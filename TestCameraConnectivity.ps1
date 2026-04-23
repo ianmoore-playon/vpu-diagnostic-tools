@@ -42,7 +42,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # ---------- Configuration ----------------------------------------------------
 
-$ScriptVersion     = "2.0"
+$ScriptVersion     = "2.1"
 $RunId             = Get-Date -Format "yyyyMMdd_HHmmss"
 $OutputDir         = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputFile        = Join-Path $OutputDir "CameraLink_Results_$RunId.txt"
@@ -52,6 +52,13 @@ $NicDriverPatterns = @(                   # Driver descriptions to match camera 
 )
 $RenegotiateWaitSec = 30                  # Seconds to wait after forcing speed change
 $EventLogHours     = 48                   # How many hours back to scan the event log
+$PixellotLogPaths  = @(                   # Pixellot application log search paths
+    "C:\Pixellot\Data\Log"               #   Primary (confirmed path)
+    "C:\Pixellot\logs"
+    "C:\Pixellot\Logs"
+    "C:\Program Files\Pixellot\logs"
+    "C:\ProgramData\Pixellot\logs"
+)
 
 # ---------- Helper Functions -------------------------------------------------
 
@@ -181,6 +188,8 @@ $ScriptStartTime = Get-Date
 
 $portResults     = @()   # Collect per-port results for summary
 $ocrAdapters     = @{}   # Adapter descriptions identified as OCR / 100 Mbps-only
+$cameraAppIssues = @()   # Camera failures found in Pixellot application log
+$latestLog       = $null # Most recent CamerasTester log found during analysis
 
 $header = @"
 ================================================================
@@ -470,6 +479,152 @@ Write-Log "        the link will always negotiate at 100 Mbps regardless of cabl
 Write-Log "        quality. Check the camera specifications." "DarkGray"
 Write-Log ""
 
+# ── Pixellot Application Log Analysis ────────────────────────────────────────
+Write-Log "-- Pixellot Application Log Analysis --------------------------------" "Cyan"
+Write-Log ""
+
+foreach ($logPath in $PixellotLogPaths) {
+    if (Test-Path $logPath) {
+        $found = Get-ChildItem -Path $logPath -Filter "CamerasTester_*.log" -ErrorAction SilentlyContinue |
+                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($found) { $latestLog = $found; break }
+    }
+}
+
+if (-not $latestLog) {
+    Write-Log "  [INFO] No CamerasTester log files found. Skipping application log analysis." "DarkGray"
+    Write-Log ("  Searched: {0}" -f ($PixellotLogPaths -join ', ')) "DarkGray"
+    Write-Log ""
+} else {
+    Write-Log ("  Log file  : {0}" -f $latestLog.FullName) "White"
+    Write-Log ("  Log size  : {0} KB  |  Modified: {1}" -f [math]::Round($latestLog.Length / 1KB, 1), $latestLog.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")) "White"
+    Write-Log ""
+
+    $logContent = Get-Content -Path $latestLog.FullName -ErrorAction SilentlyContinue
+
+    if (-not $logContent) {
+        Write-Log "  [WARN] Could not read log file contents." "Yellow"
+        Write-Log ""
+    } else {
+        $appFailCounts   = @{}   # IP -> total 'no response' failure count
+        $appSuccessIPs   = @{}   # IP -> $true if connected at least once
+        $appCameraModels = @{}   # IP -> model name string
+        $appExitCodes    = @{}   # IP -> last exit code seen
+        $appSessionCount = 0
+        $appLastIP       = $null
+
+        foreach ($line in $logContent) {
+            if ($line -match 'START NEW LOG SESSION') { $appSessionCount++ }
+
+            # Track active camera context from bracket notation: [rtsp://IP/...]
+            if ($line -match '\[rtsp://([\d.]+)/') { $appLastIP = $Matches[1] }
+
+            # Connection failure - no response from camera
+            if ($line -match "Couldn't get response from camera\s+rtsp://([\d.]+)") {
+                $appIp = $Matches[1]
+                $appFailCounts[$appIp] = ($appFailCounts[$appIp] -as [int]) + 1
+                $appLastIP = $appIp
+            }
+
+            # Successful camera parameter exchange
+            if ($line -match 'Done Setting camera parameters' -and $appLastIP) {
+                $appSuccessIPs[$appLastIP] = $true
+            }
+
+            # Camera model identification
+            if ($line -match 'Found modelName:\s*(\S+)' -and $appLastIP) {
+                $appCameraModels[$appLastIP] = $Matches[1].Trim()
+            }
+
+            # Process exit code (last value per IP wins)
+            if ($line -match 'Process exiting with result:\s*(\d+)' -and $appLastIP) {
+                $appExitCodes[$appLastIP] = [int]$Matches[1]
+            }
+        }
+
+        Write-Log ("  Sessions in log : {0}" -f $appSessionCount) "White"
+        Write-Log ""
+
+        $allLogIPs = (@($appFailCounts.Keys) + @($appSuccessIPs.Keys) + @($appCameraModels.Keys)) |
+                     Sort-Object -Unique
+
+        if ($allLogIPs.Count -eq 0) {
+            Write-Log "  [INFO] No camera connection activity found in log file." "DarkGray"
+        } else {
+            foreach ($appIp in $allLogIPs) {
+                $appFails    = $appFailCounts[$appIp] -as [int]
+                $appModel    = if ($appCameraModels[$appIp]) { $appCameraModels[$appIp] } else { "Unknown" }
+                $appExitCode = $appExitCodes[$appIp]
+
+                Write-Log ("  Camera IP : {0}" -f $appIp) "White"
+                Write-Log ("  Model     : {0}" -f $appModel) "White"
+
+                if ($appFails -gt 0) {
+                    Write-Log ("  Errors    : {0} 'Couldn't get response' failure(s) across {1} session(s)" -f $appFails, $appSessionCount) "Red"
+                    if ($null -ne $appExitCode) {
+                        $exitMsg = switch ($appExitCode) {
+                            12      { "Camera first connection problem" }
+                            default { "Exit code $appExitCode" }
+                        }
+                        Write-Log ("  Exit Code : {0}  ({1})" -f $appExitCode, $exitMsg) "Red"
+                    }
+
+                    # Correlate camera IP to NIC port
+                    $matchedNic = $null
+
+                    # Method 1: ARP/neighbor table lookup by IP
+                    $arpEntry = Get-NetNeighbor -IPAddress $appIp -ErrorAction SilentlyContinue |
+                                Where-Object { $_.State -ne "Unreachable" } | Select-Object -First 1
+                    if ($arpEntry) {
+                        $matchedNic = Get-NetAdapter -InterfaceIndex $arpEntry.InterfaceIndex -ErrorAction SilentlyContinue
+                    }
+
+                    # Method 2: /24 subnet match against camera NIC port IP addresses
+                    if (-not $matchedNic) {
+                        $targetSubnet = ($appIp -split '\.')[0..2] -join '.'
+                        foreach ($nic in $nicPorts) {
+                            $nicIfIdx  = (Get-NetAdapter -Name $nic.Name -ErrorAction SilentlyContinue).ifIndex
+                            $nicAddrs  = Get-NetIPAddress -InterfaceIndex $nicIfIdx -AddressFamily IPv4 -ErrorAction SilentlyContinue
+                            foreach ($addr in $nicAddrs) {
+                                if ($addr.IPAddress -and (($addr.IPAddress -split '\.')[0..2] -join '.') -eq $targetSubnet) {
+                                    $matchedNic = Get-NetAdapter -Name $nic.Name -ErrorAction SilentlyContinue
+                                    break
+                                }
+                            }
+                            if ($matchedNic) { break }
+                        }
+                    }
+
+                    if ($matchedNic) {
+                        Write-Log ("  NIC Port  : {0}  ({1})" -f $matchedNic.Name, $matchedNic.InterfaceDescription) "Yellow"
+                        $portResult = $portResults | Where-Object { $_.Name -eq $matchedNic.Name } | Select-Object -First 1
+                        if ($portResult) {
+                            if ($portResult.Result -eq "FAIL") {
+                                Write-Log "  [CONFIRM] NIC port was DEGRADED - application failures corroborate physical layer fault." "Red"
+                                $cameraAppIssues += ("{0} ({1}) on {2}: app failures ({3}x) + NIC degraded = CONFIRMED physical fault" -f $appIp, $appModel, $matchedNic.Name, $appFails)
+                            } elseif ($portResult.Result -like "PASS*") {
+                                Write-Log "  [NOTE]    NIC port link speed is OK (1 Gbps) - fault is not in the physical layer." "Yellow"
+                                Write-Log "            Check camera power supply, configuration, or internal hardware." "Yellow"
+                                $cameraAppIssues += ("{0} ({1}) on {2}: app failures ({3}x) but NIC OK - check camera hardware/config" -f $appIp, $appModel, $matchedNic.Name, $appFails)
+                            } else {
+                                $cameraAppIssues += ("{0} ({1}): {2} app failure(s) detected" -f $appIp, $appModel, $appFails)
+                            }
+                        } else {
+                            $cameraAppIssues += ("{0} ({1}): {2} app failure(s) detected" -f $appIp, $appModel, $appFails)
+                        }
+                    } else {
+                        Write-Log "  NIC Port  : Could not correlate to a camera NIC port via ARP or subnet match." "DarkGray"
+                        $cameraAppIssues += ("{0} ({1}): {2} app failure(s) - NIC port not identified" -f $appIp, $appModel, $appFails)
+                    }
+                } else {
+                    Write-Log "  Status    : Connected successfully - no application-level failures." "Green"
+                }
+                Write-Log ""
+            }
+        }
+    }
+}
+
 Add-Content -Path $OutputFile -Value "Full results saved: $OutputFile"
 
 # ── Clear screen and show summary ─────────────────────────────────────────────
@@ -529,6 +684,20 @@ if ($smartSpeedMessages.Count -gt 0) {
     Write-Host "         NIC confirmed physical layer limitation on at least one port." -ForegroundColor Red
 } else {
     Write-Host "  [PASS] No SmartSpeed downgrade events detected." -ForegroundColor Green
+}
+Write-Host ""
+
+# Pixellot application log summary
+Write-Host " PIXELLOT APPLICATION LOG" -ForegroundColor Cyan
+Write-Host ("-" * 64) -ForegroundColor DarkGray
+if ($cameraAppIssues.Count -gt 0) {
+    foreach ($issue in $cameraAppIssues) {
+        Write-Host ("  [WARN] {0}" -f $issue) -ForegroundColor Red
+    }
+} elseif ($latestLog) {
+    Write-Host "  [PASS] No camera connection failures found in application log." -ForegroundColor Green
+} else {
+    Write-Host "  [INFO] No Pixellot application log found - skipped." -ForegroundColor DarkGray
 }
 Write-Host ""
 
