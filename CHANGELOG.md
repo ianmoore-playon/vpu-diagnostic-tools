@@ -4,6 +4,15 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [2.2] - 2026-04-23
+
+### Fixed
+- Exit code 0 (clean application shutdown) no longer overwrites a meaningful failure code (e.g. exit 12) for the same camera IP — non-zero codes are now preferred and preserved
+- Subnet match fallback now detects when a FAIL/degraded port is also on the same subnet as the matched port and surfaces a `[CAUTION]` warning directing the tech to verify physical cable mapping — prevents a healthy port from being reported as the likely camera host after adapter reset clears the ARP table
+- Subnet match result now labelled `[subnet match - ARP unavailable]` to distinguish it from a confirmed ARP lookup
+
+---
+
 ## [2.1] - 2026-04-23
 
 ### Added
