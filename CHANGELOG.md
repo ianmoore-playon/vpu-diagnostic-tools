@@ -4,6 +4,18 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [2.1] - 2026-04-23
+
+### Added
+- Pixellot application log analysis: parses the most recent `CamerasTester_*.log` file for camera connection failures, camera model names, session counts, and process exit codes
+- IP-to-NIC-port correlation for failing cameras — tries ARP/neighbor table first, then /24 subnet match as fallback
+- Cross-reference between application log failures and NIC port results: confirms physical fault when both app failures and NIC degradation are present; flags camera-side fault when NIC link is healthy
+- `$PixellotLogPaths` config variable with confirmed primary path (`C:\Pixellot\Data\Log`) and common fallback locations
+- `PIXELLOT APPLICATION LOG` section added to the final summary screen
+- `$cameraAppIssues` list tracked and shown in summary alongside SmartSpeed and port results
+
+---
+
 ## [2.0] - 2026-04-23
 
 ### Added
