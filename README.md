@@ -1,4 +1,4 @@
-# playon-pixellot-scripts
+# pixellot-vpu-tools
 
 PowerShell diagnostic scripts for Pixellot VPU field support.
 
@@ -13,7 +13,7 @@ Diagnoses camera connection link speed issues on Pixellot VPUs. Determines wheth
 Open any PowerShell window on the VPU — no need to right-click "Run as Administrator", the script handles that automatically.
 
 ```powershell
-irm 'https://raw.githubusercontent.com/ianmoore-playon/playon-pixellot-scripts/refs/heads/main/TestCameraConnectivity.ps1' | iex
+irm 'https://raw.githubusercontent.com/ianmoore-playon/pixellot-vpu-tools/refs/heads/main/TestCameraConnectivity.ps1' | iex
 ```
 
 A UAC prompt will appear. Click **Yes**. The script runs and saves results to the Desktop as `CameraLink_Results_YYYYMMDD_HHMMSS.txt`.

@@ -9,7 +9,7 @@
 #  HOW TO RUN (one-liner - no file transfer needed):
 #    Open any PowerShell window (does NOT need to be elevated - script self-elevates) and run:
 #
-#      irm 'https://raw.githubusercontent.com/ianmoore-playon/playon-pixellot-scripts/refs/heads/main/TestCameraConnectivity.ps1' | iex
+#      irm 'https://raw.githubusercontent.com/ianmoore-playon/pixellot-vpu-tools/refs/heads/main/TestCameraConnectivity.ps1' | iex
 #
 #    Results are saved to the Desktop as CameraLink_Results_YYYYMMDD_HHMMSS.txt.
 #    When run from a local copy, results save next to the script instead.
@@ -27,7 +27,7 @@
 # =============================================================================
 
 # GitHub raw URL - update this after creating the repo so self-elevation works via irm | iex
-$ScriptUrl = "https://raw.githubusercontent.com/ianmoore-playon/playon-pixellot-scripts/refs/heads/main/TestCameraConnectivity.ps1"
+$ScriptUrl = "https://raw.githubusercontent.com/ianmoore-playon/pixellot-vpu-tools/refs/heads/main/TestCameraConnectivity.ps1"
 
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     if ($PSCommandPath) {
