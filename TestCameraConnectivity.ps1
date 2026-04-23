@@ -42,7 +42,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # ---------- Configuration ----------------------------------------------------
 
-$ScriptVersion     = "2.1"
+$ScriptVersion     = "2.2"
 $RunId             = Get-Date -Format "yyyyMMdd_HHmmss"
 $OutputDir         = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputFile        = Join-Path $OutputDir "CameraLink_Results_$RunId.txt"
@@ -536,9 +536,12 @@ if (-not $latestLog) {
                 $appCameraModels[$appLastIP] = $Matches[1].Trim()
             }
 
-            # Process exit code (last value per IP wins)
+            # Process exit code - prefer first non-zero code; never let clean app shutdown (0) overwrite a failure code
             if ($line -match 'Process exiting with result:\s*(\d+)' -and $appLastIP) {
-                $appExitCodes[$appLastIP] = [int]$Matches[1]
+                $code = [int]$Matches[1]
+                if ($code -ne 0 -or -not $appExitCodes.ContainsKey($appLastIP)) {
+                    $appExitCodes[$appLastIP] = $code
+                }
             }
         }
 
@@ -570,7 +573,8 @@ if (-not $latestLog) {
                     }
 
                     # Correlate camera IP to NIC port
-                    $matchedNic = $null
+                    $matchedNic      = $null
+                    $usedSubnetMatch = $false
 
                     # Method 1: ARP/neighbor table lookup by IP
                     $arpEntry = Get-NetNeighbor -IPAddress $appIp -ErrorAction SilentlyContinue |
@@ -581,7 +585,8 @@ if (-not $latestLog) {
 
                     # Method 2: /24 subnet match against camera NIC port IP addresses
                     if (-not $matchedNic) {
-                        $targetSubnet = ($appIp -split '\.')[0..2] -join '.'
+                        $targetSubnet    = ($appIp -split '\.')[0..2] -join '.'
+                        $usedSubnetMatch = $true
                         foreach ($nic in $nicPorts) {
                             $nicIfIdx  = (Get-NetAdapter -Name $nic.Name -ErrorAction SilentlyContinue).ifIndex
                             $nicAddrs  = Get-NetIPAddress -InterfaceIndex $nicIfIdx -AddressFamily IPv4 -ErrorAction SilentlyContinue
@@ -596,7 +601,29 @@ if (-not $latestLog) {
                     }
 
                     if ($matchedNic) {
-                        Write-Log ("  NIC Port  : {0}  ({1})" -f $matchedNic.Name, $matchedNic.InterfaceDescription) "Yellow"
+                        $nicPortLabel = if ($usedSubnetMatch) { "  NIC Port  : {0}  ({1})  [subnet match - ARP unavailable]" } else { "  NIC Port  : {0}  ({1})" }
+                        Write-Log ($nicPortLabel -f $matchedNic.Name, $matchedNic.InterfaceDescription) "Yellow"
+
+                        if ($usedSubnetMatch) {
+                            # ARP was empty (common after adapter reset during this run). Check whether a FAIL
+                            # port is also on the same subnet - if so, it is more likely the actual camera port.
+                            $degradedOnSubnet = $null
+                            foreach ($fr in ($portResults | Where-Object { $_.Result -eq "FAIL" -and $_.Name -ne $matchedNic.Name })) {
+                                $frIfIdx = (Get-NetAdapter -Name $fr.Name -ErrorAction SilentlyContinue).ifIndex
+                                $frAddrs = Get-NetIPAddress -InterfaceIndex $frIfIdx -AddressFamily IPv4 -ErrorAction SilentlyContinue
+                                if ($frAddrs | Where-Object { $_.IPAddress -and (($_.IPAddress -split '\.')[0..2] -join '.') -eq $targetSubnet }) {
+                                    $degradedOnSubnet = $fr; break
+                                }
+                            }
+                            if ($degradedOnSubnet) {
+                                Write-Log "  [CAUTION] ARP table empty - may have been cleared after adapter reset this run." "Yellow"
+                                Write-Log ("            Degraded port {0} is also on subnet {1}.x and is the more likely camera port." -f $degradedOnSubnet.Name, $targetSubnet) "Yellow"
+                                Write-Log "            Verify physical cable mapping before concluding." "Yellow"
+                            } else {
+                                Write-Log "  [NOTE]    ARP table unavailable - port identified by /24 subnet match only." "DarkGray"
+                            }
+                        }
+
                         $portResult = $portResults | Where-Object { $_.Name -eq $matchedNic.Name } | Select-Object -First 1
                         if ($portResult) {
                             if ($portResult.Result -eq "FAIL") {
