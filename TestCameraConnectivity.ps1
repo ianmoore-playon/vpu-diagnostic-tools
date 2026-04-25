@@ -42,7 +42,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # ---------- Configuration ----------------------------------------------------
 
-$ScriptVersion     = "2.5"
+$ScriptVersion     = "2.6"
 $RunId             = Get-Date -Format "yyyyMMdd_HHmmss"
 $OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir         = Join-Path $OutputBaseDir "CameraLink_Results"
@@ -573,7 +573,7 @@ foreach ($cam in $CameraIPs) {
             Write-Log "  RTSP 554 : Port closed or no response  (camera may be booting or faulted)" "Red"
         }
     } else {
-        $noRespNote = if ($cam.Optional) { " — expected if no OCR camera installed on this unit" } else { "" }
+        $noRespNote = if ($cam.Optional) { " - expected if no OCR camera installed on this unit" } else { "" }
         Write-Log ("  RTSP 554 : Skipped (no ping$noRespNote)") "DarkGray"
     }
 
@@ -674,6 +674,7 @@ if (-not $latestLog) {
                     Write-Log ("  Errors    : {0} 'Couldn't get response' failure(s) across {1} session(s)" -f $appFails, $appSessionCount) "Red"
                     if ($null -ne $appExitCode) {
                         $exitMsg = switch ($appExitCode) {
+                            11      { "Camera not found / no response before timeout" }
                             12      { "Camera first connection problem" }
                             default { "Exit code $appExitCode" }
                         }
