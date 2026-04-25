@@ -42,7 +42,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # ---------- Configuration ----------------------------------------------------
 
-$ScriptVersion     = "2.4"
+$ScriptVersion     = "2.5"
 $RunId             = Get-Date -Format "yyyyMMdd_HHmmss"
 $OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir         = Join-Path $OutputBaseDir "CameraLink_Results"
@@ -98,6 +98,22 @@ function Get-AdapterSpeedMbps {
     } catch {
         return -1
     }
+}
+
+function Get-AdapterPeakSpeedMbps {
+    param([string]$AdapterName, [int]$SampleSeconds = 12, [int]$IntervalMs = 750)
+    # Samples repeatedly to catch intermittent links that blink due to SmartSpeed
+    # retry cycles — a degraded port can appear disconnected for several seconds at
+    # a time while the NIC reattempts gigabit negotiation.
+    $peak     = 0
+    $deadline = (Get-Date).AddSeconds($SampleSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $s = Get-AdapterSpeedMbps -AdapterName $AdapterName
+        if ($s -gt $peak) { $peak = $s }
+        if ($peak -ge 1000) { break }   # Gigabit confirmed — no need to keep sampling
+        Start-Sleep -Milliseconds $IntervalMs
+    }
+    return $peak
 }
 
 function Get-SpeedDisplayString {
@@ -307,18 +323,33 @@ foreach ($nic in $nicPorts) {
     $name        = $nic.Name
     $status      = $nic.Status
     $speedMbps   = Get-AdapterSpeedMbps -AdapterName $name
-    $speedString = Get-SpeedDisplayString -Mbps $speedMbps
+    $blinking    = $false
 
     Write-Log ("  Adapter  : {0}" -f $name) "White"
     Write-Log ("  Driver   : {0}" -f $nic.InterfaceDescription) "White"
     Write-Log ("  Status   : {0}" -f $status) "White"
     Write-Log ("  MAC      : {0}" -f $nic.MacAddress) "White"
 
+    # If no link on the first read, sample for 12 seconds before concluding NO LINK.
+    # A degraded port undergoing SmartSpeed retry cycles can blink every few seconds —
+    # the NIC drops the link briefly each time it reattempts gigabit negotiation.
+    if ($speedMbps -eq 0) {
+        Write-Log "  [INFO]   No link on initial check - sampling for 12 seconds to catch intermittent connections..." "Yellow"
+        $peak = Get-AdapterPeakSpeedMbps -AdapterName $name -SampleSeconds 12
+        if ($peak -gt 0) {
+            $blinking  = $true
+            $speedMbps = $peak
+            Write-Log ("  [INFO]   Intermittent link detected - port is blinking at {0} (SmartSpeed retry cycle)" -f (Get-SpeedDisplayString -Mbps $speedMbps)) "Yellow"
+        }
+    }
+
+    $speedString = Get-SpeedDisplayString -Mbps $speedMbps
+
     if ($speedMbps -eq 1000) {
         Write-Log ("  Speed    : {0}" -f $speedString) "Green"
         Write-Log ""
         $portResults += [PSCustomObject]@{
-            Name = $name; Speed = $speedMbps; Result = "PASS"; Action = "None"
+            Name = $name; Speed = $speedMbps; Result = "PASS"; Action = "None"; Blinking = $blinking
         }
 
     } elseif ($speedMbps -eq 100) {
@@ -335,7 +366,7 @@ foreach ($nic in $nicPorts) {
             Write-Log "           Skipping remediation - 100 Mbps is expected on this port." "Green"
             $ocrAdapters[$nic.InterfaceDescription] = $true
             $portResults += [PSCustomObject]@{
-                Name = $name; Speed = $speedMbps; Result = "PASS (OCR)"; Action = "OCR scoreboard camera - 100 Mbps is expected"
+                Name = $name; Speed = $speedMbps; Result = "PASS (OCR)"; Action = "OCR scoreboard camera - 100 Mbps is expected"; Blinking = $blinking
             }
             Write-Log ""
             continue
@@ -350,7 +381,7 @@ foreach ($nic in $nicPorts) {
             Write-Log "  [FAIL]   Could not apply speed change. SpeedDuplex property not found on this adapter." "Red"
             Write-Log "           Open Device Manager > adapter Properties > Advanced tab to verify." "Red"
             $portResults += [PSCustomObject]@{
-                Name = $name; Speed = $speedMbps; Result = "FAIL"; Action = "Could not apply SpeedDuplex setting - check Device Manager Advanced tab"
+                Name = $name; Speed = $speedMbps; Result = "FAIL"; Action = "Could not apply SpeedDuplex setting - check Device Manager Advanced tab"; Blinking = $blinking
             }
             Write-Log ""
             continue
@@ -370,7 +401,7 @@ foreach ($nic in $nicPorts) {
             Write-Log "           Speed setting left at 1 Gbps Full Duplex (not Auto)." "Yellow"
             $portResults += [PSCustomObject]@{
                 Name = $name; Speed = $newSpeedMbps; Result = "PASS (forced)"
-                Action = "Forced to 1 Gbps - monitor port; connected device may not support auto-negotiation"
+                Action = "Forced to 1 Gbps - monitor port; connected device may not support auto-negotiation"; Blinking = $blinking
             }
         } else {
             # Step 3: Forcing failed - reset to Auto Negotiation (registry value "0")
@@ -401,7 +432,7 @@ foreach ($nic in $nicPorts) {
 
             $portResults += [PSCustomObject]@{
                 Name = $name; Speed = $autoSpeed; Result = "FAIL"
-                Action = "Physical layer issue - check cable, termination, RJ45 pins, and camera port"
+                Action = "Physical layer issue - check cable, termination, RJ45 pins, and camera port"; Blinking = $blinking
             }
         }
         Write-Log ""
@@ -411,14 +442,14 @@ foreach ($nic in $nicPorts) {
         Write-Log "  [INFO]   No cable connected or device powered off." "DarkGray"
         Write-Log ""
         $portResults += [PSCustomObject]@{
-            Name = $name; Speed = 0; Result = "NO LINK"; Action = "No cable or device connected"
+            Name = $name; Speed = 0; Result = "NO LINK"; Action = "No cable or device connected"; Blinking = $false
         }
 
     } else {
         Write-Log ("  Speed    : {0}" -f $speedString) "Yellow"
         Write-Log ""
         $portResults += [PSCustomObject]@{
-            Name = $name; Speed = $speedMbps; Result = "UNKNOWN"; Action = "Unexpected speed - investigate"
+            Name = $name; Speed = $speedMbps; Result = "UNKNOWN"; Action = "Unexpected speed - investigate"; Blinking = $blinking
         }
     }
 }
@@ -768,7 +799,8 @@ foreach ($r in $portResults) {
             }
         }
         "FAIL" {
-            Write-Host ("  [FAIL] {0,-20} $($r.Speed) Mbps - DEGRADED" -f $r.Name) -ForegroundColor Red
+            $blinkNote = if ($r.Blinking) { " (intermittent - link was blinking)" } else { "" }
+            Write-Host ("  [FAIL] {0,-20} $($r.Speed) Mbps - DEGRADED$blinkNote" -f $r.Name) -ForegroundColor Red
             Write-Host ("         -> {0}" -f $r.Action) -ForegroundColor Red
         }
         "NO LINK" {
