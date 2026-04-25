@@ -42,7 +42,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # ---------- Configuration ----------------------------------------------------
 
-$ScriptVersion     = "2.7"
+$ScriptVersion     = "2.8"
 $RunId             = Get-Date -Format "yyyyMMdd_HHmmss"
 $OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir         = Join-Path $OutputBaseDir "CameraLink_Results"
@@ -226,8 +226,9 @@ function Get-EventAdapterName {
 $timestamp       = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 $ScriptStartTime = Get-Date
 
-$portResults     = @()   # Collect per-port results for summary
-$ocrAdapters     = @{}   # Adapter descriptions identified as OCR / 100 Mbps-only
+$portResults               = @()   # Collect per-port results for summary
+$ocrAdapters               = @{}   # Adapter descriptions identified as OCR / 100 Mbps-only
+$totalSmartSpeedDowngrades = 0     # Real total from event log (not capped at 20)
 $cameraAppIssues = @()   # Camera failures found in Pixellot application log
 $cameraConnResults = @() # Ping + RTSP connectivity results per camera IP
 $latestLog       = $null # Most recent CamerasTester log found during analysis
@@ -499,8 +500,9 @@ $chuEvents = $events | Where-Object {
 $smartSpeedMessages = @()
 
 if ($chuEvents.Count -gt 0) {
-    $downgradeCount = ($chuEvents | Where-Object { $_.Id -eq 40 }).Count
-    $warningCount   = ($chuEvents | Where-Object { $_.Id -eq 27 }).Count
+    $downgradeCount            = ($chuEvents | Where-Object { $_.Id -eq 40 }).Count
+    $warningCount              = ($chuEvents | Where-Object { $_.Id -eq 27 }).Count
+    $totalSmartSpeedDowngrades = $downgradeCount
     Write-Log ("  [WARN] Found {0} SmartSpeed downgrade(s) and {1} link warning(s) on CHU ports in the last {2} hours:" -f $downgradeCount, $warningCount, $EventLogHours) "Red"
     Write-Log ""
     foreach ($evt in $chuEvents | Sort-Object @{Expression='TimeCreated'; Descending=$true}, @{Expression='RecordId'; Descending=$true} | Select-Object -First 20) {
@@ -807,142 +809,162 @@ Add-Content -Path $OutputFile -Value "Full results saved: $OutputFile"
 # ── Clear screen and show summary ─────────────────────────────────────────────
 Clear-Host
 
-$passCount         = ($portResults | Where-Object { $_.Result -like "PASS*" }).Count
-$failCount         = ($portResults | Where-Object { $_.Result -eq "FAIL" }).Count
-$noLinkCount       = ($portResults | Where-Object { $_.Result -eq "NO LINK" }).Count
-$unknownCount      = ($portResults | Where-Object { $_.Result -eq "UNKNOWN" }).Count
-$chuDowngradeCount = ($smartSpeedMessages | Where-Object { $_.Id -eq 40 }).Count
-$rtspFaultCount    = ($cameraConnResults | Where-Object { $_.Ping -and -not $_.Rtsp }).Count
-$allClear          = ($failCount -eq 0) -and ($unknownCount -eq 0) -and ($chuDowngradeCount -eq 0) -and ($rtspFaultCount -eq 0)
+$passCount      = ($portResults | Where-Object { $_.Result -like "PASS*" }).Count
+$failCount      = ($portResults | Where-Object { $_.Result -eq "FAIL" }).Count
+$unknownCount   = ($portResults | Where-Object { $_.Result -eq "UNKNOWN" }).Count
+$rtspFaultCount = ($cameraConnResults | Where-Object { $_.Ping -and -not $_.Rtsp }).Count
+$allClear       = ($failCount -eq 0) -and ($unknownCount -eq 0) -and
+                  ($totalSmartSpeedDowngrades -eq 0) -and ($rtspFaultCount -eq 0) -and
+                  ($cameraAppIssues.Count -eq 0)
 
-Write-Host "================================================================" -ForegroundColor White
-Write-Host " Pixellot VPU - Camera Link Speed Diagnostic - COMPLETE" -ForegroundColor White
-Write-Host "================================================================" -ForegroundColor White
-Write-Host " Computer : $($env:COMPUTERNAME)" -ForegroundColor White
-Write-Host " Date/Time: $timestamp" -ForegroundColor White
-Write-Host " VPU Model: $VpuModelDisplay" -ForegroundColor White
-Write-Host " NIC      : Intel(R) 82574L / I210 (camera POE ports)" -ForegroundColor White
-Write-Host "================================================================" -ForegroundColor White
+$ts = Get-Date -Format "yyyy-MM-dd HH:mm"
+
+# ── Header ────────────────────────────────────────────────────────────────────
+Write-Host ""
+Write-Host ("=" * 64) -ForegroundColor White
+Write-Host (" PIXELLOT VPU CAMERA DIAGNOSTIC  v$ScriptVersion") -ForegroundColor White
+Write-Host ("=" * 64) -ForegroundColor White
+Write-Host (" VPU  : $VpuModelDisplay") -ForegroundColor White
+Write-Host (" Host : $($env:COMPUTERNAME)   User: $($env:USERNAME)   $ts") -ForegroundColor White
+Write-Host ("=" * 64) -ForegroundColor White
 Write-Host ""
 
-# Per-port results
-Write-Host " PORT RESULTS" -ForegroundColor Cyan
+# ── NIC Port Status ───────────────────────────────────────────────────────────
+Write-Host " NIC PORT STATUS" -ForegroundColor Cyan
 Write-Host ("-" * 64) -ForegroundColor DarkGray
-Write-Host ""
-
 foreach ($r in $portResults) {
     switch -Wildcard ($r.Result) {
         "PASS*" {
-            $color = "Green"
             $speedLabel = if ($r.Speed -eq 1000) { "1 Gbps" } else { "$($r.Speed) Mbps" }
-            Write-Host ("  [PASS] {0,-20} {1}" -f $r.Name, $speedLabel) -ForegroundColor $color
+            Write-Host ("  {0,-14}  [OK]        {1}" -f $r.Name, $speedLabel) -ForegroundColor Green
             if ($r.Action -ne "None") {
-                Write-Host ("         -> {0}" -f $r.Action) -ForegroundColor Yellow
+                Write-Host ("                -> {0}" -f $r.Action) -ForegroundColor Yellow
             }
         }
         "FAIL" {
-            $blinkNote = if ($r.Blinking) { " (intermittent - link was blinking)" } else { "" }
-            Write-Host ("  [FAIL] {0,-20} $($r.Speed) Mbps - DEGRADED$blinkNote" -f $r.Name) -ForegroundColor Red
-            Write-Host ("         -> {0}" -f $r.Action) -ForegroundColor Red
+            $blinkNote = if ($r.Blinking) { "  (blinking / SmartSpeed retry)" } else { "" }
+            Write-Host ("  {0,-14}  [DEGRADED]  {1} Mbps$blinkNote" -f $r.Name, $r.Speed) -ForegroundColor Red
         }
         "NO LINK" {
-            Write-Host ("  [----] {0,-20} No link / not connected" -f $r.Name) -ForegroundColor DarkGray
+            Write-Host ("  {0,-14}  [NO LINK]   --" -f $r.Name) -ForegroundColor DarkGray
         }
         default {
-            Write-Host ("  [UNK?] {0,-20} $($r.Speed) Mbps - unexpected" -f $r.Name) -ForegroundColor Yellow
+            Write-Host ("  {0,-14}  [UNKNOWN]   {1} Mbps" -f $r.Name, $r.Speed) -ForegroundColor Yellow
         }
     }
 }
-
 Write-Host ""
 
-# Camera connectivity summary
-Write-Host " CAMERA CONNECTIVITY" -ForegroundColor Cyan
+# ── Camera Status ─────────────────────────────────────────────────────────────
+Write-Host " CAMERA STATUS" -ForegroundColor Cyan
 Write-Host ("-" * 64) -ForegroundColor DarkGray
 foreach ($c in $cameraConnResults) {
     if ($c.Ping -and $c.Rtsp) {
-        Write-Host ("  [OK  ] {0,-18} {1}  —  Ping OK, RTSP open" -f $c.IP, $c.Label) -ForegroundColor Green
+        Write-Host ("  {0,-18}  {1,-24}  [OK]  Ping + RTSP" -f $c.IP, $c.Label) -ForegroundColor Green
     } elseif ($c.Ping -and -not $c.Rtsp) {
-        Write-Host ("  [WARN] {0,-18} {1}  —  Ping OK, RTSP closed" -f $c.IP, $c.Label) -ForegroundColor Yellow
+        Write-Host ("  {0,-18}  {1,-24}  [!!]  Ping OK, RTSP closed" -f $c.IP, $c.Label) -ForegroundColor Yellow
     } elseif ($c.Optional) {
-        Write-Host ("  [----] {0,-18} {1}  —  No device  (normal — OCR camera not installed on this unit)" -f $c.IP, $c.Label) -ForegroundColor DarkGray
+        Write-Host ("  {0,-18}  {1,-24}  [--]  Not installed (expected)" -f $c.IP, $c.Label) -ForegroundColor DarkGray
     } else {
-        Write-Host ("  [----] {0,-18} {1}  —  No response" -f $c.IP, $c.Label) -ForegroundColor DarkGray
+        Write-Host ("  {0,-18}  {1,-24}  [--]  No response" -f $c.IP, $c.Label) -ForegroundColor DarkGray
     }
 }
 Write-Host ""
 
-# SmartSpeed summary
-Write-Host " INTEL SMARTSPEED EVENT LOG" -ForegroundColor Cyan
-Write-Host ("-" * 64) -ForegroundColor DarkGray
-if ($smartSpeedMessages.Count -gt 0) {
-    Write-Host ("  [WARN] {0} downgrade event(s) found in last {1} hours." -f $smartSpeedMessages.Count, $EventLogHours) -ForegroundColor Red
-    Write-Host "         NIC confirmed physical layer limitation on at least one port." -ForegroundColor Red
-} else {
-    Write-Host "  [PASS] No SmartSpeed downgrade events detected." -ForegroundColor Green
-}
-Write-Host ""
+# ── Diagnosis ─────────────────────────────────────────────────────────────────
+$hasDiagnosis = ($failCount -gt 0) -or ($totalSmartSpeedDowngrades -gt 0) -or
+                ($cameraAppIssues.Count -gt 0) -or ($rtspFaultCount -gt 0) -or ($unknownCount -gt 0)
 
-# Pixellot application log summary
-Write-Host " PIXELLOT APPLICATION LOG" -ForegroundColor Cyan
-Write-Host ("-" * 64) -ForegroundColor DarkGray
-if ($cameraAppIssues.Count -gt 0) {
+if ($hasDiagnosis) {
+    Write-Host " DIAGNOSIS" -ForegroundColor Cyan
+    Write-Host ("-" * 64) -ForegroundColor DarkGray
+
+    foreach ($r in ($portResults | Where-Object { $_.Result -eq "FAIL" })) {
+        $blinkNote = if ($r.Blinking) { " (blinking - SmartSpeed retry cycle)" } else { "" }
+        Write-Host ("  [FAULT]  {0} - link degraded at {1} Mbps$blinkNote" -f $r.Name, $r.Speed) -ForegroundColor Red
+        if ($totalSmartSpeedDowngrades -gt 0) {
+            Write-Host ("           SmartSpeed logged {0} downgrade(s) over {1}h. Physical layer failure confirmed." -f $totalSmartSpeedDowngrades, $EventLogHours) -ForegroundColor Red
+        }
+        Write-Host "           Forcing to 1 Gbps failed - fault is in the cable or camera port." -ForegroundColor Red
+    }
+
+    if ($totalSmartSpeedDowngrades -gt 0 -and $failCount -eq 0) {
+        Write-Host ("  [EVENT]  {0} SmartSpeed downgrade(s) in last {1}h - all ports currently at 1 Gbps." -f $totalSmartSpeedDowngrades, $EventLogHours) -ForegroundColor Yellow
+        Write-Host "           Monitor for recurrence." -ForegroundColor Yellow
+    }
+
     foreach ($issue in $cameraAppIssues) {
-        Write-Host ("  [WARN] {0}" -f $issue) -ForegroundColor Red
+        $issueColor = if ($issue -like "*CONFIRMED*") { "Red" } else { "Yellow" }
+        Write-Host ("  [WARN]   {0}" -f $issue) -ForegroundColor $issueColor
     }
-} elseif ($latestLog) {
-    Write-Host "  [PASS] No camera connection failures found in application log." -ForegroundColor Green
-} else {
-    Write-Host "  [INFO] No Pixellot application log found - skipped." -ForegroundColor DarkGray
-}
-Write-Host ""
 
-# Verdict
-if ($allClear) {
-    Write-Host "================================================================" -ForegroundColor Green
-    Write-Host "  ALL PORTS AT 1 GBPS - Camera connections appear healthy." -ForegroundColor Green
-    Write-Host "================================================================" -ForegroundColor Green
-} else {
-    Write-Host "================================================================" -ForegroundColor Yellow
-    Write-Host "  ISSUES DETECTED" -ForegroundColor Yellow
-    Write-Host "================================================================" -ForegroundColor Yellow
-    Write-Host ""
-    if ($failCount -gt 0) {
-        Write-Host "  DEGRADED PORT(S) FOUND:" -ForegroundColor Red
-        Write-Host "  Forcing to 1 Gbps failed - physical layer issue confirmed." -ForegroundColor Red
-        Write-Host ""
-        Write-Host "  Recommended steps:" -ForegroundColor White
-        Write-Host "   1. Replace the Ethernet cable on the affected port(s)" -ForegroundColor White
-        Write-Host "   2. Check cable termination - gigabit requires all 4 pairs" -ForegroundColor White
-        Write-Host "   3. Inspect RJ45 connector pins on cable and camera port for damage/corrosion" -ForegroundColor White
-        Write-Host "   4. Try a different port on the camera" -ForegroundColor White
-        Write-Host "   5. Verify the camera supports gigabit (1000BASE-T)" -ForegroundColor White
-        Write-Host "      Look up the MAC OUI in the full results file to identify" -ForegroundColor White
-        Write-Host "      the camera manufacturer." -ForegroundColor White
+    foreach ($c in ($cameraConnResults | Where-Object { $_.Ping -and -not $_.Rtsp })) {
+        Write-Host ("  [WARN]   {0} ({1}) - ping OK but RTSP port 554 closed" -f $c.IP, $c.Label) -ForegroundColor Yellow
+        Write-Host "           Camera is reachable but not accepting stream connections." -ForegroundColor Yellow
     }
+
     if ($unknownCount -gt 0) {
-        Write-Host "  UNEXPECTED SPEED DETECTED ON $unknownCount PORT(S):" -ForegroundColor Yellow
-        Write-Host "  Could not determine a standard link speed (not 100/1000 Mbps)." -ForegroundColor Yellow
-        Write-Host "  Check the full results file for the raw speed value." -ForegroundColor Yellow
-        Write-Host "  The connected device may only support 10 Mbps or an unusual rate." -ForegroundColor Yellow
+        foreach ($r in ($portResults | Where-Object { $_.Result -eq "UNKNOWN" })) {
+            Write-Host ("  [UNK]    {0} - unexpected link speed ({1} Mbps). Investigate." -f $r.Name, $r.Speed) -ForegroundColor Yellow
+        }
     }
-    if ($rtspFaultCount -gt 0) {
+
+    Write-Host ""
+}
+
+# ── Next Steps ────────────────────────────────────────────────────────────────
+Write-Host " NEXT STEPS" -ForegroundColor Cyan
+Write-Host ("-" * 64) -ForegroundColor DarkGray
+
+if ($allClear) {
+    Write-Host "  No issues found. All camera ports and streams are healthy." -ForegroundColor Green
+    Write-Host "  No action required." -ForegroundColor Green
+} else {
+    $stepNum = 1
+
+    foreach ($r in ($portResults | Where-Object { $_.Result -eq "FAIL" })) {
+        Write-Host ("  {0}. Replace the cable on {1}" -f $stepNum, $r.Name) -ForegroundColor White
+        Write-Host "     Gigabit requires all 4 wire pairs (8 wires) terminated correctly." -ForegroundColor White
+        Write-Host "     Common cause: missing brown/white-brown pair in the RJ45 crimp." -ForegroundColor White
+        Write-Host "     Inspect both cable ends + the camera-side port for damage or corrosion." -ForegroundColor White
+        Write-Host "     Re-run this tool after replacement to confirm 1 Gbps." -ForegroundColor White
         Write-Host ""
-        Write-Host "  RTSP PORT CLOSED ON $rtspFaultCount CAMERA(S):" -ForegroundColor Yellow
-        Write-Host "  Camera responds to ping but is not accepting RTSP connections." -ForegroundColor Yellow
+        $stepNum++
+    }
+
+    foreach ($c in ($cameraConnResults | Where-Object { $_.Ping -and -not $_.Rtsp })) {
+        Write-Host ("  {0}. PoE reset {1} ({2}) in VPU Manager" -f $stepNum, $c.IP, $c.Label) -ForegroundColor White
+        Write-Host "     Camera is reachable but RTSP port 554 is closed." -ForegroundColor White
+        Write-Host "     A PoE reset power-cycles the camera and should restore the stream." -ForegroundColor White
+        Write-Host "     If RTSP remains closed after the reset, the camera may need replacement." -ForegroundColor White
         Write-Host ""
-        Write-Host "  Recommended steps:" -ForegroundColor White
-        Write-Host "   1. Check VPU Manager camera status panel for error codes" -ForegroundColor White
-        Write-Host "   2. Try a PoE reset via VPU Manager (power-cycles the camera)" -ForegroundColor White
-        Write-Host "   3. If RTSP remains closed after reset, the camera may need replacement" -ForegroundColor White
+        $stepNum++
+    }
+
+    foreach ($issue in $cameraAppIssues) {
+        if ($issue -like "*but NIC OK*") {
+            $ipMatch = [regex]::Match($issue, '(\d+\.\d+\.\d+\.\d+)')
+            $camDef  = if ($ipMatch.Success) { $CameraIPs | Where-Object { $_.IP -eq $ipMatch.Value } | Select-Object -First 1 } else { $null }
+            $camTag  = if ($camDef) { "$($ipMatch.Value) ($($camDef.Label))" } elseif ($ipMatch.Success) { $ipMatch.Value } else { "camera" }
+            Write-Host ("  {0}. Monitor {1} for repeated app failures" -f $stepNum, $camTag) -ForegroundColor White
+            Write-Host "     The NIC port is healthy (1 Gbps) - the cable is not the issue." -ForegroundColor White
+            Write-Host "     If failures repeat, power-cycle the camera via PoE reset in VPU Manager." -ForegroundColor White
+            Write-Host "     Persistent failures after a reboot suggest a camera-level fault." -ForegroundColor White
+            Write-Host ""
+            $stepNum++
+        }
+    }
+
+    if ($failCount -gt 0) {
+        Write-Host ("  {0}. Re-run this tool after cable replacement" -f $stepNum) -ForegroundColor DarkGray
+        Write-Host "     Confirm the repaired port reaches 1 Gbps and SmartSpeed events stop." -ForegroundColor DarkGray
+        Write-Host ""
     }
 }
 
-Write-Host ""
-Write-Host "----------------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host " Full detailed results saved to:" -ForegroundColor White
-Write-Host " $OutputFile" -ForegroundColor Cyan
-Write-Host "----------------------------------------------------------------" -ForegroundColor DarkGray
+Write-Host ("=" * 64) -ForegroundColor DarkGray
+Write-Host (" Results: $OutputFile") -ForegroundColor DarkGray
+Write-Host ("=" * 64) -ForegroundColor DarkGray
 Write-Host ""
 Write-Host " Press any key to close..." -ForegroundColor DarkGray
 [void][System.Console]::ReadKey($true)
