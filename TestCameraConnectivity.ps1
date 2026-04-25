@@ -42,7 +42,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # ---------- Configuration ----------------------------------------------------
 
-$ScriptVersion     = "2.3"
+$ScriptVersion     = "2.4"
 $RunId             = Get-Date -Format "yyyyMMdd_HHmmss"
 $OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir         = Join-Path $OutputBaseDir "CameraLink_Results"
@@ -61,6 +61,13 @@ $PixellotLogPaths  = @(                   # Pixellot application log search path
     "C:\Program Files\Pixellot\logs"
     "C:\ProgramData\Pixellot\logs"
 )
+$CameraIPs         = @(                   # Fixed link-local IPs assigned by Pixellot firmware
+    [PSCustomObject]@{ IP = "169.254.16.50"; Label = "Camera 1 (main)";       Optional = $false }
+    [PSCustomObject]@{ IP = "169.254.16.51"; Label = "Camera 2 / DoublePlay"; Optional = $false }
+    # OCR camera at .52 is optional — not all units are configured with one
+    [PSCustomObject]@{ IP = "169.254.16.52"; Label = "OCR camera (optional)"; Optional = $true  }
+)
+$RtspPort          = 554                  # Standard RTSP port used by all Pixellot cameras
 
 # ---------- Helper Functions -------------------------------------------------
 
@@ -133,6 +140,21 @@ function Get-CurrentSpeedDuplexSetting {
     }
 }
 
+function Test-TcpPort {
+    param([string]$IP, [int]$Port, [int]$TimeoutMs = 2000)
+    # Uses raw sockets to avoid Test-NetConnection's verbose console output
+    try {
+        $tcp     = New-Object System.Net.Sockets.TcpClient
+        $connect = $tcp.BeginConnect($IP, $Port, $null, $null)
+        $ok      = $connect.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
+        if ($ok) { $tcp.EndConnect($connect) }
+        $tcp.Close()
+        return $ok
+    } catch {
+        return $false
+    }
+}
+
 function Wait-WithSpinner {
     param([int]$Seconds, [string]$Message)
     $spinner = @('|', '/', '-', '\')
@@ -191,7 +213,20 @@ $ScriptStartTime = Get-Date
 $portResults     = @()   # Collect per-port results for summary
 $ocrAdapters     = @{}   # Adapter descriptions identified as OCR / 100 Mbps-only
 $cameraAppIssues = @()   # Camera failures found in Pixellot application log
+$cameraConnResults = @() # Ping + RTSP connectivity results per camera IP
 $latestLog       = $null # Most recent CamerasTester log found during analysis
+
+# ── VPU model detection ───────────────────────────────────────────────────────
+$VpuModel  = $null
+$VpuUnitId = $null
+try {
+    $page = Invoke-WebRequest -Uri "http://localhost:32323/" -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+    if ($page.Content -match '<title>[^<]*(PXL\w+?)_(\d+)') {
+        $VpuModel  = $Matches[1]
+        $VpuUnitId = $Matches[2]
+    }
+} catch { }
+$VpuModelDisplay = if ($VpuModel) { "$VpuModel  (Unit ID: $VpuUnitId)" } else { "Not detected (VPU Manager offline?)" }
 
 $header = @"
 ================================================================
@@ -201,7 +236,8 @@ $header = @"
  User     : $($env:USERNAME)
  Date/Time: $timestamp
  Run ID   : $RunId
- NIC      : Intel(R) 82574L Gigabit Network Connection (4-port POE)
+ VPU Model: $VpuModelDisplay
+ NIC      : Intel(R) 82574L / I210 (camera POE ports)
 ================================================================
 "@
 Write-Host $header -ForegroundColor White
@@ -481,6 +517,45 @@ Write-Log "        the link will always negotiate at 100 Mbps regardless of cabl
 Write-Log "        quality. Check the camera specifications." "DarkGray"
 Write-Log ""
 
+# ── Camera Connectivity Test (Ping + RTSP) ────────────────────────────────────
+Write-Log "-- Camera Connectivity Test (Ping + RTSP Port $RtspPort) ---------------" "Cyan"
+Write-Log ""
+
+foreach ($cam in $CameraIPs) {
+    Write-Log ("  {0,-18} {1}" -f $cam.IP, $cam.Label) "White"
+
+    # Layer 3 - ICMP ping
+    $pingOk = Test-Connection -ComputerName $cam.IP -Count 2 -Quiet -ErrorAction SilentlyContinue
+    if ($pingOk) {
+        Write-Log "  Ping     : Responding" "Green"
+    } else {
+        Write-Log "  Ping     : No response  (camera offline, no link, or wrong IP)" "DarkGray"
+    }
+
+    # Layer 7 - RTSP TCP port reachability
+    $rtspOk = $false
+    if ($pingOk) {
+        $rtspOk = Test-TcpPort -IP $cam.IP -Port $RtspPort
+        if ($rtspOk) {
+            Write-Log "  RTSP 554 : Port open  (camera stream reachable)" "Green"
+        } else {
+            Write-Log "  RTSP 554 : Port closed or no response  (camera may be booting or faulted)" "Red"
+        }
+    } else {
+        $noRespNote = if ($cam.Optional) { " — expected if no OCR camera installed on this unit" } else { "" }
+        Write-Log ("  RTSP 554 : Skipped (no ping$noRespNote)") "DarkGray"
+    }
+
+    $cameraConnResults += [PSCustomObject]@{
+        IP       = $cam.IP
+        Label    = $cam.Label
+        Ping     = $pingOk
+        Rtsp     = $rtspOk
+        Optional = $cam.Optional
+    }
+    Write-Log ""
+}
+
 # ── Pixellot Application Log Analysis ────────────────────────────────────────
 Write-Log "-- Pixellot Application Log Analysis --------------------------------" "Cyan"
 Write-Log ""
@@ -664,14 +739,16 @@ $failCount         = ($portResults | Where-Object { $_.Result -eq "FAIL" }).Coun
 $noLinkCount       = ($portResults | Where-Object { $_.Result -eq "NO LINK" }).Count
 $unknownCount      = ($portResults | Where-Object { $_.Result -eq "UNKNOWN" }).Count
 $chuDowngradeCount = ($smartSpeedMessages | Where-Object { $_.Id -eq 40 }).Count
-$allClear          = ($failCount -eq 0) -and ($unknownCount -eq 0) -and ($chuDowngradeCount -eq 0)
+$rtspFaultCount    = ($cameraConnResults | Where-Object { $_.Ping -and -not $_.Rtsp }).Count
+$allClear          = ($failCount -eq 0) -and ($unknownCount -eq 0) -and ($chuDowngradeCount -eq 0) -and ($rtspFaultCount -eq 0)
 
 Write-Host "================================================================" -ForegroundColor White
 Write-Host " Pixellot VPU - Camera Link Speed Diagnostic - COMPLETE" -ForegroundColor White
 Write-Host "================================================================" -ForegroundColor White
 Write-Host " Computer : $($env:COMPUTERNAME)" -ForegroundColor White
 Write-Host " Date/Time: $timestamp" -ForegroundColor White
-Write-Host " NIC      : Intel(R) 82574L (4-port POE)" -ForegroundColor White
+Write-Host " VPU Model: $VpuModelDisplay" -ForegroundColor White
+Write-Host " NIC      : Intel(R) 82574L / I210 (camera POE ports)" -ForegroundColor White
 Write-Host "================================================================" -ForegroundColor White
 Write-Host ""
 
@@ -703,6 +780,22 @@ foreach ($r in $portResults) {
     }
 }
 
+Write-Host ""
+
+# Camera connectivity summary
+Write-Host " CAMERA CONNECTIVITY" -ForegroundColor Cyan
+Write-Host ("-" * 64) -ForegroundColor DarkGray
+foreach ($c in $cameraConnResults) {
+    if ($c.Ping -and $c.Rtsp) {
+        Write-Host ("  [OK  ] {0,-18} {1}  —  Ping OK, RTSP open" -f $c.IP, $c.Label) -ForegroundColor Green
+    } elseif ($c.Ping -and -not $c.Rtsp) {
+        Write-Host ("  [WARN] {0,-18} {1}  —  Ping OK, RTSP closed" -f $c.IP, $c.Label) -ForegroundColor Yellow
+    } elseif ($c.Optional) {
+        Write-Host ("  [----] {0,-18} {1}  —  No device  (normal — OCR camera not installed on this unit)" -f $c.IP, $c.Label) -ForegroundColor DarkGray
+    } else {
+        Write-Host ("  [----] {0,-18} {1}  —  No response" -f $c.IP, $c.Label) -ForegroundColor DarkGray
+    }
+}
 Write-Host ""
 
 # SmartSpeed summary
@@ -758,6 +851,16 @@ if ($allClear) {
         Write-Host "  Could not determine a standard link speed (not 100/1000 Mbps)." -ForegroundColor Yellow
         Write-Host "  Check the full results file for the raw speed value." -ForegroundColor Yellow
         Write-Host "  The connected device may only support 10 Mbps or an unusual rate." -ForegroundColor Yellow
+    }
+    if ($rtspFaultCount -gt 0) {
+        Write-Host ""
+        Write-Host "  RTSP PORT CLOSED ON $rtspFaultCount CAMERA(S):" -ForegroundColor Yellow
+        Write-Host "  Camera responds to ping but is not accepting RTSP connections." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  Recommended steps:" -ForegroundColor White
+        Write-Host "   1. Check VPU Manager camera status panel for error codes" -ForegroundColor White
+        Write-Host "   2. Try a PoE reset via VPU Manager (power-cycles the camera)" -ForegroundColor White
+        Write-Host "   3. If RTSP remains closed after reset, the camera may need replacement" -ForegroundColor White
     }
 }
 
