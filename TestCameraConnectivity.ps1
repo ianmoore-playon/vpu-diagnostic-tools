@@ -42,7 +42,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # ---------- Configuration ----------------------------------------------------
 
-$ScriptVersion     = "2.6"
+$ScriptVersion     = "2.7"
 $RunId             = Get-Date -Format "yyyyMMdd_HHmmss"
 $OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir         = Join-Path $OutputBaseDir "CameraLink_Results"
@@ -235,14 +235,45 @@ $latestLog       = $null # Most recent CamerasTester log found during analysis
 # ── VPU model detection ───────────────────────────────────────────────────────
 $VpuModel  = $null
 $VpuUnitId = $null
-try {
-    $page = Invoke-WebRequest -Uri "http://localhost:32323/" -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
-    if ($page.Content -match '<title>[^<]*(PXL\w+?)_(\d+)') {
-        $VpuModel  = $Matches[1]
-        $VpuUnitId = $Matches[2]
+$VpuType   = $null
+
+# Primary: agent_*.log is written every 5 min by the Pixellot agent process,
+# independent of whether VPU Manager is open in a browser.
+foreach ($logPath in $PixellotLogPaths) {
+    if (-not (Test-Path $logPath)) { continue }
+    $agentLog = Get-ChildItem -Path $logPath -Filter "agent_*.log" -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $agentLog) { continue }
+    $agentLines = Get-Content -Path $agentLog.FullName -ErrorAction SilentlyContinue
+    if (-not $agentLines) { continue }
+    foreach ($line in $agentLines) {
+        if (-not $VpuModel -and $line -match '"paramName"\s*:\s*"vpuName"[^}]*"paramValue"\s*:\s*"([^"]+)"') {
+            $raw = $Matches[1]
+            if ($raw -match '^(PXL\w+?)_(\d+)') { $VpuModel = $Matches[1]; $VpuUnitId = $Matches[2] }
+        }
+        if (-not $VpuType -and $line -match '"paramName"\s*:\s*"presentedProductType"[^}]*"paramValue"\s*:\s*"([^"]+)"') {
+            $VpuType = $Matches[1]
+        }
+        if ($VpuModel -and $VpuType) { break }
     }
-} catch { }
-$VpuModelDisplay = if ($VpuModel) { "$VpuModel  (Unit ID: $VpuUnitId)" } else { "Not detected (VPU Manager offline?)" }
+    if ($VpuModel) { break }
+}
+
+# Fallback: scrape VPU Manager SPA title (only resolves when browser is open)
+if (-not $VpuModel) {
+    try {
+        $page = Invoke-WebRequest -Uri "http://localhost:32323/" -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+        if ($page.Content -match '<title>[^<]*(PXL\w+?)_(\d+)') {
+            $VpuModel  = $Matches[1]
+            $VpuUnitId = $Matches[2]
+        }
+    } catch { }
+}
+
+$VpuModelDisplay = if ($VpuModel) {
+    $typeStr = if ($VpuType) { " / $VpuType" } else { "" }
+    "$VpuModel  (Unit ID: $VpuUnitId)$typeStr"
+} else { "Not detected (VPU Manager offline?)" }
 
 $header = @"
 ================================================================
@@ -671,6 +702,16 @@ if (-not $latestLog) {
                 Write-Log ("  Model     : {0}" -f $appModel) "White"
 
                 if ($appFails -gt 0) {
+                    # Suppress failures for optional cameras that had no network presence —
+                    # app errors are expected when the camera is simply not installed on this unit.
+                    $camDef     = $CameraIPs | Where-Object { $_.IP -eq $appIp } | Select-Object -First 1
+                    $connResult = $cameraConnResults | Where-Object { $_.IP -eq $appIp } | Select-Object -First 1
+                    if ($camDef -and $camDef.Optional -and $connResult -and (-not $connResult.Ping)) {
+                        Write-Log "  Status    : Expected - optional camera (OCR) not installed on this unit." "DarkGray"
+                        Write-Log ""
+                        continue
+                    }
+
                     Write-Log ("  Errors    : {0} 'Couldn't get response' failure(s) across {1} session(s)" -f $appFails, $appSessionCount) "Red"
                     if ($null -ne $appExitCode) {
                         $exitMsg = switch ($appExitCode) {
