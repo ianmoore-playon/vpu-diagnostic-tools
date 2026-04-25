@@ -42,9 +42,11 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # ---------- Configuration ----------------------------------------------------
 
-$ScriptVersion     = "2.2"
+$ScriptVersion     = "2.3"
 $RunId             = Get-Date -Format "yyyyMMdd_HHmmss"
-$OutputDir         = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
+$OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
+$OutputDir         = Join-Path $OutputBaseDir "CameraLink_Results"
+if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
 $OutputFile        = Join-Path $OutputDir "CameraLink_Results_$RunId.txt"
 $NicDriverPatterns = @(                   # Driver descriptions to match camera NIC ports
     "Intel(R) 82574L*"                    #   4-port POE NIC (most VPUs)
