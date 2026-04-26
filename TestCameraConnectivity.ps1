@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.3"
+$ScriptVersion      = "3.4"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -567,22 +567,13 @@ $DiagScript = {
         $s = 1
         foreach ($r in $failPorts) {
             $bNote = if ($r.Blinking) { " (intermittent)" } else { "" }
-            $sync.NextSteps.Add("$s. Replace the cable on $($r.Name)$bNote") | Out-Null
-            $sync.NextSteps.Add("   The link cannot hold gigabit speed. This") | Out-Null
-            $sync.NextSteps.Add("   usually means a wire inside the cable is") | Out-Null
-            $sync.NextSteps.Add("   damaged or broken, or the RJ45 connector") | Out-Null
-            $sync.NextSteps.Add("   on either end is not crimped correctly.") | Out-Null
-            $sync.NextSteps.Add("   Also check the camera-side RJ45 port for") | Out-Null
-            $sync.NextSteps.Add("   bent or pushed-back pins. Try a known-good") | Out-Null
-            $sync.NextSteps.Add("   replacement cable first - it resolves most") | Out-Null
-            $sync.NextSteps.Add("   cases. Re-run this tool to confirm 1 Gbps.") | Out-Null
+            $sync.NextSteps.Add("$s. Replace cable on $($r.Name)$bNote") | Out-Null
+            $sync.NextSteps.Add("The link cannot hold gigabit speed. This usually means a wire inside the cable is broken or damaged, or the RJ45 connector on one end is not crimped correctly. Also check the camera-side RJ45 port for bent or pushed-back pins. Swap in a known-good replacement cable — that resolves most cases. Re-run this tool after swapping to confirm the link comes up at 1 Gbps.") | Out-Null
             $s++
         }
         foreach ($c in $rtspFaults) {
             $sync.NextSteps.Add("$s. PoE reset $($c.IP) ($($c.Label))") | Out-Null
-            $sync.NextSteps.Add("   Camera reachable but RTSP port 554 closed.") | Out-Null
-            $sync.NextSteps.Add("   Reset power-cycles camera via VPU Manager.") | Out-Null
-            $sync.NextSteps.Add("   If still closed after reset - replace camera.") | Out-Null
+            $sync.NextSteps.Add("The camera is reachable by ping but its video port (RTSP 554) is not responding. This usually means the camera's software has stalled. Power-cycling the camera via VPU Manager will restart it. If the port is still closed after a reset, the camera may need replacement.") | Out-Null
             $s++
         }
         foreach ($issue in $sync.AppIssues) {
@@ -591,25 +582,13 @@ $DiagScript = {
                 $camLabel = ($CameraIPs | Where-Object { $_.IP -eq $ip } | Select-Object -First 1).Label
                 $tag = if ($camLabel) { "$ip ($camLabel)" } else { $ip }
                 $sync.NextSteps.Add("$s. Camera issue on $tag") | Out-Null
-                $sync.NextSteps.Add("   The cable and NIC port are healthy (link") | Out-Null
-                $sync.NextSteps.Add("   confirmed at 1 Gbps). The problem is the") | Out-Null
-                $sync.NextSteps.Add("   camera itself not responding to the VPU.") | Out-Null
-                $sync.NextSteps.Add("   Try 1 of these steps in order:") | Out-Null
-                $sync.NextSteps.Add("   a) Power-cycle via VPU Manager: open") | Out-Null
-                $sync.NextSteps.Add("      VPU Manager > Settings > Cameras >") | Out-Null
-                $sync.NextSteps.Add("      select the camera > Reset PoE Power.") | Out-Null
-                $sync.NextSteps.Add("   b) Wait 2 min for camera to fully boot,") | Out-Null
-                $sync.NextSteps.Add("      then re-run this tool to recheck.") | Out-Null
-                $sync.NextSteps.Add("   c) If failures persist after 2+ resets,") | Out-Null
-                $sync.NextSteps.Add("      the camera likely has an internal fault") | Out-Null
-                $sync.NextSteps.Add("      and may need to be replaced.") | Out-Null
+                $sync.NextSteps.Add("The cable and NIC port are healthy — the link is confirmed at 1 Gbps, so the physical connection is not the problem. The camera itself is failing to respond to the VPU's requests. Try these steps in order: a) Open VPU Manager, go to Settings > Cameras, select the camera, and click Reset PoE Power to power-cycle it. b) Wait 2 minutes for the camera to fully boot, then re-run this tool. c) If failures continue after 2 or more resets, the camera likely has an internal hardware fault and will need to be replaced.") | Out-Null
                 $s++
             }
         }
         if ($failPorts.Count -gt 0 -and ($rtspFaults.Count -gt 0 -or $sync.AppIssues.Count -gt 0)) {
             $sync.NextSteps.Add("$s. Re-run this tool after each fix") | Out-Null
-            $sync.NextSteps.Add("   Recheck shows which issues are resolved") | Out-Null
-            $sync.NextSteps.Add("   and whether SmartSpeed events have stopped.") | Out-Null
+            $sync.NextSteps.Add("Use the Retest Last Step button or run a new full diagnostic to confirm each issue is resolved and that SmartSpeed downgrade events have stopped.") | Out-Null
         }
     }
 
@@ -862,12 +841,26 @@ $lblLogHdr.Location = New-Object System.Drawing.Point(10,329); $lblLogHdr.AutoSi
 $center.Controls.Add($lblLogHdr)
 
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Size = New-Object System.Drawing.Size(570,308); $rtbLog.Location = New-Object System.Drawing.Point(10,350)
+$rtbLog.Size = New-Object System.Drawing.Size(570,270); $rtbLog.Location = New-Object System.Drawing.Point(10,350)
 $rtbLog.BackColor = $ColLogBg; $rtbLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
 $rtbLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbLog.ReadOnly = $true
 $rtbLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
 $rtbLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
 $center.Controls.Add($rtbLog)
+
+foreach ($pair in @(("btnExport","Export Report",10),("btnCopy","Copy Results",200),("btnSave","Save Log",390))) {
+    $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
+    $b.Size = New-Object System.Drawing.Size(178,32); $b.Location = New-Object System.Drawing.Point($pair[2],630)
+    $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $b.FlatAppearance.BorderColor = $ColBorder; $b.FlatAppearance.BorderSize = 1
+    $b.BackColor = [System.Drawing.Color]::White; $b.ForeColor = $ColText
+    $b.Font = New-Object System.Drawing.Font("Segoe UI",9)
+    $b.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $b.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $center.Controls.Add($b)
+    $b.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,178,32)), 5))
+    Set-Variable -Name $pair[0] -Value $b
+}
 
 # ---- Right Panel -----------------------------------------------------------
 $rightBorder = New-Object System.Windows.Forms.Panel; $rightBorder.Size = New-Object System.Drawing.Size(1,680)
@@ -895,24 +888,25 @@ $lblNextHdr.Location = New-Object System.Drawing.Point(10,50); $lblNextHdr.AutoS
 $right.Controls.Add($lblNextHdr)
 
 $rtbSteps = New-Object System.Windows.Forms.RichTextBox
-$rtbSteps.Size = New-Object System.Drawing.Size(211,218); $rtbSteps.Location = New-Object System.Drawing.Point(10,72)
+$rtbSteps.Size = New-Object System.Drawing.Size(211,450); $rtbSteps.Location = New-Object System.Drawing.Point(10,72)
 $rtbSteps.BackColor = [System.Drawing.Color]::White; $rtbSteps.ForeColor = $ColText
 $rtbSteps.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $rtbSteps.ReadOnly = $true
 $rtbSteps.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$rtbSteps.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
 $rtbSteps.Text = "Run the diagnostic to`nsee guidance here."
 $right.Controls.Add($rtbSteps)
 
 $sep5 = New-Object System.Windows.Forms.Panel; $sep5.Size = New-Object System.Drawing.Size(211,1)
-$sep5.Location = New-Object System.Drawing.Point(10,298); $sep5.BackColor = $ColBorder
+$sep5.Location = New-Object System.Drawing.Point(10,534); $sep5.BackColor = $ColBorder
 $right.Controls.Add($sep5)
 
 $lblHwHdr = New-Object System.Windows.Forms.Label; $lblHwHdr.Text = "Detected Hardware"
 $lblHwHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblHwHdr.ForeColor = $ColText
-$lblHwHdr.Location = New-Object System.Drawing.Point(10,308); $lblHwHdr.AutoSize = $true
+$lblHwHdr.Location = New-Object System.Drawing.Point(10,546); $lblHwHdr.AutoSize = $true
 $right.Controls.Add($lblHwHdr)
 
 $hwRows = @{}
-foreach ($pair in @(("CHU","CHU",328),("CameraPort","Camera Port",348),("CableStatus","Cable Status",368))) {
+foreach ($pair in @(("CHU","CHU",568),("CameraPort","Camera Port",589),("CableStatus","Cable Status",610))) {
     $lk = New-Object System.Windows.Forms.Label; $lk.Text = $pair[1]
     $lk.Font = New-Object System.Drawing.Font("Segoe UI",7.5); $lk.ForeColor = $ColMuted
     $lk.Location = New-Object System.Drawing.Point(10,$pair[2]); $lk.Size = New-Object System.Drawing.Size(85,16)
@@ -921,29 +915,6 @@ foreach ($pair in @(("CHU","CHU",328),("CameraPort","Camera Port",348),("CableSt
     $lv.Location = New-Object System.Drawing.Point(95,$pair[2]); $lv.Size = New-Object System.Drawing.Size(126,16)
     $right.Controls.Add($lk); $right.Controls.Add($lv)
     $hwRows[$pair[0]] = $lv
-}
-
-$sep6 = New-Object System.Windows.Forms.Panel; $sep6.Size = New-Object System.Drawing.Size(211,1)
-$sep6.Location = New-Object System.Drawing.Point(10,397); $sep6.BackColor = $ColBorder
-$right.Controls.Add($sep6)
-
-$lblActHdr = New-Object System.Windows.Forms.Label; $lblActHdr.Text = "Actions"
-$lblActHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblActHdr.ForeColor = $ColText
-$lblActHdr.Location = New-Object System.Drawing.Point(10,407); $lblActHdr.AutoSize = $true
-$right.Controls.Add($lblActHdr)
-
-foreach ($pair in @(("btnExport","Export Report",427),("btnCopy","Copy Results",462),("btnSave","Save Log",497))) {
-    $b = New-Object System.Windows.Forms.Button; $b.Text = "  $($pair[1])"
-    $b.Size = New-Object System.Drawing.Size(211,30); $b.Location = New-Object System.Drawing.Point(10,$pair[2])
-    $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $b.FlatAppearance.BorderColor = $ColBorder; $b.FlatAppearance.BorderSize = 1
-    $b.BackColor = [System.Drawing.Color]::White; $b.ForeColor = $ColText
-    $b.Font = New-Object System.Drawing.Font("Segoe UI",9)
-    $b.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-    $b.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $right.Controls.Add($b)
-    $b.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,211,30)), 5))
-    Set-Variable -Name $pair[0] -Value $b
 }
 
 # ---------- Timer (polls $sync every 300ms, updates UI) ---------------------
@@ -990,16 +961,27 @@ $timer.Add_Tick({
         }
 
         $rtbSteps.Clear()
+        $firstItem = $true
         foreach ($step in $sync.NextSteps) {
             $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
             if ($step -match '^\d+\.') {
-                $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI Semibold",8.5)
+                if (-not $firstItem) {
+                    $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI",4)
+                    $rtbSteps.SelectionColor = $ColText
+                    $rtbSteps.AppendText("`n")
+                }
+                $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
+                $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI Semibold",9)
                 $rtbSteps.SelectionColor = $ColText
+                $rtbSteps.AppendText("$step`n")
+                $firstItem = $false
             } else {
-                $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI",8)
+                $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
+                $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI",8.5)
                 $rtbSteps.SelectionColor = $ColMuted
+                $rtbSteps.AppendText("$step`n")
+                $firstItem = $false
             }
-            $rtbSteps.AppendText("$step`n")
         }
 
         $dt = Get-Date -Format "yyyy-MM-dd HH:mm"

@@ -4,6 +4,20 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [3.4] - 2026-04-26
+
+### Changed
+- **Actions buttons relocated** — Export Report, Copy Results, Save Log moved from right panel to a horizontal button strip at the bottom of the center panel (aligned to the status card grid at x=10/200/390)
+- **Next Steps text** — guidance now stored as complete paragraph strings and word-wrapped naturally by the RichTextBox, replacing the previous manually pre-broken lines
+- **Next Steps render** — numbered step headers rendered at 9pt Semibold with a blank-line gap between items; body text at 8.5pt, fully wrapped without manual newlines
+- **Right panel rtbSteps height** — expanded from 218px to 450px since Actions section was removed; Detected Hardware section pushed down to y=546
+- **rtbLog height** — reduced from 308px to 270px to accommodate the action button strip below
+
+### Fixed
+- Next Steps text was split mid-sentence across dozens of short lines making it hard to read — now renders as flowing paragraphs
+
+---
+
 ## [3.3] - 2026-04-26
 
 ### Changed
