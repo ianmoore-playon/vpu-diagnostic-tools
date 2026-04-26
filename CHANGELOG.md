@@ -4,6 +4,16 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [3.3] - 2026-04-26
+
+### Changed
+- **Status card icons** — each card now shows a decorative Segoe MDL2 Assets glyph watermarked in the lower-right corner (link bars, network, signal, globe, list, camera)
+- **Cable fault guidance** — removed specific wire-pair reference; now states "a wire inside the cable is damaged or broken, or the RJ45 connector is not crimped correctly" with instructions to try a known-good replacement cable first
+- **Camera fault guidance** — expanded "Monitor" directive with explicit step-by-step instructions: PoE reset via VPU Manager path, 2-minute wait, re-run, and replacement escalation if failures persist
+- **Re-run reminder** — trailing step now only appears when there are multiple issue types (cable + RTSP or camera faults) to avoid redundancy
+
+---
+
 ## [3.2] - 2026-04-26
 
 ### Changed
