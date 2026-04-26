@@ -4,6 +4,15 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [3.8] - 2026-04-26
+
+### Changed
+- **Spinner status indicator** — removed the static pipeline hint label above the cards (`"Run: Link Speed > NIC Status > ..."`); replaced with a live status label above the log (`$lblStatus`) that shows a spinning `| / - \` character plus the current step text while the diagnostic is running, and settles to a static muted summary when complete
+- **Live log section headers** — log entries are now grouped into six named sections (`SYSTEM`, `HARDWARE`, `SIGNAL QUALITY`, `NETWORK`, `CAMERAS`, `APP LOG`) rendered as bold muted uppercase headers in the log pane; `Add-Section` helper enqueues a `"Section"`-level entry that the timer tick renders with distinct font/color, then `continue`s past the normal two-column row renderer
+- **`rtbLog` repositioned** — moved from y=350, h=308 to y=370, h=289 to accommodate the new 18px `$lblStatus` label inserted between the "Live Log" header and the log box
+
+---
+
 ## [3.7] - 2026-04-26
 
 ### Fixed
