@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v3.0
+#  VPU Cable & NIC Troubleshooter  v3.7
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.6"
+$ScriptVersion      = "3.7"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -79,7 +79,6 @@ $ColLogBg    = [System.Drawing.Color]::FromArgb(15,  23,  42)
 
 # ---------- Shared state (runspace <-> UI timer) ----------------------------
 $sync = [hashtable]::Synchronized(@{
-    LogQueue     = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
     SummaryQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
     Running    = $false
     Complete   = $false
@@ -261,6 +260,12 @@ $DiagScript = {
     if ($nicPorts.Count -eq 0) {
         Add-Log "  [FAIL] No camera NIC adapters found." "Fail"
         Set-Card "NicStatus" "Not Found" "fail"
+        Add-Summary "NIC Detection" "No camera NICs found" "Fail"
+        $sync.NextSteps.Add(@{
+            H = "Wrong machine - no VPU hardware detected"
+            B = "This tool requires a Pixellot VPU with Intel 82574L or I210 camera NICs. No compatible NICs were found on this machine. Run the tool directly on the VPU."
+        }) | Out-Null
+        $sync.AllClear = $false
         $sync.Running = $false; $sync.Complete = $true
         return
     }
@@ -340,9 +345,9 @@ $DiagScript = {
                 $sync.CurrentStep = "Forcing 1 Gbps on $nm..."
                 $forceOk = Set-AdapterSpeedDuplex -AdapterName $nm -Val "6"
                 if ($forceOk) {
+                    Restart-NetAdapter -Name $nm -Confirm:$false -ErrorAction SilentlyContinue
                     Add-Log ("  [INFO]  Waiting {0}s for re-negotiation..." -f $RenegotiateWaitSec) "Warn"
                     $sync.CurrentStep = "Waiting ${RenegotiateWaitSec}s for re-negotiation on $nm..."
-                    Add-Summary $nm "Forcing 1 Gbps, waiting ${RenegotiateWaitSec}s..." "Warn"
                     Start-Sleep -Seconds $RenegotiateWaitSec
                     $newSpd = Get-AdapterSpeedMbps -AdapterName $nm
                     if ($newSpd -eq 1000) {
@@ -354,6 +359,7 @@ $DiagScript = {
                         Add-Log ("  [FAIL]  Still not 1 Gbps after forcing (current: {0}). Physical layer issue." -f $nsLabel) "Fail"
                         Add-Log "          Resetting to Auto Negotiation..." "Warn"
                         Set-AdapterSpeedDuplex -AdapterName $nm -Val "0" | Out-Null
+                        Restart-NetAdapter -Name $nm -Confirm:$false -ErrorAction SilentlyContinue
                         Start-Sleep -Seconds 5
                         $autoSpd = Get-AdapterSpeedMbps -AdapterName $nm
                         if ($autoSpd -gt 0) { Add-Log ("  [INFO]  Link restored at {0} Mbps" -f $autoSpd) "Warn" }
@@ -401,7 +407,8 @@ $DiagScript = {
     if ($chuEvents.Count -gt 0) {
         $dCnt = ($chuEvents | Where-Object { $_.Id -eq 40 }).Count
         $wCnt = ($chuEvents | Where-Object { $_.Id -eq 27 }).Count
-        Add-Log ("  [WARN] {0} downgrade(s) and {1} link warning(s) on CHU ports in the last {2}h." -f $dCnt, $wCnt, $EventLogHours) "Fail"
+        $ssLevel = if ($dCnt -gt 0) { "Fail" } else { "Warn" }
+        Add-Log ("  [WARN] {0} downgrade(s) and {1} link warning(s) on CHU ports in the last {2}h." -f $dCnt, $wCnt, $EventLogHours) $ssLevel
         Add-Log ""
         foreach ($evt in ($chuEvents | Sort-Object @{Expression='TimeCreated';Descending=$true} | Select-Object -First 10)) {
             $an = Get-EventAdapterName -Evt $evt -KnownDescs $knownDescs
@@ -410,9 +417,12 @@ $DiagScript = {
             Add-Log ("  {0}  {1}  ID {2} - {3}" -f $evt.TimeCreated.ToString("HH:mm:ss"), $shortName, $evt.Id, $label) "Warn"
         }
         Add-Log ""
-        Add-Log "  -> Physical layer limitation confirmed. Likely cause: faulty cable or bad termination." "Info"
-        $sync.StepsDone["SmartSpeed"] = "fail"
-        Add-Summary "SmartSpeed Events" "$dCnt downgrade(s) in ${EventLogHours}h" "Fail"
+        if ($dCnt -gt 0) {
+            Add-Log "  -> Physical layer limitation confirmed. Likely cause: faulty cable or bad termination." "Info"
+        }
+        $sync.StepsDone["SmartSpeed"] = if ($dCnt -gt 0) { "fail" } else { "pass" }
+        $ssSummary = if ($dCnt -gt 0) { "$dCnt downgrade(s) in ${EventLogHours}h" } else { "$wCnt warning(s), 0 downgrades" }
+        Add-Summary "SmartSpeed Events" $ssSummary $ssLevel
     } else {
         Add-Log "  [PASS] No SmartSpeed downgrade events on CHU ports." "Pass"
         $sync.StepsDone["SmartSpeed"] = "pass"
@@ -481,13 +491,15 @@ $DiagScript = {
             else          { Add-Log "  RTSP 554: Port closed or no response" "Fail" }
             if (-not $cam.Optional) { $mainPingCount++ }
             $rtspStr = if ($rtspOk) { "Ping OK / RTSP OK" } else { "Ping OK / RTSP FAIL" }
-            Add-Summary $cam.IP $rtspStr (if ($rtspOk) { "Pass" } else { "Fail" })
+            $rtspLvl = if ($rtspOk) { "Pass" } else { "Fail" }
+            Add-Summary $cam.IP $rtspStr $rtspLvl
         } else {
             $note = if ($cam.Optional) { " (expected - optional camera not installed)" } else { "" }
             Add-Log ("  Ping    : No response$note") "Gray"
             Add-Log "  RTSP 554: Skipped" "Gray"
             $noteStr = if ($cam.Optional) { "Not installed (optional)" } else { "No response" }
-            Add-Summary $cam.IP $noteStr (if ($cam.Optional) { "Gray" } else { "Fail" })
+            $noteLvl = if ($cam.Optional) { "Gray" } else { "Fail" }
+            Add-Summary $cam.IP $noteStr $noteLvl
         }
         if (-not $cam.Optional) { $mainTotal++ }
         $camResults += [PSCustomObject]@{ IP=$cam.IP; Label=$cam.Label; Ping=$pingOk; Rtsp=$rtspOk; Optional=$cam.Optional }
@@ -605,8 +617,10 @@ $DiagScript = {
     # ── Build Next Steps ──────────────────────────────────────────────────────
     $failPorts  = $portResults | Where-Object { $_.Result -eq "FAIL" }
     $rtspFaults = $camResults  | Where-Object { $_.Ping -and -not $_.Rtsp }
+    $noPingMain = $camResults  | Where-Object { -not $_.Optional -and -not $_.Ping }
     $allClear   = ($failPorts.Count -eq 0) -and ($rtspFaults.Count -eq 0) -and
-                  ($sync.TotalDowngrades -eq 0) -and ($sync.AppIssues.Count -eq 0)
+                  ($sync.TotalDowngrades -eq 0) -and ($sync.AppIssues.Count -eq 0) -and
+                  ($noPingMain.Count -eq 0)
     $sync.AllClear = $allClear
 
     if ($allClear) {
@@ -628,6 +642,13 @@ $DiagScript = {
             }) | Out-Null
             $s++
         }
+        foreach ($c in $noPingMain) {
+            $sync.NextSteps.Add(@{
+                H = "$s. PoE reset $($c.IP)"
+                B = "Camera is not responding to ping. In VPU Manager go to Settings > Cameras, select this camera, and click Reset PoE Power. Wait 2 minutes, then re-run. If unresponsive after 2 resets, check that the cable is firmly seated and the camera is powered on."
+            }) | Out-Null
+            $s++
+        }
         foreach ($issue in $sync.AppIssues) {
             if ($issue -like "*cable ruled out*") {
                 $ip = if ($issue -match '(\d+\.\d+\.\d+\.\d+)') { $Matches[1] } else { "camera" }
@@ -640,7 +661,7 @@ $DiagScript = {
                 $s++
             }
         }
-        if ($failPorts.Count -gt 0 -and ($rtspFaults.Count -gt 0 -or $sync.AppIssues.Count -gt 0)) {
+        if ($failPorts.Count -gt 0 -and ($rtspFaults.Count -gt 0 -or $noPingMain.Count -gt 0 -or $sync.AppIssues.Count -gt 0)) {
             $sync.NextSteps.Add(@{
                 H = "$s. Re-run after each fix"
                 B = "Fix one issue at a time and re-run the full diagnostic to confirm each fix before moving on."
@@ -676,32 +697,31 @@ function New-SidebarButton {
 }
 
 function New-StatusCard {
-    param([string]$Title, [int]$X, [int]$Y, [string]$Icon = "", [int]$W=178, [int]$H=78)
+    param([string]$Title, [int]$X, [int]$Y, [string]$Icon = "", [int]$CardW=178, [int]$CardH=78)
     $panel = New-Object System.Windows.Forms.Panel
-    $panel.Size = New-Object System.Drawing.Size($W, $H); $panel.Location = New-Object System.Drawing.Point($X, $Y)
+    $panel.Size = New-Object System.Drawing.Size($CardW, $CardH); $panel.Location = New-Object System.Drawing.Point($X, $Y)
     $panel.BackColor = $ColCard; $panel.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-    $panel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $W, $H)), 8))
-    $panel.Tag = $Icon
-    $panel.Add_Paint({
+    $panel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $CardW, $CardH)), 8))
+    $panel.Add_Paint(({
         param($s, $e)
         $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
         $e.Graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAlias
-        if ($s.Tag) {
+        if ($Icon) {
             $iFont  = New-Object System.Drawing.Font("Segoe MDL2 Assets", 26)
             $iBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(200, 210, 222))
-            $iStr   = [string]$s.Tag
+            $iStr   = [string]$Icon
             $iSz    = $e.Graphics.MeasureString($iStr, $iFont)
-            $ix     = $s.Width  - [int]$iSz.Width  - 10
-            $iy     = $s.Height - [int]$iSz.Height - 6
+            $ix     = $CardW - [int]$iSz.Width  - 10
+            $iy     = $CardH - [int]$iSz.Height - 6
             $e.Graphics.DrawString($iStr, $iFont, $iBrush, $ix, $iy)
             $iFont.Dispose(); $iBrush.Dispose()
         }
-        $rr = New-Object System.Drawing.Rectangle(0, 0, $s.Width - 1, $s.Height - 1)
+        $rr = New-Object System.Drawing.Rectangle(0, 0, $CardW - 1, $CardH - 1)
         $bp = [GfxHelper]::RoundedRect($rr, 8)
         $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 218, 228), 1)
         $e.Graphics.DrawPath($pen, $bp)
         $pen.Dispose(); $bp.Dispose()
-    })
+    }).GetNewClosure())
 
     $lbl = New-Object System.Windows.Forms.Label; $lbl.Text = $Title
     $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 7.5); $lbl.ForeColor = $ColMuted
@@ -711,11 +731,11 @@ function New-StatusCard {
     $val = New-Object System.Windows.Forms.Label; $val.Text = "--"
     $val.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 13)
     $val.ForeColor = $ColText; $val.Location = New-Object System.Drawing.Point(10, 28)
-    $val.Size = New-Object System.Drawing.Size($W - 20, 34); $val.BackColor = [System.Drawing.Color]::Transparent
+    $val.Size = New-Object System.Drawing.Size($CardW - 20, 34); $val.BackColor = [System.Drawing.Color]::Transparent
     $panel.Controls.Add($val)
 
     $dot = New-Object System.Windows.Forms.Panel; $dot.Size = New-Object System.Drawing.Size(10, 10)
-    $dot.Location = New-Object System.Drawing.Point($W - 18, 10); $dot.BackColor = $ColMuted
+    $dot.Location = New-Object System.Drawing.Point($CardW - 18, 10); $dot.BackColor = $ColMuted
     $dot.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 10, 10)), 5))
     $panel.Controls.Add($dot)
 
@@ -729,21 +749,6 @@ function Update-CardStatus {
     $valC = switch ($Status) { "ok" {$ColGreen} "fail" {$ColRed} "warn" {$ColYellow} default {$ColText}  }
     $Card.DotPanel.BackColor   = $dotC
     $Card.ValueLabel.ForeColor = $valC
-}
-
-function Append-RtbLog {
-    param($Rtb, [string]$Text, [string]$Level)
-    $color = switch ($Level) {
-        "Pass"  { [System.Drawing.Color]::FromArgb(74, 222,128) }
-        "Fail"  { [System.Drawing.Color]::FromArgb(252,165,165) }
-        "Warn"  { [System.Drawing.Color]::FromArgb(253,224, 71) }
-        "Cyan"  { [System.Drawing.Color]::FromArgb(103,232,249) }
-        "Gray"  { [System.Drawing.Color]::FromArgb(100,116,139) }
-        default { [System.Drawing.Color]::FromArgb(203,213,225) }
-    }
-    $Rtb.SelectionStart = $Rtb.TextLength; $Rtb.SelectionLength = 0
-    $Rtb.SelectionColor = $color; $Rtb.AppendText("$Text`n")
-    $Rtb.ScrollToCaret()
 }
 
 # ---------- Form ------------------------------------------------------------
@@ -1221,14 +1226,14 @@ foreach ($def in $testStepDefs) {
     $rowPanel.BackColor = [System.Drawing.Color]::White
     $rowPanel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,562,60)), 6))
     $rowPanel.Tag = $def.Key
-    $rowPanel.Add_Paint({
+    $rowPanel.Add_Paint(({
         param($s,$e)
         $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        $rr = New-Object System.Drawing.Rectangle(0,0,$s.Width-1,$s.Height-1)
+        $rr = New-Object System.Drawing.Rectangle(0, 0, 561, 59)
         $bp = [GfxHelper]::RoundedRect($rr, 6)
         $pen = New-Object System.Drawing.Pen($ColBorder, 1)
         $e.Graphics.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
-    })
+    }).GetNewClosure())
     $pnlTests.Controls.Add($rowPanel)
 
     # Status circle

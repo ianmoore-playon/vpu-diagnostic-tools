@@ -4,6 +4,25 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [3.7] - 2026-04-26
+
+### Fixed
+- **`$W`/`$H` crash in elevated PS** — `New-StatusCard` parameter names `$W` and `$H` collided with a variable already in scope when running in an elevated `irm | iex` session (both at form-construction time on lines like `$val.Size = New-Object System.Drawing.Size($W - 20, 34)` and inside the Paint handler via `.GetNewClosure()`). Fixed by renaming both parameters to `$CardW`/`$CardH` throughout the function. Also removed the now-unnecessary `$panel.Tag = $Icon` assignment since icon is captured directly via closure
+- **`$allClear` false-positive** — non-optional cameras (`.50`, `.51`) not responding to ping were not included in the all-clear check; the badge could show green "All Clear" while the Ping CHU card showed red "No Response". Fixed by adding `$noPingMain` check to `$allClear` condition
+- **Camera ping/RTSP entries missing from live log and output file** — `Add-Summary $cam.IP $rtspStr (if ($rtspOk) { "Pass" } else { "Fail" })` used an inline `if` expression as a function argument; this syntax has edge-case behavior in PS5.1 background runspaces that silently prevented the call from executing. Replaced with explicit variable assignment (`$rtspLvl = if (...) { ... }; Add-Summary ... $rtspLvl`) for both the ping-OK and no-ping branches
+- **NIC stuck at forced 1 Gbps after failed renegotiation** — after a forced-to-1Gbps attempt failed, `Set-NetAdapterAdvancedProperty` reset the registry value to Auto but the driver did not pick up the change without a full adapter restart; the NIC remained forced and showed "No link" on subsequent runs. Added `Restart-NetAdapter` immediately after both the force-to-1Gbps and reset-to-auto `Set-AdapterSpeedDuplex` calls to ensure the driver applies the new setting
+- **Misleading "Physical layer limitation confirmed" on ID 27 warnings only** — the message and "fail" SmartSpeed step status appeared even when there were zero ID 40 downgrade events (only ID 27 link warnings); a VPU with all-1Gbps ports and historic link warnings was told it had a cable fault. Fixed: the message, "fail" step status, and "Fail"-level summary are now gated on `$dCnt -gt 0`; warning-only events show a "Warn"-level summary with count
+- **Duplicate summary entry on forced-renegotiation path** — the intermediate `"Forcing 1 Gbps, waiting 30s..."` `Add-Summary` line appeared alongside the final `"DEGRADED cable fault"` result for the same adapter; removed the intermediate entry (live status via `$sync.CurrentStep` is sufficient during the wait)
+
+### Added
+- **No-hardware notice** — when no Intel 82574L/I210 NICs are found (e.g. running on a non-VPU PC), the Next Steps panel now shows `"Wrong machine — no VPU hardware detected"` with a plain-language explanation, replacing the silent red card with no guidance
+- **PoE reset guidance for unreachable cameras** — if a non-optional camera does not respond to ping and the NIC port is healthy, a PoE reset step is added to Next Steps (parallel to the existing RTSP-fault PoE reset step)
+
+### Removed
+- **Dead code** — `$sync.LogQueue` (unused `ConcurrentQueue` left over from pre-v3.6 live-log architecture) and `Append-RtbLog` helper function (never called since v3.6 summarized-log rewrite)
+
+---
+
 ## [3.6] - 2026-04-26
 
 ### Changed
