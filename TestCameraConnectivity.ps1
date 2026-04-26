@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.0"
+$ScriptVersion      = "3.1"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -175,7 +175,18 @@ $DiagScript = {
     # ── VPU model detection ───────────────────────────────────────────────────
     $sync.CurrentStep = "Detecting VPU model..."
     $VpuModel = $null; $VpuUnitId = $null; $VpuType = $null
+
+    # Search all known log paths; also try one level of subdirectory for non-standard layouts
+    $searchPaths = @()
     foreach ($lp in $PixellotLogPaths) {
+        $searchPaths += $lp
+        try {
+            $subs = Get-ChildItem -Path $lp -Directory -ErrorAction SilentlyContinue
+            if ($subs) { $searchPaths += $subs.FullName }
+        } catch { }
+    }
+
+    foreach ($lp in $searchPaths) {
         if (-not (Test-Path $lp)) { continue }
         $ag = Get-ChildItem -Path $lp -Filter "agent_*.log" -ErrorAction SilentlyContinue |
               Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -194,12 +205,15 @@ $DiagScript = {
         }
         if ($VpuModel) { break }
     }
+
+    # Fallback: scrape VPU Manager SPA title (requires browser open)
     if (-not $VpuModel) {
         try {
             $pg = Invoke-WebRequest -Uri "http://localhost:32323/" -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
             if ($pg.Content -match '<title>[^<]*(PXL\w+?)_(\d+)') { $VpuModel = $Matches[1]; $VpuUnitId = $Matches[2] }
         } catch { }
     }
+
     $typeStr = if ($VpuType) { " / $VpuType" } else { "" }
     $sync.VpuModel = if ($VpuModel) { "$VpuModel  (Unit ID: $VpuUnitId)$typeStr" } else { "Not detected" }
 
@@ -605,9 +619,9 @@ function New-StatusCard {
     $panel.Controls.Add($lbl)
 
     $val = New-Object System.Windows.Forms.Label; $val.Text = "--"
-    $val.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 15)
+    $val.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 13)
     $val.ForeColor = $ColText; $val.Location = New-Object System.Drawing.Point(10, 28)
-    $val.Size = New-Object System.Drawing.Size($W - 30, 32)
+    $val.Size = New-Object System.Drawing.Size($W - 20, 34)
     $panel.Controls.Add($val)
 
     $dot = New-Object System.Windows.Forms.Panel; $dot.Size = New-Object System.Drawing.Size(10, 10)
