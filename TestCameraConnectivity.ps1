@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.1"
+$ScriptVersion      = "3.2"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -45,6 +45,23 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 [System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($false)
+
+Add-Type -TypeDefinition @"
+using System.Drawing;
+using System.Drawing.Drawing2D;
+public static class GfxHelper {
+    public static GraphicsPath RoundedRect(Rectangle r, int radius) {
+        int d = radius * 2;
+        var p = new GraphicsPath();
+        p.AddArc(r.X, r.Y, d, d, 180, 90);
+        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        p.CloseFigure();
+        return p;
+    }
+}
+"@ -ReferencedAssemblies System.Drawing
 
 $ColSidebar  = [System.Drawing.Color]::FromArgb(24,  33,  47)
 $ColNavHover = [System.Drawing.Color]::FromArgb(51,  65,  85)
@@ -612,6 +629,16 @@ function New-StatusCard {
     $panel = New-Object System.Windows.Forms.Panel
     $panel.Size = New-Object System.Drawing.Size($W, $H); $panel.Location = New-Object System.Drawing.Point($X, $Y)
     $panel.BackColor = $ColCard; $panel.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+    $panel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $W, $H)), 8))
+    $panel.Add_Paint({
+        param($s, $e)
+        $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $rr = New-Object System.Drawing.Rectangle(0, 0, $s.Width - 1, $s.Height - 1)
+        $bp = [GfxHelper]::RoundedRect($rr, 8)
+        $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 218, 228), 1)
+        $e.Graphics.DrawPath($pen, $bp)
+        $pen.Dispose(); $bp.Dispose()
+    })
 
     $lbl = New-Object System.Windows.Forms.Label; $lbl.Text = $Title
     $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 7.5); $lbl.ForeColor = $ColMuted
@@ -626,6 +653,7 @@ function New-StatusCard {
 
     $dot = New-Object System.Windows.Forms.Panel; $dot.Size = New-Object System.Drawing.Size(10, 10)
     $dot.Location = New-Object System.Drawing.Point($W - 18, 10); $dot.BackColor = $ColMuted
+    $dot.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 10, 10)), 5))
     $panel.Controls.Add($dot)
 
     return @{ Panel=$panel; ValueLabel=$val; DotPanel=$dot }
@@ -750,6 +778,7 @@ $btnRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10)
 $btnRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 $btnRun.Cursor = [System.Windows.Forms.Cursors]::Hand
 $center.Controls.Add($btnRun)
+$btnRun.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,222,38)), 6))
 
 $btnRetest = New-Object System.Windows.Forms.Button; $btnRetest.Text = "Retest Last Step"
 $btnRetest.Size = New-Object System.Drawing.Size(150,38); $btnRetest.Location = New-Object System.Drawing.Point(242,12)
@@ -758,6 +787,7 @@ $btnRetest.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnRetest.FlatAp
 $btnRetest.Font = New-Object System.Drawing.Font("Segoe UI",10)
 $btnRetest.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnRetest.Enabled = $false
 $center.Controls.Add($btnRetest)
+$btnRetest.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,150,38)), 6))
 
 $lblStep = New-Object System.Windows.Forms.Label
 $lblStep.Text = "Run: Link Speed > NIC Status > Ping > Gateway > ARP > CHU Detection"
@@ -826,6 +856,7 @@ $pnlBadge = New-Object System.Windows.Forms.Panel
 $pnlBadge.Size = New-Object System.Drawing.Size(90,26); $pnlBadge.Location = New-Object System.Drawing.Point(127,13)
 $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(220,252,231)
 $right.Controls.Add($pnlBadge)
+$pnlBadge.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,90,26)), 13))
 
 $lblBadge = New-Object System.Windows.Forms.Label; $lblBadge.Text = "Ready"
 $lblBadge.Font = New-Object System.Drawing.Font("Segoe UI Semibold",8.5); $lblBadge.ForeColor = $ColGreen
@@ -885,6 +916,7 @@ foreach ($pair in @(("btnExport","Export Report",427),("btnCopy","Copy Results",
     $b.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
     $b.Cursor = [System.Windows.Forms.Cursors]::Hand
     $right.Controls.Add($b)
+    $b.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,211,30)), 5))
     Set-Variable -Name $pair[0] -Value $b
 }
 

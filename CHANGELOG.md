@@ -4,6 +4,27 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [3.2] - 2026-04-26
+
+### Changed
+- **Rounded status cards** — cards now render with 8px corner radius using GDI+ Region clipping and an anti-aliased 1px border, replacing sharp-cornered rectangles
+- **Circular indicator dots** — the per-card status dot (upper-right of each card) is clipped to a circle via Region
+- **Pill-shaped badge** — the status badge (Ready / Running / All Clear / Issues Found) uses a 13px radius giving a full pill shape at 26px height
+- **Rounded buttons** — Run Full Diagnostic, Retest Last Step, Export Report, Copy Results, and Save Log buttons all have 5–6px corner radius via Region
+
+### Added
+- `GfxHelper` C# helper class (loaded via `Add-Type`) providing `RoundedRect(Rectangle, radius)` returning a `GraphicsPath` — used for all rounded Region and border painting
+
+---
+
+## [3.1] - 2026-04-26
+
+### Fixed
+- Status card value labels truncated to "Degrade", "Reachabl" at display scale — font reduced from 15pt to 13pt Semibold, label width increased from `$W-30` to `$W-20`
+- VPU Model "Not detected" on live VPU — agent log search now also searches one level of subdirectories under each `$PixellotLogPaths` entry
+
+---
+
 ## [3.0] - 2026-04-26
 
 ### Changed
