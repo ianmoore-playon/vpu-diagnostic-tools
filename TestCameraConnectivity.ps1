@@ -791,10 +791,8 @@ $sidebar.Controls.Add($sep1)
 
 $navOverview = New-SidebarButton "  Overview" 68  $true
 $navTests    = New-SidebarButton "  Guide"    110
-$navResults  = New-SidebarButton "  Results"  152
-$navHistory  = New-SidebarButton "  History"  194
-$navSettings = New-SidebarButton "  Settings" 236
-$sidebar.Controls.AddRange(@($navOverview,$navTests,$navResults,$navHistory,$navSettings))
+$navHistory  = New-SidebarButton "  History"  152
+$sidebar.Controls.AddRange(@($navOverview,$navTests,$navHistory))
 
 $sep2 = New-Object System.Windows.Forms.Panel; $sep2.Size = New-Object System.Drawing.Size(176,1)
 $sep2.Location = New-Object System.Drawing.Point(12,282); $sep2.BackColor = [System.Drawing.Color]::FromArgb(51,65,85)
@@ -1574,7 +1572,7 @@ $lnkGuideReset.Add_LinkClicked({
 $navTests.Add_Click({
     $center.Visible    = $false
     $pnlGuide.Visible  = $true
-    foreach ($nb in @($navOverview,$navTests,$navResults,$navHistory,$navSettings)) {
+    foreach ($nb in @($navOverview,$navTests,$navHistory)) {
         $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
     }
     $navTests.BackColor = $ColNavActive; $navTests.ForeColor = [System.Drawing.Color]::White
@@ -1583,7 +1581,7 @@ $navTests.Add_Click({
 $navOverview.Add_Click({
     $pnlGuide.Visible  = $false
     $center.Visible    = $true
-    foreach ($nb in @($navOverview,$navTests,$navResults,$navHistory,$navSettings)) {
+    foreach ($nb in @($navOverview,$navTests,$navHistory)) {
         $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
     }
     $navOverview.BackColor = $ColNavActive; $navOverview.ForeColor = [System.Drawing.Color]::White
