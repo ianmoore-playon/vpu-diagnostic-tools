@@ -1570,8 +1570,9 @@ $lnkGuideReset.Add_LinkClicked({
 
 # Nav wiring
 $navTests.Add_Click({
-    $center.Visible    = $false
-    $pnlGuide.Visible  = $true
+    $center.Visible     = $false
+    $pnlGuide.Visible   = $true
+    $pnlHistory.Visible = $false
     foreach ($nb in @($navOverview,$navTests,$navHistory)) {
         $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
     }
@@ -1579,12 +1580,116 @@ $navTests.Add_Click({
 })
 
 $navOverview.Add_Click({
-    $pnlGuide.Visible  = $false
-    $center.Visible    = $true
+    $pnlGuide.Visible   = $false
+    $pnlHistory.Visible = $false
+    $center.Visible     = $true
     foreach ($nb in @($navOverview,$navTests,$navHistory)) {
         $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
     }
     $navOverview.BackColor = $ColNavActive; $navOverview.ForeColor = [System.Drawing.Color]::White
+})
+
+# ---- History Panel ---------------------------------------------------------
+$pnlHistory = New-Object System.Windows.Forms.Panel
+$pnlHistory.Size = $center.Size; $pnlHistory.Location = $center.Location
+$pnlHistory.BackColor = $ColBg; $pnlHistory.Visible = $false
+$form.Controls.Add($pnlHistory)
+
+$lblHistTitle = New-Object System.Windows.Forms.Label
+$lblHistTitle.Text = "Run History"
+$lblHistTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
+$lblHistTitle.ForeColor = $ColText
+$lblHistTitle.Location = New-Object System.Drawing.Point(10, 16); $lblHistTitle.AutoSize = $true
+$pnlHistory.Controls.Add($lblHistTitle)
+
+$lblHistSub = New-Object System.Windows.Forms.Label
+$lblHistSub.Text = "Past diagnostic runs saved to CameraLink_Results\. Double-click a row to open."
+$lblHistSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblHistSub.ForeColor = $ColMuted
+$lblHistSub.Location = New-Object System.Drawing.Point(10, 42); $lblHistSub.Size = New-Object System.Drawing.Size(562, 18)
+$pnlHistory.Controls.Add($lblHistSub)
+
+foreach ($pair in @(("btnHistRefresh","Refresh",10,100),("btnHistFolder","Open Folder",120,116))) {
+    $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
+    $b.Size = New-Object System.Drawing.Size($pair[3], 30); $b.Location = New-Object System.Drawing.Point($pair[2], 68)
+    $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $b.FlatAppearance.BorderColor = $ColBorder; $b.FlatAppearance.BorderSize = 1
+    $b.BackColor = [System.Drawing.Color]::White; $b.ForeColor = $ColText
+    $b.Font = New-Object System.Drawing.Font("Segoe UI", 9); $b.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $b.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,$pair[3],30)), 5))
+    $pnlHistory.Controls.Add($b)
+    Set-Variable -Name $pair[0] -Value $b
+}
+
+$lvHist = New-Object System.Windows.Forms.ListView
+$lvHist.Size = New-Object System.Drawing.Size(572, 540); $lvHist.Location = New-Object System.Drawing.Point(10, 108)
+$lvHist.View = [System.Windows.Forms.View]::Details
+$lvHist.FullRowSelect = $true; $lvHist.GridLines = $false
+$lvHist.BackColor = [System.Drawing.Color]::White
+$lvHist.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$lvHist.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$lvHist.HeaderStyle = [System.Windows.Forms.ColumnHeaderStyle]::Nonclickable
+$lvHist.Columns.Add("Date / Time",    155) | Out-Null
+$lvHist.Columns.Add("Result",         115) | Out-Null
+$lvHist.Columns.Add("File",           230) | Out-Null
+$lvHist.Columns.Add("Size",            56) | Out-Null
+$pnlHistory.Controls.Add($lvHist)
+
+$lblHistEmpty = New-Object System.Windows.Forms.Label
+$lblHistEmpty.Text = "No diagnostic runs found in CameraLink_Results\"
+$lblHistEmpty.Font = New-Object System.Drawing.Font("Segoe UI", 9); $lblHistEmpty.ForeColor = $ColMuted
+$lblHistEmpty.Location = New-Object System.Drawing.Point(14, 148); $lblHistEmpty.AutoSize = $true
+$lblHistEmpty.Visible = $false
+$pnlHistory.Controls.Add($lblHistEmpty)
+
+function Refresh-HistoryList {
+    $lvHist.Items.Clear(); $lblHistEmpty.Visible = $false
+    if (-not (Test-Path $OutputDir)) { $lblHistEmpty.Visible = $true; return }
+    $files = Get-ChildItem -Path $OutputDir -Filter "CameraLink_Results_*.txt" -ErrorAction SilentlyContinue |
+             Sort-Object LastWriteTime -Descending
+    if (-not $files -or @($files).Count -eq 0) { $lblHistEmpty.Visible = $true; return }
+    foreach ($f in @($files)) {
+        $dt   = $f.LastWriteTime.ToString("yyyy-MM-dd  HH:mm:ss")
+        $kb   = "$([math]::Round($f.Length / 1KB, 1)) KB"
+        $tail = Get-Content -Path $f.FullName -Tail 30 -ErrorAction SilentlyContinue
+        $result = if ($tail -match "All tests passed") { "All Clear" }
+                  elseif ($tail -match "\[FAIL\]")     { "Issues Found" }
+                  else                                 { "—" }
+        $item = New-Object System.Windows.Forms.ListViewItem($dt)
+        $item.SubItems.Add($result) | Out-Null
+        $item.SubItems.Add($f.Name) | Out-Null
+        $item.SubItems.Add($kb)     | Out-Null
+        $item.Tag = $f.FullName
+        switch ($result) {
+            "All Clear"    { $item.ForeColor = $ColGreen }
+            "Issues Found" { $item.ForeColor = $ColRed   }
+        }
+        $lvHist.Items.Add($item) | Out-Null
+    }
+}
+
+$lvHist.Add_DoubleClick({
+    if ($lvHist.SelectedItems.Count -gt 0) {
+        $path = $lvHist.SelectedItems[0].Tag
+        if (Test-Path $path) { Start-Process notepad.exe $path }
+    }
+})
+
+$btnHistRefresh.Add_Click({ Refresh-HistoryList })
+
+$btnHistFolder.Add_Click({
+    if (Test-Path $OutputDir) { Start-Process explorer.exe $OutputDir }
+    else { [System.Windows.Forms.MessageBox]::Show("No results folder found yet. Run a diagnostic first.", "Open Folder", "OK", "Information") | Out-Null }
+})
+
+$navHistory.Add_Click({
+    $center.Visible     = $false
+    $pnlGuide.Visible   = $false
+    $pnlHistory.Visible = $true
+    foreach ($nb in @($navOverview,$navTests,$navHistory)) {
+        $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
+    }
+    $navHistory.BackColor = $ColNavActive; $navHistory.ForeColor = [System.Drawing.Color]::White
+    Refresh-HistoryList
 })
 
 # ---------- Form Load -------------------------------------------------------
