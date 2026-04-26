@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.2"
+$ScriptVersion      = "3.3"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -566,12 +566,16 @@ $DiagScript = {
     } else {
         $s = 1
         foreach ($r in $failPorts) {
-            $bNote = if ($r.Blinking) { " (blinking port)" } else { "" }
-            $sync.NextSteps.Add("$s. Replace cable on $($r.Name)$bNote") | Out-Null
-            $sync.NextSteps.Add("   Gigabit needs all 4 wire pairs (8 wires).") | Out-Null
-            $sync.NextSteps.Add("   Check brown/white-brown pair in crimp.") | Out-Null
-            $sync.NextSteps.Add("   Inspect camera-side RJ45 port for damage.") | Out-Null
-            $sync.NextSteps.Add("   Re-run after replacement to confirm 1 Gbps.") | Out-Null
+            $bNote = if ($r.Blinking) { " (intermittent)" } else { "" }
+            $sync.NextSteps.Add("$s. Replace the cable on $($r.Name)$bNote") | Out-Null
+            $sync.NextSteps.Add("   The link cannot hold gigabit speed. This") | Out-Null
+            $sync.NextSteps.Add("   usually means a wire inside the cable is") | Out-Null
+            $sync.NextSteps.Add("   damaged or broken, or the RJ45 connector") | Out-Null
+            $sync.NextSteps.Add("   on either end is not crimped correctly.") | Out-Null
+            $sync.NextSteps.Add("   Also check the camera-side RJ45 port for") | Out-Null
+            $sync.NextSteps.Add("   bent or pushed-back pins. Try a known-good") | Out-Null
+            $sync.NextSteps.Add("   replacement cable first - it resolves most") | Out-Null
+            $sync.NextSteps.Add("   cases. Re-run this tool to confirm 1 Gbps.") | Out-Null
             $s++
         }
         foreach ($c in $rtspFaults) {
@@ -586,16 +590,26 @@ $DiagScript = {
                 $ip = if ($issue -match '(\d+\.\d+\.\d+\.\d+)') { $Matches[1] } else { "camera" }
                 $camLabel = ($CameraIPs | Where-Object { $_.IP -eq $ip } | Select-Object -First 1).Label
                 $tag = if ($camLabel) { "$ip ($camLabel)" } else { $ip }
-                $sync.NextSteps.Add("$s. Monitor $tag for app failures") | Out-Null
-                $sync.NextSteps.Add("   NIC port is OK - cable is not the issue.") | Out-Null
-                $sync.NextSteps.Add("   PoE reset in VPU Manager if failures repeat.") | Out-Null
-                $sync.NextSteps.Add("   Persistent failures indicate camera fault.") | Out-Null
+                $sync.NextSteps.Add("$s. Camera issue on $tag") | Out-Null
+                $sync.NextSteps.Add("   The cable and NIC port are healthy (link") | Out-Null
+                $sync.NextSteps.Add("   confirmed at 1 Gbps). The problem is the") | Out-Null
+                $sync.NextSteps.Add("   camera itself not responding to the VPU.") | Out-Null
+                $sync.NextSteps.Add("   Try 1 of these steps in order:") | Out-Null
+                $sync.NextSteps.Add("   a) Power-cycle via VPU Manager: open") | Out-Null
+                $sync.NextSteps.Add("      VPU Manager > Settings > Cameras >") | Out-Null
+                $sync.NextSteps.Add("      select the camera > Reset PoE Power.") | Out-Null
+                $sync.NextSteps.Add("   b) Wait 2 min for camera to fully boot,") | Out-Null
+                $sync.NextSteps.Add("      then re-run this tool to recheck.") | Out-Null
+                $sync.NextSteps.Add("   c) If failures persist after 2+ resets,") | Out-Null
+                $sync.NextSteps.Add("      the camera likely has an internal fault") | Out-Null
+                $sync.NextSteps.Add("      and may need to be replaced.") | Out-Null
                 $s++
             }
         }
-        if ($failPorts.Count -gt 0) {
-            $sync.NextSteps.Add("$s. Re-run tool after cable replacement") | Out-Null
-            $sync.NextSteps.Add("   Confirm 1 Gbps and SmartSpeed events stop.") | Out-Null
+        if ($failPorts.Count -gt 0 -and ($rtspFaults.Count -gt 0 -or $sync.AppIssues.Count -gt 0)) {
+            $sync.NextSteps.Add("$s. Re-run this tool after each fix") | Out-Null
+            $sync.NextSteps.Add("   Recheck shows which issues are resolved") | Out-Null
+            $sync.NextSteps.Add("   and whether SmartSpeed events have stopped.") | Out-Null
         }
     }
 
@@ -625,14 +639,26 @@ function New-SidebarButton {
 }
 
 function New-StatusCard {
-    param([string]$Title, [int]$X, [int]$Y, [int]$W=178, [int]$H=78)
+    param([string]$Title, [int]$X, [int]$Y, [string]$Icon = "", [int]$W=178, [int]$H=78)
     $panel = New-Object System.Windows.Forms.Panel
     $panel.Size = New-Object System.Drawing.Size($W, $H); $panel.Location = New-Object System.Drawing.Point($X, $Y)
     $panel.BackColor = $ColCard; $panel.BorderStyle = [System.Windows.Forms.BorderStyle]::None
     $panel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $W, $H)), 8))
+    $panel.Tag = $Icon
     $panel.Add_Paint({
         param($s, $e)
         $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $e.Graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAlias
+        if ($s.Tag) {
+            $iFont  = New-Object System.Drawing.Font("Segoe MDL2 Assets", 26)
+            $iBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(200, 210, 222))
+            $iStr   = [string]$s.Tag
+            $iSz    = $e.Graphics.MeasureString($iStr, $iFont)
+            $ix     = $s.Width  - [int]$iSz.Width  - 10
+            $iy     = $s.Height - [int]$iSz.Height - 6
+            $e.Graphics.DrawString($iStr, $iFont, $iBrush, $ix, $iy)
+            $iFont.Dispose(); $iBrush.Dispose()
+        }
         $rr = New-Object System.Drawing.Rectangle(0, 0, $s.Width - 1, $s.Height - 1)
         $bp = [GfxHelper]::RoundedRect($rr, 8)
         $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 218, 228), 1)
@@ -648,7 +674,7 @@ function New-StatusCard {
     $val = New-Object System.Windows.Forms.Label; $val.Text = "--"
     $val.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 13)
     $val.ForeColor = $ColText; $val.Location = New-Object System.Drawing.Point(10, 28)
-    $val.Size = New-Object System.Drawing.Size($W - 20, 34)
+    $val.Size = New-Object System.Drawing.Size($W - 20, 34); $val.BackColor = [System.Drawing.Color]::Transparent
     $panel.Controls.Add($val)
 
     $dot = New-Object System.Windows.Forms.Panel; $dot.Size = New-Object System.Drawing.Size(10, 10)
@@ -806,16 +832,16 @@ $lnkClear.Location = New-Object System.Drawing.Point(553,84); $lnkClear.AutoSize
 $center.Controls.Add($lnkClear)
 
 $cardDefs = @(
-    @{Key="LinkSpeed"; Title="Link Speed";    X=10;  Y=106}
-    @{Key="NicStatus"; Title="NIC Status";    X=200; Y=106}
-    @{Key="PingCHU";   Title="Ping (CHU)";    X=390; Y=106}
-    @{Key="Gateway";   Title="Gateway";        X=10;  Y=194}
-    @{Key="ArpEntry";  Title="ARP Entry";      X=200; Y=194}
-    @{Key="ChuDetect"; Title="CHU Detection";  X=390; Y=194}
+    @{Key="LinkSpeed"; Title="Link Speed";    X=10;  Y=106; Icon=[char]0xE704}  # WiFi bars - link/speed concept
+    @{Key="NicStatus"; Title="NIC Status";    X=200; Y=106; Icon=[char]0xE7F4}  # Network/port
+    @{Key="PingCHU";   Title="Ping (CHU)";    X=390; Y=106; Icon=[char]0xE701}  # Signal waves
+    @{Key="Gateway";   Title="Gateway";        X=10;  Y=194; Icon=[char]0xE88E}  # Globe
+    @{Key="ArpEntry";  Title="ARP Entry";      X=200; Y=194; Icon=[char]0xE9D5}  # Bulleted list
+    @{Key="ChuDetect"; Title="CHU Detection";  X=390; Y=194; Icon=[char]0xE722}  # Camera
 )
 $cards = @{}
 foreach ($cd in $cardDefs) {
-    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y $cd.Y
+    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y $cd.Y -Icon $cd.Icon
     $cards[$cd.Key] = $c
     $center.Controls.Add($c.Panel)
 }
