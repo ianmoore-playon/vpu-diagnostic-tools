@@ -4,6 +4,17 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [3.5] - 2026-04-26
+
+### Changed
+- **Camera-level fault note reworded** — previous `[NOTE] NIC port OK - fault is at the camera level` was overstated; now reads `Cable and NIC port are OK (1 Gbps confirmed) - physical layer is ruled out`, followed by a list of possible causes (PoE power, firmware/config, hardware) and a directive to start with a PoE reset before assuming hardware failure
+- **Unknown model flagged** — when the camera model cannot be read from the app log (meaning the VPU never completed the camera handshake), an additional note is appended to make this visible
+
+### Fixed
+- `AppIssues` match pattern updated to `*cable ruled out*` to align with new issue string
+
+---
+
 ## [3.4] - 2026-04-26
 
 ### Changed

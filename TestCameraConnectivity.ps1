@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.4"
+$ScriptVersion      = "3.5"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -531,12 +531,18 @@ $DiagScript = {
                         }
                     }
                     $portResult = if ($portMatch) { $portResults | Where-Object { $_.Name -eq $portMatch.Name } | Select-Object -First 1 } else { $null }
+                    $unknownModel = ($model -eq "Unknown")
                     if ($portResult -and $portResult.Result -eq "FAIL") {
                         Add-Log "  [CONFIRM] NIC port DEGRADED - app failures corroborate physical fault." "Fail"
                         $sync.AppIssues.Add("$ip ($model): app failures + NIC degraded = CONFIRMED physical fault") | Out-Null
                     } elseif ($portResult -and $portResult.Result -like "PASS*") {
-                        Add-Log "  [NOTE]    NIC port OK (1 Gbps) - fault is at the camera level, not the cable." "Warn"
-                        $sync.AppIssues.Add("$ip ($model): app failures but NIC OK - check camera hardware/config") | Out-Null
+                        Add-Log "  [NOTE]    Cable and NIC port are OK (1 Gbps confirmed) - physical layer is ruled out." "Warn"
+                        if ($unknownModel) {
+                            Add-Log "  [NOTE]    Camera model could not be read - the VPU is not completing the camera handshake." "Warn"
+                        }
+                        Add-Log "  [NOTE]    Possible causes: insufficient PoE power, camera firmware/config issue, or camera hardware fault." "Warn"
+                        Add-Log "            Start with a PoE reset before assuming hardware failure." "Warn"
+                        $sync.AppIssues.Add("$ip ($model): app failures but NIC OK - cable ruled out, investigate camera") | Out-Null
                     } else {
                         $sync.AppIssues.Add("$ip ($model): $fails app failure(s)") | Out-Null
                     }
@@ -577,7 +583,7 @@ $DiagScript = {
             $s++
         }
         foreach ($issue in $sync.AppIssues) {
-            if ($issue -like "*but NIC OK*") {
+            if ($issue -like "*cable ruled out*") {
                 $ip = if ($issue -match '(\d+\.\d+\.\d+\.\d+)') { $Matches[1] } else { "camera" }
                 $camLabel = ($CameraIPs | Where-Object { $_.IP -eq $ip } | Select-Object -First 1).Label
                 $tag = if ($camLabel) { "$ip ($camLabel)" } else { $ip }
