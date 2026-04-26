@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v3.8
+#  VPU Cable & NIC Troubleshooter  v3.9
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.8"
+$ScriptVersion      = "3.9"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -790,7 +790,7 @@ $sep1.Location = New-Object System.Drawing.Point(12,60); $sep1.BackColor = [Syst
 $sidebar.Controls.Add($sep1)
 
 $navOverview = New-SidebarButton "  Overview" 68  $true
-$navTests    = New-SidebarButton "  Tests"    110
+$navTests    = New-SidebarButton "  Guide"    110
 $navResults  = New-SidebarButton "  Results"  152
 $navHistory  = New-SidebarButton "  History"  194
 $navSettings = New-SidebarButton "  Settings" 236
@@ -1058,34 +1058,6 @@ $timer.Add_Tick({
     $hwRows["CameraPort"].Text  = $sync.Hardware.CameraPort
     $hwRows["CableStatus"].Text = $sync.Hardware.CableStatus
 
-    # Update Tests panel step rows from StepsDone
-    foreach ($key in $testRows.Keys) {
-        $status = $sync.StepsDone[$key]
-        if ($status -ne $script:lastStepsDone[$key]) {
-            $script:lastStepsDone[$key] = $status
-            $row = $testRows[$key]
-            if ($status -eq "pass") {
-                $row.Dot.BackColor = $ColGreen; $row.Result.Text = "Passed"; $row.Result.ForeColor = $ColGreen
-            } elseif ($status -eq "fail") {
-                $row.Dot.BackColor = $ColRed;   $row.Result.Text = "Issues Found"; $row.Result.ForeColor = $ColRed
-            } elseif ($sync.Running -and $status -ne "pass" -and $status -ne "fail") {
-                # Check if this step is "current" by seeing if the step before it is done
-            }
-        }
-        # Show "Running" on the first pending step while diagnostic is active
-        if ($sync.Running -and -not $status) {
-            $allPrior = $true
-            $testKeys = @("NicDetect","LinkSpeed","SmartSpeed","ArpGateway","CamPing","AppLog","NextSteps")
-            $idx = [Array]::IndexOf($testKeys, $key)
-            for ($i = 0; $i -lt $idx; $i++) {
-                if (-not $sync.StepsDone[$testKeys[$i]]) { $allPrior = $false; break }
-            }
-            if ($allPrior) {
-                $testRows[$key].Dot.BackColor = $ColAccent; $testRows[$key].Result.Text = "Running..."; $testRows[$key].Result.ForeColor = $ColAccent
-            }
-        }
-    }
-
     if ($sync.Running) {
         $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(219,234,254)
         $lblBadge.ForeColor = $ColAccent; $lblBadge.Text = "Running"
@@ -1150,10 +1122,6 @@ $btnRun.Add_Click({
     $btnRun.Enabled = $false; $btnRun.Text = "  Running..."
     $btnRetest.Enabled = $false
     $script:spinIdx = 0; $lblStatus.ForeColor = $ColAccent; $lblStatus.Text = " |  Starting..."
-    $script:lastStepsDone = @{}
-    foreach ($key in $testRows.Keys) {
-        $testRows[$key].Dot.BackColor = $ColMuted; $testRows[$key].Result.Text = "Pending"; $testRows[$key].Result.ForeColor = $ColMuted
-    }
 
     if ($script:runspace) { try { $script:runspace.Close() } catch { } }
     $script:runspace = [runspacefactory]::CreateRunspace()
@@ -1217,90 +1185,395 @@ $lnkClear.Add_LinkClicked({
     $lblLastRunVal.Text = "No runs yet"
 })
 
-# ---- Tests Panel -----------------------------------------------------------
-$pnlTests = New-Object System.Windows.Forms.Panel
-$pnlTests.Size = $center.Size; $pnlTests.Location = $center.Location
-$pnlTests.BackColor = $ColBg; $pnlTests.Visible = $false
-$form.Controls.Add($pnlTests)
+# ---- Guide Panel (Fault Isolation Wizard) ----------------------------------
+$pnlGuide = New-Object System.Windows.Forms.Panel
+$pnlGuide.Size = $center.Size; $pnlGuide.Location = $center.Location
+$pnlGuide.BackColor = $ColBg; $pnlGuide.Visible = $false
+$form.Controls.Add($pnlGuide)
 
-$lblTestsTitle = New-Object System.Windows.Forms.Label
-$lblTestsTitle.Text = "Diagnostic Steps"
-$lblTestsTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12)
-$lblTestsTitle.ForeColor = $ColText
-$lblTestsTitle.Location = New-Object System.Drawing.Point(10,18); $lblTestsTitle.AutoSize = $true
-$pnlTests.Controls.Add($lblTestsTitle)
+# Title
+$lblGuideTitle = New-Object System.Windows.Forms.Label
+$lblGuideTitle.Text = "Fault Isolation Guide"
+$lblGuideTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
+$lblGuideTitle.ForeColor = $ColText
+$lblGuideTitle.Location = New-Object System.Drawing.Point(10, 16); $lblGuideTitle.AutoSize = $true
+$pnlGuide.Controls.Add($lblGuideTitle)
 
-$lblTestsSub = New-Object System.Windows.Forms.Label
-$lblTestsSub.Text = "Live status of each diagnostic step. Run the full diagnostic to see results."
-$lblTestsSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblTestsSub.ForeColor = $ColMuted
-$lblTestsSub.Location = New-Object System.Drawing.Point(10,44); $lblTestsSub.Size = New-Object System.Drawing.Size(560,18)
-$pnlTests.Controls.Add($lblTestsSub)
+$lblGuideSub = New-Object System.Windows.Forms.Label
+$lblGuideSub.Text = "One change at a time — force the fault to reveal what it follows."
+$lblGuideSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblGuideSub.ForeColor = $ColMuted
+$lblGuideSub.Location = New-Object System.Drawing.Point(10, 42); $lblGuideSub.Size = New-Object System.Drawing.Size(562, 18)
+$pnlGuide.Controls.Add($lblGuideSub)
 
-$testStepDefs = @(
-    @{ Key="NicDetect";  Icon=[char]0xE7F4; Label="NIC Detection";        Desc="Find all Intel 82574L / I210 camera NIC ports" }
-    @{ Key="LinkSpeed";  Icon=[char]0xE704; Label="Link Speed + Remediation"; Desc="Sample ports 12s; force 1 Gbps on degraded ports" }
-    @{ Key="SmartSpeed"; Icon=[char]0xE7BA; Label="SmartSpeed Event Scan"; Desc="Scan System event log for ID 40 downgrade events (last 48h)" }
-    @{ Key="ArpGateway"; Icon=[char]0xE88E; Label="Gateway + ARP";        Desc="Check network reachability and ARP neighbor table" }
-    @{ Key="CamPing";    Icon=[char]0xE701; Label="Camera Ping + RTSP";   Desc="Ping each camera IP; test RTSP port 554" }
-    @{ Key="AppLog";     Icon=[char]0xE9D5; Label="App Log Analysis";     Desc="Parse CamerasTester log for connection failures" }
-    @{ Key="NextSteps";  Icon=[char]0xE722; Label="Build Guidance";       Desc="Compile next steps and update right panel" }
-)
-
-$testRows = @{}
-$rowY = 76
-foreach ($def in $testStepDefs) {
-    $rowPanel = New-Object System.Windows.Forms.Panel
-    $rowPanel.Size = New-Object System.Drawing.Size(562, 60)
-    $rowPanel.Location = New-Object System.Drawing.Point(10, $rowY)
-    $rowPanel.BackColor = [System.Drawing.Color]::White
-    $rowPanel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,562,60)), 6))
-    $rowPanel.Tag = $def.Key
-    $rowPanel.Add_Paint(({
-        param($s,$e)
-        $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        $rr = New-Object System.Drawing.Rectangle(0, 0, 561, 59)
-        $bp = [GfxHelper]::RoundedRect($rr, 6)
-        $pen = New-Object System.Drawing.Pen($ColBorder, 1)
-        $e.Graphics.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
-    }).GetNewClosure())
-    $pnlTests.Controls.Add($rowPanel)
-
-    # Status circle
-    $dot = New-Object System.Windows.Forms.Panel; $dot.Size = New-Object System.Drawing.Size(12,12)
-    $dot.Location = New-Object System.Drawing.Point(14,24); $dot.BackColor = $ColMuted
-    $dot.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,12,12)), 6))
-    $rowPanel.Controls.Add($dot)
-
-    # Label
-    $lbl = New-Object System.Windows.Forms.Label; $lbl.Text = $def.Label
-    $lbl.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lbl.ForeColor = $ColText
-    $lbl.Location = New-Object System.Drawing.Point(36,10); $lbl.Size = New-Object System.Drawing.Size(360,20)
-    $rowPanel.Controls.Add($lbl)
-
-    # Description
-    $desc = New-Object System.Windows.Forms.Label; $desc.Text = $def.Desc
-    $desc.Font = New-Object System.Drawing.Font("Segoe UI",8); $desc.ForeColor = $ColMuted
-    $desc.Location = New-Object System.Drawing.Point(36,32); $desc.Size = New-Object System.Drawing.Size(360,18)
-    $rowPanel.Controls.Add($desc)
-
-    # Result label
-    $res = New-Object System.Windows.Forms.Label; $res.Text = "Pending"
-    $res.Font = New-Object System.Drawing.Font("Segoe UI Semibold",8.5); $res.ForeColor = $ColMuted
-    $res.Location = New-Object System.Drawing.Point(420,22); $res.Size = New-Object System.Drawing.Size(130,18)
-    $res.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
-    $rowPanel.Controls.Add($res)
-
-    $testRows[$def.Key] = @{ Dot=$dot; Result=$res }
-    $rowY += 68
+# Phase step dots: 4 numbered circles
+$guideStepDots = @()
+$guideStepLabels = @("1  Baseline","2  NIC Port","3  Cable","4  Camera")
+$dotX = 10
+foreach ($i in 0..3) {
+    $dp = New-Object System.Windows.Forms.Panel; $dp.Size = New-Object System.Drawing.Size(110, 28)
+    $dp.Location = New-Object System.Drawing.Point($dotX, 64); $dp.BackColor = $ColBg
+    $dl = New-Object System.Windows.Forms.Label; $dl.Text = $guideStepLabels[$i]
+    $dl.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
+    $dl.ForeColor = [System.Drawing.Color]::FromArgb(180, 190, 200)
+    $dl.Location = New-Object System.Drawing.Point(0, 4); $dl.Size = New-Object System.Drawing.Size(110, 20)
+    $dl.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $dp.Controls.Add($dl)
+    $pnlGuide.Controls.Add($dp)
+    $guideStepDots += @{ Panel=$dp; Label=$dl }
+    $dotX += 114
 }
 
-# Update test rows from StepsDone in the timer tick
-$script:lastStepsDone = @{}
+# Blue instruction card
+$pnlGuideInstr = New-Object System.Windows.Forms.Panel
+$pnlGuideInstr.Size = New-Object System.Drawing.Size(572, 108)
+$pnlGuideInstr.Location = New-Object System.Drawing.Point(10, 100)
+$pnlGuideInstr.BackColor = $ColAccent
+$pnlGuide.Controls.Add($pnlGuideInstr)
+$pnlGuideInstr.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,572,108)), 8))
+
+$lblGuidePhase = New-Object System.Windows.Forms.Label
+$lblGuidePhase.Text = "SELECT A PORT TO BEGIN"
+$lblGuidePhase.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
+$lblGuidePhase.ForeColor = [System.Drawing.Color]::FromArgb(187, 222, 251)
+$lblGuidePhase.Location = New-Object System.Drawing.Point(14, 10); $lblGuidePhase.Size = New-Object System.Drawing.Size(544, 18)
+$pnlGuideInstr.Controls.Add($lblGuidePhase)
+
+$lblGuideInstr = New-Object System.Windows.Forms.Label
+$lblGuideInstr.Text = "Select the NIC port that is showing degraded speed (100 Mbps) and click Start."
+$lblGuideInstr.Font = New-Object System.Drawing.Font("Segoe UI", 9.5)
+$lblGuideInstr.ForeColor = [System.Drawing.Color]::White
+$lblGuideInstr.Location = New-Object System.Drawing.Point(14, 32); $lblGuideInstr.Size = New-Object System.Drawing.Size(544, 66)
+$pnlGuideInstr.Controls.Add($lblGuideInstr)
+
+# Port selector row (primary: suspect port / test port as applicable)
+$lblGuidePortA = New-Object System.Windows.Forms.Label; $lblGuidePortA.Text = "Suspect port:"
+$lblGuidePortA.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblGuidePortA.ForeColor = $ColMuted
+$lblGuidePortA.Location = New-Object System.Drawing.Point(10, 220); $lblGuidePortA.Size = New-Object System.Drawing.Size(90, 24)
+$pnlGuide.Controls.Add($lblGuidePortA)
+
+$cboGuidePortA = New-Object System.Windows.Forms.ComboBox
+$cboGuidePortA.Size = New-Object System.Drawing.Size(200, 24); $cboGuidePortA.Location = New-Object System.Drawing.Point(104, 218)
+$cboGuidePortA.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+$cboGuidePortA.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$pnlGuide.Controls.Add($cboGuidePortA)
+
+$lblGuidePortB = New-Object System.Windows.Forms.Label; $lblGuidePortB.Text = "Test port:"
+$lblGuidePortB.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblGuidePortB.ForeColor = $ColMuted
+$lblGuidePortB.Location = New-Object System.Drawing.Point(318, 220); $lblGuidePortB.Size = New-Object System.Drawing.Size(70, 24)
+$lblGuidePortB.Visible = $false
+$pnlGuide.Controls.Add($lblGuidePortB)
+
+$cboGuidePortB = New-Object System.Windows.Forms.ComboBox
+$cboGuidePortB.Size = New-Object System.Drawing.Size(168, 24); $cboGuidePortB.Location = New-Object System.Drawing.Point(392, 218)
+$cboGuidePortB.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+$cboGuidePortB.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$cboGuidePortB.Visible = $false
+$pnlGuide.Controls.Add($cboGuidePortB)
+
+# Action button
+$btnGuideAction = New-Object System.Windows.Forms.Button; $btnGuideAction.Text = "  Start Baseline"
+$btnGuideAction.Size = New-Object System.Drawing.Size(572, 40); $btnGuideAction.Location = New-Object System.Drawing.Point(10, 250)
+$btnGuideAction.BackColor = $ColAccent; $btnGuideAction.ForeColor = [System.Drawing.Color]::White
+$btnGuideAction.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnGuideAction.FlatAppearance.BorderSize = 0
+$btnGuideAction.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$btnGuideAction.Cursor = [System.Windows.Forms.Cursors]::Hand
+$btnGuideAction.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,572,40)), 6))
+$pnlGuide.Controls.Add($btnGuideAction)
+
+# Result card (hidden until a check completes)
+$pnlGuideResult = New-Object System.Windows.Forms.Panel
+$pnlGuideResult.Size = New-Object System.Drawing.Size(572, 84)
+$pnlGuideResult.Location = New-Object System.Drawing.Point(10, 302)
+$pnlGuideResult.BackColor = [System.Drawing.Color]::White
+$pnlGuideResult.Visible = $false
+$pnlGuideResult.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,572,84)), 8))
+$pnlGuideResult.Add_Paint(({
+    param($s,$e)
+    $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $rr = New-Object System.Drawing.Rectangle(0,0,571,83)
+    $bp = [GfxHelper]::RoundedRect($rr,8)
+    $pen = New-Object System.Drawing.Pen($ColBorder,1)
+    $e.Graphics.DrawPath($pen,$bp); $pen.Dispose(); $bp.Dispose()
+}).GetNewClosure())
+$pnlGuide.Controls.Add($pnlGuideResult)
+
+$lblGuideResultSpeed = New-Object System.Windows.Forms.Label; $lblGuideResultSpeed.Text = ""
+$lblGuideResultSpeed.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
+$lblGuideResultSpeed.ForeColor = $ColText
+$lblGuideResultSpeed.Location = New-Object System.Drawing.Point(14, 10); $lblGuideResultSpeed.Size = New-Object System.Drawing.Size(544, 26)
+$pnlGuideResult.Controls.Add($lblGuideResultSpeed)
+
+$lblGuideResultVerdict = New-Object System.Windows.Forms.Label; $lblGuideResultVerdict.Text = ""
+$lblGuideResultVerdict.Font = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblGuideResultVerdict.ForeColor = $ColMuted
+$lblGuideResultVerdict.Location = New-Object System.Drawing.Point(14, 38); $lblGuideResultVerdict.Size = New-Object System.Drawing.Size(544, 36)
+$pnlGuideResult.Controls.Add($lblGuideResultVerdict)
+
+# Phase history
+$sep7 = New-Object System.Windows.Forms.Panel; $sep7.Size = New-Object System.Drawing.Size(572,1)
+$sep7.Location = New-Object System.Drawing.Point(10, 398); $sep7.BackColor = $ColBorder
+$pnlGuide.Controls.Add($sep7)
+
+$lblGuideHist = New-Object System.Windows.Forms.Label; $lblGuideHist.Text = "Phase History"
+$lblGuideHist.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5); $lblGuideHist.ForeColor = $ColText
+$lblGuideHist.Location = New-Object System.Drawing.Point(10, 408); $lblGuideHist.AutoSize = $true
+$pnlGuide.Controls.Add($lblGuideHist)
+
+$lnkGuideReset = New-Object System.Windows.Forms.LinkLabel; $lnkGuideReset.Text = "Start Over"
+$lnkGuideReset.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lnkGuideReset.LinkColor = $ColMuted
+$lnkGuideReset.Location = New-Object System.Drawing.Point(530, 410); $lnkGuideReset.AutoSize = $true
+$pnlGuide.Controls.Add($lnkGuideReset)
+
+$rtbGuide = New-Object System.Windows.Forms.RichTextBox
+$rtbGuide.Size = New-Object System.Drawing.Size(572, 220); $rtbGuide.Location = New-Object System.Drawing.Point(10, 430)
+$rtbGuide.BackColor = $ColLogBg; $rtbGuide.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
+$rtbGuide.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $rtbGuide.ReadOnly = $true
+$rtbGuide.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$rtbGuide.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
+$rtbGuide.Text = "Phase results will appear here as you work through each step."
+$pnlGuide.Controls.Add($rtbGuide)
+
+# ---- Guide State & Logic ---------------------------------------------------
+$script:guide = @{
+    Phase        = 0       # 0=setup, 1=baseline done, 2=nic done, 3=cable done, 4=concluded
+    SuspectPort  = ""
+    TestPort     = ""
+    BaseSpeed    = 0
+    PhaseHistory = [System.Collections.ArrayList]::new()
+}
+
+function Get-GuideLinkSpeed {
+    param([string]$PortName, [int]$MaxSeconds = 6)
+    $deadline = (Get-Date).AddSeconds($MaxSeconds)
+    $peak = 0
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $a = Get-NetAdapter -Name $PortName -ErrorAction Stop
+            if ($a.Status -eq "Up") {
+                $ls = $a.LinkSpeed.ToString()
+                if ($ls -match '(\d+(?:\.\d+)?)\s*Gbps') { $s = [int]([double]$Matches[1]*1000) }
+                elseif ($ls -match '(\d+(?:\.\d+)?)\s*Mbps') { $s = [int]$Matches[1] }
+                else { $s = 0 }
+                if ($s -gt $peak) { $peak = $s }
+                if ($peak -ge 1000) { break }
+            }
+        } catch { }
+        Start-Sleep -Milliseconds 600
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    return $peak
+}
+
+function Update-GuideStepDots {
+    param([int]$ActivePhase)
+    for ($i = 0; $i -lt 4; $i++) {
+        $phaseNum = $i + 1
+        if ($phaseNum -lt $ActivePhase) {
+            $guideStepDots[$i].Label.ForeColor = $ColGreen
+        } elseif ($phaseNum -eq $ActivePhase) {
+            $guideStepDots[$i].Label.ForeColor = [System.Drawing.Color]::White
+        } else {
+            $guideStepDots[$i].Label.ForeColor = [System.Drawing.Color]::FromArgb(180,190,200)
+        }
+    }
+}
+
+function Add-GuideHistory {
+    param([string]$Phase, [string]$Config, [string]$Speed, [string]$Verdict, [string]$Color = "Info")
+    $rtbGuide.SelectionStart = $rtbGuide.TextLength; $rtbGuide.SelectionLength = 0
+    $col = switch ($Color) { "Pass" {[System.Drawing.Color]::FromArgb(74,222,128)} "Fail" {[System.Drawing.Color]::FromArgb(252,165,165)} default {[System.Drawing.Color]::FromArgb(148,163,184)} }
+    $rtbGuide.SelectionColor = $col
+    $rtbGuide.SelectionFont  = New-Object System.Drawing.Font("Segoe UI Semibold",8.5)
+    $rtbGuide.AppendText("$Phase`n")
+    $rtbGuide.SelectionStart = $rtbGuide.TextLength; $rtbGuide.SelectionLength = 0
+    $rtbGuide.SelectionColor = [System.Drawing.Color]::FromArgb(148,163,184)
+    $rtbGuide.SelectionFont  = New-Object System.Drawing.Font("Segoe UI",8)
+    $rtbGuide.AppendText("  $Config`n  Speed: $Speed`n  $Verdict`n`n")
+    $rtbGuide.ScrollToCaret()
+}
+
+function Show-GuideResult {
+    param([string]$SpeedText, [string]$Verdict, [string]$StatusColor)
+    $col = switch ($StatusColor) { "Pass" {$ColGreen} "Fail" {$ColRed} default {$ColYellow} }
+    $lblGuideResultSpeed.Text    = $SpeedText
+    $lblGuideResultSpeed.ForeColor = $col
+    $lblGuideResultVerdict.Text  = $Verdict
+    $pnlGuideResult.Visible      = $true
+    $pnlGuideResult.Refresh()
+}
+
+# Wire up action button
+$btnGuideAction.Add_Click({
+    $phase = $script:guide.Phase
+
+    # Phase 0 → run baseline on suspect port
+    if ($phase -eq 0) {
+        $portName = $cboGuidePortA.Text -replace '\s.*',''
+        if (-not $portName) { return }
+        $script:guide.SuspectPort = $portName
+
+        $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
+        $rtbGuide.Clear()
+        $speed = Get-GuideLinkSpeed -PortName $portName -MaxSeconds 6
+        $script:guide.BaseSpeed = $speed
+        $btnGuideAction.Enabled = $true
+
+        $speedLabel = if ($speed -ge 1000) { "1 Gbps" } elseif ($speed -gt 0) { "$speed Mbps" } else { "No link" }
+        $config = "Port: $portName  |  Cable: (original)  |  Camera: (original)"
+
+        if ($speed -ge 1000) {
+            Show-GuideResult "Baseline: $speedLabel — Port is operating normally." "The selected port is already running at 1 Gbps. No fault detected on this port. Select a different port or run the full diagnostic." "Pass"
+            Add-GuideHistory "Phase 1 — Baseline" $config $speedLabel "Port healthy — no fault on this port." "Pass"
+            $lblGuidePhase.Text = "BASELINE — PORT HEALTHY"
+            $lblGuideInstr.Text = "This port is operating normally at 1 Gbps. Select a different port above, or use Overview > Run Full Diagnostic."
+            $btnGuideAction.Text = "  Recheck Port"
+            $btnGuideAction.Enabled = $true
+            Update-GuideStepDots -ActivePhase 1
+            return
+        }
+
+        Add-GuideHistory "Phase 1 — Baseline" $config $speedLabel "Degraded link confirmed — beginning isolation." "Fail"
+        Show-GuideResult "Baseline: $speedLabel — Degraded link confirmed." "Beginning isolation. Move the SAME cable and camera to a different NIC port." "Fail"
+        $script:guide.Phase = 1
+        Update-GuideStepDots -ActivePhase 2
+
+        # Populate test port dropdown (all ports except suspect)
+        $cboGuidePortB.Items.Clear()
+        try {
+            $others = Get-NetAdapter | Where-Object { $d = $_.InterfaceDescription; ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0 -and $_.Name -ne $portName } | Sort-Object Name
+            foreach ($n in $others) { $cboGuidePortB.Items.Add($n.Name) | Out-Null }
+        } catch { }
+        if ($cboGuidePortB.Items.Count -gt 0) { $cboGuidePortB.SelectedIndex = 0 }
+
+        $lblGuidePortA.Visible = $false; $cboGuidePortA.Visible = $false
+        $lblGuidePortB.Visible = $true;  $cboGuidePortB.Visible = $true
+        $lblGuidePhase.Text = "PHASE 2 — DOES THE FAULT FOLLOW THE NIC PORT?"
+        $lblGuideInstr.Text = "Move the SAME cable and SAME camera from $portName to the port selected below. Press Check when reconnected."
+        $btnGuideAction.Text = "  Check Now"
+        $btnGuideAction.Enabled = $true
+        return
+    }
+
+    # Phase 1 → check after moving cable+CHU to test port
+    if ($phase -eq 1) {
+        $testPort = $cboGuidePortB.Text -replace '\s.*',''
+        if (-not $testPort) { return }
+        $script:guide.TestPort = $testPort
+
+        $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
+        $speed = Get-GuideLinkSpeed -PortName $testPort -MaxSeconds 6
+        $btnGuideAction.Enabled = $true
+
+        $speedLabel = if ($speed -ge 1000) { "1 Gbps" } elseif ($speed -gt 0) { "$speed Mbps" } else { "No link" }
+        $config = "Port: $testPort  |  Cable: (original)  |  Camera: (original)"
+
+        if ($speed -ge 1000) {
+            $verdict = "Fault cleared on $testPort — cable and camera are healthy on a different port. Original port ($($script:guide.SuspectPort)) is likely faulty."
+            Show-GuideResult "Phase 2: $speedLabel — Fault follows the original NIC port." $verdict "Pass"
+            Add-GuideHistory "Phase 2 — NIC Port Test" $config $speedLabel $verdict "Pass"
+            $lblGuidePhase.Text = "CONCLUSION — FAULTY NIC PORT"
+            $lblGuideInstr.Text = "The cable and camera work fine on $testPort. The original port ($($script:guide.SuspectPort)) is the source of the fault. Replace or disable that NIC port."
+            $btnGuideAction.Text = "  Run Full Diagnostic"
+            $script:guide.Phase = 4
+            Update-GuideStepDots -ActivePhase 4
+        } else {
+            $verdict = "Fault persists on $testPort — the original NIC port is likely healthy. The fault is in the cable or camera."
+            Show-GuideResult "Phase 2: $speedLabel — Fault follows cable/camera, not the NIC port." $verdict "Warn"
+            Add-GuideHistory "Phase 2 — NIC Port Test" $config $speedLabel $verdict "Info"
+            $script:guide.Phase = 2
+            $lblGuidePortB.Visible = $false; $cboGuidePortB.Visible = $false
+            $lblGuidePhase.Text = "PHASE 3 — DOES THE FAULT FOLLOW THE CABLE?"
+            $lblGuideInstr.Text = "Stay on $testPort with the same camera. Replace ONLY the cable with a known-good cable. Press Check when reconnected."
+            $btnGuideAction.Text = "  Check Now"
+            Update-GuideStepDots -ActivePhase 3
+        }
+        return
+    }
+
+    # Phase 2 → check after swapping cable
+    if ($phase -eq 2) {
+        $testPort = $script:guide.TestPort
+        $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
+        $speed = Get-GuideLinkSpeed -PortName $testPort -MaxSeconds 6
+        $btnGuideAction.Enabled = $true
+
+        $speedLabel = if ($speed -ge 1000) { "1 Gbps" } elseif ($speed -gt 0) { "$speed Mbps" } else { "No link" }
+        $config = "Port: $testPort  |  Cable: (NEW - known good)  |  Camera: (original)"
+
+        if ($speed -ge 1000) {
+            $verdict = "Link restored with new cable. The original cable is the source of the fault — bad cable or termination."
+            Show-GuideResult "Phase 3: $speedLabel — Fault follows the cable." $verdict "Pass"
+            Add-GuideHistory "Phase 3 — Cable Test" $config $speedLabel $verdict "Pass"
+            $lblGuidePhase.Text = "CONCLUSION — FAULTY CABLE"
+            $lblGuideInstr.Text = "Replacing the cable resolved the issue. The original cable (or its termination) is the source of the fault. Replace the cable end-to-end."
+            $btnGuideAction.Text = "  Run Full Diagnostic"
+            $script:guide.Phase = 4
+            Update-GuideStepDots -ActivePhase 4
+        } else {
+            $verdict = "Still degraded with new cable. Cable is not the fault — the camera is the likely cause."
+            Show-GuideResult "Phase 3: $speedLabel — Fault is not the cable." $verdict "Warn"
+            Add-GuideHistory "Phase 3 — Cable Test" $config $speedLabel $verdict "Info"
+            $script:guide.Phase = 3
+            $lblGuidePhase.Text = "PHASE 4 — DOES THE FAULT FOLLOW THE CAMERA?"
+            $lblGuideInstr.Text = "Stay on $testPort with the new cable. Connect a known-good camera. Press Check when reconnected."
+            $btnGuideAction.Text = "  Check Now"
+            Update-GuideStepDots -ActivePhase 4
+        }
+        return
+    }
+
+    # Phase 3 → check after swapping camera
+    if ($phase -eq 3) {
+        $testPort = $script:guide.TestPort
+        $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
+        $speed = Get-GuideLinkSpeed -PortName $testPort -MaxSeconds 6
+        $btnGuideAction.Enabled = $true
+
+        $speedLabel = if ($speed -ge 1000) { "1 Gbps" } elseif ($speed -gt 0) { "$speed Mbps" } else { "No link" }
+        $config = "Port: $testPort  |  Cable: (NEW)  |  Camera: (NEW - known good)"
+
+        if ($speed -ge 1000) {
+            $verdict = "Link restored with new camera. The original camera unit is the source of the fault."
+            Show-GuideResult "Phase 4: $speedLabel — Fault follows the camera." $verdict "Pass"
+            Add-GuideHistory "Phase 4 — Camera Test" $config $speedLabel $verdict "Pass"
+            $lblGuidePhase.Text = "CONCLUSION — FAULTY CAMERA (CHU)"
+            $lblGuideInstr.Text = "Replacing the camera resolved the issue. The original camera is the source of the fault. Replace the camera unit."
+        } else {
+            $verdict = "Still degraded with known-good cable and camera. The fault is likely in the NIC hardware itself or the VPU motherboard."
+            Show-GuideResult "Phase 4: $speedLabel — Fault persists with known-good equipment." $verdict "Fail"
+            Add-GuideHistory "Phase 4 — Camera Test" $config $speedLabel $verdict "Fail"
+            $lblGuidePhase.Text = "CONCLUSION — NIC / HARDWARE FAULT"
+            $lblGuideInstr.Text = "Known-good cable and camera still fail on $testPort. This indicates a fault in the NIC hardware or VPU motherboard. Run the full diagnostic and escalate."
+        }
+        $btnGuideAction.Text = "  Run Full Diagnostic"
+        $script:guide.Phase = 4
+        Update-GuideStepDots -ActivePhase 4
+        return
+    }
+
+    # Phase 4 (concluded) → jump to Overview and trigger diagnostic
+    if ($phase -eq 4) {
+        $navOverview.PerformClick()
+        $btnRun.PerformClick()
+    }
+})
+
+$lnkGuideReset.Add_LinkClicked({
+    $script:guide.Phase = 0; $script:guide.SuspectPort = ""; $script:guide.TestPort = ""; $script:guide.BaseSpeed = 0
+    $rtbGuide.Text = "Phase results will appear here as you work through each step."
+    $pnlGuideResult.Visible = $false
+    $lblGuidePhase.Text = "SELECT A PORT TO BEGIN"
+    $lblGuideInstr.Text = "Select the NIC port that is showing degraded speed (100 Mbps) and click Start."
+    $btnGuideAction.Text = "  Start Baseline"; $btnGuideAction.Enabled = $true
+    $lblGuidePortA.Visible = $true; $cboGuidePortA.Visible = $true
+    $lblGuidePortB.Visible = $false; $cboGuidePortB.Visible = $false
+    Update-GuideStepDots -ActivePhase 1
+})
 
 # Nav wiring
 $navTests.Add_Click({
-    $center.Visible   = $false
-    $pnlTests.Visible = $true
+    $center.Visible    = $false
+    $pnlGuide.Visible  = $true
     foreach ($nb in @($navOverview,$navTests,$navResults,$navHistory,$navSettings)) {
         $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
     }
@@ -1308,8 +1581,8 @@ $navTests.Add_Click({
 })
 
 $navOverview.Add_Click({
-    $pnlTests.Visible = $false
-    $center.Visible   = $true
+    $pnlGuide.Visible  = $false
+    $center.Visible    = $true
     foreach ($nb in @($navOverview,$navTests,$navResults,$navHistory,$navSettings)) {
         $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
     }
@@ -1328,9 +1601,12 @@ $form.Add_Load({
             $short = $n.InterfaceDescription -replace 'Intel\(R\) 82574L Gigabit Network Connection','CHU NIC'
             $short = $short -replace 'Intel\(R\) I210 Gigabit Network Connection','CHU NIC'
             $cboNic.Items.Add("$($n.Name)  ($short)") | Out-Null
+            $cboGuidePortA.Items.Add($n.Name) | Out-Null
         }
     } catch { }
     if ($cboNic.Items.Count -gt 0) { $cboNic.SelectedIndex = 0 }
+    if ($cboGuidePortA.Items.Count -gt 0) { $cboGuidePortA.SelectedIndex = 0 }
+    Update-GuideStepDots -ActivePhase 1
 
     try {
         $osCaption = (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption
