@@ -4,6 +4,24 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [3.6] - 2026-04-26
+
+### Changed
+- **Summarized live log** — `rtbLog` now shows a two-column checkpoint summary (label in muted gray, result in status color) instead of raw script output; detailed output still written to the `.txt` file via `Add-Log`; new `Add-Summary` function enqueues to `SummaryQueue` at 15 key diagnostic moments
+- **Next Steps cards** — `$sync.NextSteps` entries changed from flat strings to `@{H=...; B=...}` hashtables; header rendered in blue 9pt Semibold, body in muted gray 8.5pt with natural word-wrap; body text tightened to 1–2 sentences
+- **Right panel layout** — plain "Next Steps / Guidance" label replaced with a full-width blue (`$ColAccent`) header bar; `rtbSteps` height reduced from 450px to 296px to accommodate hardware section and three action buttons stacked vertically (211px wide) at the panel bottom
+- **Action buttons relocated back to right panel** — `Export Report`, `Copy Results`, `Save Log` moved from center panel bottom to right panel (y=510/546/582); center `rtbLog` height restored from 270px to 308px
+
+### Added
+- **Tests tab — live diagnostic steps panel** — `$pnlTests` replaces center panel when Tests nav is clicked; shows 7 step rows (NIC Detection, Link Speed, SmartSpeed, Gateway+ARP, Camera Ping, App Log, Build Guidance) each with colored status circle, name, description, and result label; timer tick derives live status from `$sync.StepsDone` hashtable; first pending step shows "Running…" in blue while diagnostic is active
+- **Nav wiring** — Overview and Tests sidebar buttons now properly show/hide `$center` vs `$pnlTests` and update active highlight
+- `$sync.StepsDone` synchronized hashtable — diagnostic engine writes `"pass"` / `"fail"` after each major phase; cleared on new run
+
+### Fixed
+- `rtbLog` height was 270px (reduced in v3.4 for center action buttons) — restored to 308px now that buttons are in the right panel
+
+---
+
 ## [3.5] - 2026-04-26
 
 ### Changed

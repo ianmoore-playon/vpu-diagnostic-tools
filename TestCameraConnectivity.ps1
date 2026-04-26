@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.5"
+$ScriptVersion      = "3.6"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -79,7 +79,8 @@ $ColLogBg    = [System.Drawing.Color]::FromArgb(15,  23,  42)
 
 # ---------- Shared state (runspace <-> UI timer) ----------------------------
 $sync = [hashtable]::Synchronized(@{
-    LogQueue   = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    LogQueue     = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    SummaryQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
     Running    = $false
     Complete   = $false
     Cancelled  = $false
@@ -90,6 +91,7 @@ $sync = [hashtable]::Synchronized(@{
     TotalDowngrades = 0
     LastRunLine     = ""
     CurrentStep     = "Ready"
+    StepsDone   = [hashtable]::Synchronized(@{})
     Cards = @{
         LinkSpeed = @{ Value = "--"; Status = "neutral" }
         NicStatus = @{ Value = "--"; Status = "neutral" }
@@ -112,8 +114,13 @@ $DiagScript = {
 
     function Add-Log {
         param([string]$Message, [string]$Level = "Info")
-        $sync.LogQueue.Enqueue(@{ M = $Message; L = $Level })
         Add-Content -Path $OutputFile -Value $Message -ErrorAction SilentlyContinue
+    }
+
+    function Add-Summary {
+        param([string]$Label, [string]$Result, [string]$Level = "Info")
+        $sync.SummaryQueue.Enqueue(@{ Label = $Label; Result = $Result; L = $Level })
+        Add-Content -Path $OutputFile -Value ("  {0,-24}{1}" -f $Label, $Result) -ErrorAction SilentlyContinue
     }
 
     function Set-Card {
@@ -185,6 +192,9 @@ $DiagScript = {
     $sync.AppIssues.Clear();   $sync.NextSteps.Clear()
     $sync.TotalDowngrades = 0; $sync.LastRunLine = ""
     $sync.Hardware = @{ CHU = "--"; CameraPort = "--"; CableStatus = "--" }
+    $item = $null
+    while ($sync.SummaryQueue.TryDequeue([ref]$item)) { }
+    $sync.StepsDone.Clear()
 
     "" | Set-Content -Path $OutputFile -ErrorAction SilentlyContinue
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -237,6 +247,7 @@ $DiagScript = {
     $hdr = "================================================================`n Pixellot VPU - Camera Diagnostic  v$ScriptVersion`n================================================================`n Computer : $($env:COMPUTERNAME)`n User     : $($env:USERNAME)`n Date/Time: $ts`n Run ID   : $RunId`n VPU Model: $($sync.VpuModel)`n================================================================"
     Add-Log $hdr "Cyan"
     Add-Log ""
+    Add-Summary "VPU Model" $sync.VpuModel (if ($VpuModel) { "Info" } else { "Warn" })
 
     # ── Find NIC ports ────────────────────────────────────────────────────────
     $sync.CurrentStep = "Detecting NIC ports..."
@@ -256,6 +267,8 @@ $DiagScript = {
     Add-Log ("  Found {0} camera NIC port(s):" -f $nicPorts.Count) "Info"
     foreach ($n in $nicPorts) { Add-Log ("    - {0}  ({1})" -f $n.Name, $n.InterfaceDescription) "Info" }
     Add-Log ""
+    $sync.StepsDone["NicDetect"] = "pass"
+    Add-Summary "NIC Detection" "$($nicPorts.Count) port(s) found" "Pass"
 
     # ── SmartSpeed pre-scan ───────────────────────────────────────────────────
     $sync.CurrentStep = "Scanning event log..."
@@ -314,12 +327,14 @@ $DiagScript = {
         if ($spd -eq 1000) {
             Add-Log "  Speed   : 1 Gbps  [OK]" "Pass"
             $portResults += [PSCustomObject]@{ Name=$nm; Speed=1000; Result="PASS"; Blinking=$false; Desc=$nic.InterfaceDescription }
+            Add-Summary $nm "1 Gbps  OK" "Pass"
         } elseif ($spd -eq 100) {
             Add-Log "  Speed   : 100 Mbps  [DEGRADED]" "Fail"
             if (-not $ssHistory.ContainsKey($nic.InterfaceDescription)) {
                 Add-Log "  [PASS]  No SmartSpeed history - 100 Mbps-only device (OCR camera). Skipping remediation." "Pass"
                 $ocrAdapters[$nic.InterfaceDescription] = $true
                 $portResults += [PSCustomObject]@{ Name=$nm; Speed=100; Result="PASS (OCR)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
+                Add-Summary $nm "100 Mbps  OCR camera" "Pass"
             } else {
                 Add-Log "  [ACTION] SmartSpeed history confirmed - attempting to force 1 Gbps..." "Warn"
                 $sync.CurrentStep = "Forcing 1 Gbps on $nm..."
@@ -327,11 +342,13 @@ $DiagScript = {
                 if ($forceOk) {
                     Add-Log ("  [INFO]  Waiting {0}s for re-negotiation..." -f $RenegotiateWaitSec) "Warn"
                     $sync.CurrentStep = "Waiting ${RenegotiateWaitSec}s for re-negotiation on $nm..."
+                    Add-Summary $nm "Forcing 1 Gbps, waiting ${RenegotiateWaitSec}s..." "Warn"
                     Start-Sleep -Seconds $RenegotiateWaitSec
                     $newSpd = Get-AdapterSpeedMbps -AdapterName $nm
                     if ($newSpd -eq 1000) {
                         Add-Log "  [PASS]  Forced to 1 Gbps successfully." "Pass"
                         $portResults += [PSCustomObject]@{ Name=$nm; Speed=1000; Result="PASS (forced)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
+                        Add-Summary $nm "1 Gbps  (forced OK)" "Pass"
                     } else {
                         $nsLabel = if ($newSpd -eq 0) { "Disconnected" } else { "$newSpd Mbps" }
                         Add-Log ("  [FAIL]  Still not 1 Gbps after forcing (current: {0}). Physical layer issue." -f $nsLabel) "Fail"
@@ -342,19 +359,23 @@ $DiagScript = {
                         if ($autoSpd -gt 0) { Add-Log ("  [INFO]  Link restored at {0} Mbps" -f $autoSpd) "Warn" }
                         $portResults += [PSCustomObject]@{ Name=$nm; Speed=$spd; Result="FAIL"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
                         $anyFail = $true
+                        Add-Summary $nm "DEGRADED  cable fault" "Fail"
                     }
                 } else {
                     Add-Log "  [FAIL]  Could not apply SpeedDuplex setting." "Fail"
                     $portResults += [PSCustomObject]@{ Name=$nm; Speed=$spd; Result="FAIL"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
                     $anyFail = $true
+                    Add-Summary $nm "DEGRADED  (SpeedDuplex failed)" "Fail"
                 }
             }
         } elseif ($spd -eq 0) {
             Add-Log "  Speed   : No link - no cable or device powered off." "Gray"
             $portResults += [PSCustomObject]@{ Name=$nm; Speed=0; Result="NO LINK"; Blinking=$false; Desc=$nic.InterfaceDescription }
+            Add-Summary $nm "No link" "Gray"
         } else {
             Add-Log ("  Speed   : {0} Mbps - unexpected" -f $spd) "Warn"
             $portResults += [PSCustomObject]@{ Name=$nm; Speed=$spd; Result="UNKNOWN"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
+            Add-Summary $nm "$spd Mbps  unexpected" "Warn"
         }
         Add-Log ""
     }
@@ -364,6 +385,7 @@ $DiagScript = {
     elseif ($bestSpeed -eq 0)    { Set-Card "LinkSpeed" "No Link" "neutral"; Set-Card "NicStatus" "Down" "fail" }
     else                         { Set-Card "LinkSpeed" "$bestSpeed Mbps" "warn"; Set-Card "NicStatus" "Partial" "warn" }
 
+    $sync.StepsDone["LinkSpeed"] = if ($anyFail) { "fail" } else { "pass" }
     foreach ($r in $portResults) { $sync.PortResults.Add($r) | Out-Null }
 
     # ── SmartSpeed event display ──────────────────────────────────────────────
@@ -389,8 +411,12 @@ $DiagScript = {
         }
         Add-Log ""
         Add-Log "  -> Physical layer limitation confirmed. Likely cause: faulty cable or bad termination." "Info"
+        $sync.StepsDone["SmartSpeed"] = "fail"
+        Add-Summary "SmartSpeed Events" "$dCnt downgrade(s) in ${EventLogHours}h" "Fail"
     } else {
         Add-Log "  [PASS] No SmartSpeed downgrade events on CHU ports." "Pass"
+        $sync.StepsDone["SmartSpeed"] = "pass"
+        Add-Summary "SmartSpeed Events" "None in ${EventLogHours}h" "Pass"
     }
     Add-Log ""
 
@@ -401,11 +427,14 @@ $DiagScript = {
     if ($gw) {
         if (Test-Connection -ComputerName $gw -Count 1 -Quiet -ErrorAction SilentlyContinue) {
             Set-Card "Gateway" "Reachable" "ok";    Add-Log ("  [PASS] Gateway {0} reachable." -f $gw) "Pass"
+            Add-Summary "Gateway" "$gw  reachable" "Pass"
         } else {
             Set-Card "Gateway" "Unreachable" "fail"; Add-Log ("  [WARN] Gateway {0} not responding." -f $gw) "Warn"
+            Add-Summary "Gateway" "$gw  not responding" "Fail"
         }
     } else {
         Set-Card "Gateway" "No Route" "neutral"; Add-Log "  [INFO] No default gateway configured." "Gray"
+        Add-Summary "Gateway" "No route configured" "Gray"
     }
 
     # ── ARP check ─────────────────────────────────────────────────────────────
@@ -421,10 +450,13 @@ $DiagScript = {
         Set-Card "ArpEntry" "Found" "ok"
         Add-Log ("  [PASS] {0} ARP entry/entries found in camera subnet." -f $arpEntries.Count) "Pass"
         $sync.Hardware.CHU = $arpEntries[0].LinkLayerAddress
+        Add-Summary "ARP Table" "$($arpEntries.Count) entry/entries found" "Pass"
     } else {
         Set-Card "ArpEntry" "Not Found" "neutral"
         Add-Log "  [INFO] No ARP entries found in camera subnet." "Gray"
+        Add-Summary "ARP Table" "No entries" "Gray"
     }
+    $sync.StepsDone["ArpGateway"] = "pass"
     Add-Log ""
 
     # ── Camera connectivity ───────────────────────────────────────────────────
@@ -448,10 +480,14 @@ $DiagScript = {
             if ($rtspOk) { Add-Log "  RTSP 554: Port open  (camera stream reachable)" "Pass" }
             else          { Add-Log "  RTSP 554: Port closed or no response" "Fail" }
             if (-not $cam.Optional) { $mainPingCount++ }
+            $rtspStr = if ($rtspOk) { "Ping OK / RTSP OK" } else { "Ping OK / RTSP FAIL" }
+            Add-Summary $cam.IP $rtspStr (if ($rtspOk) { "Pass" } else { "Fail" })
         } else {
             $note = if ($cam.Optional) { " (expected - optional camera not installed)" } else { "" }
             Add-Log ("  Ping    : No response$note") "Gray"
             Add-Log "  RTSP 554: Skipped" "Gray"
+            $noteStr = if ($cam.Optional) { "Not installed (optional)" } else { "No response" }
+            Add-Summary $cam.IP $noteStr (if ($cam.Optional) { "Gray" } else { "Fail" })
         }
         if (-not $cam.Optional) { $mainTotal++ }
         $camResults += [PSCustomObject]@{ IP=$cam.IP; Label=$cam.Label; Ping=$pingOk; Rtsp=$rtspOk; Optional=$cam.Optional }
@@ -459,6 +495,7 @@ $DiagScript = {
     }
 
     foreach ($r in $camResults) { $sync.CamResults.Add($r) | Out-Null }
+    $sync.StepsDone["CamPing"] = if ($mainPingCount -gt 0) { "pass" } else { "fail" }
 
     if ($mainPingCount -eq $mainTotal -and $mainTotal -gt 0) {
         Set-Card "PingCHU"   "Success" "ok";   Set-Card "ChuDetect" "Online"  "ok"
@@ -535,6 +572,7 @@ $DiagScript = {
                     if ($portResult -and $portResult.Result -eq "FAIL") {
                         Add-Log "  [CONFIRM] NIC port DEGRADED - app failures corroborate physical fault." "Fail"
                         $sync.AppIssues.Add("$ip ($model): app failures + NIC degraded = CONFIRMED physical fault") | Out-Null
+                        Add-Summary "App Log  $ip" "$fails failure(s)  NIC fault confirmed" "Fail"
                     } elseif ($portResult -and $portResult.Result -like "PASS*") {
                         Add-Log "  [NOTE]    Cable and NIC port are OK (1 Gbps confirmed) - physical layer is ruled out." "Warn"
                         if ($unknownModel) {
@@ -543,13 +581,16 @@ $DiagScript = {
                         Add-Log "  [NOTE]    Possible causes: insufficient PoE power, camera firmware/config issue, or camera hardware fault." "Warn"
                         Add-Log "            Start with a PoE reset before assuming hardware failure." "Warn"
                         $sync.AppIssues.Add("$ip ($model): app failures but NIC OK - cable ruled out, investigate camera") | Out-Null
+                        Add-Summary "App Log  $ip" "$fails failure(s)  cable ruled out" "Warn"
                     } else {
                         $sync.AppIssues.Add("$ip ($model): $fails app failure(s)") | Out-Null
+                        Add-Summary "App Log  $ip" "$fails failure(s)" "Warn"
                     }
                 } elseif ($optAbsent) {
                     Add-Log "  Status    : Expected - optional camera (OCR) not installed on this unit." "Gray"
                 } else {
                     Add-Log "  Status    : Connected successfully - no application-level failures." "Pass"
+                    Add-Summary "App Log  $ip" "No failures" "Pass"
                 }
                 Add-Log ""
             }
@@ -557,7 +598,9 @@ $DiagScript = {
     } else {
         Add-Log "  No CamerasTester log found in Pixellot log paths." "Gray"
         Add-Log ""
+        Add-Summary "App Log" "No log file found" "Gray"
     }
+    $sync.StepsDone["AppLog"] = "pass"
 
     # ── Build Next Steps ──────────────────────────────────────────────────────
     $failPorts  = $portResults | Where-Object { $_.Result -eq "FAIL" }
@@ -567,19 +610,22 @@ $DiagScript = {
     $sync.AllClear = $allClear
 
     if ($allClear) {
-        $sync.NextSteps.Add("All tests passed.") | Out-Null
-        $sync.NextSteps.Add("No action required.") | Out-Null
+        $sync.NextSteps.Add(@{ H="All tests passed."; B="No action required. All NIC ports and cameras are healthy." }) | Out-Null
     } else {
         $s = 1
         foreach ($r in $failPorts) {
             $bNote = if ($r.Blinking) { " (intermittent)" } else { "" }
-            $sync.NextSteps.Add("$s. Replace cable on $($r.Name)$bNote") | Out-Null
-            $sync.NextSteps.Add("The link cannot hold gigabit speed. This usually means a wire inside the cable is broken or damaged, or the RJ45 connector on one end is not crimped correctly. Also check the camera-side RJ45 port for bent or pushed-back pins. Swap in a known-good replacement cable — that resolves most cases. Re-run this tool after swapping to confirm the link comes up at 1 Gbps.") | Out-Null
+            $sync.NextSteps.Add(@{
+                H = "$s. Replace cable on $($r.Name)$bNote"
+                B = "The NIC could not hold gigabit. Swap in a known-good cable and check both RJ45 ends for bent pins. Re-run this tool after swapping to confirm the link comes up at 1 Gbps."
+            }) | Out-Null
             $s++
         }
         foreach ($c in $rtspFaults) {
-            $sync.NextSteps.Add("$s. PoE reset $($c.IP) ($($c.Label))") | Out-Null
-            $sync.NextSteps.Add("The camera is reachable by ping but its video port (RTSP 554) is not responding. This usually means the camera's software has stalled. Power-cycling the camera via VPU Manager will restart it. If the port is still closed after a reset, the camera may need replacement.") | Out-Null
+            $sync.NextSteps.Add(@{
+                H = "$s. PoE reset $($c.IP)"
+                B = "Camera is reachable by ping but RTSP port 554 is not responding — the camera software has likely stalled. In VPU Manager go to Settings > Cameras, select this camera, and click Reset PoE Power. Wait 2 minutes, then re-run."
+            }) | Out-Null
             $s++
         }
         foreach ($issue in $sync.AppIssues) {
@@ -587,16 +633,22 @@ $DiagScript = {
                 $ip = if ($issue -match '(\d+\.\d+\.\d+\.\d+)') { $Matches[1] } else { "camera" }
                 $camLabel = ($CameraIPs | Where-Object { $_.IP -eq $ip } | Select-Object -First 1).Label
                 $tag = if ($camLabel) { "$ip ($camLabel)" } else { $ip }
-                $sync.NextSteps.Add("$s. Camera issue on $tag") | Out-Null
-                $sync.NextSteps.Add("The cable and NIC port are healthy — the link is confirmed at 1 Gbps, so the physical connection is not the problem. The camera itself is failing to respond to the VPU's requests. Try these steps in order: a) Open VPU Manager, go to Settings > Cameras, select the camera, and click Reset PoE Power to power-cycle it. b) Wait 2 minutes for the camera to fully boot, then re-run this tool. c) If failures continue after 2 or more resets, the camera likely has an internal hardware fault and will need to be replaced.") | Out-Null
+                $sync.NextSteps.Add(@{
+                    H = "$s. Camera issue on $tag"
+                    B = "Cable and NIC port are healthy (1 Gbps confirmed). The camera is not completing the VPU handshake. Start with a PoE reset in VPU Manager (Settings > Cameras > Reset PoE Power). Wait 2 minutes and re-run. If failures continue after 2 resets, the camera likely needs replacement."
+                }) | Out-Null
                 $s++
             }
         }
         if ($failPorts.Count -gt 0 -and ($rtspFaults.Count -gt 0 -or $sync.AppIssues.Count -gt 0)) {
-            $sync.NextSteps.Add("$s. Re-run this tool after each fix") | Out-Null
-            $sync.NextSteps.Add("Use the Retest Last Step button or run a new full diagnostic to confirm each issue is resolved and that SmartSpeed downgrade events have stopped.") | Out-Null
+            $sync.NextSteps.Add(@{
+                H = "$s. Re-run after each fix"
+                B = "Fix one issue at a time and re-run the full diagnostic to confirm each fix before moving on."
+            }) | Out-Null
         }
     }
+    $sync.StepsDone["NextSteps"] = "pass"
+    Add-Summary "─────────────────" "Complete" "Cyan"
 
     $sync.LastRunLine = if ($allClear) { "All tests passed - No issues detected" } else { "$($failPorts.Count) port fault(s) detected" }
     Add-Content -Path $OutputFile -Value "`nFull results saved: $OutputFile" -ErrorAction SilentlyContinue
@@ -847,26 +899,12 @@ $lblLogHdr.Location = New-Object System.Drawing.Point(10,329); $lblLogHdr.AutoSi
 $center.Controls.Add($lblLogHdr)
 
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Size = New-Object System.Drawing.Size(570,270); $rtbLog.Location = New-Object System.Drawing.Point(10,350)
+$rtbLog.Size = New-Object System.Drawing.Size(570,308); $rtbLog.Location = New-Object System.Drawing.Point(10,350)
 $rtbLog.BackColor = $ColLogBg; $rtbLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
 $rtbLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbLog.ReadOnly = $true
 $rtbLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
 $rtbLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
 $center.Controls.Add($rtbLog)
-
-foreach ($pair in @(("btnExport","Export Report",10),("btnCopy","Copy Results",200),("btnSave","Save Log",390))) {
-    $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
-    $b.Size = New-Object System.Drawing.Size(178,32); $b.Location = New-Object System.Drawing.Point($pair[2],630)
-    $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $b.FlatAppearance.BorderColor = $ColBorder; $b.FlatAppearance.BorderSize = 1
-    $b.BackColor = [System.Drawing.Color]::White; $b.ForeColor = $ColText
-    $b.Font = New-Object System.Drawing.Font("Segoe UI",9)
-    $b.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $b.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $center.Controls.Add($b)
-    $b.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,178,32)), 5))
-    Set-Variable -Name $pair[0] -Value $b
-}
 
 # ---- Right Panel -----------------------------------------------------------
 $rightBorder = New-Object System.Windows.Forms.Panel; $rightBorder.Size = New-Object System.Drawing.Size(1,680)
@@ -888,13 +926,18 @@ $lblBadge.Font = New-Object System.Drawing.Font("Segoe UI Semibold",8.5); $lblBa
 $lblBadge.Size = New-Object System.Drawing.Size(90,26); $lblBadge.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
 $pnlBadge.Controls.Add($lblBadge)
 
+# Blue "Next Steps / Guidance" header bar
+$pnlNextHdr = New-Object System.Windows.Forms.Panel
+$pnlNextHdr.Size = New-Object System.Drawing.Size(231,32); $pnlNextHdr.Location = New-Object System.Drawing.Point(0,50)
+$pnlNextHdr.BackColor = $ColAccent
+$right.Controls.Add($pnlNextHdr)
 $lblNextHdr = New-Object System.Windows.Forms.Label; $lblNextHdr.Text = "Next Steps / Guidance"
-$lblNextHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblNextHdr.ForeColor = $ColText
-$lblNextHdr.Location = New-Object System.Drawing.Point(10,50); $lblNextHdr.AutoSize = $true
-$right.Controls.Add($lblNextHdr)
+$lblNextHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9); $lblNextHdr.ForeColor = [System.Drawing.Color]::White
+$lblNextHdr.Location = New-Object System.Drawing.Point(10,6); $lblNextHdr.AutoSize = $true
+$pnlNextHdr.Controls.Add($lblNextHdr)
 
 $rtbSteps = New-Object System.Windows.Forms.RichTextBox
-$rtbSteps.Size = New-Object System.Drawing.Size(211,450); $rtbSteps.Location = New-Object System.Drawing.Point(10,72)
+$rtbSteps.Size = New-Object System.Drawing.Size(211,296); $rtbSteps.Location = New-Object System.Drawing.Point(10,90)
 $rtbSteps.BackColor = [System.Drawing.Color]::White; $rtbSteps.ForeColor = $ColText
 $rtbSteps.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $rtbSteps.ReadOnly = $true
 $rtbSteps.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -903,16 +946,16 @@ $rtbSteps.Text = "Run the diagnostic to`nsee guidance here."
 $right.Controls.Add($rtbSteps)
 
 $sep5 = New-Object System.Windows.Forms.Panel; $sep5.Size = New-Object System.Drawing.Size(211,1)
-$sep5.Location = New-Object System.Drawing.Point(10,534); $sep5.BackColor = $ColBorder
+$sep5.Location = New-Object System.Drawing.Point(10,398); $sep5.BackColor = $ColBorder
 $right.Controls.Add($sep5)
 
 $lblHwHdr = New-Object System.Windows.Forms.Label; $lblHwHdr.Text = "Detected Hardware"
 $lblHwHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblHwHdr.ForeColor = $ColText
-$lblHwHdr.Location = New-Object System.Drawing.Point(10,546); $lblHwHdr.AutoSize = $true
+$lblHwHdr.Location = New-Object System.Drawing.Point(10,408); $lblHwHdr.AutoSize = $true
 $right.Controls.Add($lblHwHdr)
 
 $hwRows = @{}
-foreach ($pair in @(("CHU","CHU",568),("CameraPort","Camera Port",589),("CableStatus","Cable Status",610))) {
+foreach ($pair in @(("CHU","CHU",430),("CameraPort","Camera Port",450),("CableStatus","Cable Status",470))) {
     $lk = New-Object System.Windows.Forms.Label; $lk.Text = $pair[1]
     $lk.Font = New-Object System.Drawing.Font("Segoe UI",7.5); $lk.ForeColor = $ColMuted
     $lk.Location = New-Object System.Drawing.Point(10,$pair[2]); $lk.Size = New-Object System.Drawing.Size(85,16)
@@ -923,6 +966,24 @@ foreach ($pair in @(("CHU","CHU",568),("CameraPort","Camera Port",589),("CableSt
     $hwRows[$pair[0]] = $lv
 }
 
+$sep6 = New-Object System.Windows.Forms.Panel; $sep6.Size = New-Object System.Drawing.Size(211,1)
+$sep6.Location = New-Object System.Drawing.Point(10,498); $sep6.BackColor = $ColBorder
+$right.Controls.Add($sep6)
+
+foreach ($pair in @(("btnExport","Export Report",510),("btnCopy","Copy Results",546),("btnSave","Save Log",582))) {
+    $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
+    $b.Size = New-Object System.Drawing.Size(211,30); $b.Location = New-Object System.Drawing.Point(10,$pair[2])
+    $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $b.FlatAppearance.BorderColor = $ColBorder; $b.FlatAppearance.BorderSize = 1
+    $b.BackColor = [System.Drawing.Color]::White; $b.ForeColor = $ColText
+    $b.Font = New-Object System.Drawing.Font("Segoe UI",9)
+    $b.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $b.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $right.Controls.Add($b)
+    $b.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,211,30)), 5))
+    Set-Variable -Name $pair[0] -Value $b
+}
+
 # ---------- Timer (polls $sync every 300ms, updates UI) ---------------------
 $script:runspace = $null
 
@@ -930,8 +991,24 @@ $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 300
 $timer.Add_Tick({
     $item = $null
-    while ($sync.LogQueue.TryDequeue([ref]$item)) {
-        Append-RtbLog -Rtb $rtbLog -Text $item.M -Level $item.L
+    while ($sync.SummaryQueue.TryDequeue([ref]$item)) {
+        $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
+        $rtbLog.SelectionColor = [System.Drawing.Color]::FromArgb(100,116,139)
+        $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas",8)
+        $rtbLog.AppendText(("{0,-24}" -f $item.Label))
+        $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
+        $col = switch ($item.L) {
+            "Pass" { [System.Drawing.Color]::FromArgb(74,222,128) }
+            "Fail" { [System.Drawing.Color]::FromArgb(252,165,165) }
+            "Warn" { [System.Drawing.Color]::FromArgb(253,224,71)  }
+            "Cyan" { [System.Drawing.Color]::FromArgb(103,232,249) }
+            "Gray" { [System.Drawing.Color]::FromArgb(100,116,139) }
+            default{ [System.Drawing.Color]::FromArgb(203,213,225) }
+        }
+        $rtbLog.SelectionColor = $col
+        $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas",8)
+        $rtbLog.AppendText("$($item.Result)`n")
+        $rtbLog.ScrollToCaret()
     }
 
     foreach ($key in $cards.Keys) {
@@ -947,6 +1024,34 @@ $timer.Add_Tick({
     $hwRows["CHU"].Text         = $sync.Hardware.CHU
     $hwRows["CameraPort"].Text  = $sync.Hardware.CameraPort
     $hwRows["CableStatus"].Text = $sync.Hardware.CableStatus
+
+    # Update Tests panel step rows from StepsDone
+    foreach ($key in $testRows.Keys) {
+        $status = $sync.StepsDone[$key]
+        if ($status -ne $script:lastStepsDone[$key]) {
+            $script:lastStepsDone[$key] = $status
+            $row = $testRows[$key]
+            if ($status -eq "pass") {
+                $row.Dot.BackColor = $ColGreen; $row.Result.Text = "Passed"; $row.Result.ForeColor = $ColGreen
+            } elseif ($status -eq "fail") {
+                $row.Dot.BackColor = $ColRed;   $row.Result.Text = "Issues Found"; $row.Result.ForeColor = $ColRed
+            } elseif ($sync.Running -and $status -ne "pass" -and $status -ne "fail") {
+                # Check if this step is "current" by seeing if the step before it is done
+            }
+        }
+        # Show "Running" on the first pending step while diagnostic is active
+        if ($sync.Running -and -not $status) {
+            $allPrior = $true
+            $testKeys = @("NicDetect","LinkSpeed","SmartSpeed","ArpGateway","CamPing","AppLog","NextSteps")
+            $idx = [Array]::IndexOf($testKeys, $key)
+            for ($i = 0; $i -lt $idx; $i++) {
+                if (-not $sync.StepsDone[$testKeys[$i]]) { $allPrior = $false; break }
+            }
+            if ($allPrior) {
+                $testRows[$key].Dot.BackColor = $ColAccent; $testRows[$key].Result.Text = "Running..."; $testRows[$key].Result.ForeColor = $ColAccent
+            }
+        }
+    }
 
     if ($sync.Running) {
         $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(219,234,254)
@@ -969,25 +1074,21 @@ $timer.Add_Tick({
         $rtbSteps.Clear()
         $firstItem = $true
         foreach ($step in $sync.NextSteps) {
-            $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
-            if ($step -match '^\d+\.') {
-                if (-not $firstItem) {
-                    $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI",4)
-                    $rtbSteps.SelectionColor = $ColText
-                    $rtbSteps.AppendText("`n")
-                }
+            if (-not $firstItem) {
                 $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
-                $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI Semibold",9)
-                $rtbSteps.SelectionColor = $ColText
-                $rtbSteps.AppendText("$step`n")
-                $firstItem = $false
-            } else {
-                $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
-                $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI",8.5)
-                $rtbSteps.SelectionColor = $ColMuted
-                $rtbSteps.AppendText("$step`n")
-                $firstItem = $false
+                $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI",4)
+                $rtbSteps.SelectionColor = [System.Drawing.Color]::White
+                $rtbSteps.AppendText("`n")
             }
+            $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
+            $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI Semibold",9)
+            $rtbSteps.SelectionColor = $ColAccent
+            $rtbSteps.AppendText("$($step.H)`n")
+            $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
+            $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI",8.5)
+            $rtbSteps.SelectionColor = $ColMuted
+            $rtbSteps.AppendText("$($step.B)`n")
+            $firstItem = $false
         }
 
         $dt = Get-Date -Format "yyyy-MM-dd HH:mm"
@@ -1009,10 +1110,16 @@ $btnRun.Add_Click({
     $sync.OutputFile = $newOutput; $sync.RunId = $newRunId
     $sync.Hardware = @{ CHU="--"; CameraPort="--"; CableStatus="--" }
     foreach ($k in $cards.Keys) { $sync.Cards[$k] = @{ Value="--"; Status="neutral" } }
+    $sync.StepsDone.Clear()
+    $item2 = $null; while ($sync.SummaryQueue.TryDequeue([ref]$item2)) { }
 
     $rtbLog.Clear(); $rtbSteps.Text = "Diagnostic running..."
     $btnRun.Enabled = $false; $btnRun.Text = "  Running..."
     $btnRetest.Enabled = $false
+    $script:lastStepsDone = @{}
+    foreach ($key in $testRows.Keys) {
+        $testRows[$key].Dot.BackColor = $ColMuted; $testRows[$key].Result.Text = "Pending"; $testRows[$key].Result.ForeColor = $ColMuted
+    }
 
     if ($script:runspace) { try { $script:runspace.Close() } catch { } }
     $script:runspace = [runspacefactory]::CreateRunspace()
@@ -1076,10 +1183,103 @@ $lnkClear.Add_LinkClicked({
     $lblLastRunVal.Text = "No runs yet"
 })
 
+# ---- Tests Panel -----------------------------------------------------------
+$pnlTests = New-Object System.Windows.Forms.Panel
+$pnlTests.Size = $center.Size; $pnlTests.Location = $center.Location
+$pnlTests.BackColor = $ColBg; $pnlTests.Visible = $false
+$form.Controls.Add($pnlTests)
+
+$lblTestsTitle = New-Object System.Windows.Forms.Label
+$lblTestsTitle.Text = "Diagnostic Steps"
+$lblTestsTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12)
+$lblTestsTitle.ForeColor = $ColText
+$lblTestsTitle.Location = New-Object System.Drawing.Point(10,18); $lblTestsTitle.AutoSize = $true
+$pnlTests.Controls.Add($lblTestsTitle)
+
+$lblTestsSub = New-Object System.Windows.Forms.Label
+$lblTestsSub.Text = "Live status of each diagnostic step. Run the full diagnostic to see results."
+$lblTestsSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblTestsSub.ForeColor = $ColMuted
+$lblTestsSub.Location = New-Object System.Drawing.Point(10,44); $lblTestsSub.Size = New-Object System.Drawing.Size(560,18)
+$pnlTests.Controls.Add($lblTestsSub)
+
+$testStepDefs = @(
+    @{ Key="NicDetect";  Icon=[char]0xE7F4; Label="NIC Detection";        Desc="Find all Intel 82574L / I210 camera NIC ports" }
+    @{ Key="LinkSpeed";  Icon=[char]0xE704; Label="Link Speed + Remediation"; Desc="Sample ports 12s; force 1 Gbps on degraded ports" }
+    @{ Key="SmartSpeed"; Icon=[char]0xE7BA; Label="SmartSpeed Event Scan"; Desc="Scan System event log for ID 40 downgrade events (last 48h)" }
+    @{ Key="ArpGateway"; Icon=[char]0xE88E; Label="Gateway + ARP";        Desc="Check network reachability and ARP neighbor table" }
+    @{ Key="CamPing";    Icon=[char]0xE701; Label="Camera Ping + RTSP";   Desc="Ping each camera IP; test RTSP port 554" }
+    @{ Key="AppLog";     Icon=[char]0xE9D5; Label="App Log Analysis";     Desc="Parse CamerasTester log for connection failures" }
+    @{ Key="NextSteps";  Icon=[char]0xE722; Label="Build Guidance";       Desc="Compile next steps and update right panel" }
+)
+
+$testRows = @{}
+$rowY = 76
+foreach ($def in $testStepDefs) {
+    $rowPanel = New-Object System.Windows.Forms.Panel
+    $rowPanel.Size = New-Object System.Drawing.Size(562, 60)
+    $rowPanel.Location = New-Object System.Drawing.Point(10, $rowY)
+    $rowPanel.BackColor = [System.Drawing.Color]::White
+    $rowPanel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,562,60)), 6))
+    $rowPanel.Tag = $def.Key
+    $rowPanel.Add_Paint({
+        param($s,$e)
+        $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $rr = New-Object System.Drawing.Rectangle(0,0,$s.Width-1,$s.Height-1)
+        $bp = [GfxHelper]::RoundedRect($rr, 6)
+        $pen = New-Object System.Drawing.Pen($ColBorder, 1)
+        $e.Graphics.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
+    })
+    $pnlTests.Controls.Add($rowPanel)
+
+    # Status circle
+    $dot = New-Object System.Windows.Forms.Panel; $dot.Size = New-Object System.Drawing.Size(12,12)
+    $dot.Location = New-Object System.Drawing.Point(14,24); $dot.BackColor = $ColMuted
+    $dot.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,12,12)), 6))
+    $rowPanel.Controls.Add($dot)
+
+    # Label
+    $lbl = New-Object System.Windows.Forms.Label; $lbl.Text = $def.Label
+    $lbl.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lbl.ForeColor = $ColText
+    $lbl.Location = New-Object System.Drawing.Point(36,10); $lbl.Size = New-Object System.Drawing.Size(360,20)
+    $rowPanel.Controls.Add($lbl)
+
+    # Description
+    $desc = New-Object System.Windows.Forms.Label; $desc.Text = $def.Desc
+    $desc.Font = New-Object System.Drawing.Font("Segoe UI",8); $desc.ForeColor = $ColMuted
+    $desc.Location = New-Object System.Drawing.Point(36,32); $desc.Size = New-Object System.Drawing.Size(360,18)
+    $rowPanel.Controls.Add($desc)
+
+    # Result label
+    $res = New-Object System.Windows.Forms.Label; $res.Text = "Pending"
+    $res.Font = New-Object System.Drawing.Font("Segoe UI Semibold",8.5); $res.ForeColor = $ColMuted
+    $res.Location = New-Object System.Drawing.Point(420,22); $res.Size = New-Object System.Drawing.Size(130,18)
+    $res.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+    $rowPanel.Controls.Add($res)
+
+    $testRows[$def.Key] = @{ Dot=$dot; Result=$res }
+    $rowY += 68
+}
+
+# Update test rows from StepsDone in the timer tick
+$script:lastStepsDone = @{}
+
+# Nav wiring
 $navTests.Add_Click({
-    [System.Windows.Forms.MessageBox]::Show(
-        "Guided Isolation Workflow (Tests A-D)`n`nComing in a future version.`n`nThis mode will walk you step by step through`ncontrolled swaps to pinpoint whether the fault`nis in the cable, NIC port, or camera/CHU port.",
-        "Tests - Coming Soon", "OK", "Information") | Out-Null
+    $center.Visible   = $false
+    $pnlTests.Visible = $true
+    foreach ($nb in @($navOverview,$navTests,$navResults,$navHistory,$navSettings)) {
+        $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
+    }
+    $navTests.BackColor = $ColNavActive; $navTests.ForeColor = [System.Drawing.Color]::White
+})
+
+$navOverview.Add_Click({
+    $pnlTests.Visible = $false
+    $center.Visible   = $true
+    foreach ($nb in @($navOverview,$navTests,$navResults,$navHistory,$navSettings)) {
+        $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
+    }
+    $navOverview.BackColor = $ColNavActive; $navOverview.ForeColor = [System.Drawing.Color]::White
 })
 
 # ---------- Form Load -------------------------------------------------------
