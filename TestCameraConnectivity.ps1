@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v3.7
+#  VPU Cable & NIC Troubleshooter  v3.8
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.7"
+$ScriptVersion      = "3.8"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -120,6 +120,11 @@ $DiagScript = {
         param([string]$Label, [string]$Result, [string]$Level = "Info")
         $sync.SummaryQueue.Enqueue(@{ Label = $Label; Result = $Result; L = $Level })
         Add-Content -Path $OutputFile -Value ("  {0,-24}{1}" -f $Label, $Result) -ErrorAction SilentlyContinue
+    }
+
+    function Add-Section {
+        param([string]$Title)
+        $sync.SummaryQueue.Enqueue(@{ Label = ""; Result = $Title; L = "Section" })
     }
 
     function Set-Card {
@@ -246,12 +251,14 @@ $DiagScript = {
     $hdr = "================================================================`n Pixellot VPU - Camera Diagnostic  v$ScriptVersion`n================================================================`n Computer : $($env:COMPUTERNAME)`n User     : $($env:USERNAME)`n Date/Time: $ts`n Run ID   : $RunId`n VPU Model: $($sync.VpuModel)`n================================================================"
     Add-Log $hdr "Cyan"
     Add-Log ""
+    Add-Section "System"
     Add-Summary "VPU Model" $sync.VpuModel (if ($VpuModel) { "Info" } else { "Warn" })
 
     # ── Find NIC ports ────────────────────────────────────────────────────────
     $sync.CurrentStep = "Detecting NIC ports..."
     Add-Log "-- Detecting Camera NIC Ports --" "Cyan"
     Add-Log ""
+    Add-Section "Hardware"
     $nicPorts = Get-NetAdapter | Where-Object {
         $d = $_.InterfaceDescription
         ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
@@ -396,6 +403,7 @@ $DiagScript = {
 
     # ── SmartSpeed event display ──────────────────────────────────────────────
     $sync.CurrentStep = "Processing SmartSpeed events..."
+    Add-Section "Signal Quality"
     $chuEvents = $events | Where-Object {
         $a = Get-EventAdapterName -Evt $_ -KnownDescs $knownDescs
         -not $ocrAdapters.ContainsKey($a)
@@ -431,6 +439,7 @@ $DiagScript = {
     Add-Log ""
 
     # ── Gateway check ─────────────────────────────────────────────────────────
+    Add-Section "Network"
     $sync.CurrentStep = "Checking gateway..."
     $gw = (Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
            Sort-Object RouteMetric | Select-Object -First 1).NextHop
@@ -471,6 +480,7 @@ $DiagScript = {
 
     # ── Camera connectivity ───────────────────────────────────────────────────
     $sync.CurrentStep = "Testing camera connectivity..."
+    Add-Section "Cameras"
     Add-Log "-- Camera Connectivity (Ping + RTSP Port 554) --" "Cyan"
     Add-Log ""
     $camResults = @()
@@ -522,6 +532,7 @@ $DiagScript = {
 
     # ── Application log analysis ──────────────────────────────────────────────
     $sync.CurrentStep = "Analyzing Pixellot application logs..."
+    Add-Section "App Log"
     Add-Log "-- Pixellot Application Log Analysis --" "Cyan"
     Add-Log ""
     $latestLog = $null
@@ -857,12 +868,6 @@ $btnRetest.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnRetest.Enabled = $
 $center.Controls.Add($btnRetest)
 $btnRetest.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,150,38)), 6))
 
-$lblStep = New-Object System.Windows.Forms.Label
-$lblStep.Text = "Run: Link Speed > NIC Status > Ping > Gateway > ARP > CHU Detection"
-$lblStep.Font = New-Object System.Drawing.Font("Segoe UI",7.5); $lblStep.ForeColor = $ColMuted
-$lblStep.Location = New-Object System.Drawing.Point(10,58); $lblStep.Size = New-Object System.Drawing.Size(568,18)
-$center.Controls.Add($lblStep)
-
 $lblCurStat = New-Object System.Windows.Forms.Label; $lblCurStat.Text = "Current Status"
 $lblCurStat.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblCurStat.ForeColor = $ColText
 $lblCurStat.Location = New-Object System.Drawing.Point(10,82); $lblCurStat.AutoSize = $true
@@ -903,8 +908,13 @@ $lblLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblL
 $lblLogHdr.Location = New-Object System.Drawing.Point(10,329); $lblLogHdr.AutoSize = $true
 $center.Controls.Add($lblLogHdr)
 
+$lblStatus = New-Object System.Windows.Forms.Label; $lblStatus.Text = ""
+$lblStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblStatus.ForeColor = $ColMuted
+$lblStatus.Location = New-Object System.Drawing.Point(10, 350); $lblStatus.Size = New-Object System.Drawing.Size(570, 18)
+$center.Controls.Add($lblStatus)
+
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Size = New-Object System.Drawing.Size(570,308); $rtbLog.Location = New-Object System.Drawing.Point(10,350)
+$rtbLog.Size = New-Object System.Drawing.Size(570,289); $rtbLog.Location = New-Object System.Drawing.Point(10,370)
 $rtbLog.BackColor = $ColLogBg; $rtbLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
 $rtbLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbLog.ReadOnly = $true
 $rtbLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -991,12 +1001,21 @@ foreach ($pair in @(("btnExport","Export Report",510),("btnCopy","Copy Results",
 
 # ---------- Timer (polls $sync every 300ms, updates UI) ---------------------
 $script:runspace = $null
+$script:spinIdx  = 0
 
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 300
 $timer.Add_Tick({
     $item = $null
     while ($sync.SummaryQueue.TryDequeue([ref]$item)) {
+        if ($item.L -eq "Section") {
+            $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
+            $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 7.5, [System.Drawing.FontStyle]::Bold)
+            $rtbLog.SelectionColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+            $rtbLog.AppendText("`n  $($item.Result.ToUpper())`n")
+            $rtbLog.ScrollToCaret()
+            continue
+        }
         $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
         $rtbLog.SelectionColor = [System.Drawing.Color]::FromArgb(100,116,139)
         $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas",8)
@@ -1023,7 +1042,16 @@ $timer.Add_Tick({
         }
     }
 
-    if ($sync.CurrentStep -and $lblStep.Text -ne $sync.CurrentStep) { $lblStep.Text = $sync.CurrentStep }
+    $spinChars = @('|','/','-','\')
+    if ($sync.Running) {
+        $script:spinIdx = ($script:spinIdx + 1) % 4
+        $sc = $spinChars[$script:spinIdx]
+        $lblStatus.ForeColor = $ColAccent
+        $lblStatus.Text = " $sc  $($sync.CurrentStep)"
+    } elseif ($sync.Complete -and $lblStatus.ForeColor -ne $ColMuted) {
+        $lblStatus.ForeColor = $ColMuted
+        $lblStatus.Text = "  $($sync.CurrentStep)"
+    }
     if ($sync.VpuModel   -and $lblVpuVal.Text -ne $sync.VpuModel)   { $lblVpuVal.Text = $sync.VpuModel }
 
     $hwRows["CHU"].Text         = $sync.Hardware.CHU
@@ -1121,6 +1149,7 @@ $btnRun.Add_Click({
     $rtbLog.Clear(); $rtbSteps.Text = "Diagnostic running..."
     $btnRun.Enabled = $false; $btnRun.Text = "  Running..."
     $btnRetest.Enabled = $false
+    $script:spinIdx = 0; $lblStatus.ForeColor = $ColAccent; $lblStatus.Text = " |  Starting..."
     $script:lastStepsDone = @{}
     foreach ($key in $testRows.Keys) {
         $testRows[$key].Dot.BackColor = $ColMuted; $testRows[$key].Result.Text = "Pending"; $testRows[$key].Result.ForeColor = $ColMuted
