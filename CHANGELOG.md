@@ -4,6 +4,19 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [3.9] - 2026-04-26
+
+### Added
+- **Fault Isolation Guide** — new "Guide" tab (replaces the old "Tests" tab) implements a 4-phase interactive wizard for controlled fault isolation: Phase 1 captures the baseline degraded link speed, Phase 2 tests whether the fault follows the NIC port (move same cable+camera to alternate port), Phase 3 tests whether the fault follows the cable (swap cable, keep port+camera), Phase 4 tests whether the fault follows the camera (swap camera, keep port+cable). Each phase waits for the technician to perform the physical change, then measures link speed and applies logic to advance to the correct next step. Concluded phases show a plain-language verdict and the action button transitions to "Run Full Diagnostic" to bring results back to the Overview
+
+### Changed
+- **"Tests" nav → "Guide"** — nav button renamed from "Tests" to "Guide"; the old static step-row panel (`$pnlTests`, `$testRows`) and its timer-tick update loop are removed entirely
+
+### Removed
+- `$testRows`, `$script:lastStepsDone`, and the test-row timer-tick update block — no longer needed now that the Tests tab is replaced by the Guide
+
+---
+
 ## [3.8] - 2026-04-26
 
 ### Changed
