@@ -4,6 +4,83 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [3.0] - 2026-04-26
+
+### Changed
+- **Full rewrite as a WinForms GUI application** — all diagnostic logic preserved, surfaced through a three-panel interface matching the design mockup
+
+### Added
+- **Left sidebar:** nav buttons (Overview, Tests, Results, History, Settings), NIC selector dropdown, Quick Info block (OS, host, user), VPU model display
+- **Center panel:** Run Full Diagnostic + Retest Last Step buttons; six live status cards (Link Speed, NIC Status, Ping CHU, Gateway, ARP Entry, CHU Detection); Last Run Summary; color-coded scrollable Live Log (dark terminal style)
+- **Right panel:** status badge (Ready / Running / All Clear / Issues Found); dynamically generated Next Steps / Guidance list post-run; Detected Hardware table (CHU MAC, Camera Port, Cable Status); Export Report / Copy Results / Save Log action buttons
+- Diagnostic engine runs in a background PowerShell runspace; UI timer polls shared synchronized hashtable every 300ms — GUI never freezes during the 30s re-negotiation wait or 12s blink-sample window
+- Tests nav item shows placeholder for guided isolation workflow (Tests A–D, coming in a future version)
+- Self-elevation uses `-WindowStyle Hidden` so only the GUI window appears (no console behind it)
+- One-liner `irm | iex` deployment unchanged
+
+---
+
+## [2.8] - 2026-04-26
+
+### Changed
+- Redesigned on-screen summary with distinct **NIC PORT STATUS**, **CAMERA STATUS**, **DIAGNOSIS**, and **NEXT STEPS** sections replacing the previous flat verdict block
+- NEXT STEPS generated dynamically from actual findings: cable replacement per degraded port, PoE reset per RTSP fault, monitor advisory per camera-level app failure, re-run reminder
+
+### Fixed
+- SmartSpeed count in summary was using the capped 20-event sample (`$smartSpeedMessages`) instead of the real total from the event log scan — introduced `$totalSmartSpeedDowngrades` captured at scan time
+- `$allClear` now also checks `$cameraAppIssues` so camera-level app warnings are not silently ignored in the verdict
+
+---
+
+## [2.7] - 2026-04-25
+
+### Added
+- VPU model and product type detection from `agent_*.log` as primary source (written every 5 min by Pixellot agent process, independent of browser state); web scrape of VPU Manager at `http://localhost:32323/` kept as fallback
+- Product type (S2 / S2S) now shown alongside model and unit ID in the header
+
+### Fixed
+- "Not detected (VPU Manager offline?)" when VPU Manager browser was not open — agent log reading resolves this reliably
+- App log analysis incorrectly flagged "Couldn't get response" failures for the optional OCR camera (.52) when it was simply not installed — suppressed when `Optional = $true` and ping had no response
+
+---
+
+## [2.6] - 2026-04-25
+
+### Fixed
+- Em dash (U+2014) in OCR camera RTSP skip note rendered as `?` in Windows PS 5.1 log files — replaced with plain hyphen
+- Exit code 11 was unmapped and displayed as "Exit code 11" — added mapping: `11` → "Camera not found / no response before timeout"
+
+---
+
+## [2.5] - 2026-04-25
+
+### Added
+- `Get-AdapterPeakSpeedMbps`: 12-second multi-sample speed check to detect intermittent blinking links caused by Intel SmartSpeed retry cycles (NIC periodically drops 100 Mbps link to reattempt gigabit negotiation)
+- Blinking status flag propagated to port results and on-screen summary
+
+### Fixed
+- A port cycling between 100 Mbps and disconnected was classified as NO LINK on the initial read — now correctly classified as DEGRADED (blinking)
+
+---
+
+## [2.4] - 2026-04-24
+
+### Added
+- VPU model detection via web scrape of VPU Manager SPA title at `http://localhost:32323/`
+- Camera ping + RTSP port 554 connectivity test for all three camera IPs (169.254.16.50–.52)
+- `Optional = $true` flag on OCR camera (.52): absence is not flagged as a fault
+- `Test-TcpPort` helper using raw sockets (avoids `Test-NetConnection` verbose output)
+- RTSP fault count included in `$allClear` check and summary verdict
+
+---
+
+## [2.3] - 2026-04-24
+
+### Changed
+- Results saved to `CameraLink_Results\` subfolder inside script directory (or Desktop when run via `irm | iex`) instead of Desktop root
+
+---
+
 ## [2.2] - 2026-04-23
 
 ### Fixed
