@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v1.4.1
+#  VPU Cable & NIC Troubleshooter  v1.4.2
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.4.1"
+$ScriptVersion      = "1.4.2"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -759,8 +759,8 @@ function Update-CardStatus {
 # ---------- Form ------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "VPU Cable & NIC Troubleshooter  v$ScriptVersion"
-$form.Size = New-Object System.Drawing.Size(1024, 680)
-$form.MinimumSize = New-Object System.Drawing.Size(1024, 680)
+$form.ClientSize = New-Object System.Drawing.Size(1024, 680)
+$form.MinimumSize = $form.Size
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.BackColor = $ColBg
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
@@ -956,13 +956,15 @@ $center.Controls.Add($pnlSummaryCard)
 
 $lblLastRun = New-Object System.Windows.Forms.Label; $lblLastRun.Text = "Last Run Summary"
 $lblLastRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblLastRun.ForeColor = $ColText
-$lblLastRun.Location = New-Object System.Drawing.Point(14,284); $lblLastRun.AutoSize = $true
-$center.Controls.Add($lblLastRun)
+$lblLastRun.BackColor = [System.Drawing.Color]::White
+$lblLastRun.Location = New-Object System.Drawing.Point(12,6); $lblLastRun.AutoSize = $true
+$pnlSummaryCard.Controls.Add($lblLastRun)
 
 $lblLastRunVal = New-Object System.Windows.Forms.Label; $lblLastRunVal.Text = "No runs yet"
 $lblLastRunVal.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblLastRunVal.ForeColor = $ColMuted
-$lblLastRunVal.Location = New-Object System.Drawing.Point(14,304); $lblLastRunVal.Size = New-Object System.Drawing.Size(556,18)
-$center.Controls.Add($lblLastRunVal)
+$lblLastRunVal.BackColor = [System.Drawing.Color]::White
+$lblLastRunVal.Location = New-Object System.Drawing.Point(12,26); $lblLastRunVal.Size = New-Object System.Drawing.Size(554,18)
+$pnlSummaryCard.Controls.Add($lblLastRunVal)
 
 $lblLogHdr = New-Object System.Windows.Forms.Label; $lblLogHdr.Text = "Live Log"
 $lblLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblLogHdr.ForeColor = $ColText
