@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.9"
+$ScriptVersion      = "3.10"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -708,7 +708,7 @@ function New-SidebarButton {
 }
 
 function New-StatusCard {
-    param([string]$Title, [int]$X, [int]$Y, [string]$Icon = "", [int]$CardW=178, [int]$CardH=78)
+    param([string]$Title, [int]$X, [int]$Y, [string]$Icon = "", [string]$Sub = "", [int]$CardW=178, [int]$CardH=78)
     $panel = New-Object System.Windows.Forms.Panel
     $panel.Size = New-Object System.Drawing.Size($CardW, $CardH); $panel.Location = New-Object System.Drawing.Point($X, $Y)
     $panel.BackColor = $ColCard; $panel.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -741,16 +741,22 @@ function New-StatusCard {
 
     $val = New-Object System.Windows.Forms.Label; $val.Text = "--"
     $val.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 13)
-    $val.ForeColor = $ColText; $val.Location = New-Object System.Drawing.Point(10, 28)
-    $val.Size = New-Object System.Drawing.Size($CardW - 20, 34); $val.BackColor = [System.Drawing.Color]::Transparent
+    $val.ForeColor = $ColText; $val.Location = New-Object System.Drawing.Point(10, 26)
+    $val.Size = New-Object System.Drawing.Size($CardW - 20, 28); $val.BackColor = [System.Drawing.Color]::Transparent
     $panel.Controls.Add($val)
+
+    $subLbl = New-Object System.Windows.Forms.Label; $subLbl.Text = $Sub
+    $subLbl.Font = New-Object System.Drawing.Font("Segoe UI", 7); $subLbl.ForeColor = $ColMuted
+    $subLbl.Location = New-Object System.Drawing.Point(10, 57); $subLbl.Size = New-Object System.Drawing.Size($CardW - 20, 14)
+    $subLbl.BackColor = [System.Drawing.Color]::Transparent
+    $panel.Controls.Add($subLbl)
 
     $dot = New-Object System.Windows.Forms.Panel; $dot.Size = New-Object System.Drawing.Size(10, 10)
     $dot.Location = New-Object System.Drawing.Point($CardW - 18, 10); $dot.BackColor = $ColMuted
     $dot.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 10, 10)), 5))
     $panel.Controls.Add($dot)
 
-    return @{ Panel=$panel; ValueLabel=$val; DotPanel=$dot }
+    return @{ Panel=$panel; ValueLabel=$val; DotPanel=$dot; SubLabel=$subLbl }
 }
 
 function Update-CardStatus {
@@ -764,7 +770,7 @@ function Update-CardStatus {
 
 # ---------- Form ------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "VPU Cable & NIC Troubleshooter"
+$form.Text = "VPU Cable & NIC Troubleshooter  v$ScriptVersion"
 $form.Size = New-Object System.Drawing.Size(1024, 680)
 $form.MinimumSize = New-Object System.Drawing.Size(1024, 680)
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
@@ -796,11 +802,11 @@ $sep1 = New-Object System.Windows.Forms.Panel; $sep1.Size = New-Object System.Dr
 $sep1.Location = New-Object System.Drawing.Point(12,60); $sep1.BackColor = [System.Drawing.Color]::FromArgb(51,65,85)
 $sidebar.Controls.Add($sep1)
 
-$navOverview = New-SidebarButton "  Overview" 68  $true
-$navTests    = New-SidebarButton "  Guide"    110
-$navResults  = New-SidebarButton "  Results"  152
-$navHistory  = New-SidebarButton "  History"  194
-$navSettings = New-SidebarButton "  Settings" 236
+$navOverview = New-SidebarButton ([char]0x2302 + "  Overview") 68  $true
+$navTests    = New-SidebarButton ([char]0x2630 + "  Guide")    110
+$navResults  = New-SidebarButton ([char]0x25A6 + "  Results")  152
+$navHistory  = New-SidebarButton ([char]0x25F7 + "  History")  194
+$navSettings = New-SidebarButton ([char]0x2699 + "  Settings") 236
 $sidebar.Controls.AddRange(@($navOverview,$navTests,$navResults,$navHistory,$navSettings))
 
 $sep2 = New-Object System.Windows.Forms.Panel; $sep2.Size = New-Object System.Drawing.Size(176,1)
@@ -819,8 +825,19 @@ $cboNic.BackColor = [System.Drawing.Color]::FromArgb(51,65,85); $cboNic.ForeColo
 $cboNic.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $sidebar.Controls.Add($cboNic)
 
+$pnlConnDot = New-Object System.Windows.Forms.Panel
+$pnlConnDot.Size = New-Object System.Drawing.Size(8, 8); $pnlConnDot.Location = New-Object System.Drawing.Point(12, 337)
+$pnlConnDot.BackColor = $ColGreen
+$pnlConnDot.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,8,8)), 4))
+$sidebar.Controls.Add($pnlConnDot)
+
+$lblConnStatus = New-Object System.Windows.Forms.Label; $lblConnStatus.Text = "Connected"
+$lblConnStatus.Font = New-Object System.Drawing.Font("Segoe UI", 7.5); $lblConnStatus.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
+$lblConnStatus.Location = New-Object System.Drawing.Point(24, 334); $lblConnStatus.AutoSize = $true
+$sidebar.Controls.Add($lblConnStatus)
+
 $sep3 = New-Object System.Windows.Forms.Panel; $sep3.Size = New-Object System.Drawing.Size(176,1)
-$sep3.Location = New-Object System.Drawing.Point(12,344); $sep3.BackColor = [System.Drawing.Color]::FromArgb(51,65,85)
+$sep3.Location = New-Object System.Drawing.Point(12,352); $sep3.BackColor = [System.Drawing.Color]::FromArgb(51,65,85)
 $sidebar.Controls.Add($sep3)
 
 $lblQiHdr = New-Object System.Windows.Forms.Label; $lblQiHdr.Text = "Quick Info"
@@ -875,10 +892,17 @@ $btnRetest.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnRetest.Enabled = $
 $center.Controls.Add($btnRetest)
 $btnRetest.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,150,38)), 6))
 
-$lblCurStat = New-Object System.Windows.Forms.Label; $lblCurStat.Text = "Current Status"
+$lblCurStat = New-Object System.Windows.Forms.Label; $lblCurStat.Text = "Current Results"
 $lblCurStat.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblCurStat.ForeColor = $ColText
 $lblCurStat.Location = New-Object System.Drawing.Point(10,82); $lblCurStat.AutoSize = $true
 $center.Controls.Add($lblCurStat)
+
+$lblRunSteps = New-Object System.Windows.Forms.Label
+$lblRunSteps.Text = "Runs: Link Speed  •  NIC Status  •  Ping  •  Gateway  •  ARP  •  CHU Detection"
+$lblRunSteps.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
+$lblRunSteps.ForeColor = $ColMuted
+$lblRunSteps.Location = New-Object System.Drawing.Point(10, 54); $lblRunSteps.Size = New-Object System.Drawing.Size(560, 16)
+$center.Controls.Add($lblRunSteps)
 
 $lnkClear = New-Object System.Windows.Forms.LinkLabel; $lnkClear.Text = "Clear"
 $lnkClear.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lnkClear.LinkColor = $ColMuted
@@ -886,28 +910,42 @@ $lnkClear.Location = New-Object System.Drawing.Point(553,84); $lnkClear.AutoSize
 $center.Controls.Add($lnkClear)
 
 $cardDefs = @(
-    @{Key="LinkSpeed"; Title="Link Speed";    X=10;  Y=106; Icon=[char]0xE704}  # WiFi bars - link/speed concept
-    @{Key="NicStatus"; Title="NIC Status";    X=200; Y=106; Icon=[char]0xE7F4}  # Network/port
-    @{Key="PingCHU";   Title="Ping (CHU)";    X=390; Y=106; Icon=[char]0xE701}  # Signal waves
-    @{Key="Gateway";   Title="Gateway";        X=10;  Y=194; Icon=[char]0xE88E}  # Globe
-    @{Key="ArpEntry";  Title="ARP Entry";      X=200; Y=194; Icon=[char]0xE9D5}  # Bulleted list
-    @{Key="ChuDetect"; Title="CHU Detection";  X=390; Y=194; Icon=[char]0xE722}  # Camera
+    @{Key="LinkSpeed"; Title="Link Speed";    Sub="Expected: 1 Gbps";      X=10;  Y=106; Icon=[char]0xE704}
+    @{Key="NicStatus"; Title="NIC Status";    Sub="Intel I210 / 82574L";   X=200; Y=106; Icon=[char]0xE7F4}
+    @{Key="PingCHU";   Title="Ping (CHU)";    Sub="Camera head unit";      X=390; Y=106; Icon=[char]0xE701}
+    @{Key="Gateway";   Title="Gateway";       Sub="Default route";          X=10;  Y=194; Icon=[char]0xE88E}
+    @{Key="ArpEntry";  Title="ARP Entry";     Sub="L2 neighbor table";      X=200; Y=194; Icon=[char]0xE9D5}
+    @{Key="ChuDetect"; Title="CHU Detection"; Sub="Camera response";        X=390; Y=194; Icon=[char]0xE722}
 )
 $cards = @{}
 foreach ($cd in $cardDefs) {
-    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y $cd.Y -Icon $cd.Icon
+    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y $cd.Y -Icon $cd.Icon -Sub $cd.Sub
     $cards[$cd.Key] = $c
     $center.Controls.Add($c.Panel)
 }
 
+$pnlSummaryCard = New-Object System.Windows.Forms.Panel
+$pnlSummaryCard.Size = New-Object System.Drawing.Size(580, 54); $pnlSummaryCard.Location = New-Object System.Drawing.Point(2, 278)
+$pnlSummaryCard.BackColor = [System.Drawing.Color]::White
+$pnlSummaryCard.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,580,54)), 8))
+$pnlSummaryCard.Add_Paint({
+    param($s,$e)
+    $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $rr  = New-Object System.Drawing.Rectangle(0,0,579,53)
+    $bp  = [GfxHelper]::RoundedRect($rr, 8)
+    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210,218,228), 1)
+    $e.Graphics.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
+})
+$center.Controls.Add($pnlSummaryCard)
+
 $lblLastRun = New-Object System.Windows.Forms.Label; $lblLastRun.Text = "Last Run Summary"
 $lblLastRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblLastRun.ForeColor = $ColText
-$lblLastRun.Location = New-Object System.Drawing.Point(10,284); $lblLastRun.AutoSize = $true
+$lblLastRun.Location = New-Object System.Drawing.Point(14,284); $lblLastRun.AutoSize = $true
 $center.Controls.Add($lblLastRun)
 
 $lblLastRunVal = New-Object System.Windows.Forms.Label; $lblLastRunVal.Text = "No runs yet"
 $lblLastRunVal.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblLastRunVal.ForeColor = $ColMuted
-$lblLastRunVal.Location = New-Object System.Drawing.Point(10,304); $lblLastRunVal.Size = New-Object System.Drawing.Size(568,18)
+$lblLastRunVal.Location = New-Object System.Drawing.Point(14,304); $lblLastRunVal.Size = New-Object System.Drawing.Size(556,18)
 $center.Controls.Add($lblLastRunVal)
 
 $lblLogHdr = New-Object System.Windows.Forms.Label; $lblLogHdr.Text = "Live Log"
@@ -943,9 +981,16 @@ $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(220,252,231)
 $right.Controls.Add($pnlBadge)
 $pnlBadge.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,90,26)), 13))
 
+$pnlBadgeDot = New-Object System.Windows.Forms.Panel
+$pnlBadgeDot.Size = New-Object System.Drawing.Size(7,7); $pnlBadgeDot.Location = New-Object System.Drawing.Point(11, 9)
+$pnlBadgeDot.BackColor = $ColGreen
+$pnlBadgeDot.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,7,7)), 3))
+$pnlBadge.Controls.Add($pnlBadgeDot)
+
 $lblBadge = New-Object System.Windows.Forms.Label; $lblBadge.Text = "Ready"
 $lblBadge.Font = New-Object System.Drawing.Font("Segoe UI Semibold",8.5); $lblBadge.ForeColor = $ColGreen
-$lblBadge.Size = New-Object System.Drawing.Size(90,26); $lblBadge.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$lblBadge.Location = New-Object System.Drawing.Point(20,0); $lblBadge.Size = New-Object System.Drawing.Size(68,26)
+$lblBadge.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 $pnlBadge.Controls.Add($lblBadge)
 
 # Blue "Next Steps / Guidance" header bar
@@ -992,7 +1037,12 @@ $sep6 = New-Object System.Windows.Forms.Panel; $sep6.Size = New-Object System.Dr
 $sep6.Location = New-Object System.Drawing.Point(10,498); $sep6.BackColor = $ColBorder
 $right.Controls.Add($sep6)
 
-foreach ($pair in @(("btnExport","Export Report",510),("btnCopy","Copy Results",546),("btnSave","Save Log",582))) {
+$lblActHdr = New-Object System.Windows.Forms.Label; $lblActHdr.Text = "Actions"
+$lblActHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblActHdr.ForeColor = $ColText
+$lblActHdr.Location = New-Object System.Drawing.Point(10,506); $lblActHdr.AutoSize = $true
+$right.Controls.Add($lblActHdr)
+
+foreach ($pair in @(("btnExport","Export Report",530),("btnCopy","Copy Results",566),("btnSave","Save Log",602))) {
     $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
     $b.Size = New-Object System.Drawing.Size(211,30); $b.Location = New-Object System.Drawing.Point(10,$pair[2])
     $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -1064,23 +1114,29 @@ $timer.Add_Tick({
     $hwRows["CHU"].Text         = $sync.Hardware.CHU
     $hwRows["CameraPort"].Text  = $sync.Hardware.CameraPort
     $hwRows["CableStatus"].Text = $sync.Hardware.CableStatus
+    $hwRows["CHU"].ForeColor        = if ($sync.Hardware.CHU -ne "--" -and $sync.Hardware.CHU -ne "") { $ColText } else { $ColMuted }
+    $hwRows["CameraPort"].ForeColor = switch -Wildcard ($sync.Hardware.CameraPort) { "Responding" {$ColGreen} "No Response" {$ColRed} default {$ColMuted} }
+    $hwRows["CableStatus"].ForeColor= switch -Wildcard ($sync.Hardware.CableStatus) { "OK*" {$ColGreen} "Degraded" {$ColRed} default {$ColMuted} }
 
     if ($sync.Running) {
         $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(219,234,254)
         $lblBadge.ForeColor = $ColAccent; $lblBadge.Text = "Running"
+        $pnlBadgeDot.BackColor = $ColAccent
     }
 
     if ($sync.Complete -and -not $sync.Running) {
         $timer.Stop()
-        $btnRun.Enabled = $true; $btnRun.Text = "  Run Full Diagnostic"
+        $btnRun.Enabled = $true; $btnRun.Text = ([char]0x25B6 + "  Run Full Diagnostic")
         $btnRetest.Enabled = $true
 
         if ($sync.AllClear) {
             $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(220,252,231)
             $lblBadge.ForeColor = $ColGreen; $lblBadge.Text = "All Clear"
+            $pnlBadgeDot.BackColor = $ColGreen
         } else {
             $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(254,226,226)
             $lblBadge.ForeColor = $ColRed; $lblBadge.Text = "Issues Found"
+            $pnlBadgeDot.BackColor = $ColRed
         }
 
         $rtbSteps.Clear()
