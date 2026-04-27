@@ -92,7 +92,10 @@ $sync = [hashtable]::Synchronized(@{
     CurrentStep     = "Ready"
     StepsDone   = [hashtable]::Synchronized(@{})
     Cards = @{
+        LinkSpeed = @{ Value = "--"; Status = "neutral" }
+        NicStatus = @{ Value = "--"; Status = "neutral" }
         PingCHU   = @{ Value = "--"; Status = "neutral" }
+        Gateway   = @{ Value = "--"; Status = "neutral" }
         ArpEntry  = @{ Value = "--"; Status = "neutral" }
         ChuDetect = @{ Value = "--"; Status = "neutral" }
     }
@@ -100,6 +103,7 @@ $sync = [hashtable]::Synchronized(@{
     CamResults  = [System.Collections.ArrayList]::new()
     AppIssues   = [System.Collections.ArrayList]::new()
     NextSteps   = [System.Collections.ArrayList]::new()
+    Hardware    = @{ CHU = "--"; CameraPort = "--"; CableStatus = "--" }
 })
 
 # ---------- Diagnostic engine (runs in background runspace) -----------------
@@ -248,8 +252,7 @@ $DiagScript = {
     Add-Log $hdr "Cyan"
     Add-Log ""
     Add-Section "System"
-    $vpuLevel = if ($VpuModel) { "Info" } else { "Warn" }
-    Add-Summary "VPU Model" $sync.VpuModel $vpuLevel
+    Add-Summary "VPU Model" $sync.VpuModel (if ($VpuModel) { "Info" } else { "Warn" })
 
     # ── Find NIC ports ────────────────────────────────────────────────────────
     $sync.CurrentStep = "Detecting NIC ports..."
@@ -336,7 +339,6 @@ $DiagScript = {
         if ($spd -eq 1000) {
             Add-Log "  Speed   : 1 Gbps  [OK]" "Pass"
             $portResults += [PSCustomObject]@{ Name=$nm; Speed=1000; Result="PASS"; Blinking=$false; Desc=$nic.InterfaceDescription }
-            Set-Card $nm "1 Gbps" "ok"
             Add-Summary $nm "1 Gbps  OK" "Pass"
         } elseif ($spd -eq 100) {
             Add-Log "  Speed   : 100 Mbps  [DEGRADED]" "Fail"
@@ -344,12 +346,10 @@ $DiagScript = {
                 Add-Log "  [PASS]  No SmartSpeed history - 100 Mbps-only device (OCR camera). Skipping remediation." "Pass"
                 $ocrAdapters[$nic.InterfaceDescription] = $true
                 $portResults += [PSCustomObject]@{ Name=$nm; Speed=100; Result="PASS (OCR)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
-                Set-Card $nm "100M  OCR" "warn"
                 Add-Summary $nm "100 Mbps  OCR camera" "Pass"
             } else {
                 Add-Log "  [ACTION] SmartSpeed history confirmed - attempting to force 1 Gbps..." "Warn"
                 $sync.CurrentStep = "Forcing 1 Gbps on $nm..."
-                Set-Card $nm "Forcing..." "warn"
                 $forceOk = Set-AdapterSpeedDuplex -AdapterName $nm -Val "6"
                 if ($forceOk) {
                     Restart-NetAdapter -Name $nm -Confirm:$false -ErrorAction SilentlyContinue
@@ -360,7 +360,6 @@ $DiagScript = {
                     if ($newSpd -eq 1000) {
                         Add-Log "  [PASS]  Forced to 1 Gbps successfully." "Pass"
                         $portResults += [PSCustomObject]@{ Name=$nm; Speed=1000; Result="PASS (forced)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
-                        Set-Card $nm "1 Gbps" "ok"
                         Add-Summary $nm "1 Gbps  (forced OK)" "Pass"
                     } else {
                         $nsLabel = if ($newSpd -eq 0) { "Disconnected" } else { "$newSpd Mbps" }
@@ -373,30 +372,31 @@ $DiagScript = {
                         if ($autoSpd -gt 0) { Add-Log ("  [INFO]  Link restored at {0} Mbps" -f $autoSpd) "Warn" }
                         $portResults += [PSCustomObject]@{ Name=$nm; Speed=$spd; Result="FAIL"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
                         $anyFail = $true
-                        Set-Card $nm "100 Mbps" "fail"
                         Add-Summary $nm "DEGRADED  cable fault" "Fail"
                     }
                 } else {
                     Add-Log "  [FAIL]  Could not apply SpeedDuplex setting." "Fail"
                     $portResults += [PSCustomObject]@{ Name=$nm; Speed=$spd; Result="FAIL"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
                     $anyFail = $true
-                    Set-Card $nm "100 Mbps" "fail"
                     Add-Summary $nm "DEGRADED  (SpeedDuplex failed)" "Fail"
                 }
             }
         } elseif ($spd -eq 0) {
             Add-Log "  Speed   : No link - no cable or device powered off." "Gray"
             $portResults += [PSCustomObject]@{ Name=$nm; Speed=0; Result="NO LINK"; Blinking=$false; Desc=$nic.InterfaceDescription }
-            Set-Card $nm "No link" "neutral"
             Add-Summary $nm "No link" "Gray"
         } else {
             Add-Log ("  Speed   : {0} Mbps - unexpected" -f $spd) "Warn"
             $portResults += [PSCustomObject]@{ Name=$nm; Speed=$spd; Result="UNKNOWN"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
-            Set-Card $nm "$spd Mbps" "warn"
             Add-Summary $nm "$spd Mbps  unexpected" "Warn"
         }
         Add-Log ""
     }
+
+    if ($anyFail)           { Set-Card "LinkSpeed" "100 Mbps" "fail";    Set-Card "NicStatus" "Degraded" "fail" }
+    elseif ($bestSpeed -eq 1000) { Set-Card "LinkSpeed" "1 Gbps"  "ok"; Set-Card "NicStatus" "Up"       "ok"   }
+    elseif ($bestSpeed -eq 0)    { Set-Card "LinkSpeed" "No Link" "neutral"; Set-Card "NicStatus" "Down" "fail" }
+    else                         { Set-Card "LinkSpeed" "$bestSpeed Mbps" "warn"; Set-Card "NicStatus" "Partial" "warn" }
 
     $sync.StepsDone["LinkSpeed"] = if ($anyFail) { "fail" } else { "pass" }
     foreach ($r in $portResults) { $sync.PortResults.Add($r) | Out-Null }
@@ -438,8 +438,25 @@ $DiagScript = {
     }
     Add-Log ""
 
-    # ── ARP check ─────────────────────────────────────────────────────────────
+    # ── Gateway check ─────────────────────────────────────────────────────────
     Add-Section "Network"
+    $sync.CurrentStep = "Checking gateway..."
+    $gw = (Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
+           Sort-Object RouteMetric | Select-Object -First 1).NextHop
+    if ($gw) {
+        if (Test-Connection -ComputerName $gw -Count 1 -Quiet -ErrorAction SilentlyContinue) {
+            Set-Card "Gateway" "Reachable" "ok";    Add-Log ("  [PASS] Gateway {0} reachable." -f $gw) "Pass"
+            Add-Summary "Gateway" "$gw  reachable" "Pass"
+        } else {
+            Set-Card "Gateway" "Unreachable" "fail"; Add-Log ("  [WARN] Gateway {0} not responding." -f $gw) "Warn"
+            Add-Summary "Gateway" "$gw  not responding" "Fail"
+        }
+    } else {
+        Set-Card "Gateway" "No Route" "neutral"; Add-Log "  [INFO] No default gateway configured." "Gray"
+        Add-Summary "Gateway" "No route configured" "Gray"
+    }
+
+    # ── ARP check ─────────────────────────────────────────────────────────────
     $sync.CurrentStep = "Checking ARP table..."
     $arpEntries = @()
     foreach ($nic in $nicPorts) {
@@ -509,6 +526,9 @@ $DiagScript = {
     } else {
         Set-Card "PingCHU"   "No Response" "fail"; Set-Card "ChuDetect" "Offline" "fail"
     }
+
+    $sync.Hardware.CameraPort = if ($mainPingCount -gt 0) { "Responding" } else { "No Response" }
+    $sync.Hardware.CableStatus = if ($anyFail) { "Degraded" } elseif ($bestSpeed -eq 1000) { "OK (1 Gbps)" } else { "--" }
 
     # ── Application log analysis ──────────────────────────────────────────────
     $sync.CurrentStep = "Analyzing Pixellot application logs..."
@@ -742,14 +762,6 @@ function Update-CardStatus {
     $Card.ValueLabel.ForeColor = $valC
 }
 
-# ---------- Detect camera NICs (used for port cards and combo boxes) --------
-$script:detectedNics = @(try {
-    Get-NetAdapter | Where-Object {
-        $d = $_.InterfaceDescription
-        ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
-    } | Sort-Object Name
-} catch { })
-
 # ---------- Form ------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "VPU Cable & NIC Troubleshooter"
@@ -766,11 +778,18 @@ $sidebar = New-Object System.Windows.Forms.Panel
 $sidebar.Size = New-Object System.Drawing.Size(200, 680); $sidebar.Location = New-Object System.Drawing.Point(0, 0)
 $sidebar.BackColor = $ColSidebar; $form.Controls.Add($sidebar)
 
+$lblSideIcon = New-Object System.Windows.Forms.Label
+$lblSideIcon.Text = [char]0xF785
+$lblSideIcon.Font = New-Object System.Drawing.Font("Segoe MDL2 Assets", 22)
+$lblSideIcon.ForeColor = $ColAccent
+$lblSideIcon.Location = New-Object System.Drawing.Point(10, 10); $lblSideIcon.Size = New-Object System.Drawing.Size(40, 46)
+$sidebar.Controls.Add($lblSideIcon)
+
 $lblTitle = New-Object System.Windows.Forms.Label
 $lblTitle.Text = "VPU Cable & NIC`nTroubleshooter"
 $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 $lblTitle.ForeColor = [System.Drawing.Color]::White
-$lblTitle.Location = New-Object System.Drawing.Point(12, 14); $lblTitle.Size = New-Object System.Drawing.Size(176, 42)
+$lblTitle.Location = New-Object System.Drawing.Point(54, 14); $lblTitle.Size = New-Object System.Drawing.Size(134, 42)
 $sidebar.Controls.Add($lblTitle)
 
 $sep1 = New-Object System.Windows.Forms.Panel; $sep1.Size = New-Object System.Drawing.Size(176,1)
@@ -779,8 +798,10 @@ $sidebar.Controls.Add($sep1)
 
 $navOverview = New-SidebarButton "  Overview" 68  $true
 $navTests    = New-SidebarButton "  Guide"    110
-$navHistory  = New-SidebarButton "  History"  152
-$sidebar.Controls.AddRange(@($navOverview,$navTests,$navHistory))
+$navResults  = New-SidebarButton "  Results"  152
+$navHistory  = New-SidebarButton "  History"  194
+$navSettings = New-SidebarButton "  Settings" 236
+$sidebar.Controls.AddRange(@($navOverview,$navTests,$navResults,$navHistory,$navSettings))
 
 $sep2 = New-Object System.Windows.Forms.Panel; $sep2.Size = New-Object System.Drawing.Size(176,1)
 $sep2.Location = New-Object System.Drawing.Point(12,282); $sep2.BackColor = [System.Drawing.Color]::FromArgb(51,65,85)
@@ -864,34 +885,19 @@ $lnkClear.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lnkClear.LinkC
 $lnkClear.Location = New-Object System.Drawing.Point(553,84); $lnkClear.AutoSize = $true
 $center.Controls.Add($lnkClear)
 
-# Static row 2 cards — camera/network status
 $cardDefs = @(
-    @{Key="PingCHU";   Title="Ping (CHU)";    X=10;  Y=194; Icon=[char]0xE701}
-    @{Key="ArpEntry";  Title="ARP Entry";      X=200; Y=194; Icon=[char]0xE9D5}
-    @{Key="ChuDetect"; Title="CHU Detection";  X=390; Y=194; Icon=[char]0xE722}
+    @{Key="LinkSpeed"; Title="Link Speed";    X=10;  Y=106; Icon=[char]0xE704}  # WiFi bars - link/speed concept
+    @{Key="NicStatus"; Title="NIC Status";    X=200; Y=106; Icon=[char]0xE7F4}  # Network/port
+    @{Key="PingCHU";   Title="Ping (CHU)";    X=390; Y=106; Icon=[char]0xE701}  # Signal waves
+    @{Key="Gateway";   Title="Gateway";        X=10;  Y=194; Icon=[char]0xE88E}  # Globe
+    @{Key="ArpEntry";  Title="ARP Entry";      X=200; Y=194; Icon=[char]0xE9D5}  # Bulleted list
+    @{Key="ChuDetect"; Title="CHU Detection";  X=390; Y=194; Icon=[char]0xE722}  # Camera
 )
 $cards = @{}
 foreach ($cd in $cardDefs) {
     $c = New-StatusCard -Title $cd.Title -X $cd.X -Y $cd.Y -Icon $cd.Icon
     $cards[$cd.Key] = $c
     $center.Controls.Add($c.Panel)
-}
-
-# Dynamic row 1 cards — one per detected NIC port
-if ($script:detectedNics.Count -gt 0) {
-    $numPorts  = $script:detectedNics.Count
-    $portCardW = [int]((572 - ($numPorts - 1) * 8) / $numPorts)
-    $portCardX = 10
-    $portNum   = 1
-    foreach ($n in $script:detectedNics) {
-        $portTitle = "$($n.Name)  P$portNum"
-        $portNum++
-        $c = New-StatusCard -Title $portTitle -X $portCardX -Y 106 -CardW $portCardW -CardH 78
-        $cards[$n.Name] = $c
-        $sync.Cards[$n.Name] = @{ Value = "--"; Status = "neutral" }
-        $center.Controls.Add($c.Panel)
-        $portCardX += $portCardW + 8
-    }
 }
 
 $lblLastRun = New-Object System.Windows.Forms.Label; $lblLastRun.Text = "Last Run Summary"
@@ -953,7 +959,7 @@ $lblNextHdr.Location = New-Object System.Drawing.Point(10,6); $lblNextHdr.AutoSi
 $pnlNextHdr.Controls.Add($lblNextHdr)
 
 $rtbSteps = New-Object System.Windows.Forms.RichTextBox
-$rtbSteps.Size = New-Object System.Drawing.Size(211,384); $rtbSteps.Location = New-Object System.Drawing.Point(10,90)
+$rtbSteps.Size = New-Object System.Drawing.Size(211,296); $rtbSteps.Location = New-Object System.Drawing.Point(10,90)
 $rtbSteps.BackColor = [System.Drawing.Color]::White; $rtbSteps.ForeColor = $ColText
 $rtbSteps.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $rtbSteps.ReadOnly = $true
 $rtbSteps.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -962,10 +968,31 @@ $rtbSteps.Text = "Run the diagnostic to`nsee guidance here."
 $right.Controls.Add($rtbSteps)
 
 $sep5 = New-Object System.Windows.Forms.Panel; $sep5.Size = New-Object System.Drawing.Size(211,1)
-$sep5.Location = New-Object System.Drawing.Point(10,484); $sep5.BackColor = $ColBorder
+$sep5.Location = New-Object System.Drawing.Point(10,398); $sep5.BackColor = $ColBorder
 $right.Controls.Add($sep5)
 
-foreach ($pair in @(("btnExport","Export Report",494),("btnCopy","Copy Results",530),("btnSave","Save Log",566))) {
+$lblHwHdr = New-Object System.Windows.Forms.Label; $lblHwHdr.Text = "Detected Hardware"
+$lblHwHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblHwHdr.ForeColor = $ColText
+$lblHwHdr.Location = New-Object System.Drawing.Point(10,408); $lblHwHdr.AutoSize = $true
+$right.Controls.Add($lblHwHdr)
+
+$hwRows = @{}
+foreach ($pair in @(("CHU","CHU",430),("CameraPort","Camera Port",450),("CableStatus","Cable Status",470))) {
+    $lk = New-Object System.Windows.Forms.Label; $lk.Text = $pair[1]
+    $lk.Font = New-Object System.Drawing.Font("Segoe UI",7.5); $lk.ForeColor = $ColMuted
+    $lk.Location = New-Object System.Drawing.Point(10,$pair[2]); $lk.Size = New-Object System.Drawing.Size(85,16)
+    $lv = New-Object System.Windows.Forms.Label; $lv.Text = "--"
+    $lv.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lv.ForeColor = $ColText
+    $lv.Location = New-Object System.Drawing.Point(95,$pair[2]); $lv.Size = New-Object System.Drawing.Size(126,16)
+    $right.Controls.Add($lk); $right.Controls.Add($lv)
+    $hwRows[$pair[0]] = $lv
+}
+
+$sep6 = New-Object System.Windows.Forms.Panel; $sep6.Size = New-Object System.Drawing.Size(211,1)
+$sep6.Location = New-Object System.Drawing.Point(10,498); $sep6.BackColor = $ColBorder
+$right.Controls.Add($sep6)
+
+foreach ($pair in @(("btnExport","Export Report",510),("btnCopy","Copy Results",546),("btnSave","Save Log",582))) {
     $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
     $b.Size = New-Object System.Drawing.Size(211,30); $b.Location = New-Object System.Drawing.Point(10,$pair[2])
     $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -1033,6 +1060,10 @@ $timer.Add_Tick({
         $lblStatus.Text = "  $($sync.CurrentStep)"
     }
     if ($sync.VpuModel   -and $lblVpuVal.Text -ne $sync.VpuModel)   { $lblVpuVal.Text = $sync.VpuModel }
+
+    $hwRows["CHU"].Text         = $sync.Hardware.CHU
+    $hwRows["CameraPort"].Text  = $sync.Hardware.CameraPort
+    $hwRows["CableStatus"].Text = $sync.Hardware.CableStatus
 
     if ($sync.Running) {
         $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(219,234,254)
@@ -1409,7 +1440,7 @@ $btnGuideAction.Add_Click({
         }
 
         Add-GuideHistory "Phase 1 — Baseline" $config $speedLabel "Degraded link confirmed — beginning isolation." "Fail"
-        Show-GuideResult "Baseline: $speedLabel — Degraded link confirmed." "Beginning isolation. Move the SAME cable and camera to a different NIC port." "Fail"
+        Show-GuideResult "Baseline: $speedLabel — Degraded link confirmed." "Beginning isolation. Move the SAME cable to a different NIC port." "Fail"
         $script:guide.Phase = 1
         Update-GuideStepDots -ActivePhase 2
 
@@ -1548,137 +1579,38 @@ $lnkGuideReset.Add_LinkClicked({
 
 # Nav wiring
 $navTests.Add_Click({
-    $center.Visible     = $false
-    $pnlGuide.Visible   = $true
-    $pnlHistory.Visible = $false
-    foreach ($nb in @($navOverview,$navTests,$navHistory)) {
+    $center.Visible    = $false
+    $pnlGuide.Visible  = $true
+    foreach ($nb in @($navOverview,$navTests,$navResults,$navHistory,$navSettings)) {
         $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
     }
     $navTests.BackColor = $ColNavActive; $navTests.ForeColor = [System.Drawing.Color]::White
 })
 
 $navOverview.Add_Click({
-    $pnlGuide.Visible   = $false
-    $pnlHistory.Visible = $false
-    $center.Visible     = $true
-    foreach ($nb in @($navOverview,$navTests,$navHistory)) {
+    $pnlGuide.Visible  = $false
+    $center.Visible    = $true
+    foreach ($nb in @($navOverview,$navTests,$navResults,$navHistory,$navSettings)) {
         $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
     }
     $navOverview.BackColor = $ColNavActive; $navOverview.ForeColor = [System.Drawing.Color]::White
 })
 
-# ---- History Panel ---------------------------------------------------------
-$pnlHistory = New-Object System.Windows.Forms.Panel
-$pnlHistory.Size = $center.Size; $pnlHistory.Location = $center.Location
-$pnlHistory.BackColor = $ColBg; $pnlHistory.Visible = $false
-$form.Controls.Add($pnlHistory)
-
-$lblHistTitle = New-Object System.Windows.Forms.Label
-$lblHistTitle.Text = "Run History"
-$lblHistTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
-$lblHistTitle.ForeColor = $ColText
-$lblHistTitle.Location = New-Object System.Drawing.Point(10, 16); $lblHistTitle.AutoSize = $true
-$pnlHistory.Controls.Add($lblHistTitle)
-
-$lblHistSub = New-Object System.Windows.Forms.Label
-$lblHistSub.Text = "Past diagnostic runs saved to CameraLink_Results\. Double-click a row to open."
-$lblHistSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblHistSub.ForeColor = $ColMuted
-$lblHistSub.Location = New-Object System.Drawing.Point(10, 42); $lblHistSub.Size = New-Object System.Drawing.Size(562, 18)
-$pnlHistory.Controls.Add($lblHistSub)
-
-foreach ($pair in @(("btnHistRefresh","Refresh",10,100),("btnHistFolder","Open Folder",120,116))) {
-    $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
-    $b.Size = New-Object System.Drawing.Size($pair[3], 30); $b.Location = New-Object System.Drawing.Point($pair[2], 68)
-    $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $b.FlatAppearance.BorderColor = $ColBorder; $b.FlatAppearance.BorderSize = 1
-    $b.BackColor = [System.Drawing.Color]::White; $b.ForeColor = $ColText
-    $b.Font = New-Object System.Drawing.Font("Segoe UI", 9); $b.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $b.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,$pair[3],30)), 5))
-    $pnlHistory.Controls.Add($b)
-    Set-Variable -Name $pair[0] -Value $b
-}
-
-$lvHist = New-Object System.Windows.Forms.ListView
-$lvHist.Size = New-Object System.Drawing.Size(572, 540); $lvHist.Location = New-Object System.Drawing.Point(10, 108)
-$lvHist.View = [System.Windows.Forms.View]::Details
-$lvHist.FullRowSelect = $true; $lvHist.GridLines = $false
-$lvHist.BackColor = [System.Drawing.Color]::White
-$lvHist.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-$lvHist.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-$lvHist.HeaderStyle = [System.Windows.Forms.ColumnHeaderStyle]::Nonclickable
-$lvHist.Columns.Add("Date / Time",    155) | Out-Null
-$lvHist.Columns.Add("Result",         115) | Out-Null
-$lvHist.Columns.Add("File",           230) | Out-Null
-$lvHist.Columns.Add("Size",            56) | Out-Null
-$pnlHistory.Controls.Add($lvHist)
-
-$lblHistEmpty = New-Object System.Windows.Forms.Label
-$lblHistEmpty.Text = "No diagnostic runs found in CameraLink_Results\"
-$lblHistEmpty.Font = New-Object System.Drawing.Font("Segoe UI", 9); $lblHistEmpty.ForeColor = $ColMuted
-$lblHistEmpty.Location = New-Object System.Drawing.Point(14, 148); $lblHistEmpty.AutoSize = $true
-$lblHistEmpty.Visible = $false
-$pnlHistory.Controls.Add($lblHistEmpty)
-
-function Refresh-HistoryList {
-    $lvHist.Items.Clear(); $lblHistEmpty.Visible = $false
-    if (-not (Test-Path $OutputDir)) { $lblHistEmpty.Visible = $true; return }
-    $files = Get-ChildItem -Path $OutputDir -Filter "CameraLink_Results_*.txt" -ErrorAction SilentlyContinue |
-             Sort-Object LastWriteTime -Descending
-    if (-not $files -or @($files).Count -eq 0) { $lblHistEmpty.Visible = $true; return }
-    foreach ($f in @($files)) {
-        $dt   = $f.LastWriteTime.ToString("yyyy-MM-dd  HH:mm:ss")
-        $kb   = "$([math]::Round($f.Length / 1KB, 1)) KB"
-        $tail = Get-Content -Path $f.FullName -Tail 30 -ErrorAction SilentlyContinue
-        $result = if ($tail -match "All tests passed") { "All Clear" }
-                  elseif ($tail -match "\[FAIL\]")     { "Issues Found" }
-                  else                                 { "—" }
-        $item = New-Object System.Windows.Forms.ListViewItem($dt)
-        $item.SubItems.Add($result) | Out-Null
-        $item.SubItems.Add($f.Name) | Out-Null
-        $item.SubItems.Add($kb)     | Out-Null
-        $item.Tag = $f.FullName
-        switch ($result) {
-            "All Clear"    { $item.ForeColor = $ColGreen }
-            "Issues Found" { $item.ForeColor = $ColRed   }
-        }
-        $lvHist.Items.Add($item) | Out-Null
-    }
-}
-
-$lvHist.Add_DoubleClick({
-    if ($lvHist.SelectedItems.Count -gt 0) {
-        $path = $lvHist.SelectedItems[0].Tag
-        if (Test-Path $path) { Start-Process notepad.exe $path }
-    }
-})
-
-$btnHistRefresh.Add_Click({ Refresh-HistoryList })
-
-$btnHistFolder.Add_Click({
-    if (Test-Path $OutputDir) { Start-Process explorer.exe $OutputDir }
-    else { [System.Windows.Forms.MessageBox]::Show("No results folder found yet. Run a diagnostic first.", "Open Folder", "OK", "Information") | Out-Null }
-})
-
-$navHistory.Add_Click({
-    $center.Visible     = $false
-    $pnlGuide.Visible   = $false
-    $pnlHistory.Visible = $true
-    foreach ($nb in @($navOverview,$navTests,$navHistory)) {
-        $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
-    }
-    $navHistory.BackColor = $ColNavActive; $navHistory.ForeColor = [System.Drawing.Color]::White
-    Refresh-HistoryList
-})
-
 # ---------- Form Load -------------------------------------------------------
 $form.Add_Load({
     $cboNic.Items.Add("All Ports") | Out-Null
-    foreach ($n in $script:detectedNics) {
-        $short = $n.InterfaceDescription -replace 'Intel\(R\) 82574L Gigabit Network Connection','CHU NIC'
-        $short = $short -replace 'Intel\(R\) I210 Gigabit Network Connection','CHU NIC'
-        $cboNic.Items.Add("$($n.Name)  ($short)") | Out-Null
-        $cboGuidePortA.Items.Add($n.Name) | Out-Null
-    }
+    try {
+        $nics = Get-NetAdapter | Where-Object {
+            $d = $_.InterfaceDescription
+            ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
+        } | Sort-Object Name
+        foreach ($n in $nics) {
+            $short = $n.InterfaceDescription -replace 'Intel\(R\) 82574L Gigabit Network Connection','CHU NIC'
+            $short = $short -replace 'Intel\(R\) I210 Gigabit Network Connection','CHU NIC'
+            $cboNic.Items.Add("$($n.Name)  ($short)") | Out-Null
+            $cboGuidePortA.Items.Add($n.Name) | Out-Null
+        }
+    } catch { }
     if ($cboNic.Items.Count -gt 0) { $cboNic.SelectedIndex = 0 }
     if ($cboGuidePortA.Items.Count -gt 0) { $cboGuidePortA.SelectedIndex = 0 }
     Update-GuideStepDots -ActivePhase 1
