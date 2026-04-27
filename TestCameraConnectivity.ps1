@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v3.9
+#  VPU Cable & NIC Troubleshooter  v3.12
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.11"
+$ScriptVersion      = "3.12"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -617,10 +617,10 @@ $DiagScript = {
     } else {
         $s = 1
         foreach ($r in $failPorts) {
-            $bNote = if ($r.Blinking) { " (intermittent)" } else { "" }
+            $bNote = if ($r.Blinking) { " (intermittent link)" } else { "" }
             $sync.NextSteps.Add(@{
-                H = "$s. Replace cable on $($r.Name)$bNote"
-                B = "The NIC could not hold gigabit. Swap in a known-good cable and check both RJ45 ends for bent pins. Re-run this tool after swapping to confirm the link comes up at 1 Gbps."
+                H = "$s. Run Fault Isolation Guide — $($r.Name)$bNote"
+                B = "$($r.Name) has a confirmed physical-layer fault and could not hold 1 Gbps. The fault could be the cable, the NIC port, or the camera. Use the Fault Isolation Guide to determine exactly which component is at fault before replacing anything — click `"Open Fault Isolation Guide`" in the right panel."
             }) | Out-Null
             $s++
         }
@@ -782,13 +782,11 @@ $sidebar.Controls.Add($sep1)
 
 $navOverview = New-SidebarButton ([char]0x2302 + "  Overview") 68  $true
 $navTests    = New-SidebarButton ([char]0x2630 + "  Guide")    110
-$navResults  = New-SidebarButton ([char]0x25A6 + "  Results")  152
-$navHistory  = New-SidebarButton ([char]0x25F7 + "  History")  194
-$navSettings = New-SidebarButton ([char]0x2699 + "  Settings") 236
-$sidebar.Controls.AddRange(@($navOverview,$navTests,$navResults,$navHistory,$navSettings))
+$navHistory  = New-SidebarButton ([char]0x25F7 + "  History")  152
+$sidebar.Controls.AddRange(@($navOverview,$navTests,$navHistory))
 
 $sep2 = New-Object System.Windows.Forms.Panel; $sep2.Size = New-Object System.Drawing.Size(176,1)
-$sep2.Location = New-Object System.Drawing.Point(12,282); $sep2.BackColor = [System.Drawing.Color]::FromArgb(51,65,85)
+$sep2.Location = New-Object System.Drawing.Point(12,196); $sep2.BackColor = [System.Drawing.Color]::FromArgb(51,65,85)
 $sidebar.Controls.Add($sep2)
 
 $lblNicHdr = New-Object System.Windows.Forms.Label; $lblNicHdr.Text = "Selected NIC"
@@ -1001,7 +999,7 @@ $lblNextHdr.Location = New-Object System.Drawing.Point(10,6); $lblNextHdr.AutoSi
 $pnlNextHdr.Controls.Add($lblNextHdr)
 
 $rtbSteps = New-Object System.Windows.Forms.RichTextBox
-$rtbSteps.Size = New-Object System.Drawing.Size(211,400); $rtbSteps.Location = New-Object System.Drawing.Point(10,90)
+$rtbSteps.Size = New-Object System.Drawing.Size(211,382); $rtbSteps.Location = New-Object System.Drawing.Point(10,90)
 $rtbSteps.BackColor = [System.Drawing.Color]::White; $rtbSteps.ForeColor = $ColText
 $rtbSteps.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $rtbSteps.ReadOnly = $true
 $rtbSteps.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -1009,16 +1007,26 @@ $rtbSteps.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
 $rtbSteps.Text = "Run the diagnostic to`nsee guidance here."
 $right.Controls.Add($rtbSteps)
 
+$btnGoGuide = New-Object System.Windows.Forms.Button
+$btnGoGuide.Text = "Open Fault Isolation Guide  →"
+$btnGoGuide.Size = New-Object System.Drawing.Size(211,32); $btnGoGuide.Location = New-Object System.Drawing.Point(10,478)
+$btnGoGuide.BackColor = $ColAccent; $btnGoGuide.ForeColor = [System.Drawing.Color]::White
+$btnGoGuide.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnGoGuide.FlatAppearance.BorderSize = 0
+$btnGoGuide.Font = New-Object System.Drawing.Font("Segoe UI",8.5)
+$btnGoGuide.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnGoGuide.Visible = $false
+$right.Controls.Add($btnGoGuide)
+$btnGoGuide.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,211,32)), 5))
+
 $sepAct = New-Object System.Windows.Forms.Panel; $sepAct.Size = New-Object System.Drawing.Size(211,1)
-$sepAct.Location = New-Object System.Drawing.Point(10,502); $sepAct.BackColor = $ColBorder
+$sepAct.Location = New-Object System.Drawing.Point(10,518); $sepAct.BackColor = $ColBorder
 $right.Controls.Add($sepAct)
 
 $lblActHdr = New-Object System.Windows.Forms.Label; $lblActHdr.Text = "Actions"
 $lblActHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblActHdr.ForeColor = $ColText
-$lblActHdr.Location = New-Object System.Drawing.Point(10,510); $lblActHdr.AutoSize = $true
+$lblActHdr.Location = New-Object System.Drawing.Point(10,526); $lblActHdr.AutoSize = $true
 $right.Controls.Add($lblActHdr)
 
-foreach ($pair in @(("btnExport","Export Report",534),("btnCopy","Copy Results",570),("btnSave","Save Log",606))) {
+foreach ($pair in @(("btnExport","Export Report",548),("btnCopy","Copy Results",584),("btnSave","Save Log",620))) {
     $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
     $b.Size = New-Object System.Drawing.Size(211,30); $b.Location = New-Object System.Drawing.Point(10,$pair[2])
     $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -1130,6 +1138,7 @@ $timer.Add_Tick({
 
         $dt = Get-Date -Format "yyyy-MM-dd HH:mm"
         $lblLastRunVal.Text = "$($sync.LastRunLine)   $dt"
+        $btnGoGuide.Visible = (($sync.PortResults | Where-Object { $_.Result -eq "FAIL" }).Count -gt 0)
     }
 })
 
@@ -1149,7 +1158,7 @@ $btnRun.Add_Click({
     $sync.StepsDone.Clear()
     $item2 = $null; while ($sync.SummaryQueue.TryDequeue([ref]$item2)) { }
 
-    $rtbLog.Clear(); $rtbSteps.Text = "Diagnostic running..."
+    $rtbLog.Clear(); $rtbSteps.Text = "Diagnostic running..."; $btnGoGuide.Visible = $false
     $btnRun.Enabled = $false; $btnRun.Text = "  Running..."
     $btnRetest.Enabled = $false
     $script:spinIdx = 0; $lblStatus.ForeColor = $ColAccent; $lblStatus.Text = " |  Starting..."
@@ -1215,6 +1224,64 @@ $lnkClear.Add_LinkClicked({
     foreach ($k in $cards.Keys) { Update-CardStatus -Card $cards[$k] -Value "--" -Status "neutral" }
     $lblLastRunVal.Text = "No runs yet"
 })
+
+# ---------- Helper functions ------------------------------------------------
+function Reset-Guide {
+    $script:guide.Phase = 0; $script:guide.SuspectPort = ""; $script:guide.TestPort = ""; $script:guide.BaseSpeed = 0
+    $rtbGuide.Text = "Phase results will appear here as you work through each step."
+    $pnlGuideResult.Visible = $false
+    $lblGuidePhase.Text = "SELECT A PORT TO BEGIN"
+    $lblGuideInstr.Text = "Select the NIC port that is showing degraded speed (100 Mbps) and click Start."
+    $btnGuideAction.Text = "  Start Baseline"; $btnGuideAction.Enabled = $true
+    $lblGuidePortA.Visible = $true; $cboGuidePortA.Visible = $true
+    $lblGuidePortB.Visible = $false; $cboGuidePortB.Visible = $false
+    Update-GuideStepDots -ActivePhase 1
+}
+
+function Update-HistoryList {
+    $lvHistory.Items.Clear()
+    $files = @(Get-ChildItem -Path $OutputDir -Filter "CameraLink_Results_*.txt" -ErrorAction SilentlyContinue |
+               Sort-Object LastWriteTime -Descending)
+    if ($files.Count -eq 0) {
+        $empty = New-Object System.Windows.Forms.ListViewItem("No history yet")
+        $empty.ForeColor = $ColMuted
+        $empty.SubItems.Add("") | Out-Null
+        $empty.SubItems.Add("Run a diagnostic from the Overview tab to generate history.") | Out-Null
+        $empty.SubItems.Add("") | Out-Null
+        $lvHistory.Items.Add($empty) | Out-Null
+        return
+    }
+    foreach ($f in $files) {
+        $dt = $f.LastWriteTime
+        if ($f.Name -match '_(\d{8})_(\d{6})\.txt$') {
+            try { $dt = [datetime]::ParseExact("$($Matches[1])$($Matches[2])", "yyyyMMddHHmmss", $null) } catch { }
+        }
+        $resultText = "Unknown"; $resultColor = $ColMuted; $summary = ""
+        try {
+            $lines = Get-Content -Path $f.FullName -ErrorAction Stop
+            $failLines = @($lines | Where-Object { $_ -match 'DEGRADED' })
+            $okComplete = @($lines | Where-Object { $_ -match 'Complete' })
+            if ($failLines.Count -gt 0) {
+                $resultText = "Issues Found"; $resultColor = $ColRed
+                $ports = $failLines | ForEach-Object {
+                    if ($_ -match '^\s+(.+?)\s{2,}DEGRADED') { $Matches[1].Trim() }
+                } | Where-Object { $_ }
+                $summary = "$($failLines.Count) fault(s)" + $(if ($ports) { " — " + ($ports -join ", ") } else { "" })
+            } elseif ($okComplete.Count -gt 0) {
+                $resultText = "All Clear"; $resultColor = $ColGreen; $summary = "All ports healthy"
+            }
+        } catch { }
+        $sizeKb = [math]::Round($f.Length / 1KB, 1)
+        $item = New-Object System.Windows.Forms.ListViewItem($dt.ToString("yyyy-MM-dd  HH:mm"))
+        $item.SubItems.Add($resultText) | Out-Null
+        $item.SubItems.Add($summary)    | Out-Null
+        $item.SubItems.Add("$sizeKb KB") | Out-Null
+        $item.ForeColor = $resultColor
+        $item.BackColor = [System.Drawing.Color]::White
+        $item.Tag       = $f.FullName
+        $lvHistory.Items.Add($item) | Out-Null
+    }
+}
 
 # ---- Guide Panel (Fault Isolation Wizard) ----------------------------------
 $pnlGuide = New-Object System.Windows.Forms.Panel
@@ -1589,35 +1656,90 @@ $btnGuideAction.Add_Click({
     }
 })
 
-$lnkGuideReset.Add_LinkClicked({
-    $script:guide.Phase = 0; $script:guide.SuspectPort = ""; $script:guide.TestPort = ""; $script:guide.BaseSpeed = 0
-    $rtbGuide.Text = "Phase results will appear here as you work through each step."
-    $pnlGuideResult.Visible = $false
-    $lblGuidePhase.Text = "SELECT A PORT TO BEGIN"
-    $lblGuideInstr.Text = "Select the NIC port that is showing degraded speed (100 Mbps) and click Start."
-    $btnGuideAction.Text = "  Start Baseline"; $btnGuideAction.Enabled = $true
-    $lblGuidePortA.Visible = $true; $cboGuidePortA.Visible = $true
-    $lblGuidePortB.Visible = $false; $cboGuidePortB.Visible = $false
-    Update-GuideStepDots -ActivePhase 1
+$lnkGuideReset.Add_LinkClicked({ Reset-Guide })
+
+# ---- History Panel ---------------------------------------------------------
+$pnlHistory = New-Object System.Windows.Forms.Panel
+$pnlHistory.Size = $center.Size; $pnlHistory.Location = $center.Location
+$pnlHistory.BackColor = $ColBg; $pnlHistory.Visible = $false
+$form.Controls.Add($pnlHistory)
+
+$lblHistTitle = New-Object System.Windows.Forms.Label
+$lblHistTitle.Text = "Run History"
+$lblHistTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
+$lblHistTitle.ForeColor = $ColText
+$lblHistTitle.Location = New-Object System.Drawing.Point(10, 16); $lblHistTitle.AutoSize = $true
+$pnlHistory.Controls.Add($lblHistTitle)
+
+$lblHistSub = New-Object System.Windows.Forms.Label
+$lblHistSub.Text = "Past diagnostic runs — double-click a row to open the full report."
+$lblHistSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblHistSub.ForeColor = $ColMuted
+$lblHistSub.Location = New-Object System.Drawing.Point(10, 42); $lblHistSub.Size = New-Object System.Drawing.Size(540, 18)
+$pnlHistory.Controls.Add($lblHistSub)
+
+$lnkHistRefresh = New-Object System.Windows.Forms.LinkLabel; $lnkHistRefresh.Text = "Refresh"
+$lnkHistRefresh.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lnkHistRefresh.LinkColor = $ColMuted
+$lnkHistRefresh.Location = New-Object System.Drawing.Point(544, 44); $lnkHistRefresh.AutoSize = $true
+$pnlHistory.Controls.Add($lnkHistRefresh)
+$lnkHistRefresh.Add_LinkClicked({ Update-HistoryList })
+
+$lvHistory = New-Object System.Windows.Forms.ListView
+$lvHistory.Size = New-Object System.Drawing.Size(572, 594)
+$lvHistory.Location = New-Object System.Drawing.Point(10, 68)
+$lvHistory.View = [System.Windows.Forms.View]::Details
+$lvHistory.FullRowSelect = $true
+$lvHistory.GridLines = $false
+$lvHistory.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$lvHistory.BackColor = [System.Drawing.Color]::White
+$lvHistory.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$lvHistory.HeaderStyle = [System.Windows.Forms.ColumnHeaderStyle]::Nonclickable
+$lvHistory.UseCompatibleStateImageBehavior = $false
+$pnlHistory.Controls.Add($lvHistory)
+$lvHistory.Columns.Add("Date / Time",   142) | Out-Null
+$lvHistory.Columns.Add("Result",         92) | Out-Null
+$lvHistory.Columns.Add("Summary",       260) | Out-Null
+$lvHistory.Columns.Add("Size",           58) | Out-Null
+
+$lvHistory.Add_DoubleClick({
+    if ($lvHistory.SelectedItems.Count -gt 0) {
+        $path = $lvHistory.SelectedItems[0].Tag
+        if ($path -and (Test-Path $path)) { Start-Process notepad.exe $path }
+    }
 })
 
 # Nav wiring
-$navTests.Add_Click({
-    $center.Visible    = $false
-    $pnlGuide.Visible  = $true
-    foreach ($nb in @($navOverview,$navTests,$navResults,$navHistory,$navSettings)) {
+function Set-ActiveNav {
+    param($Active)
+    foreach ($nb in @($navOverview,$navTests,$navHistory)) {
         $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
     }
-    $navTests.BackColor = $ColNavActive; $navTests.ForeColor = [System.Drawing.Color]::White
-})
+    $Active.BackColor = $ColNavActive; $Active.ForeColor = [System.Drawing.Color]::White
+}
 
 $navOverview.Add_Click({
-    $pnlGuide.Visible  = $false
-    $center.Visible    = $true
-    foreach ($nb in @($navOverview,$navTests,$navResults,$navHistory,$navSettings)) {
-        $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
+    $pnlGuide.Visible = $false; $pnlHistory.Visible = $false; $center.Visible = $true
+    Set-ActiveNav $navOverview
+})
+
+$navTests.Add_Click({
+    $center.Visible = $false; $pnlHistory.Visible = $false; $pnlGuide.Visible = $true
+    Set-ActiveNav $navTests
+})
+
+$navHistory.Add_Click({
+    $center.Visible = $false; $pnlGuide.Visible = $false; $pnlHistory.Visible = $true
+    Set-ActiveNav $navHistory
+    Update-HistoryList
+})
+
+$btnGoGuide.Add_Click({
+    $firstFail = $sync.PortResults | Where-Object { $_.Result -eq "FAIL" } | Select-Object -First 1
+    $navTests.PerformClick()
+    Reset-Guide
+    if ($firstFail) {
+        $idx = $cboGuidePortA.Items.IndexOf($firstFail.Name)
+        if ($idx -ge 0) { $cboGuidePortA.SelectedIndex = $idx }
     }
-    $navOverview.BackColor = $ColNavActive; $navOverview.ForeColor = [System.Drawing.Color]::White
 })
 
 # ---------- Form Load -------------------------------------------------------
