@@ -29,7 +29,7 @@ Results are also saved automatically to a `.txt` file in `CameraLink_Results\` n
 | Remediation | For degraded 100 Mbps ports with SmartSpeed history, forces 1 Gbps and re-checks after 30 seconds |
 | Physical layer evidence | Scans Intel SmartSpeed event log (last 48 hours) for ID 40 downgrade events — irrefutable Layer 1 fault evidence |
 | OCR detection | Ports with no SmartSpeed ID 40 history are identified as 100 Mbps-only devices (OCR scoreboard cameras) — 100 Mbps is expected and no action is taken |
-| Gateway + ARP | Checks network reachability and lists connected device MACs |
+| ARP | Lists connected device MACs on the camera link-local subnet |
 | Camera ping + RTSP | Tests each camera IP (169.254.16.50–.52) for ping response and RTSP port 554 reachability |
 | App log analysis | Parses the most recent `CamerasTester_*.log` for connection failures, cross-referenced against NIC port health |
 | VPU model detection | Reads `agent_*.log` (written every 5 minutes by the Pixellot agent service) to identify the VPU model and unit ID |
@@ -45,9 +45,9 @@ Intel SmartSpeed Event ID 40 fires only when the physical medium cannot sustain 
 
 The interface is a three-panel window:
 
-- **Left sidebar** — Navigation, NIC selector, quick system info, VPU model
-- **Center panel** — Run/Retest buttons, six live status cards (Link Speed, NIC Status, Ping CHU, Gateway, ARP Entry, CHU Detection), Last Run Summary, color-coded live log, and Export / Copy / Save action buttons
-- **Right panel** — Status badge (Ready / Running / All Clear / Issues Found), plain-language Next Steps / Guidance, and Detected Hardware table (CHU MAC, camera port status, cable status)
+- **Left sidebar** — Navigation (Overview, Guide, History), NIC selector with connected status indicator, quick system info, VPU model
+- **Center panel** — Run/Retest buttons, per-port speed cards (P1–P4, one per Intel NIC), three diagnostic cards (Ping CHU, ARP Entry, CHU Detection), Last Run Summary card, color-coded live log, and Export / Copy / Save action buttons
+- **Right panel** — Status badge (Ready / Running / All Clear / Issues Found) and plain-language Next Steps / Guidance
 
 The diagnostic engine runs in a background runspace so the GUI never freezes during the 30-second re-negotiation wait or 12-second blink-sample window.
 
