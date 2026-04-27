@@ -4,16 +4,28 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
-## [3.9] - 2026-04-26
+## [3.9] - 2026-04-27
 
 ### Added
 - **Fault Isolation Guide** — new "Guide" tab (replaces the old "Tests" tab) implements a 4-phase interactive wizard for controlled fault isolation: Phase 1 captures the baseline degraded link speed, Phase 2 tests whether the fault follows the NIC port (move same cable+camera to alternate port), Phase 3 tests whether the fault follows the cable (swap cable, keep port+camera), Phase 4 tests whether the fault follows the camera (swap camera, keep port+cable). Each phase waits for the technician to perform the physical change, then measures link speed and applies logic to advance to the correct next step. Concluded phases show a plain-language verdict and the action button transitions to "Run Full Diagnostic" to bring results back to the Overview
+- **History panel** — new History nav tab shows a ListView of all past `CameraLink_Results\*.txt` files with date/time, result (All Clear / Issues Found), filename, and file size; double-click opens the file in Notepad; list refreshes on each nav to the History tab
+- **Per-port NIC status cards** — row 1 of the center panel now shows one dynamic status card per detected Intel NIC, labeled with the adapter name and port index (P1, P2, …); cards update in real time during the diagnostic as each port's link speed is measured, showing `1 Gbps` (green), `100 Mbps` (red), `No link` (neutral), or `Forcing…` (amber) with live `Set-Card` calls from the background runspace
 
 ### Changed
 - **"Tests" nav → "Guide"** — nav button renamed from "Tests" to "Guide"; the old static step-row panel (`$pnlTests`, `$testRows`) and its timer-tick update loop are removed entirely
+- **Nav tabs simplified** — Results and Settings nav buttons removed; Overview, Guide, and History remain
+- **Port labels use sequential index** — per-port card titles show P1/P2/P3/P4 based on sorted adapter order, replacing the previous extraction of the `#X` instance counter from the Intel driver description string (which reflected Windows' global NIC enumeration count, not physical port position)
+- **Static Link Speed, NIC Status, and Gateway cards removed** — replaced by the dynamic per-port cards in row 1; row 2 now contains only PingCHU, ArpEntry, and ChuDetect
+- **Gateway ping removed** — the gateway reachability check is not relevant to the camera-only link-local subnet and has been removed from the diagnostic engine and the Network section
+
+### Fixed
+- **VPU Model missing from live log** — `Add-Summary "VPU Model" $sync.VpuModel (if ($VpuModel) { "Info" } else { "Warn" })` used an inline `if` expression as a positional argument; same PS5.1 background runspace edge case as the camera ping fix in v3.7. Fixed with explicit `$vpuLevel` variable assignment
+- **Per-port cards not rendering** — cards were being created inside a `$form.Add_Load({})` event handler where `New-StatusCard` (which references script-scope color variables and the `[GfxHelper]` C# type) fails silently inside a `try/catch`. Fixed by pre-querying NICs into `$script:detectedNics` before form construction and creating port cards in the main form body alongside static card definitions
 
 ### Removed
+- **Detected Hardware section** — CHU MAC, Camera Port, and Cable Status rows removed from the right panel; `$rtbSteps` height increased to use the reclaimed space
 - `$testRows`, `$script:lastStepsDone`, and the test-row timer-tick update block — no longer needed now that the Tests tab is replaced by the Guide
+- Results and Settings nav panels and their associated controls
 
 ---
 
