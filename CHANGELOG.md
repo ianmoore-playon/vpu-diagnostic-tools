@@ -9,6 +9,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.4.2] - 2026-04-27
+
+### Fixed
+- **Content clipped at bottom of live log and action buttons** — `form.Size` was setting the outer window size (including title bar), so the client area was ~30px shorter than intended; changed to `form.ClientSize` so the content area is exactly 680px tall
+- **Last Run Summary appears as empty white box** — summary text labels were siblings on the center panel rather than children of the white card panel, causing them to paint with the gray background color; moved labels into the card panel as children with white background
+
+---
+
 ## [1.4.1] - 2026-04-27
 
 ### Changed
