@@ -4,6 +4,22 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [3.13] - 2026-04-27
+
+### Added
+- **SmartSpeed status card** — fourth card in the bottom row showing Intel SmartSpeed downgrade event count live after each run; red if any downgrades, green if none — gives the tech a number to quote when escalating
+- **Copy Summary action** — generates a structured, ticket-ready summary (port status, SmartSpeed count, camera results, app log findings, recommended next steps) and copies it to clipboard; replaces needing to paste a raw log at the tech's support chain
+- **Help tab** — eight-section reference in the sidebar: what the tool does, how to read each tab, Guide workflow walkthrough, FAQ, escalation guide
+- **Port card click-to-Guide** — clicking a red (degraded) port card on Overview navigates directly to the Guide tab with that port pre-selected; hand cursor on clickable cards
+
+### Changed
+- **History trend in summary card** — after each run, the Last Run Summary line appends which port has had issues most frequently across the last 15 runs (e.g. "Ethernet 45 has had issues in 10 of the last 12 runs")
+- **Right panel switches context per tab** — Guide tab shows a phase-by-phase reference (what each phase changes and what the result means) rather than the Overview next steps; Overview next steps restored on return
+- **"Copy Log" relabelled** — raw log copy button renamed from "Copy Results" to "Copy Log" to distinguish it from the new Copy Summary
+- **Nav wiring refactored** — `Show-Panel`, `Show-OverviewSteps`, `Show-GuideSteps` helpers extracted; all nav click handlers simplified
+
+---
+
 ## [3.12] - 2026-04-27
 
 ### Added
