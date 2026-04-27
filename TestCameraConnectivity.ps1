@@ -882,9 +882,10 @@ if ($script:detectedNics.Count -gt 0) {
     $numPorts  = $script:detectedNics.Count
     $portCardW = [int]((572 - ($numPorts - 1) * 8) / $numPorts)
     $portCardX = 10
+    $portNum   = 1
     foreach ($n in $script:detectedNics) {
-        $portIdx   = if ($n.InterfaceDescription -match '#(\d+)') { "P$($Matches[1])" } else { "P1" }
-        $portTitle = "$($n.Name)  $portIdx"
+        $portTitle = "$($n.Name)  P$portNum"
+        $portNum++
         $c = New-StatusCard -Title $portTitle -X $portCardX -Y 106 -CardW $portCardW -CardH 78
         $cards[$n.Name] = $c
         $sync.Cards[$n.Name] = @{ Value = "--"; Status = "neutral" }
