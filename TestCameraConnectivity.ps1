@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v3.14
+#  VPU Cable & NIC Troubleshooter  v1.4.0
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.14"
+$ScriptVersion      = "1.4.0"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }

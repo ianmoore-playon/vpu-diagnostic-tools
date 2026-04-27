@@ -2,12 +2,17 @@
 
 All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
+Version format: `MAJOR.MINOR.PATCH`
+- **MAJOR** — full rewrites or fundamental architecture changes
+- **MINOR** — new functional flows, significant new features, new tabs or workflows
+- **PATCH** — bug fixes, UI polish, text changes, minor improvements
+
 ---
 
-## [3.14] - 2026-04-27
+## [1.4.0] - 2026-04-27
 
 ### Added
-- **NIC selector functional** — "Test Scope" dropdown in the sidebar now filters the diagnostic to a single NIC port when a specific port is selected; "All Ports" runs the full diagnostic as before; button text updates dynamically to reflect the current scope (e.g. "Test Ethernet 45 Only")
+- **NIC selector functional** — "Test Scope" dropdown in the sidebar now filters the diagnostic to a single NIC port when a specific port is selected; "All Ports" runs the full diagnostic as before; button text updates dynamically to reflect the current scope (e.g. "▶ Test Ethernet 45 Only")
 
 ### Changed
 - **Next Steps condensed to 1–2 sentences** — all Next Steps body texts shortened for faster reading; full guidance for component isolation is now in the Guide tab
@@ -15,377 +20,214 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
-## [3.13] - 2026-04-27
+## [1.3.0] - 2026-04-27
 
 ### Added
 - **SmartSpeed status card** — fourth card in the bottom row showing Intel SmartSpeed downgrade event count live after each run; red if any downgrades, green if none — gives the tech a number to quote when escalating
-- **Copy Summary action** — generates a structured, ticket-ready summary (port status, SmartSpeed count, camera results, app log findings, recommended next steps) and copies it to clipboard; replaces needing to paste a raw log at the tech's support chain
-- **Help tab** — eight-section reference in the sidebar: what the tool does, how to read each tab, Guide workflow walkthrough, FAQ, escalation guide
+- **Copy Summary action** — generates a structured, ticket-ready summary (port status, SmartSpeed count, camera results, app log findings, recommended next steps) and copies it to clipboard
+- **Help tab** — eight-section reference: what the tool does, how to read each tab, Guide workflow walkthrough, FAQ, escalation guide
 - **Port card click-to-Guide** — clicking a red (degraded) port card on Overview navigates directly to the Guide tab with that port pre-selected; hand cursor on clickable cards
 
 ### Changed
-- **History trend in summary card** — after each run, the Last Run Summary line appends which port has had issues most frequently across the last 15 runs (e.g. "Ethernet 45 has had issues in 10 of the last 12 runs")
-- **Right panel switches context per tab** — Guide tab shows a phase-by-phase reference (what each phase changes and what the result means) rather than the Overview next steps; Overview next steps restored on return
+- **History trend in summary card** — after each run, the Last Run Summary line appends which port has had issues most frequently across the last 15 runs
+- **Right panel switches context per tab** — Guide tab shows a phase-by-phase reference rather than Overview next steps; Overview next steps restored on return
 - **"Copy Log" relabelled** — raw log copy button renamed from "Copy Results" to "Copy Log" to distinguish it from the new Copy Summary
 - **Nav wiring refactored** — `Show-Panel`, `Show-OverviewSteps`, `Show-GuideSteps` helpers extracted; all nav click handlers simplified
 
 ---
 
-## [3.12] - 2026-04-27
+## [1.2.0] - 2026-04-27
 
 ### Added
 - **History tab** — lists all past `CameraLink_Results_*.txt` runs with date/time (parsed from filename), inferred result (All Clear / Issues Found), a port-fault summary, and file size; double-click any row to open the full report in Notepad; Refresh link re-scans the output folder
-- **"Open Fault Isolation Guide →" button** — appears in the right panel when port faults are detected; navigates to the Guide tab and pre-selects the first failed port so the tech can start isolation immediately
+- **"Open Fault Isolation Guide →" button** — appears in the right panel when port faults are detected; navigates to the Guide tab and pre-selects the first failed port
 
 ### Changed
-- **Next Steps — port faults now direct to Guide** — degraded-port steps no longer say "Replace cable on X"; they now say "Run Fault Isolation Guide — X" with a body explaining the fault is confirmed physical-layer but the root cause (NIC port / cable / camera) still needs to be isolated
-- **Results and Settings nav tabs removed** — non-functional stubs removed from the sidebar; nav now has Overview, Guide, and History only
+- **Next Steps — port faults now direct to Guide** — degraded-port steps now say "Run Fault Isolation Guide — X" rather than prescribing a replacement action
+- **Results and Settings nav tabs removed** — non-functional stubs removed; nav now has Overview, Guide, History, and Help
 
 ### Fixed
-- **Nav handlers referenced removed buttons** — `$navResults` and `$navSettings` removed from all `foreach` loops in nav click handlers
+- **Nav handlers referenced removed buttons** — `$navResults` and `$navSettings` removed from all nav click handler loops
 
 ---
 
-## [3.11] - 2026-04-27
-
-Version bump only; no functional changes from 3.10.
-
----
-
-## [3.10] - 2026-04-27
+## [1.1.1] - 2026-04-27
 
 ### Added
-- **Per-port speed cards** — one status card per detected Intel NIC (P1, P2, P3, P4) ordered by PCI function number for physical left-to-right port position; each card updates live during the diagnostic with the measured link speed
-- **Card subtitles** — each status card now shows a short descriptor line below the value (e.g., "Camera head unit", "L2 neighbor table")
-- **Last Run Summary card** — plain-language summary panel wrapped in a styled card matching the status card design
-- **Actions section header** — "Actions" label added above the Export / Copy / Save buttons in the right panel
-- **Badge status dot** — colored dot indicator inside the run status badge tracking Running / All Clear / Issues Found states
-- **Connected status indicator** — dot and label below the NIC dropdown in the sidebar shows live connection state
-- **Unicode icons** — Segoe MDL2 icons added to sidebar nav buttons and action buttons; network icon added to sidebar header
-- **Version in title bar** — window title now includes the script version number
+- **Per-port speed cards** — one status card per detected Intel NIC (P1–P4) ordered by PCI function number for physical port position; each card updates live during the diagnostic
+- **Card subtitles, summary card, actions header, badge dot, connected status indicator, version in title bar** — UI polish across the center panel and sidebar
 
 ### Changed
-- **Aggregated cards replaced by per-port cards** — static Link Speed and NIC Status cards replaced by dynamic P1–P4 per-port speed cards in the first card row
-- **NIC sort order** — port cards ordered by PCI function number (physical position) rather than Windows adapter instance number
-- **"Current Status" → "Current Results"** — label rename in the center panel
-- **Next Steps expanded** — panel height increased to fill space freed by removed sections
+- **Aggregated cards replaced by per-port cards** — static Link Speed and NIC Status cards replaced by dynamic P1–P4 cards
+- **NIC sort order** — port cards ordered by PCI function number rather than Windows adapter instance number
+- **"Current Status" → "Current Results"** — label rename
 
 ### Removed
-- **Gateway card** — gateway reachability check removed from diagnostic engine and UI (not relevant to camera link-local subnet)
-- **Detected Hardware section** — right-panel hardware table (CHU MAC, camera port status, cable status) removed
+- **Gateway card** — gateway reachability check not relevant to camera link-local subnet
+- **Detected Hardware section** — CHU MAC, camera port status, cable status table removed
 
 ### Fixed
 - **Live Log always empty** — `$(if ...)` subexpression syntax bug silently discarded all log lines
 
 ---
 
-## [3.9] - 2026-04-27
+## [1.1.0] - 2026-04-27
 
 ### Added
-- **Fault Isolation Guide** — new "Guide" tab (replaces the old "Tests" tab) implements a 4-phase interactive wizard for controlled fault isolation: Phase 1 captures the baseline degraded link speed, Phase 2 tests whether the fault follows the NIC port (move same cable+camera to alternate port), Phase 3 tests whether the fault follows the cable (swap cable, keep port+camera), Phase 4 tests whether the fault follows the camera (swap camera, keep port+cable). Each phase waits for the technician to perform the physical change, then measures link speed and applies logic to advance to the correct next step. Concluded phases show a plain-language verdict and the action button transitions to "Run Full Diagnostic" to bring results back to the Overview
-- **History panel** — new History nav tab shows a ListView of all past `CameraLink_Results\*.txt` files with date/time, result (All Clear / Issues Found), filename, and file size; double-click opens the file in Notepad; list refreshes on each nav to the History tab
-- **Per-port NIC status cards** — row 1 of the center panel now shows one dynamic status card per detected Intel NIC, labeled with the adapter name and port index (P1, P2, …); cards update in real time during the diagnostic as each port's link speed is measured, showing `1 Gbps` (green), `100 Mbps` (red), `No link` (neutral), or `Forcing…` (amber) with live `Set-Card` calls from the background runspace
+- **Fault Isolation Guide** — new Guide tab implements a 4-phase interactive wizard: Phase 1 captures baseline degraded link speed; Phase 2 tests whether the fault follows the NIC port; Phase 3 tests whether the fault follows the cable; Phase 4 tests whether the fault follows the camera. Each phase measures link speed and produces a plain-language verdict. Concluded phases transition the action button to "Run Full Diagnostic" to confirm the fix
+- **Per-port NIC status cards (initial)** — one dynamic status card per detected Intel NIC, updating in real time during the diagnostic
 
 ### Changed
-- **"Tests" nav → "Guide"** — nav button renamed from "Tests" to "Guide"; the old static step-row panel (`$pnlTests`, `$testRows`) and its timer-tick update loop are removed entirely
-- **Nav tabs simplified** — Results and Settings nav buttons removed; Overview, Guide, and History remain
-- **Port labels use sequential index** — per-port card titles show P1/P2/P3/P4 based on sorted adapter order, replacing the previous extraction of the `#X` instance counter from the Intel driver description string (which reflected Windows' global NIC enumeration count, not physical port position)
-- **Static Link Speed, NIC Status, and Gateway cards removed** — replaced by the dynamic per-port cards in row 1; row 2 now contains only PingCHU, ArpEntry, and ChuDetect
-- **Gateway ping removed** — the gateway reachability check is not relevant to the camera-only link-local subnet and has been removed from the diagnostic engine and the Network section
+- **"Tests" nav → "Guide"** — nav button renamed; old static step-row panel replaced by the full wizard
+- **Gateway ping removed** — not relevant to the camera-only link-local subnet; removed from engine and UI
 
 ### Fixed
-- **VPU Model missing from live log** — `Add-Summary "VPU Model" $sync.VpuModel (if ($VpuModel) { "Info" } else { "Warn" })` used an inline `if` expression as a positional argument; same PS5.1 background runspace edge case as the camera ping fix in v3.7. Fixed with explicit `$vpuLevel` variable assignment
-- **Per-port cards not rendering** — cards were being created inside a `$form.Add_Load({})` event handler where `New-StatusCard` (which references script-scope color variables and the `[GfxHelper]` C# type) fails silently inside a `try/catch`. Fixed by pre-querying NICs into `$script:detectedNics` before form construction and creating port cards in the main form body alongside static card definitions
-
-### Removed
-- **Detected Hardware section** — CHU MAC, Camera Port, and Cable Status rows removed from the right panel; `$rtbSteps` height increased to use the reclaimed space
-- `$testRows`, `$script:lastStepsDone`, and the test-row timer-tick update block — no longer needed now that the Tests tab is replaced by the Guide
-- Results and Settings nav panels and their associated controls
+- **VPU Model missing from live log** — inline `if` expression used as positional arg in background runspace; replaced with explicit variable
+- **Per-port cards not rendering** — cards created inside `Add_Load` where color variables and `[GfxHelper]` fail silently; fixed by pre-querying NICs before form construction
 
 ---
 
-## [3.8] - 2026-04-26
+## [1.0.8] - 2026-04-26
 
 ### Changed
-- **Spinner status indicator** — removed the static pipeline hint label above the cards (`"Run: Link Speed > NIC Status > ..."`); replaced with a live status label above the log (`$lblStatus`) that shows a spinning `| / - \` character plus the current step text while the diagnostic is running, and settles to a static muted summary when complete
-- **Live log section headers** — log entries are now grouped into six named sections (`SYSTEM`, `HARDWARE`, `SIGNAL QUALITY`, `NETWORK`, `CAMERAS`, `APP LOG`) rendered as bold muted uppercase headers in the log pane; `Add-Section` helper enqueues a `"Section"`-level entry that the timer tick renders with distinct font/color, then `continue`s past the normal two-column row renderer
-- **`rtbLog` repositioned** — moved from y=350, h=308 to y=370, h=289 to accommodate the new 18px `$lblStatus` label inserted between the "Live Log" header and the log box
+- **Spinner status indicator** — replaced static pipeline hint label with a live `| / - \` spinner above the log showing current step text while running
+- **Live log section headers** — log entries grouped into named sections (`SYSTEM`, `SIGNAL QUALITY`, `NETWORK`, `CAMERAS`, `APP LOG`) rendered as bold muted uppercase headers
 
 ---
 
-## [3.7] - 2026-04-26
+## [1.0.7] - 2026-04-26
 
 ### Fixed
-- **`$W`/`$H` crash in elevated PS** — `New-StatusCard` parameter names `$W` and `$H` collided with a variable already in scope when running in an elevated `irm | iex` session (both at form-construction time on lines like `$val.Size = New-Object System.Drawing.Size($W - 20, 34)` and inside the Paint handler via `.GetNewClosure()`). Fixed by renaming both parameters to `$CardW`/`$CardH` throughout the function. Also removed the now-unnecessary `$panel.Tag = $Icon` assignment since icon is captured directly via closure
-- **`$allClear` false-positive** — non-optional cameras (`.50`, `.51`) not responding to ping were not included in the all-clear check; the badge could show green "All Clear" while the Ping CHU card showed red "No Response". Fixed by adding `$noPingMain` check to `$allClear` condition
-- **Camera ping/RTSP entries missing from live log and output file** — `Add-Summary $cam.IP $rtspStr (if ($rtspOk) { "Pass" } else { "Fail" })` used an inline `if` expression as a function argument; this syntax has edge-case behavior in PS5.1 background runspaces that silently prevented the call from executing. Replaced with explicit variable assignment (`$rtspLvl = if (...) { ... }; Add-Summary ... $rtspLvl`) for both the ping-OK and no-ping branches
-- **NIC stuck at forced 1 Gbps after failed renegotiation** — after a forced-to-1Gbps attempt failed, `Set-NetAdapterAdvancedProperty` reset the registry value to Auto but the driver did not pick up the change without a full adapter restart; the NIC remained forced and showed "No link" on subsequent runs. Added `Restart-NetAdapter` immediately after both the force-to-1Gbps and reset-to-auto `Set-AdapterSpeedDuplex` calls to ensure the driver applies the new setting
-- **Misleading "Physical layer limitation confirmed" on ID 27 warnings only** — the message and "fail" SmartSpeed step status appeared even when there were zero ID 40 downgrade events (only ID 27 link warnings); a VPU with all-1Gbps ports and historic link warnings was told it had a cable fault. Fixed: the message, "fail" step status, and "Fail"-level summary are now gated on `$dCnt -gt 0`; warning-only events show a "Warn"-level summary with count
-- **Duplicate summary entry on forced-renegotiation path** — the intermediate `"Forcing 1 Gbps, waiting 30s..."` `Add-Summary` line appeared alongside the final `"DEGRADED cable fault"` result for the same adapter; removed the intermediate entry (live status via `$sync.CurrentStep` is sufficient during the wait)
+- **`$W`/`$H` crash in elevated PS** — parameter name collision in `New-StatusCard`; renamed to `$CardW`/`$CardH` throughout
+- **`$allClear` false-positive** — non-optional cameras not responding to ping were not included in the all-clear check
+- **Camera ping/RTSP entries missing from live log** — inline `if` expression in `Add-Summary` call silently failed in PS5.1 background runspace; replaced with explicit variable
+- **NIC stuck at forced 1 Gbps after failed renegotiation** — `Restart-NetAdapter` added after both force-to-1Gbps and reset-to-auto calls
+- **Misleading "Physical layer limitation confirmed" on ID 27 warnings only** — message and fail status now gated on `$dCnt -gt 0`
+- **Duplicate summary entry on forced-renegotiation path** — intermediate "Forcing 1 Gbps, waiting 30s…" entry removed
 
 ### Added
-- **No-hardware notice** — when no Intel 82574L/I210 NICs are found (e.g. running on a non-VPU PC), the Next Steps panel now shows `"Wrong machine — no VPU hardware detected"` with a plain-language explanation, replacing the silent red card with no guidance
-- **PoE reset guidance for unreachable cameras** — if a non-optional camera does not respond to ping and the NIC port is healthy, a PoE reset step is added to Next Steps (parallel to the existing RTSP-fault PoE reset step)
-
-### Removed
-- **Dead code** — `$sync.LogQueue` (unused `ConcurrentQueue` left over from pre-v3.6 live-log architecture) and `Append-RtbLog` helper function (never called since v3.6 summarized-log rewrite)
+- **No-hardware notice** — when no Intel NICs are found, Next Steps shows "Wrong machine — no VPU hardware detected" with plain-language explanation
+- **PoE reset guidance for unreachable cameras** — added when a non-optional camera doesn't respond to ping and the NIC port is healthy
 
 ---
 
-## [3.6] - 2026-04-26
+## [1.0.6] - 2026-04-26
 
 ### Changed
-- **Summarized live log** — `rtbLog` now shows a two-column checkpoint summary (label in muted gray, result in status color) instead of raw script output; detailed output still written to the `.txt` file via `Add-Log`; new `Add-Summary` function enqueues to `SummaryQueue` at 15 key diagnostic moments
-- **Next Steps cards** — `$sync.NextSteps` entries changed from flat strings to `@{H=...; B=...}` hashtables; header rendered in blue 9pt Semibold, body in muted gray 8.5pt with natural word-wrap; body text tightened to 1–2 sentences
-- **Right panel layout** — plain "Next Steps / Guidance" label replaced with a full-width blue (`$ColAccent`) header bar; `rtbSteps` height reduced from 450px to 296px to accommodate hardware section and three action buttons stacked vertically (211px wide) at the panel bottom
-- **Action buttons relocated back to right panel** — `Export Report`, `Copy Results`, `Save Log` moved from center panel bottom to right panel (y=510/546/582); center `rtbLog` height restored from 270px to 308px
+- **Summarized live log** — `rtbLog` now shows a two-column checkpoint summary (label / result) instead of raw output; detailed output still written to `.txt` file
+- **Next Steps render** — step entries changed to `@{H=...; B=...}` hashtables; header in blue Semibold, body in muted gray with word-wrap
+- **Action buttons relocated to right panel** — Export Report, Copy Results, Save Log moved from center panel to right panel
 
 ### Added
-- **Tests tab — live diagnostic steps panel** — `$pnlTests` replaces center panel when Tests nav is clicked; shows 7 step rows (NIC Detection, Link Speed, SmartSpeed, Gateway+ARP, Camera Ping, App Log, Build Guidance) each with colored status circle, name, description, and result label; timer tick derives live status from `$sync.StepsDone` hashtable; first pending step shows "Running…" in blue while diagnostic is active
-- **Nav wiring** — Overview and Tests sidebar buttons now properly show/hide `$center` vs `$pnlTests` and update active highlight
-- `$sync.StepsDone` synchronized hashtable — diagnostic engine writes `"pass"` / `"fail"` after each major phase; cleared on new run
-
-### Fixed
-- `rtbLog` height was 270px (reduced in v3.4 for center action buttons) — restored to 308px now that buttons are in the right panel
+- **Tests tab — live diagnostic steps panel** — 7 step rows with colored status circles, names, descriptions, and result labels; timer tick derives live status from `$sync.StepsDone`
+- `$sync.StepsDone` synchronized hashtable — diagnostic engine writes pass/fail after each major phase
 
 ---
 
-## [3.5] - 2026-04-26
+## [1.0.5] - 2026-04-26
 
 ### Changed
-- **Camera-level fault note reworded** — previous `[NOTE] NIC port OK - fault is at the camera level` was overstated; now reads `Cable and NIC port are OK (1 Gbps confirmed) - physical layer is ruled out`, followed by a list of possible causes (PoE power, firmware/config, hardware) and a directive to start with a PoE reset before assuming hardware failure
-- **Unknown model flagged** — when the camera model cannot be read from the app log (meaning the VPU never completed the camera handshake), an additional note is appended to make this visible
-
-### Fixed
-- `AppIssues` match pattern updated to `*cable ruled out*` to align with new issue string
+- **Camera-level fault note reworded** — clarified to distinguish between physical layer ruled out (NIC 1 Gbps) vs. camera-side issue; added PoE reset guidance before assuming hardware failure
 
 ---
 
-## [3.4] - 2026-04-26
+## [1.0.4] - 2026-04-26
 
 ### Changed
-- **Actions buttons relocated** — Export Report, Copy Results, Save Log moved from right panel to a horizontal button strip at the bottom of the center panel (aligned to the status card grid at x=10/200/390)
-- **Next Steps text** — guidance now stored as complete paragraph strings and word-wrapped naturally by the RichTextBox, replacing the previous manually pre-broken lines
-- **Next Steps render** — numbered step headers rendered at 9pt Semibold with a blank-line gap between items; body text at 8.5pt, fully wrapped without manual newlines
-- **Right panel rtbSteps height** — expanded from 218px to 450px since Actions section was removed; Detected Hardware section pushed down to y=546
-- **rtbLog height** — reduced from 308px to 270px to accommodate the action button strip below
-
-### Fixed
-- Next Steps text was split mid-sentence across dozens of short lines making it hard to read — now renders as flowing paragraphs
+- **Actions buttons relocated** — Export Report, Copy Results, Save Log moved from right panel to horizontal button strip at bottom of center panel
+- **Next Steps text and render** — guidance stored as full paragraph strings, word-wrapped naturally by RichTextBox; numbered step headers at 9pt Semibold
 
 ---
 
-## [3.3] - 2026-04-26
+## [1.0.3] - 2026-04-26
 
 ### Changed
-- **Status card icons** — each card now shows a decorative Segoe MDL2 Assets glyph watermarked in the lower-right corner (link bars, network, signal, globe, list, camera)
-- **Cable fault guidance** — removed specific wire-pair reference; now states "a wire inside the cable is damaged or broken, or the RJ45 connector is not crimped correctly" with instructions to try a known-good replacement cable first
-- **Camera fault guidance** — expanded "Monitor" directive with explicit step-by-step instructions: PoE reset via VPU Manager path, 2-minute wait, re-run, and replacement escalation if failures persist
-- **Re-run reminder** — trailing step now only appears when there are multiple issue types (cable + RTSP or camera faults) to avoid redundancy
+- **Status card icons** — Segoe MDL2 Assets glyphs watermarked in lower-right corner of each card
+- **Cable fault guidance** — removed specific wire-pair reference; states "damaged wire or incorrect RJ45 crimp" with known-good cable swap instruction
+- **Re-run reminder** — only shown when multiple issue types are present
 
 ---
 
-## [3.2] - 2026-04-26
+## [1.0.2] - 2026-04-26
+
+### Added
+- `GfxHelper` C# helper class providing `RoundedRect()` for all rounded Region and border painting
 
 ### Changed
-- **Rounded status cards** — cards now render with 8px corner radius using GDI+ Region clipping and an anti-aliased 1px border, replacing sharp-cornered rectangles
-- **Circular indicator dots** — the per-card status dot (upper-right of each card) is clipped to a circle via Region
-- **Pill-shaped badge** — the status badge (Ready / Running / All Clear / Issues Found) uses a 13px radius giving a full pill shape at 26px height
-- **Rounded buttons** — Run Full Diagnostic, Retest Last Step, Export Report, Copy Results, and Save Log buttons all have 5–6px corner radius via Region
-
-### Added
-- `GfxHelper` C# helper class (loaded via `Add-Type`) providing `RoundedRect(Rectangle, radius)` returning a `GraphicsPath` — used for all rounded Region and border painting
+- **Rounded status cards, circular dots, pill-shaped badge, rounded buttons** — all UI chrome uses 5–13px corner radius via GDI+ Region clipping
 
 ---
 
-## [3.1] - 2026-04-26
+## [1.0.1] - 2026-04-26
 
 ### Fixed
-- Status card value labels truncated to "Degrade", "Reachabl" at display scale — font reduced from 15pt to 13pt Semibold, label width increased from `$W-30` to `$W-20`
-- VPU Model "Not detected" on live VPU — agent log search now also searches one level of subdirectories under each `$PixellotLogPaths` entry
+- Status card value labels truncated at display scale — font reduced from 15pt to 13pt Semibold, label width increased
+- VPU Model "Not detected" on live VPU — agent log search now also scans one level of subdirectories
 
 ---
 
-## [3.0] - 2026-04-26
+## [1.0.0] - 2026-04-26
 
 ### Changed
-- **Full rewrite as a WinForms GUI application** — all diagnostic logic preserved, surfaced through a three-panel interface matching the design mockup
+- **Full rewrite as a WinForms GUI application** — all diagnostic logic preserved, surfaced through a three-panel interface
 
 ### Added
-- **Left sidebar:** nav buttons (Overview, Tests, Results, History, Settings), NIC selector dropdown, Quick Info block (OS, host, user), VPU model display
-- **Center panel:** Run Full Diagnostic + Retest Last Step buttons; six live status cards (Link Speed, NIC Status, Ping CHU, Gateway, ARP Entry, CHU Detection); Last Run Summary; color-coded scrollable Live Log (dark terminal style)
-- **Right panel:** status badge (Ready / Running / All Clear / Issues Found); dynamically generated Next Steps / Guidance list post-run; Detected Hardware table (CHU MAC, Camera Port, Cable Status); Export Report / Copy Results / Save Log action buttons
-- Diagnostic engine runs in a background PowerShell runspace; UI timer polls shared synchronized hashtable every 300ms — GUI never freezes during the 30s re-negotiation wait or 12s blink-sample window
-- Tests nav item shows placeholder for guided isolation workflow (Tests A–D, coming in a future version)
-- Self-elevation uses `-WindowStyle Hidden` so only the GUI window appears (no console behind it)
-- One-liner `irm | iex` deployment unchanged
+- Left sidebar: nav buttons, NIC selector dropdown, Quick Info block, VPU model display
+- Center panel: Run / Retest buttons, live status cards, Last Run Summary, color-coded Live Log
+- Right panel: status badge, Next Steps / Guidance, Detected Hardware table, action buttons
+- Diagnostic engine runs in a background PowerShell runspace; UI timer polls shared synchronized hashtable every 300ms — GUI never freezes during long waits
+- Self-elevation uses `-WindowStyle Hidden` so only the GUI window appears
 
 ---
 
-## [2.8] - 2026-04-26
+## Legacy CLI Versions
 
-### Changed
-- Redesigned on-screen summary with distinct **NIC PORT STATUS**, **CAMERA STATUS**, **DIAGNOSIS**, and **NEXT STEPS** sections replacing the previous flat verdict block
-- NEXT STEPS generated dynamically from actual findings: cable replacement per degraded port, PoE reset per RTSP fault, monitor advisory per camera-level app failure, re-run reminder
+The following versions were command-line only (no GUI). Included for historical reference.
 
-### Fixed
-- SmartSpeed count in summary was using the capped 20-event sample (`$smartSpeedMessages`) instead of the real total from the event log scan — introduced `$totalSmartSpeedDowngrades` captured at scan time
-- `$allClear` now also checks `$cameraAppIssues` so camera-level app warnings are not silently ignored in the verdict
+### [2.8] - 2026-04-26
+Redesigned on-screen summary with NIC PORT STATUS, CAMERA STATUS, DIAGNOSIS, and NEXT STEPS sections. Fixed SmartSpeed count using wrong variable; `$allClear` now checks `$cameraAppIssues`.
 
----
+### [2.7] - 2026-04-25
+VPU model and product type detection from `agent_*.log`; VPU Manager web scrape kept as fallback. Fixed optional OCR camera false-positive app log failures.
 
-## [2.7] - 2026-04-25
+### [2.6] - 2026-04-25
+Fixed em-dash rendering in PS 5.1 log files. Added exit code 11 mapping.
 
-### Added
-- VPU model and product type detection from `agent_*.log` as primary source (written every 5 min by Pixellot agent process, independent of browser state); web scrape of VPU Manager at `http://localhost:32323/` kept as fallback
-- Product type (S2 / S2S) now shown alongside model and unit ID in the header
+### [2.5] - 2026-04-25
+Added 12-second multi-sample speed check for intermittent blinking links (Intel SmartSpeed retry cycles).
 
-### Fixed
-- "Not detected (VPU Manager offline?)" when VPU Manager browser was not open — agent log reading resolves this reliably
-- App log analysis incorrectly flagged "Couldn't get response" failures for the optional OCR camera (.52) when it was simply not installed — suppressed when `Optional = $true` and ping had no response
+### [2.4] - 2026-04-24
+Added VPU model detection, camera ping + RTSP port 554 tests, `Optional` flag for OCR camera.
 
----
+### [2.3] - 2026-04-24
+Results saved to `CameraLink_Results\` subfolder instead of Desktop root.
 
-## [2.6] - 2026-04-25
+### [2.2] - 2026-04-23
+Fixed exit code 0 overwriting meaningful failure codes. Improved subnet match fallback.
 
-### Fixed
-- Em dash (U+2014) in OCR camera RTSP skip note rendered as `?` in Windows PS 5.1 log files — replaced with plain hyphen
-- Exit code 11 was unmapped and displayed as "Exit code 11" — added mapping: `11` → "Camera not found / no response before timeout"
+### [2.1] - 2026-04-23
+Added Pixellot application log analysis, IP-to-NIC-port correlation, cross-reference with NIC port results.
 
----
+### [2.0] - 2026-04-23
+Added spinner animation, GitHub `irm | iex` one-liner support, `$ScriptUrl` config variable.
 
-## [2.5] - 2026-04-25
+### [1.8] - 2026-04-22
+Fixed parse error from em-dash character in PS 5.1.
 
-### Added
-- `Get-AdapterPeakSpeedMbps`: 12-second multi-sample speed check to detect intermittent blinking links caused by Intel SmartSpeed retry cycles (NIC periodically drops 100 Mbps link to reattempt gigabit negotiation)
-- Blinking status flag propagated to port results and on-screen summary
+### [1.7] - 2026-04-22
+Added Intel I210 NIC support, SmartSpeed pre-scan, OCR camera detection via SmartSpeed history.
 
-### Fixed
-- A port cycling between 100 Mbps and disconnected was classified as NO LINK on the initial read — now correctly classified as DEGRADED (blinking)
+### [1.6] - 2026-04-21
+Fixed `*SpeedDuplex` registry keyword lookup; corrected SpeedDuplex forced value to `"6"` (1 Gbps Full Duplex).
 
----
+### [1.5] - 2026-04-21
+Added `Get-EventAdapterName` helper. Fixed event log provider filter and description string error.
 
-## [2.4] - 2026-04-24
+### [1.4] - 2026-04-20
+Fixed self-elevation, link speed string parsing, false all-clear, and ARP multicast noise.
 
-### Added
-- VPU model detection via web scrape of VPU Manager SPA title at `http://localhost:32323/`
-- Camera ping + RTSP port 554 connectivity test for all three camera IPs (169.254.16.50–.52)
-- `Optional = $true` flag on OCR camera (.52): absence is not flagged as a fault
-- `Test-TcpPort` helper using raw sockets (avoids `Test-NetConnection` verbose output)
-- RTSP fault count included in `$allClear` check and summary verdict
+### [1.3] - 2026-04-20
+Added post-reset link monitoring and `$allClear` verdict logic.
 
----
-
-## [2.3] - 2026-04-24
-
-### Changed
-- Results saved to `CameraLink_Results\` subfolder inside script directory (or Desktop when run via `irm | iex`) instead of Desktop root
-
----
-
-## [2.2] - 2026-04-23
-
-### Fixed
-- Exit code 0 (clean application shutdown) no longer overwrites a meaningful failure code (e.g. exit 12) for the same camera IP — non-zero codes are now preferred and preserved
-- Subnet match fallback now detects when a FAIL/degraded port is also on the same subnet as the matched port and surfaces a `[CAUTION]` warning directing the tech to verify physical cable mapping — prevents a healthy port from being reported as the likely camera host after adapter reset clears the ARP table
-- Subnet match result now labelled `[subnet match - ARP unavailable]` to distinguish it from a confirmed ARP lookup
-
----
-
-## [2.1] - 2026-04-23
-
-### Added
-- Pixellot application log analysis: parses the most recent `CamerasTester_*.log` file for camera connection failures, camera model names, session counts, and process exit codes
-- IP-to-NIC-port correlation for failing cameras — tries ARP/neighbor table first, then /24 subnet match as fallback
-- Cross-reference between application log failures and NIC port results: confirms physical fault when both app failures and NIC degradation are present; flags camera-side fault when NIC link is healthy
-- `$PixellotLogPaths` config variable with confirmed primary path (`C:\Pixellot\Data\Log`) and common fallback locations
-- `PIXELLOT APPLICATION LOG` section added to the final summary screen
-- `$cameraAppIssues` list tracked and shown in summary alongside SmartSpeed and port results
-
----
-
-## [2.0] - 2026-04-23
-
-### Added
-- Spinner animation during all wait periods — shows elapsed/remaining time and a spinning `|/-\` character so the screen is never frozen
-- GitHub hosting support via `irm URL | iex` one-liner — no file transfer needed
-- `$ScriptUrl` config variable for self-elevation re-launch in iex context
-- Desktop fallback for output file path when `$PSScriptRoot` is null (iex context)
-
-### Changed
-- Self-elevation now detects whether script is running from a local file or via iex, and re-launches appropriately in each case
-- Output file saves to Desktop when run via the GitHub one-liner; saves next to script when run locally
-
----
-
-## [1.8] - 2026-04-22
-
-### Fixed
-- Parse error on older Windows PowerShell caused by em-dash character (U+2014) in `Write-Log` strings — replaced with plain hyphens
-
----
-
-## [1.7] - 2026-04-22
-
-### Added
-- Intel I210 NIC detection alongside existing 82574L support (`$NicDriverPatterns`)
-- SmartSpeed pre-scan to gate remediation decisions before the script's own actions can falsify event log stats
-- `$ScriptStartTime` guard — pre-scan query uses `EndTime = $ScriptStartTime` so script-generated events are excluded
-- OCR scoreboard camera detection via SmartSpeed history: absence of Event ID 40 history = 100 Mbps-only device, skip remediation
-
-### Fixed
-- OCR camera ports being incorrectly remediated every run (ARP-based detection replaced with SmartSpeed history approach)
-- "Irrefutable Layer 1 evidence" label appearing incorrectly when only ID 27/33 events present (no ID 40 downgrades)
-
-### Removed
-- ARP/neighbor table-based OCR detection (unreliable after adapter restart)
-
----
-
-## [1.6] - 2026-04-21
-
-### Fixed
-- `SpeedDuplex` registry keyword not found on modern Intel drivers — now tries `*SpeedDuplex` first, then `SpeedDuplex`
-- SpeedDuplex forced value corrected: `"6"` = 1 Gbps Full Duplex (was incorrectly using `"4"` = 100 Mbps)
-- Adapter name showing blank in SmartSpeed event output — added `Get-EventAdapterName` with 3-method fallback (message text, XML data elements, Properties collection)
-
----
-
-## [1.5] - 2026-04-21
-
-### Added
-- `Get-EventAdapterName` helper function for reliable per-adapter event correlation
-- Per-adapter SmartSpeed event display with Time / Adapter / Event / Message fields
-
-### Fixed
-- Event log scan missing all events — provider filter changed from `*Intel*` (incorrect) to direct provider names `e1iexpress`, `e1dexpress`, `e1rexpress`
-- Event log error "description string for parameter reference" — moved filtering into `FilterHashtable` (ProviderName + Id) instead of post-query `$_.Message` access
-
----
-
-## [1.4] - 2026-04-20
-
-### Fixed
-- Self-elevation: replaced `#Requires -RunAsAdministrator` (caused instant close if not elevated) with manual elevation block using `Start-Process PowerShell -Verb RunAs`
-- Link speed returning -1/Unknown — `LinkSpeed` on Windows Server/PS 5.1 is a formatted string, not UInt64; added regex string parsing
-- False "ALL PORTS AT 1 GBPS" all-clear — `$allClear` now also checks `$unknownCount` and `$chuDowngradeCount`
-- ARP section multicast noise — replaced single IP exclusion with MAC first-octet LSB multicast bit check
-
----
-
-## [1.3] - 2026-04-20
-
-### Added
-- Post-reset link monitoring: after resetting to Auto Negotiation, polls every 2 seconds and confirms link speed once restored
-- `$allClear` verdict logic in summary
-
----
-
-## [1.0 - 1.2] - 2026-04-19
-
-### Initial versions
-- Core NIC detection and link speed reporting for Intel 82574L
-- SmartSpeed event log scan (System log, last 48 hours)
-- Force-to-1Gbps remediation with 30-second re-negotiation wait
-- Auto Negotiation reset on failure
-- Results saved to timestamped `.txt` file alongside script
+### [1.0 – 1.2] - 2026-04-19
+Initial versions: NIC detection, link speed reporting, SmartSpeed event log scan, force-to-1Gbps remediation, Auto Negotiation reset, timestamped output file.
