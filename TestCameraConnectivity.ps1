@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v3.13
+#  VPU Cable & NIC Troubleshooter  v3.14
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.13"
+$ScriptVersion      = "3.14"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -106,7 +106,8 @@ $sync = [hashtable]::Synchronized(@{
 # ---------- Diagnostic engine (runs in background runspace) -----------------
 $DiagScript = {
     param($sync, $NicDriverPatterns, $RenegotiateWaitSec, $EventLogHours,
-          $PixellotLogPaths, $CameraIPs, $RtspPort, $OutputFile, $RunId, $ScriptVersion)
+          $PixellotLogPaths, $CameraIPs, $RtspPort, $OutputFile, $RunId, $ScriptVersion,
+          [string]$FilterNic = "")
 
     function Add-Log {
         param([string]$Message, [string]$Level = "Info")
@@ -262,12 +263,16 @@ $DiagScript = {
         try { (Get-NetAdapterHardwareInfo -Name $_.Name -ErrorAction Stop).Function } catch { 999 }
     }, Name
 
+    if ($FilterNic) {
+        $nicPorts = @($nicPorts | Where-Object { $_.Name -eq $FilterNic })
+    }
+
     if ($nicPorts.Count -eq 0) {
         Add-Log "  [FAIL] No camera NIC adapters found." "Fail"
         Add-Summary "NIC Detection" "No camera NICs found" "Fail"
         $sync.NextSteps.Add(@{
             H = "Wrong machine - no VPU hardware detected"
-            B = "This tool requires a Pixellot VPU with Intel 82574L or I210 camera NICs. No compatible NICs were found on this machine. Run the tool directly on the VPU."
+            B = "No compatible Intel camera NICs found. Run this tool directly on the Pixellot VPU."
         }) | Out-Null
         $sync.AllClear = $false
         $sync.Running = $false; $sync.Complete = $true
@@ -625,21 +630,21 @@ $DiagScript = {
             $bNote = if ($r.Blinking) { " (intermittent link)" } else { "" }
             $sync.NextSteps.Add(@{
                 H = "$s. Run Fault Isolation Guide — $($r.Name)$bNote"
-                B = "$($r.Name) has a confirmed physical-layer fault and could not hold 1 Gbps. The fault could be the cable, the NIC port, or the camera. Use the Fault Isolation Guide to determine exactly which component is at fault before replacing anything — click `"Open Fault Isolation Guide`" in the right panel."
+                B = "Use the Guide tab to isolate whether the fault is the cable, NIC port, or camera before replacing anything."
             }) | Out-Null
             $s++
         }
         foreach ($c in $rtspFaults) {
             $sync.NextSteps.Add(@{
                 H = "$s. PoE reset $($c.IP)"
-                B = "Camera is reachable by ping but RTSP port 554 is not responding — the camera software has likely stalled. In VPU Manager go to Settings > Cameras, select this camera, and click Reset PoE Power. Wait 2 minutes, then re-run."
+                B = "RTSP is stalled — reset PoE power in VPU Manager (Settings > Cameras), wait 2 min, then re-run."
             }) | Out-Null
             $s++
         }
         foreach ($c in $noPingMain) {
             $sync.NextSteps.Add(@{
                 H = "$s. PoE reset $($c.IP)"
-                B = "Camera is not responding to ping. In VPU Manager go to Settings > Cameras, select this camera, and click Reset PoE Power. Wait 2 minutes, then re-run. If unresponsive after 2 resets, check that the cable is firmly seated and the camera is powered on."
+                B = "Reset PoE power in VPU Manager (Settings > Cameras), wait 2 min, then re-run. If still offline after 2 resets, check cable seating and power."
             }) | Out-Null
             $s++
         }
@@ -650,7 +655,7 @@ $DiagScript = {
                 $tag = if ($camLabel) { "$ip ($camLabel)" } else { $ip }
                 $sync.NextSteps.Add(@{
                     H = "$s. Camera issue on $tag"
-                    B = "Cable and NIC port are healthy (1 Gbps confirmed). The camera is not completing the VPU handshake. Start with a PoE reset in VPU Manager (Settings > Cameras > Reset PoE Power). Wait 2 minutes and re-run. If failures continue after 2 resets, the camera likely needs replacement."
+                    B = "Cable and NIC are healthy (1 Gbps). Reset PoE power in VPU Manager, wait 2 min, and re-run. If failures persist after 2 resets, the camera likely needs replacement."
                 }) | Out-Null
                 $s++
             }
@@ -795,7 +800,7 @@ $sep2 = New-Object System.Windows.Forms.Panel; $sep2.Size = New-Object System.Dr
 $sep2.Location = New-Object System.Drawing.Point(12,238); $sep2.BackColor = [System.Drawing.Color]::FromArgb(51,65,85)
 $sidebar.Controls.Add($sep2)
 
-$lblNicHdr = New-Object System.Windows.Forms.Label; $lblNicHdr.Text = "Selected NIC"
+$lblNicHdr = New-Object System.Windows.Forms.Label; $lblNicHdr.Text = "Test Scope"
 $lblNicHdr.Font = New-Object System.Drawing.Font("Segoe UI",7.5); $lblNicHdr.ForeColor = [System.Drawing.Color]::FromArgb(100,116,139)
 $lblNicHdr.Location = New-Object System.Drawing.Point(12,292); $lblNicHdr.AutoSize = $true
 $sidebar.Controls.Add($lblNicHdr)
@@ -1119,7 +1124,13 @@ $timer.Add_Tick({
 
     if ($sync.Complete -and -not $sync.Running) {
         $timer.Stop()
-        $btnRun.Enabled = $true; $btnRun.Text = ([char]0x25B6 + "  Run Full Diagnostic")
+        $btnRun.Enabled = $true
+        $btnRun.Text = if ($cboNic.SelectedIndex -le 0) {
+            [char]0x25B6 + "  Run Full Diagnostic"
+        } else {
+            $n = ($cboNic.SelectedItem -as [string]) -replace '\s+\(.*', ''
+            [char]0x25B6 + "  Test $n Only"
+        }
         $btnRetest.Enabled = $true
 
         if ($sync.AllClear) {
@@ -1172,6 +1183,7 @@ $btnRun.Add_Click({
     $ps = [powershell]::Create()
     $ps.Runspace = $script:runspace
     $ps.AddScript($DiagScript) | Out-Null
+    $filterNicVal = if ($cboNic.SelectedIndex -gt 0) { ($cboNic.SelectedItem -as [string]) -replace '\s+\(.*', '' } else { "" }
     $ps.AddParameters(@{
         sync               = $sync
         NicDriverPatterns  = $NicDriverPatterns
@@ -1183,12 +1195,26 @@ $btnRun.Add_Click({
         OutputFile         = $newOutput
         RunId              = $newRunId
         ScriptVersion      = $ScriptVersion
+        FilterNic          = $filterNicVal
     }) | Out-Null
     $ps.BeginInvoke() | Out-Null
     $timer.Start()
 })
 
 $btnRetest.Add_Click({ $btnRun.PerformClick() })
+
+$cboNic.Add_SelectedIndexChanged({
+    if (-not $sync.Running) {
+        if ($cboNic.SelectedIndex -le 0) {
+            $btnRun.Text = [char]0x25B6 + "  Run Full Diagnostic"
+            $lblRunSteps.Text = "Runs: Port Speed  •  Ping  •  ARP  •  CHU Detection"
+        } else {
+            $nicName = ($cboNic.SelectedItem -as [string]) -replace '\s+\(.*', ''
+            $btnRun.Text = [char]0x25B6 + "  Test $nicName Only"
+            $lblRunSteps.Text = "Scope: $nicName only  •  Port Speed  •  Ping  •  ARP  •  CHU Detection"
+        }
+    }
+})
 
 $btnExport.Add_Click({
     if ($sync.OutputFile -and (Test-Path $sync.OutputFile)) {

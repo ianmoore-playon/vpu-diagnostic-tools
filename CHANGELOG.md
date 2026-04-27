@@ -4,6 +4,17 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [3.14] - 2026-04-27
+
+### Added
+- **NIC selector functional** — "Test Scope" dropdown in the sidebar now filters the diagnostic to a single NIC port when a specific port is selected; "All Ports" runs the full diagnostic as before; button text updates dynamically to reflect the current scope (e.g. "Test Ethernet 45 Only")
+
+### Changed
+- **Next Steps condensed to 1–2 sentences** — all Next Steps body texts shortened for faster reading; full guidance for component isolation is now in the Guide tab
+- **"Selected NIC" label renamed to "Test Scope"** — makes the purpose of the dropdown immediately clear
+
+---
+
 ## [3.13] - 2026-04-27
 
 ### Added
