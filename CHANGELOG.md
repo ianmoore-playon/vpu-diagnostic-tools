@@ -1,6 +1,39 @@
-# Changelog - Pixellot VPU Camera Link Diagnostic
+# Changelog - VPU Cable & NIC Troubleshooter
 
 All notable changes to `TestCameraConnectivity.ps1` are documented here.
+
+---
+
+## [3.11] - 2026-04-27
+
+Version bump only; no functional changes from 3.10.
+
+---
+
+## [3.10] - 2026-04-27
+
+### Added
+- **Per-port speed cards** — one status card per detected Intel NIC (P1, P2, P3, P4) ordered by PCI function number for physical left-to-right port position; each card updates live during the diagnostic with the measured link speed
+- **Card subtitles** — each status card now shows a short descriptor line below the value (e.g., "Camera head unit", "L2 neighbor table")
+- **Last Run Summary card** — plain-language summary panel wrapped in a styled card matching the status card design
+- **Actions section header** — "Actions" label added above the Export / Copy / Save buttons in the right panel
+- **Badge status dot** — colored dot indicator inside the run status badge tracking Running / All Clear / Issues Found states
+- **Connected status indicator** — dot and label below the NIC dropdown in the sidebar shows live connection state
+- **Unicode icons** — Segoe MDL2 icons added to sidebar nav buttons and action buttons; network icon added to sidebar header
+- **Version in title bar** — window title now includes the script version number
+
+### Changed
+- **Aggregated cards replaced by per-port cards** — static Link Speed and NIC Status cards replaced by dynamic P1–P4 per-port speed cards in the first card row
+- **NIC sort order** — port cards ordered by PCI function number (physical position) rather than Windows adapter instance number
+- **"Current Status" → "Current Results"** — label rename in the center panel
+- **Next Steps expanded** — panel height increased to fill space freed by removed sections
+
+### Removed
+- **Gateway card** — gateway reachability check removed from diagnostic engine and UI (not relevant to camera link-local subnet)
+- **Detected Hardware section** — right-panel hardware table (CHU MAC, camera port status, cable status) removed
+
+### Fixed
+- **Live Log always empty** — `$(if ...)` subexpression syntax bug silently discarded all log lines
 
 ---
 
