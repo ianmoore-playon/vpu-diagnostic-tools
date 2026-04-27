@@ -742,6 +742,14 @@ function Update-CardStatus {
     $Card.ValueLabel.ForeColor = $valC
 }
 
+# ---------- Detect camera NICs (used for port cards and combo boxes) --------
+$script:detectedNics = @(try {
+    Get-NetAdapter | Where-Object {
+        $d = $_.InterfaceDescription
+        ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
+    } | Sort-Object Name
+} catch { })
+
 # ---------- Form ------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "VPU Cable & NIC Troubleshooter"
@@ -856,7 +864,7 @@ $lnkClear.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lnkClear.LinkC
 $lnkClear.Location = New-Object System.Drawing.Point(553,84); $lnkClear.AutoSize = $true
 $center.Controls.Add($lnkClear)
 
-# Static row 2 cards (camera/network status) — port cards added dynamically at form load
+# Static row 2 cards — camera/network status
 $cardDefs = @(
     @{Key="PingCHU";   Title="Ping (CHU)";    X=10;  Y=194; Icon=[char]0xE701}
     @{Key="ArpEntry";  Title="ARP Entry";      X=200; Y=194; Icon=[char]0xE9D5}
@@ -868,7 +876,22 @@ foreach ($cd in $cardDefs) {
     $cards[$cd.Key] = $c
     $center.Controls.Add($c.Panel)
 }
-# $portCards populated at form load once NIC list is known
+
+# Dynamic row 1 cards — one per detected NIC port
+if ($script:detectedNics.Count -gt 0) {
+    $numPorts  = $script:detectedNics.Count
+    $portCardW = [int]((572 - ($numPorts - 1) * 8) / $numPorts)
+    $portCardX = 10
+    foreach ($n in $script:detectedNics) {
+        $portIdx   = if ($n.InterfaceDescription -match '#(\d+)') { "P$($Matches[1])" } else { "P1" }
+        $portTitle = "$($n.Name)  $portIdx"
+        $c = New-StatusCard -Title $portTitle -X $portCardX -Y 106 -CardW $portCardW -CardH 78
+        $cards[$n.Name] = $c
+        $sync.Cards[$n.Name] = @{ Value = "--"; Status = "neutral" }
+        $center.Controls.Add($c.Panel)
+        $portCardX += $portCardW + 8
+    }
+}
 
 $lblLastRun = New-Object System.Windows.Forms.Label; $lblLastRun.Text = "Last Run Summary"
 $lblLastRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblLastRun.ForeColor = $ColText
@@ -1649,32 +1672,12 @@ $navHistory.Add_Click({
 # ---------- Form Load -------------------------------------------------------
 $form.Add_Load({
     $cboNic.Items.Add("All Ports") | Out-Null
-    try {
-        $nics = Get-NetAdapter | Where-Object {
-            $d = $_.InterfaceDescription
-            ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
-        } | Sort-Object Name
-        foreach ($n in $nics) {
-            $short = $n.InterfaceDescription -replace 'Intel\(R\) 82574L Gigabit Network Connection','CHU NIC'
-            $short = $short -replace 'Intel\(R\) I210 Gigabit Network Connection','CHU NIC'
-            $cboNic.Items.Add("$($n.Name)  ($short)") | Out-Null
-            $cboGuidePortA.Items.Add($n.Name) | Out-Null
-        }
-        # Build per-port cards dynamically (row 1, y=106)
-        $numPorts = $nics.Count
-        if ($numPorts -gt 0) {
-            $portCardW = [int]((572 - ($numPorts - 1) * 8) / $numPorts)
-            $portCardX = 10
-            foreach ($n in $nics) {
-                $portLabel = if ($n.InterfaceDescription -match '#(\d+)') { "$($n.Name)  P$($Matches[1])" } else { "$($n.Name)  P1" }
-                $c = New-StatusCard -Title $portLabel -X $portCardX -Y 106 -CardW $portCardW -CardH 78
-                $cards[$n.Name] = $c
-                $sync.Cards[$n.Name] = @{ Value = "--"; Status = "neutral" }
-                $center.Controls.Add($c.Panel)
-                $portCardX += $portCardW + 8
-            }
-        }
-    } catch { }
+    foreach ($n in $script:detectedNics) {
+        $short = $n.InterfaceDescription -replace 'Intel\(R\) 82574L Gigabit Network Connection','CHU NIC'
+        $short = $short -replace 'Intel\(R\) I210 Gigabit Network Connection','CHU NIC'
+        $cboNic.Items.Add("$($n.Name)  ($short)") | Out-Null
+        $cboGuidePortA.Items.Add($n.Name) | Out-Null
+    }
     if ($cboNic.Items.Count -gt 0) { $cboNic.SelectedIndex = 0 }
     if ($cboGuidePortA.Items.Count -gt 0) { $cboGuidePortA.SelectedIndex = 0 }
     Update-GuideStepDots -ActivePhase 1
