@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v3.12
+#  VPU Cable & NIC Troubleshooter  v3.13
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "3.12"
+$ScriptVersion      = "3.13"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -92,9 +92,10 @@ $sync = [hashtable]::Synchronized(@{
     CurrentStep     = "Ready"
     StepsDone   = [hashtable]::Synchronized(@{})
     Cards = @{
-        PingCHU   = @{ Value = "--"; Status = "neutral" }
-        ArpEntry  = @{ Value = "--"; Status = "neutral" }
-        ChuDetect = @{ Value = "--"; Status = "neutral" }
+        SmartSpeed = @{ Value = "--"; Status = "neutral" }
+        PingCHU    = @{ Value = "--"; Status = "neutral" }
+        ArpEntry   = @{ Value = "--"; Status = "neutral" }
+        ChuDetect  = @{ Value = "--"; Status = "neutral" }
     }
     PortResults = [System.Collections.ArrayList]::new()
     CamResults  = [System.Collections.ArrayList]::new()
@@ -430,10 +431,14 @@ $DiagScript = {
         $sync.StepsDone["SmartSpeed"] = if ($dCnt -gt 0) { "fail" } else { "pass" }
         $ssSummary = if ($dCnt -gt 0) { "$dCnt downgrade(s) in ${EventLogHours}h" } else { "$wCnt warning(s), 0 downgrades" }
         Add-Summary "SmartSpeed Events" $ssSummary $ssLevel
+        $ssCardVal    = if ($dCnt -gt 0) { "$dCnt events" } elseif ($wCnt -gt 0) { "$wCnt warnings" } else { "None" }
+        $ssCardStatus = if ($dCnt -gt 0) { "fail" } elseif ($wCnt -gt 0) { "warn" } else { "ok" }
+        Set-Card "SmartSpeed" $ssCardVal $ssCardStatus
     } else {
         Add-Log "  [PASS] No SmartSpeed downgrade events on CHU ports." "Pass"
         $sync.StepsDone["SmartSpeed"] = "pass"
         Add-Summary "SmartSpeed Events" "None in ${EventLogHours}h" "Pass"
+        Set-Card "SmartSpeed" "None" "ok"
     }
     Add-Log ""
 
@@ -783,10 +788,11 @@ $sidebar.Controls.Add($sep1)
 $navOverview = New-SidebarButton ([char]0x2302 + "  Overview") 68  $true
 $navTests    = New-SidebarButton ([char]0x2630 + "  Guide")    110
 $navHistory  = New-SidebarButton ([char]0x25F7 + "  History")  152
-$sidebar.Controls.AddRange(@($navOverview,$navTests,$navHistory))
+$navHelp     = New-SidebarButton ([char]0x003F + "  Help")     194
+$sidebar.Controls.AddRange(@($navOverview,$navTests,$navHistory,$navHelp))
 
 $sep2 = New-Object System.Windows.Forms.Panel; $sep2.Size = New-Object System.Drawing.Size(176,1)
-$sep2.Location = New-Object System.Drawing.Point(12,196); $sep2.BackColor = [System.Drawing.Color]::FromArgb(51,65,85)
+$sep2.Location = New-Object System.Drawing.Point(12,238); $sep2.BackColor = [System.Drawing.Color]::FromArgb(51,65,85)
 $sidebar.Controls.Add($sep2)
 
 $lblNicHdr = New-Object System.Windows.Forms.Label; $lblNicHdr.Text = "Selected NIC"
@@ -885,15 +891,16 @@ $lnkClear.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lnkClear.LinkC
 $lnkClear.Location = New-Object System.Drawing.Point(553,84); $lnkClear.AutoSize = $true
 $center.Controls.Add($lnkClear)
 
-# Fixed bottom-row cards: Ping, ARP, CHU
+# Fixed bottom-row cards: SmartSpeed, Ping, ARP, CHU  (W=138 each, 10px gaps)
 $cardDefs = @(
-    @{Key="PingCHU";   Title="Ping (CHU)";    Sub="Camera head unit";  X=10;  Y=194; Icon=[char]0xE701}
-    @{Key="ArpEntry";  Title="ARP Entry";     Sub="L2 neighbor table"; X=200; Y=194; Icon=[char]0xE9D5}
-    @{Key="ChuDetect"; Title="CHU Detection"; Sub="Camera response";   X=390; Y=194; Icon=[char]0xE722}
+    @{Key="SmartSpeed"; Title="SmartSpeed";    Sub="Intel events (48h)"; X=10;  Y=194; Icon=[char]0xE7BA; W=138}
+    @{Key="PingCHU";    Title="Ping (CHU)";    Sub="Camera head unit";   X=158; Y=194; Icon=[char]0xE701; W=138}
+    @{Key="ArpEntry";   Title="ARP Entry";     Sub="L2 neighbor table";  X=306; Y=194; Icon=[char]0xE9D5; W=138}
+    @{Key="ChuDetect";  Title="CHU Detection"; Sub="Camera response";    X=454; Y=194; Icon=[char]0xE722; W=138}
 )
 $cards = @{}
 foreach ($cd in $cardDefs) {
-    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y $cd.Y -Icon $cd.Icon -Sub $cd.Sub
+    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y $cd.Y -Icon $cd.Icon -Sub $cd.Sub -CardW $cd.W
     $cards[$cd.Key] = $c
     $center.Controls.Add($c.Panel)
 }
@@ -915,6 +922,15 @@ if ($script:detectedNics.Count -gt 0) {
         $cards[$n.Name] = $c
         $sync.Cards[$n.Name] = @{ Value = "--"; Status = "neutral" }
         $center.Controls.Add($c.Panel)
+        # Click a degraded port card → jump to Guide with that port pre-selected
+        $capturedName = $n.Name
+        $portClickHandler = {
+            $pr = $sync.PortResults | Where-Object { $_.Name -eq $capturedName -and $_.Result -eq "FAIL" } | Select-Object -First 1
+            if ($pr) { $navTests.PerformClick(); Reset-Guide; $idx = $cboGuidePortA.Items.IndexOf($capturedName); if ($idx -ge 0) { $cboGuidePortA.SelectedIndex = $idx } }
+        }.GetNewClosure()
+        $c.Panel.Add_Click($portClickHandler)
+        $c.ValueLabel.Add_Click($portClickHandler)
+        $c.Panel.Cursor = [System.Windows.Forms.Cursors]::Hand
         $portCardX += $portCardW + 10; $portNum++
     }
 }
@@ -1026,9 +1042,9 @@ $lblActHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblA
 $lblActHdr.Location = New-Object System.Drawing.Point(10,526); $lblActHdr.AutoSize = $true
 $right.Controls.Add($lblActHdr)
 
-foreach ($pair in @(("btnExport","Export Report",548),("btnCopy","Copy Results",584),("btnSave","Save Log",620))) {
+foreach ($pair in @(("btnExport","Export Report",548),("btnCopySummary","Copy Summary",578),("btnCopy","Copy Log",608),("btnSave","Save Log",638))) {
     $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
-    $b.Size = New-Object System.Drawing.Size(211,30); $b.Location = New-Object System.Drawing.Point(10,$pair[2])
+    $b.Size = New-Object System.Drawing.Size(211,26); $b.Location = New-Object System.Drawing.Point(10,$pair[2])
     $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $b.FlatAppearance.BorderColor = $ColBorder; $b.FlatAppearance.BorderSize = 1
     $b.BackColor = [System.Drawing.Color]::White; $b.ForeColor = $ColText
@@ -1036,7 +1052,7 @@ foreach ($pair in @(("btnExport","Export Report",548),("btnCopy","Copy Results",
     $b.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
     $b.Cursor = [System.Windows.Forms.Cursors]::Hand
     $right.Controls.Add($b)
-    $b.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,211,30)), 5))
+    $b.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,211,26)), 5))
     Set-Variable -Name $pair[0] -Value $b
 }
 
@@ -1116,28 +1132,12 @@ $timer.Add_Tick({
             $pnlBadgeDot.BackColor = $ColRed
         }
 
-        $rtbSteps.Clear()
-        $firstItem = $true
-        foreach ($step in $sync.NextSteps) {
-            if (-not $firstItem) {
-                $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
-                $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI",4)
-                $rtbSteps.SelectionColor = [System.Drawing.Color]::White
-                $rtbSteps.AppendText("`n")
-            }
-            $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
-            $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI Semibold",9)
-            $rtbSteps.SelectionColor = $ColAccent
-            $rtbSteps.AppendText("$($step.H)`n")
-            $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
-            $rtbSteps.SelectionFont  = New-Object System.Drawing.Font("Segoe UI",8.5)
-            $rtbSteps.SelectionColor = $ColMuted
-            $rtbSteps.AppendText("$($step.B)`n")
-            $firstItem = $false
-        }
+        Show-OverviewSteps
 
         $dt = Get-Date -Format "yyyy-MM-dd HH:mm"
-        $lblLastRunVal.Text = "$($sync.LastRunLine)   $dt"
+        $trend = Get-PortTrendSummary
+        $trendSuffix = if ($trend) { "   ·   $trend" } else { "" }
+        $lblLastRunVal.Text = "$($sync.LastRunLine)   $dt$trendSuffix"
         $btnGoGuide.Visible = (($sync.PortResults | Where-Object { $_.Result -eq "FAIL" }).Count -gt 0)
     }
 })
@@ -1198,10 +1198,63 @@ $btnExport.Add_Click({
     }
 })
 
+$btnCopySummary.Add_Click({
+    if (-not $sync.Complete) {
+        [System.Windows.Forms.MessageBox]::Show("Run the diagnostic first.", "Copy Summary", "OK", "Information") | Out-Null
+        return
+    }
+    $lines = @()
+    $lines += "═" * 48
+    $lines += "VPU DIAGNOSTIC SUMMARY"
+    $lines += "Date:       $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+    $lines += "Computer:   $($env:COMPUTERNAME)"
+    $lines += "VPU Model:  $($sync.VpuModel)"
+    $lines += "Run ID:     $($sync.RunId)"
+    $lines += ""
+    $lines += "RESULT: $(if ($sync.AllClear) { 'ALL CLEAR' } else { 'ISSUES FOUND' })"
+    $lines += "═" * 48
+    $lines += ""
+    $lines += "PORT STATUS"
+    foreach ($r in $sync.PortResults) {
+        $status = switch ($r.Result) {
+            "PASS"          { "1 Gbps — OK" }
+            "PASS (forced)" { "1 Gbps — OK (forced)" }
+            "PASS (OCR)"    { "100 Mbps — OCR camera (expected)" }
+            "FAIL"          { "DEGRADED — physical layer fault" }
+            "NO LINK"       { "No link" }
+            default         { $r.Result }
+        }
+        $lines += "  $($r.Name.PadRight(16)) $status"
+    }
+    $lines += ""
+    $lines += "SIGNAL QUALITY"
+    $ssLine = if ($sync.TotalDowngrades -gt 0) { "$($sync.TotalDowngrades) SmartSpeed downgrade event(s) in 48h — physical layer fault confirmed" } else { "No SmartSpeed downgrade events" }
+    $lines += "  $ssLine"
+    $lines += ""
+    $lines += "CAMERA CONNECTIVITY"
+    foreach ($c in $sync.CamResults) {
+        $cs = if ($c.Ping -and $c.Rtsp) { "Ping OK / RTSP OK" } elseif ($c.Ping) { "Ping OK / RTSP FAIL" } elseif ($c.Optional) { "Not installed (optional)" } else { "No response" }
+        $lines += "  $($c.IP.PadRight(18)) $($c.Label) — $cs"
+    }
+    if ($sync.AppIssues.Count -gt 0) {
+        $lines += ""
+        $lines += "APPLICATION LOG FINDINGS"
+        foreach ($issue in $sync.AppIssues) { $lines += "  $issue" }
+    }
+    $lines += ""
+    $lines += "NEXT STEPS"
+    foreach ($step in $sync.NextSteps) { $lines += "  - $($step.H)" }
+    $lines += ""
+    if ($sync.OutputFile) { $lines += "Full report: $(Split-Path $sync.OutputFile -Leaf)" }
+    $lines += "═" * 48
+    [System.Windows.Forms.Clipboard]::SetText(($lines -join "`r`n"))
+    [System.Windows.Forms.MessageBox]::Show("Summary copied to clipboard. Paste into your ticket or support chat.", "Copy Summary", "OK", "Information") | Out-Null
+})
+
 $btnCopy.Add_Click({
     if ($rtbLog.TextLength -gt 0) {
         [System.Windows.Forms.Clipboard]::SetText($rtbLog.Text)
-        [System.Windows.Forms.MessageBox]::Show("Log copied to clipboard.", "Copy Results", "OK", "Information") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("Log copied to clipboard.", "Copy Log", "OK", "Information") | Out-Null
     }
 })
 
@@ -1226,6 +1279,69 @@ $lnkClear.Add_LinkClicked({
 })
 
 # ---------- Helper functions ------------------------------------------------
+function Get-PortTrendSummary {
+    $files = @(Get-ChildItem -Path $OutputDir -Filter "CameraLink_Results_*.txt" -ErrorAction SilentlyContinue |
+               Sort-Object LastWriteTime -Descending | Select-Object -First 15)
+    if ($files.Count -lt 3) { return $null }
+    $portCounts = @{}
+    foreach ($f in $files) {
+        try {
+            $lines = Get-Content -Path $f.FullName -ErrorAction Stop
+            @($lines | Where-Object { $_ -match 'DEGRADED' }) | ForEach-Object {
+                if ($_ -match '^\s+(.+?)\s{2,}DEGRADED') { $p = $Matches[1].Trim(); $portCounts[$p] = ($portCounts[$p] -as [int]) + 1 }
+            }
+        } catch { }
+    }
+    if ($portCounts.Count -eq 0) { return $null }
+    $top = $portCounts.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 1
+    return "$($top.Key) has had issues in $($top.Value) of the last $($files.Count) runs"
+}
+
+function Show-OverviewSteps {
+    $rtbSteps.Clear()
+    if ($sync.NextSteps.Count -eq 0) { $rtbSteps.Text = "Run the diagnostic to`nsee guidance here."; return }
+    $first = $true
+    foreach ($step in $sync.NextSteps) {
+        if (-not $first) {
+            $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
+            $rtbSteps.SelectionFont = New-Object System.Drawing.Font("Segoe UI",4)
+            $rtbSteps.SelectionColor = [System.Drawing.Color]::White; $rtbSteps.AppendText("`n")
+        }
+        $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
+        $rtbSteps.SelectionFont = New-Object System.Drawing.Font("Segoe UI Semibold",9)
+        $rtbSteps.SelectionColor = $ColAccent; $rtbSteps.AppendText("$($step.H)`n")
+        $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
+        $rtbSteps.SelectionFont = New-Object System.Drawing.Font("Segoe UI",8.5)
+        $rtbSteps.SelectionColor = $ColMuted; $rtbSteps.AppendText("$($step.B)`n")
+        $first = $false
+    }
+}
+
+function Show-GuideSteps {
+    $rtbSteps.Clear()
+    $sections = @(
+        @{ H="Phase 1 — Baseline";   B="Confirm the link is degraded on the suspect port. Establishes a reference speed before any changes." }
+        @{ H="Phase 2 — NIC Port";   B="Move the SAME cable and camera to a different NIC port. If 1 Gbps: NIC port is faulty. If still degraded: continue." }
+        @{ H="Phase 3 — Cable";      B="Stay on the same test port and camera. Swap only the cable for a known-good one. If 1 Gbps: cable is faulty. If still degraded: continue." }
+        @{ H="Phase 4 — Camera";     B="Stay on test port and new cable. Swap only the camera for a known-good unit. If 1 Gbps: camera is faulty. If still degraded: NIC/motherboard fault." }
+    )
+    $first = $true
+    foreach ($s in $sections) {
+        if (-not $first) {
+            $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
+            $rtbSteps.SelectionFont = New-Object System.Drawing.Font("Segoe UI",4)
+            $rtbSteps.SelectionColor = [System.Drawing.Color]::White; $rtbSteps.AppendText("`n")
+        }
+        $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
+        $rtbSteps.SelectionFont = New-Object System.Drawing.Font("Segoe UI Semibold",9)
+        $rtbSteps.SelectionColor = $ColAccent; $rtbSteps.AppendText("$($s.H)`n")
+        $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
+        $rtbSteps.SelectionFont = New-Object System.Drawing.Font("Segoe UI",8.5)
+        $rtbSteps.SelectionColor = $ColMuted; $rtbSteps.AppendText("$($s.B)`n")
+        $first = $false
+    }
+}
+
 function Reset-Guide {
     $script:guide.Phase = 0; $script:guide.SuspectPort = ""; $script:guide.TestPort = ""; $script:guide.BaseSpeed = 0
     $rtbGuide.Text = "Phase results will appear here as you work through each step."
@@ -1707,29 +1823,79 @@ $lvHistory.Add_DoubleClick({
     }
 })
 
+# ---- Help Panel ------------------------------------------------------------
+$pnlHelp = New-Object System.Windows.Forms.Panel
+$pnlHelp.Size = $center.Size; $pnlHelp.Location = $center.Location
+$pnlHelp.BackColor = $ColBg; $pnlHelp.Visible = $false
+$form.Controls.Add($pnlHelp)
+
+$lblHelpTitle = New-Object System.Windows.Forms.Label
+$lblHelpTitle.Text = "How to Use This Tool"
+$lblHelpTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
+$lblHelpTitle.ForeColor = $ColText
+$lblHelpTitle.Location = New-Object System.Drawing.Point(10, 16); $lblHelpTitle.AutoSize = $true
+$pnlHelp.Controls.Add($lblHelpTitle)
+
+$rtbHelp = New-Object System.Windows.Forms.RichTextBox
+$rtbHelp.Size = New-Object System.Drawing.Size(572, 636); $rtbHelp.Location = New-Object System.Drawing.Point(10, 46)
+$rtbHelp.BackColor = $ColBg; $rtbHelp.ForeColor = $ColText
+$rtbHelp.Font = New-Object System.Drawing.Font("Segoe UI", 9); $rtbHelp.ReadOnly = $true
+$rtbHelp.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$rtbHelp.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
+$pnlHelp.Controls.Add($rtbHelp)
+
+$helpSections = @(
+    @{ H="What this tool does";           B="Diagnoses camera NIC link-speed problems on Pixellot VPUs. It measures link speed on each Intel NIC port, checks for Intel SmartSpeed downgrade events (physical-layer evidence), pings each camera, and analyses the Pixellot application log. Results appear in plain language with a recommended next action." }
+    @{ H="Overview tab — running a diagnostic"; B="Click Run Full Diagnostic and wait about 60–90 seconds. The port cards (P1–P4) update live as each port is measured. When complete, the right panel shows numbered next steps.`n`nIf a port shows a degraded link, the SmartSpeed card tells you how many downgrade events occurred in the last 48 hours — that count is the key evidence to quote when escalating." }
+    @{ H="Reading the port cards";        B="Green / 1 Gbps = healthy link.`nRed / 100 Mbps = degraded (physical fault, use the Guide to isolate).`nGrey / No link = no cable connected or device off.`n100M OCR = expected for OCR scoreboard cameras (100 Mbps-only, no action needed).`n`nClicking a red port card takes you straight to the Guide with that port pre-selected." }
+    @{ H="Guide tab — fault isolation";   B="Use the Guide when Overview shows a degraded port and you need to know whether to replace the cable, the NIC port, or the camera. Do not replace anything until the Guide tells you what is at fault.`n`nThe Guide uses the 'one change at a time' method:`n  Phase 1 — Baseline: confirm the fault exists.`n  Phase 2 — NIC Port: move cable+camera to another port.`n  Phase 3 — Cable: swap in a known-good cable.`n  Phase 4 — Camera: swap in a known-good camera.`n`nEach phase measures link speed and tells you whether the fault followed the changed component." }
+    @{ H="History tab";                   B="Shows all past diagnostic runs from the CameraLink_Results folder. Green rows are All Clear; red rows show Issues Found with the affected port(s). Double-click any row to open the full report in Notepad.`n`nIf the same port appears as Issues Found across many runs, the trend line on the Overview summary card will note this — useful evidence when requesting a replacement." }
+    @{ H="Escalating to support";         B="After a run, click Copy Summary in the Actions section. This generates a structured paragraph with port status, SmartSpeed count, camera results, and recommended next steps — paste it directly into your ticket or support chat.`n`nThe Run ID in the summary matches the filename in CameraLink_Results so the agent can ask you to email the full report if needed." }
+    @{ H="What is a SmartSpeed event?";   B="Intel SmartSpeed Event ID 40 fires when the NIC tried to establish a gigabit link but the physical medium could not sustain it. It only fires on physical-layer failures — it never fires when a device (like an OCR camera) simply doesn't support gigabit.`n`nAny non-zero SmartSpeed count on a camera NIC is definitive evidence of a cable, termination, or NIC fault. Zero events on a 100 Mbps port means the device is 100-Mbps-only (OCR camera)." }
+    @{ H="Frequently asked questions";    B="Q: The VPU Model shows 'Not detected' — is that a problem?`nA: No. The tool still runs a full diagnostic. VPU model detection requires the Pixellot agent log to be present and recently updated.`n`nQ: Ethernet 47 / 48 show No link — is that a fault?`nA: No link is normal for ports that don't have a camera connected. Only ports that should have a camera but show 100 Mbps are faults.`n`nQ: The Guide says 'NIC / hardware fault' — what now?`nA: Known-good cable and camera still fail on the test port. Run a full diagnostic, use Copy Summary, and escalate to L2 support for hardware replacement." }
+)
+$firstHelp = $true
+foreach ($s in $helpSections) {
+    if (-not $firstHelp) {
+        $rtbHelp.SelectionStart = $rtbHelp.TextLength; $rtbHelp.SelectionLength = 0
+        $rtbHelp.SelectionFont = New-Object System.Drawing.Font("Segoe UI",5); $rtbHelp.SelectionColor = $ColBg; $rtbHelp.AppendText("`n")
+    }
+    $rtbHelp.SelectionStart = $rtbHelp.TextLength; $rtbHelp.SelectionLength = 0
+    $rtbHelp.SelectionFont = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5); $rtbHelp.SelectionColor = $ColText; $rtbHelp.AppendText("$($s.H)`n")
+    $rtbHelp.SelectionStart = $rtbHelp.TextLength; $rtbHelp.SelectionLength = 0
+    $rtbHelp.SelectionFont = New-Object System.Drawing.Font("Segoe UI", 9); $rtbHelp.SelectionColor = $ColMuted; $rtbHelp.AppendText("$($s.B)`n")
+    $firstHelp = $false
+}
+
 # Nav wiring
 function Set-ActiveNav {
     param($Active)
-    foreach ($nb in @($navOverview,$navTests,$navHistory)) {
+    foreach ($nb in @($navOverview,$navTests,$navHistory,$navHelp)) {
         $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
     }
     $Active.BackColor = $ColNavActive; $Active.ForeColor = [System.Drawing.Color]::White
 }
 
+function Show-Panel {
+    param($Panel)
+    foreach ($p in @($center,$pnlGuide,$pnlHistory,$pnlHelp)) { $p.Visible = $false }
+    $Panel.Visible = $true
+}
+
 $navOverview.Add_Click({
-    $pnlGuide.Visible = $false; $pnlHistory.Visible = $false; $center.Visible = $true
-    Set-ActiveNav $navOverview
+    Show-Panel $center; Set-ActiveNav $navOverview; Show-OverviewSteps
 })
 
 $navTests.Add_Click({
-    $center.Visible = $false; $pnlHistory.Visible = $false; $pnlGuide.Visible = $true
-    Set-ActiveNav $navTests
+    Show-Panel $pnlGuide; Set-ActiveNav $navTests; Show-GuideSteps
 })
 
 $navHistory.Add_Click({
-    $center.Visible = $false; $pnlGuide.Visible = $false; $pnlHistory.Visible = $true
-    Set-ActiveNav $navHistory
-    Update-HistoryList
+    Show-Panel $pnlHistory; Set-ActiveNav $navHistory; Update-HistoryList
+})
+
+$navHelp.Add_Click({
+    Show-Panel $pnlHelp; Set-ActiveNav $navHelp
 })
 
 $btnGoGuide.Add_Click({
