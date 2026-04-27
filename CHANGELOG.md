@@ -9,6 +9,13 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.4.1] - 2026-04-27
+
+### Changed
+- **"Guide" tab renamed to "Isolate"** — nav button, panel title, action button ("Open Fault Isolator →"), Next Steps heading, and all Help tab references updated; eliminates confusion with the Help tab which is the actual usage guide
+
+---
+
 ## [1.4.0] - 2026-04-27
 
 ### Added
