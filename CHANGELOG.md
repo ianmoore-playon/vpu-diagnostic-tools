@@ -4,6 +4,21 @@ All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
 ---
 
+## [3.12] - 2026-04-27
+
+### Added
+- **History tab** — lists all past `CameraLink_Results_*.txt` runs with date/time (parsed from filename), inferred result (All Clear / Issues Found), a port-fault summary, and file size; double-click any row to open the full report in Notepad; Refresh link re-scans the output folder
+- **"Open Fault Isolation Guide →" button** — appears in the right panel when port faults are detected; navigates to the Guide tab and pre-selects the first failed port so the tech can start isolation immediately
+
+### Changed
+- **Next Steps — port faults now direct to Guide** — degraded-port steps no longer say "Replace cable on X"; they now say "Run Fault Isolation Guide — X" with a body explaining the fault is confirmed physical-layer but the root cause (NIC port / cable / camera) still needs to be isolated
+- **Results and Settings nav tabs removed** — non-functional stubs removed from the sidebar; nav now has Overview, Guide, and History only
+
+### Fixed
+- **Nav handlers referenced removed buttons** — `$navResults` and `$navSettings` removed from all `foreach` loops in nav click handlers
+
+---
+
 ## [3.11] - 2026-04-27
 
 Version bump only; no functional changes from 3.10.
