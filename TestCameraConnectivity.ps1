@@ -92,10 +92,7 @@ $sync = [hashtable]::Synchronized(@{
     CurrentStep     = "Ready"
     StepsDone   = [hashtable]::Synchronized(@{})
     Cards = @{
-        LinkSpeed = @{ Value = "--"; Status = "neutral" }
-        NicStatus = @{ Value = "--"; Status = "neutral" }
         PingCHU   = @{ Value = "--"; Status = "neutral" }
-        Gateway   = @{ Value = "--"; Status = "neutral" }
         ArpEntry  = @{ Value = "--"; Status = "neutral" }
         ChuDetect = @{ Value = "--"; Status = "neutral" }
     }
@@ -103,7 +100,6 @@ $sync = [hashtable]::Synchronized(@{
     CamResults  = [System.Collections.ArrayList]::new()
     AppIssues   = [System.Collections.ArrayList]::new()
     NextSteps   = [System.Collections.ArrayList]::new()
-    Hardware    = @{ CHU = "--"; CameraPort = "--"; CableStatus = "--" }
 })
 
 # ---------- Diagnostic engine (runs in background runspace) -----------------
@@ -195,7 +191,6 @@ $DiagScript = {
     $sync.PortResults.Clear(); $sync.CamResults.Clear()
     $sync.AppIssues.Clear();   $sync.NextSteps.Clear()
     $sync.TotalDowngrades = 0; $sync.LastRunLine = ""
-    $sync.Hardware = @{ CHU = "--"; CameraPort = "--"; CableStatus = "--" }
     $item = $null
     while ($sync.SummaryQueue.TryDequeue([ref]$item)) { }
     $sync.StepsDone.Clear()
@@ -252,21 +247,22 @@ $DiagScript = {
     Add-Log $hdr "Cyan"
     Add-Log ""
     Add-Section "System"
-    Add-Summary "VPU Model" $sync.VpuModel (if ($VpuModel) { "Info" } else { "Warn" })
+    Add-Summary "VPU Model" $sync.VpuModel $(if ($VpuModel) { "Info" } else { "Warn" })
 
     # ── Find NIC ports ────────────────────────────────────────────────────────
     $sync.CurrentStep = "Detecting NIC ports..."
     Add-Log "-- Detecting Camera NIC Ports --" "Cyan"
     Add-Log ""
-    Add-Section "Hardware"
+    Add-Section "Ports"
     $nicPorts = Get-NetAdapter | Where-Object {
         $d = $_.InterfaceDescription
         ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
-    } | Sort-Object Name
+    } | Sort-Object {
+        try { (Get-NetAdapterHardwareInfo -Name $_.Name -ErrorAction Stop).Function } catch { 999 }
+    }, Name
 
     if ($nicPorts.Count -eq 0) {
         Add-Log "  [FAIL] No camera NIC adapters found." "Fail"
-        Set-Card "NicStatus" "Not Found" "fail"
         Add-Summary "NIC Detection" "No camera NICs found" "Fail"
         $sync.NextSteps.Add(@{
             H = "Wrong machine - no VPU hardware detected"
@@ -339,6 +335,7 @@ $DiagScript = {
         if ($spd -eq 1000) {
             Add-Log "  Speed   : 1 Gbps  [OK]" "Pass"
             $portResults += [PSCustomObject]@{ Name=$nm; Speed=1000; Result="PASS"; Blinking=$false; Desc=$nic.InterfaceDescription }
+            Set-Card $nm "1 Gbps" "ok"
             Add-Summary $nm "1 Gbps  OK" "Pass"
         } elseif ($spd -eq 100) {
             Add-Log "  Speed   : 100 Mbps  [DEGRADED]" "Fail"
@@ -346,10 +343,12 @@ $DiagScript = {
                 Add-Log "  [PASS]  No SmartSpeed history - 100 Mbps-only device (OCR camera). Skipping remediation." "Pass"
                 $ocrAdapters[$nic.InterfaceDescription] = $true
                 $portResults += [PSCustomObject]@{ Name=$nm; Speed=100; Result="PASS (OCR)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
+                Set-Card $nm "100M OCR" "warn"
                 Add-Summary $nm "100 Mbps  OCR camera" "Pass"
             } else {
                 Add-Log "  [ACTION] SmartSpeed history confirmed - attempting to force 1 Gbps..." "Warn"
                 $sync.CurrentStep = "Forcing 1 Gbps on $nm..."
+                Set-Card $nm "Forcing..." "warn"
                 $forceOk = Set-AdapterSpeedDuplex -AdapterName $nm -Val "6"
                 if ($forceOk) {
                     Restart-NetAdapter -Name $nm -Confirm:$false -ErrorAction SilentlyContinue
@@ -360,6 +359,7 @@ $DiagScript = {
                     if ($newSpd -eq 1000) {
                         Add-Log "  [PASS]  Forced to 1 Gbps successfully." "Pass"
                         $portResults += [PSCustomObject]@{ Name=$nm; Speed=1000; Result="PASS (forced)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
+                        Set-Card $nm "1 Gbps" "ok"
                         Add-Summary $nm "1 Gbps  (forced OK)" "Pass"
                     } else {
                         $nsLabel = if ($newSpd -eq 0) { "Disconnected" } else { "$newSpd Mbps" }
@@ -372,31 +372,30 @@ $DiagScript = {
                         if ($autoSpd -gt 0) { Add-Log ("  [INFO]  Link restored at {0} Mbps" -f $autoSpd) "Warn" }
                         $portResults += [PSCustomObject]@{ Name=$nm; Speed=$spd; Result="FAIL"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
                         $anyFail = $true
+                        Set-Card $nm "100 Mbps" "fail"
                         Add-Summary $nm "DEGRADED  cable fault" "Fail"
                     }
                 } else {
                     Add-Log "  [FAIL]  Could not apply SpeedDuplex setting." "Fail"
                     $portResults += [PSCustomObject]@{ Name=$nm; Speed=$spd; Result="FAIL"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
                     $anyFail = $true
+                    Set-Card $nm "100 Mbps" "fail"
                     Add-Summary $nm "DEGRADED  (SpeedDuplex failed)" "Fail"
                 }
             }
         } elseif ($spd -eq 0) {
             Add-Log "  Speed   : No link - no cable or device powered off." "Gray"
             $portResults += [PSCustomObject]@{ Name=$nm; Speed=0; Result="NO LINK"; Blinking=$false; Desc=$nic.InterfaceDescription }
+            Set-Card $nm "No link" "neutral"
             Add-Summary $nm "No link" "Gray"
         } else {
             Add-Log ("  Speed   : {0} Mbps - unexpected" -f $spd) "Warn"
             $portResults += [PSCustomObject]@{ Name=$nm; Speed=$spd; Result="UNKNOWN"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
+            Set-Card $nm "$spd Mbps" "warn"
             Add-Summary $nm "$spd Mbps  unexpected" "Warn"
         }
         Add-Log ""
     }
-
-    if ($anyFail)           { Set-Card "LinkSpeed" "100 Mbps" "fail";    Set-Card "NicStatus" "Degraded" "fail" }
-    elseif ($bestSpeed -eq 1000) { Set-Card "LinkSpeed" "1 Gbps"  "ok"; Set-Card "NicStatus" "Up"       "ok"   }
-    elseif ($bestSpeed -eq 0)    { Set-Card "LinkSpeed" "No Link" "neutral"; Set-Card "NicStatus" "Down" "fail" }
-    else                         { Set-Card "LinkSpeed" "$bestSpeed Mbps" "warn"; Set-Card "NicStatus" "Partial" "warn" }
 
     $sync.StepsDone["LinkSpeed"] = if ($anyFail) { "fail" } else { "pass" }
     foreach ($r in $portResults) { $sync.PortResults.Add($r) | Out-Null }
@@ -438,25 +437,8 @@ $DiagScript = {
     }
     Add-Log ""
 
-    # ── Gateway check ─────────────────────────────────────────────────────────
-    Add-Section "Network"
-    $sync.CurrentStep = "Checking gateway..."
-    $gw = (Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
-           Sort-Object RouteMetric | Select-Object -First 1).NextHop
-    if ($gw) {
-        if (Test-Connection -ComputerName $gw -Count 1 -Quiet -ErrorAction SilentlyContinue) {
-            Set-Card "Gateway" "Reachable" "ok";    Add-Log ("  [PASS] Gateway {0} reachable." -f $gw) "Pass"
-            Add-Summary "Gateway" "$gw  reachable" "Pass"
-        } else {
-            Set-Card "Gateway" "Unreachable" "fail"; Add-Log ("  [WARN] Gateway {0} not responding." -f $gw) "Warn"
-            Add-Summary "Gateway" "$gw  not responding" "Fail"
-        }
-    } else {
-        Set-Card "Gateway" "No Route" "neutral"; Add-Log "  [INFO] No default gateway configured." "Gray"
-        Add-Summary "Gateway" "No route configured" "Gray"
-    }
-
     # ── ARP check ─────────────────────────────────────────────────────────────
+    Add-Section "Network"
     $sync.CurrentStep = "Checking ARP table..."
     $arpEntries = @()
     foreach ($nic in $nicPorts) {
@@ -468,7 +450,6 @@ $DiagScript = {
     if ($arpEntries.Count -gt 0) {
         Set-Card "ArpEntry" "Found" "ok"
         Add-Log ("  [PASS] {0} ARP entry/entries found in camera subnet." -f $arpEntries.Count) "Pass"
-        $sync.Hardware.CHU = $arpEntries[0].LinkLayerAddress
         Add-Summary "ARP Table" "$($arpEntries.Count) entry/entries found" "Pass"
     } else {
         Set-Card "ArpEntry" "Not Found" "neutral"
@@ -526,9 +507,6 @@ $DiagScript = {
     } else {
         Set-Card "PingCHU"   "No Response" "fail"; Set-Card "ChuDetect" "Offline" "fail"
     }
-
-    $sync.Hardware.CameraPort = if ($mainPingCount -gt 0) { "Responding" } else { "No Response" }
-    $sync.Hardware.CableStatus = if ($anyFail) { "Degraded" } elseif ($bestSpeed -eq 1000) { "OK (1 Gbps)" } else { "--" }
 
     # ── Application log analysis ──────────────────────────────────────────────
     $sync.CurrentStep = "Analyzing Pixellot application logs..."
@@ -898,7 +876,7 @@ $lblCurStat.Location = New-Object System.Drawing.Point(10,82); $lblCurStat.AutoS
 $center.Controls.Add($lblCurStat)
 
 $lblRunSteps = New-Object System.Windows.Forms.Label
-$lblRunSteps.Text = "Runs: Link Speed  •  NIC Status  •  Ping  •  Gateway  •  ARP  •  CHU Detection"
+$lblRunSteps.Text = "Runs: Port Speed  •  Ping  •  ARP  •  CHU Detection"
 $lblRunSteps.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
 $lblRunSteps.ForeColor = $ColMuted
 $lblRunSteps.Location = New-Object System.Drawing.Point(10, 54); $lblRunSteps.Size = New-Object System.Drawing.Size(560, 16)
@@ -909,19 +887,38 @@ $lnkClear.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lnkClear.LinkC
 $lnkClear.Location = New-Object System.Drawing.Point(553,84); $lnkClear.AutoSize = $true
 $center.Controls.Add($lnkClear)
 
+# Fixed bottom-row cards: Ping, ARP, CHU
 $cardDefs = @(
-    @{Key="LinkSpeed"; Title="Link Speed";    Sub="Expected: 1 Gbps";      X=10;  Y=106; Icon=[char]0xE704}
-    @{Key="NicStatus"; Title="NIC Status";    Sub="Intel I210 / 82574L";   X=200; Y=106; Icon=[char]0xE7F4}
-    @{Key="PingCHU";   Title="Ping (CHU)";    Sub="Camera head unit";      X=390; Y=106; Icon=[char]0xE701}
-    @{Key="Gateway";   Title="Gateway";       Sub="Default route";          X=10;  Y=194; Icon=[char]0xE88E}
-    @{Key="ArpEntry";  Title="ARP Entry";     Sub="L2 neighbor table";      X=200; Y=194; Icon=[char]0xE9D5}
-    @{Key="ChuDetect"; Title="CHU Detection"; Sub="Camera response";        X=390; Y=194; Icon=[char]0xE722}
+    @{Key="PingCHU";   Title="Ping (CHU)";    Sub="Camera head unit";  X=10;  Y=194; Icon=[char]0xE701}
+    @{Key="ArpEntry";  Title="ARP Entry";     Sub="L2 neighbor table"; X=200; Y=194; Icon=[char]0xE9D5}
+    @{Key="ChuDetect"; Title="CHU Detection"; Sub="Camera response";   X=390; Y=194; Icon=[char]0xE722}
 )
 $cards = @{}
 foreach ($cd in $cardDefs) {
     $c = New-StatusCard -Title $cd.Title -X $cd.X -Y $cd.Y -Icon $cd.Icon -Sub $cd.Sub
     $cards[$cd.Key] = $c
     $center.Controls.Add($c.Panel)
+}
+
+# Dynamic top-row cards: one per camera NIC, ordered by physical PCI port position
+$script:detectedNics = @(Get-NetAdapter | Where-Object {
+    $d = $_.InterfaceDescription
+    ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
+} | Sort-Object {
+    try { (Get-NetAdapterHardwareInfo -Name $_.Name -ErrorAction Stop).Function } catch { 999 }
+}, Name)
+
+if ($script:detectedNics.Count -gt 0) {
+    $numPorts  = $script:detectedNics.Count
+    $portCardW = [int]((580 - ($numPorts - 1) * 10) / $numPorts)
+    $portCardX = 10; $portNum = 1
+    foreach ($n in $script:detectedNics) {
+        $c = New-StatusCard -Title "P$portNum" -Sub $n.Name -X $portCardX -Y 106 -CardW $portCardW -CardH 78
+        $cards[$n.Name] = $c
+        $sync.Cards[$n.Name] = @{ Value = "--"; Status = "neutral" }
+        $center.Controls.Add($c.Panel)
+        $portCardX += $portCardW + 10; $portNum++
+    }
 }
 
 $pnlSummaryCard = New-Object System.Windows.Forms.Panel
@@ -1004,7 +1001,7 @@ $lblNextHdr.Location = New-Object System.Drawing.Point(10,6); $lblNextHdr.AutoSi
 $pnlNextHdr.Controls.Add($lblNextHdr)
 
 $rtbSteps = New-Object System.Windows.Forms.RichTextBox
-$rtbSteps.Size = New-Object System.Drawing.Size(211,296); $rtbSteps.Location = New-Object System.Drawing.Point(10,90)
+$rtbSteps.Size = New-Object System.Drawing.Size(211,400); $rtbSteps.Location = New-Object System.Drawing.Point(10,90)
 $rtbSteps.BackColor = [System.Drawing.Color]::White; $rtbSteps.ForeColor = $ColText
 $rtbSteps.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $rtbSteps.ReadOnly = $true
 $rtbSteps.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -1012,37 +1009,16 @@ $rtbSteps.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
 $rtbSteps.Text = "Run the diagnostic to`nsee guidance here."
 $right.Controls.Add($rtbSteps)
 
-$sep5 = New-Object System.Windows.Forms.Panel; $sep5.Size = New-Object System.Drawing.Size(211,1)
-$sep5.Location = New-Object System.Drawing.Point(10,398); $sep5.BackColor = $ColBorder
-$right.Controls.Add($sep5)
-
-$lblHwHdr = New-Object System.Windows.Forms.Label; $lblHwHdr.Text = "Detected Hardware"
-$lblHwHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblHwHdr.ForeColor = $ColText
-$lblHwHdr.Location = New-Object System.Drawing.Point(10,408); $lblHwHdr.AutoSize = $true
-$right.Controls.Add($lblHwHdr)
-
-$hwRows = @{}
-foreach ($pair in @(("CHU","CHU",430),("CameraPort","Camera Port",450),("CableStatus","Cable Status",470))) {
-    $lk = New-Object System.Windows.Forms.Label; $lk.Text = $pair[1]
-    $lk.Font = New-Object System.Drawing.Font("Segoe UI",7.5); $lk.ForeColor = $ColMuted
-    $lk.Location = New-Object System.Drawing.Point(10,$pair[2]); $lk.Size = New-Object System.Drawing.Size(85,16)
-    $lv = New-Object System.Windows.Forms.Label; $lv.Text = "--"
-    $lv.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lv.ForeColor = $ColText
-    $lv.Location = New-Object System.Drawing.Point(95,$pair[2]); $lv.Size = New-Object System.Drawing.Size(126,16)
-    $right.Controls.Add($lk); $right.Controls.Add($lv)
-    $hwRows[$pair[0]] = $lv
-}
-
-$sep6 = New-Object System.Windows.Forms.Panel; $sep6.Size = New-Object System.Drawing.Size(211,1)
-$sep6.Location = New-Object System.Drawing.Point(10,498); $sep6.BackColor = $ColBorder
-$right.Controls.Add($sep6)
+$sepAct = New-Object System.Windows.Forms.Panel; $sepAct.Size = New-Object System.Drawing.Size(211,1)
+$sepAct.Location = New-Object System.Drawing.Point(10,502); $sepAct.BackColor = $ColBorder
+$right.Controls.Add($sepAct)
 
 $lblActHdr = New-Object System.Windows.Forms.Label; $lblActHdr.Text = "Actions"
 $lblActHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblActHdr.ForeColor = $ColText
-$lblActHdr.Location = New-Object System.Drawing.Point(10,506); $lblActHdr.AutoSize = $true
+$lblActHdr.Location = New-Object System.Drawing.Point(10,510); $lblActHdr.AutoSize = $true
 $right.Controls.Add($lblActHdr)
 
-foreach ($pair in @(("btnExport","Export Report",530),("btnCopy","Copy Results",566),("btnSave","Save Log",602))) {
+foreach ($pair in @(("btnExport","Export Report",534),("btnCopy","Copy Results",570),("btnSave","Save Log",606))) {
     $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
     $b.Size = New-Object System.Drawing.Size(211,30); $b.Location = New-Object System.Drawing.Point(10,$pair[2])
     $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -1111,13 +1087,6 @@ $timer.Add_Tick({
     }
     if ($sync.VpuModel   -and $lblVpuVal.Text -ne $sync.VpuModel)   { $lblVpuVal.Text = $sync.VpuModel }
 
-    $hwRows["CHU"].Text         = $sync.Hardware.CHU
-    $hwRows["CameraPort"].Text  = $sync.Hardware.CameraPort
-    $hwRows["CableStatus"].Text = $sync.Hardware.CableStatus
-    $hwRows["CHU"].ForeColor        = if ($sync.Hardware.CHU -ne "--" -and $sync.Hardware.CHU -ne "") { $ColText } else { $ColMuted }
-    $hwRows["CameraPort"].ForeColor = switch -Wildcard ($sync.Hardware.CameraPort) { "Responding" {$ColGreen} "No Response" {$ColRed} default {$ColMuted} }
-    $hwRows["CableStatus"].ForeColor= switch -Wildcard ($sync.Hardware.CableStatus) { "OK*" {$ColGreen} "Degraded" {$ColRed} default {$ColMuted} }
-
     if ($sync.Running) {
         $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(219,234,254)
         $lblBadge.ForeColor = $ColAccent; $lblBadge.Text = "Running"
@@ -1176,7 +1145,6 @@ $btnRun.Add_Click({
     $sync.TotalDowngrades = 0; $sync.LastRunLine = ""; $sync.VpuModel = ""
     $sync.Cancelled = $false; $sync.CurrentStep = "Starting..."
     $sync.OutputFile = $newOutput; $sync.RunId = $newRunId
-    $sync.Hardware = @{ CHU="--"; CameraPort="--"; CableStatus="--" }
     foreach ($k in $cards.Keys) { $sync.Cards[$k] = @{ Value="--"; Status="neutral" } }
     $sync.StepsDone.Clear()
     $item2 = $null; while ($sync.SummaryQueue.TryDequeue([ref]$item2)) { }
