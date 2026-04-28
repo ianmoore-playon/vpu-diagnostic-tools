@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v1.6.4
+#  VPU Cable & NIC Troubleshooter  v1.6.5
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.6.4"
+$ScriptVersion      = "1.6.5"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -367,17 +367,17 @@ $DiagScript = {
                     $histNote = if ($hasAnyHistory) { "link-at-100M events + MAC $OcrMacOui confirmed" } else { "MAC $OcrMacOui confirmed, no prior event history" }
                     Add-Log "  [PASS]  Pixellot OCR camera identified ($histNote) — 100 Mbps expected. Skipping remediation." "Pass"
                     $portResults += [PSCustomObject]@{ Name=$nm; Speed=100; Result="PASS (OCR)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
-                    Set-Card $nm "100 Mbps" "ok"
+                    Set-Card $nm "100 Mbps (OCR)" "ok"
                     Add-Summary $nm "100 Mbps  OCR camera" "Pass"
                 } elseif ($hasAnyHistory) {
                     Add-Log "  [PASS]  Link-at-100M events present, no ID 40 — confirmed 100 Mbps-only device (OCR camera). Skipping remediation." "Pass"
                     $portResults += [PSCustomObject]@{ Name=$nm; Speed=100; Result="PASS (OCR)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
-                    Set-Card $nm "100 Mbps" "ok"
+                    Set-Card $nm "100 Mbps (OCR)" "ok"
                     Add-Summary $nm "100 Mbps  OCR camera" "Pass"
                 } else {
                     Add-Log "  [WARN]  No SmartSpeed history and MAC not yet in ARP cache — likely OCR camera, but cannot rule out new cable fault." "Warn"
                     $portResults += [PSCustomObject]@{ Name=$nm; Speed=100; Result="PASS (OCR?)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
-                    Set-Card $nm "100 Mbps" "warn"
+                    Set-Card $nm "100 Mbps (OCR)" "warn"
                     Add-Summary $nm "100 Mbps  OCR? (unconfirmed)" "Warn"
                 }
             } else {
