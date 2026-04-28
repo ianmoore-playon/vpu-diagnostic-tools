@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v1.6.5
+#  VPU Cable & NIC Troubleshooter  v1.6.6
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.6.5"
+$ScriptVersion      = "1.6.6"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -803,6 +803,11 @@ function New-StatusCard {
 function Update-CardStatus {
     param($Card, [string]$Value, [string]$Status)
     $Card.ValueLabel.Text = $Value
+    $Card.ValueLabel.Font = if ($Value.Length -gt 9) {
+        New-Object System.Drawing.Font("Segoe UI Semibold", 11)
+    } else {
+        New-Object System.Drawing.Font("Segoe UI Semibold", 13)
+    }
     $dotC = switch ($Status) { "ok" {$ColGreen} "fail" {$ColRed} "warn" {$ColYellow} default {$ColMuted} }
     $valC = switch ($Status) { "ok" {$ColGreen} "fail" {$ColRed} "warn" {$ColYellow} default {$ColText}  }
     $Card.DotPanel.BackColor   = $dotC
