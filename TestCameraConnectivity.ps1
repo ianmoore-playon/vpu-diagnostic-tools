@@ -793,8 +793,11 @@ $DiagScript = {
                 Add-Summary "PoE Budget" "Card not found" "Gray"
             }
         } catch {
-            Add-Log ("  [INFO] PoE query failed: {0}" -f $_.Exception.Message) "Gray"
-            Add-Summary "PoE Budget" "Query error" "Gray"
+            $poeErrType = $_.Exception.GetType().Name
+            $poeErrMsg  = $_.Exception.Message -replace "[\r\n]+"," "
+            Add-Log ("  [WARN] PoE query failed ({0}): {1}" -f $poeErrType, $poeErrMsg) "Warn"
+            Add-Summary "PoE Budget" $poeErrType "Warn"
+            Set-Card "PoEBudget" "Error" "warn"
         }
     } else {
         Add-Log "  [INFO] SmartPoE.dll not found — PoE monitoring not available on this system." "Gray"
