@@ -45,11 +45,11 @@ Intel SmartSpeed Event ID 40 fires only when the physical medium cannot sustain 
 
 The interface is a three-panel window:
 
-- **Left sidebar** — Navigation (Overview, Guide, History), NIC selector with connected status indicator, quick system info, VPU model
-- **Center panel** — Run/Retest buttons, per-port speed cards (P1–P4, one per Intel NIC), three diagnostic cards (Ping CHU, ARP Entry, CHU Detection), Last Run Summary card, color-coded live log, and Export / Copy / Save action buttons
-- **Right panel** — Status badge (Ready / Running / All Clear / Issues Found) and plain-language Next Steps / Guidance
+- **Left sidebar** — Navigation (Overview, Isolate, History, Help), NIC selector with connected status indicator, quick system info, VPU model, and auto-update notice (yellow, appears when a newer version is available on GitHub)
+- **Center panel** — Run / Retest / Cancel buttons, per-port speed cards (P1–P4, one per Intel NIC), four diagnostic cards (SmartSpeed, Ping CHU, ARP Entry, CHU Detection), Last Run Summary card, and color-coded live log
+- **Right panel** — Status badge (Ready / Running / All Clear / Issues Found), plain-language Next Steps / Guidance, and Export / Copy Summary / Copy Log / Save Log action buttons
 
-The diagnostic engine runs in a background runspace so the GUI never freezes during the 30-second re-negotiation wait or 12-second blink-sample window.
+The diagnostic engine runs in a background runspace so the GUI never freezes during the 30-second re-negotiation wait or 12-second blink-sample window. The **Cancel** button stops a running diagnostic at any point.
 
 ### Requirements
 

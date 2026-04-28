@@ -9,6 +9,26 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.5.0] - 2026-04-28
+
+### Added
+- **Cancel button** — red "Cancel" button appears next to "Retest Last Step" while a diagnostic is running; sets `$sync.Cancelled` to stop the background runspace (including the 30-second re-negotiation wait) and hides itself automatically when the run completes
+- **Auto-update notice** — on form load, a background async `WebClient` fetch checks the remote `$ScriptVersion`; if a newer version is available, a yellow notice appears in the sidebar: "Update available: vX.Y.Z — Re-run the one-liner to update."
+- **Log folder pruning** — at the start of each run, the `CameraLink_Results` folder is trimmed to the 50 most recent files; oldest files are silently deleted to prevent unbounded disk growth
+- **Isolate session saved to report** — when the fault isolation wizard reaches a conclusion (Phase 2/3/4), the full phase history is appended to the current run's `.txt` report file under a "FAULT ISOLATION SESSION" header; escalation reports now capture both diagnostic and isolation results in one file
+- **Structured STATUS line in report files** — each report now ends with `STATUS: ALL_CLEAR` or `STATUS: ISSUES_FOUND`; used by the History tab for fast, reliable result classification
+
+### Fixed
+- **Race condition on shared ArrayList reads** — `$sync.PortResults`, `$sync.CamResults`, `$sync.AppIssues`, and `$sync.NextSteps` are now snapshot-copied (`@(...)`) before iteration in the UI timer tick, Copy Summary handler, and Show-OverviewSteps; prevents intermittent exceptions if the background runspace adds an item mid-iteration
+- **Isolate guide link-speed sampling too short for blinking links** — `Get-GuideLinkSpeed` default sampling window raised from 6 s to 12 s, matching the diagnostic engine; prevents false "No link" readings on ports undergoing Intel SmartSpeed retry cycles (~8–10 s period)
+
+### Changed
+- **History tab result classification uses STATUS line** — `Update-HistoryList` now reads the `STATUS:` line instead of grepping for "DEGRADED"; backward-compatible fallback retained for files written before v1.5.0
+- **NIC detection in form Load de-duplicated** — `$form.Add_Load` now reuses the already-queried `$script:detectedNics` array instead of issuing a second `Get-NetAdapter` call; port card order and dropdown order are now consistent (both PCI function order)
+- **Guide action handler refactored to switch** — replaced four chained `if ($phase -eq X)` blocks with a single `switch ($script:guide.Phase)` for clarity
+
+---
+
 ## [1.4.2] - 2026-04-27
 
 ### Fixed

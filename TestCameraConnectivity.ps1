@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v1.4.2
+#  VPU Cable & NIC Troubleshooter  v1.5.0
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.4.2"
+$ScriptVersion      = "1.5.0"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -97,10 +97,11 @@ $sync = [hashtable]::Synchronized(@{
         ArpEntry   = @{ Value = "--"; Status = "neutral" }
         ChuDetect  = @{ Value = "--"; Status = "neutral" }
     }
-    PortResults = [System.Collections.ArrayList]::new()
-    CamResults  = [System.Collections.ArrayList]::new()
-    AppIssues   = [System.Collections.ArrayList]::new()
-    NextSteps   = [System.Collections.ArrayList]::new()
+    PortResults     = [System.Collections.ArrayList]::new()
+    CamResults      = [System.Collections.ArrayList]::new()
+    AppIssues       = [System.Collections.ArrayList]::new()
+    NextSteps       = [System.Collections.ArrayList]::new()
+    UpdateAvailable = ""
 })
 
 # ---------- Diagnostic engine (runs in background runspace) -----------------
@@ -671,7 +672,8 @@ $DiagScript = {
     Add-Summary "─────────────────" "Complete" "Cyan"
 
     $sync.LastRunLine = if ($allClear) { "All tests passed - No issues detected" } else { "$($failPorts.Count) port fault(s) detected" }
-    Add-Content -Path $OutputFile -Value "`nFull results saved: $OutputFile" -ErrorAction SilentlyContinue
+    Add-Content -Path $OutputFile -Value "`nSTATUS: $(if ($allClear) { 'ALL_CLEAR' } else { 'ISSUES_FOUND' })" -ErrorAction SilentlyContinue
+    Add-Content -Path $OutputFile -Value "Full results saved: $OutputFile" -ErrorAction SilentlyContinue
     $sync.CurrentStep = if ($allClear) { "All tests passed. No issues detected." } else { "Diagnostic complete. Review next steps in right panel." }
     $sync.Running = $false
     $sync.Complete = $true
@@ -855,6 +857,12 @@ $lblVpuVal.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblVpuVal.For
 $lblVpuVal.Location = New-Object System.Drawing.Point(12,460); $lblVpuVal.Size = New-Object System.Drawing.Size(176,40)
 $sidebar.Controls.Add($lblVpuVal)
 
+$lblUpdate = New-Object System.Windows.Forms.Label; $lblUpdate.Text = ""
+$lblUpdate.Font = New-Object System.Drawing.Font("Segoe UI",7.5); $lblUpdate.ForeColor = [System.Drawing.Color]::FromArgb(251,191,36)
+$lblUpdate.Location = New-Object System.Drawing.Point(12,506); $lblUpdate.Size = New-Object System.Drawing.Size(176,52)
+$lblUpdate.Visible = $false
+$sidebar.Controls.Add($lblUpdate)
+
 # ---- Center Panel ----------------------------------------------------------
 $center = New-Object System.Windows.Forms.Panel
 $center.Size = New-Object System.Drawing.Size(592,680); $center.Location = New-Object System.Drawing.Point(200,0)
@@ -878,6 +886,15 @@ $btnRetest.Font = New-Object System.Drawing.Font("Segoe UI",10)
 $btnRetest.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnRetest.Enabled = $false
 $center.Controls.Add($btnRetest)
 $btnRetest.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,150,38)), 6))
+
+$btnCancel = New-Object System.Windows.Forms.Button; $btnCancel.Text = "Cancel"
+$btnCancel.Size = New-Object System.Drawing.Size(148,38); $btnCancel.Location = New-Object System.Drawing.Point(402,12)
+$btnCancel.BackColor = $ColRed; $btnCancel.ForeColor = [System.Drawing.Color]::White
+$btnCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnCancel.FlatAppearance.BorderSize = 0
+$btnCancel.Font = New-Object System.Drawing.Font("Segoe UI",10)
+$btnCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnCancel.Visible = $false
+$center.Controls.Add($btnCancel)
+$btnCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,148,38)), 6))
 
 $lblCurStat = New-Object System.Windows.Forms.Label; $lblCurStat.Text = "Current Results"
 $lblCurStat.Font = New-Object System.Drawing.Font("Segoe UI Semibold",9.5); $lblCurStat.ForeColor = $ColText
@@ -1122,10 +1139,17 @@ $timer.Add_Tick({
         $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(219,234,254)
         $lblBadge.ForeColor = $ColAccent; $lblBadge.Text = "Running"
         $pnlBadgeDot.BackColor = $ColAccent
+        if (-not $btnCancel.Visible) { $btnCancel.Visible = $true }
+    }
+
+    if ($sync.UpdateAvailable -and -not $lblUpdate.Visible) {
+        $lblUpdate.Text = "Update available: v$($sync.UpdateAvailable)`nRe-run the one-liner to update."
+        $lblUpdate.Visible = $true
     }
 
     if ($sync.Complete -and -not $sync.Running) {
         $timer.Stop()
+        $btnCancel.Visible = $false
         $btnRun.Enabled = $true
         $btnRun.Text = if ($cboNic.SelectedIndex -le 0) {
             [char]0x25B6 + "  Run Full Diagnostic"
@@ -1151,13 +1175,20 @@ $timer.Add_Tick({
         $trend = Get-PortTrendSummary
         $trendSuffix = if ($trend) { "   ·   $trend" } else { "" }
         $lblLastRunVal.Text = "$($sync.LastRunLine)   $dt$trendSuffix"
-        $btnGoGuide.Visible = (($sync.PortResults | Where-Object { $_.Result -eq "FAIL" }).Count -gt 0)
+        $btnGoGuide.Visible = ((@($sync.PortResults) | Where-Object { $_.Result -eq "FAIL" }).Count -gt 0)
     }
 })
 
 # ---------- Button Handlers -------------------------------------------------
 $btnRun.Add_Click({
     if ($sync.Running) { return }
+
+    # Prune log folder — keep the 49 most recent files (new run will be the 50th)
+    try {
+        $pruneFiles = @(Get-ChildItem -Path $OutputDir -Filter "CameraLink_Results_*.txt" -ErrorAction SilentlyContinue |
+                        Sort-Object LastWriteTime -Descending | Select-Object -Skip 49)
+        $pruneFiles | Remove-Item -Force -ErrorAction SilentlyContinue
+    } catch { }
 
     $newRunId  = Get-Date -Format "yyyyMMdd_HHmmss"
     $newOutput = Join-Path $OutputDir "CameraLink_Results_$newRunId.txt"
@@ -1205,6 +1236,11 @@ $btnRun.Add_Click({
 
 $btnRetest.Add_Click({ $btnRun.PerformClick() })
 
+$btnCancel.Add_Click({
+    $sync.Cancelled = $true
+    $btnCancel.Visible = $false
+})
+
 $cboNic.Add_SelectedIndexChanged({
     if (-not $sync.Running) {
         if ($cboNic.SelectedIndex -le 0) {
@@ -1243,7 +1279,7 @@ $btnCopySummary.Add_Click({
     $lines += "═" * 48
     $lines += ""
     $lines += "PORT STATUS"
-    foreach ($r in $sync.PortResults) {
+    foreach ($r in @($sync.PortResults)) {
         $status = switch ($r.Result) {
             "PASS"          { "1 Gbps — OK" }
             "PASS (forced)" { "1 Gbps — OK (forced)" }
@@ -1260,18 +1296,18 @@ $btnCopySummary.Add_Click({
     $lines += "  $ssLine"
     $lines += ""
     $lines += "CAMERA CONNECTIVITY"
-    foreach ($c in $sync.CamResults) {
+    foreach ($c in @($sync.CamResults)) {
         $cs = if ($c.Ping -and $c.Rtsp) { "Ping OK / RTSP OK" } elseif ($c.Ping) { "Ping OK / RTSP FAIL" } elseif ($c.Optional) { "Not installed (optional)" } else { "No response" }
         $lines += "  $($c.IP.PadRight(18)) $($c.Label) — $cs"
     }
     if ($sync.AppIssues.Count -gt 0) {
         $lines += ""
         $lines += "APPLICATION LOG FINDINGS"
-        foreach ($issue in $sync.AppIssues) { $lines += "  $issue" }
+        foreach ($issue in @($sync.AppIssues)) { $lines += "  $issue" }
     }
     $lines += ""
     $lines += "NEXT STEPS"
-    foreach ($step in $sync.NextSteps) { $lines += "  - $($step.H)" }
+    foreach ($step in @($sync.NextSteps)) { $lines += "  - $($step.H)" }
     $lines += ""
     if ($sync.OutputFile) { $lines += "Full report: $(Split-Path $sync.OutputFile -Leaf)" }
     $lines += "═" * 48
@@ -1329,7 +1365,7 @@ function Show-OverviewSteps {
     $rtbSteps.Clear()
     if ($sync.NextSteps.Count -eq 0) { $rtbSteps.Text = "Run the diagnostic to`nsee guidance here."; return }
     $first = $true
-    foreach ($step in $sync.NextSteps) {
+    foreach ($step in @($sync.NextSteps)) {
         if (-not $first) {
             $rtbSteps.SelectionStart = $rtbSteps.TextLength; $rtbSteps.SelectionLength = 0
             $rtbSteps.SelectionFont = New-Object System.Drawing.Font("Segoe UI",4)
@@ -1403,16 +1439,28 @@ function Update-HistoryList {
         $resultText = "Unknown"; $resultColor = $ColMuted; $summary = ""
         try {
             $lines = Get-Content -Path $f.FullName -ErrorAction Stop
-            $failLines = @($lines | Where-Object { $_ -match 'DEGRADED' })
-            $okComplete = @($lines | Where-Object { $_ -match 'Complete' })
-            if ($failLines.Count -gt 0) {
+            $statusLine = $lines | Where-Object { $_ -match '^STATUS:' } | Select-Object -Last 1
+            if ($statusLine -match 'ALL_CLEAR') {
+                $resultText = "All Clear"; $resultColor = $ColGreen; $summary = "All ports healthy"
+            } elseif ($statusLine -match 'ISSUES_FOUND') {
                 $resultText = "Issues Found"; $resultColor = $ColRed
+                $failLines = @($lines | Where-Object { $_ -match 'DEGRADED' })
                 $ports = $failLines | ForEach-Object {
                     if ($_ -match '^\s+(.+?)\s{2,}DEGRADED') { $Matches[1].Trim() }
                 } | Where-Object { $_ }
                 $summary = "$($failLines.Count) fault(s)" + $(if ($ports) { " — " + ($ports -join ", ") } else { "" })
-            } elseif ($okComplete.Count -gt 0) {
-                $resultText = "All Clear"; $resultColor = $ColGreen; $summary = "All ports healthy"
+            } else {
+                # Fallback for files written before v1.5.0
+                $failLines = @($lines | Where-Object { $_ -match 'DEGRADED' })
+                if ($failLines.Count -gt 0) {
+                    $resultText = "Issues Found"; $resultColor = $ColRed
+                    $ports = $failLines | ForEach-Object {
+                        if ($_ -match '^\s+(.+?)\s{2,}DEGRADED') { $Matches[1].Trim() }
+                    } | Where-Object { $_ }
+                    $summary = "$($failLines.Count) fault(s)" + $(if ($ports) { " — " + ($ports -join ", ") } else { "" })
+                } elseif (@($lines | Where-Object { $_ -match 'Complete' }).Count -gt 0) {
+                    $resultText = "All Clear"; $resultColor = $ColGreen; $summary = "All ports healthy"
+                }
             }
         } catch { }
         $sizeKb = [math]::Round($f.Length / 1KB, 1)
@@ -1575,6 +1623,13 @@ $rtbGuide.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
 $rtbGuide.Text = "Phase results will appear here as you work through each step."
 $pnlGuide.Controls.Add($rtbGuide)
 
+function Save-GuideSession {
+    if (-not $sync.OutputFile -or -not (Test-Path $sync.OutputFile)) { return }
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $content = "`n" + ("=" * 64) + "`n FAULT ISOLATION SESSION  $ts`n" + ("=" * 64) + "`n" + $rtbGuide.Text
+    Add-Content -Path $sync.OutputFile -Value $content -ErrorAction SilentlyContinue
+}
+
 # ---- Guide State & Logic ---------------------------------------------------
 $script:guide = @{
     Phase        = 0       # 0=setup, 1=baseline done, 2=nic done, 3=cable done, 4=concluded
@@ -1585,7 +1640,7 @@ $script:guide = @{
 }
 
 function Get-GuideLinkSpeed {
-    param([string]$PortName, [int]$MaxSeconds = 6)
+    param([string]$PortName, [int]$MaxSeconds = 12)
     $deadline = (Get-Date).AddSeconds($MaxSeconds)
     $peak = 0
     while ((Get-Date) -lt $deadline) {
@@ -1646,157 +1701,152 @@ function Show-GuideResult {
 
 # Wire up action button
 $btnGuideAction.Add_Click({
-    $phase = $script:guide.Phase
+    switch ($script:guide.Phase) {
+        0 {
+            # Phase 0 → run baseline on suspect port
+            $portName = $cboGuidePortA.Text -replace '\s.*',''
+            if (-not $portName) { return }
+            $script:guide.SuspectPort = $portName
 
-    # Phase 0 → run baseline on suspect port
-    if ($phase -eq 0) {
-        $portName = $cboGuidePortA.Text -replace '\s.*',''
-        if (-not $portName) { return }
-        $script:guide.SuspectPort = $portName
-
-        $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
-        $rtbGuide.Clear()
-        $speed = Get-GuideLinkSpeed -PortName $portName -MaxSeconds 6
-        $script:guide.BaseSpeed = $speed
-        $btnGuideAction.Enabled = $true
-
-        $speedLabel = if ($speed -ge 1000) { "1 Gbps" } elseif ($speed -gt 0) { "$speed Mbps" } else { "No link" }
-        $config = "Port: $portName  |  Cable: (original)  |  Camera: (original)"
-
-        if ($speed -ge 1000) {
-            Show-GuideResult "Baseline: $speedLabel — Port is operating normally." "The selected port is already running at 1 Gbps. No fault detected on this port. Select a different port or run the full diagnostic." "Pass"
-            Add-GuideHistory "Phase 1 — Baseline" $config $speedLabel "Port healthy — no fault on this port." "Pass"
-            $lblGuidePhase.Text = "BASELINE — PORT HEALTHY"
-            $lblGuideInstr.Text = "This port is operating normally at 1 Gbps. Select a different port above, or use Overview > Run Full Diagnostic."
-            $btnGuideAction.Text = "  Recheck Port"
+            $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
+            $rtbGuide.Clear()
+            $speed = Get-GuideLinkSpeed -PortName $portName
+            $script:guide.BaseSpeed = $speed
             $btnGuideAction.Enabled = $true
-            Update-GuideStepDots -ActivePhase 1
-            return
+
+            $speedLabel = if ($speed -ge 1000) { "1 Gbps" } elseif ($speed -gt 0) { "$speed Mbps" } else { "No link" }
+            $config = "Port: $portName  |  Cable: (original)  |  Camera: (original)"
+
+            if ($speed -ge 1000) {
+                Show-GuideResult "Baseline: $speedLabel — Port is operating normally." "The selected port is already running at 1 Gbps. No fault detected on this port. Select a different port or run the full diagnostic." "Pass"
+                Add-GuideHistory "Phase 1 — Baseline" $config $speedLabel "Port healthy — no fault on this port." "Pass"
+                $lblGuidePhase.Text = "BASELINE — PORT HEALTHY"
+                $lblGuideInstr.Text = "This port is operating normally at 1 Gbps. Select a different port above, or use Overview > Run Full Diagnostic."
+                $btnGuideAction.Text = "  Recheck Port"
+                $btnGuideAction.Enabled = $true
+                Update-GuideStepDots -ActivePhase 1
+                return
+            }
+
+            Add-GuideHistory "Phase 1 — Baseline" $config $speedLabel "Degraded link confirmed — beginning isolation." "Fail"
+            Show-GuideResult "Baseline: $speedLabel — Degraded link confirmed." "Beginning isolation. Move the SAME cable to a different NIC port." "Fail"
+            $script:guide.Phase = 1
+            Update-GuideStepDots -ActivePhase 2
+
+            # Populate test port dropdown (all ports except suspect)
+            $cboGuidePortB.Items.Clear()
+            try {
+                $others = Get-NetAdapter | Where-Object { $d = $_.InterfaceDescription; ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0 -and $_.Name -ne $portName } | Sort-Object Name
+                foreach ($n in $others) { $cboGuidePortB.Items.Add($n.Name) | Out-Null }
+            } catch { }
+            if ($cboGuidePortB.Items.Count -gt 0) { $cboGuidePortB.SelectedIndex = 0 }
+
+            $lblGuidePortA.Visible = $false; $cboGuidePortA.Visible = $false
+            $lblGuidePortB.Visible = $true;  $cboGuidePortB.Visible = $true
+            $lblGuidePhase.Text = "PHASE 2 — DOES THE FAULT FOLLOW THE NIC PORT?"
+            $lblGuideInstr.Text = "Move the SAME cable and SAME camera from $portName to the port selected below. Press Check when reconnected."
+            $btnGuideAction.Text = "  Check Now"
+            $btnGuideAction.Enabled = $true
         }
+        1 {
+            # Phase 1 → check after moving cable+CHU to test port
+            $testPort = $cboGuidePortB.Text -replace '\s.*',''
+            if (-not $testPort) { return }
+            $script:guide.TestPort = $testPort
 
-        Add-GuideHistory "Phase 1 — Baseline" $config $speedLabel "Degraded link confirmed — beginning isolation." "Fail"
-        Show-GuideResult "Baseline: $speedLabel — Degraded link confirmed." "Beginning isolation. Move the SAME cable to a different NIC port." "Fail"
-        $script:guide.Phase = 1
-        Update-GuideStepDots -ActivePhase 2
+            $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
+            $speed = Get-GuideLinkSpeed -PortName $testPort
+            $btnGuideAction.Enabled = $true
 
-        # Populate test port dropdown (all ports except suspect)
-        $cboGuidePortB.Items.Clear()
-        try {
-            $others = Get-NetAdapter | Where-Object { $d = $_.InterfaceDescription; ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0 -and $_.Name -ne $portName } | Sort-Object Name
-            foreach ($n in $others) { $cboGuidePortB.Items.Add($n.Name) | Out-Null }
-        } catch { }
-        if ($cboGuidePortB.Items.Count -gt 0) { $cboGuidePortB.SelectedIndex = 0 }
+            $speedLabel = if ($speed -ge 1000) { "1 Gbps" } elseif ($speed -gt 0) { "$speed Mbps" } else { "No link" }
+            $config = "Port: $testPort  |  Cable: (original)  |  Camera: (original)"
 
-        $lblGuidePortA.Visible = $false; $cboGuidePortA.Visible = $false
-        $lblGuidePortB.Visible = $true;  $cboGuidePortB.Visible = $true
-        $lblGuidePhase.Text = "PHASE 2 — DOES THE FAULT FOLLOW THE NIC PORT?"
-        $lblGuideInstr.Text = "Move the SAME cable and SAME camera from $portName to the port selected below. Press Check when reconnected."
-        $btnGuideAction.Text = "  Check Now"
-        $btnGuideAction.Enabled = $true
-        return
-    }
+            if ($speed -ge 1000) {
+                $verdict = "Fault cleared on $testPort — cable and camera are healthy on a different port. Original port ($($script:guide.SuspectPort)) is likely faulty."
+                Show-GuideResult "Phase 2: $speedLabel — Fault follows the original NIC port." $verdict "Pass"
+                Add-GuideHistory "Phase 2 — NIC Port Test" $config $speedLabel $verdict "Pass"
+                $lblGuidePhase.Text = "CONCLUSION — FAULTY NIC PORT"
+                $lblGuideInstr.Text = "The cable and camera work fine on $testPort. The original port ($($script:guide.SuspectPort)) is the source of the fault. Replace or disable that NIC port."
+                $btnGuideAction.Text = "  Run Full Diagnostic"
+                $script:guide.Phase = 4
+                Update-GuideStepDots -ActivePhase 4
+                Save-GuideSession
+            } else {
+                $verdict = "Fault persists on $testPort — the original NIC port is likely healthy. The fault is in the cable or camera."
+                Show-GuideResult "Phase 2: $speedLabel — Fault follows cable/camera, not the NIC port." $verdict "Warn"
+                Add-GuideHistory "Phase 2 — NIC Port Test" $config $speedLabel $verdict "Info"
+                $script:guide.Phase = 2
+                $lblGuidePortB.Visible = $false; $cboGuidePortB.Visible = $false
+                $lblGuidePhase.Text = "PHASE 3 — DOES THE FAULT FOLLOW THE CABLE?"
+                $lblGuideInstr.Text = "Stay on $testPort with the same camera. Replace ONLY the cable with a known-good cable. Press Check when reconnected."
+                $btnGuideAction.Text = "  Check Now"
+                Update-GuideStepDots -ActivePhase 3
+            }
+        }
+        2 {
+            # Phase 2 → check after swapping cable
+            $testPort = $script:guide.TestPort
+            $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
+            $speed = Get-GuideLinkSpeed -PortName $testPort
+            $btnGuideAction.Enabled = $true
 
-    # Phase 1 → check after moving cable+CHU to test port
-    if ($phase -eq 1) {
-        $testPort = $cboGuidePortB.Text -replace '\s.*',''
-        if (-not $testPort) { return }
-        $script:guide.TestPort = $testPort
+            $speedLabel = if ($speed -ge 1000) { "1 Gbps" } elseif ($speed -gt 0) { "$speed Mbps" } else { "No link" }
+            $config = "Port: $testPort  |  Cable: (NEW - known good)  |  Camera: (original)"
 
-        $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
-        $speed = Get-GuideLinkSpeed -PortName $testPort -MaxSeconds 6
-        $btnGuideAction.Enabled = $true
+            if ($speed -ge 1000) {
+                $verdict = "Link restored with new cable. The original cable is the source of the fault — bad cable or termination."
+                Show-GuideResult "Phase 3: $speedLabel — Fault follows the cable." $verdict "Pass"
+                Add-GuideHistory "Phase 3 — Cable Test" $config $speedLabel $verdict "Pass"
+                $lblGuidePhase.Text = "CONCLUSION — FAULTY CABLE"
+                $lblGuideInstr.Text = "Replacing the cable resolved the issue. The original cable (or its termination) is the source of the fault. Replace the cable end-to-end."
+                $btnGuideAction.Text = "  Run Full Diagnostic"
+                $script:guide.Phase = 4
+                Update-GuideStepDots -ActivePhase 4
+                Save-GuideSession
+            } else {
+                $verdict = "Still degraded with new cable. Cable is not the fault — the camera is the likely cause."
+                Show-GuideResult "Phase 3: $speedLabel — Fault is not the cable." $verdict "Warn"
+                Add-GuideHistory "Phase 3 — Cable Test" $config $speedLabel $verdict "Info"
+                $script:guide.Phase = 3
+                $lblGuidePhase.Text = "PHASE 4 — DOES THE FAULT FOLLOW THE CAMERA?"
+                $lblGuideInstr.Text = "Stay on $testPort with the new cable. Connect a known-good camera. Press Check when reconnected."
+                $btnGuideAction.Text = "  Check Now"
+                Update-GuideStepDots -ActivePhase 4
+            }
+        }
+        3 {
+            # Phase 3 → check after swapping camera
+            $testPort = $script:guide.TestPort
+            $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
+            $speed = Get-GuideLinkSpeed -PortName $testPort
+            $btnGuideAction.Enabled = $true
 
-        $speedLabel = if ($speed -ge 1000) { "1 Gbps" } elseif ($speed -gt 0) { "$speed Mbps" } else { "No link" }
-        $config = "Port: $testPort  |  Cable: (original)  |  Camera: (original)"
+            $speedLabel = if ($speed -ge 1000) { "1 Gbps" } elseif ($speed -gt 0) { "$speed Mbps" } else { "No link" }
+            $config = "Port: $testPort  |  Cable: (NEW)  |  Camera: (NEW - known good)"
 
-        if ($speed -ge 1000) {
-            $verdict = "Fault cleared on $testPort — cable and camera are healthy on a different port. Original port ($($script:guide.SuspectPort)) is likely faulty."
-            Show-GuideResult "Phase 2: $speedLabel — Fault follows the original NIC port." $verdict "Pass"
-            Add-GuideHistory "Phase 2 — NIC Port Test" $config $speedLabel $verdict "Pass"
-            $lblGuidePhase.Text = "CONCLUSION — FAULTY NIC PORT"
-            $lblGuideInstr.Text = "The cable and camera work fine on $testPort. The original port ($($script:guide.SuspectPort)) is the source of the fault. Replace or disable that NIC port."
+            if ($speed -ge 1000) {
+                $verdict = "Link restored with new camera. The original camera unit is the source of the fault."
+                Show-GuideResult "Phase 4: $speedLabel — Fault follows the camera." $verdict "Pass"
+                Add-GuideHistory "Phase 4 — Camera Test" $config $speedLabel $verdict "Pass"
+                $lblGuidePhase.Text = "CONCLUSION — FAULTY CAMERA (CHU)"
+                $lblGuideInstr.Text = "Replacing the camera resolved the issue. The original camera is the source of the fault. Replace the camera unit."
+            } else {
+                $verdict = "Still degraded with known-good cable and camera. The fault is likely in the NIC hardware itself or the VPU motherboard."
+                Show-GuideResult "Phase 4: $speedLabel — Fault persists with known-good equipment." $verdict "Fail"
+                Add-GuideHistory "Phase 4 — Camera Test" $config $speedLabel $verdict "Fail"
+                $lblGuidePhase.Text = "CONCLUSION — NIC / HARDWARE FAULT"
+                $lblGuideInstr.Text = "Known-good cable and camera still fail on $testPort. This indicates a fault in the NIC hardware or VPU motherboard. Run the full diagnostic and escalate."
+            }
             $btnGuideAction.Text = "  Run Full Diagnostic"
             $script:guide.Phase = 4
             Update-GuideStepDots -ActivePhase 4
-        } else {
-            $verdict = "Fault persists on $testPort — the original NIC port is likely healthy. The fault is in the cable or camera."
-            Show-GuideResult "Phase 2: $speedLabel — Fault follows cable/camera, not the NIC port." $verdict "Warn"
-            Add-GuideHistory "Phase 2 — NIC Port Test" $config $speedLabel $verdict "Info"
-            $script:guide.Phase = 2
-            $lblGuidePortB.Visible = $false; $cboGuidePortB.Visible = $false
-            $lblGuidePhase.Text = "PHASE 3 — DOES THE FAULT FOLLOW THE CABLE?"
-            $lblGuideInstr.Text = "Stay on $testPort with the same camera. Replace ONLY the cable with a known-good cable. Press Check when reconnected."
-            $btnGuideAction.Text = "  Check Now"
-            Update-GuideStepDots -ActivePhase 3
+            Save-GuideSession
         }
-        return
-    }
-
-    # Phase 2 → check after swapping cable
-    if ($phase -eq 2) {
-        $testPort = $script:guide.TestPort
-        $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
-        $speed = Get-GuideLinkSpeed -PortName $testPort -MaxSeconds 6
-        $btnGuideAction.Enabled = $true
-
-        $speedLabel = if ($speed -ge 1000) { "1 Gbps" } elseif ($speed -gt 0) { "$speed Mbps" } else { "No link" }
-        $config = "Port: $testPort  |  Cable: (NEW - known good)  |  Camera: (original)"
-
-        if ($speed -ge 1000) {
-            $verdict = "Link restored with new cable. The original cable is the source of the fault — bad cable or termination."
-            Show-GuideResult "Phase 3: $speedLabel — Fault follows the cable." $verdict "Pass"
-            Add-GuideHistory "Phase 3 — Cable Test" $config $speedLabel $verdict "Pass"
-            $lblGuidePhase.Text = "CONCLUSION — FAULTY CABLE"
-            $lblGuideInstr.Text = "Replacing the cable resolved the issue. The original cable (or its termination) is the source of the fault. Replace the cable end-to-end."
-            $btnGuideAction.Text = "  Run Full Diagnostic"
-            $script:guide.Phase = 4
-            Update-GuideStepDots -ActivePhase 4
-        } else {
-            $verdict = "Still degraded with new cable. Cable is not the fault — the camera is the likely cause."
-            Show-GuideResult "Phase 3: $speedLabel — Fault is not the cable." $verdict "Warn"
-            Add-GuideHistory "Phase 3 — Cable Test" $config $speedLabel $verdict "Info"
-            $script:guide.Phase = 3
-            $lblGuidePhase.Text = "PHASE 4 — DOES THE FAULT FOLLOW THE CAMERA?"
-            $lblGuideInstr.Text = "Stay on $testPort with the new cable. Connect a known-good camera. Press Check when reconnected."
-            $btnGuideAction.Text = "  Check Now"
-            Update-GuideStepDots -ActivePhase 4
+        4 {
+            # Phase 4 (concluded) → jump to Overview and trigger diagnostic
+            $navOverview.PerformClick()
+            $btnRun.PerformClick()
         }
-        return
-    }
-
-    # Phase 3 → check after swapping camera
-    if ($phase -eq 3) {
-        $testPort = $script:guide.TestPort
-        $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
-        $speed = Get-GuideLinkSpeed -PortName $testPort -MaxSeconds 6
-        $btnGuideAction.Enabled = $true
-
-        $speedLabel = if ($speed -ge 1000) { "1 Gbps" } elseif ($speed -gt 0) { "$speed Mbps" } else { "No link" }
-        $config = "Port: $testPort  |  Cable: (NEW)  |  Camera: (NEW - known good)"
-
-        if ($speed -ge 1000) {
-            $verdict = "Link restored with new camera. The original camera unit is the source of the fault."
-            Show-GuideResult "Phase 4: $speedLabel — Fault follows the camera." $verdict "Pass"
-            Add-GuideHistory "Phase 4 — Camera Test" $config $speedLabel $verdict "Pass"
-            $lblGuidePhase.Text = "CONCLUSION — FAULTY CAMERA (CHU)"
-            $lblGuideInstr.Text = "Replacing the camera resolved the issue. The original camera is the source of the fault. Replace the camera unit."
-        } else {
-            $verdict = "Still degraded with known-good cable and camera. The fault is likely in the NIC hardware itself or the VPU motherboard."
-            Show-GuideResult "Phase 4: $speedLabel — Fault persists with known-good equipment." $verdict "Fail"
-            Add-GuideHistory "Phase 4 — Camera Test" $config $speedLabel $verdict "Fail"
-            $lblGuidePhase.Text = "CONCLUSION — NIC / HARDWARE FAULT"
-            $lblGuideInstr.Text = "Known-good cable and camera still fail on $testPort. This indicates a fault in the NIC hardware or VPU motherboard. Run the full diagnostic and escalate."
-        }
-        $btnGuideAction.Text = "  Run Full Diagnostic"
-        $script:guide.Phase = 4
-        Update-GuideStepDots -ActivePhase 4
-        return
-    }
-
-    # Phase 4 (concluded) → jump to Overview and trigger diagnostic
-    if ($phase -eq 4) {
-        $navOverview.PerformClick()
-        $btnRun.PerformClick()
     }
 })
 
@@ -1940,11 +1990,7 @@ $btnGoGuide.Add_Click({
 $form.Add_Load({
     $cboNic.Items.Add("All Ports") | Out-Null
     try {
-        $nics = Get-NetAdapter | Where-Object {
-            $d = $_.InterfaceDescription
-            ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
-        } | Sort-Object Name
-        foreach ($n in $nics) {
+        foreach ($n in $script:detectedNics) {
             $short = $n.InterfaceDescription -replace 'Intel\(R\) 82574L Gigabit Network Connection','CHU NIC'
             $short = $short -replace 'Intel\(R\) I210 Gigabit Network Connection','CHU NIC'
             $cboNic.Items.Add("$($n.Name)  ($short)") | Out-Null
@@ -1958,6 +2004,24 @@ $form.Add_Load({
     try {
         $osCaption = (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption
         if ($osCaption) { $lblQiOs.Text = "OS: $($osCaption -replace 'Microsoft Windows ','Win ')" }
+    } catch { }
+
+    # Async update check — compares remote $ScriptVersion to current; shows notice if newer
+    try {
+        $wc = New-Object System.Net.WebClient
+        Register-ObjectEvent -InputObject $wc -EventName DownloadStringCompleted `
+            -MessageData @{ Sync = $sync; CurVer = $ScriptVersion } -Action {
+            try {
+                $data = $Event.MessageData
+                if (-not $EventArgs.Error -and
+                    $EventArgs.Result -match '\$ScriptVersion\s*=\s*"(\d+\.\d+\.\d+)"') {
+                    if ([version]$Matches[1] -gt [version]$data.CurVer) {
+                        $data.Sync.UpdateAvailable = $Matches[1]
+                    }
+                }
+            } catch { }
+        } | Out-Null
+        $wc.DownloadStringAsync([uri]$ScriptUrl)
     } catch { }
 })
 
