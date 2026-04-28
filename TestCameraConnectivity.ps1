@@ -38,19 +38,34 @@ $OcrMacOui   = "00-D0-89"   # Pixellot OCR camera MAC OUI; all other 169.254.x.x
 
 # ---------- ADLINK SmartPoE DLL search ---------------------------------------
 # DLL ships with ADLINK PCIe-GIE7x driver package; not present on all VPU models.
-# If found, PATH is updated so the DLL can be resolved by name in P/Invoke at call time.
+# If found, PATH is updated so the DLL can be resolved by name at P/Invoke call time.
+# x64 DLL required — VPUs run 64-bit Windows.
 $PoeDllPath = $null
 foreach ($c in @(
+    "$env:SystemRoot\System32\SmartPoE.dll"
     "C:\Program Files\ADLINK\SmartPoE\SmartPoE.dll"
     "C:\Program Files (x86)\ADLINK\SmartPoE\SmartPoE.dll"
+    "C:\Program Files\ADLINK\PCIe-GIE7x\SmartPoE.dll"
     "C:\ADLINK\SmartPoE\SmartPoE.dll"
-    "$env:SystemRoot\System32\SmartPoE.dll"
 )) { if (Test-Path $c) { $PoeDllPath = $c; break } }
+# Registry probes
 if (-not $PoeDllPath) {
-    try {
-        $k = Get-ItemPropertyValue "HKLM:\SOFTWARE\ADLINK\SmartPoE" "InstallDir" -ErrorAction Stop
-        $c = Join-Path $k "SmartPoE.dll"; if (Test-Path $c) { $PoeDllPath = $c }
-    } catch { }
+    foreach ($reg in @("HKLM:\SOFTWARE\ADLINK\SmartPoE","HKLM:\SOFTWARE\WOW6432Node\ADLINK\SmartPoE","HKLM:\SOFTWARE\ADLINK\GigE Tool")) {
+        try {
+            $k = Get-ItemPropertyValue $reg "InstallDir" -ErrorAction Stop
+            $c = Join-Path $k "SmartPoE.dll"; if (Test-Path $c) { $PoeDllPath = $c; break }
+        } catch { }
+    }
+}
+# Recursive fallback under known ADLINK root dirs
+if (-not $PoeDllPath) {
+    foreach ($root in @("C:\Program Files\ADLINK","C:\Program Files (x86)\ADLINK","C:\ADLINK")) {
+        if (Test-Path $root) {
+            $found = Get-ChildItem $root -Recurse -Filter "SmartPoE.dll" -ErrorAction SilentlyContinue |
+                     Where-Object { $_.FullName -notlike "*x86*" } | Select-Object -First 1
+            if ($found) { $PoeDllPath = $found.FullName; break }
+        }
+    }
 }
 
 # ---------- WinForms ---------------------------------------------------------
@@ -81,22 +96,23 @@ if ($PoeDllPath -and -not ([System.Management.Automation.PSTypeName]'AdlinkPoE')
     Add-Type -TypeDefinition @"
 using System.Runtime.InteropServices;
 public static class AdlinkPoE {
-    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
-    public static extern int SmartPoE_Register_Card(out int cardId);
-    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
-    public static extern int SmartPoE_Release_Card(int cardId);
-    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
-    public static extern int SmartPoE_Get_PoEConsPowbudget(int cardId, out float budget);
-    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
-    public static extern int SmartPoE_Get_PoELeftPowbudget(int cardId, out float budget);
-    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
-    public static extern int SmartPoE_Get_PSEPortCurrent(int cardId, int port, out float current);
-    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
-    public static extern int SmartPoE_Get_PSEPortVoltage(int cardId, int port, out float voltage);
-    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
-    public static extern int SmartPoE_Get_Temperature(int cardId, out float temp);
-    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
-    public static extern int SmartPoE_Get_PoEstate(int cardId, int port, out int state);
+    // Register_Card: pass card index (0 for first card); returns 0 on success, negative on error.
+    [DllImport("SmartPoE.dll")]
+    public static extern short SmartPoE_Register_Card(ushort card_num);
+    [DllImport("SmartPoE.dll")]
+    public static extern short SmartPoE_Release_Card(ushort wCardNumber);
+    [DllImport("SmartPoE.dll")]
+    public static extern short SmartPoE_Get_Temperature(ushort wCardNumber, out double wTemperature);
+    [DllImport("SmartPoE.dll")]
+    public static extern short SmartPoE_Get_POEConsPowbudget(ushort wCardNumber, out double wPower);
+    [DllImport("SmartPoE.dll")]
+    public static extern short SmartPoE_Get_POELeftPowbudget(ushort wCardNumber, out double wPower);
+    [DllImport("SmartPoE.dll")]
+    public static extern short SmartPoE_Get_PSEPortCurrent(ushort wCardNumber, short PortNumber, out double wCurrent);
+    [DllImport("SmartPoE.dll")]
+    public static extern short SmartPoE_Get_PSEPortVoltage(ushort wCardNumber, short PortNumber, out double wVoltage);
+    [DllImport("SmartPoE.dll")]
+    public static extern short SmartPoE_Get_PortStatus(ushort wCardNumber, short PortNumber, out byte bstateClass, out byte bstatePowerGood);
 }
 "@
 }
@@ -725,18 +741,18 @@ $DiagScript = {
     Add-Log ""
     if ($PoeDllPath -and ([System.Management.Automation.PSTypeName]'AdlinkPoE').Type) {
         try {
-            $cardId = [int]0
-            $regRet = [AdlinkPoE]::SmartPoE_Register_Card([ref]$cardId)
+            $cardNum = [ushort]0
+            $regRet  = [AdlinkPoE]::SmartPoE_Register_Card($cardNum)
             if ($regRet -eq 0) {
                 $sync.PoeAvailable = $true
 
-                $consumed  = [float]0.0; $remaining = [float]0.0
-                [void][AdlinkPoE]::SmartPoE_Get_PoEConsPowbudget($cardId, [ref]$consumed)
-                [void][AdlinkPoE]::SmartPoE_Get_PoELeftPowbudget($cardId, [ref]$remaining)
+                $consumed  = [double]0.0; $remaining = [double]0.0
+                [void][AdlinkPoE]::SmartPoE_Get_POEConsPowbudget($cardNum, [ref]$consumed)
+                [void][AdlinkPoE]::SmartPoE_Get_POELeftPowbudget($cardNum, [ref]$remaining)
                 $total = $consumed + $remaining
 
-                $temp = [float]0.0
-                [void][AdlinkPoE]::SmartPoE_Get_Temperature($cardId, [ref]$temp)
+                $temp = [double]0.0
+                [void][AdlinkPoE]::SmartPoE_Get_Temperature($cardNum, [ref]$temp)
 
                 Add-Log ("  Total Budget : {0:F1} W  (Consumed: {1:F1} W  |  Available: {2:F1} W)" -f $total, $consumed, $remaining) "Info"
                 Add-Log ("  NIC Temp     : {0:F1} °C" -f $temp) "Info"
@@ -744,14 +760,16 @@ $DiagScript = {
 
                 for ($port = 0; $port -lt 4; $port++) {
                     if ($sync.Cancelled) { break }
-                    $pLabel  = "P$($port + 1)"
-                    $voltage = [float]0.0; $current = [float]0.0; $state = [int]0
-                    [void][AdlinkPoE]::SmartPoE_Get_PSEPortVoltage($cardId, $port, [ref]$voltage)
-                    [void][AdlinkPoE]::SmartPoE_Get_PSEPortCurrent($cardId, $port, [ref]$current)
-                    [void][AdlinkPoE]::SmartPoE_Get_PoEstate($cardId, $port, [ref]$state)
+                    $pLabel   = "P$($port + 1)"
+                    $portNum  = [short]$port
+                    $voltage  = [double]0.0; $current = [double]0.0
+                    $pgClass  = [byte]0;     $pgGood  = [byte]0
+                    [void][AdlinkPoE]::SmartPoE_Get_PSEPortVoltage($cardNum, $portNum, [ref]$voltage)
+                    [void][AdlinkPoE]::SmartPoE_Get_PSEPortCurrent($cardNum, $portNum, [ref]$current)
+                    [void][AdlinkPoE]::SmartPoE_Get_PortStatus($cardNum, $portNum, [ref]$pgClass, [ref]$pgGood)
                     $watts    = $voltage * $current
-                    $stateStr = if ($state -eq 1) { "PoE ON" } else { "PoE OFF" }
-                    $portLvl  = if ($state -eq 1) { "Pass" } else { "Gray" }
+                    $stateStr = if ($pgGood -eq 1) { "PoE ON" } else { "PoE OFF" }
+                    $portLvl  = if ($pgGood -eq 1) { "Pass" } else { "Gray" }
                     Add-Log    ("  {0,-5} : {1:F2} V  {2:F3} A  {3:F1} W  [{4}]" -f $pLabel, $voltage, $current, $watts, $stateStr) $portLvl
                     Add-Summary "PoE $pLabel" ("{0:F1} W  ({1})" -f $watts, $stateStr) $portLvl
                 }
@@ -768,9 +786,9 @@ $DiagScript = {
                     Add-Summary "PoE Budget" ("{0:F0} W  OK" -f $total) "Pass"
                     Set-Card "PoEBudget" ("{0:F0} W" -f $total) "ok"
                 }
-                [void][AdlinkPoE]::SmartPoE_Release_Card($cardId)
+                [void][AdlinkPoE]::SmartPoE_Release_Card($cardNum)
             } else {
-                Add-Log "  [INFO] SmartPoE_Register_Card returned $regRet — card not detected on this system." "Gray"
+                Add-Log "  [INFO] SmartPoE_Register_Card returned $regRet — PoE card not detected on this system." "Gray"
                 Add-Summary "PoE Budget" "Card not found" "Gray"
             }
         } catch {
