@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v1.6.6
+#  VPU Cable & NIC Troubleshooter  v1.7.0
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.6.6"
+$ScriptVersion      = "1.7.0"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -1060,8 +1060,10 @@ if ($script:detectedNics.Count -gt 0) {
         # Click a degraded port card → jump to Guide with that port pre-selected
         $capturedName = $n.Name
         $portClickHandler = {
-            $pr = $sync.PortResults | Where-Object { $_.Name -eq $capturedName -and $_.Result -eq "FAIL" } | Select-Object -First 1
-            if ($pr) { $navTests.PerformClick(); Reset-Guide; $idx = $cboGuidePortA.Items.IndexOf($capturedName); if ($idx -ge 0) { $cboGuidePortA.SelectedIndex = $idx } }
+            $navTests.PerformClick()
+            Reset-Guide
+            $idx = $cboGuidePortA.Items.IndexOf($capturedName)
+            if ($idx -ge 0) { $cboGuidePortA.SelectedIndex = $idx }
         }.GetNewClosure()
         $c.Panel.Add_Click($portClickHandler)
         $c.ValueLabel.Add_Click($portClickHandler)
@@ -1100,6 +1102,24 @@ $lblLogHdr = New-Object System.Windows.Forms.Label; $lblLogHdr.Text = "Live Log"
 $lblLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10); $lblLogHdr.ForeColor = $ColText
 $lblLogHdr.Location = New-Object System.Drawing.Point(10, 370); $lblLogHdr.AutoSize = $true
 $center.Controls.Add($lblLogHdr)
+
+$btnLogHighlights = New-Object System.Windows.Forms.Button; $btnLogHighlights.Text = "Highlights"
+$btnLogHighlights.Size = New-Object System.Drawing.Size(90, 22); $btnLogHighlights.Location = New-Object System.Drawing.Point(585, 369)
+$btnLogHighlights.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnLogHighlights.FlatAppearance.BorderSize = 0
+$btnLogHighlights.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
+$btnLogHighlights.BackColor = $ColAccent; $btnLogHighlights.ForeColor = [System.Drawing.Color]::White
+$btnLogHighlights.Cursor = [System.Windows.Forms.Cursors]::Hand
+$center.Controls.Add($btnLogHighlights)
+$btnLogHighlights.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,90,22)),4))
+
+$btnLogDetailed = New-Object System.Windows.Forms.Button; $btnLogDetailed.Text = "Detailed"
+$btnLogDetailed.Size = New-Object System.Drawing.Size(80, 22); $btnLogDetailed.Location = New-Object System.Drawing.Point(680, 369)
+$btnLogDetailed.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnLogDetailed.FlatAppearance.BorderSize = 0
+$btnLogDetailed.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
+$btnLogDetailed.BackColor = [System.Drawing.Color]::FromArgb(226,232,240); $btnLogDetailed.ForeColor = $ColMuted
+$btnLogDetailed.Cursor = [System.Windows.Forms.Cursors]::Hand
+$center.Controls.Add($btnLogDetailed)
+$btnLogDetailed.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,80,22)),4))
 
 $lblStatus = New-Object System.Windows.Forms.Label; $lblStatus.Text = ""
 $lblStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblStatus.ForeColor = $ColMuted
@@ -1165,7 +1185,19 @@ $lblActHdr.Location = New-Object System.Drawing.Point(10, 510); $lblActHdr.AutoS
 $lblActHdr.Anchor = $AnchorBL
 $right.Controls.Add($lblActHdr)
 
-foreach ($pair in @(("btnExport","Export Report",532),("btnCopySummary","Copy Summary",564),("btnCopy","Copy Log",596),("btnSave","Save Log",628))) {
+$btnAdapterSettings = New-Object System.Windows.Forms.Button; $btnAdapterSettings.Text = "Open Adapter Settings"
+$btnAdapterSettings.Size = New-Object System.Drawing.Size(239, 28); $btnAdapterSettings.Location = New-Object System.Drawing.Point(10, 532)
+$btnAdapterSettings.Anchor = $AnchorBLR
+$btnAdapterSettings.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnAdapterSettings.FlatAppearance.BorderColor = $ColBorder; $btnAdapterSettings.FlatAppearance.BorderSize = 1
+$btnAdapterSettings.BackColor = [System.Drawing.Color]::White; $btnAdapterSettings.ForeColor = $ColText
+$btnAdapterSettings.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$btnAdapterSettings.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$btnAdapterSettings.Cursor = [System.Windows.Forms.Cursors]::Hand
+$right.Controls.Add($btnAdapterSettings)
+$btnAdapterSettings.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 239, 28)), 5))
+
+foreach ($pair in @(("btnExport","Export Report",564),("btnCopySummary","Copy Summary",596),("btnCopy","Copy Log",628),("btnSave","Save Log",660))) {
     $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
     $b.Size = New-Object System.Drawing.Size(239, 28); $b.Location = New-Object System.Drawing.Point(10, $pair[2])
     $b.Anchor = $AnchorBLR
@@ -1181,39 +1213,20 @@ foreach ($pair in @(("btnExport","Export Report",532),("btnCopySummary","Copy Su
 }
 
 # ---------- Timer (polls $sync every 300ms, updates UI) ---------------------
-$script:runspace = $null
-$script:spinIdx  = 0
+$script:runspace    = $null
+$script:spinIdx     = 0
+$script:logMode     = "Highlights"
+$script:allLogItems = [System.Collections.ArrayList]::new()
 
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 300
 $timer.Add_Tick({
     $item = $null
     while ($sync.SummaryQueue.TryDequeue([ref]$item)) {
-        if ($item.L -eq "Section") {
-            $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
-            $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 7.5, [System.Drawing.FontStyle]::Bold)
-            $rtbLog.SelectionColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
-            $rtbLog.AppendText("`n  $($item.Result.ToUpper())`n")
-            $rtbLog.ScrollToCaret()
-            continue
+        $script:allLogItems.Add($item) | Out-Null
+        if ($script:logMode -eq "Detailed" -or (Test-HighlightItem $item)) {
+            Render-LogItem $item
         }
-        $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
-        $rtbLog.SelectionColor = [System.Drawing.Color]::FromArgb(100,116,139)
-        $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas",8)
-        $rtbLog.AppendText(("{0,-24}" -f $item.Label))
-        $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
-        $col = switch ($item.L) {
-            "Pass" { [System.Drawing.Color]::FromArgb(74,222,128) }
-            "Fail" { [System.Drawing.Color]::FromArgb(252,165,165) }
-            "Warn" { [System.Drawing.Color]::FromArgb(253,224,71)  }
-            "Cyan" { [System.Drawing.Color]::FromArgb(103,232,249) }
-            "Gray" { [System.Drawing.Color]::FromArgb(100,116,139) }
-            default{ [System.Drawing.Color]::FromArgb(203,213,225) }
-        }
-        $rtbLog.SelectionColor = $col
-        $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas",8)
-        $rtbLog.AppendText("$($item.Result)`n")
-        $rtbLog.ScrollToCaret()
     }
 
     foreach ($key in $cards.Keys) {
@@ -1301,6 +1314,7 @@ $btnRun.Add_Click({
     foreach ($k in $cards.Keys) { $sync.Cards[$k] = @{ Value="--"; Status="neutral" } }
     $sync.StepsDone.Clear()
     $item2 = $null; while ($sync.SummaryQueue.TryDequeue([ref]$item2)) { }
+    $script:allLogItems.Clear()
 
     $rtbLog.Clear(); $rtbSteps.Text = "Diagnostic running..."; $btnGoGuide.Visible = $false
     $btnRun.Enabled = $false; $btnRun.Text = "  Running..."
@@ -1340,6 +1354,22 @@ $btnRetest.Add_Click({ $btnRun.PerformClick() })
 $btnCancel.Add_Click({
     $sync.Cancelled = $true
     $btnCancel.Visible = $false
+})
+
+$btnAdapterSettings.Add_Click({ Start-Process "ncpa.cpl" })
+
+$btnLogHighlights.Add_Click({
+    $script:logMode = "Highlights"
+    $btnLogHighlights.BackColor = $ColAccent; $btnLogHighlights.ForeColor = [System.Drawing.Color]::White
+    $btnLogDetailed.BackColor   = [System.Drawing.Color]::FromArgb(226,232,240); $btnLogDetailed.ForeColor = $ColMuted
+    Refresh-Log
+})
+
+$btnLogDetailed.Add_Click({
+    $script:logMode = "Detailed"
+    $btnLogDetailed.BackColor   = $ColAccent; $btnLogDetailed.ForeColor = [System.Drawing.Color]::White
+    $btnLogHighlights.BackColor = [System.Drawing.Color]::FromArgb(226,232,240); $btnLogHighlights.ForeColor = $ColMuted
+    Refresh-Log
 })
 
 $cboNic.Add_SelectedIndexChanged({
@@ -1439,11 +1469,59 @@ $btnSave.Add_Click({
 
 $lnkClear.Add_LinkClicked({
     $rtbLog.Clear()
+    $script:allLogItems.Clear()
     foreach ($k in $cards.Keys) { Update-CardStatus -Card $cards[$k] -Value "--" -Status "neutral" }
     $lblLastRunVal.Text = "No runs yet"
 })
 
 # ---------- Helper functions ------------------------------------------------
+function Test-HighlightItem {
+    param($item)
+    if ($item.L -eq "Section") { return $item.Result -in @("Ports", "Signal Quality") }
+    return ($item.Label -notmatch '^\d') -and
+           ($item.Label -notlike 'App Log*') -and
+           ($item.Label -ne 'ARP Table') -and
+           ($item.Label -ne 'VPU Model')
+}
+
+function Render-LogItem {
+    param($item)
+    if ($item.L -eq "Section") {
+        $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
+        $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 7.5, [System.Drawing.FontStyle]::Bold)
+        $rtbLog.SelectionColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+        $rtbLog.AppendText("`n  $($item.Result.ToUpper())`n")
+        $rtbLog.ScrollToCaret()
+        return
+    }
+    $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
+    $rtbLog.SelectionColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+    $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 8)
+    $rtbLog.AppendText(("{0,-24}" -f $item.Label))
+    $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
+    $col = switch ($item.L) {
+        "Pass" { [System.Drawing.Color]::FromArgb(74, 222, 128) }
+        "Fail" { [System.Drawing.Color]::FromArgb(252, 165, 165) }
+        "Warn" { [System.Drawing.Color]::FromArgb(253, 224, 71)  }
+        "Cyan" { [System.Drawing.Color]::FromArgb(103, 232, 249) }
+        "Gray" { [System.Drawing.Color]::FromArgb(100, 116, 139) }
+        default{ [System.Drawing.Color]::FromArgb(203, 213, 225) }
+    }
+    $rtbLog.SelectionColor = $col
+    $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 8)
+    $rtbLog.AppendText("$($item.Result)`n")
+    $rtbLog.ScrollToCaret()
+}
+
+function Refresh-Log {
+    $rtbLog.Clear()
+    foreach ($logItem in @($script:allLogItems)) {
+        if ($script:logMode -eq "Detailed" -or (Test-HighlightItem $logItem)) {
+            Render-LogItem $logItem
+        }
+    }
+}
+
 function Get-PortTrendSummary {
     $files = @(Get-ChildItem -Path $OutputDir -Filter "CameraLink_Results_*.txt" -ErrorAction SilentlyContinue |
                Sort-Object LastWriteTime -Descending | Select-Object -First 15)

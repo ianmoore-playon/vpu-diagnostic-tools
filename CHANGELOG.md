@@ -9,6 +9,15 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.7.0] - 2026-04-28
+
+### Added
+- **Log mode toggle** — Live log header now has Highlights / Detailed toggle buttons. Highlights shows only port speed results and SmartSpeed signal quality events; Detailed shows the full output including camera IP ping rows, ARP table, app log entries, and VPU model. Defaults to Highlights on launch and on each new run.
+- **Open Adapter Settings button** — New button in the Actions panel launches `ncpa.cpl` (Network Connections) directly from the tool.
+- **Port tile click always navigates to Isolate tab** — Previously only faulted ports were clickable; now all port tiles (OCR, no-link, pass) navigate to the Isolate tab for that port.
+
+---
+
 ## [1.6.6] - 2026-04-28
 
 ### Fixed
