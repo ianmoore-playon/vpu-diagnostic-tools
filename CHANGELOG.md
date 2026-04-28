@@ -9,6 +9,13 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.6.1] - 2026-04-28
+
+### Added
+- **Maximize / restore support** — window can now be maximized to fill the screen; all structural panels (`header`, `sidebar`, `center`, `right`) and scrollable content areas (`rtbLog`, `rtbSteps`, `rtbGuide`, `lvHistory`, `rtbHelp`) are anchored so they resize correctly when maximized; action buttons and separator in the right panel remain pinned to the bottom; restoring from maximized snaps back to 1280×760; status badge in the header stays pinned to the top-right corner
+
+---
+
 ## [1.6.0] - 2026-04-27
 
 ### Changed
