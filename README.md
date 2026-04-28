@@ -33,6 +33,7 @@ Results are also saved automatically to a `.txt` file in `CameraLink_Results\` n
 | Camera ping + RTSP | Tests each camera IP (169.254.16.50–.52) for ping response and RTSP port 554 reachability |
 | App log analysis | Parses the most recent `CamerasTester_*.log` for connection failures, cross-referenced against NIC port health |
 | VPU model detection | Reads `agent_*.log` (written every 5 minutes by the Pixellot agent service) to identify the VPU model and unit ID |
+| PoE power monitoring | Queries the ADLINK PCIe-GIE7x SmartPoE card via `SmartPoE.dll` for total power budget, per-port voltage/current/wattage, and NIC temperature; flags budget < 55 W (Molex connector disconnected) as an issue with a next step |
 
 ### How it distinguishes cable faults from OCR cameras
 
