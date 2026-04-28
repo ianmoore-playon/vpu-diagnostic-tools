@@ -803,11 +803,19 @@ function New-StatusCard {
 function Update-CardStatus {
     param($Card, [string]$Value, [string]$Status)
     $Card.ValueLabel.Text = $Value
-    $Card.ValueLabel.Font = if ($Value.Length -gt 9) {
-        New-Object System.Drawing.Font("Segoe UI Semibold", 11)
-    } else {
-        New-Object System.Drawing.Font("Segoe UI Semibold", 13)
-    }
+    $fSize = 13
+    try {
+        $g = $Card.Panel.CreateGraphics()
+        while ($fSize -gt 8) {
+            $f = New-Object System.Drawing.Font("Segoe UI Semibold", $fSize)
+            $tw = $g.MeasureString($Value, $f).Width
+            $f.Dispose()
+            if ($tw -le ($Card.ValueLabel.Width - 4)) { break }
+            $fSize--
+        }
+        $g.Dispose()
+    } catch { $fSize = if ($Value.Length -gt 9) { 10 } else { 13 } }
+    $Card.ValueLabel.Font = New-Object System.Drawing.Font("Segoe UI Semibold", $fSize)
     $dotC = switch ($Status) { "ok" {$ColGreen} "fail" {$ColRed} "warn" {$ColYellow} default {$ColMuted} }
     $valC = switch ($Status) { "ok" {$ColGreen} "fail" {$ColRed} "warn" {$ColYellow} default {$ColText}  }
     $Card.DotPanel.BackColor   = $dotC
