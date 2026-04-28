@@ -9,6 +9,13 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.6.0] - 2026-04-27
+
+### Changed
+- **UI redesign — wider, modern layout** — window expanded from 1024×680 to 1280×760; a new dark navy header bar (1280×68) holds the tool title, subtitle, and status badge; sidebar, center panel, and right panel all repositioned below the header; sidebar widened to 220px with taller nav buttons (205×44); center panel widened to 800px; right panel 259px; all overlay panels (Isolate, History, Help) updated to fill the new 800px center panel width; History Summary column expanded from 260px to 468px
+
+---
+
 ## [1.5.0] - 2026-04-28
 
 ### Added
