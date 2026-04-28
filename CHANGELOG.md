@@ -9,6 +9,13 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.6.3] - 2026-04-28
+
+### Added
+- **MAC-based OCR camera identification** — ARP table is now checked for the Pixellot OCR camera MAC OUI (`00:D0:89`) during the 100 Mbps port evaluation; a confirmed MAC promotes the port directly to `PASS (OCR)` regardless of SmartSpeed event history, eliminating the `PASS (OCR?)` false-uncertain state on new installs; `$OcrMacOui` is a top-level config variable threaded into the diagnostic runspace
+
+---
+
 ## [1.6.2] - 2026-04-28
 
 ### Fixed
