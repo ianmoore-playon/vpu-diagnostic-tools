@@ -9,6 +9,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.6.4] - 2026-04-28
+
+### Changed
+- **OCR port card color** — confirmed OCR cameras (`PASS (OCR)`) now display green instead of yellow; uncertain OCR (`PASS (OCR?)`) remains yellow
+- **OCR port card value** — card now shows `100 Mbps` instead of `100M OCR` / `100M OCR?`; color (green vs yellow vs red) conveys the meaning
+
+---
+
 ## [1.6.3] - 2026-04-28
 
 ### Added
