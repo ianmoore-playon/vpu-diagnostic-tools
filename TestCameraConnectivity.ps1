@@ -42,6 +42,7 @@ $OcrMacOui   = "00-D0-89"   # Pixellot OCR camera MAC OUI; all other 169.254.x.x
 # x64 DLL required — VPUs run 64-bit Windows.
 $PoeDllPath = $null
 foreach ($c in @(
+    "C:\Program Files\ADLINK\GIE Series\Library\Dll\x64\SmartPoE.dll"
     "$env:SystemRoot\System32\SmartPoE.dll"
     "C:\Program Files\ADLINK\SmartPoE\SmartPoE.dll"
     "C:\Program Files (x86)\ADLINK\SmartPoE\SmartPoE.dll"
