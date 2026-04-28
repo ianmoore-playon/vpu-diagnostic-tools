@@ -9,6 +9,13 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.6.6] - 2026-04-28
+
+### Fixed
+- **Port card value clipped on long text** — `Update-CardStatus` now drops the value label font from 13pt to 11pt when the value exceeds 9 characters, preventing `100 Mbps (OCR)` from being clipped at the label boundary
+
+---
+
 ## [1.6.5] - 2026-04-28
 
 ### Changed
