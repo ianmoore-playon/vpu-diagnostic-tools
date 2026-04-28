@@ -9,6 +9,13 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.8.0] - 2026-04-28
+
+### Changed
+- **Dynamic camera discovery — static IP list removed** — `$CameraIPs` (hardcoded 169.254.16.50–.52) has been replaced with ARP-based discovery; the diagnostic engine now reads `Get-NetNeighbor` on each camera NIC interface and builds the camera list at runtime; only link-local `169.254.x.x` addresses with unicast MACs are included, which automatically excludes any non-camera device accidentally connected to a camera port (e.g. an internet uplink, which receives a routable DHCP address); OCR cameras are identified by the `$OcrMacOui` (`00-D0-89`) prefix and marked optional; all other link-local neighbors are classified as S2/CHU cameras (required); if no cameras are found in the ARP table the connectivity section is skipped with an informational note rather than pinging addresses that may not be correct
+
+---
+
 ## [1.7.0] - 2026-04-28
 
 ### Added

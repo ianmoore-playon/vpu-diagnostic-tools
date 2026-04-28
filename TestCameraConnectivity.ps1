@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.7.0"
+$ScriptVersion      = "1.8.0"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -33,13 +33,8 @@ $PixellotLogPaths   = @(
     "C:\Program Files\Pixellot\logs"
     "C:\ProgramData\Pixellot\logs"
 )
-$CameraIPs = @(
-    [PSCustomObject]@{ IP = "169.254.16.50"; Label = "Camera 1 (main)";       Optional = $false }
-    [PSCustomObject]@{ IP = "169.254.16.51"; Label = "Camera 2 / DoublePlay"; Optional = $false }
-    [PSCustomObject]@{ IP = "169.254.16.52"; Label = "OCR camera (optional)"; Optional = $true  }
-)
 $RtspPort    = 554
-$OcrMacOui   = "00-D0-89"
+$OcrMacOui   = "00-D0-89"   # Pixellot OCR camera MAC OUI; all other 169.254.x.x devices on camera NICs are treated as S2/CHU
 
 # ---------- WinForms ---------------------------------------------------------
 Add-Type -AssemblyName System.Windows.Forms
@@ -109,7 +104,7 @@ $sync = [hashtable]::Synchronized(@{
 # ---------- Diagnostic engine (runs in background runspace) -----------------
 $DiagScript = {
     param($sync, $NicDriverPatterns, $RenegotiateWaitSec, $EventLogHours,
-          $PixellotLogPaths, $CameraIPs, $RtspPort, $OutputFile, $RunId, $ScriptVersion,
+          $PixellotLogPaths, $RtspPort, $OutputFile, $RunId, $ScriptVersion,
           [string]$OcrMacOui = "00-D0-89",
           [string]$FilterNic = "")
 
@@ -476,24 +471,49 @@ $DiagScript = {
     }
     Add-Log ""
 
-    # ── ARP check ─────────────────────────────────────────────────────────────
+    # ── Camera discovery + ARP ───────────────────────────────────────────────
+    # Discovers cameras dynamically from the ARP/neighbor table on each camera NIC.
+    # Filter: link-local (169.254.x.x) + unicast MAC — excludes any non-camera device
+    # (e.g. an internet uplink accidentally plugged into a camera port, which gets a
+    # DHCP/routable address and will not appear in the 169.254.x.x range).
+    # OCR cameras are identified by MAC OUI; all other link-local devices are S2/CHU.
     Add-Section "Network"
-    $sync.CurrentStep = "Checking ARP table..."
-    $arpEntries = @()
+    $sync.CurrentStep = "Discovering cameras..."
+    Add-Log "-- Camera Discovery (ARP neighbor table) --" "Cyan"
+    Add-Log ""
+    $discoveredCameras = @()
     foreach ($nic in $nicPorts) {
-        $idx = (Get-NetAdapter -Name $nic.Name).ifIndex
-        $nb  = Get-NetNeighbor -InterfaceIndex $idx -ErrorAction SilentlyContinue |
-               Where-Object { $_.State -ne "Unreachable" -and ([Convert]::ToInt32(($_.LinkLayerAddress -split '-')[0], 16) -band 1) -eq 0 }
-        if ($nb) { $arpEntries += $nb }
+        if ($sync.Cancelled) { break }
+        $idx = (Get-NetAdapter -Name $nic.Name -ErrorAction SilentlyContinue).ifIndex
+        if (-not $idx) { continue }
+        $neighbors = Get-NetNeighbor -InterfaceIndex $idx -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.IPAddress  -like "169.254.*" -and
+                $_.State      -ne  "Unreachable" -and
+                ([Convert]::ToInt32(($_.LinkLayerAddress -split '-')[0], 16) -band 1) -eq 0
+            }
+        foreach ($nb in $neighbors) {
+            if ($discoveredCameras | Where-Object { $_.IP -eq $nb.IPAddress }) { continue }
+            $isOcr = $nb.LinkLayerAddress -like "$OcrMacOui-*"
+            $discoveredCameras += [PSCustomObject]@{
+                IP       = $nb.IPAddress
+                MAC      = $nb.LinkLayerAddress
+                Label    = if ($isOcr) { "OCR Camera" } else { "S2 Camera" }
+                Optional = $isOcr
+                NicName  = $nic.Name
+            }
+            Add-Log ("  Found  : {0,-18} MAC: {1}  Type: {2}" -f $nb.IPAddress, $nb.LinkLayerAddress, (if ($isOcr) { "OCR Camera" } else { "S2 Camera" })) "Info"
+        }
     }
-    if ($arpEntries.Count -gt 0) {
+    Add-Log ""
+    if ($discoveredCameras.Count -gt 0) {
         Set-Card "ArpEntry" "Found" "ok"
-        Add-Log ("  [PASS] {0} ARP entry/entries found in camera subnet." -f $arpEntries.Count) "Pass"
-        Add-Summary "ARP Table" "$($arpEntries.Count) entry/entries found" "Pass"
+        Add-Log ("  [PASS] {0} camera(s) discovered." -f $discoveredCameras.Count) "Pass"
+        Add-Summary "ARP Table" "$($discoveredCameras.Count) camera(s) discovered" "Pass"
     } else {
         Set-Card "ArpEntry" "Not Found" "neutral"
-        Add-Log "  [INFO] No ARP entries found in camera subnet." "Gray"
-        Add-Summary "ARP Table" "No entries" "Gray"
+        Add-Log "  [INFO] No cameras found in ARP table — cameras may not be powered or not yet communicating." "Gray"
+        Add-Summary "ARP Table" "No cameras found" "Gray"
     }
     $sync.StepsDone["ArpGateway"] = "pass"
     Add-Log ""
@@ -506,45 +526,53 @@ $DiagScript = {
     $camResults = @()
     $mainPingCount = 0; $mainTotal = 0
 
-    foreach ($cam in $CameraIPs) {
-        if ($sync.Cancelled) { break }
-        $sync.CurrentStep = "Pinging $($cam.IP)..."
-        Add-Log ("  {0,-18} {1}" -f $cam.IP, $cam.Label) "Info"
-        $pingOk = Test-Connection -ComputerName $cam.IP -Count 2 -Quiet -ErrorAction SilentlyContinue
-        $rtspOk = $false
-
-        if ($pingOk) {
-            Add-Log "  Ping    : Responding" "Pass"
-            $sync.CurrentStep = "Testing RTSP on $($cam.IP)..."
-            $rtspOk = Test-TcpPort -IP $cam.IP -Port $RtspPort
-            if ($rtspOk) { Add-Log "  RTSP 554: Port open  (camera stream reachable)" "Pass" }
-            else          { Add-Log "  RTSP 554: Port closed or no response" "Fail" }
-            if (-not $cam.Optional) { $mainPingCount++ }
-            $rtspStr = if ($rtspOk) { "Ping OK / RTSP OK" } else { "Ping OK / RTSP FAIL" }
-            $rtspLvl = if ($rtspOk) { "Pass" } else { "Fail" }
-            Add-Summary $cam.IP $rtspStr $rtspLvl
-        } else {
-            $note = if ($cam.Optional) { " (expected - optional camera not installed)" } else { "" }
-            Add-Log ("  Ping    : No response$note") "Gray"
-            Add-Log "  RTSP 554: Skipped" "Gray"
-            $noteStr = if ($cam.Optional) { "Not installed (optional)" } else { "No response" }
-            $noteLvl = if ($cam.Optional) { "Gray" } else { "Fail" }
-            Add-Summary $cam.IP $noteStr $noteLvl
-        }
-        if (-not $cam.Optional) { $mainTotal++ }
-        $camResults += [PSCustomObject]@{ IP=$cam.IP; Label=$cam.Label; Ping=$pingOk; Rtsp=$rtspOk; Optional=$cam.Optional }
-        Add-Log ""
-    }
-
-    foreach ($r in $camResults) { $sync.CamResults.Add($r) | Out-Null }
-    $sync.StepsDone["CamPing"] = if ($mainPingCount -gt 0) { "pass" } else { "fail" }
-
-    if ($mainPingCount -eq $mainTotal -and $mainTotal -gt 0) {
-        Set-Card "PingCHU"   "Success" "ok";   Set-Card "ChuDetect" "Online"  "ok"
-    } elseif ($mainPingCount -gt 0) {
-        Set-Card "PingCHU"   "Partial" "warn"; Set-Card "ChuDetect" "Partial" "warn"
+    if ($discoveredCameras.Count -eq 0) {
+        Add-Log "  [INFO] No cameras discovered — skipping connectivity tests." "Gray"
+        Add-Summary "Cameras" "None discovered" "Gray"
+        Set-Card "PingCHU"   "No Cameras" "neutral"
+        Set-Card "ChuDetect" "Not Found"  "neutral"
+        $sync.StepsDone["CamPing"] = "pass"
     } else {
-        Set-Card "PingCHU"   "No Response" "fail"; Set-Card "ChuDetect" "Offline" "fail"
+        foreach ($cam in $discoveredCameras) {
+            if ($sync.Cancelled) { break }
+            $sync.CurrentStep = "Pinging $($cam.IP)..."
+            Add-Log ("  {0,-18} {1}  (MAC: {2})" -f $cam.IP, $cam.Label, $cam.MAC) "Info"
+            $pingOk = Test-Connection -ComputerName $cam.IP -Count 2 -Quiet -ErrorAction SilentlyContinue
+            $rtspOk = $false
+
+            if ($pingOk) {
+                Add-Log "  Ping    : Responding" "Pass"
+                $sync.CurrentStep = "Testing RTSP on $($cam.IP)..."
+                $rtspOk = Test-TcpPort -IP $cam.IP -Port $RtspPort
+                if ($rtspOk) { Add-Log "  RTSP 554: Port open  (camera stream reachable)" "Pass" }
+                else          { Add-Log "  RTSP 554: Port closed or no response" "Fail" }
+                if (-not $cam.Optional) { $mainPingCount++ }
+                $rtspStr = if ($rtspOk) { "Ping OK / RTSP OK" } else { "Ping OK / RTSP FAIL" }
+                $rtspLvl = if ($rtspOk) { "Pass" } else { "Fail" }
+                Add-Summary $cam.IP $rtspStr $rtspLvl
+            } else {
+                $note = if ($cam.Optional) { " (optional)" } else { "" }
+                Add-Log ("  Ping    : No response$note") "Gray"
+                Add-Log "  RTSP 554: Skipped" "Gray"
+                $noteStr = if ($cam.Optional) { "No response (optional)" } else { "No response" }
+                $noteLvl = if ($cam.Optional) { "Gray" } else { "Fail" }
+                Add-Summary $cam.IP $noteStr $noteLvl
+            }
+            if (-not $cam.Optional) { $mainTotal++ }
+            $camResults += [PSCustomObject]@{ IP=$cam.IP; Label=$cam.Label; Ping=$pingOk; Rtsp=$rtspOk; Optional=$cam.Optional }
+            Add-Log ""
+        }
+
+        foreach ($r in $camResults) { $sync.CamResults.Add($r) | Out-Null }
+        $sync.StepsDone["CamPing"] = if ($mainPingCount -gt 0) { "pass" } else { "fail" }
+
+        if ($mainPingCount -eq $mainTotal -and $mainTotal -gt 0) {
+            Set-Card "PingCHU"   "Success" "ok";   Set-Card "ChuDetect" "Online"  "ok"
+        } elseif ($mainPingCount -gt 0) {
+            Set-Card "PingCHU"   "Partial" "warn"; Set-Card "ChuDetect" "Partial" "warn"
+        } else {
+            Set-Card "PingCHU"   "No Response" "fail"; Set-Card "ChuDetect" "Offline" "fail"
+        }
     }
 
     # ── Application log analysis ──────────────────────────────────────────────
@@ -587,7 +615,7 @@ $DiagScript = {
             foreach ($ip in $allIPs) {
                 $fails = $failCounts[$ip] -as [int]
                 $model = if ($models[$ip]) { $models[$ip] } else { "Unknown" }
-                $camDef  = $CameraIPs  | Where-Object { $_.IP -eq $ip } | Select-Object -First 1
+                $camDef  = $discoveredCameras | Where-Object { $_.IP -eq $ip } | Select-Object -First 1
                 $connRes = $camResults | Where-Object { $_.IP -eq $ip } | Select-Object -First 1
                 $optAbsent = $camDef -and $camDef.Optional -and $connRes -and (-not $connRes.Ping)
                 Add-Log ("  Camera IP : {0}  Model: {1}" -f $ip, $model) "Info"
@@ -1337,7 +1365,6 @@ $btnRun.Add_Click({
         RenegotiateWaitSec = $RenegotiateWaitSec
         EventLogHours      = $EventLogHours
         PixellotLogPaths   = $PixellotLogPaths
-        CameraIPs          = $CameraIPs
         RtspPort           = $RtspPort
         OutputFile         = $newOutput
         RunId              = $newRunId
