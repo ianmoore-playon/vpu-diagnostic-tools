@@ -9,6 +9,13 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.6.5] - 2026-04-28
+
+### Changed
+- **OCR port card value** — card now shows `100 Mbps (OCR)` instead of `100 Mbps` to make the OCR classification explicit at a glance
+
+---
+
 ## [1.6.4] - 2026-04-28
 
 ### Changed
