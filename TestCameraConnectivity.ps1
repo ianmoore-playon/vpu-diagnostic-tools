@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.6.1"
+$ScriptVersion      = "1.6.2"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -102,6 +102,7 @@ $sync = [hashtable]::Synchronized(@{
     AppIssues       = [System.Collections.ArrayList]::new()
     NextSteps       = [System.Collections.ArrayList]::new()
     UpdateAvailable = ""
+    AppLogTime      = $null
 })
 
 # ---------- Diagnostic engine (runs in background runspace) -----------------
@@ -193,7 +194,7 @@ $DiagScript = {
     $sync.Running = $true; $sync.Complete = $false; $sync.AllClear = $false
     $sync.PortResults.Clear(); $sync.CamResults.Clear()
     $sync.AppIssues.Clear();   $sync.NextSteps.Clear()
-    $sync.TotalDowngrades = 0; $sync.LastRunLine = ""
+    $sync.TotalDowngrades = 0; $sync.LastRunLine = ""; $sync.AppLogTime = $null
     $item = $null
     while ($sync.SummaryQueue.TryDequeue([ref]$item)) { }
     $sync.StepsDone.Clear()
@@ -347,11 +348,23 @@ $DiagScript = {
         } elseif ($spd -eq 100) {
             Add-Log "  Speed   : 100 Mbps  [DEGRADED]" "Fail"
             if (-not $ssHistory.ContainsKey($nic.InterfaceDescription)) {
-                Add-Log "  [PASS]  No SmartSpeed history - 100 Mbps-only device (OCR camera). Skipping remediation." "Pass"
+                # Any events (ID 27/33) but no ID 40 → connected at 100M without ever attempting gigabit → confirmed OCR.
+                # Zero events → could be OCR or a brand-new cable fault with no prior history yet.
+                $hasAnyHistory = ($events | Where-Object {
+                    (Get-EventAdapterName -Evt $_ -KnownDescs $knownDescs) -eq $nic.InterfaceDescription
+                }).Count -gt 0
                 $ocrAdapters[$nic.InterfaceDescription] = $true
-                $portResults += [PSCustomObject]@{ Name=$nm; Speed=100; Result="PASS (OCR)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
-                Set-Card $nm "100M OCR" "warn"
-                Add-Summary $nm "100 Mbps  OCR camera" "Pass"
+                if ($hasAnyHistory) {
+                    Add-Log "  [PASS]  Link-at-100M events present, no ID 40 — confirmed 100 Mbps-only device (OCR camera). Skipping remediation." "Pass"
+                    $portResults += [PSCustomObject]@{ Name=$nm; Speed=100; Result="PASS (OCR)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
+                    Set-Card $nm "100M OCR" "warn"
+                    Add-Summary $nm "100 Mbps  OCR camera" "Pass"
+                } else {
+                    Add-Log "  [WARN]  No SmartSpeed history at all — likely OCR camera, but cannot rule out new cable fault (no prior history exists yet)." "Warn"
+                    $portResults += [PSCustomObject]@{ Name=$nm; Speed=100; Result="PASS (OCR?)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
+                    Set-Card $nm "100M OCR?" "warn"
+                    Add-Summary $nm "100 Mbps  OCR? (unconfirmed)" "Warn"
+                }
             } else {
                 Add-Log "  [ACTION] SmartSpeed history confirmed - attempting to force 1 Gbps..." "Warn"
                 $sync.CurrentStep = "Forcing 1 Gbps on $nm..."
@@ -534,6 +547,7 @@ $DiagScript = {
     }
 
     if ($latestLog) {
+        $sync.AppLogTime = $latestLog.LastWriteTime
         Add-Log ("  Log file : {0}  ({1} KB  Modified: {2})" -f $latestLog.Name, [math]::Round($latestLog.Length/1KB,1), $latestLog.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")) "Info"
         $logContent = Get-Content -Path $latestLog.FullName -ErrorAction SilentlyContinue
         if ($logContent) {
@@ -615,12 +629,16 @@ $DiagScript = {
     $sync.StepsDone["AppLog"] = "pass"
 
     # ── Build Next Steps ──────────────────────────────────────────────────────
-    $failPorts  = $portResults | Where-Object { $_.Result -eq "FAIL" }
-    $rtspFaults = $camResults  | Where-Object { $_.Ping -and -not $_.Rtsp }
-    $noPingMain = $camResults  | Where-Object { -not $_.Optional -and -not $_.Ping }
-    $allClear   = ($failPorts.Count -eq 0) -and ($rtspFaults.Count -eq 0) -and
-                  ($sync.TotalDowngrades -eq 0) -and ($sync.AppIssues.Count -eq 0) -and
-                  ($noPingMain.Count -eq 0)
+    $failPorts    = @($portResults | Where-Object { $_.Result -eq "FAIL" })
+    $forcedPorts  = @($portResults | Where-Object { $_.Result -eq "PASS (forced)" })
+    $uncertainOcr = @($portResults | Where-Object { $_.Result -eq "PASS (OCR?)" })
+    $rtspFaults   = @($camResults  | Where-Object { $_.Ping -and -not $_.Rtsp })
+    $noPingMain   = @($camResults  | Where-Object { -not $_.Optional -and -not $_.Ping })
+    # allClear only when every active fault category is empty; historical SmartSpeed events on
+    # currently-passing ports are informational only and do not block all-clear
+    $allClear = ($failPorts.Count -eq 0) -and ($forcedPorts.Count -eq 0) -and
+                ($uncertainOcr.Count -eq 0) -and ($rtspFaults.Count -eq 0) -and
+                ($sync.AppIssues.Count -eq 0) -and ($noPingMain.Count -eq 0)
     $sync.AllClear = $allClear
 
     if ($allClear) {
@@ -632,6 +650,20 @@ $DiagScript = {
             $sync.NextSteps.Add(@{
                 H = "$s. Isolate Fault — $($r.Name)$bNote"
                 B = "Use the Isolate tab to determine whether the fault is the cable, NIC port, or camera before replacing anything."
+            }) | Out-Null
+            $s++
+        }
+        foreach ($r in $forcedPorts) {
+            $sync.NextSteps.Add(@{
+                H = "$s. Replace cable on $($r.Name) — preventive"
+                B = "This port was forced to 1 Gbps and is currently holding, but SmartSpeed history confirms the cable or termination is marginal. Replace the cable before the link degrades again."
+            }) | Out-Null
+            $s++
+        }
+        foreach ($r in $uncertainOcr) {
+            $sync.NextSteps.Add(@{
+                H = "$s. Verify $($r.Name) — OCR camera or new cable fault?"
+                B = "This port is at 100 Mbps with no SmartSpeed history. On an established VPU this is an OCR (scoreboard) camera — no action needed. On a new or first-time installation a bad cable also produces no history. If this is a CHU port, use the Isolate tab to test the cable."
             }) | Out-Null
             $s++
         }
@@ -654,14 +686,18 @@ $DiagScript = {
                 $ip = if ($issue -match '(\d+\.\d+\.\d+\.\d+)') { $Matches[1] } else { "camera" }
                 $camLabel = ($CameraIPs | Where-Object { $_.IP -eq $ip } | Select-Object -First 1).Label
                 $tag = if ($camLabel) { "$ip ($camLabel)" } else { $ip }
+                $logNote = if ($sync.AppLogTime) {
+                    " Log is from $($sync.AppLogTime.ToString('MM/dd HH:mm')) — if a cable was recently replaced, these failures may be stale; re-run after the VPU reconnects to confirm."
+                } else { "" }
                 $sync.NextSteps.Add(@{
                     H = "$s. Camera issue on $tag"
-                    B = "Cable and NIC are healthy (1 Gbps). Reset PoE power in VPU Manager, wait 2 min, and re-run. If failures persist after 2 resets, the camera likely needs replacement."
+                    B = "Cable and NIC are healthy (1 Gbps).$logNote Reset PoE power in VPU Manager, wait 2 min, and re-run. If failures persist after 2 resets, the camera likely needs replacement."
                 }) | Out-Null
                 $s++
             }
         }
-        if ($failPorts.Count -gt 0 -and ($rtspFaults.Count -gt 0 -or $noPingMain.Count -gt 0 -or $sync.AppIssues.Count -gt 0)) {
+        $activePortIssues = $failPorts.Count + $forcedPorts.Count + $uncertainOcr.Count
+        if ($activePortIssues -gt 0 -and ($rtspFaults.Count -gt 0 -or $noPingMain.Count -gt 0 -or $sync.AppIssues.Count -gt 0)) {
             $sync.NextSteps.Add(@{
                 H = "$s. Re-run after each fix"
                 B = "Fix one issue at a time and re-run the full diagnostic to confirm each fix before moving on."
@@ -1765,8 +1801,14 @@ $btnGuideAction.Add_Click({
                 return
             }
 
-            Add-GuideHistory "Phase 1 — Baseline" $config $speedLabel "Degraded link confirmed — beginning isolation." "Fail"
-            Show-GuideResult "Baseline: $speedLabel — Degraded link confirmed." "Beginning isolation. Move the SAME cable to a different NIC port." "Fail"
+            $baseMsg   = if ($speed -eq 0) { "No link detected" } else { "Degraded link confirmed" }
+            $baseInstr = if ($speed -eq 0) {
+                "No link on $portName. First verify the camera is powered on and the cable is seated firmly at both ends. If the problem persists with a confirmed-connected camera, proceed to isolate which component is at fault."
+            } else {
+                "Degraded link confirmed. Move the SAME cable and SAME camera from $portName to the port selected below."
+            }
+            Add-GuideHistory "Phase 1 — Baseline" $config $speedLabel "$baseMsg — beginning isolation." "Fail"
+            Show-GuideResult "Baseline: $speedLabel — $baseMsg." $baseInstr "Fail"
             $script:guide.Phase = 1
             Update-GuideStepDots -ActivePhase 2
 
@@ -1791,7 +1833,21 @@ $btnGuideAction.Add_Click({
             if (-not $testPort) { return }
             $script:guide.TestPort = $testPort
 
-            $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
+            # Pre-check: read test port speed before assuming the tech has moved anything.
+            # If it is already degraded, the isolation result would be misleading.
+            $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Pre-checking port..."
+            $preSpeed = Get-GuideLinkSpeed -PortName $testPort -MaxSeconds 4
+            if ($preSpeed -gt 0 -and $preSpeed -lt 1000) {
+                $btnGuideAction.Enabled = $true; $btnGuideAction.Text = "  Check Now"
+                $dlg = [System.Windows.Forms.MessageBox]::Show(
+                    "$testPort is already showing degraded speed ($preSpeed Mbps) before you moved anything.`n`nIf this port has its own independent fault, Phase 2 results will be unreliable — the test needs a known-good port to be valid.`n`nClick Cancel to pick a different test port, or OK to proceed anyway.",
+                    "Test Port May Be Faulty",
+                    [System.Windows.Forms.MessageBoxButtons]::OKCancel,
+                    [System.Windows.Forms.MessageBoxIcon]::Warning
+                )
+                if ($dlg -eq [System.Windows.Forms.DialogResult]::Cancel) { return }
+                $btnGuideAction.Enabled = $false; $btnGuideAction.Text = "  Checking..."
+            }
             $speed = Get-GuideLinkSpeed -PortName $testPort
             $btnGuideAction.Enabled = $true
 

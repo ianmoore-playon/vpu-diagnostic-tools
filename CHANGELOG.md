@@ -9,6 +9,17 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.6.2] - 2026-04-28
+
+### Fixed
+- **Forced-port next steps missing (flaw 1)** — ports that were successfully forced to 1 Gbps (`PASS (forced)`) were excluded from `$failPorts`, so `$allClear` stayed false (due to `$TotalDowngrades > 0`) but no next step was generated; replaced the `$TotalDowngrades` check in `$allClear` with explicit `$forcedPorts` and `$uncertainOcr` tracking; forced ports now generate a "replace cable — preventive" next step
+- **App log timing false positive (flaw 2)** — the "camera issue / cable ruled out" next step assumed log failures were concurrent with the current NIC state; log last-modified timestamp (`$sync.AppLogTime`) is now shown in the next step with a note that failures may be stale if a cable was recently replaced
+- **New-install cable fault misidentified as OCR (flaw 3)** — OCR detection used only ID 40 absence; a port with zero events of any kind (new installation, no prior history) was silently marked OCR; now checks for any events (ID 27/33/40): confirmed-OCR when link-at-100M events exist, flagged as `PASS (OCR?)` with a "verify" next step when there is no history at all
+- **Isolate guide Phase 2 test port not pre-verified (flaw 4)** — the test port was never checked for its own health before Phase 2; a quick 4-second pre-check now runs before the full measurement; if the test port is already degraded, a warning dialog is shown with the option to cancel and select a different port
+- **Guide baseline "No link" described as "Degraded link confirmed" (minor flaw 5)** — a completely disconnected port (0 Mbps) was shown the same "Degraded link confirmed" message as a 100 Mbps port; now shows "No link detected" with a prompt to verify camera power and cable seating before proceeding
+
+---
+
 ## [1.6.1] - 2026-04-28
 
 ### Added
