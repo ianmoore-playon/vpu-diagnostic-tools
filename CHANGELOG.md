@@ -9,6 +9,23 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.9.0] - 2026-04-28
+
+### Added
+
+- **PoE power monitoring** — Diagnostic engine now queries the ADLINK PCIe-GIE7x SmartPoE card (via `SmartPoE.dll` P/Invoke) for per-port voltage, current, and wattage plus total power budget. If total budget < 55 W (Molex connector disconnected scenario), a "Issues Found" flag is raised with a "Check Molex power connector" next step. A new **PoE Budget** card appears in the Overview row alongside SmartSpeed, Ping, ARP, and CHU Detection. PoE data is included in the Copy Summary output. On systems without the ADLINK DLL the section logs "N/A" and is otherwise silent.
+- **DLL auto-search** — Script probes standard ADLINK install paths and HKLM registry key at startup; if found, the DLL directory is added to PATH and the `AdlinkPoE` P/Invoke type is registered before the runspace launches.
+
+### Fixed
+
+- **Stale `$CameraIPs` reference in next steps** — The app-log "camera ruled out" next step was still referencing the removed `$CameraIPs` list (v1.8.0 removal). Fixed to use `$discoveredCameras` so the camera label (OCR Camera / S2 Camera) appears correctly in the next step text.
+
+### Changed
+
+- **Diagnostic card row resized** — Four cards resized from 187 px to 146 px each to make room for the fifth PoE Budget card; total row still fills the 780 px panel width.
+
+---
+
 ## [1.8.0] - 2026-04-28
 
 ### Changed

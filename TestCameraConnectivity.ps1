@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.8.0"
+$ScriptVersion      = "1.9.0"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -35,6 +35,23 @@ $PixellotLogPaths   = @(
 )
 $RtspPort    = 554
 $OcrMacOui   = "00-D0-89"   # Pixellot OCR camera MAC OUI; all other 169.254.x.x devices on camera NICs are treated as S2/CHU
+
+# ---------- ADLINK SmartPoE DLL search ---------------------------------------
+# DLL ships with ADLINK PCIe-GIE7x driver package; not present on all VPU models.
+# If found, PATH is updated so the DLL can be resolved by name in P/Invoke at call time.
+$PoeDllPath = $null
+foreach ($c in @(
+    "C:\Program Files\ADLINK\SmartPoE\SmartPoE.dll"
+    "C:\Program Files (x86)\ADLINK\SmartPoE\SmartPoE.dll"
+    "C:\ADLINK\SmartPoE\SmartPoE.dll"
+    "$env:SystemRoot\System32\SmartPoE.dll"
+)) { if (Test-Path $c) { $PoeDllPath = $c; break } }
+if (-not $PoeDllPath) {
+    try {
+        $k = Get-ItemPropertyValue "HKLM:\SOFTWARE\ADLINK\SmartPoE" "InstallDir" -ErrorAction Stop
+        $c = Join-Path $k "SmartPoE.dll"; if (Test-Path $c) { $PoeDllPath = $c }
+    } catch { }
+}
 
 # ---------- WinForms ---------------------------------------------------------
 Add-Type -AssemblyName System.Windows.Forms
@@ -58,6 +75,31 @@ public static class GfxHelper {
     }
 }
 "@ -ReferencedAssemblies System.Drawing
+
+if ($PoeDllPath -and -not ([System.Management.Automation.PSTypeName]'AdlinkPoE').Type) {
+    $env:PATH = "$([System.IO.Path]::GetDirectoryName($PoeDllPath));$env:PATH"
+    Add-Type -TypeDefinition @"
+using System.Runtime.InteropServices;
+public static class AdlinkPoE {
+    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
+    public static extern int SmartPoE_Register_Card(out int cardId);
+    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
+    public static extern int SmartPoE_Release_Card(int cardId);
+    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
+    public static extern int SmartPoE_Get_PoEConsPowbudget(int cardId, out float budget);
+    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
+    public static extern int SmartPoE_Get_PoELeftPowbudget(int cardId, out float budget);
+    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
+    public static extern int SmartPoE_Get_PSEPortCurrent(int cardId, int port, out float current);
+    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
+    public static extern int SmartPoE_Get_PSEPortVoltage(int cardId, int port, out float voltage);
+    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
+    public static extern int SmartPoE_Get_Temperature(int cardId, out float temp);
+    [DllImport("SmartPoE.dll", CallingConvention=CallingConvention.Cdecl)]
+    public static extern int SmartPoE_Get_PoEstate(int cardId, int port, out int state);
+}
+"@
+}
 
 $ColSidebar  = [System.Drawing.Color]::FromArgb(24,  33,  47)
 $ColNavHover = [System.Drawing.Color]::FromArgb(51,  65,  85)
@@ -92,6 +134,7 @@ $sync = [hashtable]::Synchronized(@{
         PingCHU    = @{ Value = "--"; Status = "neutral" }
         ArpEntry   = @{ Value = "--"; Status = "neutral" }
         ChuDetect  = @{ Value = "--"; Status = "neutral" }
+        PoEBudget  = @{ Value = "--"; Status = "neutral" }
     }
     PortResults     = [System.Collections.ArrayList]::new()
     CamResults      = [System.Collections.ArrayList]::new()
@@ -99,6 +142,8 @@ $sync = [hashtable]::Synchronized(@{
     NextSteps       = [System.Collections.ArrayList]::new()
     UpdateAvailable = ""
     AppLogTime      = $null
+    PoeBudgetLow    = $false
+    PoeAvailable    = $false
 })
 
 # ---------- Diagnostic engine (runs in background runspace) -----------------
@@ -106,7 +151,8 @@ $DiagScript = {
     param($sync, $NicDriverPatterns, $RenegotiateWaitSec, $EventLogHours,
           $PixellotLogPaths, $RtspPort, $OutputFile, $RunId, $ScriptVersion,
           [string]$OcrMacOui = "00-D0-89",
-          [string]$FilterNic = "")
+          [string]$FilterNic = "",
+          [string]$PoeDllPath = "")
 
     function Add-Log {
         param([string]$Message, [string]$Level = "Info")
@@ -192,6 +238,7 @@ $DiagScript = {
     $sync.PortResults.Clear(); $sync.CamResults.Clear()
     $sync.AppIssues.Clear();   $sync.NextSteps.Clear()
     $sync.TotalDowngrades = 0; $sync.LastRunLine = ""; $sync.AppLogTime = $null
+    $sync.PoeBudgetLow = $false; $sync.PoeAvailable = $false
     $item = $null
     while ($sync.SummaryQueue.TryDequeue([ref]$item)) { }
     $sync.StepsDone.Clear()
@@ -671,6 +718,72 @@ $DiagScript = {
     }
     $sync.StepsDone["AppLog"] = "pass"
 
+    # ── PoE power monitoring ──────────────────────────────────────────────────
+    $sync.CurrentStep = "Reading PoE power..."
+    Add-Section "PoE Power"
+    Add-Log "-- PoE Power Monitoring (ADLINK SmartPoE) --" "Cyan"
+    Add-Log ""
+    if ($PoeDllPath -and ([System.Management.Automation.PSTypeName]'AdlinkPoE').Type) {
+        try {
+            $cardId = [int]0
+            $regRet = [AdlinkPoE]::SmartPoE_Register_Card([ref]$cardId)
+            if ($regRet -eq 0) {
+                $sync.PoeAvailable = $true
+
+                $consumed  = [float]0.0; $remaining = [float]0.0
+                [void][AdlinkPoE]::SmartPoE_Get_PoEConsPowbudget($cardId, [ref]$consumed)
+                [void][AdlinkPoE]::SmartPoE_Get_PoELeftPowbudget($cardId, [ref]$remaining)
+                $total = $consumed + $remaining
+
+                $temp = [float]0.0
+                [void][AdlinkPoE]::SmartPoE_Get_Temperature($cardId, [ref]$temp)
+
+                Add-Log ("  Total Budget : {0:F1} W  (Consumed: {1:F1} W  |  Available: {2:F1} W)" -f $total, $consumed, $remaining) "Info"
+                Add-Log ("  NIC Temp     : {0:F1} °C" -f $temp) "Info"
+                Add-Log ""
+
+                for ($port = 0; $port -lt 4; $port++) {
+                    if ($sync.Cancelled) { break }
+                    $pLabel  = "P$($port + 1)"
+                    $voltage = [float]0.0; $current = [float]0.0; $state = [int]0
+                    [void][AdlinkPoE]::SmartPoE_Get_PSEPortVoltage($cardId, $port, [ref]$voltage)
+                    [void][AdlinkPoE]::SmartPoE_Get_PSEPortCurrent($cardId, $port, [ref]$current)
+                    [void][AdlinkPoE]::SmartPoE_Get_PoEstate($cardId, $port, [ref]$state)
+                    $watts    = $voltage * $current
+                    $stateStr = if ($state -eq 1) { "PoE ON" } else { "PoE OFF" }
+                    $portLvl  = if ($state -eq 1) { "Pass" } else { "Gray" }
+                    Add-Log    ("  {0,-5} : {1:F2} V  {2:F3} A  {3:F1} W  [{4}]" -f $pLabel, $voltage, $current, $watts, $stateStr) $portLvl
+                    Add-Summary "PoE $pLabel" ("{0:F1} W  ({1})" -f $watts, $stateStr) $portLvl
+                }
+                Add-Log ""
+
+                $sync.PoeBudgetLow = ($total -gt 0) -and ($total -lt 55)
+                if ($sync.PoeBudgetLow) {
+                    Add-Log ("  [WARN]  Total power budget {0:F1} W is below the 55 W minimum." -f $total) "Fail"
+                    Add-Log "          The Molex power connector on the PoE NIC may be disconnected." "Fail"
+                    Add-Summary "PoE Budget" ("{0:F0} W  LOW" -f $total) "Fail"
+                    Set-Card "PoEBudget" ("{0:F0} W" -f $total) "fail"
+                } else {
+                    Add-Log ("  [PASS]  Total power budget {0:F1} W — adequate." -f $total) "Pass"
+                    Add-Summary "PoE Budget" ("{0:F0} W  OK" -f $total) "Pass"
+                    Set-Card "PoEBudget" ("{0:F0} W" -f $total) "ok"
+                }
+                [void][AdlinkPoE]::SmartPoE_Release_Card($cardId)
+            } else {
+                Add-Log "  [INFO] SmartPoE_Register_Card returned $regRet — card not detected on this system." "Gray"
+                Add-Summary "PoE Budget" "Card not found" "Gray"
+            }
+        } catch {
+            Add-Log ("  [INFO] PoE query failed: {0}" -f $_.Exception.Message) "Gray"
+            Add-Summary "PoE Budget" "Query error" "Gray"
+        }
+    } else {
+        Add-Log "  [INFO] SmartPoE.dll not found — PoE monitoring not available on this system." "Gray"
+        Add-Summary "PoE Budget" "N/A" "Gray"
+    }
+    $sync.StepsDone["PoePower"] = "pass"
+    Add-Log ""
+
     # ── Build Next Steps ──────────────────────────────────────────────────────
     $failPorts    = @($portResults | Where-Object { $_.Result -eq "FAIL" })
     $forcedPorts  = @($portResults | Where-Object { $_.Result -eq "PASS (forced)" })
@@ -681,7 +794,8 @@ $DiagScript = {
     # currently-passing ports are informational only and do not block all-clear
     $allClear = ($failPorts.Count -eq 0) -and ($forcedPorts.Count -eq 0) -and
                 ($uncertainOcr.Count -eq 0) -and ($rtspFaults.Count -eq 0) -and
-                ($sync.AppIssues.Count -eq 0) -and ($noPingMain.Count -eq 0)
+                ($sync.AppIssues.Count -eq 0) -and ($noPingMain.Count -eq 0) -and
+                (-not $sync.PoeBudgetLow)
     $sync.AllClear = $allClear
 
     if ($allClear) {
@@ -724,11 +838,18 @@ $DiagScript = {
             }) | Out-Null
             $s++
         }
+        if ($sync.PoeBudgetLow) {
+            $sync.NextSteps.Add(@{
+                H = "$s. Check Molex power connector on PoE NIC"
+                B = "Total PoE power budget is below 55 W. The Molex connector that powers the PoE NIC card may be disconnected or loose inside the VPU. Cameras may fail to initialize or drop during streaming. Inspect and firmly reseat the internal Molex connector on the camera NIC card."
+            }) | Out-Null
+            $s++
+        }
         foreach ($issue in $sync.AppIssues) {
             if ($issue -like "*cable ruled out*") {
                 $ip = if ($issue -match '(\d+\.\d+\.\d+\.\d+)') { $Matches[1] } else { "camera" }
-                $camLabel = ($CameraIPs | Where-Object { $_.IP -eq $ip } | Select-Object -First 1).Label
-                $tag = if ($camLabel) { "$ip ($camLabel)" } else { $ip }
+                $camDef = $discoveredCameras | Where-Object { $_.IP -eq $ip } | Select-Object -First 1
+                $tag = if ($camDef) { "$ip ($($camDef.Label))" } else { $ip }
                 $logNote = if ($sync.AppLogTime) {
                     " Log is from $($sync.AppLogTime.ToString('MM/dd HH:mm')) — if a cable was recently replaced, these failures may be stale; re-run after the VPU reconnects to confirm."
                 } else { "" }
@@ -1054,12 +1175,13 @@ $lnkClear.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lnkClear.Link
 $lnkClear.Location = New-Object System.Drawing.Point(762, 90); $lnkClear.AutoSize = $true
 $center.Controls.Add($lnkClear)
 
-# Fixed bottom-row cards: SmartSpeed, Ping, ARP, CHU  (187px each, 10px gaps)
+# Fixed bottom-row cards: SmartSpeed, Ping, ARP, CHU, PoE  (146px each, 10px gaps → fills 780px)
 $cardDefs = @(
-    @{Key="SmartSpeed"; Title="SmartSpeed";    Sub="Intel events (48h)"; X=10;  Y=204; Icon=[char]0xE7BA; W=187}
-    @{Key="PingCHU";    Title="Ping (CHU)";    Sub="Camera head unit";   X=207; Y=204; Icon=[char]0xE701; W=187}
-    @{Key="ArpEntry";   Title="ARP Entry";     Sub="L2 neighbor table";  X=404; Y=204; Icon=[char]0xE9D5; W=187}
-    @{Key="ChuDetect";  Title="CHU Detection"; Sub="Camera response";    X=601; Y=204; Icon=[char]0xE722; W=187}
+    @{Key="SmartSpeed"; Title="SmartSpeed";    Sub="Intel events (48h)"; X=10;  Y=204; Icon=[char]0xE7BA; W=146}
+    @{Key="PingCHU";    Title="Ping (CHU)";    Sub="Camera head unit";   X=166; Y=204; Icon=[char]0xE701; W=146}
+    @{Key="ArpEntry";   Title="ARP Entry";     Sub="L2 neighbor table";  X=322; Y=204; Icon=[char]0xE9D5; W=146}
+    @{Key="ChuDetect";  Title="CHU Detection"; Sub="Camera response";    X=478; Y=204; Icon=[char]0xE722; W=146}
+    @{Key="PoEBudget";  Title="PoE Budget";    Sub="ADLINK SmartPoE";    X=634; Y=204; Icon=[char]0xE7E8; W=146}
 )
 $cards = @{}
 foreach ($cd in $cardDefs) {
@@ -1337,6 +1459,7 @@ $btnRun.Add_Click({
     $sync.PortResults.Clear(); $sync.CamResults.Clear()
     $sync.AppIssues.Clear();   $sync.NextSteps.Clear()
     $sync.TotalDowngrades = 0; $sync.LastRunLine = ""; $sync.VpuModel = ""
+    $sync.PoeBudgetLow = $false; $sync.PoeAvailable = $false
     $sync.Cancelled = $false; $sync.CurrentStep = "Starting..."
     $sync.OutputFile = $newOutput; $sync.RunId = $newRunId
     foreach ($k in $cards.Keys) { $sync.Cards[$k] = @{ Value="--"; Status="neutral" } }
@@ -1371,6 +1494,7 @@ $btnRun.Add_Click({
         ScriptVersion      = $ScriptVersion
         OcrMacOui          = $OcrMacOui
         FilterNic          = $filterNicVal
+        PoeDllPath         = if ($PoeDllPath) { $PoeDllPath } else { "" }
     }) | Out-Null
     $ps.BeginInvoke() | Out-Null
     $timer.Start()
@@ -1462,6 +1586,13 @@ $btnCopySummary.Add_Click({
         $lines += ""
         $lines += "APPLICATION LOG FINDINGS"
         foreach ($issue in @($sync.AppIssues)) { $lines += "  $issue" }
+    }
+    if ($sync.PoeAvailable) {
+        $lines += ""
+        $lines += "POE POWER BUDGET"
+        $poeVal  = $sync.Cards['PoEBudget'].Value
+        $poeNote = if ($sync.PoeBudgetLow) { " — BELOW 55 W THRESHOLD — check Molex connector on PoE NIC" } else { " — adequate" }
+        $lines += "  Total budget: $poeVal$poeNote"
     }
     $lines += ""
     $lines += "NEXT STEPS"
