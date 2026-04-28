@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Cable & NIC Troubleshooter  v1.5.0
+#  VPU Cable & NIC Troubleshooter  v1.6.3
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.6.2"
+$ScriptVersion      = "1.6.3"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -38,7 +38,8 @@ $CameraIPs = @(
     [PSCustomObject]@{ IP = "169.254.16.51"; Label = "Camera 2 / DoublePlay"; Optional = $false }
     [PSCustomObject]@{ IP = "169.254.16.52"; Label = "OCR camera (optional)"; Optional = $true  }
 )
-$RtspPort = 554
+$RtspPort    = 554
+$OcrMacOui   = "00-D0-89"
 
 # ---------- WinForms ---------------------------------------------------------
 Add-Type -AssemblyName System.Windows.Forms
@@ -109,6 +110,7 @@ $sync = [hashtable]::Synchronized(@{
 $DiagScript = {
     param($sync, $NicDriverPatterns, $RenegotiateWaitSec, $EventLogHours,
           $PixellotLogPaths, $CameraIPs, $RtspPort, $OutputFile, $RunId, $ScriptVersion,
+          [string]$OcrMacOui = "00-D0-89",
           [string]$FilterNic = "")
 
     function Add-Log {
@@ -353,14 +355,27 @@ $DiagScript = {
                 $hasAnyHistory = ($events | Where-Object {
                     (Get-EventAdapterName -Evt $_ -KnownDescs $knownDescs) -eq $nic.InterfaceDescription
                 }).Count -gt 0
+                $hasOcrMac = $false
+                try {
+                    $portIdx = (Get-NetAdapter -Name $nm -ErrorAction Stop).ifIndex
+                    $hasOcrMac = ($null -ne (Get-NetNeighbor -InterfaceIndex $portIdx -ErrorAction SilentlyContinue |
+                        Where-Object { $_.State -ne "Unreachable" -and $_.LinkLayerAddress -like "$OcrMacOui-*" } |
+                        Select-Object -First 1))
+                } catch { }
                 $ocrAdapters[$nic.InterfaceDescription] = $true
-                if ($hasAnyHistory) {
+                if ($hasOcrMac) {
+                    $histNote = if ($hasAnyHistory) { "link-at-100M events + MAC $OcrMacOui confirmed" } else { "MAC $OcrMacOui confirmed, no prior event history" }
+                    Add-Log "  [PASS]  Pixellot OCR camera identified ($histNote) — 100 Mbps expected. Skipping remediation." "Pass"
+                    $portResults += [PSCustomObject]@{ Name=$nm; Speed=100; Result="PASS (OCR)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
+                    Set-Card $nm "100M OCR" "warn"
+                    Add-Summary $nm "100 Mbps  OCR camera" "Pass"
+                } elseif ($hasAnyHistory) {
                     Add-Log "  [PASS]  Link-at-100M events present, no ID 40 — confirmed 100 Mbps-only device (OCR camera). Skipping remediation." "Pass"
                     $portResults += [PSCustomObject]@{ Name=$nm; Speed=100; Result="PASS (OCR)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
                     Set-Card $nm "100M OCR" "warn"
                     Add-Summary $nm "100 Mbps  OCR camera" "Pass"
                 } else {
-                    Add-Log "  [WARN]  No SmartSpeed history at all — likely OCR camera, but cannot rule out new cable fault (no prior history exists yet)." "Warn"
+                    Add-Log "  [WARN]  No SmartSpeed history and MAC not yet in ARP cache — likely OCR camera, but cannot rule out new cable fault." "Warn"
                     $portResults += [PSCustomObject]@{ Name=$nm; Speed=100; Result="PASS (OCR?)"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
                     Set-Card $nm "100M OCR?" "warn"
                     Add-Summary $nm "100 Mbps  OCR? (unconfirmed)" "Warn"
@@ -1300,6 +1315,7 @@ $btnRun.Add_Click({
         OutputFile         = $newOutput
         RunId              = $newRunId
         ScriptVersion      = $ScriptVersion
+        OcrMacOui          = $OcrMacOui
         FilterNic          = $filterNicVal
     }) | Out-Null
     $ps.BeginInvoke() | Out-Null
