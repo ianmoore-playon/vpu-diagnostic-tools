@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.9.2] - 2026-04-28
+
+### Fixed
+
+- **PoE `RuntimeException` — `out byte` P/Invoke incompatibility** — PowerShell 5.1 cannot reliably call P/Invoke methods with `out byte` parameters via `[ref]`; removed `SmartPoE_Get_PortStatus` from the DllImport and loop; per-port PoE ON/OFF state is now inferred from measured voltage (> 1.0 V = PoE ON). Also corrected `PortNumber` parameter type from `short` to `ushort` to match the `U16` declaration in `SmartPoE.h`.
+
+---
+
 ## [1.9.1] - 2026-04-28
 
 ### Added

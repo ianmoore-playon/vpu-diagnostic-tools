@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.9.0"
+$ScriptVersion      = "1.9.2"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -109,11 +109,9 @@ public static class AdlinkPoE {
     [DllImport("SmartPoE.dll")]
     public static extern short SmartPoE_Get_POELeftPowbudget(ushort wCardNumber, out double wPower);
     [DllImport("SmartPoE.dll")]
-    public static extern short SmartPoE_Get_PSEPortCurrent(ushort wCardNumber, short PortNumber, out double wCurrent);
+    public static extern short SmartPoE_Get_PSEPortCurrent(ushort wCardNumber, ushort PortNumber, out double wCurrent);
     [DllImport("SmartPoE.dll")]
-    public static extern short SmartPoE_Get_PSEPortVoltage(ushort wCardNumber, short PortNumber, out double wVoltage);
-    [DllImport("SmartPoE.dll")]
-    public static extern short SmartPoE_Get_PortStatus(ushort wCardNumber, short PortNumber, out byte bstateClass, out byte bstatePowerGood);
+    public static extern short SmartPoE_Get_PSEPortVoltage(ushort wCardNumber, ushort PortNumber, out double wVoltage);
 }
 "@
 }
@@ -762,14 +760,12 @@ $DiagScript = {
                 for ($port = 0; $port -lt 4; $port++) {
                     if ($sync.Cancelled) { break }
                     $pLabel   = "P$($port + 1)"
-                    $portNum  = [short]$port
+                    $portNum  = [ushort]$port
                     $voltage  = [double]0.0; $current = [double]0.0
-                    $pgClass  = [byte]0;     $pgGood  = [byte]0
                     [void][AdlinkPoE]::SmartPoE_Get_PSEPortVoltage($cardNum, $portNum, [ref]$voltage)
                     [void][AdlinkPoE]::SmartPoE_Get_PSEPortCurrent($cardNum, $portNum, [ref]$current)
-                    [void][AdlinkPoE]::SmartPoE_Get_PortStatus($cardNum, $portNum, [ref]$pgClass, [ref]$pgGood)
                     $watts    = $voltage * $current
-                    $stateStr = if ($pgGood -eq 1) { "PoE ON" } else { "PoE OFF" }
+                    $stateStr = if ($voltage -gt 1.0) { "PoE ON" } else { "PoE OFF" }
                     $portLvl  = if ($pgGood -eq 1) { "Pass" } else { "Gray" }
                     Add-Log    ("  {0,-5} : {1:F2} V  {2:F3} A  {3:F1} W  [{4}]" -f $pLabel, $voltage, $current, $watts, $stateStr) $portLvl
                     Add-Summary "PoE $pLabel" ("{0:F1} W  ({1})" -f $watts, $stateStr) $portLvl
@@ -796,6 +792,10 @@ $DiagScript = {
             $poeErrType = $_.Exception.GetType().Name
             $poeErrMsg  = $_.Exception.Message -replace "[\r\n]+"," "
             Add-Log ("  [WARN] PoE query failed ({0}): {1}" -f $poeErrType, $poeErrMsg) "Warn"
+            if ($_.Exception.InnerException) {
+                $inner = $_.Exception.InnerException
+                Add-Log ("         Inner: ({0}): {1}" -f $inner.GetType().Name, ($inner.Message -replace "[\r\n]+"," ")) "Warn"
+            }
             Add-Summary "PoE Budget" $poeErrType "Warn"
             Set-Card "PoEBudget" "Error" "warn"
         }
@@ -1143,9 +1143,20 @@ $sidebar.Controls.Add($lblVpuVal)
 
 $lblUpdate = New-Object System.Windows.Forms.Label; $lblUpdate.Text = ""
 $lblUpdate.Font = New-Object System.Drawing.Font("Segoe UI", 7.5); $lblUpdate.ForeColor = [System.Drawing.Color]::FromArgb(251, 191, 36)
-$lblUpdate.Location = New-Object System.Drawing.Point(12, 436); $lblUpdate.Size = New-Object System.Drawing.Size(196, 52)
+$lblUpdate.Location = New-Object System.Drawing.Point(12, 436); $lblUpdate.Size = New-Object System.Drawing.Size(196, 32)
 $lblUpdate.Visible = $false
 $sidebar.Controls.Add($lblUpdate)
+
+$btnUpdate = New-Object System.Windows.Forms.Button; $btnUpdate.Text = "  Update Now"
+$btnUpdate.Size = New-Object System.Drawing.Size(196, 28); $btnUpdate.Location = New-Object System.Drawing.Point(12, 472)
+$btnUpdate.BackColor = [System.Drawing.Color]::FromArgb(251, 191, 36)
+$btnUpdate.ForeColor = [System.Drawing.Color]::FromArgb(30, 27, 12)
+$btnUpdate.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnUpdate.FlatAppearance.BorderSize = 0
+$btnUpdate.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
+$btnUpdate.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+$btnUpdate.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnUpdate.Visible = $false
+$sidebar.Controls.Add($btnUpdate)
+$btnUpdate.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 196, 28)), 5))
 
 # ---- Center Panel ----------------------------------------------------------
 $center = New-Object System.Windows.Forms.Panel
@@ -1428,8 +1439,8 @@ $timer.Add_Tick({
     }
 
     if ($sync.UpdateAvailable -and -not $lblUpdate.Visible) {
-        $lblUpdate.Text = "Update available: v$($sync.UpdateAvailable)`nRe-run the one-liner to update."
-        $lblUpdate.Visible = $true
+        $lblUpdate.Text = "Update available: v$($sync.UpdateAvailable)"
+        $lblUpdate.Visible = $true; $btnUpdate.Visible = $true
     }
 
     if ($sync.Complete -and -not $sync.Running) {
@@ -1530,6 +1541,17 @@ $btnCancel.Add_Click({
 })
 
 $btnAdapterSettings.Add_Click({ Start-Process "ncpa.cpl" })
+
+$btnUpdate.Add_Click({
+    $btnUpdate.Text = "  Launching..."; $btnUpdate.Enabled = $false
+    try {
+        Start-Process PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"irm '$ScriptUrl' | iex`""
+        $form.Close()
+    } catch {
+        $btnUpdate.Enabled = $true; $btnUpdate.Text = "  Update Now"
+        [System.Windows.Forms.MessageBox]::Show("Could not launch update.`nRe-run the one-liner manually to update.", "Update Failed", "OK", "Warning") | Out-Null
+    }
+})
 
 $btnLogHighlights.Add_Click({
     $script:logMode = "Highlights"
