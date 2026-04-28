@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.6.0"
+$ScriptVersion      = "1.6.1"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -766,14 +766,24 @@ $form.MinimumSize = $form.Size
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.BackColor = $ColBg
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
-$form.MaximizeBox = $false
+$form.MaximizeBox = $true
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+
+# Anchor shorthands — used to make panels resize correctly when maximized
+$AnchorTLRB = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.Forms.AnchorStyles]::Left  -bor [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom
+$AnchorTLR  = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.Forms.AnchorStyles]::Left  -bor [System.Windows.Forms.AnchorStyles]::Right
+$AnchorTLB  = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.Forms.AnchorStyles]::Left  -bor [System.Windows.Forms.AnchorStyles]::Bottom
+$AnchorTRB  = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom
+$AnchorBLR  = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left  -bor [System.Windows.Forms.AnchorStyles]::Right
+$AnchorBL   = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
+$AnchorTR   = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.Forms.AnchorStyles]::Right
 
 # ---- Header Bar ------------------------------------------------------------
 $pnlHeader = New-Object System.Windows.Forms.Panel
 $pnlHeader.Size = New-Object System.Drawing.Size(1280, 68)
 $pnlHeader.Location = New-Object System.Drawing.Point(0, 0)
 $pnlHeader.BackColor = $ColSidebar
+$pnlHeader.Anchor = $AnchorTLR
 $form.Controls.Add($pnlHeader)
 
 $lblHdrIcon = New-Object System.Windows.Forms.Label
@@ -801,6 +811,7 @@ $pnlHeader.Controls.Add($lblHdrSub)
 $pnlBadge = New-Object System.Windows.Forms.Panel
 $pnlBadge.Size = New-Object System.Drawing.Size(110, 30); $pnlBadge.Location = New-Object System.Drawing.Point(1150, 19)
 $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(220, 252, 231)
+$pnlBadge.Anchor = $AnchorTR
 $pnlHeader.Controls.Add($pnlBadge)
 $pnlBadge.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 30)), 15))
 
@@ -818,12 +829,13 @@ $pnlBadge.Controls.Add($lblBadge)
 
 $sepHdr = New-Object System.Windows.Forms.Panel; $sepHdr.Size = New-Object System.Drawing.Size(1280, 1)
 $sepHdr.Location = New-Object System.Drawing.Point(0, 67); $sepHdr.BackColor = [System.Drawing.Color]::FromArgb(51, 65, 85)
+$sepHdr.Anchor = $AnchorTLR
 $pnlHeader.Controls.Add($sepHdr)
 
 # ---- Left Sidebar ----------------------------------------------------------
 $sidebar = New-Object System.Windows.Forms.Panel
 $sidebar.Size = New-Object System.Drawing.Size(220, 692); $sidebar.Location = New-Object System.Drawing.Point(0, 68)
-$sidebar.BackColor = $ColSidebar; $form.Controls.Add($sidebar)
+$sidebar.BackColor = $ColSidebar; $sidebar.Anchor = $AnchorTLB; $form.Controls.Add($sidebar)
 
 $sep1 = New-Object System.Windows.Forms.Panel; $sep1.Size = New-Object System.Drawing.Size(196, 1)
 $sep1.Location = New-Object System.Drawing.Point(12, 2); $sep1.BackColor = [System.Drawing.Color]::FromArgb(51, 65, 85)
@@ -903,7 +915,7 @@ $sidebar.Controls.Add($lblUpdate)
 # ---- Center Panel ----------------------------------------------------------
 $center = New-Object System.Windows.Forms.Panel
 $center.Size = New-Object System.Drawing.Size(800, 692); $center.Location = New-Object System.Drawing.Point(220, 68)
-$center.BackColor = $ColBg; $form.Controls.Add($center)
+$center.BackColor = $ColBg; $center.Anchor = $AnchorTLRB; $form.Controls.Add($center)
 
 $btnRun = New-Object System.Windows.Forms.Button; $btnRun.Text = [char]0x25B6 + "  Run Full Diagnostic"
 $btnRun.Size = New-Object System.Drawing.Size(290, 44); $btnRun.Location = New-Object System.Drawing.Point(10, 12)
@@ -1036,16 +1048,18 @@ $rtbLog.BackColor = $ColLogBg; $rtbLog.ForeColor = [System.Drawing.Color]::FromA
 $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8); $rtbLog.ReadOnly = $true
 $rtbLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
 $rtbLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
+$rtbLog.Anchor = $AnchorTLRB
 $center.Controls.Add($rtbLog)
 
 # ---- Right Panel -----------------------------------------------------------
 $rightBorder = New-Object System.Windows.Forms.Panel; $rightBorder.Size = New-Object System.Drawing.Size(1, 692)
 $rightBorder.Location = New-Object System.Drawing.Point(1020, 68); $rightBorder.BackColor = $ColBorder
+$rightBorder.Anchor = $AnchorTRB
 $form.Controls.Add($rightBorder)
 
 $right = New-Object System.Windows.Forms.Panel
 $right.Size = New-Object System.Drawing.Size(259, 692); $right.Location = New-Object System.Drawing.Point(1021, 68)
-$right.BackColor = [System.Drawing.Color]::White; $form.Controls.Add($right)
+$right.BackColor = [System.Drawing.Color]::White; $right.Anchor = $AnchorTRB; $form.Controls.Add($right)
 
 # Blue "Next Steps / Guidance" header bar
 $pnlNextHdr = New-Object System.Windows.Forms.Panel
@@ -1058,7 +1072,7 @@ $lblNextHdr.Location = New-Object System.Drawing.Point(12, 8); $lblNextHdr.AutoS
 $pnlNextHdr.Controls.Add($lblNextHdr)
 
 $rtbSteps = New-Object System.Windows.Forms.RichTextBox
-$rtbSteps.Size = New-Object System.Drawing.Size(239, 408); $rtbSteps.Location = New-Object System.Drawing.Point(10, 44)
+$rtbSteps.Size = New-Object System.Drawing.Size(239, 408); $rtbSteps.Location = New-Object System.Drawing.Point(10, 44); $rtbSteps.Anchor = $AnchorTLRB
 $rtbSteps.BackColor = [System.Drawing.Color]::White; $rtbSteps.ForeColor = $ColText
 $rtbSteps.Font = New-Object System.Drawing.Font("Segoe UI", 9); $rtbSteps.ReadOnly = $true
 $rtbSteps.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -1078,16 +1092,19 @@ $btnGoGuide.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((
 
 $sepAct = New-Object System.Windows.Forms.Panel; $sepAct.Size = New-Object System.Drawing.Size(239, 1)
 $sepAct.Location = New-Object System.Drawing.Point(10, 502); $sepAct.BackColor = $ColBorder
+$sepAct.Anchor = $AnchorBLR
 $right.Controls.Add($sepAct)
 
 $lblActHdr = New-Object System.Windows.Forms.Label; $lblActHdr.Text = "Actions"
 $lblActHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10); $lblActHdr.ForeColor = $ColText
 $lblActHdr.Location = New-Object System.Drawing.Point(10, 510); $lblActHdr.AutoSize = $true
+$lblActHdr.Anchor = $AnchorBL
 $right.Controls.Add($lblActHdr)
 
 foreach ($pair in @(("btnExport","Export Report",532),("btnCopySummary","Copy Summary",564),("btnCopy","Copy Log",596),("btnSave","Save Log",628))) {
     $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
     $b.Size = New-Object System.Drawing.Size(239, 28); $b.Location = New-Object System.Drawing.Point(10, $pair[2])
+    $b.Anchor = $AnchorBLR
     $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $b.FlatAppearance.BorderColor = $ColBorder; $b.FlatAppearance.BorderSize = 1
     $b.BackColor = [System.Drawing.Color]::White; $b.ForeColor = $ColText
@@ -1498,6 +1515,7 @@ function Update-HistoryList {
 $pnlGuide = New-Object System.Windows.Forms.Panel
 $pnlGuide.Size = $center.Size; $pnlGuide.Location = $center.Location
 $pnlGuide.BackColor = $ColBg; $pnlGuide.Visible = $false
+$pnlGuide.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlGuide)
 
 # Title
@@ -1634,7 +1652,7 @@ $lnkGuideReset.Location = New-Object System.Drawing.Point(530, 410); $lnkGuideRe
 $pnlGuide.Controls.Add($lnkGuideReset)
 
 $rtbGuide = New-Object System.Windows.Forms.RichTextBox
-$rtbGuide.Size = New-Object System.Drawing.Size(780, 220); $rtbGuide.Location = New-Object System.Drawing.Point(10, 430)
+$rtbGuide.Size = New-Object System.Drawing.Size(780, 220); $rtbGuide.Location = New-Object System.Drawing.Point(10, 430); $rtbGuide.Anchor = $AnchorTLRB
 $rtbGuide.BackColor = $ColLogBg; $rtbGuide.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
 $rtbGuide.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $rtbGuide.ReadOnly = $true
 $rtbGuide.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -1875,6 +1893,7 @@ $lnkGuideReset.Add_LinkClicked({ Reset-Guide })
 $pnlHistory = New-Object System.Windows.Forms.Panel
 $pnlHistory.Size = $center.Size; $pnlHistory.Location = $center.Location
 $pnlHistory.BackColor = $ColBg; $pnlHistory.Visible = $false
+$pnlHistory.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlHistory)
 
 $lblHistTitle = New-Object System.Windows.Forms.Label
@@ -1898,7 +1917,7 @@ $lnkHistRefresh.Add_LinkClicked({ Update-HistoryList })
 
 $lvHistory = New-Object System.Windows.Forms.ListView
 $lvHistory.Size = New-Object System.Drawing.Size(780, 594)
-$lvHistory.Location = New-Object System.Drawing.Point(10, 68)
+$lvHistory.Location = New-Object System.Drawing.Point(10, 68); $lvHistory.Anchor = $AnchorTLRB
 $lvHistory.View = [System.Windows.Forms.View]::Details
 $lvHistory.FullRowSelect = $true
 $lvHistory.GridLines = $false
@@ -1924,6 +1943,7 @@ $lvHistory.Add_DoubleClick({
 $pnlHelp = New-Object System.Windows.Forms.Panel
 $pnlHelp.Size = $center.Size; $pnlHelp.Location = $center.Location
 $pnlHelp.BackColor = $ColBg; $pnlHelp.Visible = $false
+$pnlHelp.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlHelp)
 
 $lblHelpTitle = New-Object System.Windows.Forms.Label
@@ -1934,7 +1954,7 @@ $lblHelpTitle.Location = New-Object System.Drawing.Point(10, 16); $lblHelpTitle.
 $pnlHelp.Controls.Add($lblHelpTitle)
 
 $rtbHelp = New-Object System.Windows.Forms.RichTextBox
-$rtbHelp.Size = New-Object System.Drawing.Size(780, 636); $rtbHelp.Location = New-Object System.Drawing.Point(10, 46)
+$rtbHelp.Size = New-Object System.Drawing.Size(780, 636); $rtbHelp.Location = New-Object System.Drawing.Point(10, 46); $rtbHelp.Anchor = $AnchorTLRB
 $rtbHelp.BackColor = $ColBg; $rtbHelp.ForeColor = $ColText
 $rtbHelp.Font = New-Object System.Drawing.Font("Segoe UI", 9); $rtbHelp.ReadOnly = $true
 $rtbHelp.BorderStyle = [System.Windows.Forms.BorderStyle]::None
