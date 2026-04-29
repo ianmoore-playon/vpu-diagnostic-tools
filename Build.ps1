@@ -1,5 +1,5 @@
 # =============================================================================
-#  Build.ps1  —  Combines launcher + all module files into a single Run.ps1
+#  Build.ps1  -  Combines launcher + all module files into a single Run.ps1
 #  Run automatically by RunDiagnostic.bat before launching the tool.
 # =============================================================================
 
@@ -42,4 +42,4 @@ foreach ($line in (Get-Content "$dest\TestCameraConnectivity.ps1")) {
     $out,
     [System.Text.UTF8Encoding]::new($false)
 )
-Write-Host "Done — Run.ps1 built ($($out.Count) lines)"
+Write-Host "Done - Run.ps1 built ($($out.Count) lines)"
