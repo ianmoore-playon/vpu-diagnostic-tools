@@ -10,6 +10,26 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [2.3.0] - 2026-04-29
+
+### Changed
+
+- **Module refactor** — monolithic `TestCameraConnectivity.ps1` (3,724 lines) split into a thin 468-line launcher plus 10 panel modules under `Modules\`. Each module is dot-sourced into the launcher's scope so all shared variables (`$form`, `$sync`, colors, layout constants) remain accessible without passing parameters.
+  - `Modules\UIHelpers.psm1` — Add-Type, GfxHelper, AdlinkPoE P/Invoke, color/layout constants, `New-StatusCard`, `Update-CardStatus`, `Set-ActiveNav`, `Show-Panel`
+  - `Modules\SystemOverview.psm1` — System Overview hub panel
+  - `Modules\CameraConnectivity.psm1` — camera diagnostic engine, Guide/Isolate panel, all camera logic
+  - `Modules\NetworkDiagnostics.psm1` — network test engine and panel
+  - `Modules\PixellotServices.psm1` — Pixellot Services panel (added in v2.2.0, now extracted)
+  - `Modules\DiskHealth.psm1` — System & Disk Health panel (added in v2.2.0, now extracted)
+  - `Modules\EventViewer.psm1` — Event Viewer panel (added in v2.2.0, now extracted)
+  - `Modules\ReportGenerator.psm1` — History/Reports panel
+  - `Modules\HelpAbout.psm1` — Help/About panel
+  - `Modules\PoeNicHardware.psm1` — PoE / NIC Hardware placeholder
+- **`RunDiagnostic.bat`** updated to run the local `TestCameraConnectivity.ps1` directly (no longer fetches from GitHub via `irm | iex`). Self-elevation is handled inside the PS1.
+- Update check now runs async on form load, comparing remote version to current.
+
+---
+
 ## [2.2.0] - 2026-04-29
 
 ### Added

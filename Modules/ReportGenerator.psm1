@@ -1,5 +1,5 @@
 # =============================================================================
-#  ReportGenerator.psm1  —  Run History panel + Update-HistoryList helper
+#  ReportGenerator.psm1  —  Run History panel
 # =============================================================================
 
 function Update-HistoryList {
@@ -34,6 +34,7 @@ function Update-HistoryList {
                 } | Where-Object { $_ }
                 $summary = "$($failLines.Count) fault(s)" + $(if ($ports) { " — " + ($ports -join ", ") } else { "" })
             } else {
+                # Fallback for files written before v1.5.0
                 $failLines = @($lines | Where-Object { $_ -match 'DEGRADED' })
                 if ($failLines.Count -gt 0) {
                     $resultText = "Issues Found"; $resultColor = $ColRed
@@ -58,57 +59,55 @@ function Update-HistoryList {
     }
 }
 
-function Build-HistoryPanel {
-    $script:pnlHistory = New-Object System.Windows.Forms.Panel
-    $script:pnlHistory.Size      = New-Object System.Drawing.Size($WideW, $ContentH)
-    $script:pnlHistory.Location  = New-Object System.Drawing.Point($SideW, $HdrH)
-    $script:pnlHistory.BackColor = $ColBg
-    $script:pnlHistory.Visible   = $false
-    $script:pnlHistory.Anchor    = $AnchorTLRB
-    $form.Controls.Add($script:pnlHistory)
 
-    $lblHistTitle = New-Object System.Windows.Forms.Label
-    $lblHistTitle.Text = "Run History"
-    $lblHistTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
-    $lblHistTitle.ForeColor = $ColText
-    $lblHistTitle.Location = New-Object System.Drawing.Point(10, 16); $lblHistTitle.AutoSize = $true
-    $script:pnlHistory.Controls.Add($lblHistTitle)
+# ---- History Panel (embedded in Reports) -----------------------------------
+$pnlHistory = New-Object System.Windows.Forms.Panel
+$pnlHistory.Size     = New-Object System.Drawing.Size($WideW, $ContentH)
+$pnlHistory.Location = New-Object System.Drawing.Point($SideW, $HdrH)
+$pnlHistory.BackColor = $ColBg; $pnlHistory.Visible = $false
+$pnlHistory.Anchor = $AnchorTLRB
+$form.Controls.Add($pnlHistory)
 
-    $lblHistSub = New-Object System.Windows.Forms.Label
-    $lblHistSub.Text = "Past diagnostic runs — double-click a row to open the full report."
-    $lblHistSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblHistSub.ForeColor = $ColMuted
-    $lblHistSub.Location = New-Object System.Drawing.Point(10, 42); $lblHistSub.Size = New-Object System.Drawing.Size(540, 18)
-    $script:pnlHistory.Controls.Add($lblHistSub)
+$lblHistTitle = New-Object System.Windows.Forms.Label
+$lblHistTitle.Text = "Run History"
+$lblHistTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
+$lblHistTitle.ForeColor = $ColText
+$lblHistTitle.Location = New-Object System.Drawing.Point(10, 16); $lblHistTitle.AutoSize = $true
+$pnlHistory.Controls.Add($lblHistTitle)
 
-    $lnkHistRefresh = New-Object System.Windows.Forms.LinkLabel
-    $lnkHistRefresh.Text = "Refresh"
-    $lnkHistRefresh.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lnkHistRefresh.LinkColor = $ColMuted
-    $lnkHistRefresh.Location = New-Object System.Drawing.Point(544, 44); $lnkHistRefresh.AutoSize = $true
-    $script:pnlHistory.Controls.Add($lnkHistRefresh)
-    $lnkHistRefresh.Add_LinkClicked({ Update-HistoryList })
+$lblHistSub = New-Object System.Windows.Forms.Label
+$lblHistSub.Text = "Past diagnostic runs — double-click a row to open the full report."
+$lblHistSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblHistSub.ForeColor = $ColMuted
+$lblHistSub.Location = New-Object System.Drawing.Point(10, 42); $lblHistSub.Size = New-Object System.Drawing.Size(540, 18)
+$pnlHistory.Controls.Add($lblHistSub)
 
-    $script:lvHistory = New-Object System.Windows.Forms.ListView
-    $script:lvHistory.Size = New-Object System.Drawing.Size(1012, 560)
-    $script:lvHistory.Location = New-Object System.Drawing.Point(10, 68)
-    $script:lvHistory.Anchor = $AnchorTLRB
-    $script:lvHistory.View = [System.Windows.Forms.View]::Details
-    $script:lvHistory.FullRowSelect = $true
-    $script:lvHistory.GridLines = $false
-    $script:lvHistory.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-    $script:lvHistory.BackColor = [System.Drawing.Color]::White
-    $script:lvHistory.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $script:lvHistory.HeaderStyle = [System.Windows.Forms.ColumnHeaderStyle]::Nonclickable
-    $script:lvHistory.UseCompatibleStateImageBehavior = $false
-    $script:pnlHistory.Controls.Add($script:lvHistory)
-    $script:lvHistory.Columns.Add("Date / Time",   142) | Out-Null
-    $script:lvHistory.Columns.Add("Result",         92) | Out-Null
-    $script:lvHistory.Columns.Add("Summary",       700) | Out-Null
-    $script:lvHistory.Columns.Add("Size",           58) | Out-Null
+$lnkHistRefresh = New-Object System.Windows.Forms.LinkLabel; $lnkHistRefresh.Text = "Refresh"
+$lnkHistRefresh.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lnkHistRefresh.LinkColor = $ColMuted
+$lnkHistRefresh.Location = New-Object System.Drawing.Point(544, 44); $lnkHistRefresh.AutoSize = $true
+$pnlHistory.Controls.Add($lnkHistRefresh)
+$lnkHistRefresh.Add_LinkClicked({ Update-HistoryList })
 
-    $script:lvHistory.Add_DoubleClick({
-        if ($script:lvHistory.SelectedItems.Count -gt 0) {
-            $path = $script:lvHistory.SelectedItems[0].Tag
-            if ($path -and (Test-Path $path)) { Start-Process notepad.exe $path }
-        }
-    })
-}
+$lvHistory = New-Object System.Windows.Forms.ListView
+$lvHistory.Size = New-Object System.Drawing.Size(1012, 560)
+$lvHistory.Location = New-Object System.Drawing.Point(10, 68); $lvHistory.Anchor = $AnchorTLRB
+$lvHistory.View = [System.Windows.Forms.View]::Details
+$lvHistory.FullRowSelect = $true
+$lvHistory.GridLines = $false
+$lvHistory.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$lvHistory.BackColor = [System.Drawing.Color]::White
+$lvHistory.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$lvHistory.HeaderStyle = [System.Windows.Forms.ColumnHeaderStyle]::Nonclickable
+$lvHistory.UseCompatibleStateImageBehavior = $false
+$pnlHistory.Controls.Add($lvHistory)
+$lvHistory.Columns.Add("Date / Time",   142) | Out-Null
+$lvHistory.Columns.Add("Result",         92) | Out-Null
+$lvHistory.Columns.Add("Summary",       700) | Out-Null
+$lvHistory.Columns.Add("Size",           58) | Out-Null
+
+$lvHistory.Add_DoubleClick({
+    if ($lvHistory.SelectedItems.Count -gt 0) {
+        $path = $lvHistory.SelectedItems[0].Tag
+        if ($path -and (Test-Path $path)) { Start-Process notepad.exe $path }
+    }
+})
+
