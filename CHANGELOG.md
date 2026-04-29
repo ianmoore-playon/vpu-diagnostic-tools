@@ -1,4 +1,4 @@
-# Changelog - VPU Diagnostic Tools
+# Changelog - VPU Diagnostic Tool Suite
 
 All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
@@ -7,6 +7,35 @@ Version format: `MAJOR.MINOR.PATCH`
 - **MAJOR** — full rewrites or fundamental architecture changes
 - **MINOR** — new functional flows, significant new features, new tabs or workflows
 - **PATCH** — bug fixes, UI polish, text changes, minor improvements
+
+---
+
+## [2.1.1] - 2026-04-28
+
+### Fixed
+
+- Updated all script URLs and `RunDiagnostic.bat` to point to the new `vpu-diagnostic-tools` repository (previously referenced `pixellot-vpu-tools`).
+- Fixed MD060 lint warning in README.md — table separator row changed from `|---|---|` to `| --- | --- |`.
+
+---
+
+## [2.1.0] - 2026-04-28
+
+### Added
+
+- **System Overview hub** — New default landing page with eight section cards (2×4 grid), each navigating to the corresponding diagnostic section. Includes "Run Full Diagnostic" and "Open Last Report" buttons.
+- **Six new section stubs** — PoE / NIC Hardware, Pixellot Services, System & Disk Health, Event Viewer, Reports, and Settings panels added with correct headers, separators, and footer buttons (Run Full Diagnostic + Export Section). Functionality will be populated in subsequent versions.
+- **Bottom status bar** — Thin dark bar at the bottom of the window shows a status dot, "Status: Ready/Running/All Clear/Issues Found", and last-run timestamp. Updates live on diagnostic completion.
+- **Sidebar status dot** — Green/amber/red dot and label at the bottom of the sidebar mirrors overall tool state.
+
+### Changed
+
+- **Sidebar rebuilt** — Replaced 5-item nav (Overview, Isolate, History, Help, Network) with 10-item nav: System Overview, Network Configuration, Camera Connectivity, PoE / NIC Hardware, Pixellot Services, System & Disk Health, Event Viewer, Reports, Settings, About.
+- **Header updated** — Title is now "VPU Diagnostic Tool Suite"; subtitle updated to "All-in-one diagnostic and troubleshooting tool for Pixellot VPU systems."; version label added top-right.
+- **NIC test scope selector** moved from sidebar into the Camera Connectivity panel.
+- **Network, History, Help panels** widened from 800 px to 1060 px (full content area, no right panel) to match new layout.
+- **Camera Connectivity** retains the 800 px narrow layout with the right Next Steps panel.
+- **Form border** changed from `FixedSingle` to `Sizable` to allow free resizing.
 
 ---
 

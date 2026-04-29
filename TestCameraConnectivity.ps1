@@ -1,12 +1,12 @@
 # =============================================================================
-#  VPU Diagnostic Tools  v2.0.0
+#  VPU Diagnostic Tool Suite  v2.1.1
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
-#    irm 'https://raw.githubusercontent.com/ianmoore-playon/pixellot-vpu-tools/refs/heads/main/TestCameraConnectivity.ps1' | iex
+#    irm 'https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/TestCameraConnectivity.ps1' | iex
 # =============================================================================
 
-$ScriptUrl = "https://raw.githubusercontent.com/ianmoore-playon/pixellot-vpu-tools/refs/heads/main/TestCameraConnectivity.ps1"
+$ScriptUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/TestCameraConnectivity.ps1"
 
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     $elevArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden"
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "2.0.0"
+$ScriptVersion      = "2.1.1"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }

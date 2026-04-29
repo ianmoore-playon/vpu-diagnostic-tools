@@ -4,9 +4,9 @@ PowerShell diagnostic tools for Pixellot VPU field support.
 
 ---
 
-## TestCameraConnectivity.ps1 — VPU Diagnostic Tools
+## TestCameraConnectivity.ps1 — VPU Diagnostic Tool Suite
 
-An all-in-one GUI diagnostic tool for Pixellot VPUs. It covers camera NIC and cable health as well as network connectivity, displays live results in an interactive interface, and provides plain-language next-step guidance for both technical and non-technical users.
+An all-in-one GUI diagnostic tool for Pixellot VPUs. Covers camera NIC and cable health, network connectivity, PoE/NIC hardware, Pixellot services, system and disk health, and event monitoring. Displays live results in an interactive interface and provides plain-language next-step guidance for both technical and non-technical users.
 
 ### How to run
 
@@ -19,7 +19,7 @@ Download [`RunDiagnostic.bat`](RunDiagnostic.bat) to the VPU and double-click it
 Open any PowerShell window on the VPU and paste:
 
 ```powershell
-irm 'https://raw.githubusercontent.com/ianmoore-playon/pixellot-vpu-tools/refs/heads/main/TestCameraConnectivity.ps1' | iex
+irm 'https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/TestCameraConnectivity.ps1' | iex
 ```
 
 A UAC prompt will appear. Click **Yes**. A GUI window opens and the diagnostic begins when you click **Run Full Diagnostic**.
@@ -29,7 +29,7 @@ Results are also saved automatically to a `.txt` file in `CameraLink_Results\` n
 ### What it checks
 
 | Check | Detail |
-|---|---|
+| --- | --- |
 | NIC detection | Finds all Intel 82574L and I210 camera NIC ports |
 | Link speed | Reports current speed on each port; samples for 12 seconds to catch intermittent (blinking) links |
 | Remediation | For degraded 100 Mbps ports with SmartSpeed history, forces 1 Gbps and re-checks after 30 seconds |
