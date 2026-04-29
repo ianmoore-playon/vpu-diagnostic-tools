@@ -156,6 +156,26 @@ function Update-CardStatus {
 }
 
 
+function New-StubPanel {
+    param([string]$Title, [string]$SubText = "")
+    $p = New-Object System.Windows.Forms.Panel
+    $p.Size     = New-Object System.Drawing.Size($WideW, $ContentH)
+    $p.Location = New-Object System.Drawing.Point($SideW, $HdrH)
+    $p.BackColor = $ColBg; $p.Visible = $false; $p.Anchor = $AnchorTLRB
+    $form.Controls.Add($p)
+    $lTitle = New-Object System.Windows.Forms.Label
+    $lTitle.Text = $Title; $lTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
+    $lTitle.ForeColor = $ColText; $lTitle.Location = New-Object System.Drawing.Point(10, 16); $lTitle.AutoSize = $true
+    $p.Controls.Add($lTitle)
+    if ($SubText) {
+        $lSub = New-Object System.Windows.Forms.Label; $lSub.Text = $SubText
+        $lSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lSub.ForeColor = $ColMuted
+        $lSub.Location = New-Object System.Drawing.Point(10, 42); $lSub.Size = New-Object System.Drawing.Size(762, 18)
+        $p.Controls.Add($lSub)
+    }
+    return $p
+}
+
 function Set-ActiveNav {
     param($Active)
     $visibleNavs = @($navSysOverview,$navNetConfig,$navCamera,$navPoE,$navServices,$navDisk,$navEvents,$navReports,$navSettings,$navAbout)
