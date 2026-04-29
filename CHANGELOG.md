@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.9.5] - 2026-04-28
+
+### Added
+
+- **Fault flag in Isolate port dropdown** — After each diagnostic run, the suspect port dropdown in the Isolate tab appends `⚠ FAULT` to any port with a `FAIL` or `PASS (forced)` result, making the faulty port immediately visible without switching back to Overview. The selection is preserved across refreshes; port-card click-through and "Open Fault Isolator" navigation updated to match the new item text.
+
+---
+
 ## [1.9.4] - 2026-04-28
 
 ### Changed

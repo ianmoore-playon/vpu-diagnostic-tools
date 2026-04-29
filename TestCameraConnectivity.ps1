@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.9.4"
+$ScriptVersion      = "1.9.5"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -1245,7 +1245,10 @@ if ($script:detectedNics.Count -gt 0) {
         $portClickHandler = {
             $navTests.PerformClick()
             Reset-Guide
-            $idx = $cboGuidePortA.Items.IndexOf($capturedName)
+            $idx = -1
+            for ($i = 0; $i -lt $cboGuidePortA.Items.Count; $i++) {
+                if (($cboGuidePortA.Items[$i] -as [string]) -like "$capturedName*") { $idx = $i; break }
+            }
             if ($idx -ge 0) { $cboGuidePortA.SelectedIndex = $idx }
         }.GetNewClosure()
         $c.Panel.Add_Click($portClickHandler)
@@ -1472,6 +1475,7 @@ $timer.Add_Tick({
         $trendSuffix = if ($trend) { "   ·   $trend" } else { "" }
         $lblLastRunVal.Text = "$($sync.LastRunLine)   $dt$trendSuffix"
         $btnGoGuide.Visible = ((@($sync.PortResults) | Where-Object { $_.Result -eq "FAIL" }).Count -gt 0)
+        Update-GuidePortDropdown
     }
 })
 
@@ -1797,6 +1801,28 @@ function Reset-Guide {
     $lblGuidePortA.Visible = $true; $cboGuidePortA.Visible = $true
     $lblGuidePortB.Visible = $false; $cboGuidePortB.Visible = $false
     Update-GuideStepDots -ActivePhase 1
+}
+
+function Update-GuidePortDropdown {
+    $prevName = if ($cboGuidePortA.SelectedIndex -ge 0) {
+        ($cboGuidePortA.SelectedItem -as [string]) -replace '\s+⚠.*', ''
+    } else { $null }
+
+    $cboGuidePortA.Items.Clear()
+    foreach ($n in $script:detectedNics) {
+        $pr = @($sync.PortResults) | Where-Object { $_.Name -eq $n.Name } | Select-Object -First 1
+        $flag = if ($pr -and $pr.Result -in @("FAIL", "PASS (forced)")) { "  ⚠ FAULT" } else { "" }
+        $cboGuidePortA.Items.Add("$($n.Name)$flag") | Out-Null
+    }
+
+    $newIdx = -1
+    if ($prevName) {
+        for ($i = 0; $i -lt $cboGuidePortA.Items.Count; $i++) {
+            if (($cboGuidePortA.Items[$i] -as [string]) -like "$prevName*") { $newIdx = $i; break }
+        }
+    }
+    if ($newIdx -ge 0) { $cboGuidePortA.SelectedIndex = $newIdx }
+    elseif ($cboGuidePortA.Items.Count -gt 0) { $cboGuidePortA.SelectedIndex = 0 }
 }
 
 function Update-HistoryList {
@@ -2385,7 +2411,10 @@ $btnGoGuide.Add_Click({
     $navTests.PerformClick()
     Reset-Guide
     if ($firstFail) {
-        $idx = $cboGuidePortA.Items.IndexOf($firstFail.Name)
+        $idx = -1
+        for ($i = 0; $i -lt $cboGuidePortA.Items.Count; $i++) {
+            if (($cboGuidePortA.Items[$i] -as [string]) -like "$($firstFail.Name)*") { $idx = $i; break }
+        }
         if ($idx -ge 0) { $cboGuidePortA.SelectedIndex = $idx }
     }
 })
