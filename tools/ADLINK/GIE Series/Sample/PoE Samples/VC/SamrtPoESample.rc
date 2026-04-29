@@ -1,0 +1,182 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// Chinese (Traditional, Taiwan) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHT)
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL
+#pragma code_page(950)
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHT)\r\n"
+    "LANGUAGE 4, 1\r\n"
+    "#pragma code_page(950)\r\n"
+    "#include ""res\\SamrtPoESample.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""     // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "res\\SamrtPoESample.ico"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_SAMRTPOESAMPLE_DIALOG DIALOGEX 0, 0, 197, 176
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_MINIMIZEBOX | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "Samrt PoE Sample"
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    LTEXT           "Port",IDC_STATIC,43,56,14,8
+    LTEXT           "Power Over Ethernet",IDC_STATIC,75,56,69,8
+    LTEXT           "1",IDC_STATIC,46,72,8,8
+    LTEXT           "2",IDC_STATIC,45,90,8,8
+    LTEXT           "3",IDC_STATIC,46,107,8,8
+    LTEXT           "4",IDC_STATIC,46,125,8,8
+    LTEXT           "Card number:",IDC_STATIC,43,20,45,8
+    COMBOBOX        IDC_COMBO_CARD_NUMBER,95,18,52,119,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "ON",IDC_RADIO_PORT1_ON,"Button",BS_AUTORADIOBUTTON | WS_GROUP,76,72,26,10
+    CONTROL         "OFF",IDC_RADIO_PORT1_OFF,"Button",BS_AUTORADIOBUTTON,113,72,29,10
+    CONTROL         "ON",IDC_RADIO_PORT2_ON,"Button",BS_AUTORADIOBUTTON | WS_GROUP,76,89,26,10
+    CONTROL         "OFF",IDC_RADIO_PORT2_OFF,"Button",BS_AUTORADIOBUTTON,113,90,29,10
+    CONTROL         "ON",IDC_RADIO_PORT3_ON,"Button",BS_AUTORADIOBUTTON | WS_GROUP,76,107,26,10
+    CONTROL         "OFF",IDC_RADIO_PORT3_OFF,"Button",BS_AUTORADIOBUTTON,113,108,29,10
+    CONTROL         "ON",IDC_RADIO_PORT4_ON,"Button",BS_AUTORADIOBUTTON | WS_GROUP,76,124,26,10
+    CONTROL         "OFF",IDC_RADIO_PORT4_OFF,"Button",BS_AUTORADIOBUTTON,113,125,29,10
+    PUSHBUTTON      "Set",IDC_BUTTON_SET,78,143,50,14
+    LTEXT           "Card ID:",IDC_STATIC,59,38,28,8
+    EDITTEXT        IDC_EDIT_ID,95,35,52,14,ES_AUTOHSCROLL | WS_DISABLED
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,1,1
+ PRODUCTVERSION 1,0,1,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904e4"
+        BEGIN
+            VALUE "CompanyName", "ADLINK Technology Inc."
+            VALUE "FileDescription", "GIE64+ SmartPoE Sample"
+            VALUE "FileVersion", "1.0.1.1"
+            VALUE "InternalName", "SamrtPoESample.exe"
+            VALUE "LegalCopyright", "ADLINK Copy Right (c) 2012.  All rights reserved."
+            VALUE "OriginalFilename", "SamrtPoESample.exe"
+            VALUE "ProductName", "GIE64+"
+            VALUE "ProductVersion", "1.0.1.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_SAMRTPOESAMPLE_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 190
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 169
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // Chinese (Traditional, Taiwan) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHT)
+LANGUAGE 4, 1
+#pragma code_page(950)
+#include "res\SamrtPoESample.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"     // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+
