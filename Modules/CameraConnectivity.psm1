@@ -884,12 +884,12 @@ $pnlSummaryCard.Size = New-Object System.Drawing.Size(780, 56); $pnlSummaryCard.
 $pnlSummaryCard.BackColor = [System.Drawing.Color]::White
 $pnlSummaryCard.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 780, 56)), 8))
 $pnlSummaryCard.Add_Paint({
-    param($s, $e)
-    $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g = $args[1].Graphics
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $rr  = New-Object System.Drawing.Rectangle(0, 0, 779, 55)
     $bp  = [GfxHelper]::RoundedRect($rr, 8)
     $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 218, 228), 1)
-    $e.Graphics.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
+    $g.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
 })
 $center.Controls.Add($pnlSummaryCard)
 
@@ -1603,14 +1603,14 @@ $pnlGuideResult.Location = New-Object System.Drawing.Point(10, 302)
 $pnlGuideResult.BackColor = [System.Drawing.Color]::White
 $pnlGuideResult.Visible = $false
 $pnlGuideResult.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,780,84)), 8))
-$pnlGuideResult.Add_Paint(({
-    param($s,$e)
-    $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+$pnlGuideResult.Add_Paint({
+    $g = $args[1].Graphics
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $rr = New-Object System.Drawing.Rectangle(0,0,571,83)
     $bp = [GfxHelper]::RoundedRect($rr,8)
-    $pen = New-Object System.Drawing.Pen($ColBorder,1)
-    $e.Graphics.DrawPath($pen,$bp); $pen.Dispose(); $bp.Dispose()
-}).GetNewClosure())
+    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(226,232,240),1)
+    $g.DrawPath($pen,$bp); $pen.Dispose(); $bp.Dispose()
+})
 $pnlGuide.Controls.Add($pnlGuideResult)
 
 $lblGuideResultSpeed = New-Object System.Windows.Forms.Label; $lblGuideResultSpeed.Text = ""

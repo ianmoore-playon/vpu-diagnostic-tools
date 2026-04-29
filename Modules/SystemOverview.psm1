@@ -35,11 +35,11 @@ function New-SectionCard {
     $pnl.Cursor    = [System.Windows.Forms.Cursors]::Hand
     $pnl.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $W, $H)), 8))
     $pnl.Add_Paint({
-        param($s,$e)
-        $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        $bp  = [GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,$s.Width-1,$s.Height-1)),8)
-        $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(226,232,240),1)
-        $e.Graphics.DrawPath($pen,$bp); $pen.Dispose(); $bp.Dispose()
+        $g = $args[1].Graphics
+        $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $bp  = [GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, ([int]$this.Width - 1), ([int]$this.Height - 1))), 8)
+        $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(226, 232, 240), 1)
+        $g.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
     })
     $iLbl = New-Object System.Windows.Forms.Label
     $iLbl.Text      = [char]$IconCode

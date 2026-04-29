@@ -87,26 +87,28 @@ function New-StatusCard {
     $panel.Size = New-Object System.Drawing.Size($CardW, $CardH); $panel.Location = New-Object System.Drawing.Point($X, $Y)
     $panel.BackColor = $ColCard; $panel.BorderStyle = [System.Windows.Forms.BorderStyle]::None
     $panel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $CardW, $CardH)), 8))
-    $panel.Add_Paint(({
-        param($s, $e)
-        $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        $e.Graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAlias
-        if ($Icon) {
+    $panel.Tag = $Icon
+    $panel.Add_Paint({
+        $g = $args[1].Graphics
+        $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAlias
+        $pW = [int]$this.Width; $pH = [int]$this.Height
+        if ($this.Tag) {
             $iFont  = New-Object System.Drawing.Font("Segoe MDL2 Assets", 26)
             $iBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(200, 210, 222))
-            $iStr   = [string]$Icon
-            $iSz    = $e.Graphics.MeasureString($iStr, $iFont)
-            $ix     = $CardW - [int]$iSz.Width  - 10
-            $iy     = $CardH - [int]$iSz.Height - 6
-            $e.Graphics.DrawString($iStr, $iFont, $iBrush, $ix, $iy)
+            $iStr   = [string]$this.Tag
+            $iSz    = $g.MeasureString($iStr, $iFont)
+            $ix     = $pW - [int]$iSz.Width  - 10
+            $iy     = $pH - [int]$iSz.Height - 6
+            $g.DrawString($iStr, $iFont, $iBrush, $ix, $iy)
             $iFont.Dispose(); $iBrush.Dispose()
         }
-        $rr = New-Object System.Drawing.Rectangle(0, 0, $CardW - 1, $CardH - 1)
+        $rr = New-Object System.Drawing.Rectangle(0, 0, ($pW - 1), ($pH - 1))
         $bp = [GfxHelper]::RoundedRect($rr, 8)
         $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 218, 228), 1)
-        $e.Graphics.DrawPath($pen, $bp)
+        $g.DrawPath($pen, $bp)
         $pen.Dispose(); $bp.Dispose()
-    }).GetNewClosure())
+    })
 
     $lbl = New-Object System.Windows.Forms.Label; $lbl.Text = $Title
     $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 7.5); $lbl.ForeColor = $ColMuted
@@ -190,7 +192,7 @@ function Set-ActiveNav {
 function Show-Panel {
     param($Panel, [bool]$ShowRight = $false)
     if ($script:allNavPanels) {
-        foreach ($p in $script:allNavPanels) { $p.Visible = $false }
+        foreach ($p in $script:allNavPanels) { if ($p -is [System.Windows.Forms.Control]) { $p.Visible = $false } }
     }
     $Panel.Visible   = $true
     $right.Visible        = $ShowRight
