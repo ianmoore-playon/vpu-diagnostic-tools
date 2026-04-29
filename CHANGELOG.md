@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.9.4] - 2026-04-28
+
+### Changed
+
+- **PoE log section renamed to "POE STATUS"** — PoE entries now appear under their own "POE STATUS" section header in the live log (Highlights and Detailed modes) instead of flowing under "SIGNAL QUALITY". Copy Summary header updated to match.
+
+---
+
 ## [1.9.3] - 2026-04-28
 
 ### Fixed
