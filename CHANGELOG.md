@@ -10,6 +10,15 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [2.1.3] - 2026-04-29
+
+### Fixed
+
+- Navigation now works correctly. `$script:allNavPanels` was being populated before `$pnlHistory`, `$pnlHelp`, and `$pnlNetwork` were created, so those entries were `$null` in the array — and a stale `$script:allNavPanels = $null` line later in the script wiped the whole array. Moved the array assignment to after all panels are created; removed the erroneous null assignment.
+- Sidebar now highlights the correct active button on startup (`Set-ActiveNav $navSysOverview` called in form Load).
+
+---
+
 ## [2.1.2] - 2026-04-29
 
 ### Fixed

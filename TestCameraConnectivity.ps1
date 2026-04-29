@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Diagnostic Tool Suite  v2.1.2
+#  VPU Diagnostic Tool Suite  v2.1.3
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "2.1.2"
+$ScriptVersion      = "2.1.3"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -2883,12 +2883,6 @@ $pnlEvents   = New-StubPanel "Event Viewer"          "View recent critical and w
 $pnlReports  = New-StubPanel "Reports"               "Generate and manage diagnostic reports."
 $pnlSettings = New-StubPanel "Settings"              "Configure tool behavior and preferences."
 
-# Register all swappable panels so Show-Panel can hide them all at once
-$script:allNavPanels = @(
-    $pnlSysOverview,$center,$pnlGuide,$pnlHistory,$pnlHelp,$pnlNetwork,
-    $pnlPoE,$pnlServices,$pnlDisk,$pnlEvents,$pnlReports,$pnlSettings
-)
-
 # ---- History Panel (embedded in Reports) -----------------------------------
 $pnlHistory = New-Object System.Windows.Forms.Panel
 $pnlHistory.Size     = New-Object System.Drawing.Size($WideW, $ContentH)
@@ -3064,9 +3058,14 @@ $pnlNetwork.Controls.Add($rtbNetLog)
 $script:netRunspace = $null
 $script:netSpinIdx  = 0
 
-# ---- Nav wiring ------------------------------------------------------------
-$script:allNavPanels = $null  # populated after stub panels are created
+# All panels registered here — after every panel is created — so Show-Panel
+# can hide them all before making the target visible.
+$script:allNavPanels = @(
+    $pnlSysOverview,$center,$pnlGuide,$pnlHistory,$pnlHelp,$pnlNetwork,
+    $pnlPoE,$pnlServices,$pnlDisk,$pnlEvents,$pnlReports,$pnlSettings
+)
 
+# ---- Nav wiring ------------------------------------------------------------
 function Set-ActiveNav {
     param($Active)
     $visibleNavs = @($navSysOverview,$navNetConfig,$navCamera,$navPoE,$navServices,$navDisk,$navEvents,$navReports,$navSettings,$navAbout)
@@ -3166,6 +3165,7 @@ $form.Add_Load({
     if ($cboNic.Items.Count -gt 0) { $cboNic.SelectedIndex = 0 }
     if ($cboGuidePortA.Items.Count -gt 0) { $cboGuidePortA.SelectedIndex = 0 }
     Update-GuideStepDots -ActivePhase 1
+    Set-ActiveNav $navSysOverview
 
     try {
         $osCaption = (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption
