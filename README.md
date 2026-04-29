@@ -4,9 +4,9 @@ PowerShell diagnostic tools for Pixellot VPU field support.
 
 ---
 
-## TestCameraConnectivity.ps1
+## TestCameraConnectivity.ps1 — VPU Diagnostic Tools
 
-A GUI diagnostic tool for troubleshooting camera connection issues on Pixellot VPUs. It runs a full diagnostic, displays live results in an interactive interface, and provides plain-language next-step guidance for both technical and non-technical users.
+An all-in-one GUI diagnostic tool for Pixellot VPUs. It covers camera NIC and cable health as well as network connectivity, displays live results in an interactive interface, and provides plain-language next-step guidance for both technical and non-technical users.
 
 ### How to run
 
@@ -40,6 +40,7 @@ Results are also saved automatically to a `.txt` file in `CameraLink_Results\` n
 | App log analysis | Parses the most recent `CamerasTester_*.log` for connection failures, cross-referenced against NIC port health |
 | VPU model detection | Reads `agent_*.log` (written every 5 minutes by the Pixellot agent service) to identify the VPU model and unit ID |
 | PoE power monitoring | Queries the ADLINK PCIe-GIE7x SmartPoE card via `SmartPoE.dll` for total power budget, per-port voltage/current/wattage, and NIC temperature; flags budget < 55 W (Molex connector disconnected) as an issue with a next step |
+| Network connectivity | **Network tab** — tests internet reachability, per-adapter IP/gateway/speed inventory, required TCP/UDP port connectivity (DNS, NTP, HTTPS, RTMP, Zixi), and DNS resolution for all Pixellot-required domains |
 
 ### How it distinguishes cable faults from OCR cameras
 
@@ -56,6 +57,7 @@ The interface is a 1280×760 window with four layout zones:
 - **Left sidebar** — Navigation (Overview, Isolate, History, Help), NIC selector with connected status indicator, quick system info, VPU model, and auto-update notice (yellow, appears when a newer version is available on GitHub)
 - **Center panel** — Run / Retest / Cancel buttons, per-port speed cards (P1–P4, one per Intel NIC), four diagnostic cards (SmartSpeed, Ping CHU, ARP Entry, CHU Detection), Last Run Summary card, and color-coded live log
 - **Right panel** — Plain-language Next Steps / Guidance, and Export / Copy Summary / Copy Log / Save Log action buttons
+- **Network panel** (via sidebar Network nav) — Run Network Test / Cancel buttons, three summary cards (Internet, Port Tests, Domain Tests), and a live log of all connectivity test results
 
 The diagnostic engine runs in a background runspace so the GUI never freezes during the 30-second re-negotiation wait or 12-second blink-sample window. The **Cancel** button stops a running diagnostic at any point.
 
