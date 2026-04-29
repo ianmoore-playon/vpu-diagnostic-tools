@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Diagnostic Tool Suite  v2.1.3
+#  VPU Diagnostic Tool Suite  v2.2.0
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "2.1.3"
+$ScriptVersion      = "2.2.0"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -182,6 +182,10 @@ $sync = [hashtable]::Synchronized(@{
         NetInternet = @{ Value = "--"; Status = "neutral" }
         NetPorts    = @{ Value = "--"; Status = "neutral" }
         NetDomains  = @{ Value = "--"; Status = "neutral" }
+        SvcStatus   = @{ Value = "--"; Status = "neutral" }
+        DiskStatus  = @{ Value = "--"; Status = "neutral" }
+        MemStatus   = @{ Value = "--"; Status = "neutral" }
+        EvtStatus   = @{ Value = "--"; Status = "neutral" }
     }
     PortResults     = [System.Collections.ArrayList]::new()
     CamResults      = [System.Collections.ArrayList]::new()
@@ -205,6 +209,21 @@ $sync = [hashtable]::Synchronized(@{
     NetDomainFail   = 0
     NetDomainInfo   = 0
     NetAdapters     = [System.Collections.ArrayList]::new()
+    SvcRunning      = $false
+    SvcComplete     = $false
+    SvcCancelled    = $false
+    SvcStep         = "Ready"
+    SvcQueue        = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    DiskRunning     = $false
+    DiskComplete    = $false
+    DiskCancelled   = $false
+    DiskStep        = "Ready"
+    DiskQueue       = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    EvtRunning      = $false
+    EvtComplete     = $false
+    EvtCancelled    = $false
+    EvtStep         = "Ready"
+    EvtQueue        = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
 })
 
 # ---------- Diagnostic engine (runs in background runspace) -----------------
@@ -2019,6 +2038,120 @@ $netTimer.Add_Tick({
     }
 })
 
+# ---------- Services timer --------------------------------------------------
+$svcTimer = New-Object System.Windows.Forms.Timer; $svcTimer.Interval = 300
+$svcTimer.Add_Tick({
+    $svcItem = $null
+    while ($sync.SvcQueue.TryDequeue([ref]$svcItem)) {
+        if ($svcItem.L -eq "Section") {
+            $rtbSvcLog.SelectionStart=$rtbSvcLog.TextLength;$rtbSvcLog.SelectionLength=0
+            $rtbSvcLog.SelectionFont=New-Object System.Drawing.Font("Consolas",7.5,[System.Drawing.FontStyle]::Bold)
+            $rtbSvcLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
+            $rtbSvcLog.AppendText("`n  $($svcItem.Result.ToUpper())`n")
+        } else {
+            $rtbSvcLog.SelectionStart=$rtbSvcLog.TextLength;$rtbSvcLog.SelectionLength=0
+            $rtbSvcLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
+            $rtbSvcLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
+            $rtbSvcLog.AppendText(("{0,-26}" -f $svcItem.Label))
+            $col = switch ($svcItem.L) { "Pass"{[System.Drawing.Color]::FromArgb(74,222,128)} "Fail"{[System.Drawing.Color]::FromArgb(252,165,165)} "Warn"{[System.Drawing.Color]::FromArgb(253,224,71)} "Gray"{[System.Drawing.Color]::FromArgb(100,116,139)} default{[System.Drawing.Color]::FromArgb(203,213,225)} }
+            $rtbSvcLog.SelectionStart=$rtbSvcLog.TextLength;$rtbSvcLog.SelectionLength=0
+            $rtbSvcLog.SelectionColor=$col; $rtbSvcLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
+            $rtbSvcLog.AppendText("$($svcItem.Result)`n")
+        }
+        $rtbSvcLog.ScrollToCaret()
+    }
+    foreach ($key in $svcCards.Keys) {
+        $sc = $sync.Cards[$key]
+        if ($sc -and $svcCards[$key].ValueLabel.Text -ne $sc.Value) { Update-CardStatus -Card $svcCards[$key] -Value $sc.Value -Status $sc.Status }
+    }
+    if ($sync.SvcRunning) {
+        $script:svcSpinIdx=($script:svcSpinIdx+1)%4
+        $lblSvcStatus.ForeColor=$ColAccent
+        $lblSvcStatus.Text=" $(@('|','/','-','\')[$script:svcSpinIdx])  $($sync.SvcStep)"
+    }
+    if ($sync.SvcComplete -and -not $sync.SvcRunning) {
+        $svcTimer.Stop(); $btnSvcCancel.Visible=$false
+        $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Check Services"
+        $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="  $($sync.SvcStep)"
+    }
+})
+
+# ---------- Disk timer ------------------------------------------------------
+$diskTimer = New-Object System.Windows.Forms.Timer; $diskTimer.Interval = 300
+$diskTimer.Add_Tick({
+    $diskItem = $null
+    while ($sync.DiskQueue.TryDequeue([ref]$diskItem)) {
+        if ($diskItem.L -eq "Section") {
+            $rtbDiskLog.SelectionStart=$rtbDiskLog.TextLength;$rtbDiskLog.SelectionLength=0
+            $rtbDiskLog.SelectionFont=New-Object System.Drawing.Font("Consolas",7.5,[System.Drawing.FontStyle]::Bold)
+            $rtbDiskLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
+            $rtbDiskLog.AppendText("`n  $($diskItem.Result.ToUpper())`n")
+        } else {
+            $rtbDiskLog.SelectionStart=$rtbDiskLog.TextLength;$rtbDiskLog.SelectionLength=0
+            $rtbDiskLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
+            $rtbDiskLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
+            $rtbDiskLog.AppendText(("{0,-26}" -f $diskItem.Label))
+            $col = switch ($diskItem.L) { "Pass"{[System.Drawing.Color]::FromArgb(74,222,128)} "Fail"{[System.Drawing.Color]::FromArgb(252,165,165)} "Warn"{[System.Drawing.Color]::FromArgb(253,224,71)} "Gray"{[System.Drawing.Color]::FromArgb(100,116,139)} default{[System.Drawing.Color]::FromArgb(203,213,225)} }
+            $rtbDiskLog.SelectionStart=$rtbDiskLog.TextLength;$rtbDiskLog.SelectionLength=0
+            $rtbDiskLog.SelectionColor=$col; $rtbDiskLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
+            $rtbDiskLog.AppendText("$($diskItem.Result)`n")
+        }
+        $rtbDiskLog.ScrollToCaret()
+    }
+    foreach ($key in $diskCards.Keys) {
+        $sc = $sync.Cards[$key]
+        if ($sc -and $diskCards[$key].ValueLabel.Text -ne $sc.Value) { Update-CardStatus -Card $diskCards[$key] -Value $sc.Value -Status $sc.Status }
+    }
+    if ($sync.DiskRunning) {
+        $script:diskSpinIdx=($script:diskSpinIdx+1)%4
+        $lblDiskStatus.ForeColor=$ColAccent
+        $lblDiskStatus.Text=" $(@('|','/','-','\')[$script:diskSpinIdx])  $($sync.DiskStep)"
+    }
+    if ($sync.DiskComplete -and -not $sync.DiskRunning) {
+        $diskTimer.Stop(); $btnDiskCancel.Visible=$false
+        $btnDiskRun.Enabled=$true; $btnDiskRun.Text=[char]0x25B6+"  Check System Health"
+        $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="  $($sync.DiskStep)"
+    }
+})
+
+# ---------- Event Viewer timer -----------------------------------------------
+$evtTimer = New-Object System.Windows.Forms.Timer; $evtTimer.Interval = 300
+$evtTimer.Add_Tick({
+    $evtItem = $null
+    while ($sync.EvtQueue.TryDequeue([ref]$evtItem)) {
+        if ($evtItem.L -eq "Section") {
+            $rtbEvtLog.SelectionStart=$rtbEvtLog.TextLength;$rtbEvtLog.SelectionLength=0
+            $rtbEvtLog.SelectionFont=New-Object System.Drawing.Font("Consolas",7.5,[System.Drawing.FontStyle]::Bold)
+            $rtbEvtLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
+            $rtbEvtLog.AppendText("`n  $($evtItem.Result.ToUpper())`n")
+        } else {
+            $rtbEvtLog.SelectionStart=$rtbEvtLog.TextLength;$rtbEvtLog.SelectionLength=0
+            $rtbEvtLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
+            $rtbEvtLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
+            $rtbEvtLog.AppendText(("{0,-26}" -f $evtItem.Label))
+            $col = switch ($evtItem.L) { "Pass"{[System.Drawing.Color]::FromArgb(74,222,128)} "Fail"{[System.Drawing.Color]::FromArgb(252,165,165)} "Warn"{[System.Drawing.Color]::FromArgb(253,224,71)} "Gray"{[System.Drawing.Color]::FromArgb(100,116,139)} default{[System.Drawing.Color]::FromArgb(203,213,225)} }
+            $rtbEvtLog.SelectionStart=$rtbEvtLog.TextLength;$rtbEvtLog.SelectionLength=0
+            $rtbEvtLog.SelectionColor=$col; $rtbEvtLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
+            $rtbEvtLog.AppendText("$($evtItem.Result)`n")
+        }
+        $rtbEvtLog.ScrollToCaret()
+    }
+    foreach ($key in $evtCards.Keys) {
+        $sc = $sync.Cards[$key]
+        if ($sc -and $evtCards[$key].ValueLabel.Text -ne $sc.Value) { Update-CardStatus -Card $evtCards[$key] -Value $sc.Value -Status $sc.Status }
+    }
+    if ($sync.EvtRunning) {
+        $script:evtSpinIdx=($script:evtSpinIdx+1)%4
+        $lblEvtStatus.ForeColor=$ColAccent
+        $lblEvtStatus.Text=" $(@('|','/','-','\')[$script:evtSpinIdx])  $($sync.EvtStep)"
+    }
+    if ($sync.EvtComplete -and -not $sync.EvtRunning) {
+        $evtTimer.Stop(); $btnEvtCancel.Visible=$false
+        $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Check Event Log"
+        $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="  $($sync.EvtStep)"
+    }
+})
+
 # ---------- Button Handlers -------------------------------------------------
 $btnRun.Add_Click({
     if ($sync.Running) { return }
@@ -2821,6 +2954,173 @@ $btnGuideAction.Add_Click({
 
 $lnkGuideReset.Add_LinkClicked({ Reset-Guide })
 
+# ---------- Services background script ---------------------------------------
+$SvcScript = {
+    param($sync)
+    $sync.SvcRunning = $true; $sync.SvcComplete = $false; $sync.SvcCancelled = $false
+    $item = $null; while ($sync.SvcQueue.TryDequeue([ref]$item)) { }
+    function Svc-Log { param([string]$Label,[string]$Result,[string]$Level="Info")
+        $sync.SvcQueue.Enqueue(@{ Label=$Label; Result=$Result; L=$Level }) }
+    function Svc-Section { param([string]$Title)
+        $sync.SvcQueue.Enqueue(@{ Label=""; Result=$Title; L="Section" }) }
+
+    $sync.SvcStep = "Checking Pixellot services..."
+    Svc-Section "Pixellot Services"
+    $allSvcs = @()
+    foreach ($p in @("Pixellot*","pxl*","CanopyAgent*","SportzCast*")) {
+        try { $allSvcs += @(Get-Service -Name $p -ErrorAction SilentlyContinue) } catch { }
+    }
+    if ($allSvcs.Count -gt 0) {
+        $running = 0
+        foreach ($svc in ($allSvcs | Sort-Object DisplayName)) {
+            if ($sync.SvcCancelled) { break }
+            $lvl = if ($svc.Status -eq "Running") { $running++; "Pass" } else { "Warn" }
+            Svc-Log $svc.DisplayName $svc.Status.ToString() $lvl
+        }
+        $sync.Cards["SvcStatus"] = @{ Value="$running/$($allSvcs.Count) running"; Status=if($running -lt $allSvcs.Count){"warn"}else{"ok"} }
+    } else {
+        Svc-Log "Pixellot services" "None found on this system" "Gray"
+        $sync.Cards["SvcStatus"] = @{ Value="None found"; Status="neutral" }
+    }
+    if ($sync.SvcCancelled) { $sync.SvcRunning=$false; $sync.SvcComplete=$true; return }
+
+    $sync.SvcStep = "Checking system dependencies..."
+    Svc-Section "System Dependencies"
+    foreach ($dep in @(
+        @{Name="W32Time";     Label="Windows Time (NTP)"}
+        @{Name="Dnscache";    Label="DNS Client"}
+        @{Name="Dhcp";        Label="DHCP Client"}
+        @{Name="EventLog";    Label="Windows Event Log"}
+        @{Name="wuauserv";    Label="Windows Update"}
+    )) {
+        if ($sync.SvcCancelled) { break }
+        try {
+            $s = Get-Service -Name $dep.Name -ErrorAction Stop
+            Svc-Log $dep.Label $s.Status.ToString() $(if($s.Status -eq "Running"){"Pass"}else{"Warn"})
+        } catch { Svc-Log $dep.Label "Not found" "Gray" }
+    }
+
+    $sync.SvcStep = "Complete"; $sync.SvcRunning=$false; $sync.SvcComplete=$true
+}
+
+# ---------- Disk/System health background script -----------------------------
+$DiskScript = {
+    param($sync)
+    $sync.DiskRunning = $true; $sync.DiskComplete = $false; $sync.DiskCancelled = $false
+    $item = $null; while ($sync.DiskQueue.TryDequeue([ref]$item)) { }
+    function Disk-Log { param([string]$Label,[string]$Result,[string]$Level="Info")
+        $sync.DiskQueue.Enqueue(@{ Label=$Label; Result=$Result; L=$Level }) }
+    function Disk-Section { param([string]$Title)
+        $sync.DiskQueue.Enqueue(@{ Label=""; Result=$Title; L="Section" }) }
+
+    $sync.DiskStep = "Reading system info..."
+    Disk-Section "System"
+    try {
+        $os = Get-WmiObject Win32_OperatingSystem -ErrorAction Stop
+        $uptime = (Get-Date) - $os.ConvertToDateTime($os.LastBootUpTime)
+        Disk-Log "Computer"  $env:COMPUTERNAME "Info"
+        Disk-Log "OS"        ($os.Caption -replace "Microsoft ","") "Info"
+        Disk-Log "Uptime"    ("{0}d {1}h {2}m" -f [int]$uptime.TotalDays,$uptime.Hours,$uptime.Minutes) "Info"
+        $totalMem = [math]::Round($os.TotalVisibleMemorySize/1MB,1)
+        $freeMem  = [math]::Round($os.FreePhysicalMemory/1MB,1)
+        $memPct   = [math]::Round((($totalMem-$freeMem)/$totalMem)*100)
+        $memLvl   = if($memPct-gt90){"Fail"}elseif($memPct-gt75){"Warn"}else{"Pass"}
+        Disk-Log "Memory" ("{0} GB used / {1} GB total  ({2}%)" -f ($totalMem-$freeMem),$totalMem,$memPct) $memLvl
+        $sync.Cards["MemStatus"] = @{ Value="$memPct% used"; Status=switch($memLvl){"Pass"{"ok"}"Warn"{"warn"}"Fail"{"fail"}} }
+    } catch { Disk-Log "System info" "Error reading" "Warn" }
+    if ($sync.DiskCancelled) { $sync.DiskRunning=$false; $sync.DiskComplete=$true; return }
+
+    $sync.DiskStep = "Checking disk space..."
+    Disk-Section "Disk Space"
+    try {
+        $disks = @(Get-WmiObject Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction Stop)
+        $worstStatus = "ok"; $cFree = 0
+        foreach ($d in $disks) {
+            if ($sync.DiskCancelled) { break }
+            $freeGb  = [math]::Round($d.FreeSpace/1GB,1)
+            $totalGb = [math]::Round($d.Size/1GB,1)
+            $pct     = if($d.Size-gt0){[math]::Round((1-$d.FreeSpace/$d.Size)*100)}else{0}
+            $lvl     = if($pct-gt95){"Fail"}elseif($pct-gt85){"Warn"}else{"Pass"}
+            if($d.DeviceID -eq "C:"){$cFree=$freeGb}
+            if($lvl-eq"Fail"-and$worstStatus-ne"fail"){$worstStatus="fail"}
+            elseif($lvl-eq"Warn"-and$worstStatus-eq"ok"){$worstStatus="warn"}
+            Disk-Log "$($d.DeviceID)  $($d.VolumeName)" ("{0} GB free / {1} GB  ({2}% used)" -f $freeGb,$totalGb,$pct) $lvl
+        }
+        $sync.Cards["DiskStatus"] = @{ Value="C: $cFree GB free"; Status=$worstStatus }
+    } catch { Disk-Log "Disk" "Error reading disk info" "Warn" }
+    if ($sync.DiskCancelled) { $sync.DiskRunning=$false; $sync.DiskComplete=$true; return }
+
+    $sync.DiskStep = "Checking Pixellot folders..."
+    Disk-Section "Pixellot Data Paths"
+    foreach ($pp in @(
+        @{Path="C:\Pixellot";           Label="Pixellot root"}
+        @{Path="C:\Pixellot\Data";      Label="Data folder"}
+        @{Path="C:\Pixellot\Data\Log";  Label="Log folder"}
+        @{Path="C:\Pixellot\recordings";Label="Recordings"}
+    )) {
+        if ($sync.DiskCancelled) { break }
+        if (Test-Path $pp.Path) {
+            try {
+                $sz = (Get-ChildItem $pp.Path -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+                $szStr = if($sz-ge1GB){"{0:F1} GB" -f ($sz/1GB)}else{"{0:F0} MB" -f ($sz/1MB)}
+                Disk-Log $pp.Label "Exists  ($szStr)" "Pass"
+            } catch { Disk-Log $pp.Label "Exists" "Pass" }
+        } else { Disk-Log $pp.Label "Not found" "Gray" }
+    }
+
+    $sync.DiskStep = "Complete"; $sync.DiskRunning=$false; $sync.DiskComplete=$true
+}
+
+# ---------- Event Viewer background script -----------------------------------
+$EvtScript = {
+    param($sync, [int]$EvtHours=24)
+    $sync.EvtRunning = $true; $sync.EvtComplete = $false; $sync.EvtCancelled = $false
+    $item = $null; while ($sync.EvtQueue.TryDequeue([ref]$item)) { }
+    function Evt-Log { param([string]$Label,[string]$Result,[string]$Level="Info")
+        $sync.EvtQueue.Enqueue(@{ Label=$Label; Result=$Result; L=$Level }) }
+    function Evt-Section { param([string]$Title)
+        $sync.EvtQueue.Enqueue(@{ Label=""; Result=$Title; L="Section" }) }
+
+    $since = (Get-Date).AddHours(-$EvtHours)
+    $totalErrors = 0; $totalWarns = 0
+
+    foreach ($logName in @("System","Application")) {
+        if ($sync.EvtCancelled) { break }
+        $sync.EvtStep = "Reading $logName events..."
+        Evt-Section $logName
+        try {
+            $evts = @(Get-EventLog -LogName $logName -EntryType Error,Warning -After $since -Newest 100 -ErrorAction Stop)
+            $errs = @($evts | Where-Object { $_.EntryType -eq "Error" })
+            $wrns = @($evts | Where-Object { $_.EntryType -eq "Warning" })
+            $totalErrors += $errs.Count; $totalWarns += $wrns.Count
+            if ($evts.Count -eq 0) {
+                Evt-Log "Last ${EvtHours}h" "No errors or warnings" "Pass"
+            } else {
+                Evt-Log "Errors (last ${EvtHours}h)"   "$($errs.Count)" $(if($errs.Count-gt0){"Fail"}else{"Pass"})
+                Evt-Log "Warnings (last ${EvtHours}h)" "$($wrns.Count)" $(if($wrns.Count-gt20){"Warn"}else{"Info"})
+                foreach ($ev in ($errs | Select-Object -First 10)) {
+                    if ($sync.EvtCancelled) { break }
+                    $msg = (($ev.Message -split "`n")[0] -replace '\s+',' ').Trim()
+                    if ($msg.Length -gt 72) { $msg = $msg.Substring(0,69)+"..." }
+                    Evt-Log "$($ev.TimeGenerated.ToString('MM/dd HH:mm'))  $($ev.Source)" $msg "Fail"
+                }
+                foreach ($ev in ($wrns | Select-Object -First 5)) {
+                    if ($sync.EvtCancelled) { break }
+                    $msg = (($ev.Message -split "`n")[0] -replace '\s+',' ').Trim()
+                    if ($msg.Length -gt 72) { $msg = $msg.Substring(0,69)+"..." }
+                    Evt-Log "$($ev.TimeGenerated.ToString('MM/dd HH:mm'))  $($ev.Source)" $msg "Warn"
+                }
+            }
+        } catch { Evt-Log $logName "Error reading event log" "Warn" }
+    }
+
+    $sync.Cards["EvtStatus"] = @{
+        Value  = if($totalErrors-gt0){"$totalErrors errors"}elseif($totalWarns-gt0){"$totalWarns warns"}else{"Clean"}
+        Status = if($totalErrors-gt0){"fail"}elseif($totalWarns-gt20){"warn"}else{"ok"}
+    }
+    $sync.EvtStep = "Complete"; $sync.EvtRunning=$false; $sync.EvtComplete=$true
+}
+
 # ---- Stub Panel Helper -----------------------------------------------------
 function New-StubPanel {
     param([string]$Title,[string]$Sub)
@@ -2877,11 +3177,177 @@ function New-StubPanel {
 
 # ---- Six Section Stub Panels -----------------------------------------------
 $pnlPoE      = New-StubPanel "PoE / NIC Hardware"    "Check PoE power, NIC status and hardware health."
-$pnlServices = New-StubPanel "Pixellot Services"     "Check Pixellot services and application components."
-$pnlDisk     = New-StubPanel "System & Disk Health"  "Check disk space, SMART status and system health."
-$pnlEvents   = New-StubPanel "Event Viewer"          "View recent critical and warning events from Windows."
 $pnlReports  = New-StubPanel "Reports"               "Generate and manage diagnostic reports."
 $pnlSettings = New-StubPanel "Settings"              "Configure tool behavior and preferences."
+
+# ---- Pixellot Services Panel -----------------------------------------------
+$pnlServices = New-Object System.Windows.Forms.Panel
+$pnlServices.Size = New-Object System.Drawing.Size($WideW,$ContentH)
+$pnlServices.Location = New-Object System.Drawing.Point($SideW,$HdrH)
+$pnlServices.BackColor = $ColBg; $pnlServices.Visible = $false; $pnlServices.Anchor = $AnchorTLRB
+$form.Controls.Add($pnlServices)
+$lblSvcTitle = New-Object System.Windows.Forms.Label; $lblSvcTitle.Text = "Pixellot Services"
+$lblSvcTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lblSvcTitle.ForeColor = $ColText
+$lblSvcTitle.Location = New-Object System.Drawing.Point(10,16); $lblSvcTitle.AutoSize = $true
+$pnlServices.Controls.Add($lblSvcTitle)
+$lblSvcSub = New-Object System.Windows.Forms.Label
+$lblSvcSub.Text = "Checks Pixellot application services and key Windows dependencies."
+$lblSvcSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblSvcSub.ForeColor = $ColMuted
+$lblSvcSub.Location = New-Object System.Drawing.Point(10,42); $lblSvcSub.Size = New-Object System.Drawing.Size(762,18)
+$pnlServices.Controls.Add($lblSvcSub)
+$svcCardDefs = @(
+    @{ Key="SvcStatus"; Title="Services"; Sub="Running / total"; X=10; Icon=[char]0xE9F5; W=250 }
+)
+$svcCards = @{}
+foreach ($cd in $svcCardDefs) {
+    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y 68 -Icon $cd.Icon -Sub $cd.Sub -CardW $cd.W -CardH 90
+    $svcCards[$cd.Key] = $c; $pnlServices.Controls.Add($c.Panel)
+}
+$btnSvcRun = New-Object System.Windows.Forms.Button; $btnSvcRun.Text = [char]0x25B6 + "  Check Services"
+$btnSvcRun.Size = New-Object System.Drawing.Size(220,40); $btnSvcRun.Location = New-Object System.Drawing.Point(10,170)
+$btnSvcRun.BackColor = $ColAccent; $btnSvcRun.ForeColor = [System.Drawing.Color]::White
+$btnSvcRun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnSvcRun.FlatAppearance.BorderSize = 0
+$btnSvcRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10)
+$btnSvcRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft; $btnSvcRun.Cursor = [System.Windows.Forms.Cursors]::Hand
+$pnlServices.Controls.Add($btnSvcRun)
+$btnSvcRun.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,220,40)),6))
+$btnSvcCancel = New-Object System.Windows.Forms.Button; $btnSvcCancel.Text = "Cancel"
+$btnSvcCancel.Size = New-Object System.Drawing.Size(100,40); $btnSvcCancel.Location = New-Object System.Drawing.Point(238,170)
+$btnSvcCancel.BackColor = $ColRed; $btnSvcCancel.ForeColor = [System.Drawing.Color]::White
+$btnSvcCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnSvcCancel.FlatAppearance.BorderSize = 0
+$btnSvcCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnSvcCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnSvcCancel.Visible = $false
+$pnlServices.Controls.Add($btnSvcCancel)
+$btnSvcCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
+$lblSvcStatus = New-Object System.Windows.Forms.Label; $lblSvcStatus.Text = ""
+$lblSvcStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblSvcStatus.ForeColor = $ColMuted
+$lblSvcStatus.Location = New-Object System.Drawing.Point(10,218); $lblSvcStatus.Size = New-Object System.Drawing.Size(762,18)
+$pnlServices.Controls.Add($lblSvcStatus)
+$lblSvcLogHdr = New-Object System.Windows.Forms.Label; $lblSvcLogHdr.Text = "Service Status"
+$lblSvcLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblSvcLogHdr.ForeColor = $ColText
+$lblSvcLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblSvcLogHdr.AutoSize = $true
+$pnlServices.Controls.Add($lblSvcLogHdr)
+$rtbSvcLog = New-Object System.Windows.Forms.RichTextBox
+$rtbSvcLog.Size = New-Object System.Drawing.Size(762,422); $rtbSvcLog.Location = New-Object System.Drawing.Point(10,266)
+$rtbSvcLog.BackColor = $ColLogBg; $rtbSvcLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
+$rtbSvcLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbSvcLog.ReadOnly = $true
+$rtbSvcLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$rtbSvcLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical; $rtbSvcLog.Anchor = $AnchorTLRB
+$rtbSvcLog.Text = "Click 'Check Services' to begin."
+$pnlServices.Controls.Add($rtbSvcLog)
+$script:svcRunspace = $null; $script:svcSpinIdx = 0
+
+# ---- System & Disk Health Panel --------------------------------------------
+$pnlDisk = New-Object System.Windows.Forms.Panel
+$pnlDisk.Size = New-Object System.Drawing.Size($WideW,$ContentH)
+$pnlDisk.Location = New-Object System.Drawing.Point($SideW,$HdrH)
+$pnlDisk.BackColor = $ColBg; $pnlDisk.Visible = $false; $pnlDisk.Anchor = $AnchorTLRB
+$form.Controls.Add($pnlDisk)
+$lblDiskTitle = New-Object System.Windows.Forms.Label; $lblDiskTitle.Text = "System & Disk Health"
+$lblDiskTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lblDiskTitle.ForeColor = $ColText
+$lblDiskTitle.Location = New-Object System.Drawing.Point(10,16); $lblDiskTitle.AutoSize = $true
+$pnlDisk.Controls.Add($lblDiskTitle)
+$lblDiskSub = New-Object System.Windows.Forms.Label
+$lblDiskSub.Text = "Checks disk space, memory usage, system uptime, and Pixellot data folder sizes."
+$lblDiskSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblDiskSub.ForeColor = $ColMuted
+$lblDiskSub.Location = New-Object System.Drawing.Point(10,42); $lblDiskSub.Size = New-Object System.Drawing.Size(762,18)
+$pnlDisk.Controls.Add($lblDiskSub)
+$diskCardDefs = @(
+    @{ Key="DiskStatus"; Title="Disk Space";   Sub="C: free space";   X=10;  Icon=[char]0xEDA2; W=250 }
+    @{ Key="MemStatus";  Title="Memory";       Sub="RAM utilization"; X=270; Icon=[char]0xE950; W=250 }
+)
+$diskCards = @{}
+foreach ($cd in $diskCardDefs) {
+    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y 68 -Icon $cd.Icon -Sub $cd.Sub -CardW $cd.W -CardH 90
+    $diskCards[$cd.Key] = $c; $pnlDisk.Controls.Add($c.Panel)
+}
+$btnDiskRun = New-Object System.Windows.Forms.Button; $btnDiskRun.Text = [char]0x25B6 + "  Check System Health"
+$btnDiskRun.Size = New-Object System.Drawing.Size(240,40); $btnDiskRun.Location = New-Object System.Drawing.Point(10,170)
+$btnDiskRun.BackColor = $ColAccent; $btnDiskRun.ForeColor = [System.Drawing.Color]::White
+$btnDiskRun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnDiskRun.FlatAppearance.BorderSize = 0
+$btnDiskRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10)
+$btnDiskRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft; $btnDiskRun.Cursor = [System.Windows.Forms.Cursors]::Hand
+$pnlDisk.Controls.Add($btnDiskRun)
+$btnDiskRun.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,240,40)),6))
+$btnDiskCancel = New-Object System.Windows.Forms.Button; $btnDiskCancel.Text = "Cancel"
+$btnDiskCancel.Size = New-Object System.Drawing.Size(100,40); $btnDiskCancel.Location = New-Object System.Drawing.Point(258,170)
+$btnDiskCancel.BackColor = $ColRed; $btnDiskCancel.ForeColor = [System.Drawing.Color]::White
+$btnDiskCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnDiskCancel.FlatAppearance.BorderSize = 0
+$btnDiskCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnDiskCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnDiskCancel.Visible = $false
+$pnlDisk.Controls.Add($btnDiskCancel)
+$btnDiskCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
+$lblDiskStatus = New-Object System.Windows.Forms.Label; $lblDiskStatus.Text = ""
+$lblDiskStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblDiskStatus.ForeColor = $ColMuted
+$lblDiskStatus.Location = New-Object System.Drawing.Point(10,218); $lblDiskStatus.Size = New-Object System.Drawing.Size(762,18)
+$pnlDisk.Controls.Add($lblDiskStatus)
+$lblDiskLogHdr = New-Object System.Windows.Forms.Label; $lblDiskLogHdr.Text = "Health Report"
+$lblDiskLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblDiskLogHdr.ForeColor = $ColText
+$lblDiskLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblDiskLogHdr.AutoSize = $true
+$pnlDisk.Controls.Add($lblDiskLogHdr)
+$rtbDiskLog = New-Object System.Windows.Forms.RichTextBox
+$rtbDiskLog.Size = New-Object System.Drawing.Size(762,422); $rtbDiskLog.Location = New-Object System.Drawing.Point(10,266)
+$rtbDiskLog.BackColor = $ColLogBg; $rtbDiskLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
+$rtbDiskLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbDiskLog.ReadOnly = $true
+$rtbDiskLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$rtbDiskLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical; $rtbDiskLog.Anchor = $AnchorTLRB
+$rtbDiskLog.Text = "Click 'Check System Health' to begin."
+$pnlDisk.Controls.Add($rtbDiskLog)
+$script:diskRunspace = $null; $script:diskSpinIdx = 0
+
+# ---- Event Viewer Panel ----------------------------------------------------
+$pnlEvents = New-Object System.Windows.Forms.Panel
+$pnlEvents.Size = New-Object System.Drawing.Size($WideW,$ContentH)
+$pnlEvents.Location = New-Object System.Drawing.Point($SideW,$HdrH)
+$pnlEvents.BackColor = $ColBg; $pnlEvents.Visible = $false; $pnlEvents.Anchor = $AnchorTLRB
+$form.Controls.Add($pnlEvents)
+$lblEvtTitle = New-Object System.Windows.Forms.Label; $lblEvtTitle.Text = "Event Viewer"
+$lblEvtTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lblEvtTitle.ForeColor = $ColText
+$lblEvtTitle.Location = New-Object System.Drawing.Point(10,16); $lblEvtTitle.AutoSize = $true
+$pnlEvents.Controls.Add($lblEvtTitle)
+$lblEvtSub = New-Object System.Windows.Forms.Label
+$lblEvtSub.Text = "Recent errors and warnings from the System and Application Windows event logs (last 24 hours)."
+$lblEvtSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblEvtSub.ForeColor = $ColMuted
+$lblEvtSub.Location = New-Object System.Drawing.Point(10,42); $lblEvtSub.Size = New-Object System.Drawing.Size(762,18)
+$pnlEvents.Controls.Add($lblEvtSub)
+$evtCardDefs = @(
+    @{ Key="EvtStatus"; Title="Event Status"; Sub="Errors / warnings (24h)"; X=10; Icon=[char]0xE7BA; W=280 }
+)
+$evtCards = @{}
+foreach ($cd in $evtCardDefs) {
+    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y 68 -Icon $cd.Icon -Sub $cd.Sub -CardW $cd.W -CardH 90
+    $evtCards[$cd.Key] = $c; $pnlEvents.Controls.Add($c.Panel)
+}
+$btnEvtRun = New-Object System.Windows.Forms.Button; $btnEvtRun.Text = [char]0x25B6 + "  Check Event Log"
+$btnEvtRun.Size = New-Object System.Drawing.Size(220,40); $btnEvtRun.Location = New-Object System.Drawing.Point(10,170)
+$btnEvtRun.BackColor = $ColAccent; $btnEvtRun.ForeColor = [System.Drawing.Color]::White
+$btnEvtRun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnEvtRun.FlatAppearance.BorderSize = 0
+$btnEvtRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10)
+$btnEvtRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft; $btnEvtRun.Cursor = [System.Windows.Forms.Cursors]::Hand
+$pnlEvents.Controls.Add($btnEvtRun)
+$btnEvtRun.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,220,40)),6))
+$btnEvtCancel = New-Object System.Windows.Forms.Button; $btnEvtCancel.Text = "Cancel"
+$btnEvtCancel.Size = New-Object System.Drawing.Size(100,40); $btnEvtCancel.Location = New-Object System.Drawing.Point(238,170)
+$btnEvtCancel.BackColor = $ColRed; $btnEvtCancel.ForeColor = [System.Drawing.Color]::White
+$btnEvtCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnEvtCancel.FlatAppearance.BorderSize = 0
+$btnEvtCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnEvtCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnEvtCancel.Visible = $false
+$pnlEvents.Controls.Add($btnEvtCancel)
+$btnEvtCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
+$lblEvtStatus = New-Object System.Windows.Forms.Label; $lblEvtStatus.Text = ""
+$lblEvtStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblEvtStatus.ForeColor = $ColMuted
+$lblEvtStatus.Location = New-Object System.Drawing.Point(10,218); $lblEvtStatus.Size = New-Object System.Drawing.Size(762,18)
+$pnlEvents.Controls.Add($lblEvtStatus)
+$lblEvtLogHdr = New-Object System.Windows.Forms.Label; $lblEvtLogHdr.Text = "Event Log"
+$lblEvtLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblEvtLogHdr.ForeColor = $ColText
+$lblEvtLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblEvtLogHdr.AutoSize = $true
+$pnlEvents.Controls.Add($lblEvtLogHdr)
+$rtbEvtLog = New-Object System.Windows.Forms.RichTextBox
+$rtbEvtLog.Size = New-Object System.Drawing.Size(762,422); $rtbEvtLog.Location = New-Object System.Drawing.Point(10,266)
+$rtbEvtLog.BackColor = $ColLogBg; $rtbEvtLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
+$rtbEvtLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbEvtLog.ReadOnly = $true
+$rtbEvtLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$rtbEvtLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical; $rtbEvtLog.Anchor = $AnchorTLRB
+$rtbEvtLog.Text = "Click 'Check Event Log' to begin."
+$pnlEvents.Controls.Add($rtbEvtLog)
+$script:evtRunspace = $null; $script:evtSpinIdx = 0
 
 # ---- History Panel (embedded in Reports) -----------------------------------
 $pnlHistory = New-Object System.Windows.Forms.Panel
@@ -3151,6 +3617,60 @@ $btnNetCancel.Add_Click({
     $btnNetCancel.Visible = $false
 })
 
+$btnSvcRun.Add_Click({
+    if ($sync.SvcRunning) { return }
+    $sync.SvcCancelled = $false
+    $sync.Cards["SvcStatus"] = @{ Value="--"; Status="neutral" }
+    foreach ($key in $svcCards.Keys) { Update-CardStatus -Card $svcCards[$key] -Value "--" -Status "neutral" }
+    $rtbSvcLog.Clear(); $btnSvcRun.Enabled=$false; $btnSvcRun.Text="  Running..."
+    $btnSvcCancel.Visible=$true; $script:svcSpinIdx=0
+    $lblSvcStatus.ForeColor=$ColAccent; $lblSvcStatus.Text=" |  Starting..."
+    if ($script:svcRunspace) { try { $script:svcRunspace.Close() } catch { } }
+    $script:svcRunspace = [runspacefactory]::CreateRunspace()
+    $script:svcRunspace.ApartmentState="STA"; $script:svcRunspace.ThreadOptions="ReuseThread"; $script:svcRunspace.Open()
+    $ps = [powershell]::Create(); $ps.Runspace=$script:svcRunspace
+    $ps.AddScript($SvcScript) | Out-Null
+    $ps.AddParameters(@{ sync=$sync }) | Out-Null
+    $ps.BeginInvoke() | Out-Null; $svcTimer.Start()
+})
+$btnSvcCancel.Add_Click({ $sync.SvcCancelled=$true; $btnSvcCancel.Visible=$false })
+
+$btnDiskRun.Add_Click({
+    if ($sync.DiskRunning) { return }
+    $sync.DiskCancelled = $false
+    foreach ($key in @("DiskStatus","MemStatus")) { $sync.Cards[$key]=@{Value="--";Status="neutral"} }
+    foreach ($key in $diskCards.Keys) { Update-CardStatus -Card $diskCards[$key] -Value "--" -Status "neutral" }
+    $rtbDiskLog.Clear(); $btnDiskRun.Enabled=$false; $btnDiskRun.Text="  Running..."
+    $btnDiskCancel.Visible=$true; $script:diskSpinIdx=0
+    $lblDiskStatus.ForeColor=$ColAccent; $lblDiskStatus.Text=" |  Starting..."
+    if ($script:diskRunspace) { try { $script:diskRunspace.Close() } catch { } }
+    $script:diskRunspace = [runspacefactory]::CreateRunspace()
+    $script:diskRunspace.ApartmentState="STA"; $script:diskRunspace.ThreadOptions="ReuseThread"; $script:diskRunspace.Open()
+    $ps = [powershell]::Create(); $ps.Runspace=$script:diskRunspace
+    $ps.AddScript($DiskScript) | Out-Null
+    $ps.AddParameters(@{ sync=$sync }) | Out-Null
+    $ps.BeginInvoke() | Out-Null; $diskTimer.Start()
+})
+$btnDiskCancel.Add_Click({ $sync.DiskCancelled=$true; $btnDiskCancel.Visible=$false })
+
+$btnEvtRun.Add_Click({
+    if ($sync.EvtRunning) { return }
+    $sync.EvtCancelled = $false
+    $sync.Cards["EvtStatus"] = @{ Value="--"; Status="neutral" }
+    foreach ($key in $evtCards.Keys) { Update-CardStatus -Card $evtCards[$key] -Value "--" -Status "neutral" }
+    $rtbEvtLog.Clear(); $btnEvtRun.Enabled=$false; $btnEvtRun.Text="  Running..."
+    $btnEvtCancel.Visible=$true; $script:evtSpinIdx=0
+    $lblEvtStatus.ForeColor=$ColAccent; $lblEvtStatus.Text=" |  Starting..."
+    if ($script:evtRunspace) { try { $script:evtRunspace.Close() } catch { } }
+    $script:evtRunspace = [runspacefactory]::CreateRunspace()
+    $script:evtRunspace.ApartmentState="STA"; $script:evtRunspace.ThreadOptions="ReuseThread"; $script:evtRunspace.Open()
+    $ps = [powershell]::Create(); $ps.Runspace=$script:evtRunspace
+    $ps.AddScript($EvtScript) | Out-Null
+    $ps.AddParameters(@{ sync=$sync; EvtHours=24 }) | Out-Null
+    $ps.BeginInvoke() | Out-Null; $evtTimer.Start()
+})
+$btnEvtCancel.Add_Click({ $sync.EvtCancelled=$true; $btnEvtCancel.Visible=$false })
+
 # ---------- Form Load -------------------------------------------------------
 $form.Add_Load({
     $cboNic.Items.Add("All Ports") | Out-Null
@@ -3192,10 +3712,13 @@ $form.Add_Load({
 })
 
 $form.Add_FormClosing({
-    $timer.Stop(); $netTimer.Stop()
-    $sync.Cancelled = $true; $sync.NetCancelled = $true
+    $timer.Stop(); $netTimer.Stop(); $svcTimer.Stop(); $diskTimer.Stop(); $evtTimer.Stop()
+    $sync.Cancelled=$true; $sync.NetCancelled=$true; $sync.SvcCancelled=$true; $sync.DiskCancelled=$true; $sync.EvtCancelled=$true
     try { if ($script:runspace)    { $script:runspace.Close();    $script:runspace.Dispose()    } } catch { }
     try { if ($script:netRunspace) { $script:netRunspace.Close(); $script:netRunspace.Dispose() } } catch { }
+    try { if ($script:svcRunspace) { $script:svcRunspace.Close(); $script:svcRunspace.Dispose() } } catch { }
+    try { if ($script:diskRunspace){ $script:diskRunspace.Close();$script:diskRunspace.Dispose()} } catch { }
+    try { if ($script:evtRunspace) { $script:evtRunspace.Close(); $script:evtRunspace.Dispose() } } catch { }
 })
 
 [System.Windows.Forms.Application]::Run($form)

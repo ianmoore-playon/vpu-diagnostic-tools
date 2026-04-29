@@ -10,6 +10,17 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [2.2.0] - 2026-04-29
+
+### Added
+
+- **Pixellot Services panel** — "Check Services" runs a background diagnostic checking all `Pixellot*`, `pxl*`, `CanopyAgent*`, and `SportzCast*` Windows services plus key system dependencies (W32Time, DNS Client, DHCP, Event Log, Windows Update). Live log with status card showing running/total count.
+- **System & Disk Health panel** — "Check System Health" reports OS caption, uptime, memory utilization, per-drive disk space with pass/warn/fail thresholds, and Pixellot data folder sizes. Two status cards: Disk Space and Memory.
+- **Event Viewer panel** — "Check Event Log" scans the System and Application Windows event logs for errors and warnings in the last 24 hours. Shows error/warning counts and up to 10 most recent errors with timestamp, source, and first line of message. Status card reflects error count.
+- All three panels follow the same pattern as the Network tab: independent Run/Cancel buttons, live spinner, colored RichTextBox log, graceful cancel support, and proper runspace/timer cleanup on form close.
+
+---
+
 ## [2.1.3] - 2026-04-29
 
 ### Fixed
