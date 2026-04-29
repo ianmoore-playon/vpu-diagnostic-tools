@@ -9,7 +9,7 @@ $ScriptVersion = "2.2.0"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    $elevArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden"
+    $elevArgs = "-NoProfile -ExecutionPolicy Bypass"
     if ($PSCommandPath) {
         Start-Process PowerShell -Verb RunAs -ArgumentList "$elevArgs -File `"$PSCommandPath`""
     }
