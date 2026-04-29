@@ -10,7 +10,13 @@ A GUI diagnostic tool for troubleshooting camera connection issues on Pixellot V
 
 ### How to run
 
-Open any PowerShell window on the VPU — no need to right-click "Run as Administrator", the script handles elevation automatically.
+#### Option 1 — Double-click launcher (recommended for field use)
+
+Download [`RunDiagnostic.bat`](RunDiagnostic.bat) to the VPU and double-click it. A UAC prompt will appear — click **Yes**. The GUI opens and the diagnostic begins when you click **Run Full Diagnostic**.
+
+#### Option 2 — PowerShell one-liner
+
+Open any PowerShell window on the VPU and paste:
 
 ```powershell
 irm 'https://raw.githubusercontent.com/ianmoore-playon/pixellot-vpu-tools/refs/heads/main/TestCameraConnectivity.ps1' | iex
