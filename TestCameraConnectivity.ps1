@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.9.3"
+$ScriptVersion      = "1.9.4"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -735,7 +735,7 @@ $DiagScript = {
 
     # ── PoE power monitoring ──────────────────────────────────────────────────
     $sync.CurrentStep = "Reading PoE power..."
-    Add-Section "PoE Power"
+    Add-Section "PoE Status"
     Add-Log "-- PoE Power Monitoring (ADLINK SmartPoE) --" "Cyan"
     Add-Log ""
     if ($PoeDllPath -and ([System.Management.Automation.PSTypeName]'AdlinkPoE').Type) {
@@ -1633,7 +1633,7 @@ $btnCopySummary.Add_Click({
     }
     if ($sync.PoeAvailable) {
         $lines += ""
-        $lines += "POE POWER BUDGET"
+        $lines += "POE STATUS"
         $poeVal  = $sync.Cards['PoEBudget'].Value
         $poeNote = if ($sync.PoeBudgetLow) { " — BELOW 55 W THRESHOLD — check Molex connector on PoE NIC" } else { " — adequate" }
         $lines += "  Total budget: $poeVal$poeNote"
@@ -1679,7 +1679,7 @@ $lnkClear.Add_LinkClicked({
 # ---------- Helper functions ------------------------------------------------
 function Test-HighlightItem {
     param($item)
-    if ($item.L -eq "Section") { return $item.Result -in @("Ports", "Signal Quality") }
+    if ($item.L -eq "Section") { return $item.Result -in @("Ports", "Signal Quality", "PoE Status") }
     return ($item.Label -notmatch '^\d') -and
            ($item.Label -notlike 'App Log*') -and
            ($item.Label -ne 'ARP Table') -and
