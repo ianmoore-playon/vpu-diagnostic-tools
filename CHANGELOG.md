@@ -1,4 +1,4 @@
-# Changelog - VPU Cable & NIC Troubleshooter
+# Changelog - VPU Diagnostic Tools
 
 All notable changes to `TestCameraConnectivity.ps1` are documented here.
 
@@ -7,6 +7,24 @@ Version format: `MAJOR.MINOR.PATCH`
 - **MAJOR** — full rewrites or fundamental architecture changes
 - **MINOR** — new functional flows, significant new features, new tabs or workflows
 - **PATCH** — bug fixes, UI polish, text changes, minor improvements
+
+---
+
+## [2.0.0] - 2026-04-28
+
+### Added
+
+- **Network tab** — New "Network" entry in the sidebar launches a dedicated network connectivity panel. Runs independently from the camera diagnostic with its own Run / Cancel buttons and live log. Tests include:
+  - Basic internet reachability (ICMP ping to 8.8.8.8 / 1.1.1.1)
+  - Per-adapter inventory (IP, gateway, link speed) for all active adapters
+  - Port tests: real TCP connect probes for TCP 53 (DNS), TCP 443, and real protocol probes for UDP 53 (DNS query) and UDP 123 (NTP request); unreliable UDP ports (443/2088/5672) reported as INFO with explanation
+  - Domain DNS tests: async resolution for all Pixellot-required domains (nfhsnetwork.com, pixellot.tv, pixellot.stream, software.pixellot.tv, sportzcast.net, app.singular.live, balena-cloud.com, logmein.com, s3.amazonaws.com, leaf-uploads/downloads.s3.amazonaws.com)
+  - Three summary cards: Internet, Port Tests, Domain Tests
+- **Tool rebrand** — Renamed from "VPU Cable & NIC Troubleshooter" to "VPU Diagnostic Tools" in form title, header bar, and CHANGELOG. Subtitle updated to reflect multi-tab scope.
+
+### Changed
+
+- **Sidebar** — Added "Network" navigation button; all controls below the nav group shifted down to accommodate the fifth nav entry.
 
 ---
 
