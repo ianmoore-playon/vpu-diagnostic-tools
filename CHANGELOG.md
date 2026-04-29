@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [2.1.2] - 2026-04-29
+
+### Fixed
+
+- Hub section cards now navigate correctly to their target panels. The click handler was using `Get-Variable -Scope Script` inside a WinForms event context where that scope lookup doesn't resolve; replaced with direct button capture via `GetNewClosure()`.
+
+---
+
 ## [2.1.1] - 2026-04-28
 
 ### Fixed

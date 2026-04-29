@@ -1,5 +1,5 @@
 # =============================================================================
-#  VPU Diagnostic Tool Suite  v2.1.1
+#  VPU Diagnostic Tool Suite  v2.1.2
 #  GUI diagnostic tool for Pixellot VPU camera NIC and cable issues.
 #
 #  HOW TO RUN (one-liner):
@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "2.1.1"
+$ScriptVersion      = "2.1.2"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -1552,8 +1552,8 @@ foreach ($hc in $hubCardDefs) {
     $hy = $hRowY[$hc.R]
     $cp = New-SectionCard -Title $hc.Title -Desc $hc.Desc -IconCode $hc.Icon -X $hx -Y $hy -W $hCW -H $hCH
     $pnlSysOverview.Controls.Add($cp)
-    $navRef = $hc.Nav
-    $clickBlock = [scriptblock]::Create("(Get-Variable -Name '$navRef' -Scope Script -ErrorAction SilentlyContinue).Value.PerformClick(); if (-not `$?) { (Get-Variable -Name '$navRef').Value.PerformClick() }")
+    $navBtn = Get-Variable -Name $hc.Nav -ValueOnly
+    $clickBlock = { $navBtn.PerformClick() }.GetNewClosure()
     $cp.Add_Click($clickBlock)
     foreach ($ctrl in @($cp.Controls)) { $ctrl.Add_Click($clickBlock) }
 }
