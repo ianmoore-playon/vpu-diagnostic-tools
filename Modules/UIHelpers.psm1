@@ -1,5 +1,5 @@
 # =============================================================================
-#  UIHelpers.psm1  —  WinForms bootstrap, colors, and shared GUI helpers
+#  UIHelpers.psm1  -  WinForms bootstrap, colors, and shared GUI helpers
 # =============================================================================
 
 # ---------- WinForms ---------------------------------------------------------

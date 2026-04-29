@@ -1,5 +1,5 @@
 # =============================================================================
-#  NetworkDiagnostics.psm1  —  Network connectivity panel
+#  NetworkDiagnostics.psm1  -  Network connectivity panel
 # =============================================================================
 
 # ---------- Network connectivity test config ----------------------------------
@@ -10,16 +10,16 @@ $PortTests = @(
     [PSCustomObject]@{ Protocol="TCP"; Port=53;   ProbeHost="8.8.8.8";               Reliable=$true;  Purpose="DNS";                                      Note="" },
     [PSCustomObject]@{ Protocol="UDP"; Port=123;  ProbeHost="0.us.pool.ntp.org";      Reliable=$true;  Purpose="Clock synchronization (NTP)";              Note="Real NTP request. PASS confirms clock sync is working." },
     [PSCustomObject]@{ Protocol="TCP"; Port=443;  ProbeHost="pixellot.tv";            Reliable=$true;  Purpose="System ops, remote mgmt, video stream";    Note="" },
-    [PSCustomObject]@{ Protocol="UDP"; Port=443;  ProbeHost="pixellot.stream";        Reliable=$false; Purpose="Video streaming — Zixi fallback on 443";   Note="Dynamic stream server. See *.pixellot.stream domain test." },
+    [PSCustomObject]@{ Protocol="UDP"; Port=443;  ProbeHost="pixellot.stream";        Reliable=$false; Purpose="Video streaming - Zixi fallback on 443";   Note="Dynamic stream server. See *.pixellot.stream domain test." },
     [PSCustomObject]@{ Protocol="TCP"; Port=1935; ProbeHost="pixellot.stream";        Reliable=$false; Purpose="SportzCast remote management";             Note="Also covers ports 1400-1405. Dynamic stream server." },
-    [PSCustomObject]@{ Protocol="UDP"; Port=2088; ProbeHost="pixellot.stream";        Reliable=$false; Purpose="Video streaming — Zixi primary";           Note="Dynamic stream server. See *.pixellot.stream domain test." },
+    [PSCustomObject]@{ Protocol="UDP"; Port=2088; ProbeHost="pixellot.stream";        Reliable=$false; Purpose="Video streaming - Zixi primary";           Note="Dynamic stream server. See *.pixellot.stream domain test." },
     [PSCustomObject]@{ Protocol="TCP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$false; Purpose="Graphics and watermark generation";        Note="Does not accept raw probes. See *.app.singular.live domain test." },
     [PSCustomObject]@{ Protocol="UDP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$false; Purpose="Graphics and watermark generation";        Note="UDP returns no response on working VPUs. See domain test." }
 )
 
 $DomainTests = @(
     [PSCustomObject]@{ Domain="nfhsnetwork.com";                Wildcard=$true;  Purpose="Scheduling, events, watermark images";                Note="" },
-    [PSCustomObject]@{ Domain="pixellot.stream";                Wildcard=$true;  Purpose="Broadcast stream to Pixellot servers (Zixi)";         Note="Stream-only destination — DNS not expected to resolve." },
+    [PSCustomObject]@{ Domain="pixellot.stream";                Wildcard=$true;  Purpose="Broadcast stream to Pixellot servers (Zixi)";         Note="Stream-only destination - DNS not expected to resolve." },
     [PSCustomObject]@{ Domain="pixellot.tv";                    Wildcard=$true;  Purpose="Pixellot system management and software downloads";   Note="" },
     [PSCustomObject]@{ Domain="software.pixellot.tv";           Wildcard=$true;  Purpose="Software package downloads and updates";              Note="" },
     [PSCustomObject]@{ Domain="sportzcast.net";                 Wildcard=$true;  Purpose="SportzCast remote management and updates";            Note="" },
@@ -112,7 +112,7 @@ $NetScript = {
         } catch { return $null }
     }
 
-    # ── Internet check ────────────────────────────────────────────────────────
+    # -- Internet check --------------------------------------------------------
     $sync.NetStep = "Checking internet connectivity..."
     Net-Section "Connectivity"
     $pingOk = $false
@@ -125,13 +125,13 @@ $NetScript = {
         $sync.NetBasicOk = $true
         Set-NetCard "NetInternet" "Online" "ok"
     } else {
-        Net-Log "Internet" "No response — check uplink adapter" "Fail"
+        Net-Log "Internet" "No response - check uplink adapter" "Fail"
         Set-NetCard "NetInternet" "Offline" "fail"
     }
 
     if ($sync.NetCancelled) { $sync.NetRunning = $false; $sync.NetComplete = $true; return }
 
-    # ── Adapter info ──────────────────────────────────────────────────────────
+    # -- Adapter info ----------------------------------------------------------
     $sync.NetStep = "Reading network adapters..."
     Net-Section "Adapters"
     try {
@@ -142,7 +142,7 @@ $NetScript = {
             $entry = [PSCustomObject]@{
                 Name    = $a.Name; Desc = $a.InterfaceDescription
                 IP      = if ($ip) { $ip } else { "No IP" }
-                Gateway = if ($gw) { $gw } else { "—" }
+                Gateway = if ($gw) { $gw } else { "-" }
                 Speed   = $a.LinkSpeed
             }
             $sync.NetAdapters.Add($entry) | Out-Null
@@ -153,16 +153,16 @@ $NetScript = {
 
     if ($sync.NetCancelled) { $sync.NetRunning = $false; $sync.NetComplete = $true; return }
 
-    # ── Port tests ────────────────────────────────────────────────────────────
+    # -- Port tests ------------------------------------------------------------
     $sync.NetStep = "Testing required ports..."
     Net-Section "Port Tests"
     $portPass = 0; $portFail = 0; $portInfo = 0
     foreach ($pt in $PortTests) {
         if ($sync.NetCancelled) { break }
-        $sync.NetStep = "Testing $($pt.Protocol) $($pt.Port) → $($pt.ProbeHost)..."
+        $sync.NetStep = "Testing $($pt.Protocol) $($pt.Port) ? $($pt.ProbeHost)..."
         $label = "$($pt.Protocol) $($pt.Port)"
         if (-not $pt.Reliable) {
-            Net-Log $label "INFO — $($pt.Purpose)" "Warn"
+            Net-Log $label "INFO - $($pt.Purpose)" "Warn"
             if ($pt.Note) { Net-Log "  " $pt.Note "Gray" }
             $portInfo++; continue
         }
@@ -183,7 +183,7 @@ $NetScript = {
 
     if ($sync.NetCancelled) { $sync.NetRunning = $false; $sync.NetComplete = $true; return }
 
-    # ── Domain tests ──────────────────────────────────────────────────────────
+    # -- Domain tests ----------------------------------------------------------
     $sync.NetStep = "Resolving domains..."
     Net-Section "Domain Tests"
     $domPass = 0; $domFail = 0; $domInfo = 0
@@ -191,7 +191,7 @@ $NetScript = {
         if ($sync.NetCancelled) { break }
         $sync.NetStep = "Resolving $($dt.Domain)..."
         if ($dt.Note -like "*DNS not expected*") {
-            Net-Log $dt.Domain "INFO — stream-only destination (DNS resolution not expected)" "Warn"
+            Net-Log $dt.Domain "INFO - stream-only destination (DNS resolution not expected)" "Warn"
             $domInfo++; continue
         }
         $addrs = Resolve-DomainAsync -Domain $dt.Domain -TimeoutMs $NetTimeoutMs
@@ -225,14 +225,14 @@ $NetScript = {
 
         $dt = Get-Date -Format "yyyy-MM-dd HH:mm"
         $trend = Get-PortTrendSummary
-        $trendSuffix = if ($trend) { "   ·   $trend" } else { "" }
+        $trendSuffix = if ($trend) { "   .   $trend" } else { "" }
         $lblLastRunVal.Text = "$($sync.LastRunLine)   $dt$trendSuffix"
         $btnGoGuide.Visible = ((@($sync.PortResults) | Where-Object { $_.Result -eq "FAIL" }).Count -gt 0)
         Update-GuidePortDropdown
     }
 })
 
-# Network timer — polls $sync.NetQueue every 300ms, updates Network panel UI
+# Network timer - polls $sync.NetQueue every 300ms, updates Network panel UI
 $netTimer = New-Object System.Windows.Forms.Timer
 $netTimer.Interval = 300
 $netTimer.Add_Tick({
@@ -305,7 +305,7 @@ $lblNetTitle.Location = New-Object System.Drawing.Point(10, 16); $lblNetTitle.Au
 $pnlNetwork.Controls.Add($lblNetTitle)
 
 $lblNetSub = New-Object System.Windows.Forms.Label
-$lblNetSub.Text = "Tests ports and domains required by Pixellot — run on the VPU's internet-connected adapter."
+$lblNetSub.Text = "Tests ports and domains required by Pixellot - run on the VPU's internet-connected adapter."
 $lblNetSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblNetSub.ForeColor = $ColMuted
 $lblNetSub.Location = New-Object System.Drawing.Point(10, 42); $lblNetSub.Size = New-Object System.Drawing.Size(762, 18)
 $pnlNetwork.Controls.Add($lblNetSub)
@@ -367,7 +367,7 @@ $pnlNetwork.Controls.Add($rtbNetLog)
 $script:netRunspace = $null
 $script:netSpinIdx  = 0
 
-# All panels registered here — after every panel is created — so Show-Panel
+# All panels registered here - after every panel is created - so Show-Panel
 # can hide them all before making the target visible.
 $script:allNavPanels = @(
     $pnlSysOverview,$center,$pnlGuide,$pnlHistory,$pnlHelp,$pnlNetwork,

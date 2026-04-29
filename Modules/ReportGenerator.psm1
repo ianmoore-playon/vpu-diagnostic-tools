@@ -1,5 +1,5 @@
 # =============================================================================
-#  ReportGenerator.psm1  —  Run History panel
+#  ReportGenerator.psm1  -  Run History panel
 # =============================================================================
 
 function Update-HistoryList {
@@ -32,7 +32,7 @@ function Update-HistoryList {
                 $ports = $failLines | ForEach-Object {
                     if ($_ -match '^\s+(.+?)\s{2,}DEGRADED') { $Matches[1].Trim() }
                 } | Where-Object { $_ }
-                $summary = "$($failLines.Count) fault(s)" + $(if ($ports) { " — " + ($ports -join ", ") } else { "" })
+                $summary = "$($failLines.Count) fault(s)" + $(if ($ports) { " - " + ($ports -join ", ") } else { "" })
             } else {
                 # Fallback for files written before v1.5.0
                 $failLines = @($lines | Where-Object { $_ -match 'DEGRADED' })
@@ -41,7 +41,7 @@ function Update-HistoryList {
                     $ports = $failLines | ForEach-Object {
                         if ($_ -match '^\s+(.+?)\s{2,}DEGRADED') { $Matches[1].Trim() }
                     } | Where-Object { $_ }
-                    $summary = "$($failLines.Count) fault(s)" + $(if ($ports) { " — " + ($ports -join ", ") } else { "" })
+                    $summary = "$($failLines.Count) fault(s)" + $(if ($ports) { " - " + ($ports -join ", ") } else { "" })
                 } elseif (@($lines | Where-Object { $_ -match 'Complete' }).Count -gt 0) {
                     $resultText = "All Clear"; $resultColor = $ColGreen; $summary = "All ports healthy"
                 }
@@ -76,7 +76,7 @@ $lblHistTitle.Location = New-Object System.Drawing.Point(10, 16); $lblHistTitle.
 $pnlHistory.Controls.Add($lblHistTitle)
 
 $lblHistSub = New-Object System.Windows.Forms.Label
-$lblHistSub.Text = "Past diagnostic runs — double-click a row to open the full report."
+$lblHistSub.Text = "Past diagnostic runs - double-click a row to open the full report."
 $lblHistSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblHistSub.ForeColor = $ColMuted
 $lblHistSub.Location = New-Object System.Drawing.Point(10, 42); $lblHistSub.Size = New-Object System.Drawing.Size(540, 18)
 $pnlHistory.Controls.Add($lblHistSub)

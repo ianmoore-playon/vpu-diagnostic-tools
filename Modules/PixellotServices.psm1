@@ -1,5 +1,5 @@
 # =============================================================================
-#  PixellotServices.psm1  —  Pixellot Services panel
+#  PixellotServices.psm1  -  Pixellot Services panel
 # =============================================================================
 
 # ---------- Services background script ---------------------------------------

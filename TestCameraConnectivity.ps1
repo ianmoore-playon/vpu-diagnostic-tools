@@ -1,6 +1,6 @@
 # =============================================================================
 #  VPU Diagnostic Tool Suite  v2.2.0
-#  Launcher — loads modules from .\Modules\ and runs the GUI.
+#  Launcher - loads modules from .\Modules\ and runs the GUI.
 #
 #  HOW TO RUN: double-click RunDiagnostic.bat  (handles elevation automatically)
 # =============================================================================
@@ -432,10 +432,10 @@ $form.Add_Load({
 
     try {
         $osCaption = (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption
-        if ($osCaption) { $lblVpuVal.Text = "$($env:COMPUTERNAME)  ·  $($osCaption -replace 'Microsoft Windows ','Win ')" }
+        if ($osCaption) { $lblVpuVal.Text = "$($env:COMPUTERNAME)  .  $($osCaption -replace 'Microsoft Windows ','Win ')" }
     } catch { }
 
-    # Async update check — compares remote $ScriptVersion to current; shows notice if newer
+    # Async update check - compares remote $ScriptVersion to current; shows notice if newer
     try {
         $wc = New-Object System.Net.WebClient
         Register-ObjectEvent -InputObject $wc -EventName DownloadStringCompleted `

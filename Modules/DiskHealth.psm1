@@ -1,5 +1,5 @@
 # =============================================================================
-#  DiskHealth.psm1  —  System and Disk Health panel
+#  DiskHealth.psm1  -  System and Disk Health panel
 # =============================================================================
 
 # ---------- Disk/System health background script -----------------------------
