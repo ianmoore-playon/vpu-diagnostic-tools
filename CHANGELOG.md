@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.9.3] - 2026-04-28
+
+### Fixed
+
+- **PoE `RuntimeException: Unable to find type [ushort]`** — `[ushort]` and `[short]` are not valid PowerShell type accelerators; replaced with `[uint16]` and `[uint16]` respectively in the PoE diagnostic code. The C# declarations inside `Add-Type` were unaffected.
+
+---
+
 ## [1.9.2] - 2026-04-28
 
 ### Fixed

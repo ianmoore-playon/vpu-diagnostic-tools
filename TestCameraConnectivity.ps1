@@ -19,7 +19,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # ---------- Configuration ----------------------------------------------------
-$ScriptVersion      = "1.9.2"
+$ScriptVersion      = "1.9.3"
 $OutputBaseDir      = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir          = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
@@ -740,7 +740,7 @@ $DiagScript = {
     Add-Log ""
     if ($PoeDllPath -and ([System.Management.Automation.PSTypeName]'AdlinkPoE').Type) {
         try {
-            $cardNum = [ushort]0
+            $cardNum = [uint16]0
             $regRet  = [AdlinkPoE]::SmartPoE_Register_Card($cardNum)
             if ($regRet -eq 0) {
                 $sync.PoeAvailable = $true
@@ -760,7 +760,7 @@ $DiagScript = {
                 for ($port = 0; $port -lt 4; $port++) {
                     if ($sync.Cancelled) { break }
                     $pLabel   = "P$($port + 1)"
-                    $portNum  = [ushort]$port
+                    $portNum  = [uint16]$port
                     $voltage  = [double]0.0; $current = [double]0.0
                     [void][AdlinkPoE]::SmartPoE_Get_PSEPortVoltage($cardNum, $portNum, [ref]$voltage)
                     [void][AdlinkPoE]::SmartPoE_Get_PSEPortCurrent($cardNum, $portNum, [ref]$current)
