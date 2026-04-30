@@ -306,18 +306,18 @@ $pnlTabBar.Controls.Add($sepTab)
 
 $tabW = 142  # 9 tabs × 142px ≈ 1280px
 $navSysOverview = New-TabButton "Home"                 0xE80F  (0 * $tabW)  $tabW
-$navNetConfig   = New-TabButton "Network Config"       0xE701  (1 * $tabW)  $tabW
-$navCamera      = New-TabButton "Camera Connectivity"  0xE722  (2 * $tabW)  $tabW
-$navServices    = New-TabButton "Pixellot Services"    0xE9F5  (3 * $tabW)  $tabW
-$navPoE         = New-TabButton "PoE / NIC Hardware"   0xE7E8  (4 * $tabW)  $tabW
-$navDisk        = New-TabButton "Disk & System Health" 0xEDA2  (5 * $tabW)  $tabW
-$navEvents      = New-TabButton "Event Viewer"         0xE7BA  (6 * $tabW)  $tabW
-$navReports     = New-TabButton "Reports"              0xE7C3  (7 * $tabW)  $tabW
-$navSysInfo     = New-TabButton "System Overview"      0xE9A0  (8 * $tabW)  $tabW
+$navSysInfo     = New-TabButton "System Overview"      0xE9A0  (1 * $tabW)  $tabW
+$navNetConfig   = New-TabButton "Network Config"       0xE701  (2 * $tabW)  $tabW
+$navCamera      = New-TabButton "Camera Connectivity"  0xE722  (3 * $tabW)  $tabW
+$navServices    = New-TabButton "Pixellot Services"    0xE9F5  (4 * $tabW)  $tabW
+$navPoE         = New-TabButton "PoE / NIC Hardware"   0xE7E8  (5 * $tabW)  $tabW
+$navDisk        = New-TabButton "Disk & System Health" 0xEDA2  (6 * $tabW)  $tabW
+$navEvents      = New-TabButton "Event Viewer"         0xE7BA  (7 * $tabW)  $tabW
+$navReports     = New-TabButton "Reports"              0xE7C3  (8 * $tabW)  $tabW
 
 $pnlTabBar.Controls.AddRange(@(
-    $navSysOverview,$navNetConfig,$navCamera,$navServices,
-    $navPoE,$navDisk,$navEvents,$navReports,$navSysInfo
+    $navSysOverview,$navSysInfo,$navNetConfig,$navCamera,$navServices,
+    $navPoE,$navDisk,$navEvents,$navReports
 ))
 
 # Helper for hidden compat buttons (no tab appearance needed)
