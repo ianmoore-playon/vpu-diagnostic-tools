@@ -212,8 +212,8 @@ $script:fdSpinChars     = @('|','/','-','\')
 
 $timerFullDiag.Add_Tick({
     $script:fdSpinIdx = ($script:fdSpinIdx + 1) % 4
-    $spin    = $script:fdSpinChars[$script:fdSpinIdx]
-    $allDone = $true
+    $spin     = $script:fdSpinChars[$script:fdSpinIdx]
+    $allDone  = $true
     $anyIssue = $false
 
     for ($i = 0; $i -lt $fdModuleDefs.Count; $i++) {
@@ -230,22 +230,20 @@ $timerFullDiag.Add_Tick({
                 $row.StatusLbl.ForeColor = $ColAccent
             }
         } else {
-            if ($row.ViewBtn.Enabled) { continue }   # already painted
+            # Always accumulate anyIssue — don't skip via continue
             $worst = Get-WorstCardStatus $mod.CardKeys
-            $dotC  = switch ($worst) { "fail"{$ColRed} "warn"{$ColYellow} "ok"{$ColGreen} default{$ColMuted} }
-            $statT = switch ($worst) { "fail"{"Issues Found"} "warn"{"Warning"} "ok"{"Pass"} default{"Complete"} }
-            $row.Dot.BackColor       = $dotC
-            $row.StatusLbl.Text      = $statT
-            $row.StatusLbl.ForeColor = $dotC
-            $row.ValueLbl.Text       = Get-ModuleSummaryText $mod.CardKeys
-            $row.ViewBtn.Enabled     = $true
             if ($worst -in @("fail","warn")) { $anyIssue = $true }
-        }
 
-        # Re-evaluate anyIssue for already-painted rows
-        if ($complete -and $row.ViewBtn.Enabled) {
-            $w = Get-WorstCardStatus $mod.CardKeys
-            if ($w -in @("fail","warn")) { $anyIssue = $true }
+            # Paint the row only once (first time it completes)
+            if (-not $row.ViewBtn.Enabled) {
+                $dotC  = switch ($worst) { "fail"{$ColRed} "warn"{$ColYellow} "ok"{$ColGreen} default{$ColMuted} }
+                $statT = switch ($worst) { "fail"{"Issues Found"} "warn"{"Warning"} "ok"{"Pass"} default{"Complete"} }
+                $row.Dot.BackColor       = $dotC
+                $row.StatusLbl.Text      = $statT
+                $row.StatusLbl.ForeColor = $dotC
+                $row.ValueLbl.Text       = Get-ModuleSummaryText $mod.CardKeys
+                $row.ViewBtn.Enabled     = $true
+            }
         }
     }
 
@@ -274,6 +272,18 @@ $timerFullDiag.Add_Tick({
 
 $btnFdRerun.Add_Click({ Start-FullDiagnostic })
 
+# PerformClick() silently does nothing when a button's parent panel is hidden
+# (WinForms CanSelect check requires Enabled + all ancestors visible).
+# This helper invokes OnClick directly, bypassing that check.
+function Invoke-ButtonClick {
+    param([System.Windows.Forms.Button]$Btn)
+    $mi = $Btn.GetType().GetMethod(
+        'OnClick',
+        [System.Reflection.BindingFlags]'Instance,NonPublic'
+    )
+    $mi.Invoke($Btn, @([System.EventArgs]::Empty))
+}
+
 # --- Public entry point ------------------------------------------------------
 function Start-FullDiagnostic {
     Show-Panel $pnlFullDiag
@@ -293,14 +303,15 @@ function Start-FullDiagnostic {
         $row.ViewBtn.Enabled     = $false
     }
 
-    # Fire all module diagnostics in parallel
+    # Fire all module diagnostics — use Invoke-ButtonClick to bypass the
+    # WinForms CanSelect check that blocks PerformClick on hidden panels.
     Start-SysInfoCollection
-    $btnNetRun.PerformClick()
-    $btnRun.PerformClick()
-    $btnSvcRun.PerformClick()
-    $btnHwRun.PerformClick()
-    $btnDiskRun.PerformClick()
-    $btnEvtRun.PerformClick()
+    Invoke-ButtonClick $btnNetRun
+    Invoke-ButtonClick $btnRun
+    Invoke-ButtonClick $btnSvcRun
+    Invoke-ButtonClick $btnHwRun
+    Invoke-ButtonClick $btnDiskRun
+    Invoke-ButtonClick $btnEvtRun
 
     $timerFullDiag.Start()
 }

@@ -10,6 +10,16 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.5] - 2026-04-30
+
+### Fixed
+
+- **Full Diagnostic — modules stuck at "Waiting"** — `PerformClick()` silently does nothing when a button's parent panel is not visible (`CanSelect` requires all ancestors to be visible). Added `Invoke-ButtonClick` helper that calls `OnClick` via reflection to bypass this check, so all six module diagnostics now start correctly when triggered from the Home page.
+- **Full Diagnostic — Re-run button never enabled** — a consequence of the above; since no modules were completing, `$allDone` was never `$true`. Fixed by the above.
+- **Full Diagnostic — `anyIssue` evaluated incorrectly** — the `continue` in the already-painted branch of the timer tick skipped the `anyIssue` accumulation for all but the last module to complete, potentially showing an incorrect overall banner. Restructured the loop to always evaluate `anyIssue` for completed modules before deciding whether to repaint.
+
+---
+
 ## [1.0.4] - 2026-04-30
 
 ### Added
@@ -498,6 +508,16 @@ Version format: `MAJOR.MINOR.PATCH`
 ### Changed
 
 - **Camera-level fault note reworded** — clarified to distinguish between physical layer ruled out (NIC 1 Gbps) vs. camera-side issue; added PoE reset guidance before assuming hardware failure
+
+---
+
+## [1.0.5] - 2026-04-30
+
+### Fixed
+
+- **Full Diagnostic — modules stuck at "Waiting"** — `PerformClick()` silently does nothing when a button's parent panel is not visible (`CanSelect` requires all ancestors to be visible). Added `Invoke-ButtonClick` helper that calls `OnClick` via reflection to bypass this check, so all six module diagnostics now start correctly when triggered from the Home page.
+- **Full Diagnostic — Re-run button never enabled** — a consequence of the above; since no modules were completing, `$allDone` was never `$true`. Fixed by the above.
+- **Full Diagnostic — `anyIssue` evaluated incorrectly** — the `continue` in the already-painted branch of the timer tick skipped the `anyIssue` accumulation for all but the last module to complete, potentially showing an incorrect overall banner. Restructured the loop to always evaluate `anyIssue` for completed modules before deciding whether to repaint.
 
 ---
 
