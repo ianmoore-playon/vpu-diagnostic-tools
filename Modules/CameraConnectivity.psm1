@@ -972,7 +972,7 @@ $form.Controls.Add($rightBorder)
 
 $right = New-Object System.Windows.Forms.Panel
 $right.Size      = New-Object System.Drawing.Size($RightW, $ContentH)
-$right.Location  = New-Object System.Drawing.Point($RightX + 1, $ContentY)
+$right.Location  = New-Object System.Drawing.Point(([int]$RightX + 1), $ContentY)
 $right.BackColor = $ColCard
 $right.Anchor    = $AnchorTRB
 $form.Controls.Add($right)

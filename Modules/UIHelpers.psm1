@@ -162,17 +162,17 @@ function New-StatusCard {
     $val = New-Object System.Windows.Forms.Label; $val.Text = "--"
     $val.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 13)
     $val.ForeColor = $ColText; $val.Location = New-Object System.Drawing.Point(10, 26)
-    $val.Size = New-Object System.Drawing.Size($CardW - 20, 28); $val.BackColor = [System.Drawing.Color]::Transparent
+    $val.Size = New-Object System.Drawing.Size(([int]$CardW - 20), 28); $val.BackColor = [System.Drawing.Color]::Transparent
     $panel.Controls.Add($val)
 
     $subLbl = New-Object System.Windows.Forms.Label; $subLbl.Text = $Sub
     $subLbl.Font = New-Object System.Drawing.Font("Segoe UI", 7); $subLbl.ForeColor = $ColMuted
-    $subLbl.Location = New-Object System.Drawing.Point(10, 57); $subLbl.Size = New-Object System.Drawing.Size($CardW - 20, 14)
+    $subLbl.Location = New-Object System.Drawing.Point(10, 57); $subLbl.Size = New-Object System.Drawing.Size(([int]$CardW - 20), 14)
     $subLbl.BackColor = [System.Drawing.Color]::Transparent
     $panel.Controls.Add($subLbl)
 
     $dot = New-Object System.Windows.Forms.Panel; $dot.Size = New-Object System.Drawing.Size(10, 10)
-    $dot.Location = New-Object System.Drawing.Point($CardW - 18, 10); $dot.BackColor = $ColMuted
+    $dot.Location = New-Object System.Drawing.Point(([int]$CardW - 18), 10); $dot.BackColor = $ColMuted
     $dot.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 10, 10)), 5))
     $panel.Controls.Add($dot)
 

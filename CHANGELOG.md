@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.1] - 2026-04-30
+
+### Fixed
+
+- **`op_Subtraction`/`op_Addition` failures in Run.ps1** — Layout constants (`$HdrH`, `$TabH`, `$SbarH`, `$RightX`) and `[int]`-typed function parameters (`$CardW`, `$W`) were coerced to `[System.Object[]]` at runtime in the Build.ps1-combined script on Win 10 LTSC, causing `"[System.Object[]] does not contain op_Subtraction"` errors. Fixed by adding explicit `[int]` cast expressions at every arithmetic use site in `UIHelpers.psm1` (`New-StatusCard`), `SystemOverview.psm1` (`New-SectionCard`), `CameraConnectivity.psm1`, and `TestCameraConnectivity.ps1`. These casts are picked up by `Build.ps1`'s inlining and applied to the generated `Run.ps1`. Note: `.psm1` files cannot be dot-sourced on Windows (they open in Notepad or are blocked by security policy) — `Build.ps1`'s single-file inlining approach is required and is retained.
+
+---
+
 ## [1.0.0] - 2026-04-29
 
 ### Fixed (post-test hotfix)

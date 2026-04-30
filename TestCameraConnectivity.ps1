@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click RunDiagnostic.bat  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.0"
+$ScriptVersion = "1.0.1"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -246,7 +246,7 @@ $pnlBadge.Controls.Add($lblBadge)
 
 $sepHdr = New-Object System.Windows.Forms.Panel
 $sepHdr.Size      = New-Object System.Drawing.Size(1280, 1)
-$sepHdr.Location  = New-Object System.Drawing.Point(0, $HdrH - 1)
+$sepHdr.Location  = New-Object System.Drawing.Point(0, ([int]$HdrH - 1))
 $sepHdr.BackColor = [System.Drawing.Color]::FromArgb(51, 65, 85)
 $sepHdr.Anchor    = $AnchorTLR
 $pnlHeader.Controls.Add($sepHdr)
@@ -254,7 +254,7 @@ $pnlHeader.Controls.Add($sepHdr)
 # ---- Bottom Status Bar -----------------------------------------------------
 $pnlStatusBar = New-Object System.Windows.Forms.Panel
 $pnlStatusBar.Size      = New-Object System.Drawing.Size(1280, $SbarH)
-$pnlStatusBar.Location  = New-Object System.Drawing.Point(0, 760 - $SbarH)
+$pnlStatusBar.Location  = New-Object System.Drawing.Point(0, (760 - [int]$SbarH))
 $pnlStatusBar.BackColor = [System.Drawing.Color]::FromArgb(30, 41, 59)
 $pnlStatusBar.Anchor    = $AnchorBLR
 $form.Controls.Add($pnlStatusBar)
@@ -294,7 +294,7 @@ $form.Controls.Add($pnlTabBar)
 
 $sepTab = New-Object System.Windows.Forms.Panel
 $sepTab.Size      = New-Object System.Drawing.Size(1280, 1)
-$sepTab.Location  = New-Object System.Drawing.Point(0, $TabH - 1)
+$sepTab.Location  = New-Object System.Drawing.Point(0, ([int]$TabH - 1))
 $sepTab.BackColor = [System.Drawing.Color]::FromArgb(51, 65, 85)
 $sepTab.Anchor    = $AnchorTLR
 $pnlTabBar.Controls.Add($sepTab)

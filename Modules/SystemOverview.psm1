@@ -54,7 +54,7 @@ function New-SectionCard {
     $tLbl.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5)
     $tLbl.ForeColor = $ColText
     $tLbl.Location  = New-Object System.Drawing.Point(16, 56)
-    $tLbl.Size      = New-Object System.Drawing.Size($W - 24, 20)
+    $tLbl.Size      = New-Object System.Drawing.Size(([int]$W - 24), 20)
     $tLbl.BackColor = [System.Drawing.Color]::Transparent
     $pnl.Controls.Add($tLbl)
     $dLbl = New-Object System.Windows.Forms.Label
@@ -62,7 +62,7 @@ function New-SectionCard {
     $dLbl.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
     $dLbl.ForeColor = $ColMuted
     $dLbl.Location  = New-Object System.Drawing.Point(16, 80)
-    $dLbl.Size      = New-Object System.Drawing.Size($W - 24, 34)
+    $dLbl.Size      = New-Object System.Drawing.Size(([int]$W - 24), 34)
     $dLbl.BackColor = [System.Drawing.Color]::Transparent
     $pnl.Controls.Add($dLbl)
     return $pnl
