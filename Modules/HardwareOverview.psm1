@@ -97,6 +97,8 @@ $SysInfoScript = {
     try {
         $gpus = @(Get-CimInstance Win32_VideoController -ErrorAction Stop |
                   Where-Object { $_.Name -notlike "*Remote*" -and $_.Name -notlike "*Virtual*" })
+        $discrete = @($gpus | Where-Object { $_.Name -notlike "*Intel*" -and $_.Name -notlike "*Microsoft*" })
+        if ($discrete.Count -gt 0) { $gpus = $discrete }
         if ($gpus.Count -eq 0) { Si-Log "GPU" "None detected" "Warn" }
         foreach ($gpu in $gpus) {
             Si-Log "Name"   $gpu.Name                                                               "Info"
@@ -164,6 +166,7 @@ $pnlSysInfo.BackColor = $ColBg
 $pnlSysInfo.Anchor    = $AnchorTLRB
 $pnlSysInfo.Visible   = $false
 $form.Controls.Add($pnlSysInfo)
+$script:allNavPanels += $pnlSysInfo
 
 $lblSiTitle = New-Object System.Windows.Forms.Label
 $lblSiTitle.Text      = "System Overview"

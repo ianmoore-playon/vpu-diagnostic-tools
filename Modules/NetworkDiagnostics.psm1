@@ -33,8 +33,6 @@ $DomainTests = @(
 
 # ---------- Network diagnostic engine (runs in its own background runspace) --
 $NetScript = {
-    param($sync, $PortTests, $DomainTests, $NetTimeoutMs)
-
     $sync.NetRunning   = $true
     $sync.NetComplete  = $false
     $sync.NetCancelled = $false
@@ -372,15 +370,13 @@ $btnNetRun.Add_Click({
     $script:netRunspace.ApartmentState = "STA"
     $script:netRunspace.ThreadOptions  = "ReuseThread"
     $script:netRunspace.Open()
+    $script:netRunspace.SessionStateProxy.SetVariable("sync",         $sync)
+    $script:netRunspace.SessionStateProxy.SetVariable("PortTests",    $PortTests)
+    $script:netRunspace.SessionStateProxy.SetVariable("DomainTests",  $DomainTests)
+    $script:netRunspace.SessionStateProxy.SetVariable("NetTimeoutMs", $NetTimeoutMs)
     $ps = [powershell]::Create()
     $ps.Runspace = $script:netRunspace
     $ps.AddScript($NetScript) | Out-Null
-    $ps.AddParameters(@{
-        sync         = $sync
-        PortTests    = $PortTests
-        DomainTests  = $DomainTests
-        NetTimeoutMs = $NetTimeoutMs
-    }) | Out-Null
     $ps.BeginInvoke() | Out-Null
     $netTimer.Start()
 })
