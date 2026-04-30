@@ -10,6 +10,19 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.2] - 2026-04-30
+
+### Added
+
+- **System Overview tab** — new `HardwareOverview.psm1` module adds a dedicated "System Overview" tab that collects and displays OS edition/version/build/uptime, system manufacturer/model/BIOS/serial, CPU name/cores/speed, RAM total/available/per-slot, GPU name/VRAM/driver, disk models/sizes/interfaces, and physical NIC names/MACs/speed/status. Data is collected via CIM in a background runspace; a Refresh button re-runs collection. Auto-starts on first tab visit.
+
+### Changed
+
+- **"System Overview" home hub renamed to "Home"** — the landing page tile grid is now labelled "Home" in both the tab bar and the panel title. The "System Overview" hub card now navigates to the new hardware panel instead of looping back.
+- **Tab width reduced from 160 px to 142 px** to accommodate the new 9th tab while staying within the 1280 px window width.
+
+---
+
 ## [1.0.1] - 2026-04-30
 
 ### Fixed

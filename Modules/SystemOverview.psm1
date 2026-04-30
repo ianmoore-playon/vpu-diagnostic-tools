@@ -11,7 +11,7 @@ $pnlSysOverview.Anchor    = $AnchorTLRB
 $form.Controls.Add($pnlSysOverview)
 
 $lblHubTitle = New-Object System.Windows.Forms.Label
-$lblHubTitle.Text      = "VPU Diagnostic Tool Suite"
+$lblHubTitle.Text      = "Home"
 $lblHubTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 15)
 $lblHubTitle.ForeColor = $ColText
 $lblHubTitle.Location  = New-Object System.Drawing.Point(30, 32)
@@ -69,7 +69,7 @@ function New-SectionCard {
 }
 
 $hubCardDefs = @(
-    @{Nav="navSysOverview"; Title="System Overview";       Desc="Hardware and OS information";        Icon=0xE80F; R=0;C=0}
+    @{Nav="navSysInfo";     Title="System Overview";       Desc="Hardware and OS information";        Icon=0xE80F; R=0;C=0}
     @{Nav="navNetConfig";   Title="Network Configuration"; Desc="IP, DNS, firewall and connectivity"; Icon=0xE701;R=0;C=1}
     @{Nav="navCamera";      Title="Camera Connectivity";   Desc="Cameras, NICs and link status";      Icon=0xE722;R=0;C=2}
     @{Nav="navServices";    Title="Pixellot Services";     Desc="Services status and logs";            Icon=0xE9F5;R=0;C=3}
@@ -81,7 +81,7 @@ $hubCardDefs = @(
 $hCW = 234; $hCH = 128; $hGap = 10
 $hRowY = @(106, 248)
 $hubNavLookup = @{
-    navSysOverview = $navSysOverview
+    navSysInfo     = $navSysInfo
     navNetConfig   = $navNetConfig
     navCamera      = $navCamera
     navPoE         = $navPoE

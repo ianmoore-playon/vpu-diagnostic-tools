@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click RunDiagnostic.bat  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.1"
+$ScriptVersion = "1.0.2"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -135,6 +135,11 @@ $sync = [hashtable]::Synchronized(@{
     HwCancelled     = $false
     HwStep          = "Ready"
     HwQueue         = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    SysInfoRunning   = $false
+    SysInfoComplete  = $false
+    SysInfoCancelled = $false
+    SysInfoStep      = "Ready"
+    SysInfoQueue     = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
     PoePortData     = [System.Collections.ArrayList]::new()
     PoeConsumed     = 0.0
     PoeTotal        = 0.0
@@ -299,8 +304,8 @@ $sepTab.BackColor = [System.Drawing.Color]::FromArgb(51, 65, 85)
 $sepTab.Anchor    = $AnchorTLR
 $pnlTabBar.Controls.Add($sepTab)
 
-$tabW = 160  # 8 tabs × 160px = 1280px
-$navSysOverview = New-TabButton "System Overview"      0xE80F  (0 * $tabW)  $tabW
+$tabW = 142  # 9 tabs × 142px ≈ 1280px
+$navSysOverview = New-TabButton "Home"                 0xE80F  (0 * $tabW)  $tabW
 $navNetConfig   = New-TabButton "Network Config"       0xE701  (1 * $tabW)  $tabW
 $navCamera      = New-TabButton "Camera Connectivity"  0xE722  (2 * $tabW)  $tabW
 $navServices    = New-TabButton "Pixellot Services"    0xE9F5  (3 * $tabW)  $tabW
@@ -308,10 +313,11 @@ $navPoE         = New-TabButton "PoE / NIC Hardware"   0xE7E8  (4 * $tabW)  $tab
 $navDisk        = New-TabButton "Disk & System Health" 0xEDA2  (5 * $tabW)  $tabW
 $navEvents      = New-TabButton "Event Viewer"         0xE7BA  (6 * $tabW)  $tabW
 $navReports     = New-TabButton "Reports"              0xE7C3  (7 * $tabW)  $tabW
+$navSysInfo     = New-TabButton "System Overview"      0xE9A0  (8 * $tabW)  $tabW
 
 $pnlTabBar.Controls.AddRange(@(
     $navSysOverview,$navNetConfig,$navCamera,$navServices,
-    $navPoE,$navDisk,$navEvents,$navReports
+    $navPoE,$navDisk,$navEvents,$navReports,$navSysInfo
 ))
 
 # Helper for hidden compat buttons (no tab appearance needed)
@@ -369,17 +375,19 @@ $form.Controls.AddRange(@($lblVpuVal, $pnlSideDot, $lblSideStatus))
 . "$ModulesDir\PixellotServices.psm1"
 . "$ModulesDir\DiskHealth.psm1"
 . "$ModulesDir\EventViewer.psm1"
+. "$ModulesDir\HardwareOverview.psm1"
 $pnlReports  = New-StubPanel "Reports"  "Generate and manage diagnostic reports."
 $pnlSettings = New-StubPanel "Settings" "Configure tool behavior and preferences."
 
 # ---------- Nav panel registry (must be after all panels created) ------------
 $script:allNavPanels = @(
     $pnlSysOverview,$center,$pnlGuide,$pnlHistory,$pnlHelp,$pnlNetwork,
-    $pnlPoE,$pnlServices,$pnlDisk,$pnlEvents,$pnlReports,$pnlSettings
+    $pnlPoE,$pnlServices,$pnlDisk,$pnlEvents,$pnlReports,$pnlSettings,$pnlSysInfo
 )
 
 # ---------- Nav click handlers -----------------------------------------------
 $navSysOverview.Add_Click({ Show-Panel $pnlSysOverview; Set-ActiveNav $navSysOverview })
+$navSysInfo.Add_Click({     Show-Panel $pnlSysInfo;     Set-ActiveNav $navSysInfo })
 $navNetConfig.Add_Click({   Show-Panel $pnlNetwork;     Set-ActiveNav $navNetConfig })
 $navCamera.Add_Click({      Show-Panel $center $true;   Set-ActiveNav $navCamera; Show-OverviewSteps })
 $navPoE.Add_Click({         Show-Panel $pnlPoE;         Set-ActiveNav $navPoE })
@@ -435,14 +443,15 @@ $form.Add_Load({
 })
 
 $form.Add_FormClosing({
-    $timer.Stop(); $netTimer.Stop(); $svcTimer.Stop(); $diskTimer.Stop(); $evtTimer.Stop(); $hwTimer.Stop()
-    $sync.Cancelled=$true; $sync.NetCancelled=$true; $sync.SvcCancelled=$true; $sync.DiskCancelled=$true; $sync.EvtCancelled=$true; $sync.HwCancelled=$true
+    $timer.Stop(); $netTimer.Stop(); $svcTimer.Stop(); $diskTimer.Stop(); $evtTimer.Stop(); $hwTimer.Stop(); $sysInfoTimer.Stop()
+    $sync.Cancelled=$true; $sync.NetCancelled=$true; $sync.SvcCancelled=$true; $sync.DiskCancelled=$true; $sync.EvtCancelled=$true; $sync.HwCancelled=$true; $sync.SysInfoCancelled=$true
     try { if ($script:runspace)    { $script:runspace.Close();    $script:runspace.Dispose()    } } catch { }
     try { if ($script:netRunspace) { $script:netRunspace.Close(); $script:netRunspace.Dispose() } } catch { }
     try { if ($script:svcRunspace) { $script:svcRunspace.Close(); $script:svcRunspace.Dispose() } } catch { }
     try { if ($script:diskRunspace){ $script:diskRunspace.Close();$script:diskRunspace.Dispose()} } catch { }
     try { if ($script:evtRunspace) { $script:evtRunspace.Close(); $script:evtRunspace.Dispose() } } catch { }
-    try { if ($script:hwRunspace)  { $script:hwRunspace.Close();  $script:hwRunspace.Dispose()  } } catch { }
+    try { if ($script:hwRunspace)      { $script:hwRunspace.Close();      $script:hwRunspace.Dispose()      } } catch { }
+    try { if ($script:sysInfoRunspace) { $script:sysInfoRunspace.Close(); $script:sysInfoRunspace.Dispose() } } catch { }
 })
 
 [System.Windows.Forms.Application]::Run($form)

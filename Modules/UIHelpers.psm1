@@ -224,7 +224,7 @@ function New-StubPanel {
 
 function Set-ActiveNav {
     param($Active)
-    $tabNavs = @($navSysOverview,$navNetConfig,$navCamera,$navPoE,$navServices,$navDisk,$navEvents,$navReports)
+    $tabNavs = @($navSysOverview,$navNetConfig,$navCamera,$navPoE,$navServices,$navDisk,$navEvents,$navReports,$navSysInfo)
     foreach ($nb in $tabNavs) {
         $nb.BackColor = $ColSidebar
         if ($nb.Tag -ne $null) { $nb.Tag.Active = $false }
