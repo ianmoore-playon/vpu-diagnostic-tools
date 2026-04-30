@@ -123,7 +123,7 @@ $pnlDisk.Controls.Add($lblDiskTitle)
 $lblDiskSub = New-Object System.Windows.Forms.Label
 $lblDiskSub.Text = "Checks disk space, memory usage, system uptime, and Pixellot data folder sizes."
 $lblDiskSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblDiskSub.ForeColor = $ColMuted
-$lblDiskSub.Location = New-Object System.Drawing.Point(10,42); $lblDiskSub.Size = New-Object System.Drawing.Size(762,18)
+$lblDiskSub.Location = New-Object System.Drawing.Point(10,42); $lblDiskSub.Size = New-Object System.Drawing.Size(1240,18)
 $pnlDisk.Controls.Add($lblDiskSub)
 $diskCardDefs = @(
     @{ Key="DiskStatus"; Title="Disk Space";   Sub="C: free space";   X=10;  Icon=[char]0xEDA2; W=250 }
@@ -151,14 +151,14 @@ $pnlDisk.Controls.Add($btnDiskCancel)
 $btnDiskCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
 $lblDiskStatus = New-Object System.Windows.Forms.Label; $lblDiskStatus.Text = ""
 $lblDiskStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblDiskStatus.ForeColor = $ColMuted
-$lblDiskStatus.Location = New-Object System.Drawing.Point(10,218); $lblDiskStatus.Size = New-Object System.Drawing.Size(762,18)
+$lblDiskStatus.Location = New-Object System.Drawing.Point(10,218); $lblDiskStatus.Size = New-Object System.Drawing.Size(1240,18)
 $pnlDisk.Controls.Add($lblDiskStatus)
 $lblDiskLogHdr = New-Object System.Windows.Forms.Label; $lblDiskLogHdr.Text = "Health Report"
 $lblDiskLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblDiskLogHdr.ForeColor = $ColText
 $lblDiskLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblDiskLogHdr.AutoSize = $true
 $pnlDisk.Controls.Add($lblDiskLogHdr)
 $rtbDiskLog = New-Object System.Windows.Forms.RichTextBox
-$rtbDiskLog.Size = New-Object System.Drawing.Size(762,422); $rtbDiskLog.Location = New-Object System.Drawing.Point(10,266)
+$rtbDiskLog.Size = New-Object System.Drawing.Size(1240,336); $rtbDiskLog.Location = New-Object System.Drawing.Point(10,266)
 $rtbDiskLog.BackColor = $ColLogBg; $rtbDiskLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
 $rtbDiskLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbDiskLog.ReadOnly = $true
 $rtbDiskLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None

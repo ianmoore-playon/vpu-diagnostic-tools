@@ -162,13 +162,13 @@ $pnlPoE.Controls.Add($lblHwTitle)
 $lblHwSub = New-Object System.Windows.Forms.Label
 $lblHwSub.Text = "GPU model, peripheral connections, NIC link uptime, and PoE power status."
 $lblHwSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblHwSub.ForeColor = $ColMuted
-$lblHwSub.Location = New-Object System.Drawing.Point(10,42); $lblHwSub.Size = New-Object System.Drawing.Size(762,18)
+$lblHwSub.Location = New-Object System.Drawing.Point(10,42); $lblHwSub.Size = New-Object System.Drawing.Size(1240,18)
 $pnlPoE.Controls.Add($lblHwSub)
 
 $hwCardDefs = @(
-    @{ Key="HwGpu";     Title="GPU";     Sub="Graphics adapter";  X=10;  Icon=[char]0xE7F4; W=340 }
-    @{ Key="HwMonitor"; Title="Monitor"; Sub="Display connected";  X=360; Icon=[char]0xE7F4; W=340 }
-    @{ Key="HwMmk";     Title="MMK";     Sub="Mouse & keyboard";   X=710; Icon=[char]0xE7C8; W=340 }
+    @{ Key="HwGpu";     Title="GPU";     Sub="Graphics adapter";  X=10;  Icon=[char]0xE7F4; W=400 }
+    @{ Key="HwMonitor"; Title="Monitor"; Sub="Display connected";  X=420; Icon=[char]0xE7F4; W=400 }
+    @{ Key="HwMmk";     Title="MMK";     Sub="Mouse & keyboard";   X=830; Icon=[char]0xE7C8; W=400 }
 )
 $hwCards = @{}
 foreach ($cd in $hwCardDefs) {
@@ -195,7 +195,7 @@ $btnHwCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect(
 
 $lblHwStatus = New-Object System.Windows.Forms.Label; $lblHwStatus.Text = ""
 $lblHwStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblHwStatus.ForeColor = $ColMuted
-$lblHwStatus.Location = New-Object System.Drawing.Point(10,218); $lblHwStatus.Size = New-Object System.Drawing.Size(762,18)
+$lblHwStatus.Location = New-Object System.Drawing.Point(10,218); $lblHwStatus.Size = New-Object System.Drawing.Size(1240,18)
 $pnlPoE.Controls.Add($lblHwStatus)
 
 $lblHwLogHdr = New-Object System.Windows.Forms.Label; $lblHwLogHdr.Text = "Hardware Details"
@@ -204,7 +204,7 @@ $lblHwLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblHwLogHdr.Au
 $pnlPoE.Controls.Add($lblHwLogHdr)
 
 $rtbHwLog = New-Object System.Windows.Forms.RichTextBox
-$rtbHwLog.Size = New-Object System.Drawing.Size(762,422); $rtbHwLog.Location = New-Object System.Drawing.Point(10,266)
+$rtbHwLog.Size = New-Object System.Drawing.Size(1240,336); $rtbHwLog.Location = New-Object System.Drawing.Point(10,266)
 $rtbHwLog.BackColor = $ColLogBg; $rtbHwLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
 $rtbHwLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbHwLog.ReadOnly = $true
 $rtbHwLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None

@@ -852,16 +852,16 @@ $center.Controls.Add($lblCurStat)
 
 $lnkClear = New-Object System.Windows.Forms.LinkLabel; $lnkClear.Text = "Clear"
 $lnkClear.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lnkClear.LinkColor = $ColMuted
-$lnkClear.Location = New-Object System.Drawing.Point(762, 90); $lnkClear.AutoSize = $true
+$lnkClear.Location = New-Object System.Drawing.Point(1220, 90); $lnkClear.AutoSize = $true
 $center.Controls.Add($lnkClear)
 
-# Fixed bottom-row cards: SmartSpeed, Ping, ARP, CHU, PoE  (146px each, 10px gaps ? fills 780px)
+# Fixed bottom-row cards: SmartSpeed, Ping, ARP, CHU, PoE  (244px each, 10px gaps - fills 1260px)
 $cardDefs = @(
-    @{Key="SmartSpeed"; Title="SmartSpeed";    Sub="Intel events (48h)"; X=10;  Y=204; Icon=[char]0xE7BA; W=146}
-    @{Key="PingCHU";    Title="Ping (CHU)";    Sub="Camera head unit";   X=166; Y=204; Icon=[char]0xE701; W=146}
-    @{Key="ArpEntry";   Title="ARP Entry";     Sub="L2 neighbor table";  X=322; Y=204; Icon=[char]0xE9D5; W=146}
-    @{Key="ChuDetect";  Title="CHU Detection"; Sub="Camera response";    X=478; Y=204; Icon=[char]0xE722; W=146}
-    @{Key="PoEBudget";  Title="PoE Budget";    Sub="ADLINK SmartPoE";    X=634; Y=204; Icon=[char]0xE7E8; W=146}
+    @{Key="SmartSpeed"; Title="SmartSpeed";    Sub="Intel events (48h)"; X=10;   Y=204; Icon=[char]0xE7BA; W=244}
+    @{Key="PingCHU";    Title="Ping (CHU)";    Sub="Camera head unit";   X=264;  Y=204; Icon=[char]0xE701; W=244}
+    @{Key="ArpEntry";   Title="ARP Entry";     Sub="L2 neighbor table";  X=518;  Y=204; Icon=[char]0xE9D5; W=244}
+    @{Key="ChuDetect";  Title="CHU Detection"; Sub="Camera response";    X=772;  Y=204; Icon=[char]0xE722; W=244}
+    @{Key="PoEBudget";  Title="PoE Budget";    Sub="ADLINK SmartPoE";    X=1026; Y=204; Icon=[char]0xE7E8; W=244}
 )
 $cards = @{}
 foreach ($cd in $cardDefs) {
@@ -880,7 +880,7 @@ $script:detectedNics = @(Get-NetAdapter | Where-Object {
 
 if ($script:detectedNics.Count -gt 0) {
     $numPorts  = $script:detectedNics.Count
-    $portCardW = [int]((780 - ($numPorts - 1) * 10) / $numPorts)
+    $portCardW = [int]((1260 - ($numPorts - 1) * 10) / $numPorts)
     $portCardX = 10; $portNum = 1
     foreach ($n in $script:detectedNics) {
         $c = New-StatusCard -Title "P$portNum" -Sub $n.Name -X $portCardX -Y 106 -CardW $portCardW -CardH 90
@@ -906,13 +906,13 @@ if ($script:detectedNics.Count -gt 0) {
 }
 
 $pnlSummaryCard = New-Object System.Windows.Forms.Panel
-$pnlSummaryCard.Size = New-Object System.Drawing.Size(780, 56); $pnlSummaryCard.Location = New-Object System.Drawing.Point(10, 304)
+$pnlSummaryCard.Size = New-Object System.Drawing.Size(1260, 56); $pnlSummaryCard.Location = New-Object System.Drawing.Point(10, 304)
 $pnlSummaryCard.BackColor = $ColCard
-$pnlSummaryCard.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 780, 56)), 8))
+$pnlSummaryCard.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 1260, 56)), 8))
 $pnlSummaryCard.Add_Paint({
     $g = $args[1].Graphics
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $rr  = New-Object System.Drawing.Rectangle(0, 0, 779, 55)
+    $rr  = New-Object System.Drawing.Rectangle(0, 0, 1259, 55)
     $bp  = [GfxHelper]::RoundedRect($rr, 8)
     $pen = New-Object System.Drawing.Pen($ColBorder, 1)
     $g.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
@@ -928,7 +928,7 @@ $pnlSummaryCard.Controls.Add($lblLastRun)
 $lblLastRunVal = New-Object System.Windows.Forms.Label; $lblLastRunVal.Text = "No runs yet"
 $lblLastRunVal.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblLastRunVal.ForeColor = $ColMuted
 $lblLastRunVal.BackColor = [System.Drawing.Color]::Transparent
-$lblLastRunVal.Location = New-Object System.Drawing.Point(14, 28); $lblLastRunVal.Size = New-Object System.Drawing.Size(750, 18)
+$lblLastRunVal.Location = New-Object System.Drawing.Point(14, 28); $lblLastRunVal.Size = New-Object System.Drawing.Size(1230, 18)
 $pnlSummaryCard.Controls.Add($lblLastRunVal)
 
 $lblLogHdr = New-Object System.Windows.Forms.Label; $lblLogHdr.Text = "Live Log"
@@ -937,7 +937,7 @@ $lblLogHdr.Location = New-Object System.Drawing.Point(10, 370); $lblLogHdr.AutoS
 $center.Controls.Add($lblLogHdr)
 
 $btnLogHighlights = New-Object System.Windows.Forms.Button; $btnLogHighlights.Text = "Highlights"
-$btnLogHighlights.Size = New-Object System.Drawing.Size(90, 22); $btnLogHighlights.Location = New-Object System.Drawing.Point(585, 369)
+$btnLogHighlights.Size = New-Object System.Drawing.Size(90, 22); $btnLogHighlights.Location = New-Object System.Drawing.Point(1070, 369)
 $btnLogHighlights.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnLogHighlights.FlatAppearance.BorderSize = 0
 $btnLogHighlights.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
 $btnLogHighlights.BackColor = $ColAccent; $btnLogHighlights.ForeColor = [System.Drawing.Color]::White
@@ -946,7 +946,7 @@ $center.Controls.Add($btnLogHighlights)
 $btnLogHighlights.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,90,22)),4))
 
 $btnLogDetailed = New-Object System.Windows.Forms.Button; $btnLogDetailed.Text = "Detailed"
-$btnLogDetailed.Size = New-Object System.Drawing.Size(80, 22); $btnLogDetailed.Location = New-Object System.Drawing.Point(680, 369)
+$btnLogDetailed.Size = New-Object System.Drawing.Size(80, 22); $btnLogDetailed.Location = New-Object System.Drawing.Point(1170, 369)
 $btnLogDetailed.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnLogDetailed.FlatAppearance.BorderSize = 0
 $btnLogDetailed.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
 $btnLogDetailed.BackColor = $ColNavHover; $btnLogDetailed.ForeColor = $ColMuted
@@ -956,11 +956,11 @@ $btnLogDetailed.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRe
 
 $lblStatus = New-Object System.Windows.Forms.Label; $lblStatus.Text = ""
 $lblStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblStatus.ForeColor = $ColMuted
-$lblStatus.Location = New-Object System.Drawing.Point(10, 392); $lblStatus.Size = New-Object System.Drawing.Size(780, 18)
+$lblStatus.Location = New-Object System.Drawing.Point(10, 392); $lblStatus.Size = New-Object System.Drawing.Size(1260, 18)
 $center.Controls.Add($lblStatus)
 
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Size = New-Object System.Drawing.Size(780, 288); $rtbLog.Location = New-Object System.Drawing.Point(10, 412)
+$rtbLog.Size = New-Object System.Drawing.Size(1260, 190); $rtbLog.Location = New-Object System.Drawing.Point(10, 412)
 $rtbLog.BackColor = $ColLogBg; $rtbLog.ForeColor = [System.Drawing.Color]::FromArgb(203, 213, 225)
 $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8); $rtbLog.ReadOnly = $true
 $rtbLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -1561,7 +1561,7 @@ $pnlGuide.Controls.Add($lblGuideTitle)
 $lblGuideSub = New-Object System.Windows.Forms.Label
 $lblGuideSub.Text = "One change at a time - force the fault to reveal what it follows."
 $lblGuideSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblGuideSub.ForeColor = $ColMuted
-$lblGuideSub.Location = New-Object System.Drawing.Point(10, 42); $lblGuideSub.Size = New-Object System.Drawing.Size(562, 18)
+$lblGuideSub.Location = New-Object System.Drawing.Point(10, 42); $lblGuideSub.Size = New-Object System.Drawing.Size(1240, 18)
 $pnlGuide.Controls.Add($lblGuideSub)
 
 # Phase step dots: 4 numbered circles
@@ -1584,24 +1584,24 @@ foreach ($i in 0..3) {
 
 # Blue instruction card
 $pnlGuideInstr = New-Object System.Windows.Forms.Panel
-$pnlGuideInstr.Size = New-Object System.Drawing.Size(780, 108)
+$pnlGuideInstr.Size = New-Object System.Drawing.Size(1260, 108)
 $pnlGuideInstr.Location = New-Object System.Drawing.Point(10, 100)
 $pnlGuideInstr.BackColor = $ColAccent
 $pnlGuide.Controls.Add($pnlGuideInstr)
-$pnlGuideInstr.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,780,108)), 8))
+$pnlGuideInstr.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,1260,108)), 8))
 
 $lblGuidePhase = New-Object System.Windows.Forms.Label
 $lblGuidePhase.Text = "SELECT A PORT TO BEGIN"
 $lblGuidePhase.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
 $lblGuidePhase.ForeColor = [System.Drawing.Color]::FromArgb(187, 222, 251)
-$lblGuidePhase.Location = New-Object System.Drawing.Point(14, 10); $lblGuidePhase.Size = New-Object System.Drawing.Size(544, 18)
+$lblGuidePhase.Location = New-Object System.Drawing.Point(14, 10); $lblGuidePhase.Size = New-Object System.Drawing.Size(1230, 18)
 $pnlGuideInstr.Controls.Add($lblGuidePhase)
 
 $lblGuideInstr = New-Object System.Windows.Forms.Label
 $lblGuideInstr.Text = "Select the NIC port that is showing degraded speed (100 Mbps) and click Start."
 $lblGuideInstr.Font = New-Object System.Drawing.Font("Segoe UI", 9.5)
 $lblGuideInstr.ForeColor = [System.Drawing.Color]::White
-$lblGuideInstr.Location = New-Object System.Drawing.Point(14, 32); $lblGuideInstr.Size = New-Object System.Drawing.Size(544, 66)
+$lblGuideInstr.Location = New-Object System.Drawing.Point(14, 32); $lblGuideInstr.Size = New-Object System.Drawing.Size(1230, 66)
 $pnlGuideInstr.Controls.Add($lblGuideInstr)
 
 # Port selector row (primary: suspect port / test port as applicable)
@@ -1631,25 +1631,25 @@ $pnlGuide.Controls.Add($cboGuidePortB)
 
 # Action button
 $btnGuideAction = New-Object System.Windows.Forms.Button; $btnGuideAction.Text = "  Start Baseline"
-$btnGuideAction.Size = New-Object System.Drawing.Size(780, 40); $btnGuideAction.Location = New-Object System.Drawing.Point(10, 250)
+$btnGuideAction.Size = New-Object System.Drawing.Size(1260, 40); $btnGuideAction.Location = New-Object System.Drawing.Point(10, 250)
 $btnGuideAction.BackColor = $ColAccent; $btnGuideAction.ForeColor = [System.Drawing.Color]::White
 $btnGuideAction.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnGuideAction.FlatAppearance.BorderSize = 0
 $btnGuideAction.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
 $btnGuideAction.Cursor = [System.Windows.Forms.Cursors]::Hand
-$btnGuideAction.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,780,40)), 6))
+$btnGuideAction.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,1260,40)), 6))
 $pnlGuide.Controls.Add($btnGuideAction)
 
 # Result card (hidden until a check completes)
 $pnlGuideResult = New-Object System.Windows.Forms.Panel
-$pnlGuideResult.Size = New-Object System.Drawing.Size(780, 84)
+$pnlGuideResult.Size = New-Object System.Drawing.Size(1260, 84)
 $pnlGuideResult.Location = New-Object System.Drawing.Point(10, 302)
 $pnlGuideResult.BackColor = $ColCard
 $pnlGuideResult.Visible = $false
-$pnlGuideResult.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,780,84)), 8))
+$pnlGuideResult.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,1260,84)), 8))
 $pnlGuideResult.Add_Paint({
     $g = $args[1].Graphics
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $rr = New-Object System.Drawing.Rectangle(0,0,571,83)
+    $rr = New-Object System.Drawing.Rectangle(0,0,1259,83)
     $bp = [GfxHelper]::RoundedRect($rr,8)
     $pen = New-Object System.Drawing.Pen($ColBorder,1)
     $g.DrawPath($pen,$bp); $pen.Dispose(); $bp.Dispose()
@@ -1659,17 +1659,17 @@ $pnlGuide.Controls.Add($pnlGuideResult)
 $lblGuideResultSpeed = New-Object System.Windows.Forms.Label; $lblGuideResultSpeed.Text = ""
 $lblGuideResultSpeed.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
 $lblGuideResultSpeed.ForeColor = $ColText
-$lblGuideResultSpeed.Location = New-Object System.Drawing.Point(14, 10); $lblGuideResultSpeed.Size = New-Object System.Drawing.Size(544, 26)
+$lblGuideResultSpeed.Location = New-Object System.Drawing.Point(14, 10); $lblGuideResultSpeed.Size = New-Object System.Drawing.Size(1230, 26)
 $pnlGuideResult.Controls.Add($lblGuideResultSpeed)
 
 $lblGuideResultVerdict = New-Object System.Windows.Forms.Label; $lblGuideResultVerdict.Text = ""
 $lblGuideResultVerdict.Font = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $lblGuideResultVerdict.ForeColor = $ColMuted
-$lblGuideResultVerdict.Location = New-Object System.Drawing.Point(14, 38); $lblGuideResultVerdict.Size = New-Object System.Drawing.Size(544, 36)
+$lblGuideResultVerdict.Location = New-Object System.Drawing.Point(14, 38); $lblGuideResultVerdict.Size = New-Object System.Drawing.Size(1230, 36)
 $pnlGuideResult.Controls.Add($lblGuideResultVerdict)
 
 # Phase history
-$sep7 = New-Object System.Windows.Forms.Panel; $sep7.Size = New-Object System.Drawing.Size(780,1)
+$sep7 = New-Object System.Windows.Forms.Panel; $sep7.Size = New-Object System.Drawing.Size(1260,1)
 $sep7.Location = New-Object System.Drawing.Point(10, 398); $sep7.BackColor = $ColBorder
 $pnlGuide.Controls.Add($sep7)
 
@@ -1680,11 +1680,11 @@ $pnlGuide.Controls.Add($lblGuideHist)
 
 $lnkGuideReset = New-Object System.Windows.Forms.LinkLabel; $lnkGuideReset.Text = "Start Over"
 $lnkGuideReset.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lnkGuideReset.LinkColor = $ColMuted
-$lnkGuideReset.Location = New-Object System.Drawing.Point(530, 410); $lnkGuideReset.AutoSize = $true
+$lnkGuideReset.Location = New-Object System.Drawing.Point(1190, 410); $lnkGuideReset.AutoSize = $true
 $pnlGuide.Controls.Add($lnkGuideReset)
 
 $rtbGuide = New-Object System.Windows.Forms.RichTextBox
-$rtbGuide.Size = New-Object System.Drawing.Size(780, 220); $rtbGuide.Location = New-Object System.Drawing.Point(10, 430); $rtbGuide.Anchor = $AnchorTLRB
+$rtbGuide.Size = New-Object System.Drawing.Size(1260, 172); $rtbGuide.Location = New-Object System.Drawing.Point(10, 430); $rtbGuide.Anchor = $AnchorTLRB
 $rtbGuide.BackColor = $ColLogBg; $rtbGuide.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
 $rtbGuide.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $rtbGuide.ReadOnly = $true
 $rtbGuide.BorderStyle = [System.Windows.Forms.BorderStyle]::None

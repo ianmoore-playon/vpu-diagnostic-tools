@@ -104,7 +104,7 @@ $pnlServices.Controls.Add($lblSvcTitle)
 $lblSvcSub = New-Object System.Windows.Forms.Label
 $lblSvcSub.Text = "Checks Pixellot application services and key Windows dependencies."
 $lblSvcSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblSvcSub.ForeColor = $ColMuted
-$lblSvcSub.Location = New-Object System.Drawing.Point(10,42); $lblSvcSub.Size = New-Object System.Drawing.Size(762,18)
+$lblSvcSub.Location = New-Object System.Drawing.Point(10,42); $lblSvcSub.Size = New-Object System.Drawing.Size(1240,18)
 $pnlServices.Controls.Add($lblSvcSub)
 $svcCardDefs = @(
     @{ Key="SvcStatus"; Title="Services"; Sub="Running / total"; X=10; Icon=[char]0xE9F5; W=250 }
@@ -131,14 +131,14 @@ $pnlServices.Controls.Add($btnSvcCancel)
 $btnSvcCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
 $lblSvcStatus = New-Object System.Windows.Forms.Label; $lblSvcStatus.Text = ""
 $lblSvcStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblSvcStatus.ForeColor = $ColMuted
-$lblSvcStatus.Location = New-Object System.Drawing.Point(10,218); $lblSvcStatus.Size = New-Object System.Drawing.Size(762,18)
+$lblSvcStatus.Location = New-Object System.Drawing.Point(10,218); $lblSvcStatus.Size = New-Object System.Drawing.Size(1240,18)
 $pnlServices.Controls.Add($lblSvcStatus)
 $lblSvcLogHdr = New-Object System.Windows.Forms.Label; $lblSvcLogHdr.Text = "Service Status"
 $lblSvcLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblSvcLogHdr.ForeColor = $ColText
 $lblSvcLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblSvcLogHdr.AutoSize = $true
 $pnlServices.Controls.Add($lblSvcLogHdr)
 $rtbSvcLog = New-Object System.Windows.Forms.RichTextBox
-$rtbSvcLog.Size = New-Object System.Drawing.Size(762,422); $rtbSvcLog.Location = New-Object System.Drawing.Point(10,266)
+$rtbSvcLog.Size = New-Object System.Drawing.Size(1240,336); $rtbSvcLog.Location = New-Object System.Drawing.Point(10,266)
 $rtbSvcLog.BackColor = $ColLogBg; $rtbSvcLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
 $rtbSvcLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbSvcLog.ReadOnly = $true
 $rtbSvcLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None

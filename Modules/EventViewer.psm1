@@ -105,7 +105,7 @@ $pnlEvents.Controls.Add($lblEvtTitle)
 $lblEvtSub = New-Object System.Windows.Forms.Label
 $lblEvtSub.Text = "Recent errors and warnings from the System and Application Windows event logs (last 24 hours)."
 $lblEvtSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblEvtSub.ForeColor = $ColMuted
-$lblEvtSub.Location = New-Object System.Drawing.Point(10,42); $lblEvtSub.Size = New-Object System.Drawing.Size(762,18)
+$lblEvtSub.Location = New-Object System.Drawing.Point(10,42); $lblEvtSub.Size = New-Object System.Drawing.Size(1240,18)
 $pnlEvents.Controls.Add($lblEvtSub)
 $evtCardDefs = @(
     @{ Key="EvtStatus"; Title="Event Status"; Sub="Errors / warnings (24h)"; X=10; Icon=[char]0xE7BA; W=280 }
@@ -132,14 +132,14 @@ $pnlEvents.Controls.Add($btnEvtCancel)
 $btnEvtCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
 $lblEvtStatus = New-Object System.Windows.Forms.Label; $lblEvtStatus.Text = ""
 $lblEvtStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblEvtStatus.ForeColor = $ColMuted
-$lblEvtStatus.Location = New-Object System.Drawing.Point(10,218); $lblEvtStatus.Size = New-Object System.Drawing.Size(762,18)
+$lblEvtStatus.Location = New-Object System.Drawing.Point(10,218); $lblEvtStatus.Size = New-Object System.Drawing.Size(1240,18)
 $pnlEvents.Controls.Add($lblEvtStatus)
 $lblEvtLogHdr = New-Object System.Windows.Forms.Label; $lblEvtLogHdr.Text = "Event Log"
 $lblEvtLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblEvtLogHdr.ForeColor = $ColText
 $lblEvtLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblEvtLogHdr.AutoSize = $true
 $pnlEvents.Controls.Add($lblEvtLogHdr)
 $rtbEvtLog = New-Object System.Windows.Forms.RichTextBox
-$rtbEvtLog.Size = New-Object System.Drawing.Size(762,422); $rtbEvtLog.Location = New-Object System.Drawing.Point(10,266)
+$rtbEvtLog.Size = New-Object System.Drawing.Size(1240,336); $rtbEvtLog.Location = New-Object System.Drawing.Point(10,266)
 $rtbEvtLog.BackColor = $ColLogBg; $rtbEvtLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
 $rtbEvtLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbEvtLog.ReadOnly = $true
 $rtbEvtLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None

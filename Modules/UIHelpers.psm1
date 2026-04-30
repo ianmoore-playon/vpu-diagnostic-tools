@@ -216,7 +216,7 @@ function New-StubPanel {
     if ($SubText) {
         $lSub = New-Object System.Windows.Forms.Label; $lSub.Text = $SubText
         $lSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lSub.ForeColor = $ColMuted
-        $lSub.Location = New-Object System.Drawing.Point(10, 42); $lSub.Size = New-Object System.Drawing.Size(762, 18)
+        $lSub.Location = New-Object System.Drawing.Point(10, 42); $lSub.Size = New-Object System.Drawing.Size(1240, 18)
         $p.Controls.Add($lSub)
     }
     return $p

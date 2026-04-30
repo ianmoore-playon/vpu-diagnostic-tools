@@ -78,17 +78,17 @@ $pnlHistory.Controls.Add($lblHistTitle)
 $lblHistSub = New-Object System.Windows.Forms.Label
 $lblHistSub.Text = "Past diagnostic runs - double-click a row to open the full report."
 $lblHistSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblHistSub.ForeColor = $ColMuted
-$lblHistSub.Location = New-Object System.Drawing.Point(10, 42); $lblHistSub.Size = New-Object System.Drawing.Size(540, 18)
+$lblHistSub.Location = New-Object System.Drawing.Point(10, 42); $lblHistSub.Size = New-Object System.Drawing.Size(1000, 18)
 $pnlHistory.Controls.Add($lblHistSub)
 
 $lnkHistRefresh = New-Object System.Windows.Forms.LinkLabel; $lnkHistRefresh.Text = "Refresh"
 $lnkHistRefresh.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lnkHistRefresh.LinkColor = $ColMuted
-$lnkHistRefresh.Location = New-Object System.Drawing.Point(544, 44); $lnkHistRefresh.AutoSize = $true
+$lnkHistRefresh.Location = New-Object System.Drawing.Point(1180, 44); $lnkHistRefresh.AutoSize = $true
 $pnlHistory.Controls.Add($lnkHistRefresh)
 $lnkHistRefresh.Add_LinkClicked({ Update-HistoryList })
 
 $lvHistory = New-Object System.Windows.Forms.ListView
-$lvHistory.Size = New-Object System.Drawing.Size(1012, 560)
+$lvHistory.Size = New-Object System.Drawing.Size(1240, 534)
 $lvHistory.Location = New-Object System.Drawing.Point(10, 68); $lvHistory.Anchor = $AnchorTLRB
 $lvHistory.View = [System.Windows.Forms.View]::Details
 $lvHistory.FullRowSelect = $true
@@ -102,7 +102,7 @@ $lvHistory.UseCompatibleStateImageBehavior = $false
 $pnlHistory.Controls.Add($lvHistory)
 $lvHistory.Columns.Add("Date / Time",   142) | Out-Null
 $lvHistory.Columns.Add("Result",         92) | Out-Null
-$lvHistory.Columns.Add("Summary",       700) | Out-Null
+$lvHistory.Columns.Add("Summary",       948) | Out-Null
 $lvHistory.Columns.Add("Size",           58) | Out-Null
 
 $lvHistory.Add_DoubleClick({

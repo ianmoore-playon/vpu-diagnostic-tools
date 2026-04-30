@@ -288,7 +288,7 @@ $pnlNetwork.Controls.Add($lblNetTitle)
 $lblNetSub = New-Object System.Windows.Forms.Label
 $lblNetSub.Text = "Tests ports and domains required by Pixellot - run on the VPU's internet-connected adapter."
 $lblNetSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblNetSub.ForeColor = $ColMuted
-$lblNetSub.Location = New-Object System.Drawing.Point(10, 42); $lblNetSub.Size = New-Object System.Drawing.Size(762, 18)
+$lblNetSub.Location = New-Object System.Drawing.Point(10, 42); $lblNetSub.Size = New-Object System.Drawing.Size(1240, 18)
 $pnlNetwork.Controls.Add($lblNetSub)
 
 # Status cards: Internet / Ports / Domains
@@ -327,7 +327,7 @@ $btnNetCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect
 
 $lblNetStatus = New-Object System.Windows.Forms.Label; $lblNetStatus.Text = ""
 $lblNetStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblNetStatus.ForeColor = $ColMuted
-$lblNetStatus.Location = New-Object System.Drawing.Point(10, 218); $lblNetStatus.Size = New-Object System.Drawing.Size(762, 18)
+$lblNetStatus.Location = New-Object System.Drawing.Point(10, 218); $lblNetStatus.Size = New-Object System.Drawing.Size(1240, 18)
 $pnlNetwork.Controls.Add($lblNetStatus)
 
 $lblNetLogHdr = New-Object System.Windows.Forms.Label; $lblNetLogHdr.Text = "Test Results"
@@ -336,7 +336,7 @@ $lblNetLogHdr.Location = New-Object System.Drawing.Point(10, 242); $lblNetLogHdr
 $pnlNetwork.Controls.Add($lblNetLogHdr)
 
 $rtbNetLog = New-Object System.Windows.Forms.RichTextBox
-$rtbNetLog.Size = New-Object System.Drawing.Size(762, 422); $rtbNetLog.Location = New-Object System.Drawing.Point(10, 266)
+$rtbNetLog.Size = New-Object System.Drawing.Size(1240, 336); $rtbNetLog.Location = New-Object System.Drawing.Point(10, 266)
 $rtbNetLog.BackColor = $ColLogBg; $rtbNetLog.ForeColor = [System.Drawing.Color]::FromArgb(203, 213, 225)
 $rtbNetLog.Font = New-Object System.Drawing.Font("Consolas", 8); $rtbNetLog.ReadOnly = $true
 $rtbNetLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None

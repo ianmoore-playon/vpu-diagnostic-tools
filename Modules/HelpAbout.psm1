@@ -18,7 +18,7 @@ $lblHelpTitle.Location = New-Object System.Drawing.Point(10, 16); $lblHelpTitle.
 $pnlHelp.Controls.Add($lblHelpTitle)
 
 $rtbHelp = New-Object System.Windows.Forms.RichTextBox
-$rtbHelp.Size = New-Object System.Drawing.Size(1012, 600); $rtbHelp.Location = New-Object System.Drawing.Point(24, 46); $rtbHelp.Anchor = $AnchorTLRB
+$rtbHelp.Size = New-Object System.Drawing.Size(1240, 556); $rtbHelp.Location = New-Object System.Drawing.Point(24, 46); $rtbHelp.Anchor = $AnchorTLRB
 $rtbHelp.BackColor = $ColBg; $rtbHelp.ForeColor = $ColText
 $rtbHelp.Font = New-Object System.Drawing.Font("Segoe UI", 9); $rtbHelp.ReadOnly = $true
 $rtbHelp.BorderStyle = [System.Windows.Forms.BorderStyle]::None
