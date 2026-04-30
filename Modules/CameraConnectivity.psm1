@@ -772,7 +772,7 @@ $DiagScript = {
 # ---- Camera Connectivity (was "Center Panel") ------------------------------
 $center = New-Object System.Windows.Forms.Panel
 $center.Size      = New-Object System.Drawing.Size($NarrowW, $ContentH)
-$center.Location  = New-Object System.Drawing.Point($SideW, $HdrH)
+$center.Location  = New-Object System.Drawing.Point($SideW, $ContentY)
 $center.BackColor = $ColBg
 $center.Anchor    = $AnchorTLRB
 $center.Visible   = $false
@@ -971,14 +971,14 @@ $center.Controls.Add($rtbLog)
 # ---- Right Panel (Camera Connectivity only) --------------------------------
 $rightBorder = New-Object System.Windows.Forms.Panel
 $rightBorder.Size      = New-Object System.Drawing.Size(1, $ContentH)
-$rightBorder.Location  = New-Object System.Drawing.Point($RightX, $HdrH)
+$rightBorder.Location  = New-Object System.Drawing.Point($RightX, $ContentY)
 $rightBorder.BackColor = $ColBorder
 $rightBorder.Anchor    = $AnchorTRB
 $form.Controls.Add($rightBorder)
 
 $right = New-Object System.Windows.Forms.Panel
 $right.Size      = New-Object System.Drawing.Size($RightW, $ContentH)
-$right.Location  = New-Object System.Drawing.Point($RightX + 1, $HdrH)
+$right.Location  = New-Object System.Drawing.Point($RightX + 1, $ContentY)
 $right.BackColor = [System.Drawing.Color]::White
 $right.Anchor    = $AnchorTRB
 $form.Controls.Add($right)
@@ -1545,7 +1545,7 @@ function Update-HistoryList {
 # ---- Guide Panel (Fault Isolation Wizard) ----------------------------------
 $pnlGuide = New-Object System.Windows.Forms.Panel
 $pnlGuide.Size     = New-Object System.Drawing.Size($NarrowW, $ContentH)
-$pnlGuide.Location = New-Object System.Drawing.Point($SideW, $HdrH)
+$pnlGuide.Location = New-Object System.Drawing.Point($SideW, $ContentY)
 $pnlGuide.BackColor = $ColBg; $pnlGuide.Visible = $false
 $pnlGuide.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlGuide)

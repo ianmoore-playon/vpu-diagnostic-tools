@@ -63,7 +63,7 @@ function Update-HistoryList {
 # ---- History Panel (embedded in Reports) -----------------------------------
 $pnlHistory = New-Object System.Windows.Forms.Panel
 $pnlHistory.Size     = New-Object System.Drawing.Size($WideW, $ContentH)
-$pnlHistory.Location = New-Object System.Drawing.Point($SideW, $HdrH)
+$pnlHistory.Location = New-Object System.Drawing.Point($SideW, $ContentY)
 $pnlHistory.BackColor = $ColBg; $pnlHistory.Visible = $false
 $pnlHistory.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlHistory)

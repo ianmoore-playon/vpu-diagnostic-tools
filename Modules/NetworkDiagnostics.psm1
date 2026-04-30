@@ -273,7 +273,7 @@ $netTimer.Add_Tick({
 # ---- Network Panel ---------------------------------------------------------
 $pnlNetwork = New-Object System.Windows.Forms.Panel
 $pnlNetwork.Size     = New-Object System.Drawing.Size($WideW, $ContentH)
-$pnlNetwork.Location = New-Object System.Drawing.Point($SideW, $HdrH)
+$pnlNetwork.Location = New-Object System.Drawing.Point($SideW, $ContentY)
 $pnlNetwork.BackColor = $ColBg; $pnlNetwork.Visible = $false
 $pnlNetwork.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlNetwork)

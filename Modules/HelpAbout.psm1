@@ -5,7 +5,7 @@
 # ---- Help Panel (shown via About nav) --------------------------------------
 $pnlHelp = New-Object System.Windows.Forms.Panel
 $pnlHelp.Size     = New-Object System.Drawing.Size($WideW, $ContentH)
-$pnlHelp.Location = New-Object System.Drawing.Point($SideW, $HdrH)
+$pnlHelp.Location = New-Object System.Drawing.Point($SideW, $ContentY)
 $pnlHelp.BackColor = $ColBg; $pnlHelp.Visible = $false
 $pnlHelp.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlHelp)

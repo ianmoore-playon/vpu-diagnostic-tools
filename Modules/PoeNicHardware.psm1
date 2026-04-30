@@ -150,7 +150,7 @@ $hwTimer.Add_Tick({
 # ---- VPU Hardware Panel -----------------------------------------------------
 $pnlPoE = New-Object System.Windows.Forms.Panel
 $pnlPoE.Size = New-Object System.Drawing.Size($WideW,$ContentH)
-$pnlPoE.Location = New-Object System.Drawing.Point($SideW,$HdrH)
+$pnlPoE.Location = New-Object System.Drawing.Point($SideW,$ContentY)
 $pnlPoE.BackColor = $ColBg; $pnlPoE.Visible = $false; $pnlPoE.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlPoE)
 

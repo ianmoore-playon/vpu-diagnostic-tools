@@ -81,6 +81,46 @@ function New-SidebarButton {
     return $btn
 }
 
+function New-TabButton {
+    param([string]$Label, [int]$IconCode, [int]$X, [int]$W = 160)
+    $btn = New-Object System.Windows.Forms.Button
+    $btn.Size      = New-Object System.Drawing.Size($W, $TabH)
+    $btn.Location  = New-Object System.Drawing.Point($X, 0)
+    $btn.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btn.FlatAppearance.BorderSize = 0
+    $btn.FlatAppearance.MouseOverBackColor = $ColNavHover
+    $btn.BackColor = $ColSidebar
+    $btn.Cursor    = [System.Windows.Forms.Cursors]::Hand
+    $btn.Text      = ""
+    $btn.Tag       = [PSCustomObject]@{ Icon = [char]$IconCode; Label = $Label; Active = $false }
+    $btn.Add_Paint({
+        $s = $args[0]; $e = $args[1]
+        $g = $e.Graphics
+        $g.SmoothingMode     = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAlias
+        $t  = $s.Tag
+        $fg = if ($t.Active) { [System.Drawing.Color]::White } else { [System.Drawing.Color]::FromArgb(148,163,184) }
+        $iBrush = New-Object System.Drawing.SolidBrush($fg)
+        $tBrush = New-Object System.Drawing.SolidBrush($fg)
+        $iFont  = New-Object System.Drawing.Font("Segoe MDL2 Assets", 13)
+        $tFont  = New-Object System.Drawing.Font("Segoe UI", 7.5)
+        $iStr   = [string]$t.Icon
+        $tStr   = $t.Label
+        $iSz    = $g.MeasureString($iStr, $iFont)
+        $tSz    = $g.MeasureString($tStr, $tFont)
+        $bW     = [int]$s.Width
+        $g.DrawString($iStr, $iFont, $iBrush, [int](($bW - $iSz.Width) / 2), 5)
+        $g.DrawString($tStr, $tFont, $tBrush, [int](($bW - $tSz.Width) / 2), 27)
+        if ($t.Active) {
+            $acPen = New-Object System.Drawing.Pen($ColAccent, 2)
+            $g.DrawLine($acPen, 8, ([int]$s.Height - 1), ($bW - 8), ([int]$s.Height - 1))
+            $acPen.Dispose()
+        }
+        $iFont.Dispose(); $tFont.Dispose(); $iBrush.Dispose(); $tBrush.Dispose()
+    })
+    return $btn
+}
+
 function New-StatusCard {
     param([string]$Title, [int]$X, [int]$Y, [string]$Icon = "", [string]$Sub = "", [int]$CardW=178, [int]$CardH=78)
     $panel = New-Object System.Windows.Forms.Panel
@@ -161,8 +201,8 @@ function Update-CardStatus {
 function New-StubPanel {
     param([string]$Title, [string]$SubText = "")
     $p = New-Object System.Windows.Forms.Panel
-    $p.Size     = New-Object System.Drawing.Size($WideW, $ContentH)
-    $p.Location = New-Object System.Drawing.Point($SideW, $HdrH)
+    $p.Size     = New-Object System.Drawing.Size($ContentW, $ContentH)
+    $p.Location = New-Object System.Drawing.Point(0, $ContentY)
     $p.BackColor = $ColBg; $p.Visible = $false; $p.Anchor = $AnchorTLRB
     $form.Controls.Add($p)
     $lTitle = New-Object System.Windows.Forms.Label
@@ -180,12 +220,16 @@ function New-StubPanel {
 
 function Set-ActiveNav {
     param($Active)
-    $visibleNavs = @($navSysOverview,$navNetConfig,$navCamera,$navPoE,$navServices,$navDisk,$navEvents,$navReports,$navSettings,$navAbout)
-    foreach ($nb in $visibleNavs) {
-        $nb.BackColor = $ColSidebar; $nb.ForeColor = [System.Drawing.Color]::FromArgb(148,163,184)
+    $tabNavs = @($navSysOverview,$navNetConfig,$navCamera,$navPoE,$navServices,$navDisk,$navEvents,$navReports)
+    foreach ($nb in $tabNavs) {
+        $nb.BackColor = $ColSidebar
+        if ($nb.Tag -ne $null) { $nb.Tag.Active = $false }
+        $nb.Invalidate()
     }
-    if ($Active -and $visibleNavs -contains $Active) {
-        $Active.BackColor = $ColNavActive; $Active.ForeColor = [System.Drawing.Color]::White
+    if ($Active -and $tabNavs -contains $Active) {
+        $Active.BackColor = $ColNavActive
+        $Active.Tag.Active = $true
+        $Active.Invalidate()
     }
 }
 

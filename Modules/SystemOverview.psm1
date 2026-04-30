@@ -5,7 +5,7 @@
 # ---- System Overview Hub ---------------------------------------------------
 $pnlSysOverview = New-Object System.Windows.Forms.Panel
 $pnlSysOverview.Size      = New-Object System.Drawing.Size($WideW, $ContentH)
-$pnlSysOverview.Location  = New-Object System.Drawing.Point($SideW, $HdrH)
+$pnlSysOverview.Location  = New-Object System.Drawing.Point($SideW, $ContentY)
 $pnlSysOverview.BackColor = $ColBg
 $pnlSysOverview.Anchor    = $AnchorTLRB
 $form.Controls.Add($pnlSysOverview)

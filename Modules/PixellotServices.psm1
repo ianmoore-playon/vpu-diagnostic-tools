@@ -94,7 +94,7 @@ $svcTimer.Add_Tick({
 # ---- Pixellot Services Panel -----------------------------------------------
 $pnlServices = New-Object System.Windows.Forms.Panel
 $pnlServices.Size = New-Object System.Drawing.Size($WideW,$ContentH)
-$pnlServices.Location = New-Object System.Drawing.Point($SideW,$HdrH)
+$pnlServices.Location = New-Object System.Drawing.Point($SideW,$ContentY)
 $pnlServices.BackColor = $ColBg; $pnlServices.Visible = $false; $pnlServices.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlServices)
 $lblSvcTitle = New-Object System.Windows.Forms.Label; $lblSvcTitle.Text = "Pixellot Services"

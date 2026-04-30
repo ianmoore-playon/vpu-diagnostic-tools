@@ -95,7 +95,7 @@ $evtTimer.Add_Tick({
 # ---- Event Viewer Panel ----------------------------------------------------
 $pnlEvents = New-Object System.Windows.Forms.Panel
 $pnlEvents.Size = New-Object System.Drawing.Size($WideW,$ContentH)
-$pnlEvents.Location = New-Object System.Drawing.Point($SideW,$HdrH)
+$pnlEvents.Location = New-Object System.Drawing.Point($SideW,$ContentY)
 $pnlEvents.BackColor = $ColBg; $pnlEvents.Visible = $false; $pnlEvents.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlEvents)
 $lblEvtTitle = New-Object System.Windows.Forms.Label; $lblEvtTitle.Text = "Event Viewer"

@@ -113,7 +113,7 @@ $diskTimer.Add_Tick({
 # ---- System & Disk Health Panel --------------------------------------------
 $pnlDisk = New-Object System.Windows.Forms.Panel
 $pnlDisk.Size = New-Object System.Drawing.Size($WideW,$ContentH)
-$pnlDisk.Location = New-Object System.Drawing.Point($SideW,$HdrH)
+$pnlDisk.Location = New-Object System.Drawing.Point($SideW,$ContentY)
 $pnlDisk.BackColor = $ColBg; $pnlDisk.Visible = $false; $pnlDisk.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlDisk)
 $lblDiskTitle = New-Object System.Windows.Forms.Label; $lblDiskTitle.Text = "System & Disk Health"

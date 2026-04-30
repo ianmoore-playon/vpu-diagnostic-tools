@@ -165,14 +165,18 @@ $AnchorTR   = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.F
 
 # Layout constants — typed [int] so arithmetic never fails on malformed environments
 [int]$HdrH     = 68
+[int]$TabH     = 52
 [int]$SbarH    = 28
-[int]$SideW    = 220
-[int]$ContentY = $HdrH
-[int]$ContentH = 760 - $HdrH - $SbarH   # 664
-[int]$NarrowW  = 800                      # camera panel (with right panel)
-[int]$WideW    = 1060                     # all other sections (no right panel)
-[int]$RightX   = $SideW + $NarrowW       # 1020
-[int]$RightW   = 259
+[int]$SideW    = 0                              # no sidebar
+[int]$ContentX = 0
+[int]$ContentY = $HdrH + $TabH                 # 120
+[int]$ContentH = 760 - $HdrH - $TabH - $SbarH  # 612
+[int]$ContentW = 1280                           # full-width content area
+# Legacy aliases — Phase 2 will rewrite panel modules to use ContentW/ContentH directly
+[int]$WideW    = $ContentW
+[int]$NarrowW  = $ContentW
+[int]$RightX   = $ContentW
+[int]$RightW   = 0
 
 # ---- Header ----------------------------------------------------------------
 $pnlHeader = New-Object System.Windows.Forms.Panel
@@ -280,82 +284,63 @@ $lblSbarLastRun.Size      = New-Object System.Drawing.Size(400, $SbarH)
 $lblSbarLastRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 $pnlStatusBar.Controls.Add($lblSbarLastRun)
 
-# ---- Sidebar ---------------------------------------------------------------
-$sidebar = New-Object System.Windows.Forms.Panel
-$sidebar.Size      = New-Object System.Drawing.Size($SideW, $ContentH)
-$sidebar.Location  = New-Object System.Drawing.Point(0, $HdrH)
-$sidebar.BackColor = $ColSidebar
-$sidebar.Anchor    = $AnchorTLB
-$form.Controls.Add($sidebar)
+# ---- Tab navigation bar ----------------------------------------------------
+$pnlTabBar = New-Object System.Windows.Forms.Panel
+$pnlTabBar.Size      = New-Object System.Drawing.Size(1280, $TabH)
+$pnlTabBar.Location  = New-Object System.Drawing.Point(0, $HdrH)
+$pnlTabBar.BackColor = $ColSidebar
+$pnlTabBar.Anchor    = $AnchorTLR
+$form.Controls.Add($pnlTabBar)
 
+$sepTab = New-Object System.Windows.Forms.Panel
+$sepTab.Size      = New-Object System.Drawing.Size(1280, 1)
+$sepTab.Location  = New-Object System.Drawing.Point(0, $TabH - 1)
+$sepTab.BackColor = [System.Drawing.Color]::FromArgb(51, 65, 85)
+$sepTab.Anchor    = $AnchorTLR
+$pnlTabBar.Controls.Add($sepTab)
+
+$tabW = 160  # 8 tabs × 160px = 1280px
+$navSysOverview = New-TabButton "System Overview"      0xE80F  (0 * $tabW)  $tabW
+$navNetConfig   = New-TabButton "Network Config"       0xE701  (1 * $tabW)  $tabW
+$navCamera      = New-TabButton "Camera Connectivity"  0xE722  (2 * $tabW)  $tabW
+$navServices    = New-TabButton "Pixellot Services"    0xE9F5  (3 * $tabW)  $tabW
+$navPoE         = New-TabButton "PoE / NIC Hardware"   0xE7E8  (4 * $tabW)  $tabW
+$navDisk        = New-TabButton "Disk & System Health" 0xEDA2  (5 * $tabW)  $tabW
+$navEvents      = New-TabButton "Event Viewer"         0xE7BA  (6 * $tabW)  $tabW
+$navReports     = New-TabButton "Reports"              0xE7C3  (7 * $tabW)  $tabW
+
+$pnlTabBar.Controls.AddRange(@(
+    $navSysOverview,$navNetConfig,$navCamera,$navServices,
+    $navPoE,$navDisk,$navEvents,$navReports
+))
+
+# Helper for hidden compat buttons (no tab appearance needed)
 function New-NavButton {
     param([string]$Text, [int]$Y, [bool]$Active = $false)
     $btn = New-Object System.Windows.Forms.Button
-    $btn.Size      = New-Object System.Drawing.Size(210, 40)
-    $btn.Location  = New-Object System.Drawing.Point(5, $Y)
-    $btn.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $btn.FlatAppearance.BorderSize = 0
-    $btn.FlatAppearance.MouseOverBackColor = $ColNavHover
-    $btn.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-    $btn.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
-    $btn.Padding   = New-Object System.Windows.Forms.Padding(14, 0, 0, 0)
-    $btn.Cursor    = [System.Windows.Forms.Cursors]::Hand
-    $btn.Text      = $Text
-    if ($Active) { $btn.BackColor = $ColNavActive; $btn.ForeColor = [System.Drawing.Color]::White }
-    else         { $btn.BackColor = $ColSidebar;   $btn.ForeColor = [System.Drawing.Color]::FromArgb(148, 163, 184) }
+    $btn.Size = New-Object System.Drawing.Size(0, 0); $btn.Visible = $false
     return $btn
 }
 
-# Keep New-SidebarButton as alias so existing internal code still works
-function New-SidebarButton { param([string]$Text,[int]$Y,[bool]$Active=$false); return New-NavButton $Text $Y $Active }
+# Hidden buttons kept for internal PerformClick() compatibility
+$navSettings = New-NavButton ""; $navAbout    = New-NavButton ""
+$navOverview = New-NavButton ""; $navTests    = New-NavButton ""
+$navHistory  = New-NavButton ""; $navHelp     = New-NavButton ""
+$form.Controls.AddRange(@($navSettings,$navAbout,$navOverview,$navTests,$navHistory,$navHelp))
 
-$navSysOverview = New-NavButton "  System Overview"      8   $true
-$navNetConfig   = New-NavButton "  Network Configuration" 52
-$navCamera      = New-NavButton "  Camera Connectivity"  96
-$navPoE         = New-NavButton "  VPU Hardware"          140
-$navServices    = New-NavButton "  Pixellot Services"    184
-$navDisk        = New-NavButton "  System & Disk Health" 228
-$navEvents      = New-NavButton "  Event Viewer"         272
-
-$sepNav = New-Object System.Windows.Forms.Panel
-$sepNav.Size      = New-Object System.Drawing.Size(196, 1)
-$sepNav.Location  = New-Object System.Drawing.Point(12, 320)
-$sepNav.BackColor = [System.Drawing.Color]::FromArgb(51, 65, 85)
-
-$navReports  = New-NavButton "  Reports"  328
-$navSettings = New-NavButton "  Settings" 372
-$navAbout    = New-NavButton "  About"    416
-
-# Hidden nav buttons kept for internal PerformClick() compatibility
-$navOverview = New-NavButton "  Camera Connectivity" 96   # alias for $navCamera
-$navTests    = New-NavButton "  Isolate"  0; $navTests.Visible   = $false
-$navHistory  = New-NavButton "  History"  0; $navHistory.Visible = $false
-$navHelp     = New-NavButton "  Help"     0; $navHelp.Visible    = $false
-
-$sidebar.Controls.AddRange(@(
-    $navSysOverview,$navNetConfig,$navCamera,$navPoE,$navServices,$navDisk,$navEvents,
-    $sepNav,$navReports,$navSettings,$navAbout,
-    $navTests,$navHistory,$navHelp
-))
-
-$sepUpdateSep = New-Object System.Windows.Forms.Panel
-$sepUpdateSep.Size      = New-Object System.Drawing.Size(196, 1)
-$sepUpdateSep.Location  = New-Object System.Drawing.Point(12, 468)
-$sepUpdateSep.BackColor = [System.Drawing.Color]::FromArgb(51, 65, 85)
-$sidebar.Controls.Add($sepUpdateSep)
-
+# Update notification — placed in header
 $lblUpdate = New-Object System.Windows.Forms.Label
 $lblUpdate.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)
 $lblUpdate.ForeColor = [System.Drawing.Color]::FromArgb(251, 191, 36)
-$lblUpdate.Location  = New-Object System.Drawing.Point(12, 478)
-$lblUpdate.Size      = New-Object System.Drawing.Size(196, 32)
+$lblUpdate.Location  = New-Object System.Drawing.Point(630, 8)
+$lblUpdate.Size      = New-Object System.Drawing.Size(190, 32)
 $lblUpdate.Visible   = $false
-$sidebar.Controls.Add($lblUpdate)
+$pnlHeader.Controls.Add($lblUpdate)
 
 $btnUpdate = New-Object System.Windows.Forms.Button
 $btnUpdate.Text      = "  Update Now"
-$btnUpdate.Size      = New-Object System.Drawing.Size(196, 28)
-$btnUpdate.Location  = New-Object System.Drawing.Point(12, 514)
+$btnUpdate.Size      = New-Object System.Drawing.Size(116, 24)
+$btnUpdate.Location  = New-Object System.Drawing.Point(828, 16)
 $btnUpdate.BackColor = [System.Drawing.Color]::FromArgb(251, 191, 36)
 $btnUpdate.ForeColor = [System.Drawing.Color]::FromArgb(30, 27, 12)
 $btnUpdate.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -364,33 +349,14 @@ $btnUpdate.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
 $btnUpdate.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 $btnUpdate.Cursor    = [System.Windows.Forms.Cursors]::Hand
 $btnUpdate.Visible   = $false
-$btnUpdate.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 196, 28)), 5))
-$sidebar.Controls.Add($btnUpdate)
+$btnUpdate.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 116, 24)), 5))
+$pnlHeader.Controls.Add($btnUpdate)
 
-# Sidebar VPU model (referenced by timer)
-$lblVpuVal = New-Object System.Windows.Forms.Label
-$lblVpuVal.Text      = "Detecting..."
-$lblVpuVal.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)
-$lblVpuVal.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
-$lblVpuVal.Location  = New-Object System.Drawing.Point(14, 600)
-$lblVpuVal.Size      = New-Object System.Drawing.Size(196, 36)
-$sidebar.Controls.Add($lblVpuVal)
-
-# Sidebar bottom status dot
-$pnlSideDot = New-Object System.Windows.Forms.Panel
-$pnlSideDot.Size      = New-Object System.Drawing.Size(8, 8)
-$pnlSideDot.Location  = New-Object System.Drawing.Point(14, 644)
-$pnlSideDot.BackColor = $ColGreen
-$pnlSideDot.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 8, 8)), 4))
-$sidebar.Controls.Add($pnlSideDot)
-
-$lblSideStatus = New-Object System.Windows.Forms.Label
-$lblSideStatus.Text      = "Ready"
-$lblSideStatus.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
-$lblSideStatus.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
-$lblSideStatus.Location  = New-Object System.Drawing.Point(28, 638)
-$lblSideStatus.Size      = New-Object System.Drawing.Size(170, 18)
-$sidebar.Controls.Add($lblSideStatus)
+# Compat controls referenced by timer code — hidden, off-screen
+$lblVpuVal     = New-Object System.Windows.Forms.Label; $lblVpuVal.Visible     = $false
+$pnlSideDot    = New-Object System.Windows.Forms.Panel; $pnlSideDot.Visible    = $false; $pnlSideDot.BackColor = $ColGreen
+$lblSideStatus = New-Object System.Windows.Forms.Label; $lblSideStatus.Visible = $false
+$form.Controls.AddRange(@($lblVpuVal, $pnlSideDot, $lblSideStatus))
 
 
 # ---------- Load panel modules -----------------------------------------------
