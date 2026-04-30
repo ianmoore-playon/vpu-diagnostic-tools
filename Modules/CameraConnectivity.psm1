@@ -959,14 +959,8 @@ $lblStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblStatus.Fore
 $lblStatus.Location = New-Object System.Drawing.Point(10, 392); $lblStatus.Size = New-Object System.Drawing.Size(1260, 18)
 $center.Controls.Add($lblStatus)
 
-$rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Size = New-Object System.Drawing.Size(1260, 190); $rtbLog.Location = New-Object System.Drawing.Point(10, 412)
-$rtbLog.BackColor = $ColLogBg; $rtbLog.ForeColor = [System.Drawing.Color]::FromArgb(203, 213, 225)
-$rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8); $rtbLog.ReadOnly = $true
-$rtbLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-$rtbLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
-$rtbLog.Anchor = $AnchorTLRB
-$center.Controls.Add($rtbLog)
+$dgvLog = New-LogGrid -X 10 -Y 412 -W 1260 -H 190 -LabelColW 180
+$center.Controls.Add($dgvLog)
 
 # ---- Right Panel (Camera Connectivity only) --------------------------------
 $rightBorder = New-Object System.Windows.Forms.Panel
@@ -1164,7 +1158,7 @@ $btnRun.Add_Click({
     $item2 = $null; while ($sync.SummaryQueue.TryDequeue([ref]$item2)) { }
     $script:allLogItems.Clear()
 
-    $rtbLog.Clear(); $rtbSteps.Text = "Diagnostic running..."; $btnGoGuide.Visible = $false
+    $dgvLog.Rows.Clear(); $rtbSteps.Text = "Diagnostic running..."; $btnGoGuide.Visible = $false
     $btnRun.Enabled = $false; $btnRun.Text = "  Running..."
     $btnRetest.Enabled = $false
     $script:spinIdx = 0; $lblStatus.ForeColor = $ColAccent; $lblStatus.Text = " |  Starting..."
@@ -1219,15 +1213,15 @@ $btnUpdate.Add_Click({
 
 $btnLogHighlights.Add_Click({
     $script:logMode = "Highlights"
-    $btnLogHighlights.BackColor = $ColAccent; $btnLogHighlights.ForeColor = [System.Drawing.Color]::White
-    $btnLogDetailed.BackColor   = [System.Drawing.Color]::FromArgb(226,232,240); $btnLogDetailed.ForeColor = $ColMuted
+    $btnLogHighlights.BackColor = $ColAccent;    $btnLogHighlights.ForeColor = [System.Drawing.Color]::White
+    $btnLogDetailed.BackColor   = $ColNavHover;  $btnLogDetailed.ForeColor   = $ColMuted
     Refresh-Log
 })
 
 $btnLogDetailed.Add_Click({
     $script:logMode = "Detailed"
-    $btnLogDetailed.BackColor   = $ColAccent; $btnLogDetailed.ForeColor = [System.Drawing.Color]::White
-    $btnLogHighlights.BackColor = [System.Drawing.Color]::FromArgb(226,232,240); $btnLogHighlights.ForeColor = $ColMuted
+    $btnLogDetailed.BackColor   = $ColAccent;    $btnLogDetailed.ForeColor   = [System.Drawing.Color]::White
+    $btnLogHighlights.BackColor = $ColNavHover;  $btnLogHighlights.ForeColor = $ColMuted
     Refresh-Log
 })
 
@@ -1313,8 +1307,12 @@ $btnCopySummary.Add_Click({
 })
 
 $btnCopy.Add_Click({
-    if ($rtbLog.TextLength -gt 0) {
-        [System.Windows.Forms.Clipboard]::SetText($rtbLog.Text)
+    if ($dgvLog.Rows.Count -gt 0) {
+        $lines = foreach ($row in $dgvLog.Rows) {
+            $lbl = "$($row.Cells[0].Value)"; $res = "$($row.Cells[1].Value)"
+            if ($lbl) { "{0,-24}{1}" -f $lbl, $res } else { $res }
+        }
+        [System.Windows.Forms.Clipboard]::SetText(($lines -join "`r`n"))
         [System.Windows.Forms.MessageBox]::Show("Log copied to clipboard.", "Copy Log", "OK", "Information") | Out-Null
     }
 })
@@ -1334,7 +1332,7 @@ $btnSave.Add_Click({
 })
 
 $lnkClear.Add_LinkClicked({
-    $rtbLog.Clear()
+    $dgvLog.Rows.Clear()
     $script:allLogItems.Clear()
     foreach ($k in $cards.Keys) { Update-CardStatus -Card $cards[$k] -Value "--" -Status "neutral" }
     $lblLastRunVal.Text = "No runs yet"
@@ -1352,35 +1350,11 @@ function Test-HighlightItem {
 
 function Render-LogItem {
     param($item)
-    if ($item.L -eq "Section") {
-        $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
-        $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 7.5, [System.Drawing.FontStyle]::Bold)
-        $rtbLog.SelectionColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
-        $rtbLog.AppendText("`n  $($item.Result.ToUpper())`n")
-        $rtbLog.ScrollToCaret()
-        return
-    }
-    $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
-    $rtbLog.SelectionColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
-    $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 8)
-    $rtbLog.AppendText(("{0,-24}" -f $item.Label))
-    $rtbLog.SelectionStart = $rtbLog.TextLength; $rtbLog.SelectionLength = 0
-    $col = switch ($item.L) {
-        "Pass" { [System.Drawing.Color]::FromArgb(74, 222, 128) }
-        "Fail" { [System.Drawing.Color]::FromArgb(252, 165, 165) }
-        "Warn" { [System.Drawing.Color]::FromArgb(253, 224, 71)  }
-        "Cyan" { [System.Drawing.Color]::FromArgb(103, 232, 249) }
-        "Gray" { [System.Drawing.Color]::FromArgb(100, 116, 139) }
-        default{ [System.Drawing.Color]::FromArgb(203, 213, 225) }
-    }
-    $rtbLog.SelectionColor = $col
-    $rtbLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 8)
-    $rtbLog.AppendText("$($item.Result)`n")
-    $rtbLog.ScrollToCaret()
+    Add-LogRow $dgvLog $item.Label $item.Result $item.L
 }
 
 function Refresh-Log {
-    $rtbLog.Clear()
+    $dgvLog.Rows.Clear()
     foreach ($logItem in @($script:allLogItems)) {
         if ($script:logMode -eq "Detailed" -or (Test-HighlightItem $logItem)) {
             Render-LogItem $logItem

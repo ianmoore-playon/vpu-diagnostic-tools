@@ -246,3 +246,64 @@ function Show-Panel {
     $right.Visible        = $ShowRight
     $rightBorder.Visible  = $ShowRight
 }
+
+function New-LogGrid {
+    param([int]$X, [int]$Y, [int]$W, [int]$H, [int]$LabelColW = 200)
+    $dgv = New-Object System.Windows.Forms.DataGridView
+    $dgv.Size     = New-Object System.Drawing.Size($W, $H)
+    $dgv.Location = New-Object System.Drawing.Point($X, $Y)
+    $dgv.Anchor   = $AnchorTLRB
+    $dgv.BackgroundColor = $ColLogBg
+    $dgv.GridColor       = $ColLogBg
+    $dgv.BorderStyle     = [System.Windows.Forms.BorderStyle]::None
+    $dgv.RowHeadersVisible   = $false
+    $dgv.ColumnHeadersVisible = $false
+    $dgv.ReadOnly             = $true
+    $dgv.AllowUserToAddRows   = $false
+    $dgv.AllowUserToResizeRows = $false
+    $dgv.RowTemplate.Height   = 20
+    $dgv.SelectionMode  = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
+    $dgv.MultiSelect    = $false
+    $dgv.CellBorderStyle = [System.Windows.Forms.DataGridViewCellBorderStyle]::None
+    $dgv.DefaultCellStyle.BackColor         = $ColLogBg
+    $dgv.DefaultCellStyle.ForeColor         = [System.Drawing.Color]::FromArgb(203, 213, 225)
+    $dgv.DefaultCellStyle.Font              = New-Object System.Drawing.Font("Consolas", 8)
+    $dgv.DefaultCellStyle.SelectionBackColor = $ColNavHover
+    $dgv.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::FromArgb(203, 213, 225)
+    $dgv.DefaultCellStyle.Padding           = New-Object System.Windows.Forms.Padding(4, 0, 4, 0)
+    $c0 = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $c0.Name = "Label"; $c0.Width = $LabelColW; $c0.MinimumWidth = $LabelColW
+    $c0.Resizable = [System.Windows.Forms.DataGridViewTriState]::False
+    $c0.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+    $dgv.Columns.Add($c0) | Out-Null
+    $c1 = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $c1.Name = "Result"; $c1.AutoSizeMode = [System.Windows.Forms.DataGridViewAutoSizeColumnMode]::Fill
+    $dgv.Columns.Add($c1) | Out-Null
+    return $dgv
+}
+
+function Add-LogRow {
+    param($Grid, [string]$Label, [string]$Result, [string]$Level)
+    if ($Level -eq "Section") {
+        $i = $Grid.Rows.Add("", "  $($Result.ToUpper())")
+        $r = $Grid.Rows[$i]
+        $r.DefaultCellStyle.BackColor         = [System.Drawing.Color]::FromArgb(6, 10, 20)
+        $r.DefaultCellStyle.ForeColor         = [System.Drawing.Color]::FromArgb(100, 116, 139)
+        $r.DefaultCellStyle.Font              = New-Object System.Drawing.Font("Consolas", 7.5, [System.Drawing.FontStyle]::Bold)
+        $r.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(6, 10, 20)
+        $r.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+    } else {
+        $i = $Grid.Rows.Add($Label, $Result)
+        $r = $Grid.Rows[$i]
+        $col = switch ($Level) {
+            "Pass" { [System.Drawing.Color]::FromArgb(74,  222, 128) }
+            "Fail" { [System.Drawing.Color]::FromArgb(252, 165, 165) }
+            "Warn" { [System.Drawing.Color]::FromArgb(253, 224, 71)  }
+            "Cyan" { [System.Drawing.Color]::FromArgb(103, 232, 249) }
+            "Gray" { [System.Drawing.Color]::FromArgb(100, 116, 139) }
+            default{ [System.Drawing.Color]::FromArgb(203, 213, 225) }
+        }
+        $r.Cells[1].Style.ForeColor = $col
+    }
+    try { $Grid.FirstDisplayedScrollingRowIndex = $Grid.Rows.Count - 1 } catch { }
+}

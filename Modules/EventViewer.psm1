@@ -58,22 +58,7 @@ $evtTimer = New-Object System.Windows.Forms.Timer; $evtTimer.Interval = 300
 $evtTimer.Add_Tick({
     $evtItem = $null
     while ($sync.EvtQueue.TryDequeue([ref]$evtItem)) {
-        if ($evtItem.L -eq "Section") {
-            $rtbEvtLog.SelectionStart=$rtbEvtLog.TextLength;$rtbEvtLog.SelectionLength=0
-            $rtbEvtLog.SelectionFont=New-Object System.Drawing.Font("Consolas",7.5,[System.Drawing.FontStyle]::Bold)
-            $rtbEvtLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
-            $rtbEvtLog.AppendText("`n  $($evtItem.Result.ToUpper())`n")
-        } else {
-            $rtbEvtLog.SelectionStart=$rtbEvtLog.TextLength;$rtbEvtLog.SelectionLength=0
-            $rtbEvtLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
-            $rtbEvtLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
-            $rtbEvtLog.AppendText(("{0,-26}" -f $evtItem.Label))
-            $col = switch ($evtItem.L) { "Pass"{[System.Drawing.Color]::FromArgb(74,222,128)} "Fail"{[System.Drawing.Color]::FromArgb(252,165,165)} "Warn"{[System.Drawing.Color]::FromArgb(253,224,71)} "Gray"{[System.Drawing.Color]::FromArgb(100,116,139)} default{[System.Drawing.Color]::FromArgb(203,213,225)} }
-            $rtbEvtLog.SelectionStart=$rtbEvtLog.TextLength;$rtbEvtLog.SelectionLength=0
-            $rtbEvtLog.SelectionColor=$col; $rtbEvtLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
-            $rtbEvtLog.AppendText("$($evtItem.Result)`n")
-        }
-        $rtbEvtLog.ScrollToCaret()
+        Add-LogRow $dgvEvtLog $evtItem.Label $evtItem.Result $evtItem.L
     }
     foreach ($key in $evtCards.Keys) {
         $sc = $sync.Cards[$key]
@@ -138,14 +123,8 @@ $lblEvtLogHdr = New-Object System.Windows.Forms.Label; $lblEvtLogHdr.Text = "Eve
 $lblEvtLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblEvtLogHdr.ForeColor = $ColText
 $lblEvtLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblEvtLogHdr.AutoSize = $true
 $pnlEvents.Controls.Add($lblEvtLogHdr)
-$rtbEvtLog = New-Object System.Windows.Forms.RichTextBox
-$rtbEvtLog.Size = New-Object System.Drawing.Size(1240,336); $rtbEvtLog.Location = New-Object System.Drawing.Point(10,266)
-$rtbEvtLog.BackColor = $ColLogBg; $rtbEvtLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
-$rtbEvtLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbEvtLog.ReadOnly = $true
-$rtbEvtLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-$rtbEvtLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical; $rtbEvtLog.Anchor = $AnchorTLRB
-$rtbEvtLog.Text = "Click 'Check Event Log' to begin."
-$pnlEvents.Controls.Add($rtbEvtLog)
+$dgvEvtLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
+$pnlEvents.Controls.Add($dgvEvtLog)
 $script:evtRunspace = $null; $script:evtSpinIdx = 0
 
 
@@ -154,7 +133,7 @@ $btnEvtRun.Add_Click({
     $sync.EvtCancelled = $false
     $sync.Cards["EvtStatus"] = @{ Value="--"; Status="neutral" }
     foreach ($key in $evtCards.Keys) { Update-CardStatus -Card $evtCards[$key] -Value "--" -Status "neutral" }
-    $rtbEvtLog.Clear(); $btnEvtRun.Enabled=$false; $btnEvtRun.Text="  Running..."
+    $dgvEvtLog.Rows.Clear(); $btnEvtRun.Enabled=$false; $btnEvtRun.Text="  Running..."
     $btnEvtCancel.Visible=$true; $script:evtSpinIdx=0
     $lblEvtStatus.ForeColor=$ColAccent; $lblEvtStatus.Text=" |  Starting..."
     if ($script:evtRunspace) { try { $script:evtRunspace.Close() } catch { } }

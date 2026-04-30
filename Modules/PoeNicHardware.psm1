@@ -113,22 +113,7 @@ $hwTimer = New-Object System.Windows.Forms.Timer; $hwTimer.Interval = 300
 $hwTimer.Add_Tick({
     $hwItem = $null
     while ($sync.HwQueue.TryDequeue([ref]$hwItem)) {
-        if ($hwItem.L -eq "Section") {
-            $rtbHwLog.SelectionStart=$rtbHwLog.TextLength; $rtbHwLog.SelectionLength=0
-            $rtbHwLog.SelectionFont=New-Object System.Drawing.Font("Consolas",7.5,[System.Drawing.FontStyle]::Bold)
-            $rtbHwLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
-            $rtbHwLog.AppendText("`n  $($hwItem.Result.ToUpper())`n")
-        } else {
-            $rtbHwLog.SelectionStart=$rtbHwLog.TextLength; $rtbHwLog.SelectionLength=0
-            $rtbHwLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
-            $rtbHwLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
-            $rtbHwLog.AppendText(("{0,-26}" -f $hwItem.Label))
-            $col = switch ($hwItem.L) { "Pass"{[System.Drawing.Color]::FromArgb(74,222,128)} "Fail"{[System.Drawing.Color]::FromArgb(252,165,165)} "Warn"{[System.Drawing.Color]::FromArgb(253,224,71)} "Gray"{[System.Drawing.Color]::FromArgb(100,116,139)} default{[System.Drawing.Color]::FromArgb(203,213,225)} }
-            $rtbHwLog.SelectionStart=$rtbHwLog.TextLength; $rtbHwLog.SelectionLength=0
-            $rtbHwLog.SelectionColor=$col; $rtbHwLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
-            $rtbHwLog.AppendText("$($hwItem.Result)`n")
-        }
-        $rtbHwLog.ScrollToCaret()
+        Add-LogRow $dgvHwLog $hwItem.Label $hwItem.Result $hwItem.L
     }
     foreach ($key in $hwCards.Keys) {
         $sc = $sync.Cards[$key]
@@ -203,14 +188,8 @@ $lblHwLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lbl
 $lblHwLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblHwLogHdr.AutoSize = $true
 $pnlPoE.Controls.Add($lblHwLogHdr)
 
-$rtbHwLog = New-Object System.Windows.Forms.RichTextBox
-$rtbHwLog.Size = New-Object System.Drawing.Size(1240,336); $rtbHwLog.Location = New-Object System.Drawing.Point(10,266)
-$rtbHwLog.BackColor = $ColLogBg; $rtbHwLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
-$rtbHwLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbHwLog.ReadOnly = $true
-$rtbHwLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-$rtbHwLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical; $rtbHwLog.Anchor = $AnchorTLRB
-$rtbHwLog.Text = "Click 'Check Hardware' to begin.`r`nNote: NIC uptime and PoE data require Camera Connectivity to run first."
-$pnlPoE.Controls.Add($rtbHwLog)
+$dgvHwLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
+$pnlPoE.Controls.Add($dgvHwLog)
 
 $script:hwRunspace = $null; $script:hwSpinIdx = 0
 
@@ -220,7 +199,7 @@ $btnHwRun.Add_Click({
     $sync.HwCancelled = $false
     foreach ($key in $hwCards.Keys) { $sync.Cards[$key] = @{ Value="--"; Status="neutral" } }
     foreach ($key in $hwCards.Keys) { Update-CardStatus -Card $hwCards[$key] -Value "--" -Status "neutral" }
-    $rtbHwLog.Clear(); $btnHwRun.Enabled=$false; $btnHwRun.Text="  Running..."
+    $dgvHwLog.Rows.Clear(); $btnHwRun.Enabled=$false; $btnHwRun.Text="  Running..."
     $btnHwCancel.Visible=$true; $script:hwSpinIdx=0
     $lblHwStatus.ForeColor=$ColAccent; $lblHwStatus.Text=" |  Starting..."
     if ($script:hwRunspace) { try { $script:hwRunspace.Close() } catch { } }

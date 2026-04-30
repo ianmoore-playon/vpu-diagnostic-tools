@@ -57,22 +57,7 @@ $svcTimer = New-Object System.Windows.Forms.Timer; $svcTimer.Interval = 300
 $svcTimer.Add_Tick({
     $svcItem = $null
     while ($sync.SvcQueue.TryDequeue([ref]$svcItem)) {
-        if ($svcItem.L -eq "Section") {
-            $rtbSvcLog.SelectionStart=$rtbSvcLog.TextLength;$rtbSvcLog.SelectionLength=0
-            $rtbSvcLog.SelectionFont=New-Object System.Drawing.Font("Consolas",7.5,[System.Drawing.FontStyle]::Bold)
-            $rtbSvcLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
-            $rtbSvcLog.AppendText("`n  $($svcItem.Result.ToUpper())`n")
-        } else {
-            $rtbSvcLog.SelectionStart=$rtbSvcLog.TextLength;$rtbSvcLog.SelectionLength=0
-            $rtbSvcLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
-            $rtbSvcLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
-            $rtbSvcLog.AppendText(("{0,-26}" -f $svcItem.Label))
-            $col = switch ($svcItem.L) { "Pass"{[System.Drawing.Color]::FromArgb(74,222,128)} "Fail"{[System.Drawing.Color]::FromArgb(252,165,165)} "Warn"{[System.Drawing.Color]::FromArgb(253,224,71)} "Gray"{[System.Drawing.Color]::FromArgb(100,116,139)} default{[System.Drawing.Color]::FromArgb(203,213,225)} }
-            $rtbSvcLog.SelectionStart=$rtbSvcLog.TextLength;$rtbSvcLog.SelectionLength=0
-            $rtbSvcLog.SelectionColor=$col; $rtbSvcLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
-            $rtbSvcLog.AppendText("$($svcItem.Result)`n")
-        }
-        $rtbSvcLog.ScrollToCaret()
+        Add-LogRow $dgvSvcLog $svcItem.Label $svcItem.Result $svcItem.L
     }
     foreach ($key in $svcCards.Keys) {
         $sc = $sync.Cards[$key]
@@ -137,14 +122,8 @@ $lblSvcLogHdr = New-Object System.Windows.Forms.Label; $lblSvcLogHdr.Text = "Ser
 $lblSvcLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblSvcLogHdr.ForeColor = $ColText
 $lblSvcLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblSvcLogHdr.AutoSize = $true
 $pnlServices.Controls.Add($lblSvcLogHdr)
-$rtbSvcLog = New-Object System.Windows.Forms.RichTextBox
-$rtbSvcLog.Size = New-Object System.Drawing.Size(1240,336); $rtbSvcLog.Location = New-Object System.Drawing.Point(10,266)
-$rtbSvcLog.BackColor = $ColLogBg; $rtbSvcLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
-$rtbSvcLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbSvcLog.ReadOnly = $true
-$rtbSvcLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-$rtbSvcLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical; $rtbSvcLog.Anchor = $AnchorTLRB
-$rtbSvcLog.Text = "Click 'Check Services' to begin."
-$pnlServices.Controls.Add($rtbSvcLog)
+$dgvSvcLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
+$pnlServices.Controls.Add($dgvSvcLog)
 $script:svcRunspace = $null; $script:svcSpinIdx = 0
 
 
@@ -153,7 +132,7 @@ $btnSvcRun.Add_Click({
     $sync.SvcCancelled = $false
     $sync.Cards["SvcStatus"] = @{ Value="--"; Status="neutral" }
     foreach ($key in $svcCards.Keys) { Update-CardStatus -Card $svcCards[$key] -Value "--" -Status "neutral" }
-    $rtbSvcLog.Clear(); $btnSvcRun.Enabled=$false; $btnSvcRun.Text="  Running..."
+    $dgvSvcLog.Rows.Clear(); $btnSvcRun.Enabled=$false; $btnSvcRun.Text="  Running..."
     $btnSvcCancel.Visible=$true; $script:svcSpinIdx=0
     $lblSvcStatus.ForeColor=$ColAccent; $lblSvcStatus.Text=" |  Starting..."
     if ($script:svcRunspace) { try { $script:svcRunspace.Close() } catch { } }

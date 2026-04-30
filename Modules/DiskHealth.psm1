@@ -76,22 +76,7 @@ $diskTimer = New-Object System.Windows.Forms.Timer; $diskTimer.Interval = 300
 $diskTimer.Add_Tick({
     $diskItem = $null
     while ($sync.DiskQueue.TryDequeue([ref]$diskItem)) {
-        if ($diskItem.L -eq "Section") {
-            $rtbDiskLog.SelectionStart=$rtbDiskLog.TextLength;$rtbDiskLog.SelectionLength=0
-            $rtbDiskLog.SelectionFont=New-Object System.Drawing.Font("Consolas",7.5,[System.Drawing.FontStyle]::Bold)
-            $rtbDiskLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
-            $rtbDiskLog.AppendText("`n  $($diskItem.Result.ToUpper())`n")
-        } else {
-            $rtbDiskLog.SelectionStart=$rtbDiskLog.TextLength;$rtbDiskLog.SelectionLength=0
-            $rtbDiskLog.SelectionColor=[System.Drawing.Color]::FromArgb(100,116,139)
-            $rtbDiskLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
-            $rtbDiskLog.AppendText(("{0,-26}" -f $diskItem.Label))
-            $col = switch ($diskItem.L) { "Pass"{[System.Drawing.Color]::FromArgb(74,222,128)} "Fail"{[System.Drawing.Color]::FromArgb(252,165,165)} "Warn"{[System.Drawing.Color]::FromArgb(253,224,71)} "Gray"{[System.Drawing.Color]::FromArgb(100,116,139)} default{[System.Drawing.Color]::FromArgb(203,213,225)} }
-            $rtbDiskLog.SelectionStart=$rtbDiskLog.TextLength;$rtbDiskLog.SelectionLength=0
-            $rtbDiskLog.SelectionColor=$col; $rtbDiskLog.SelectionFont=New-Object System.Drawing.Font("Consolas",8)
-            $rtbDiskLog.AppendText("$($diskItem.Result)`n")
-        }
-        $rtbDiskLog.ScrollToCaret()
+        Add-LogRow $dgvDiskLog $diskItem.Label $diskItem.Result $diskItem.L
     }
     foreach ($key in $diskCards.Keys) {
         $sc = $sync.Cards[$key]
@@ -157,14 +142,8 @@ $lblDiskLogHdr = New-Object System.Windows.Forms.Label; $lblDiskLogHdr.Text = "H
 $lblDiskLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblDiskLogHdr.ForeColor = $ColText
 $lblDiskLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblDiskLogHdr.AutoSize = $true
 $pnlDisk.Controls.Add($lblDiskLogHdr)
-$rtbDiskLog = New-Object System.Windows.Forms.RichTextBox
-$rtbDiskLog.Size = New-Object System.Drawing.Size(1240,336); $rtbDiskLog.Location = New-Object System.Drawing.Point(10,266)
-$rtbDiskLog.BackColor = $ColLogBg; $rtbDiskLog.ForeColor = [System.Drawing.Color]::FromArgb(203,213,225)
-$rtbDiskLog.Font = New-Object System.Drawing.Font("Consolas",8); $rtbDiskLog.ReadOnly = $true
-$rtbDiskLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-$rtbDiskLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical; $rtbDiskLog.Anchor = $AnchorTLRB
-$rtbDiskLog.Text = "Click 'Check System Health' to begin."
-$pnlDisk.Controls.Add($rtbDiskLog)
+$dgvDiskLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
+$pnlDisk.Controls.Add($dgvDiskLog)
 $script:diskRunspace = $null; $script:diskSpinIdx = 0
 
 
@@ -173,7 +152,7 @@ $btnDiskRun.Add_Click({
     $sync.DiskCancelled = $false
     foreach ($key in @("DiskStatus","MemStatus")) { $sync.Cards[$key]=@{Value="--";Status="neutral"} }
     foreach ($key in $diskCards.Keys) { Update-CardStatus -Card $diskCards[$key] -Value "--" -Status "neutral" }
-    $rtbDiskLog.Clear(); $btnDiskRun.Enabled=$false; $btnDiskRun.Text="  Running..."
+    $dgvDiskLog.Rows.Clear(); $btnDiskRun.Enabled=$false; $btnDiskRun.Text="  Running..."
     $btnDiskCancel.Visible=$true; $script:diskSpinIdx=0
     $lblDiskStatus.ForeColor=$ColAccent; $lblDiskStatus.Text=" |  Starting..."
     if ($script:diskRunspace) { try { $script:diskRunspace.Close() } catch { } }
