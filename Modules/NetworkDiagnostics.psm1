@@ -244,22 +244,25 @@ $netTimer.Add_Tick({
     }
 
     # Update net cards
-    foreach ($key in $netCards.Keys) {
-        $sc = $sync.Cards[$key]
-        if ($sc -and $netCards[$key].ValueLabel.Text -ne $sc.Value) {
-            Update-CardStatus -Card $netCards[$key] -Value $sc.Value -Status $sc.Status
-        }
+    foreach ($netKey in $netCards.Keys) {
+        $netCardData = $sync.Cards[$netKey]
+        if ($netCardData) { Update-CardStatus -Card $netCards[$netKey] -Value $netCardData.Value -Status $netCardData.Status }
     }
 
     if ($sync.NetRunning) {
         $script:netSpinIdx = ($script:netSpinIdx + 1) % 4
-        $sc = @('|','/','-','\')[$script:netSpinIdx]
+        $spinChar = @('|','/','-','\')[$script:netSpinIdx]
         $lblNetStatus.ForeColor = $ColAccent
-        $lblNetStatus.Text = " $sc  $($sync.NetStep)"
+        $lblNetStatus.Text = " $spinChar  $($sync.NetStep)"
     }
 
     if ($sync.NetComplete -and -not $sync.NetRunning) {
         $netTimer.Stop()
+        # Force final card refresh now that all values are settled
+        foreach ($netKey in $netCards.Keys) {
+            $netCardData = $sync.Cards[$netKey]
+            if ($netCardData) { Update-CardStatus -Card $netCards[$netKey] -Value $netCardData.Value -Status $netCardData.Status }
+        }
         $btnNetCancel.Visible = $false
         $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Network Test"
         $lblNetStatus.ForeColor = $ColMuted
