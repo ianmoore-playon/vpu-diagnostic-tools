@@ -280,31 +280,6 @@ $DiskScript = {
         $sync.Cards["DiskStatus"] = @{ Value = "$errCount disk error(s) in event log — $osDrive $cardFreeGB GB free"; Status = $overallWorst }
     }
 
-    # ── 6. System Memory ─────────────────────────────────────────────────────
-    if ($sync.DiskCancelled) { $sync.DiskRunning=$false; $sync.DiskComplete=$true; return }
-    $sync.DiskStep = "Checking memory..."
-    Disk-Section "System Memory"
-
-    try {
-        $os = Get-WmiObject Win32_OperatingSystem -ErrorAction Stop
-        $uptime   = (Get-Date) - $os.ConvertToDateTime($os.LastBootUpTime)
-        $totalMem = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
-        $freeMem  = [math]::Round($os.FreePhysicalMemory      / 1MB, 1)
-        $usedMem  = [math]::Round($totalMem - $freeMem, 1)
-        $memPct   = [math]::Round(($usedMem / $totalMem) * 100)
-        $memLvl   = if ($memPct -gt 90) { "Fail" } elseif ($memPct -gt 75) { "Warn" } else { "Pass" }
-        Disk-Log "Computer"   $env:COMPUTERNAME "Info"
-        Disk-Log "OS"         ($os.Caption -replace "Microsoft ","") "Info"
-        Disk-Log "Uptime"     ("{0}d {1}h {2}m" -f [int]$uptime.TotalDays, $uptime.Hours, $uptime.Minutes) "Info"
-        Disk-Log "RAM Total"  "$totalMem GB" "Info"
-        Disk-Log "RAM Used"   "$usedMem GB  ($memPct%)" $memLvl
-        Disk-Log "RAM Free"   "$freeMem GB" "Info"
-        $sync.Cards["MemStatus"] = @{
-            Value  = "$memPct% used  ($usedMem / $totalMem GB)"
-            Status = switch ($memLvl) { "Pass"{"ok"} "Warn"{"warn"} "Fail"{"fail"} }
-        }
-    } catch { Disk-Log "Memory" "Error reading system info" "Warn" }
-
     $sync.DiskStep = "Complete"; $sync.DiskRunning=$false; $sync.DiskComplete=$true
 }
 
@@ -344,13 +319,12 @@ $lblDiskTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lb
 $lblDiskTitle.Location = New-Object System.Drawing.Point(10,16); $lblDiskTitle.AutoSize = $true
 $pnlDisk.Controls.Add($lblDiskTitle)
 $lblDiskSub = New-Object System.Windows.Forms.Label
-$lblDiskSub.Text = "Physical drive health, volume free space, Pixellot storage paths, top space consumers, disk errors, and system memory."
+$lblDiskSub.Text = "Physical drive health, volume free space, Pixellot storage paths, top space consumers, and disk event log errors."
 $lblDiskSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblDiskSub.ForeColor = $ColMuted
 $lblDiskSub.Location = New-Object System.Drawing.Point(10,42); $lblDiskSub.Size = New-Object System.Drawing.Size(1240,18)
 $pnlDisk.Controls.Add($lblDiskSub)
 $diskCardDefs = @(
     @{ Key="DiskStatus"; Title="Disk Space";   Sub="C: free space";   X=10;  Icon=[char]0xEDA2; W=250 }
-    @{ Key="MemStatus";  Title="Memory";       Sub="RAM utilization"; X=270; Icon=[char]0xE950; W=250 }
 )
 $diskCards = @{}
 foreach ($cd in $diskCardDefs) {
@@ -388,7 +362,7 @@ $script:diskRunspace = $null; $script:diskSpinIdx = 0
 $btnDiskRun.Add_Click({
     if ($sync.DiskRunning) { return }
     $sync.DiskCancelled = $false
-    foreach ($key in @("DiskStatus","MemStatus")) { $sync.Cards[$key]=@{Value="--";Status="neutral"} }
+    $sync.Cards["DiskStatus"] = @{ Value="--"; Status="neutral" }
     foreach ($key in $diskCards.Keys) { Update-CardStatus -Card $diskCards[$key] -Value "--" -Status "neutral" }
     $dgvDiskLog.Rows.Clear(); $btnDiskRun.Enabled=$false; $btnDiskRun.Text="  Running..."
     $btnDiskCancel.Visible=$true; $script:diskSpinIdx=0

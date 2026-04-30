@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "VPU Diagnostic Tool Launcher (version).bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.11"
+$ScriptVersion = "1.0.12"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
