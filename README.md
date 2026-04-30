@@ -12,7 +12,7 @@ An all-in-one GUI diagnostic tool for Pixellot VPUs. Covers camera NIC and cable
 
 #### Option 1 — Double-click launcher (recommended for field use)
 
-Download [`RunDiagnostic.bat`](RunDiagnostic.bat) to the VPU and double-click it. A UAC prompt will appear — click **Yes**. The GUI opens and the diagnostic begins when you click **Run Full Diagnostic**.
+Download the latest `VPU Diagnostic Tool Launcher (version).bat` from the [Releases page](https://github.com/ianmoore-playon/vpu-diagnostic-tools/releases/latest) to the VPU and double-click it. A UAC prompt will appear — click **Yes**. The GUI opens and the diagnostic begins when you click **Run Full Diagnostic**.
 
 #### Option 2 — PowerShell one-liner
 

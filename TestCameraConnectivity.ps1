@@ -2,7 +2,7 @@
 #  VPU Diagnostic Tool Suite  v1.0.0
 #  Launcher - loads modules from .\Modules\ and runs the GUI.
 #
-#  HOW TO RUN: double-click RunDiagnostic.bat  (handles elevation automatically)
+#  HOW TO RUN: double-click "VPU Diagnostic Tool Launcher (version).bat"  (handles elevation automatically)
 # =============================================================================
 
 $ScriptVersion = "1.0.6"

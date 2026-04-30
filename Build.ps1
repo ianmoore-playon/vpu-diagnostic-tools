@@ -1,6 +1,6 @@
 # =============================================================================
 #  Build.ps1  -  Combines launcher + all module files into a single Run.ps1
-#  Run automatically by RunDiagnostic.bat before launching the tool.
+#  Run automatically by "VPU Diagnostic Tool Launcher.bat" before launching the tool.
 # =============================================================================
 
 $dest   = $PSScriptRoot
