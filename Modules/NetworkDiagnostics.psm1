@@ -54,7 +54,10 @@ $NetScript = {
     }
     function Set-NetCard {
         param([string]$Key, [string]$Value, [string]$Status)
-        $sync.Cards[$Key] = @{ Value = $Value; Status = $Status }
+        # Write directly to outer synchronized hashtable — avoids inner-hashtable
+        # visibility issues between the runspace thread and the UI timer thread.
+        $sync["NetCard_${Key}_V"] = $Value
+        $sync["NetCard_${Key}_S"] = $Status
     }
     function Test-TcpConnect {
         param([string]$HostName, [int]$Port, [int]$TimeoutMs)
@@ -243,10 +246,11 @@ $netTimer.Add_Tick({
         $rtbNetLog.ScrollToCaret()
     }
 
-    # Update net cards
+    # Update net cards from top-level sync keys (reliable cross-thread visibility)
     foreach ($netKey in $netCards.Keys) {
-        $netCardData = $sync.Cards[$netKey]
-        if ($netCardData) { Update-CardStatus -Card $netCards[$netKey] -Value $netCardData.Value -Status $netCardData.Status }
+        $ncV = $sync["NetCard_${netKey}_V"]
+        $ncS = $sync["NetCard_${netKey}_S"]
+        if ($ncV) { Update-CardStatus -Card $netCards[$netKey] -Value $ncV -Status $ncS }
     }
 
     if ($sync.NetRunning) {
@@ -258,11 +262,6 @@ $netTimer.Add_Tick({
 
     if ($sync.NetComplete -and -not $sync.NetRunning) {
         $netTimer.Stop()
-        # Force final card refresh now that all values are settled
-        foreach ($netKey in $netCards.Keys) {
-            $netCardData = $sync.Cards[$netKey]
-            if ($netCardData) { Update-CardStatus -Card $netCards[$netKey] -Value $netCardData.Value -Status $netCardData.Status }
-        }
         $btnNetCancel.Visible = $false
         $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Network Test"
         $lblNetStatus.ForeColor = $ColMuted
@@ -360,7 +359,10 @@ $script:allNavPanels = @(
 $btnNetRun.Add_Click({
     if ($sync.NetRunning) { return }
     $sync.NetCancelled = $false
-    foreach ($k in @("NetInternet","NetPorts","NetDomains")) { $sync.Cards[$k] = @{ Value="--"; Status="neutral" } }
+    foreach ($k in @("NetInternet","NetPorts","NetDomains")) {
+        $sync["NetCard_${k}_V"] = "--"
+        $sync["NetCard_${k}_S"] = "neutral"
+    }
     foreach ($k in $netCards.Keys) { Update-CardStatus -Card $netCards[$k] -Value "--" -Status "neutral" }
     $rtbNetLog.Clear()
     $btnNetRun.Enabled = $false; $btnNetRun.Text = "  Running..."
