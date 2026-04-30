@@ -163,16 +163,16 @@ $AnchorBLR  = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.F
 $AnchorBL   = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
 $AnchorTR   = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.Forms.AnchorStyles]::Right
 
-# Layout constants
-$HdrH     = 68
-$SbarH    = 28
-$SideW    = 220
-$ContentY = $HdrH
-$ContentH = 760 - $HdrH - $SbarH   # 664
-$NarrowW  = 800                      # camera panel (with right panel)
-$WideW    = 1060                     # all other sections (no right panel)
-$RightX   = $SideW + $NarrowW       # 1020
-$RightW   = 259
+# Layout constants — typed [int] so arithmetic never fails on malformed environments
+[int]$HdrH     = 68
+[int]$SbarH    = 28
+[int]$SideW    = 220
+[int]$ContentY = $HdrH
+[int]$ContentH = 760 - $HdrH - $SbarH   # 664
+[int]$NarrowW  = 800                      # camera panel (with right panel)
+[int]$WideW    = 1060                     # all other sections (no right panel)
+[int]$RightX   = $SideW + $NarrowW       # 1020
+[int]$RightW   = 259
 
 # ---- Header ----------------------------------------------------------------
 $pnlHeader = New-Object System.Windows.Forms.Panel

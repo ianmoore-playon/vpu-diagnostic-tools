@@ -213,25 +213,6 @@ $NetScript = {
     $sync.NetComplete = $true
 }
 
-
-            $lblBadge.ForeColor = $ColRed; $lblBadge.Text = "Issues Found"
-            $pnlBadgeDot.BackColor = $ColRed
-            $pnlSbarDot.BackColor = $ColRed; $lblSbarStatus.Text = "Status: Issues Found"
-            $pnlSideDot.BackColor = $ColRed; $lblSideStatus.Text = "Issues Found"
-        }
-        $lblSbarLastRun.Text = "Last Run: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
-
-        Show-OverviewSteps
-
-        $dt = Get-Date -Format "yyyy-MM-dd HH:mm"
-        $trend = Get-PortTrendSummary
-        $trendSuffix = if ($trend) { "   .   $trend" } else { "" }
-        $lblLastRunVal.Text = "$($sync.LastRunLine)   $dt$trendSuffix"
-        $btnGoGuide.Visible = ((@($sync.PortResults) | Where-Object { $_.Result -eq "FAIL" }).Count -gt 0)
-        Update-GuidePortDropdown
-    }
-})
-
 # Network timer - polls $sync.NetQueue every 300ms, updates Network panel UI
 $netTimer = New-Object System.Windows.Forms.Timer
 $netTimer.Interval = 300

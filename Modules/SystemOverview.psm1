@@ -80,12 +80,22 @@ $hubCardDefs = @(
 )
 $hCW = 234; $hCH = 128; $hGap = 10
 $hRowY = @(106, 248)
+$hubNavLookup = @{
+    navSysOverview = $navSysOverview
+    navNetConfig   = $navNetConfig
+    navCamera      = $navCamera
+    navPoE         = $navPoE
+    navServices    = $navServices
+    navDisk        = $navDisk
+    navEvents      = $navEvents
+    navReports     = $navReports
+}
 foreach ($hc in $hubCardDefs) {
     $hx = 30 + $hc.C * ($hCW + $hGap)
     $hy = $hRowY[$hc.R]
     $cp = New-SectionCard -Title $hc.Title -Desc $hc.Desc -IconCode $hc.Icon -X $hx -Y $hy -W $hCW -H $hCH
     $pnlSysOverview.Controls.Add($cp)
-    $navBtn = Get-Variable -Name $hc.Nav -ValueOnly
+    $navBtn = $hubNavLookup[$hc.Nav]
     $clickBlock = { $navBtn.PerformClick() }.GetNewClosure()
     $cp.Add_Click($clickBlock)
     foreach ($ctrl in @($cp.Controls)) { $ctrl.Add_Click($clickBlock) }

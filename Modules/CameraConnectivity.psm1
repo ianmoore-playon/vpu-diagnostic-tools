@@ -1121,6 +1121,23 @@ $timer.Add_Tick({
             $pnlSideDot.BackColor = $ColGreen; $lblSideStatus.Text = "All Clear"
         } else {
             $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(254,226,226)
+            $lblBadge.ForeColor = $ColRed; $lblBadge.Text = "Issues Found"
+            $pnlBadgeDot.BackColor = $ColRed
+            $pnlSbarDot.BackColor = $ColRed; $lblSbarStatus.Text = "Status: Issues Found"
+            $pnlSideDot.BackColor = $ColRed; $lblSideStatus.Text = "Issues Found"
+        }
+        $lblSbarLastRun.Text = "Last Run: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+
+        Show-OverviewSteps
+
+        $dt = Get-Date -Format "yyyy-MM-dd HH:mm"
+        $trend = Get-PortTrendSummary
+        $trendSuffix = if ($trend) { "   .   $trend" } else { "" }
+        $lblLastRunVal.Text = "$($sync.LastRunLine)   $dt$trendSuffix"
+        $btnGoGuide.Visible = ((@($sync.PortResults) | Where-Object { $_.Result -eq "FAIL" }).Count -gt 0)
+        Update-GuidePortDropdown
+    }
+})
 
 # ---------- Button Handlers -------------------------------------------------
 $btnRun.Add_Click({
