@@ -4,7 +4,7 @@ PowerShell diagnostic tools for Pixellot VPU field support.
 
 ---
 
-## TestCameraConnectivity.ps1 — VPU Diagnostic Tool Suite
+## VPUDiagnosticTool.ps1 — VPU Diagnostic Tool Suite
 
 An all-in-one GUI diagnostic tool for Pixellot VPUs. Covers camera NIC and cable health, network connectivity, PoE/NIC hardware, Pixellot services, system and disk health, and event monitoring. Displays live results in an interactive interface and provides plain-language next-step guidance for both technical and non-technical users.
 
@@ -19,7 +19,7 @@ Download the latest `VPU Diagnostic Tool Launcher (version).bat` from the [Relea
 Open any PowerShell window on the VPU and paste:
 
 ```powershell
-irm 'https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/TestCameraConnectivity.ps1' | iex
+irm 'https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/VPUDiagnosticTool.ps1' | iex
 ```
 
 A UAC prompt will appear. Click **Yes**. A GUI window opens and the diagnostic begins when you click **Run Full Diagnostic**.

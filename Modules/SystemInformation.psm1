@@ -1,5 +1,5 @@
 # =============================================================================
-#  HardwareOverview.psm1  -  System Overview panel
+#  SystemInformation.psm1  -  System Information panel
 #  Collects OS, CPU, RAM, GPU, disk and NIC details via CIM in a background
 #  runspace and streams them into a DataGridView log.
 # =============================================================================
@@ -177,7 +177,7 @@ $form.Controls.Add($pnlSysInfo)
 $script:allNavPanels += $pnlSysInfo
 
 $lblSiTitle = New-Object System.Windows.Forms.Label
-$lblSiTitle.Text      = "System Overview"
+$lblSiTitle.Text      = "System Information"
 $lblSiTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 13)
 $lblSiTitle.ForeColor = $ColText
 $lblSiTitle.Location  = New-Object System.Drawing.Point(30, 24)

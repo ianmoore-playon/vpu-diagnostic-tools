@@ -1,11 +1,11 @@
 # =============================================================================
-#  VPU Diagnostic Tool Suite  v1.0.0
-#  Launcher - loads modules from .\Modules\ and runs the GUI.
+#  VPUDiagnosticTool.ps1  -  VPU Diagnostic Tool Suite
+#  Loads modules from .\Modules\ and runs the GUI.
 #
 #  HOW TO RUN: double-click "VPU Diagnostic Tool Launcher (version).bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.8"
+$ScriptVersion = "1.0.9"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -433,8 +433,8 @@ $form.Controls.AddRange(@($lblVpuVal, $pnlSideDot, $lblSideStatus))
 . "$ModulesDir\PoeNicHardware.psm1"
 . "$ModulesDir\PixellotServices.psm1"
 . "$ModulesDir\DiskHealth.psm1"
-. "$ModulesDir\EventViewer.psm1"
-. "$ModulesDir\HardwareOverview.psm1"
+. "$ModulesDir\EventLogs.psm1"
+. "$ModulesDir\SystemInformation.psm1"
 . "$ModulesDir\FullDiagnostic.psm1"
 $pnlReports  = New-StubPanel "Reports"  "Generate and manage diagnostic reports."
 $pnlSettings = New-StubPanel "Settings" "Configure tool behavior and preferences."
@@ -500,7 +500,7 @@ $form.Add_Load({
                 }
             } catch { }
         } | Out-Null
-        $rawUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/TestCameraConnectivity.ps1"
+        $rawUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/VPUDiagnosticTool.ps1"
         $wc.DownloadStringAsync([uri]$rawUrl)
     } catch { }
 })
