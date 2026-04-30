@@ -160,6 +160,21 @@ $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
 $form.MaximizeBox = $true
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
+$AssetsDir   = Join-Path $PSScriptRoot "Assets"
+$iconPngPath = Join-Path $AssetsDir "icon.png"
+if (Test-Path $iconPngPath) {
+    try {
+        $iconBmp     = New-Object System.Drawing.Bitmap($iconPngPath)
+        $iconResized = New-Object System.Drawing.Bitmap(48, 48)
+        $iconG       = [System.Drawing.Graphics]::FromImage($iconResized)
+        $iconG.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $iconG.DrawImage($iconBmp, 0, 0, 48, 48)
+        $iconG.Dispose(); $iconBmp.Dispose()
+        $form.Icon = [System.Drawing.Icon]::FromHandle($iconResized.GetHicon())
+        $iconResized.Dispose()
+    } catch { }
+}
+
 $AnchorTLRB = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.Forms.AnchorStyles]::Left  -bor [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom
 $AnchorTLR  = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.Forms.AnchorStyles]::Left  -bor [System.Windows.Forms.AnchorStyles]::Right
 $AnchorTLB  = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.Forms.AnchorStyles]::Left  -bor [System.Windows.Forms.AnchorStyles]::Bottom
@@ -191,29 +206,16 @@ $pnlHeader.BackColor = $ColSidebar
 $pnlHeader.Anchor    = $AnchorTLR
 $form.Controls.Add($pnlHeader)
 
-$lblHdrIcon = New-Object System.Windows.Forms.Label
-$lblHdrIcon.Text      = [char]0xF785
-$lblHdrIcon.Font      = New-Object System.Drawing.Font("Segoe MDL2 Assets", 22)
-$lblHdrIcon.ForeColor = $ColAccent
-$lblHdrIcon.Location  = New-Object System.Drawing.Point(14, 10)
-$lblHdrIcon.Size      = New-Object System.Drawing.Size(46, 46)
-$pnlHeader.Controls.Add($lblHdrIcon)
-
-$lblHdrTitle = New-Object System.Windows.Forms.Label
-$lblHdrTitle.Text      = "VPU Diagnostic Tool Suite"
-$lblHdrTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
-$lblHdrTitle.ForeColor = [System.Drawing.Color]::White
-$lblHdrTitle.Location  = New-Object System.Drawing.Point(64, 10)
-$lblHdrTitle.Size      = New-Object System.Drawing.Size(700, 26)
-$pnlHeader.Controls.Add($lblHdrTitle)
-
-$lblHdrSub = New-Object System.Windows.Forms.Label
-$lblHdrSub.Text      = "All-in-one diagnostic and troubleshooting tool for Pixellot VPU systems."
-$lblHdrSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
-$lblHdrSub.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
-$lblHdrSub.Location  = New-Object System.Drawing.Point(66, 38)
-$lblHdrSub.Size      = New-Object System.Drawing.Size(560, 16)
-$pnlHeader.Controls.Add($lblHdrSub)
+$picHdrLogo = New-Object System.Windows.Forms.PictureBox
+$picHdrLogo.SizeMode  = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+$picHdrLogo.Location  = New-Object System.Drawing.Point(8, 4)
+$picHdrLogo.Size      = New-Object System.Drawing.Size(200, 60)
+$picHdrLogo.BackColor = [System.Drawing.Color]::Transparent
+$logoPngPath = Join-Path $AssetsDir "logo.png"
+if (Test-Path $logoPngPath) {
+    $picHdrLogo.Image = [System.Drawing.Image]::FromFile($logoPngPath)
+}
+$pnlHeader.Controls.Add($picHdrLogo)
 
 $lblHdrVer = New-Object System.Windows.Forms.Label
 $lblHdrVer.Text      = "Version $ScriptVersion"
