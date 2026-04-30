@@ -12,6 +12,10 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ## [1.0.0] - 2026-04-29
 
+### Fixed (post-test hotfix)
+
+- **RunDiagnostic.bat** no longer runs `Build.ps1`. The bat now launches `TestCameraConnectivity.ps1` directly (which dot-sources the `Modules\` directory). The combined `Run.ps1` produced by `Build.ps1` caused layout constants (`$HdrH`, `$ContentH`, etc.) to become `[System.Object[]]` at runtime, breaking panel construction, System Overview navigation, Camera Connectivity run, and Network Configuration results. The modular dot-source path was proven stable on the VPU.
+
 ### Added
 
 - **VPU Hardware tab** (replaces "PoE / NIC Hardware" stub) — "Check Hardware" runs a background diagnostic showing GPU model (`Win32_VideoController`), monitor connection status (`Win32_DesktopMonitor` with PnP fallback), and MMK peripheral status (mouse via `Win32_PointingDevice`, keyboard via `Win32_Keyboard`). NIC port link uptime and PoE per-port data are read from the Camera Connectivity cache — no second DLL call. Follows the same pattern as all other panel modules: independent runspace, 300ms timer, Run/Cancel buttons, live spinner, and dark RichTextBox log.

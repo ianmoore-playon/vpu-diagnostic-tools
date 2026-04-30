@@ -6,12 +6,5 @@ if %ERRORLEVEL% neq 0 (
     pause
     exit /b 1
 )
-echo Building launcher...
-PowerShell -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\VPU-DiagTool\Build.ps1"
-if %ERRORLEVEL% neq 0 (
-    echo Build step failed. See errors above.
-    pause
-    exit /b 1
-)
 echo Launching...
-PowerShell -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\VPU-DiagTool\Run.ps1"
+PowerShell -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\VPU-DiagTool\TestCameraConnectivity.ps1"
