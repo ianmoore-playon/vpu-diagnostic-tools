@@ -8,7 +8,8 @@ $DiagScript = {
           $PixellotLogPaths, $RtspPort, $OutputFile, $RunId, $ScriptVersion,
           [string]$OcrMacOui = "00-D0-89",
           [string]$FilterNic = "",
-          [string]$PoeDllPath = "")
+          [string]$PoeDllPath = "",
+          [bool]$PoeMgmtSupported = $true)
 
     function Add-Log {
         param([string]$Message, [string]$Level = "Info")
@@ -603,7 +604,11 @@ $DiagScript = {
     Add-Log "-- PoE Power Monitoring (ADLINK SmartPoE) --" "Cyan"
     Add-Log ""
     $sync.PoePortData.Clear()
-    if ($PoeDllPath -and ([System.Management.Automation.PSTypeName]'AdlinkPoE').Type) {
+    if (-not $PoeMgmtSupported) {
+        Add-Log "  [INFO] PoE power management not supported on this NIC model (GIE64 / 82574L)." "Gray"
+        Add-Summary "PoE Budget" "N/A (GIE64)" "Gray"
+        Set-Card "PoEBudget" "N/A" "neutral"
+    } elseif ($PoeDllPath -and ([System.Management.Automation.PSTypeName]'AdlinkPoE').Type) {
         try {
             $cardNum = [uint16]0
             $regRet  = [AdlinkPoE]::SmartPoE_Register_Card($cardNum)
@@ -727,7 +732,7 @@ $DiagScript = {
             }) | Out-Null
             $s++
         }
-        if ($sync.PoeBudgetLow) {
+        if ($PoeMgmtSupported -and $sync.PoeBudgetLow) {
             $sync.NextSteps.Add(@{
                 H = "$s. Check Molex power connector on PoE NIC"
                 B = "Total PoE power budget is below 55 W. The Molex connector that powers the PoE NIC card may be disconnected or loose inside the VPU. Cameras may fail to initialize or drop during streaming. Inspect and firmly reseat the internal Molex connector on the camera NIC card."
@@ -845,6 +850,22 @@ $lblRunSteps.Location  = New-Object System.Drawing.Point(200, 60)
 $lblRunSteps.Size      = New-Object System.Drawing.Size(560, 18)
 $center.Controls.Add($lblRunSteps)
 
+$lblNicCardHdr = New-Object System.Windows.Forms.Label
+$lblNicCardHdr.Text      = "NIC Card"
+$lblNicCardHdr.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)
+$lblNicCardHdr.ForeColor = $ColMuted
+$lblNicCardHdr.Location  = New-Object System.Drawing.Point(780, 16)
+$lblNicCardHdr.AutoSize  = $true
+$center.Controls.Add($lblNicCardHdr)
+
+$lblNicCardVal = New-Object System.Windows.Forms.Label
+$lblNicCardVal.Text      = "Detecting..."
+$lblNicCardVal.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblNicCardVal.ForeColor = $ColText
+$lblNicCardVal.Location  = New-Object System.Drawing.Point(780, 34)
+$lblNicCardVal.AutoSize  = $true
+$center.Controls.Add($lblNicCardVal)
+
 $lblCurStat = New-Object System.Windows.Forms.Label; $lblCurStat.Text = "Current Results"
 $lblCurStat.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10); $lblCurStat.ForeColor = $ColText
 $lblCurStat.Location = New-Object System.Drawing.Point(10, 88); $lblCurStat.AutoSize = $true
@@ -898,9 +919,10 @@ if ($script:detectedNics.Count -gt 0) {
             }
             if ($idx -ge 0) { $cboGuidePortA.SelectedIndex = $idx }
         }.GetNewClosure()
-        $c.Panel.Add_Click($portClickHandler)
-        $c.ValueLabel.Add_Click($portClickHandler)
-        $c.Panel.Cursor = [System.Windows.Forms.Cursors]::Hand
+        foreach ($ctrl in @($c.Panel) + @($c.Panel.Controls)) {
+            $ctrl.Add_Click($portClickHandler)
+            $ctrl.Cursor = [System.Windows.Forms.Cursors]::Hand
+        }
         $portCardX += $portCardW + 10; $portNum++
     }
 }
@@ -1186,6 +1208,7 @@ $btnRun.Add_Click({
         OcrMacOui          = $OcrMacOui
         FilterNic          = $filterNicVal
         PoeDllPath         = if ($PoeDllPath) { $PoeDllPath } else { "" }
+        PoeMgmtSupported   = if ($script:nicCardInfo) { [bool]$script:nicCardInfo.PoeMgmtSupported } else { $true }
     }) | Out-Null
     $ps.BeginInvoke() | Out-Null
     $timer.Start()

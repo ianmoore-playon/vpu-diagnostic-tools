@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click RunDiagnostic.bat  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.2"
+$ScriptVersion = "1.0.3"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -21,6 +21,19 @@ $OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::
 $OutputDir         = Join-Path $OutputBaseDir "CameraLink_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
 $NicDriverPatterns = @("Intel(R) 82574L*", "Intel(R) I210*", "Intel(R) I211*", "Intel(R) I350*", "Intel(R) I354*")
+
+function Get-AdlinkCardInfo {
+    param($nics)
+    $desc = if ($nics.Count -gt 0) { $nics[0].InterfaceDescription } else { "" }
+    $count = $nics.Count
+    if     ($desc -like "*82574L*") { @{ Label = "ADLINK GIE64  (Intel 82574L x$count)";     PoeMgmtSupported = $false } }
+    elseif ($desc -like "*I210*")   { @{ Label = "ADLINK GIE74P  (Intel I210 x$count)";       PoeMgmtSupported = $true  } }
+    elseif ($desc -like "*I211*")   { @{ Label = "ADLINK GIE74P  (Intel I211 x$count)";       PoeMgmtSupported = $true  } }
+    elseif ($desc -like "*I350*")   { @{ Label = "ADLINK GIE74P-AN  (Intel I350 x$count)";    PoeMgmtSupported = $false } }
+    elseif ($desc -like "*I354*")   { @{ Label = "ADLINK GIE74P-AN  (Intel I354 x$count)";    PoeMgmtSupported = $false } }
+    elseif ($count -gt 0)           { @{ Label = "Unknown NIC  ($desc)";                       PoeMgmtSupported = $false } }
+    else                            { @{ Label = "No NIC detected";                            PoeMgmtSupported = $false } }
+}
 $RenegotiateWaitSec = 30
 $EventLogHours      = 48
 $PixellotLogPaths   = @(
@@ -440,6 +453,8 @@ $form.Add_Load({
             $cboNic.Items.Add("$($n.Name)  ($short)") | Out-Null
             $cboGuidePortA.Items.Add($n.Name) | Out-Null
         }
+        $script:nicCardInfo = Get-AdlinkCardInfo $script:detectedNics
+        $lblNicCardVal.Text = $script:nicCardInfo.Label
     } catch { }
     if ($cboNic.Items.Count -gt 0) { $cboNic.SelectedIndex = 0 }
     if ($cboGuidePortA.Items.Count -gt 0) { $cboGuidePortA.SelectedIndex = 0 }

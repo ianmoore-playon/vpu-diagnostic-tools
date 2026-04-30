@@ -10,6 +10,19 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.3] - 2026-04-30
+
+### Added
+
+- **NIC Card header on Camera Connectivity tab** — a "NIC Card" label now appears in the toolbar area showing the detected ADLINK card model, Intel chip, and port count (e.g. `ADLINK GIE74P  (Intel I210 x4)`). Derived at form load from `InterfaceDescription`; covers GIE64, GIE74P, and GIE74P-AN variants.
+
+### Fixed
+
+- **PoE power management false positives on GIE64 (82574L) systems** — `Get-AdlinkCardInfo` maps each detected NIC chip to its ADLINK card family and a `PoeMgmtSupported` flag. On GIE64/82574L and GIE74P-AN/I350/I354 systems that do not support PoE power management, the diagnostic now skips all `SmartPoE_Get_*` budget/port queries and shows "N/A (GIE64)" on the PoE Budget card in gray. The "Check Molex connector" next step is also suppressed on unsupported cards.
+- **Port card click not opening Fault Isolator** — clicking the port tile only fired when the user hit the panel background; clicks on child labels (title, value, sub-label, status dot) were silently swallowed because WinForms clicks don't bubble to parent panels. The handler is now attached to all child controls via a loop so clicking anywhere on the card navigates to the Fault Isolation guide.
+
+---
+
 ## [1.0.2] - 2026-04-30
 
 ### Added
