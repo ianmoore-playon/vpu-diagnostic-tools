@@ -49,19 +49,23 @@ public static class AdlinkPoE {
 "@
 }
 
-$ColSidebar  = [System.Drawing.Color]::FromArgb(24,  33,  47)
-$ColNavHover = [System.Drawing.Color]::FromArgb(51,  65,  85)
-$ColNavActive= [System.Drawing.Color]::FromArgb(59, 130, 246)
+$ColSidebar  = [System.Drawing.Color]::FromArgb(15,  22,  36)
+$ColNavHover = [System.Drawing.Color]::FromArgb(38,  52,  70)
+$ColNavActive= [System.Drawing.Color]::FromArgb(37,  99, 235)
 $ColAccent   = [System.Drawing.Color]::FromArgb(59, 130, 246)
-$ColBg       = [System.Drawing.Color]::FromArgb(243,244,246)
-$ColCard     = [System.Drawing.Color]::White
-$ColBorder   = [System.Drawing.Color]::FromArgb(226,232,240)
-$ColText     = [System.Drawing.Color]::FromArgb(17,  24,  39)
-$ColMuted    = [System.Drawing.Color]::FromArgb(107,114, 128)
-$ColGreen    = [System.Drawing.Color]::FromArgb(22, 163,  74)
-$ColRed      = [System.Drawing.Color]::FromArgb(220,  38,  38)
-$ColYellow   = [System.Drawing.Color]::FromArgb(202, 138,   4)
-$ColLogBg    = [System.Drawing.Color]::FromArgb(15,  23,  42)
+$ColBg       = [System.Drawing.Color]::FromArgb(10,  16,  30)
+$ColCard     = [System.Drawing.Color]::FromArgb(22,  32,  50)
+$ColBorder   = [System.Drawing.Color]::FromArgb(44,  59,  80)
+$ColText     = [System.Drawing.Color]::FromArgb(220, 228, 240)
+$ColMuted    = [System.Drawing.Color]::FromArgb(110, 128, 155)
+$ColGreen    = [System.Drawing.Color]::FromArgb(34,  197,  94)
+$ColRed      = [System.Drawing.Color]::FromArgb(239,  68,  68)
+$ColYellow   = [System.Drawing.Color]::FromArgb(234, 179,   8)
+$ColLogBg    = [System.Drawing.Color]::FromArgb(6,   10,  20)
+# Badge tint backgrounds (dark theme — coloured bg with matching text)
+$ColBadgeOkBg  = [System.Drawing.Color]::FromArgb(15,  58,  35)
+$ColBadgeErrBg = [System.Drawing.Color]::FromArgb(90,  18,  18)
+$ColBadgeRunBg = [System.Drawing.Color]::FromArgb(80,  48,   8)
 
 # ---------- GUI Helper Functions --------------------------------------------
 function New-SidebarButton {
@@ -135,7 +139,7 @@ function New-StatusCard {
         $pW = [int]$this.Width; $pH = [int]$this.Height
         if ($this.Tag) {
             $iFont  = New-Object System.Drawing.Font("Segoe MDL2 Assets", 26)
-            $iBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(200, 210, 222))
+            $iBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(44, 59, 80))
             $iStr   = [string]$this.Tag
             $iSz    = $g.MeasureString($iStr, $iFont)
             $ix     = $pW - [int]$iSz.Width  - 10
@@ -145,7 +149,7 @@ function New-StatusCard {
         }
         $rr = New-Object System.Drawing.Rectangle(0, 0, ($pW - 1), ($pH - 1))
         $bp = [GfxHelper]::RoundedRect($rr, 8)
-        $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 218, 228), 1)
+        $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(44, 59, 80), 1)
         $g.DrawPath($pen, $bp)
         $pen.Dispose(); $bp.Dispose()
     })

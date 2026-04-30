@@ -53,7 +53,7 @@ function Update-HistoryList {
         $item.SubItems.Add($summary)    | Out-Null
         $item.SubItems.Add("$sizeKb KB") | Out-Null
         $item.ForeColor = $resultColor
-        $item.BackColor = [System.Drawing.Color]::White
+        $item.BackColor = $ColCard
         $item.Tag       = $f.FullName
         $lvHistory.Items.Add($item) | Out-Null
     }
@@ -94,7 +94,8 @@ $lvHistory.View = [System.Windows.Forms.View]::Details
 $lvHistory.FullRowSelect = $true
 $lvHistory.GridLines = $false
 $lvHistory.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-$lvHistory.BackColor = [System.Drawing.Color]::White
+$lvHistory.BackColor = $ColCard
+$lvHistory.ForeColor = $ColText
 $lvHistory.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 $lvHistory.HeaderStyle = [System.Windows.Forms.ColumnHeaderStyle]::Nonclickable
 $lvHistory.UseCompatibleStateImageBehavior = $false

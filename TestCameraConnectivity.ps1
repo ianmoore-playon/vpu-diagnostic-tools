@@ -223,7 +223,7 @@ $pnlHeader.Controls.Add($lblHdrVer)
 $pnlBadge = New-Object System.Windows.Forms.Panel
 $pnlBadge.Size      = New-Object System.Drawing.Size(120, 28)
 $pnlBadge.Location  = New-Object System.Drawing.Point(1146, 20)
-$pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(220, 252, 231)
+$pnlBadge.BackColor = $ColBadgeOkBg
 $pnlBadge.Anchor    = $AnchorTR
 $pnlHeader.Controls.Add($pnlBadge)
 $pnlBadge.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 120, 28)), 14))

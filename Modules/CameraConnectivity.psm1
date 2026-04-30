@@ -791,7 +791,7 @@ $cboNic = New-Object System.Windows.Forms.ComboBox
 $cboNic.Size          = New-Object System.Drawing.Size(180, 22)
 $cboNic.Location      = New-Object System.Drawing.Point(10, 34)
 $cboNic.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-$cboNic.BackColor     = [System.Drawing.Color]::White
+$cboNic.BackColor     = $ColCard
 $cboNic.Font          = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $center.Controls.Add($cboNic)
 
@@ -813,7 +813,7 @@ $btnRetest = New-Object System.Windows.Forms.Button
 $btnRetest.Text      = "Retest Last Step"
 $btnRetest.Size      = New-Object System.Drawing.Size(160, 40)
 $btnRetest.Location  = New-Object System.Drawing.Point(478, 14)
-$btnRetest.BackColor = [System.Drawing.Color]::FromArgb(226, 232, 240)
+$btnRetest.BackColor = $ColNavHover
 $btnRetest.ForeColor = $ColText
 $btnRetest.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $btnRetest.FlatAppearance.BorderSize = 0
@@ -907,27 +907,27 @@ if ($script:detectedNics.Count -gt 0) {
 
 $pnlSummaryCard = New-Object System.Windows.Forms.Panel
 $pnlSummaryCard.Size = New-Object System.Drawing.Size(780, 56); $pnlSummaryCard.Location = New-Object System.Drawing.Point(10, 304)
-$pnlSummaryCard.BackColor = [System.Drawing.Color]::White
+$pnlSummaryCard.BackColor = $ColCard
 $pnlSummaryCard.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 780, 56)), 8))
 $pnlSummaryCard.Add_Paint({
     $g = $args[1].Graphics
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $rr  = New-Object System.Drawing.Rectangle(0, 0, 779, 55)
     $bp  = [GfxHelper]::RoundedRect($rr, 8)
-    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 218, 228), 1)
+    $pen = New-Object System.Drawing.Pen($ColBorder, 1)
     $g.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
 })
 $center.Controls.Add($pnlSummaryCard)
 
 $lblLastRun = New-Object System.Windows.Forms.Label; $lblLastRun.Text = "Last Run Summary"
 $lblLastRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5); $lblLastRun.ForeColor = $ColText
-$lblLastRun.BackColor = [System.Drawing.Color]::White
+$lblLastRun.BackColor = [System.Drawing.Color]::Transparent
 $lblLastRun.Location = New-Object System.Drawing.Point(14, 7); $lblLastRun.AutoSize = $true
 $pnlSummaryCard.Controls.Add($lblLastRun)
 
 $lblLastRunVal = New-Object System.Windows.Forms.Label; $lblLastRunVal.Text = "No runs yet"
 $lblLastRunVal.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblLastRunVal.ForeColor = $ColMuted
-$lblLastRunVal.BackColor = [System.Drawing.Color]::White
+$lblLastRunVal.BackColor = [System.Drawing.Color]::Transparent
 $lblLastRunVal.Location = New-Object System.Drawing.Point(14, 28); $lblLastRunVal.Size = New-Object System.Drawing.Size(750, 18)
 $pnlSummaryCard.Controls.Add($lblLastRunVal)
 
@@ -949,7 +949,7 @@ $btnLogDetailed = New-Object System.Windows.Forms.Button; $btnLogDetailed.Text =
 $btnLogDetailed.Size = New-Object System.Drawing.Size(80, 22); $btnLogDetailed.Location = New-Object System.Drawing.Point(680, 369)
 $btnLogDetailed.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnLogDetailed.FlatAppearance.BorderSize = 0
 $btnLogDetailed.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
-$btnLogDetailed.BackColor = [System.Drawing.Color]::FromArgb(226,232,240); $btnLogDetailed.ForeColor = $ColMuted
+$btnLogDetailed.BackColor = $ColNavHover; $btnLogDetailed.ForeColor = $ColMuted
 $btnLogDetailed.Cursor = [System.Windows.Forms.Cursors]::Hand
 $center.Controls.Add($btnLogDetailed)
 $btnLogDetailed.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,80,22)),4))
@@ -979,7 +979,7 @@ $form.Controls.Add($rightBorder)
 $right = New-Object System.Windows.Forms.Panel
 $right.Size      = New-Object System.Drawing.Size($RightW, $ContentH)
 $right.Location  = New-Object System.Drawing.Point($RightX + 1, $ContentY)
-$right.BackColor = [System.Drawing.Color]::White
+$right.BackColor = $ColCard
 $right.Anchor    = $AnchorTRB
 $form.Controls.Add($right)
 
@@ -995,7 +995,7 @@ $pnlNextHdr.Controls.Add($lblNextHdr)
 
 $rtbSteps = New-Object System.Windows.Forms.RichTextBox
 $rtbSteps.Size = New-Object System.Drawing.Size(239, 380); $rtbSteps.Location = New-Object System.Drawing.Point(10, 44); $rtbSteps.Anchor = $AnchorTLRB
-$rtbSteps.BackColor = [System.Drawing.Color]::White; $rtbSteps.ForeColor = $ColText
+$rtbSteps.BackColor = $ColCard; $rtbSteps.ForeColor = $ColText
 $rtbSteps.Font = New-Object System.Drawing.Font("Segoe UI", 9); $rtbSteps.ReadOnly = $true
 $rtbSteps.BorderStyle = [System.Windows.Forms.BorderStyle]::None
 $rtbSteps.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
@@ -1028,7 +1028,7 @@ $btnAdapterSettings.Size = New-Object System.Drawing.Size(239, 28); $btnAdapterS
 $btnAdapterSettings.Anchor = $AnchorBLR
 $btnAdapterSettings.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $btnAdapterSettings.FlatAppearance.BorderColor = $ColBorder; $btnAdapterSettings.FlatAppearance.BorderSize = 1
-$btnAdapterSettings.BackColor = [System.Drawing.Color]::White; $btnAdapterSettings.ForeColor = $ColText
+$btnAdapterSettings.BackColor = $ColNavHover; $btnAdapterSettings.ForeColor = $ColText
 $btnAdapterSettings.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 $btnAdapterSettings.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
 $btnAdapterSettings.Cursor = [System.Windows.Forms.Cursors]::Hand
@@ -1041,7 +1041,7 @@ foreach ($pair in @(("btnExport","Export Report",536),("btnCopySummary","Copy Su
     $b.Anchor = $AnchorBLR
     $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $b.FlatAppearance.BorderColor = $ColBorder; $b.FlatAppearance.BorderSize = 1
-    $b.BackColor = [System.Drawing.Color]::White; $b.ForeColor = $ColText
+    $b.BackColor = $ColNavHover; $b.ForeColor = $ColText
     $b.Font = New-Object System.Drawing.Font("Segoe UI", 9)
     $b.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
     $b.Cursor = [System.Windows.Forms.Cursors]::Hand
@@ -1087,8 +1087,8 @@ $timer.Add_Tick({
     if ($sync.VpuModel -and $sync.VpuModel -ne "" -and -not $lblVpuVal.Text.StartsWith($sync.VpuModel)) { $lblVpuVal.Text = $sync.VpuModel }
 
     if ($sync.Running) {
-        $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(219,234,254)
-        $lblBadge.ForeColor = $ColAccent; $lblBadge.Text = "Running"
+        $pnlBadge.BackColor = $ColBadgeRunBg
+        $lblBadge.ForeColor = $ColYellow; $lblBadge.Text = "Running"
         $pnlBadgeDot.BackColor = $ColAccent
         $pnlSbarDot.BackColor = $ColAccent
         $lblSbarStatus.Text = "Status: Running"
@@ -1114,13 +1114,13 @@ $timer.Add_Tick({
         $btnRetest.Enabled = $true
 
         if ($sync.AllClear) {
-            $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(220,252,231)
+            $pnlBadge.BackColor = $ColBadgeOkBg
             $lblBadge.ForeColor = $ColGreen; $lblBadge.Text = "All Clear"
             $pnlBadgeDot.BackColor = $ColGreen
             $pnlSbarDot.BackColor = $ColGreen; $lblSbarStatus.Text = "Status: All Clear"
             $pnlSideDot.BackColor = $ColGreen; $lblSideStatus.Text = "All Clear"
         } else {
-            $pnlBadge.BackColor = [System.Drawing.Color]::FromArgb(254,226,226)
+            $pnlBadge.BackColor = $ColBadgeErrBg
             $lblBadge.ForeColor = $ColRed; $lblBadge.Text = "Issues Found"
             $pnlBadgeDot.BackColor = $ColRed
             $pnlSbarDot.BackColor = $ColRed; $lblSbarStatus.Text = "Status: Issues Found"
@@ -1536,7 +1536,7 @@ function Update-HistoryList {
         $item.SubItems.Add($summary)    | Out-Null
         $item.SubItems.Add("$sizeKb KB") | Out-Null
         $item.ForeColor = $resultColor
-        $item.BackColor = [System.Drawing.Color]::White
+        $item.BackColor = $ColCard
         $item.Tag       = $f.FullName
         $lvHistory.Items.Add($item) | Out-Null
     }
@@ -1643,7 +1643,7 @@ $pnlGuide.Controls.Add($btnGuideAction)
 $pnlGuideResult = New-Object System.Windows.Forms.Panel
 $pnlGuideResult.Size = New-Object System.Drawing.Size(780, 84)
 $pnlGuideResult.Location = New-Object System.Drawing.Point(10, 302)
-$pnlGuideResult.BackColor = [System.Drawing.Color]::White
+$pnlGuideResult.BackColor = $ColCard
 $pnlGuideResult.Visible = $false
 $pnlGuideResult.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,780,84)), 8))
 $pnlGuideResult.Add_Paint({
@@ -1651,7 +1651,7 @@ $pnlGuideResult.Add_Paint({
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $rr = New-Object System.Drawing.Rectangle(0,0,571,83)
     $bp = [GfxHelper]::RoundedRect($rr,8)
-    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(226,232,240),1)
+    $pen = New-Object System.Drawing.Pen($ColBorder,1)
     $g.DrawPath($pen,$bp); $pen.Dispose(); $bp.Dispose()
 })
 $pnlGuide.Controls.Add($pnlGuideResult)

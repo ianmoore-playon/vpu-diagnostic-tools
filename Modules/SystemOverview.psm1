@@ -31,14 +31,14 @@ function New-SectionCard {
     $pnl = New-Object System.Windows.Forms.Panel
     $pnl.Size      = New-Object System.Drawing.Size($W, $H)
     $pnl.Location  = New-Object System.Drawing.Point($X, $Y)
-    $pnl.BackColor = [System.Drawing.Color]::White
+    $pnl.BackColor = $ColCard
     $pnl.Cursor    = [System.Windows.Forms.Cursors]::Hand
     $pnl.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $W, $H)), 8))
     $pnl.Add_Paint({
         $g = $args[1].Graphics
         $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
         $bp  = [GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, ([int]$this.Width - 1), ([int]$this.Height - 1))), 8)
-        $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(226, 232, 240), 1)
+        $pen = New-Object System.Drawing.Pen($ColBorder, 1)
         $g.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
     })
     $iLbl = New-Object System.Windows.Forms.Label
@@ -119,7 +119,7 @@ $btnHubLastReport = New-Object System.Windows.Forms.Button
 $btnHubLastReport.Text      = "Open Last Report"
 $btnHubLastReport.Size      = New-Object System.Drawing.Size(180, 44)
 $btnHubLastReport.Location  = New-Object System.Drawing.Point(300, 396)
-$btnHubLastReport.BackColor = [System.Drawing.Color]::FromArgb(226, 232, 240)
+$btnHubLastReport.BackColor = $ColNavHover
 $btnHubLastReport.ForeColor = $ColText
 $btnHubLastReport.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $btnHubLastReport.FlatAppearance.BorderSize = 0
