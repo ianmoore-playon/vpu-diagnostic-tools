@@ -108,7 +108,7 @@ function Get-FdActionText {
         }
         4 { return "Reconnect monitor, keyboard, or mouse — check USB and display cable connections" }
         5 { return "Free disk space if critically low — run chkdsk for drive errors" }
-        6 { return "Open Event Viewer panel to investigate hardware or driver-related errors" }
+        6 { return "Open Event Logs to investigate hardware or driver-related errors" }
     }
     return ""
 }

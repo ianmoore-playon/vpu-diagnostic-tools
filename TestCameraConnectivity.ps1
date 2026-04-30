@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "VPU Diagnostic Tool Launcher (version).bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.7"
+$ScriptVersion = "1.0.8"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -349,19 +349,35 @@ $pnlTabBar.Controls.Add($sepTab)
 
 $tabW = 142  # 9 tabs × 142px ≈ 1280px
 $navSysOverview = New-TabButton "Home"                 0xE80F  (0 * $tabW)  $tabW
-$navSysInfo     = New-TabButton "System Overview"      0xE9A0  (1 * $tabW)  $tabW
-$navNetConfig   = New-TabButton "Network Config"       0xE701  (2 * $tabW)  $tabW
-$navCamera      = New-TabButton "Camera Connectivity"  0xE722  (3 * $tabW)  $tabW
-$navServices    = New-TabButton "Pixellot Services"    0xE9F5  (4 * $tabW)  $tabW
-$navPoE         = New-TabButton "PoE / NIC Hardware"   0xE7E8  (5 * $tabW)  $tabW
-$navDisk        = New-TabButton "Disk & System Health" 0xEDA2  (6 * $tabW)  $tabW
-$navEvents      = New-TabButton "Event Viewer"         0xE7BA  (7 * $tabW)  $tabW
+$navSysInfo     = New-TabButton "System Information"   0xE9A0  (1 * $tabW)  $tabW
+$navNetConfig   = New-TabButton "Network"              0xE701  (2 * $tabW)  $tabW
+$navCamera      = New-TabButton "Camera"               0xE722  (3 * $tabW)  $tabW
+$navServices    = New-TabButton "Services"             0xE9F5  (4 * $tabW)  $tabW
+$navPoE         = New-TabButton "Hardware"             0xE7E8  (5 * $tabW)  $tabW
+$navDisk        = New-TabButton "Disks"                0xEDA2  (6 * $tabW)  $tabW
+$navEvents      = New-TabButton "Event Logs"           0xE7BA  (7 * $tabW)  $tabW
 $navReports     = New-TabButton "Reports"              0xE7C3  (8 * $tabW)  $tabW
 
 $pnlTabBar.Controls.AddRange(@(
     $navSysOverview,$navSysInfo,$navNetConfig,$navCamera,$navServices,
     $navPoE,$navDisk,$navEvents,$navReports
 ))
+
+# ---- Tab hover tooltips -----------------------------------------------------
+$tabTip = New-Object System.Windows.Forms.ToolTip
+$tabTip.AutoPopDelay = 8000   # stay visible 8 s
+$tabTip.InitialDelay = 550    # appear after 550 ms hover
+$tabTip.ReshowDelay  = 300
+$tabTip.ShowAlways   = $true  # show even when form lacks focus
+$tabTip.SetToolTip($navSysOverview, "Run Full Diagnostic across all modules and view a health summary")
+$tabTip.SetToolTip($navSysInfo,     "CPU, RAM, GPU, storage, and network adapter inventory")
+$tabTip.SetToolTip($navNetConfig,   "Internet access, required port connectivity, and DNS resolution for Pixellot services")
+$tabTip.SetToolTip($navCamera,      "Camera NIC link speeds, cable-fault detection, ping/RTSP checks, and PoE power budget")
+$tabTip.SetToolTip($navServices,    "Running status of Pixellot agent, encoder, and support services")
+$tabTip.SetToolTip($navPoE,         "PoE card power budget, per-port voltage and current, and connected peripheral devices")
+$tabTip.SetToolTip($navDisk,        "Drive free space, disk health, and system memory availability")
+$tabTip.SetToolTip($navEvents,      "Recent Windows system errors filtered for hardware and service-related issues")
+$tabTip.SetToolTip($navReports,     "View, copy, or export previously saved diagnostic reports")
 
 # Helper for hidden compat buttons (no tab appearance needed)
 function New-NavButton {
