@@ -58,6 +58,8 @@ $NetScript = {
         # visibility issues between the runspace thread and the UI timer thread.
         $sync["NetCard_${Key}_V"] = $Value
         $sync["NetCard_${Key}_S"] = $Status
+        # Also mirror into sync.Cards so FullDiagnostic summary can read it.
+        $sync.Cards[$Key] = @{ Value = $Value; Status = $Status }
     }
     function Test-TcpConnect {
         param([string]$HostName, [int]$Port, [int]$TimeoutMs)

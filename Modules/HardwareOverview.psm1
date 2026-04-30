@@ -161,7 +161,7 @@ $SysInfoScript = {
     } catch { Si-Log "NICs" "Query failed" "Warn" }
 
     $ramStr = if ($fdRamGB -gt 0) { "$fdRamGB GB RAM" } else { "RAM unknown" }
-    $sync.Cards["SysInfo"] = @{ Value = "$fdCpuShort  ·  $ramStr"; Status = "ok" }
+    $sync.Cards["SysInfo"] = @{ Value = "$fdCpuShort   |   $ramStr"; Status = "ok" }
     $sync.SysInfoRunning = $false
     $sync.SysInfoComplete = $true
 }

@@ -38,7 +38,7 @@ function Get-ModuleSummaryText {
             if ($v -and $v -ne "--") { $parts += $v }
         }
     }
-    return ($parts -join "  ·  ")
+    return ($parts -join "   |   ")
 }
 
 # --- Panel -------------------------------------------------------------------
@@ -117,12 +117,13 @@ foreach ($mod in $fdModuleDefs) {
 
     # Module name
     $nLbl = New-Object System.Windows.Forms.Label
-    $nLbl.Text      = $mod.Name
-    $nLbl.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5)
-    $nLbl.ForeColor = $ColText
-    $nLbl.Location  = New-Object System.Drawing.Point(50, 17)
-    $nLbl.Size      = New-Object System.Drawing.Size(220, 20)
-    $nLbl.BackColor = [System.Drawing.Color]::Transparent
+    $nLbl.Text         = $mod.Name
+    $nLbl.Font         = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5)
+    $nLbl.ForeColor    = $ColText
+    $nLbl.Location     = New-Object System.Drawing.Point(50, 17)
+    $nLbl.Size         = New-Object System.Drawing.Size(220, 20)
+    $nLbl.BackColor    = [System.Drawing.Color]::Transparent
+    $nLbl.UseMnemonic  = $false
     $rPnl.Controls.Add($nLbl)
 
     # Status dot
@@ -155,7 +156,7 @@ foreach ($mod in $fdModuleDefs) {
 
     # View button
     $vBtn = New-Object System.Windows.Forms.Button
-    $vBtn.Text      = "View  " + [char]0xE76C
+    $vBtn.Text      = "View  >"
     $vBtn.Size      = New-Object System.Drawing.Size(96, 30)
     $vBtn.Location  = New-Object System.Drawing.Point(1110, 12)
     $vBtn.BackColor = $ColNavHover
@@ -190,7 +191,7 @@ $btnFdRerun.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRec
 $pnlFullDiag.Controls.Add($btnFdRerun)
 
 $btnFdBack = New-Object System.Windows.Forms.Button
-$btnFdBack.Text      = [char]0xE76B + "  Back to Home"
+$btnFdBack.Text      = "<  Back to Home"
 $btnFdBack.Size      = New-Object System.Drawing.Size(160, 40)
 $btnFdBack.Location  = New-Object System.Drawing.Point(286, 566)
 $btnFdBack.BackColor = $ColNavHover
@@ -250,13 +251,13 @@ $timerFullDiag.Add_Tick({
     if ($allDone) {
         $timerFullDiag.Stop()
         $elapsed = [int]((Get-Date) - $script:fdStartTime).TotalSeconds
-        $lblFdSub.Text = "Completed in ${elapsed}s  ·  $(Get-Date -Format 'MM/dd HH:mm')"
+        $lblFdSub.Text = "Completed in ${elapsed}s   |   $(Get-Date -Format 'MM/dd HH:mm')"
 
         if ($anyIssue) {
             $pnlFdBanner.BackColor     = [System.Drawing.Color]::FromArgb(55, 20, 20)
             $lblFdBannerIcon.Text      = [char]0xE783
             $lblFdBannerIcon.ForeColor = $ColRed
-            $lblFdBannerText.Text      = "Issues found — review highlighted modules below"
+            $lblFdBannerText.Text      = "Issues found - review highlighted modules below"
             $lblFdBannerText.ForeColor = $ColRed
         } else {
             $pnlFdBanner.BackColor     = [System.Drawing.Color]::FromArgb(15, 48, 28)

@@ -10,6 +10,17 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.6] - 2026-04-30
+
+### Fixed
+
+- **Full Diagnostic encoding garbage** (`Ã‚Â·`, `Ã¢â‚¬â€œ`) - non-ASCII characters (middle dot, em dash) in FullDiagnostic strings were double-encoded by `Get-Content`'s default ANSI read in Build.ps1. Replaced all non-ASCII separators with ASCII `|` and `-`.
+- **"View E" / "< E" button glyphs** - MDL2 Assets Private Use Area glyphs in a Segoe UI font button rendered as garbage. Changed to plain ASCII `View  >` and `<  Back to Home`.
+- **"Disk  System Health" label** - WinForms Label `UseMnemonic` defaults to true, eating the `&` in "Disk & System Health". Set `UseMnemonic = $false` on module name labels.
+- **Network Configuration shows no value** - the network runspace writes to `$sync["NetCard_X_V"]` flat keys, not `$sync.Cards["NetX"]`. Updated `Set-NetCard` in NetworkDiagnostics to also mirror values into `$sync.Cards` so the Full Diagnostic summary reads them correctly.
+
+---
+
 ## [1.0.5] - 2026-04-30
 
 ### Fixed
@@ -503,11 +514,33 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.6] - 2026-04-30
+
+### Fixed
+
+- **Full Diagnostic encoding garbage** (`Ã‚Â·`, `Ã¢â‚¬â€œ`) - non-ASCII characters (middle dot, em dash) in FullDiagnostic strings were double-encoded by `Get-Content`'s default ANSI read in Build.ps1. Replaced all non-ASCII separators with ASCII `|` and `-`.
+- **"View E" / "< E" button glyphs** - MDL2 Assets Private Use Area glyphs in a Segoe UI font button rendered as garbage. Changed to plain ASCII `View  >` and `<  Back to Home`.
+- **"Disk  System Health" label** - WinForms Label `UseMnemonic` defaults to true, eating the `&` in "Disk & System Health". Set `UseMnemonic = $false` on module name labels.
+- **Network Configuration shows no value** - the network runspace writes to `$sync["NetCard_X_V"]` flat keys, not `$sync.Cards["NetX"]`. Updated `Set-NetCard` in NetworkDiagnostics to also mirror values into `$sync.Cards` so the Full Diagnostic summary reads them correctly.
+
+---
+
 ## [1.0.5] - 2026-04-26
 
 ### Changed
 
 - **Camera-level fault note reworded** — clarified to distinguish between physical layer ruled out (NIC 1 Gbps) vs. camera-side issue; added PoE reset guidance before assuming hardware failure
+
+---
+
+## [1.0.6] - 2026-04-30
+
+### Fixed
+
+- **Full Diagnostic encoding garbage** (`Ã‚Â·`, `Ã¢â‚¬â€œ`) - non-ASCII characters (middle dot, em dash) in FullDiagnostic strings were double-encoded by `Get-Content`'s default ANSI read in Build.ps1. Replaced all non-ASCII separators with ASCII `|` and `-`.
+- **"View E" / "< E" button glyphs** - MDL2 Assets Private Use Area glyphs in a Segoe UI font button rendered as garbage. Changed to plain ASCII `View  >` and `<  Back to Home`.
+- **"Disk  System Health" label** - WinForms Label `UseMnemonic` defaults to true, eating the `&` in "Disk & System Health". Set `UseMnemonic = $false` on module name labels.
+- **Network Configuration shows no value** - the network runspace writes to `$sync["NetCard_X_V"]` flat keys, not `$sync.Cards["NetX"]`. Updated `Set-NetCard` in NetworkDiagnostics to also mirror values into `$sync.Cards` so the Full Diagnostic summary reads them correctly.
 
 ---
 
