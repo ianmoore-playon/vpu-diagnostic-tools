@@ -8,7 +8,7 @@ $modDir = Join-Path $dest "Modules"
 $mods   = @(
     'UIHelpers','SystemOverview','CameraConnectivity','NetworkDiagnostics',
     'ReportGenerator','HelpAbout','PoeNicHardware','PixellotServices',
-    'DiskHealth','EventViewer','HardwareOverview'
+    'DiskHealth','EventViewer','HardwareOverview','FullDiagnostic'
 )
 
 Write-Host "Building combined launcher..."

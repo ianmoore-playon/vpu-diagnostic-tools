@@ -128,7 +128,7 @@ $btnHubLastReport.Cursor    = [System.Windows.Forms.Cursors]::Hand
 $btnHubLastReport.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 44)), 7))
 $pnlSysOverview.Controls.Add($btnHubLastReport)
 
-$btnHubRun.Add_Click({ $navCamera.PerformClick(); $btnRun.PerformClick() })
+$btnHubRun.Add_Click({ Start-FullDiagnostic })
 $btnHubLastReport.Add_Click({
     $latest = Get-ChildItem -Path $OutputDir -Filter "CameraLink_Results_*.txt" -ErrorAction SilentlyContinue |
               Sort-Object LastWriteTime -Descending | Select-Object -First 1

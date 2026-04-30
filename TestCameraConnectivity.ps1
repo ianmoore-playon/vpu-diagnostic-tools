@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click RunDiagnostic.bat  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.3"
+$ScriptVersion = "1.0.4"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -105,6 +105,7 @@ $sync = [hashtable]::Synchronized(@{
         HwGpu       = @{ Value = "--"; Status = "neutral" }
         HwMonitor   = @{ Value = "--"; Status = "neutral" }
         HwMmk       = @{ Value = "--"; Status = "neutral" }
+        SysInfo     = @{ Value = "--"; Status = "neutral" }
     }
     PortResults     = [System.Collections.ArrayList]::new()
     CamResults      = [System.Collections.ArrayList]::new()
@@ -418,13 +419,15 @@ $form.Controls.AddRange(@($lblVpuVal, $pnlSideDot, $lblSideStatus))
 . "$ModulesDir\DiskHealth.psm1"
 . "$ModulesDir\EventViewer.psm1"
 . "$ModulesDir\HardwareOverview.psm1"
+. "$ModulesDir\FullDiagnostic.psm1"
 $pnlReports  = New-StubPanel "Reports"  "Generate and manage diagnostic reports."
 $pnlSettings = New-StubPanel "Settings" "Configure tool behavior and preferences."
 
 # ---------- Nav panel registry (must be after all panels created) ------------
 $script:allNavPanels = @(
     $pnlSysOverview,$center,$pnlGuide,$pnlHistory,$pnlHelp,$pnlNetwork,
-    $pnlPoE,$pnlServices,$pnlDisk,$pnlEvents,$pnlReports,$pnlSettings,$pnlSysInfo
+    $pnlPoE,$pnlServices,$pnlDisk,$pnlEvents,$pnlReports,$pnlSettings,$pnlSysInfo,
+    $pnlFullDiag
 )
 
 # ---------- Nav click handlers -----------------------------------------------

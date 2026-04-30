@@ -56,6 +56,7 @@ $SysInfoScript = {
     # -- Processor ---------------------------------------------------------------
     $sync.SysInfoStep = "Querying processor..."
     Si-Section "Processor"
+    $fdCpuShort = "Unknown CPU"
     try {
         $cpus = @(Get-CimInstance Win32_Processor -ErrorAction Stop)
         foreach ($cpu in $cpus) {
@@ -65,6 +66,9 @@ $SysInfoScript = {
             Si-Log "Cores"        "$($cpu.NumberOfCores) physical / $($cpu.NumberOfLogicalProcessors) logical"  "Info"
             if ($cpu.SocketDesignation) { Si-Log "Socket" $cpu.SocketDesignation                            "Info" }
         }
+        if ($cpus.Count -gt 0) {
+            $fdCpuShort = $cpus[0].Name.Trim() -replace 'Intel\(R\) Core\(TM\) ','Core ' -replace '\(R\)|\(TM\)','' -replace '\s+@\s.*','' -replace '\s+',' '
+        }
     } catch { Si-Log "CPU" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -72,8 +76,10 @@ $SysInfoScript = {
     # -- Memory ------------------------------------------------------------------
     $sync.SysInfoStep = "Querying memory..."
     Si-Section "Memory"
+    $fdRamGB = 0
     try {
         $os2 = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $fdRamGB = [int]([double]$os2.TotalVisibleMemorySize / 1048576.0 + 0.5)
         Si-Log "Total RAM"  ("{0:F1} GB" -f ([double]$os2.TotalVisibleMemorySize / 1048576.0))     "Info"
         Si-Log "Available"  ("{0:F1} GB" -f ([double]$os2.FreePhysicalMemory     / 1048576.0))     "Info"
         $slots = @(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue)
@@ -154,6 +160,8 @@ $SysInfoScript = {
         }
     } catch { Si-Log "NICs" "Query failed" "Warn" }
 
+    $ramStr = if ($fdRamGB -gt 0) { "$fdRamGB GB RAM" } else { "RAM unknown" }
+    $sync.Cards["SysInfo"] = @{ Value = "$fdCpuShort  ·  $ramStr"; Status = "ok" }
     $sync.SysInfoRunning = $false
     $sync.SysInfoComplete = $true
 }

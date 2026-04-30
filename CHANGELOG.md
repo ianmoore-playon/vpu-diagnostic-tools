@@ -10,6 +10,15 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.4] - 2026-04-30
+
+### Added
+
+- **Full Diagnostic** (`FullDiagnostic.psm1`) — "Run Full Diagnostic" on the Home page now fires all seven diagnostic modules in parallel (System Overview, Network Config, Camera Connectivity, Pixellot Services, VPU Hardware, Disk & System Health, Event Viewer) and presents a one-page summary. Each module row shows a live spinning status while running, then resolves to Pass / Warning / Issues Found with a one-line value summary and a "View →" button that jumps directly to that module's tab. An overall banner (green All Clear / red Issues Found) appears when all checks complete. A "Re-run" button re-fires everything; "Back to Home" returns to the hub card grid.
+- **System Overview summary card** — `HardwareOverview.psm1` now writes `sync.Cards["SysInfo"]` (e.g. `Core i7-8700  ·  16 GB RAM`) at collection end so the Full Diagnostic summary can display a one-line hardware snapshot.
+
+---
+
 ## [1.0.3] - 2026-04-30
 
 ### Added
