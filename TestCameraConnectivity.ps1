@@ -1,11 +1,11 @@
 # =============================================================================
-#  VPU Diagnostic Tool Suite  v2.2.0
+#  VPU Diagnostic Tool Suite  v1.0.0
 #  Launcher - loads modules from .\Modules\ and runs the GUI.
 #
 #  HOW TO RUN: double-click RunDiagnostic.bat  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "2.2.0"
+$ScriptVersion = "1.0.0"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -89,6 +89,9 @@ $sync = [hashtable]::Synchronized(@{
         DiskStatus  = @{ Value = "--"; Status = "neutral" }
         MemStatus   = @{ Value = "--"; Status = "neutral" }
         EvtStatus   = @{ Value = "--"; Status = "neutral" }
+        HwGpu       = @{ Value = "--"; Status = "neutral" }
+        HwMonitor   = @{ Value = "--"; Status = "neutral" }
+        HwMmk       = @{ Value = "--"; Status = "neutral" }
     }
     PortResults     = [System.Collections.ArrayList]::new()
     CamResults      = [System.Collections.ArrayList]::new()
@@ -127,6 +130,16 @@ $sync = [hashtable]::Synchronized(@{
     EvtCancelled    = $false
     EvtStep         = "Ready"
     EvtQueue        = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    HwRunning       = $false
+    HwComplete      = $false
+    HwCancelled     = $false
+    HwStep          = "Ready"
+    HwQueue         = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    PoePortData     = [System.Collections.ArrayList]::new()
+    PoeConsumed     = 0.0
+    PoeTotal        = 0.0
+    PoeTemp         = 0.0
+    NicLinkUptimes  = [System.Collections.ArrayList]::new()
 })
 
 
@@ -299,7 +312,7 @@ function New-SidebarButton { param([string]$Text,[int]$Y,[bool]$Active=$false); 
 $navSysOverview = New-NavButton "  System Overview"      8   $true
 $navNetConfig   = New-NavButton "  Network Configuration" 52
 $navCamera      = New-NavButton "  Camera Connectivity"  96
-$navPoE         = New-NavButton "  PoE / NIC Hardware"   140
+$navPoE         = New-NavButton "  VPU Hardware"          140
 $navServices    = New-NavButton "  Pixellot Services"    184
 $navDisk        = New-NavButton "  System & Disk Health" 228
 $navEvents      = New-NavButton "  Event Viewer"         272
@@ -456,13 +469,14 @@ $form.Add_Load({
 })
 
 $form.Add_FormClosing({
-    $timer.Stop(); $netTimer.Stop(); $svcTimer.Stop(); $diskTimer.Stop(); $evtTimer.Stop()
-    $sync.Cancelled=$true; $sync.NetCancelled=$true; $sync.SvcCancelled=$true; $sync.DiskCancelled=$true; $sync.EvtCancelled=$true
+    $timer.Stop(); $netTimer.Stop(); $svcTimer.Stop(); $diskTimer.Stop(); $evtTimer.Stop(); $hwTimer.Stop()
+    $sync.Cancelled=$true; $sync.NetCancelled=$true; $sync.SvcCancelled=$true; $sync.DiskCancelled=$true; $sync.EvtCancelled=$true; $sync.HwCancelled=$true
     try { if ($script:runspace)    { $script:runspace.Close();    $script:runspace.Dispose()    } } catch { }
     try { if ($script:netRunspace) { $script:netRunspace.Close(); $script:netRunspace.Dispose() } } catch { }
     try { if ($script:svcRunspace) { $script:svcRunspace.Close(); $script:svcRunspace.Dispose() } } catch { }
     try { if ($script:diskRunspace){ $script:diskRunspace.Close();$script:diskRunspace.Dispose()} } catch { }
     try { if ($script:evtRunspace) { $script:evtRunspace.Close(); $script:evtRunspace.Dispose() } } catch { }
+    try { if ($script:hwRunspace)  { $script:hwRunspace.Close();  $script:hwRunspace.Dispose()  } } catch { }
 })
 
 [System.Windows.Forms.Application]::Run($form)

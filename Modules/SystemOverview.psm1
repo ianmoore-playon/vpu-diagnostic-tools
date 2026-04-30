@@ -73,7 +73,7 @@ $hubCardDefs = @(
     @{Nav="navNetConfig";   Title="Network Configuration"; Desc="IP, DNS, firewall and connectivity"; Icon=0xE701;R=0;C=1}
     @{Nav="navCamera";      Title="Camera Connectivity";   Desc="Cameras, NICs and link status";      Icon=0xE722;R=0;C=2}
     @{Nav="navServices";    Title="Pixellot Services";     Desc="Services status and logs";            Icon=0xE9F5;R=0;C=3}
-    @{Nav="navPoE";         Title="PoE / NIC Hardware";    Desc="PoE ports, NICs and hardware";       Icon=0xE7E8;R=1;C=0}
+    @{Nav="navPoE";         Title="VPU Hardware";           Desc="GPU, peripherals, PoE and NIC uptime"; Icon=0xE7E8;R=1;C=0}
     @{Nav="navDisk";        Title="System & Disk Health";  Desc="Disk space, performance and health"; Icon=0xEDA2;R=1;C=1}
     @{Nav="navEvents";      Title="Event Viewer";           Desc="Critical and warning events";        Icon=0xE7BA;R=1;C=2}
     @{Nav="navReports";     Title="Reports";                Desc="Generate and export reports";        Icon=0xE7C3;R=1;C=3}

@@ -10,6 +10,33 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.0] - 2026-04-29
+
+### Added
+
+- **VPU Hardware tab** (replaces "PoE / NIC Hardware" stub) — "Check Hardware" runs a background diagnostic showing GPU model (`Win32_VideoController`), monitor connection status (`Win32_DesktopMonitor` with PnP fallback), and MMK peripheral status (mouse via `Win32_PointingDevice`, keyboard via `Win32_Keyboard`). NIC port link uptime and PoE per-port data are read from the Camera Connectivity cache — no second DLL call. Follows the same pattern as all other panel modules: independent runspace, 300ms timer, Run/Cancel buttons, live spinner, and dark RichTextBox log.
+- **NIC link uptime** — Camera Connectivity runspace now calculates per-port link uptime after the SmartSpeed pre-scan, reusing the already-fetched event log (`$events`, IDs 27/32). Results cached in `$sync.NicLinkUptimes`; `>48h` indicates a stable link (positive result, not a warning).
+- **PoE data cache** — Camera Connectivity runspace writes per-port PoE readings (voltage, current, watts, state) to `$sync.PoePortData` and budget summary to `$sync.PoeTotal/PoeConsumed/PoeTemp`. VPU Hardware tab reads from this cache.
+
+### Fixed
+
+- **PoE port level** — `$portLvl` was referencing undefined `$pgGood`; corrected to `$voltage -gt 1.0` so PoE-active ports correctly show green instead of always gray.
+
+### Changed
+
+- **"PoE / NIC Hardware"** nav button and hub card renamed to **"VPU Hardware"** throughout (sidebar, System Overview hub).
+- Version renumbered from 2.x to 1.0.0, marking first production-ready release for field deployment.
+
+---
+
+## [0.2.2] - 2026-04-29
+
+### Changed
+
+- Version renumbered from 2.3.0 to 0.2.2 to reflect pre-release / alpha status ahead of the planned v1.0.0 milestone.
+
+---
+
 ## [2.3.0] - 2026-04-29
 
 ### Changed

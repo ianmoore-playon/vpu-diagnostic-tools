@@ -211,6 +211,29 @@ $DiagScript = {
         }
     }
 
+    # -- NIC port link uptime (reuses $events already fetched above) -----------
+    $sync.NicLinkUptimes.Clear()
+    foreach ($nic in $nicPorts) {
+        $lastUp = $null
+        foreach ($evt in ($events | Where-Object { $_.Id -in @(27,32) } |
+                                    Sort-Object TimeCreated -Descending)) {
+            $a = Get-EventAdapterName -Evt $evt -KnownDescs $knownDescs
+            if ($a -ne $nic.InterfaceDescription) { continue }
+            $msg  = try { $evt.Message } catch { "" }
+            $isUp = ($evt.Id -eq 32) -or
+                    ($evt.Id -eq 27 -and $msg -match '\d+\s*(Gbps|Mbps)') -or
+                    ($evt.Id -eq 27 -and $msg -notmatch '(?i)disconnect|down')
+            if ($isUp) { $lastUp = $evt.TimeCreated; break }
+        }
+        $uptimeStr = if ($lastUp) {
+            $span = (Get-Date) - $lastUp
+            if     ($span.TotalDays -ge 1)  { "{0}d {1}h" -f [int]$span.TotalDays, $span.Hours }
+            elseif ($span.TotalHours -ge 1) { "{0}h {1}m" -f [int]$span.TotalHours, $span.Minutes }
+            else                            { "{0}m"       -f [int]$span.TotalMinutes }
+        } else { ">48h" }
+        $sync.NicLinkUptimes.Add(@{ Name = $nic.Name; Uptime = $uptimeStr }) | Out-Null
+    }
+
     # -- Link speed check ------------------------------------------------------
     $sync.CurrentStep = "Checking link speeds..."
     Add-Log "-- Link Speed Check --" "Cyan"
@@ -579,6 +602,7 @@ $DiagScript = {
     Add-Section "PoE Status"
     Add-Log "-- PoE Power Monitoring (ADLINK SmartPoE) --" "Cyan"
     Add-Log ""
+    $sync.PoePortData.Clear()
     if ($PoeDllPath -and ([System.Management.Automation.PSTypeName]'AdlinkPoE').Type) {
         try {
             $cardNum = [uint16]0
@@ -607,10 +631,12 @@ $DiagScript = {
                     [void][AdlinkPoE]::SmartPoE_Get_PSEPortCurrent($cardNum, $portNum, [ref]$current)
                     $watts    = $voltage * $current
                     $stateStr = if ($voltage -gt 1.0) { "PoE ON" } else { "PoE OFF" }
-                    $portLvl  = if ($pgGood -eq 1) { "Pass" } else { "Gray" }
+                    $portLvl  = if ($voltage -gt 1.0) { "Pass" } else { "Gray" }
                     Add-Log    ("  {0,-5} : {1:F2} V  {2:F3} A  {3:F1} W  [{4}]" -f $pLabel, $voltage, $current, $watts, $stateStr) $portLvl
                     Add-Summary "PoE $pLabel" ("{0:F1} W  ({1})" -f $watts, $stateStr) $portLvl
+                    $sync.PoePortData.Add(@{ Port=$pLabel; Voltage=$voltage; Current=$current; Watts=$watts; PoeOn=($voltage -gt 1.0) }) | Out-Null
                 }
+                $sync.PoeConsumed = $consumed; $sync.PoeTotal = $total; $sync.PoeTemp = $temp
                 Add-Log ""
 
                 $sync.PoeBudgetLow = ($total -gt 0) -and ($total -lt 55)
