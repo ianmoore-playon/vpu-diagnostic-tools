@@ -12,40 +12,109 @@ $SvcScript = {
     function Svc-Section { param([string]$Title)
         $sync.SvcQueue.Enqueue(@{ Label=""; Result=$Title; L="Section" }) }
 
-    $sync.SvcStep = "Checking Pixellot services..."
-    Svc-Section "Pixellot Services"
-    $allSvcs = @()
-    foreach ($p in @("Pixellot*","pxl*","CanopyAgent*","SportzCast*")) {
-        try { $allSvcs += @(Get-Service -Name $p -ErrorAction SilentlyContinue) } catch { }
-    }
-    if ($allSvcs.Count -gt 0) {
-        $running = 0
-        foreach ($svc in ($allSvcs | Sort-Object DisplayName)) {
-            if ($sync.SvcCancelled) { break }
-            $lvl = if ($svc.Status -eq "Running") { $running++; "Pass" } else { "Warn" }
-            Svc-Log $svc.DisplayName $svc.Status.ToString() $lvl
-        }
-        $sync.Cards["SvcStatus"] = @{ Value="$running/$($allSvcs.Count) running"; Status=if($running -lt $allSvcs.Count){"warn"}else{"ok"} }
-    } else {
-        Svc-Log "Pixellot services" "None found on this system" "Gray"
-        $sync.Cards["SvcStatus"] = @{ Value="None found"; Status="neutral" }
-    }
-    if ($sync.SvcCancelled) { $sync.SvcRunning=$false; $sync.SvcComplete=$true; return }
+    $critFail = 0   # required processes that are NOT running
+    $warnCount = 0  # non-critical issues (Scoreconnect stopped, etc.)
 
+    # ── Section 1: Core Pixellot Processes ────────────────────────────────────
+    # These four must always be running. VPU.exe is informational only.
+    $sync.SvcStep = "Checking core Pixellot processes..."
+    Svc-Section "Core Pixellot Processes"
+
+    $required = @(
+        @{ Proc="Agent";       Label="Agent.exe";       Note="" }
+        @{ Proc="KeepAgentUp"; Label="KeepAgentUp.exe"; Note="" }
+        @{ Proc="Coordinator"; Label="Coordinator.exe"; Note="" }
+        @{ Proc="LogMeIn";     Label="LogMeIn.exe";     Note="" }
+    )
+
+    foreach ($r in $required) {
+        if ($sync.SvcCancelled) { $sync.SvcRunning=$false; $sync.SvcComplete=$true; return }
+        $procs = @(Get-Process -Name $r.Proc -ErrorAction SilentlyContinue)
+        if ($procs.Count -gt 0) {
+            $pidStr = ($procs | ForEach-Object { $_.Id }) -join ", "
+            Svc-Log $r.Label "Running  (PID $pidStr)" "Pass"
+        } else {
+            Svc-Log $r.Label "NOT running" "Fail"
+            $critFail++
+        }
+    }
+
+    # VPU.exe — informational only; not running is normal when cameras are idle
+    if (-not $sync.SvcCancelled) {
+        $vpuProc = @(Get-Process -Name "VPU" -ErrorAction SilentlyContinue)
+        if ($vpuProc.Count -gt 0) {
+            $pidStr = ($vpuProc | ForEach-Object { $_.Id }) -join ", "
+            Svc-Log "VPU.exe" "Running  (PID $pidStr)  — cameras active" "Pass"
+        } else {
+            Svc-Log "VPU.exe" "Not running  — normal when cameras are idle" "Gray"
+        }
+    }
+
+    # ── Section 2: Scoreconnect ───────────────────────────────────────────────
+    # Covers v1, v2, and v3 via wildcard.  Missing = not installed (not a fault).
+    if ($sync.SvcCancelled) { $sync.SvcRunning=$false; $sync.SvcComplete=$true; return }
+    $sync.SvcStep = "Checking Scoreconnect..."
+    Svc-Section "Scoreconnect"
+
+    # Windows service (wildcard matches Scoreconnect I / II / III)
+    $scSvcs = @()
+    try { $scSvcs += @(Get-Service -Name        "Scoreconnect*" -ErrorAction SilentlyContinue) } catch {}
+    try { $scSvcs += @(Get-Service -DisplayName "Scoreconnect*" -ErrorAction SilentlyContinue) } catch {}
+    # Deduplicate by service name
+    $scSvcs = @($scSvcs | Sort-Object Name -Unique)
+
+    if ($scSvcs.Count -gt 0) {
+        foreach ($svc in $scSvcs) {
+            if ($svc.Status -eq "Running") {
+                Svc-Log "Service: $($svc.DisplayName)" "Running" "Pass"
+            } else {
+                Svc-Log "Service: $($svc.DisplayName)" $svc.Status.ToString() "Warn"
+                $warnCount++
+            }
+        }
+    }
+
+    # Process check (exe may run independently of the service)
+    $scProcs = @(Get-Process -Name "Scoreconnect*" -ErrorAction SilentlyContinue)
+    if ($scProcs.Count -gt 0) {
+        foreach ($p in $scProcs) {
+            Svc-Log "$($p.Name).exe" "Running  (PID $($p.Id))" "Pass"
+        }
+    } elseif ($scSvcs.Count -gt 0) {
+        # Service is registered but process not found — add context
+        Svc-Log "Scoreconnect*.exe" "Process not running" "Warn"
+        $warnCount++
+    } else {
+        # Neither service nor process found — likely not installed on this VPU
+        Svc-Log "Scoreconnect" "Not detected on this VPU" "Gray"
+    }
+
+    # ── Section 3: System Dependencies ───────────────────────────────────────
+    if ($sync.SvcCancelled) { $sync.SvcRunning=$false; $sync.SvcComplete=$true; return }
     $sync.SvcStep = "Checking system dependencies..."
     Svc-Section "System Dependencies"
     foreach ($dep in @(
-        @{Name="W32Time";     Label="Windows Time (NTP)"}
-        @{Name="Dnscache";    Label="DNS Client"}
-        @{Name="Dhcp";        Label="DHCP Client"}
-        @{Name="EventLog";    Label="Windows Event Log"}
-        @{Name="wuauserv";    Label="Windows Update"}
+        @{Name="W32Time";  Label="Windows Time (NTP)"}
+        @{Name="Dnscache"; Label="DNS Client"}
+        @{Name="Dhcp";     Label="DHCP Client"}
+        @{Name="EventLog"; Label="Windows Event Log"}
+        @{Name="wuauserv"; Label="Windows Update"}
     )) {
         if ($sync.SvcCancelled) { break }
         try {
             $s = Get-Service -Name $dep.Name -ErrorAction Stop
             Svc-Log $dep.Label $s.Status.ToString() $(if($s.Status -eq "Running"){"Pass"}else{"Warn"})
         } catch { Svc-Log $dep.Label "Not found" "Gray" }
+    }
+
+    # ── Card summary ─────────────────────────────────────────────────────────
+    if ($critFail -gt 0) {
+        $noun = if ($critFail -eq 1) { "process" } else { "processes" }
+        $sync.Cards["SvcStatus"] = @{ Value="$critFail required $noun not running"; Status="fail" }
+    } elseif ($warnCount -gt 0) {
+        $sync.Cards["SvcStatus"] = @{ Value="Core processes OK — Scoreconnect needs attention"; Status="warn" }
+    } else {
+        $sync.Cards["SvcStatus"] = @{ Value="All core processes running"; Status="ok" }
     }
 
     $sync.SvcStep = "Complete"; $sync.SvcRunning=$false; $sync.SvcComplete=$true
@@ -87,7 +156,7 @@ $lblSvcTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lbl
 $lblSvcTitle.Location = New-Object System.Drawing.Point(10,16); $lblSvcTitle.AutoSize = $true
 $pnlServices.Controls.Add($lblSvcTitle)
 $lblSvcSub = New-Object System.Windows.Forms.Label
-$lblSvcSub.Text = "Checks Pixellot application services and key Windows dependencies."
+$lblSvcSub.Text = "Checks required Pixellot processes, Scoreconnect service, and system dependencies."
 $lblSvcSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblSvcSub.ForeColor = $ColMuted
 $lblSvcSub.Location = New-Object System.Drawing.Point(10,42); $lblSvcSub.Size = New-Object System.Drawing.Size(1240,18)
 $pnlServices.Controls.Add($lblSvcSub)

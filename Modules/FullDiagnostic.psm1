@@ -103,8 +103,9 @@ function Get-FdActionText {
         2 { return "Inspect camera cable connections for damage or loose RJ45 connectors" }
         3 {
             $v = if ($sync.Cards.ContainsKey("SvcStatus")) { $sync.Cards["SvcStatus"].Value } else { "" }
-            if ($v -eq "None found") { return "Verify Pixellot software is installed and the agent service is running" }
-            return "Open the Services panel and restart any stopped Pixellot services"
+            if ($v -like "*not running*") { return "Restart the missing process(es) from the Services tab or reboot the VPU" }
+            if ($v -like "*Scoreconnect*") { return "Restart the Scoreconnect service from the Services tab" }
+            return "Open the Services tab to review process and service status"
         }
         4 { return "Reconnect monitor, keyboard, or mouse — check USB and display cable connections" }
         5 { return "Free disk space if critically low — run chkdsk for drive errors" }
