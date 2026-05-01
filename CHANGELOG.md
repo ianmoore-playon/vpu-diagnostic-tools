@@ -10,6 +10,17 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.13] - 2026-04-30
+
+### Changed
+
+- **Launcher now installs to `%ProgramFiles%\VPU-DiagTool`** — the tool is no longer re-downloaded to `%TEMP%` on every run. On first launch it installs to Program Files and builds `Run.ps1`; on subsequent launches it checks the latest GitHub commit SHA and only re-downloads when an update is available.
+- **Smart update detection** — a `.commit` file stores the installed GitHub commit SHA. The launcher compares it against the remote SHA on each run via one lightweight GitHub API call. If the SHA matches, the tool launches instantly. If the check fails (no internet), it falls back to the installed version gracefully.
+- **Self-elevation** — the launcher now prompts for administrator privileges via UAC if not already elevated, since writing to Program Files requires admin access.
+- **Re-download safety net** — if `Run.ps1` is missing for any reason (failed build, manual deletion) the launcher forces a fresh download regardless of the stored SHA.
+
+---
+
 ## [1.0.6] - 2026-04-30
 
 ### Fixed
