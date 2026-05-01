@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.30] - 2026-05-01
+
+### Changed
+
+- **TCP 5672 upgraded to reliable test** — `app.singular.live` is behind Cloudflare Spectrum which proxies TCP on arbitrary ports, so a plain TCP connect gives a valid firewall signal. Promoted to `Reliable=$true`. Failure note updated to explain the real-world impact: blocking TCP 5672 prevents scoreboards and watermarks from appearing on stream. UDP 5672 remains INFO pending a capture during an active Singular session.
+
+---
+
 ## [1.0.29] - 2026-05-01
 
 ### Fixed
