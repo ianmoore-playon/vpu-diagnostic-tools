@@ -720,6 +720,7 @@ $form.Add_Load({
     # Async update check - compares remote $ScriptVersion to current; shows notice if newer
     try {
         $wc = New-Object System.Net.WebClient
+        if ($env:VPU_DEPLOY_TOKEN) { $wc.Headers.Add("Authorization", "Bearer $env:VPU_DEPLOY_TOKEN") }
         Register-ObjectEvent -InputObject $wc -EventName DownloadStringCompleted `
             -MessageData @{ Sync = $sync; CurVer = $ScriptVersion } -Action {
             try {
