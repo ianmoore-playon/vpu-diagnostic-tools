@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.24"
+$ScriptVersion = "1.0.25"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -2989,7 +2989,9 @@ $NetScript = {
     }
     function Set-NetCard {
         param([string]$Key, [string]$Value, [string]$Status)
-        $sync.Cards[$Key] = @{ Value = $Value; Status = $Status }
+        $sync.Cards[$Key]   = @{ Value = $Value; Status = $Status }
+        $sync["_nc_$Key"]   = $Value    # direct write to synchronized hashtable — guaranteed cross-thread visibility
+        $sync["_ncs_$Key"]  = $Status
     }
     function Test-TcpConnect {
         param([string]$HostName, [int]$Port, [int]$TimeoutMs)
@@ -3179,9 +3181,10 @@ $netTimer.Add_Tick({
     }
 
     foreach ($netKey in $netCards.Keys) {
-        $sc = $sync.Cards[$netKey]
-        if ($sc -and $sc.Value -and $sc.Value -ne $netCards[$netKey].ValueLabel.Text) {
-            Update-CardStatus -Card $netCards[$netKey] -Value $sc.Value -Status $sc.Status
+        $val = $sync["_nc_$netKey"]
+        $sts = $sync["_ncs_$netKey"]
+        if ($val -and $val -ne $netCards[$netKey].ValueLabel.Text) {
+            Update-CardStatus -Card $netCards[$netKey] -Value $val -Status $sts
         }
     }
 
@@ -3193,12 +3196,12 @@ $netTimer.Add_Tick({
     }
 
     if ($sync.NetComplete -and -not $sync.NetRunning) {
-        # Memory barrier from reading $sync.NetComplete guarantees the inner $sync.Cards
-        # writes from the background thread are now visible — force a final sync.
+        # Final sync reads directly from the synchronized hashtable — guaranteed visibility.
         foreach ($netKey in $netCards.Keys) {
-            $sc = $sync.Cards[$netKey]
-            if ($sc -and $sc.Value) {
-                Update-CardStatus -Card $netCards[$netKey] -Value $sc.Value -Status $sc.Status
+            $val = $sync["_nc_$netKey"]
+            $sts = $sync["_ncs_$netKey"]
+            if ($val) {
+                Update-CardStatus -Card $netCards[$netKey] -Value $val -Status $sts
             }
         }
         $netTimer.Stop()
@@ -3299,7 +3302,9 @@ function Start-NetDiagnostic {
     if ($sync.NetRunning) { return }
     $sync.NetCancelled = $false
     foreach ($k in @("NetInternet","NetPorts","NetDomains")) {
-        $sync.Cards[$k] = @{ Value="--"; Status="neutral" }
+        $sync.Cards[$k]  = @{ Value="--"; Status="neutral" }
+        $sync["_nc_$k"]  = "--"
+        $sync["_ncs_$k"] = "neutral"
     }
     foreach ($k in $netCards.Keys) { Update-CardStatus -Card $netCards[$k] -Value "--" -Status "neutral" }
     $rtbNetLog.Clear()
@@ -4887,7 +4892,7 @@ $sysInfoTimer.Add_Tick({
     if ($sync.SysInfoComplete) {
         $sysInfoTimer.Stop()
         $btnSiRefresh.Enabled = $true
-        $lblSiStatus.Text = "Collected at $(Get-Date -Format 'HH:mm:ss')"
+        $lblSiStatus.Text = "Collected at $(Get-Date -Format 'h:mm:ss tt')"
     } else {
         $lblSiStatus.Text = $sync.SysInfoStep
     }
@@ -5350,7 +5355,7 @@ $timerFullDiag.Add_Tick({
 
     $timerFullDiag.Stop()
     $elapsed = [int]((Get-Date) - $script:fdStartTime).TotalSeconds
-    $lblFdSub.Text = "Completed in ${elapsed}s   |   $(Get-Date -Format 'MM/dd HH:mm')"
+    $lblFdSub.Text = "Completed in ${elapsed}s   |   $(Get-Date -Format 'M/d h:mm tt')"
 
     $totalIssues = $critCount + $warnCount
     if ($totalIssues -gt 0) {
@@ -5627,7 +5632,7 @@ $timerToast.Add_Tick({
             $clr  = if ($isOk -and -not $isWarn) { $ColGreen } elseif ($isWarn) { $ColYellow } else { $ColRed }
             $icon = if ($isOk -and -not $isWarn) { [char]0xE73E } elseif ($isWarn) { [char]0xE7BA } else { [char]0xEA39 }
             $msg  = "$($meta.Name)  -  " + $(if ($isOk -and -not $isWarn) { "All Clear" } elseif ($isWarn) { "Warning" } else { "Issues Found" })
-            $sub  = "Completed $(Get-Date -Format 'HH:mm:ss')   |   Click X to dismiss"
+            $sub  = "Completed $(Get-Date -Format 'h:mm:ss tt')   |   Click X to dismiss"
 
             $pnlToastAccent.BackColor = $clr
             $lblToastIcon.Text        = $icon

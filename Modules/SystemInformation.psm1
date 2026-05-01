@@ -242,7 +242,7 @@ $sysInfoTimer.Add_Tick({
     if ($sync.SysInfoComplete) {
         $sysInfoTimer.Stop()
         $btnSiRefresh.Enabled = $true
-        $lblSiStatus.Text = "Collected at $(Get-Date -Format 'HH:mm:ss')"
+        $lblSiStatus.Text = "Collected at $(Get-Date -Format 'h:mm:ss tt')"
     } else {
         $lblSiStatus.Text = $sync.SysInfoStep
     }

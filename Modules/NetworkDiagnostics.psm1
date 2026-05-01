@@ -54,7 +54,9 @@ $NetScript = {
     }
     function Set-NetCard {
         param([string]$Key, [string]$Value, [string]$Status)
-        $sync.Cards[$Key] = @{ Value = $Value; Status = $Status }
+        $sync.Cards[$Key]   = @{ Value = $Value; Status = $Status }
+        $sync["_nc_$Key"]   = $Value    # direct write to synchronized hashtable — guaranteed cross-thread visibility
+        $sync["_ncs_$Key"]  = $Status
     }
     function Test-TcpConnect {
         param([string]$HostName, [int]$Port, [int]$TimeoutMs)
@@ -244,9 +246,10 @@ $netTimer.Add_Tick({
     }
 
     foreach ($netKey in $netCards.Keys) {
-        $sc = $sync.Cards[$netKey]
-        if ($sc -and $sc.Value -and $sc.Value -ne $netCards[$netKey].ValueLabel.Text) {
-            Update-CardStatus -Card $netCards[$netKey] -Value $sc.Value -Status $sc.Status
+        $val = $sync["_nc_$netKey"]
+        $sts = $sync["_ncs_$netKey"]
+        if ($val -and $val -ne $netCards[$netKey].ValueLabel.Text) {
+            Update-CardStatus -Card $netCards[$netKey] -Value $val -Status $sts
         }
     }
 
@@ -258,12 +261,12 @@ $netTimer.Add_Tick({
     }
 
     if ($sync.NetComplete -and -not $sync.NetRunning) {
-        # Memory barrier from reading $sync.NetComplete guarantees the inner $sync.Cards
-        # writes from the background thread are now visible — force a final sync.
+        # Final sync reads directly from the synchronized hashtable — guaranteed visibility.
         foreach ($netKey in $netCards.Keys) {
-            $sc = $sync.Cards[$netKey]
-            if ($sc -and $sc.Value) {
-                Update-CardStatus -Card $netCards[$netKey] -Value $sc.Value -Status $sc.Status
+            $val = $sync["_nc_$netKey"]
+            $sts = $sync["_ncs_$netKey"]
+            if ($val) {
+                Update-CardStatus -Card $netCards[$netKey] -Value $val -Status $sts
             }
         }
         $netTimer.Stop()
@@ -364,7 +367,9 @@ function Start-NetDiagnostic {
     if ($sync.NetRunning) { return }
     $sync.NetCancelled = $false
     foreach ($k in @("NetInternet","NetPorts","NetDomains")) {
-        $sync.Cards[$k] = @{ Value="--"; Status="neutral" }
+        $sync.Cards[$k]  = @{ Value="--"; Status="neutral" }
+        $sync["_nc_$k"]  = "--"
+        $sync["_ncs_$k"] = "neutral"
     }
     foreach ($k in $netCards.Keys) { Update-CardStatus -Card $netCards[$k] -Value "--" -Status "neutral" }
     $rtbNetLog.Clear()

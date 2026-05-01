@@ -10,6 +10,18 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.25] - 2026-05-01
+
+### Fixed
+
+- **Port Tests and Domain Tests cards stuck at "--" (v2 fix)** — the v1.0.24 fix read card values from the inner `$sync.Cards` hashtable (unsynchronized), which was not guaranteed to be visible across threads even after the `$sync.NetComplete` memory barrier. Rewrote `Set-NetCard` to dual-write values directly into the synchronized `$sync` hashtable via `$sync["_nc_$Key"]` / `$sync["_ncs_$Key"]` keys; the timer tick and completion handler now read the same synchronized keys, ensuring full acquire/release visibility on every access via `Monitor.Enter/Exit`.
+
+### Changed
+
+- **Time format** — all user-visible timestamps (toast completion, Full Diagnostic sub-label, System Info "Collected at") now display in 12-hour AM/PM format (`h:mm:ss tt`) instead of 24-hour military time.
+
+---
+
 ## [1.0.24] - 2026-05-01
 
 ### Fixed

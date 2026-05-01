@@ -424,7 +424,7 @@ $timerFullDiag.Add_Tick({
 
     $timerFullDiag.Stop()
     $elapsed = [int]((Get-Date) - $script:fdStartTime).TotalSeconds
-    $lblFdSub.Text = "Completed in ${elapsed}s   |   $(Get-Date -Format 'MM/dd HH:mm')"
+    $lblFdSub.Text = "Completed in ${elapsed}s   |   $(Get-Date -Format 'M/d h:mm tt')"
 
     $totalIssues = $critCount + $warnCount
     if ($totalIssues -gt 0) {
