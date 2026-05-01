@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 #  PoeNicHardware.psm1  -  VPU Hardware panel
 #  Shows GPU model, monitor/mouse/keyboard status, NIC link uptime, and PoE data.
 #  NIC uptime and PoE data are populated by the Camera Connectivity runspace;

@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 #  SystemInformation.psm1  -  System Information panel
 #  Collects OS, CPU, RAM, GPU, disk and NIC details via CIM in a background
 #  runspace and streams them into a DataGridView log.

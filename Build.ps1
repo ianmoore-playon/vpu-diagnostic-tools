@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 #  Build.ps1  -  Combines VPUDiagnosticTool.ps1 + all module files into a single Run.ps1
 #  Run automatically by "VPU Diagnostic Tool Launcher.bat" before launching the tool.
 # =============================================================================
@@ -40,6 +40,6 @@ foreach ($line in (Get-Content "$dest\VPUDiagnosticTool.ps1")) {
 [System.IO.File]::WriteAllLines(
     "$dest\Run.ps1",
     $out,
-    [System.Text.UTF8Encoding]::new($false)
+    [System.Text.UTF8Encoding]::new($true)
 )
 Write-Verbose "Done - Run.ps1 built ($($out.Count) lines)"

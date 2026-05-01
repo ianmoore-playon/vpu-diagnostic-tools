@@ -1,0 +1,380 @@
+[33mcommit 6772fb4e1414101be922e368b8c02bcc27e3a9e7[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 21:05:41 2026 -0400
+
+    v2.0.0: Network tab, tool rebrand to VPU Diagnostic Tools
+    
+    - Add Network tab with internet reachability, adapter inventory, port
+      tests (TCP/UDP DNS, NTP, HTTPS), and domain DNS resolution for all
+      Pixellot-required endpoints; own runspace + timer + cancel support
+    - Add $NetScript background runspace; $PortTests and $DomainTests config
+    - Rebrand form title and header from 'VPU Cable & NIC Troubleshooter'
+      to 'VPU Diagnostic Tools'; subtitle updated for multi-tab scope
+    - Sidebar: add Network nav button; shift lower controls down 46px
+    - CHANGELOG, README updated for v2.0.0
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit b19034f45837ba1752742410626f7f80a7dfee12[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 20:30:20 2026 -0400
+
+    v1.9.5: Add fault flag to Isolate tab port dropdown
+    
+    After each diagnostic, Update-GuidePortDropdown rebuilds cboGuidePortA
+    with "  ⚠ FAULT" appended to any FAIL or PASS (forced) port. Both
+    IndexOf lookups replaced with prefix-match loops so the suffix does not
+    break click-through navigation from port cards or the guide button.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 731e9feb381e8b26e2c4bee5fd2b5cdd6687f888[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 20:23:19 2026 -0400
+
+    Add RunDiagnostic.bat one-click launcher; update README
+    
+    RunDiagnostic.bat wraps the irm|iex one-liner so field techs can
+    double-click to launch without opening PowerShell manually.
+    README updated with Option 1/Option 2 run instructions.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit d8f8c6c8c85977abad9f102d536b80e6ee502162[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 20:16:31 2026 -0400
+
+    v1.9.4: Add POE STATUS section to live log
+    
+    Renamed Add-Section "PoE Power" to "PoE Status" and added it to the
+    Highlights mode allowlist so PoE entries appear under their own section
+    header instead of flowing under SIGNAL QUALITY. Copy Summary header
+    updated to match.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit f2df89f14e236a145adac2c0585eff3c4927be15[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 20:04:02 2026 -0400
+
+    v1.9.3: Fix PoE RuntimeException — [ushort] not a valid PS type accelerator
+    
+    [ushort] and [short] are not recognized by PowerShell 5.1; replaced
+    with [uint16] in the cardNum and portNum variable casts. The C# inside
+    Add-Type uses ushort/short which is valid C# and was not affected.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 2c271ff50dcf5091859e3fc94fbef75a3a583847[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 18:02:17 2026 -0400
+
+    v1.9.2: Fix PoE RuntimeException caused by out byte P/Invoke incompatibility
+    
+    PowerShell 5.1 cannot reliably call P/Invoke methods with out byte
+    parameters via [ref]. Removed SmartPoE_Get_PortStatus from the
+    DllImport and loop; infer per-port PoE state from voltage (>1 V = on).
+    Fixed PortNumber type from short to ushort to match SmartPoE.h U16.
+    Improved catch block to log InnerException details. Also disabled
+    MD013/MD024 markdownlint rules globally (line-length and duplicate
+    headings are inherent to changelog format).
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit f934abc12cbcafa48bc52c1975eb1c653e480c46[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 17:48:07 2026 -0400
+
+    Fix all MD032 linting warnings in CHANGELOG; add markdownlint config
+    
+    Added blank lines between all ### headings and their lists throughout
+    CHANGELOG.md. Added .markdownlint.json to suppress MD024 (duplicate
+    heading names like ### Added/Fixed/Changed are inherent to changelog
+    format).
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 4ce85af037442fe0102cafc06e0705dc7a98a9a8[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 17:32:55 2026 -0400
+
+    v1.9.0: Surface PoE exception type in summary card and log
+    
+    Exception type now shows in Highlights-mode summary and the card
+    turns yellow so the error is visible without switching to Detailed log.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 328bda4e8fbf6f56302040733fe8bb1641cba64a[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 17:29:37 2026 -0400
+
+    v1.9.0: Add exact ADLINK install path to DLL search
+    
+    VPU install path confirmed: C:\Program Files\ADLINK\GIE Series\Library\Dll\x64\
+    Added as first candidate so the DLL is found on the first probe without
+    falling through to the slower recursive scan.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 3f71f0d4a0c1818f12490903e955baf19ab9baa3[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 17:28:52 2026 -0400
+
+    v1.9.0: Fix SmartPoE P/Invoke signatures from header file
+    
+    Corrected against actual SmartPoE.h and SmartPoE.cs:
+    - Register_Card: ushort input (not out int), returns short error code
+    - Function names: Get_POEConsPowbudget / Get_POELeftPowbudget (POE not PoE)
+    - All measurements: double not float
+    - Calling convention: StdCall (DllImport default on Windows, per header __stdcall)
+    - Per-port state: Get_PortStatus(..., out byte bstatePowerGood) replaces
+      the multi-flag Get_POEstate which is a global status register, not per-port
+    - DLL search: added recursive scan under ADLINK dirs and more registry keys;
+      x86 DLLs excluded in recursive fallback (VPUs are 64-bit)
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit fee9d9106ac93290c6ea436eabd6bc2852e53a79[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 17:10:21 2026 -0400
+
+    v1.9.0: Add PoE power monitoring via ADLINK SmartPoE API
+    
+    - Queries SmartPoE.dll (ADLINK PCIe-GIE7x) for total budget, per-port
+      V/A/W, and NIC temperature; flags budget < 55 W (Molex disconnected)
+    - DLL auto-search probes standard install paths + HKLM registry
+    - New PoE Budget card in Overview row (5-card layout, resized to 146 px each)
+    - Molex connector next step generated when budget is low
+    - PoE data included in Copy Summary output
+    - Fixed stale $CameraIPs reference in app-log next step (use $discoveredCameras)
+    - Graceful fallback: if SmartPoE.dll absent, section logs N/A silently
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit eaeeb5f53b8a7b4362e3abe0ef6509f3cd0b9f87[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 16:45:50 2026 -0400
+
+    v1.8.0: Dynamic camera discovery — replace static IP list with ARP
+    
+    Removes the hardcoded $CameraIPs (169.254.16.50-52) and discovers cameras
+    at runtime from Get-NetNeighbor on each camera NIC interface. Only 169.254.x.x
+    link-local unicast entries are included, which naturally excludes internet
+    uplinks (routable DHCP addresses). OCR cameras identified by MAC OUI 00-D0-89
+    (optional); all other link-local neighbors classified as S2/CHU (required).
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit cfb9a07a3b155570e7cac30790a880b4288986b7[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 13:10:52 2026 -0400
+
+    v1.7.0 — log mode toggle, adapter settings button, all port tiles clickable
+    
+    - Highlights/Detailed toggle on live log header; Highlights filters to port
+      speed results and SmartSpeed events only; Detailed shows full output
+    - Open Adapter Settings button in Actions panel launches ncpa.cpl
+    - Port tile click navigates to Isolate tab regardless of port status
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit a8e2db4e4fd521abb826e2039f821172fc2e8798[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 11:26:11 2026 -0400
+
+    v1.6.6 — Use MeasureString to fit card value text at any DPI
+    
+    Replace static font-size threshold with a MeasureString loop that
+    shrinks from 13pt down to 8pt until the text fits the label width,
+    ensuring "100 Mbps (OCR)" renders correctly regardless of screen
+    scaling or DPI setting.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 103a5e45e5aca088119cea17e55616b098adb6e8[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 11:12:41 2026 -0400
+
+    v1.6.6 — Fix port card text clipping on long values
+    
+    Update-CardStatus drops to 11pt font when value exceeds 9 chars,
+    preventing "100 Mbps (OCR)" from being clipped at the label boundary.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit f048c1a81ee09e98893e813bfb206c4ed6ccb959[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 10:46:30 2026 -0400
+
+    v1.6.5 — Show "100 Mbps (OCR)" on port cards
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit eee907e8b4d3ed452362eb05a35f9892fcc0ea26[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 10:34:13 2026 -0400
+
+    v1.6.4 — OCR port card UI polish
+    
+    Confirmed OCR cameras now show green (ok) instead of yellow, and
+    the card value shows "100 Mbps" instead of "100M OCR" for all
+    100 Mbps ports — color conveys meaning (green=expected, yellow=uncertain,
+    red=fault). Uncertain OCR? remains yellow.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit d3f68b8c2e85cfea9c03e784cf85e8286d1673a4[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 10:20:00 2026 -0400
+
+    v1.6.3 — MAC-based OCR camera identification
+    
+    Adds ARP OUI check (00:D0:89) for positive Pixellot OCR camera
+    identification on 100 Mbps ports, eliminating the PASS (OCR?)
+    false-uncertain state on new installs where no SmartSpeed history
+    exists yet. $OcrMacOui config variable threaded into the diagnostic
+    runspace.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 779a60da07e1c2cde2c2ac341d94e894345add7d[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 00:51:59 2026 -0400
+
+    v1.6.2: Fix all five diagnostic logic flaws
+    
+    - Forced ports now generate "replace cable preventive" next step; allClear
+      no longer uses TotalDowngrades (was causing Issues Found with no steps)
+    - App log "cable ruled out" next step now shows log timestamp with stale-data caveat
+    - OCR detection distinguishes zero-history (uncertain) from link-at-100M events
+      (confirmed); uncertain ports get a "verify" next step
+    - Isolate guide Phase 2 pre-checks test port health before measuring; warns and
+      allows cancel if test port is already degraded
+    - Guide baseline "No link" now shows correct message instead of "Degraded link confirmed"
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 5613951509819a483183968cfa6cffa87ba291bc[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 00:39:27 2026 -0400
+
+    v1.6.1: Add maximize/restore support with anchored layout
+    
+    Enables the maximize button and anchors all structural panels and scrollable
+    content so they fill the screen when maximized; restoring snaps back to 1280x760.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit e5c620507a45d3b740be9bf853325b0743bb5e89[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 00:29:59 2026 -0400
+
+    v1.6.0: Modern UI redesign — wider layout with header bar
+    
+    Expands window to 1280×760, adds a full-width dark navy header bar holding
+    the title and status badge, widens center panel to 800px, and updates all
+    overlay panels (Isolate, History, Help) to match.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit ae987a052974982e68bbd297635504bfd3cbdaf8[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Tue Apr 28 00:13:53 2026 -0400
+
+    v1.5.0: Cancel button, auto-update notice, log pruning, Isolate session saving, bug fixes
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 20dca0560f4d6e61c21c11fdbbd7c87c76b49c25[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Mon Apr 27 10:54:42 2026 -0400
+
+    v1.4.2: Fix content clipping and summary card labels
+    
+    - Use ClientSize instead of Size so content area is full 680px;
+      fixes log and action buttons being cut off at the bottom
+    - Move Last Run Summary labels into the card panel as children
+      so they render correctly on the white background
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 80327886dcc961fe2823fdd42d6580febbbf1f5d[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Mon Apr 27 10:39:40 2026 -0400
+
+    v1.4.1: Rename Guide tab to Isolate
+    
+    Nav button, panel title, action button, Next Steps heading, and Help
+    tab references all updated. Removes ambiguity with the Help tab.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 1f2164b73263cdaae39262ac9d2d8f88a0267b10[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Mon Apr 27 10:25:13 2026 -0400
+
+    Switch to semantic versioning (1.4.0)
+    
+    Retroactively maps all 3.x releases to X.Y.Z format:
+      3.0–3.8  → 1.0.0–1.0.8 (GUI foundation + patches)
+      3.9      → 1.1.0 (Guide tab — new functional flow)
+      3.10–3.11→ 1.1.1 (per-port cards, UI polish)
+      3.12     → 1.2.0 (History tab — new functional flow)
+      3.13     → 1.3.0 (SmartSpeed card, Copy Summary, Help tab)
+      3.14     → 1.4.0 (Test Scope selector — current)
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit d71ed7672bb1644c37c36a848b39d883ce56a83c[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Mon Apr 27 09:58:03 2026 -0400
+
+    v3.14: NIC selector functional, Next Steps condensed
+    
+    - Test Scope dropdown now filters diagnostic to a single NIC port;
+      button text updates to reflect scope (e.g. "Test Ethernet 45 Only")
+    - All Next Steps body texts shortened to 1-2 sentences
+    - Sidebar label renamed from "Selected NIC" to "Test Scope"
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 8d1c51ace1bacaa0d8f9d9982516a8d1f2c88249[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Mon Apr 27 09:08:41 2026 -0400
+
+    v3.13: Add CHANGELOG entry
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 36c1e0e165677e5a8317c8dadca227aff8cdf0a5[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Mon Apr 27 09:08:11 2026 -0400
+
+    v3.13: SmartSpeed card, Copy Summary, trend indicator, port-click-to-Guide, Help tab
+    
+    - SmartSpeed status card added to bottom row (4 cards: SmartSpeed, Ping, ARP, CHU)
+      showing event count live after each diagnostic run
+    - Copy Summary action generates a structured ticket-ready summary: port status,
+      SmartSpeed count, camera connectivity, app log findings, next steps
+    - History trend: after each run the Last Run Summary line appends which port has
+      had issues most frequently across the last 15 runs
+    - Clicking a red (degraded) port card navigates directly to the Guide tab with
+      that port pre-selected; card cursor shows Hand when clickable
+    - Help tab added to sidebar with 8 sections covering what the tool does, how to
+      read each tab, how to use the Guide workflow, FAQ, and escalation guidance
+    - Right panel shows Guide phase reference (one-change-at-a-time summary) while
+      in the Guide tab; restores Overview next steps on return to Overview
+    - Refactor: Show-OverviewSteps, Show-GuideSteps, Show-Panel helpers extracted;
+      nav wiring simplified
+    - Bump version to 3.13
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[33mcommit 738f27562c3010980cc07b8dbb57d137eeebdee7[m
+Author: Ian Moore <ian@npsolutions.net>
+Date:   Mon Apr 27 05:01:03 2026 -0400
+
+    v3.12: Add CHANGELOG entry
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>

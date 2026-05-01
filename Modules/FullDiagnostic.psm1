@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 #  FullDiagnostic.psm1  -  Orchestrates all module diagnostics and shows a
 #  one-page summary on the Home panel.
 #
