@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.24] - 2026-05-01
+
+### Fixed
+
+- **Port Tests and Domain Tests cards stuck at "--"** — a memory-ordering race between the background network test runspace and the UI timer caused card values written to the inner (unsynchronized) `$sync.Cards` hashtable to be invisible to the timer tick that also detected test completion. The timer tick read the inner hashtable before the acquire memory barrier fired (from reading `$sync.NetComplete`), so it saw stale `"--"` values and skipped the update. Fixed by adding a forced card sync inside the completion handler, where the memory barrier from reading `$sync.NetComplete` guarantees all background-thread writes are visible.
+
+---
+
 ## [1.0.23] - 2026-05-01
 
 ### Fixed

@@ -258,6 +258,14 @@ $netTimer.Add_Tick({
     }
 
     if ($sync.NetComplete -and -not $sync.NetRunning) {
+        # Memory barrier from reading $sync.NetComplete guarantees the inner $sync.Cards
+        # writes from the background thread are now visible — force a final sync.
+        foreach ($netKey in $netCards.Keys) {
+            $sc = $sync.Cards[$netKey]
+            if ($sc -and $sc.Value) {
+                Update-CardStatus -Card $netCards[$netKey] -Value $sc.Value -Status $sc.Status
+            }
+        }
         $netTimer.Stop()
         $btnNetCancel.Visible = $false
         $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Network Test"

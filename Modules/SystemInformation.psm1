@@ -14,6 +14,21 @@ $SysInfoScript = {
     function Si-Section { param([string]$Title)
         $sync.SysInfoQueue.Enqueue(@{ Label=""; Result=$Title; L="Section" }) }
 
+    # -- Pixellot Software -------------------------------------------------------
+    $sync.SysInfoStep = "Querying Pixellot software..."
+    Si-Section "Pixellot Software"
+    try {
+        $pxReg  = Get-ItemProperty -Path "HKLM:\SOFTWARE\Pixellot" -ErrorAction Stop
+        $pxVer  = if ($pxReg.PSObject.Properties['Version']      -and $pxReg.Version)      { $pxReg.Version }      else { "Not found" }
+        $pxImg  = if ($pxReg.PSObject.Properties['ImageVersion'] -and $pxReg.ImageVersion) { $pxReg.ImageVersion } else { "Not found" }
+        $pxDeps = if ($pxReg.PSObject.Properties['Dependencies'] -and $pxReg.Dependencies) { $pxReg.Dependencies } else { "Not found" }
+        Si-Log "Software Version"    $pxVer  "Info"
+        Si-Log "Image Version"       $pxImg  "Info"
+        Si-Log "Dependency Version"  $pxDeps "Info"
+    } catch { Si-Log "Pixellot" "Registry key not found (HKLM:\SOFTWARE\Pixellot)" "Warn" }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
     # -- Operating System --------------------------------------------------------
     $sync.SysInfoStep = "Querying operating system..."
     Si-Section "Operating System"
