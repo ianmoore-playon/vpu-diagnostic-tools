@@ -177,6 +177,11 @@ $btnHwCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnHwCancel.
 $pnlPoE.Controls.Add($btnHwCancel)
 $btnHwCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
 
+$lblHwEta = New-Object System.Windows.Forms.Label; $lblHwEta.Text = "est. ~5 sec"
+$lblHwEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblHwEta.ForeColor = $ColMuted
+$lblHwEta.Location = New-Object System.Drawing.Point(348,180); $lblHwEta.AutoSize = $true
+$pnlPoE.Controls.Add($lblHwEta)
+
 $lblHwStatus = New-Object System.Windows.Forms.Label; $lblHwStatus.Text = ""
 $lblHwStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblHwStatus.ForeColor = $ColMuted
 $lblHwStatus.Location = New-Object System.Drawing.Point(10,218); $lblHwStatus.Size = New-Object System.Drawing.Size(1240,18)

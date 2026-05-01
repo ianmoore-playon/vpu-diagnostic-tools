@@ -352,6 +352,11 @@ $btnDiskCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnDiskCance
 $btnDiskCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnDiskCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnDiskCancel.Visible = $false
 $pnlDisk.Controls.Add($btnDiskCancel)
 $btnDiskCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
+
+$lblDiskEta = New-Object System.Windows.Forms.Label; $lblDiskEta.Text = "est. ~30 sec"
+$lblDiskEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblDiskEta.ForeColor = $ColMuted
+$lblDiskEta.Location = New-Object System.Drawing.Point(368,180); $lblDiskEta.AutoSize = $true
+$pnlDisk.Controls.Add($lblDiskEta)
 $lblDiskStatus = New-Object System.Windows.Forms.Label; $lblDiskStatus.Text = ""
 $lblDiskStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblDiskStatus.ForeColor = $ColMuted
 $lblDiskStatus.Location = New-Object System.Drawing.Point(10,218); $lblDiskStatus.Size = New-Object System.Drawing.Size(1240,18)

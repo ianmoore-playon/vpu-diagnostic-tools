@@ -1,12 +1,22 @@
-# Changelog - VPU Diagnostic Tool Suite
+# Changelog - Pulse — Pixellot Diagnostic Toolset
 
-All notable changes to `TestCameraConnectivity.ps1` are documented here.
+All notable changes to `Pulse.ps1` are documented here.
 
 Version format: `MAJOR.MINOR.PATCH`
 
 - **MAJOR** — full rewrites or fundamental architecture changes
 - **MINOR** — new functional flows, significant new features, new tabs or workflows
 - **PATCH** — bug fixes, UI polish, text changes, minor improvements
+
+---
+
+## [1.0.17] - 2026-04-30
+
+### Changed
+
+- **Rebrand to Pulse** — tool renamed from "VPU Diagnostic Tool Suite" to "Pulse — Pixellot Diagnostic Toolset". Main script renamed `VPUDiagnosticTool.ps1` → `Pulse.ps1`, launcher renamed to `Pulse.bat`, install directory changed to `%ProgramFiles%\Pulse`, output folder renamed `CameraLink_Results` → `Pulse_Results`.
+- **Build step removed** — `Pulse.bat` now launches `Pulse.ps1` (modular dot-source) directly; `Build.ps1` / `Run.ps1` are no longer part of the deployment path. Fixes System Overview navigation, Camera Connectivity run, and Network Configuration results that were broken when all modules were inlined into a single file.
+- **ETA labels** — estimated wait time shown next to each panel's Check button (Camera ~2 min, Network ~20 sec, Hardware ~5 sec, Disk ~30 sec, Services ~3 sec, Event Logs ~5 sec).
 
 ---
 

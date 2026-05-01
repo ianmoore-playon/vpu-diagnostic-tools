@@ -1,6 +1,6 @@
 ﻿# =============================================================================
-#  Build.ps1  -  Combines VPUDiagnosticTool.ps1 + all module files into a single Run.ps1
-#  Run automatically by "VPU Diagnostic Tool Launcher.bat" before launching the tool.
+#  Build.ps1  -  Combines Pulse.ps1 + all module files into a single Run.ps1
+#  (Legacy build step - Pulse.bat now launches Pulse.ps1 directly.)
 # =============================================================================
 
 $dest   = $PSScriptRoot
@@ -13,15 +13,15 @@ $mods   = @(
 
 Write-Verbose "Building combined launcher..."
 
-if (-not (Test-Path "$dest\VPUDiagnosticTool.ps1")) {
-    Write-Error "VPUDiagnosticTool.ps1 not found in $dest"; exit 1
+if (-not (Test-Path "$dest\Pulse.ps1")) {
+    Write-Error "Pulse.ps1 not found in $dest"; exit 1
 }
 if (-not (Test-Path $modDir)) {
     Write-Error "Modules\ directory not found in $dest"; exit 1
 }
 
 $out = [System.Collections.Generic.List[string]]::new()
-foreach ($line in (Get-Content "$dest\VPUDiagnosticTool.ps1")) {
+foreach ($line in (Get-Content "$dest\Pulse.ps1")) {
     $injected = $false
     foreach ($mod in $mods) {
         if ($line.Trim() -eq ('. "$ModulesDir\' + $mod + '.psm1"')) {

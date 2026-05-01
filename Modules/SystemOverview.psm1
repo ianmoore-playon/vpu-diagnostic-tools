@@ -78,8 +78,7 @@ $hubCardDefs = @(
     @{Nav="navEvents";   Title="OS Event Logs";      Desc="Recent OS errors filtered for hardware and services";     Icon=0xE7BA; R=1;C=2}
     @{Nav="navReports";  Title="Reports";            Desc="View, copy and export saved diagnostic reports";          Icon=0xE7C3; R=1;C=3}
 )
-$hCW = 296; $hCH = 200; $hGap = 16
-$hRowY = @(90, 306)
+$hCH = 200; $hGap = 16; $hMargin = 24; $hCols = 4; $hRows = 2
 $hubNavLookup = @{
     navSysInfo     = $navSysInfo
     navNetConfig   = $navNetConfig
@@ -90,35 +89,35 @@ $hubNavLookup = @{
     navEvents      = $navEvents
     navReports     = $navReports
 }
+$script:hubTiles = @()
 foreach ($hc in $hubCardDefs) {
-    $hx = 24 + $hc.C * ($hCW + $hGap)
-    $hy = $hRowY[$hc.R]
-    $cp = New-SectionCard -Title $hc.Title -Desc $hc.Desc -IconCode $hc.Icon -X $hx -Y $hy -W $hCW -H $hCH
+    $hCW  = [int](($pnlSysOverview.Width - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
+    $hx   = $hMargin + $hc.C * ($hCW + $hGap)
+    $hy   = 90 + $hc.R * ($hCH + $hGap)
+    $cp   = New-SectionCard -Title $hc.Title -Desc $hc.Desc -IconCode $hc.Icon -X $hx -Y $hy -W $hCW -H $hCH
     $pnlSysOverview.Controls.Add($cp)
+    $script:hubTiles += $cp
     $navBtn = $hubNavLookup[$hc.Nav]
     $clickBlock = { $navBtn.PerformClick() }.GetNewClosure()
     $cp.Add_Click($clickBlock)
     foreach ($ctrl in @($cp.Controls)) { $ctrl.Add_Click($clickBlock) }
 }
 
-$btnHubRun = New-Object System.Windows.Forms.Button
-$btnHubRun.Text      = [char]0x25B6 + "  Run Full Diagnostic"
-$btnHubRun.Size      = New-Object System.Drawing.Size(260, 44)
-$btnHubRun.Location  = New-Object System.Drawing.Point(24, 524)
-$btnHubRun.BackColor = $ColAccent
-$btnHubRun.ForeColor = [System.Drawing.Color]::White
-$btnHubRun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnHubRun.FlatAppearance.BorderSize = 0
-$btnHubRun.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
-$btnHubRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-$btnHubRun.Cursor    = [System.Windows.Forms.Cursors]::Hand
-$btnHubRun.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 260, 44)), 7))
-$pnlSysOverview.Controls.Add($btnHubRun)
+$pnlSysOverview.Add_SizeChanged({
+    $pw   = $pnlSysOverview.Width
+    $hCW  = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
+    for ($i = 0; $i -lt $script:hubTiles.Count; $i++) {
+        $col = $i % $hCols; $row = [int]($i / $hCols)
+        $script:hubTiles[$i].Location = New-Object System.Drawing.Point(($hMargin + $col*($hCW+$hGap)), (90 + $row*($hCH+$hGap)))
+        $script:hubTiles[$i].Size     = New-Object System.Drawing.Size($hCW, $hCH)
+    }
+    $btnHubLastReport.Location = New-Object System.Drawing.Point($hMargin, (90 + $hRows*($hCH+$hGap) + 10))
+})
 
 $btnHubLastReport = New-Object System.Windows.Forms.Button
 $btnHubLastReport.Text      = "Open Last Report"
 $btnHubLastReport.Size      = New-Object System.Drawing.Size(180, 44)
-$btnHubLastReport.Location  = New-Object System.Drawing.Point(294, 524)
+$btnHubLastReport.Location  = New-Object System.Drawing.Point(24, 524)
 $btnHubLastReport.BackColor = $ColNavHover
 $btnHubLastReport.ForeColor = $ColText
 $btnHubLastReport.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -128,9 +127,8 @@ $btnHubLastReport.Cursor    = [System.Windows.Forms.Cursors]::Hand
 $btnHubLastReport.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 44)), 7))
 $pnlSysOverview.Controls.Add($btnHubLastReport)
 
-$btnHubRun.Add_Click({ Start-FullDiagnostic })
 $btnHubLastReport.Add_Click({
-    $latest = Get-ChildItem -Path $OutputDir -Filter "CameraLink_Results_*.txt" -ErrorAction SilentlyContinue |
+    $latest = Get-ChildItem -Path $OutputDir -Filter "Pulse_Results_*.txt" -ErrorAction SilentlyContinue |
               Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($latest) { Start-Process notepad.exe $latest.FullName }
     else { [System.Windows.Forms.MessageBox]::Show("No reports found yet.", "Open Last Report", "OK", "Information") | Out-Null }

@@ -1,6 +1,6 @@
 ﻿# =============================================================================
-#  Download.ps1  —  Downloads and installs the VPU Diagnostic Tool Suite
-#  Called by the launcher BAT for both first-install and update scenarios.
+#  Download.ps1  —  Downloads and installs Pulse — Pixellot Diagnostic Toolset
+#  Called by Pulse.bat for both first-install and update scenarios.
 #  Reads install path from $env:VPU_INST.
 # =============================================================================
 

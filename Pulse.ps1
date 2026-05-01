@@ -1,11 +1,11 @@
 ﻿# =============================================================================
-#  VPUDiagnosticTool.ps1  -  VPU Diagnostic Tool Suite
+#  Pulse.ps1  -  Pulse — Pixellot Diagnostic Toolset
 #  Loads modules from .\Modules\ and runs the GUI.
 #
-#  HOW TO RUN: double-click "VPU Diagnostic Tool Launcher (version).bat"  (handles elevation automatically)
+#  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.16"
+$ScriptVersion = "1.0.17"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -18,7 +18,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # ---------- Configuration ----------------------------------------------------
 $OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
-$OutputDir         = Join-Path $OutputBaseDir "CameraLink_Results"
+$OutputDir         = Join-Path $OutputBaseDir "Pulse_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
 $NicDriverPatterns = @("Intel(R) 82574L*", "Intel(R) I210*", "Intel(R) I211*", "Intel(R) I350*", "Intel(R) I354*")
 
@@ -105,7 +105,13 @@ $sync = [hashtable]::Synchronized(@{
         NetInternet = @{ Value = "--"; Status = "neutral" }
         NetPorts    = @{ Value = "--"; Status = "neutral" }
         NetDomains  = @{ Value = "--"; Status = "neutral" }
-        SvcStatus   = @{ Value = "--"; Status = "neutral" }
+        SvcStatus       = @{ Value = "--"; Status = "neutral" }
+        SvcAgent        = @{ Value = "--"; Status = "neutral" }
+        SvcKeepAgentUp  = @{ Value = "--"; Status = "neutral" }
+        SvcCoordinator  = @{ Value = "--"; Status = "neutral" }
+        SvcLogMeIn      = @{ Value = "--"; Status = "neutral" }
+        SvcVpu          = @{ Value = "--"; Status = "neutral" }
+        SvcScoreconnect = @{ Value = "--"; Status = "neutral" }
         DiskStatus  = @{ Value = "--"; Status = "neutral" }
         MemStatus   = @{ Value = "--"; Status = "neutral" }
         EvtStatus   = @{ Value = "--"; Status = "neutral" }
@@ -172,7 +178,7 @@ $sync = [hashtable]::Synchronized(@{
 # ---------- Form + layout ----------------------------------------------------
 # ---------- Form ------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "VPU Diagnostic Tool Suite"
+$form.Text = "Pulse — Pixellot Diagnostic Toolset"
 $form.ClientSize = New-Object System.Drawing.Size(1280, 760)
 $form.MinimumSize = $form.Size
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
@@ -240,14 +246,14 @@ $lblHdrIcon.Location  = New-Object System.Drawing.Point(14, 10)
 $lblHdrIcon.Size      = New-Object System.Drawing.Size(46, 46)
 $pnlHeader.Controls.Add($lblHdrIcon)
 $lblHdrTitle = New-Object System.Windows.Forms.Label
-$lblHdrTitle.Text      = "VPU Diagnostic Tool Suite"
+$lblHdrTitle.Text      = "Pulse"
 $lblHdrTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
 $lblHdrTitle.ForeColor = [System.Drawing.Color]::White
 $lblHdrTitle.Location  = New-Object System.Drawing.Point(64, 10)
 $lblHdrTitle.Size      = New-Object System.Drawing.Size(700, 26)
 $pnlHeader.Controls.Add($lblHdrTitle)
 $lblHdrSub = New-Object System.Windows.Forms.Label
-$lblHdrSub.Text      = "All-in-one diagnostic and troubleshooting tool for Pixellot VPU systems."
+$lblHdrSub.Text      = "A Pixellot Diagnostic Toolset"
 $lblHdrSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
 $lblHdrSub.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
 $lblHdrSub.Location  = New-Object System.Drawing.Point(66, 38)
@@ -377,9 +383,23 @@ $navDisk        = New-TabButton "Disks"                0xEDA2  (6 * $tabW)  $tab
 $navEvents      = New-TabButton "OS Event Logs"        0xE7BA  (7 * $tabW)  $tabW
 $navReports     = New-TabButton "Reports"              0xE7C3  (8 * $tabW)  $tabW
 
+$btnTabFullDiag = New-Object System.Windows.Forms.Button
+$btnTabFullDiag.Text      = [char]0x25B6 + "  Run Diagnostic"
+$btnTabFullDiag.Size      = New-Object System.Drawing.Size(132, 38)
+$btnTabFullDiag.Location  = New-Object System.Drawing.Point(1142, 13)
+$btnTabFullDiag.BackColor = $ColAccent
+$btnTabFullDiag.ForeColor = [System.Drawing.Color]::White
+$btnTabFullDiag.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnTabFullDiag.FlatAppearance.BorderSize = 0
+$btnTabFullDiag.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
+$btnTabFullDiag.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+$btnTabFullDiag.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnTabFullDiag.Anchor    = $AnchorTR
+$btnTabFullDiag.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,132,38)),6))
+
 $pnlTabBar.Controls.AddRange(@(
     $navSysOverview,$navSysInfo,$navNetConfig,$navCamera,$navServices,
-    $navPoE,$navDisk,$navEvents,$navReports
+    $navPoE,$navDisk,$navEvents,$navReports,$btnTabFullDiag
 ))
 
 # ---- Tab hover tooltips -----------------------------------------------------
@@ -608,6 +628,7 @@ $navAbout.Add_Click({       Show-Panel $pnlHelp;        Set-ActiveNav $navAbout 
 $navOverview.Add_Click({    $navCamera.PerformClick() })
 $navHistory.Add_Click({     $navReports.PerformClick() })
 $navHelp.Add_Click({        $navAbout.PerformClick() })
+$btnTabFullDiag.Add_Click({ Start-FullDiagnostic })
 
 # ---------- Form Load -------------------------------------------------------
 $form.Add_Load({
@@ -647,7 +668,7 @@ $form.Add_Load({
                 }
             } catch { }
         } | Out-Null
-        $rawUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/VPUDiagnosticTool.ps1"
+        $rawUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/Pulse.ps1"
         $wc.DownloadStringAsync([uri]$rawUrl)
     } catch { }
 })

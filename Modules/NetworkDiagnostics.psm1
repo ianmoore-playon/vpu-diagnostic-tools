@@ -327,6 +327,11 @@ $btnNetCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnNetCancel.Visib
 $pnlNetwork.Controls.Add($btnNetCancel)
 $btnNetCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 40)), 6))
 
+$lblNetEta = New-Object System.Windows.Forms.Label; $lblNetEta.Text = "est. ~20 sec"
+$lblNetEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblNetEta.ForeColor = $ColMuted
+$lblNetEta.Location = New-Object System.Drawing.Point(378,180); $lblNetEta.AutoSize = $true
+$pnlNetwork.Controls.Add($lblNetEta)
+
 $lblNetStatus = New-Object System.Windows.Forms.Label; $lblNetStatus.Text = ""
 $lblNetStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblNetStatus.ForeColor = $ColMuted
 $lblNetStatus.Location = New-Object System.Drawing.Point(10, 218); $lblNetStatus.Size = New-Object System.Drawing.Size(1240, 18)

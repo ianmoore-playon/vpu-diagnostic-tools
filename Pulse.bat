@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 :: Console appearance
-title VPU Diagnostic Tool Suite
+title Pulse — Pixellot Diagnostic Toolset
 mode con cols=72 lines=32
 
 :: Disable QuickEdit so accidental clicks don't freeze the window
@@ -20,8 +20,8 @@ cls
 echo.
 echo  +==============================================================+
 echo  ^|                                                              ^|
-echo  ^|         VPU DIAGNOSTIC TOOL SUITE                           ^|
-echo  ^|         Pixellot VPU Field Diagnostic Utility               ^|
+echo  ^|         PULSE — PIXELLOT DIAGNOSTIC TOOLSET                  ^|
+echo  ^|         A Pixellot Diagnostic Toolset                        ^|
 echo  ^|                                                              ^|
 echo  +==============================================================+
 echo.
@@ -32,7 +32,7 @@ echo  --------------------------------------------------------------
 echo.
 
 :: ---- Version and install state --------------------------------------------
-set "InstallDir=%ProgramFiles%\VPU-DiagTool"
+set "InstallDir=%ProgramFiles%\Pulse"
 set "NeedDownload=1"
 set "LocalVersion=not installed"
 set "RemoteVersion="
@@ -64,13 +64,13 @@ if exist "%InstallDir%\.commit" (
     )
 )
 
-:: Force re-download if Run.ps1 is missing regardless of version check
-if not exist "%InstallDir%\Run.ps1" set "NeedDownload=1"
+:: Force re-download if Pulse.ps1 is missing regardless of version check
+if not exist "%InstallDir%\Pulse.ps1" set "NeedDownload=1"
 
-:: ---- Download + build (only when needed) -----------------------------------
+:: ---- Download (only when needed) -------------------------------------------
 if "!NeedDownload!"=="1" (
     if "!LocalVersion!"=="not installed" (
-        echo    Installing VPU Diagnostic Tool Suite for the first time...
+        echo    Installing Pulse for the first time...
     )
     echo.
     set "VPU_INST=%InstallDir%"
@@ -103,18 +103,6 @@ if "!NeedDownload!"=="1" (
         )
     )
 
-    echo.
-    echo    Building launcher...
-    PowerShell -NoProfile -ExecutionPolicy Bypass -File "%InstallDir%\Build.ps1"
-    if !ERRORLEVEL! neq 0 (
-        echo.
-        echo  ==============================================================
-        echo    ERROR: Build step failed. See errors above.
-        echo  ==============================================================
-        echo.
-        pause
-        exit /b 1
-    )
     echo    Done.
 
     :: Record installed commit SHA for future update checks (no | pipe used)
@@ -125,13 +113,13 @@ if "!NeedDownload!"=="1" (
 echo.
 echo  ==============================================================
 if "!RemoteVersion!"=="" (
-    echo    Launching  VPU Diagnostic Tool Suite  v!LocalVersion!
+    echo    Launching  Pulse  v!LocalVersion!
 ) else (
-    echo    Launching  VPU Diagnostic Tool Suite  v!RemoteVersion!
+    echo    Launching  Pulse  v!RemoteVersion!
 )
 echo.
 echo    This window will remain open while the application runs.
 echo    Do NOT close it  --  minimise it instead.
 echo  ==============================================================
 echo.
-PowerShell -NoProfile -ExecutionPolicy Bypass -File "%InstallDir%\Run.ps1"
+PowerShell -NoProfile -ExecutionPolicy Bypass -File "%InstallDir%\Pulse.ps1"

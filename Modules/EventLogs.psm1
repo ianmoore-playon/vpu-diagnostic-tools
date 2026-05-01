@@ -115,6 +115,11 @@ $btnEvtCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnEvtCancel.
 $btnEvtCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnEvtCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnEvtCancel.Visible = $false
 $pnlEvents.Controls.Add($btnEvtCancel)
 $btnEvtCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
+
+$lblEvtEta = New-Object System.Windows.Forms.Label; $lblEvtEta.Text = "est. ~5 sec"
+$lblEvtEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblEvtEta.ForeColor = $ColMuted
+$lblEvtEta.Location = New-Object System.Drawing.Point(348,180); $lblEvtEta.AutoSize = $true
+$pnlEvents.Controls.Add($lblEvtEta)
 $lblEvtStatus = New-Object System.Windows.Forms.Label; $lblEvtStatus.Text = ""
 $lblEvtStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblEvtStatus.ForeColor = $ColMuted
 $lblEvtStatus.Location = New-Object System.Drawing.Point(10,218); $lblEvtStatus.Size = New-Object System.Drawing.Size(1240,18)

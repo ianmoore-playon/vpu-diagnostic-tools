@@ -4,7 +4,7 @@
 
 function Update-HistoryList {
     $lvHistory.Items.Clear()
-    $files = @(Get-ChildItem -Path $OutputDir -Filter "CameraLink_Results_*.txt" -ErrorAction SilentlyContinue |
+    $files = @(Get-ChildItem -Path $OutputDir -Filter "Pulse_Results_*.txt" -ErrorAction SilentlyContinue |
                Sort-Object LastWriteTime -Descending)
     if ($files.Count -eq 0) {
         $empty = New-Object System.Windows.Forms.ListViewItem("No history yet")

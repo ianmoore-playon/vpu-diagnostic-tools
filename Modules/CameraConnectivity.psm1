@@ -828,6 +828,11 @@ $btnRetest.Enabled   = $false
 $center.Controls.Add($btnRetest)
 $btnRetest.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 160, 40)), 7))
 
+$lblEta = New-Object System.Windows.Forms.Label; $lblEta.Text = "est. ~2 min"
+$lblEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblEta.ForeColor = $ColMuted
+$lblEta.Location = New-Object System.Drawing.Point(480, 24); $lblEta.AutoSize = $true
+$center.Controls.Add($lblEta)
+
 $btnCancel = New-Object System.Windows.Forms.Button
 $btnCancel.Text      = "Cancel"
 $btnCancel.Size      = New-Object System.Drawing.Size(110, 40)
@@ -1161,13 +1166,13 @@ $btnRun.Add_Click({
 
     # Prune log folder - keep the 49 most recent files (new run will be the 50th)
     try {
-        $pruneFiles = @(Get-ChildItem -Path $OutputDir -Filter "CameraLink_Results_*.txt" -ErrorAction SilentlyContinue |
+        $pruneFiles = @(Get-ChildItem -Path $OutputDir -Filter "Pulse_Results_*.txt" -ErrorAction SilentlyContinue |
                         Sort-Object LastWriteTime -Descending | Select-Object -Skip 49)
         $pruneFiles | Remove-Item -Force -ErrorAction SilentlyContinue
     } catch { }
 
     $newRunId  = Get-Date -Format "yyyyMMdd_HHmmss"
-    $newOutput = Join-Path $OutputDir "CameraLink_Results_$newRunId.txt"
+    $newOutput = Join-Path $OutputDir "Pulse_Results_$newRunId.txt"
     $sync.Running = $false; $sync.Complete = $false; $sync.AllClear = $false
     $sync.PortResults.Clear(); $sync.CamResults.Clear()
     $sync.AppIssues.Clear();   $sync.NextSteps.Clear()
@@ -1386,7 +1391,7 @@ function Refresh-Log {
 }
 
 function Get-PortTrendSummary {
-    $files = @(Get-ChildItem -Path $OutputDir -Filter "CameraLink_Results_*.txt" -ErrorAction SilentlyContinue |
+    $files = @(Get-ChildItem -Path $OutputDir -Filter "Pulse_Results_*.txt" -ErrorAction SilentlyContinue |
                Sort-Object LastWriteTime -Descending | Select-Object -First 15)
     if ($files.Count -lt 3) { return $null }
     $portCounts = @{}
@@ -1484,7 +1489,7 @@ function Update-GuidePortDropdown {
 
 function Update-HistoryList {
     $lvHistory.Items.Clear()
-    $files = @(Get-ChildItem -Path $OutputDir -Filter "CameraLink_Results_*.txt" -ErrorAction SilentlyContinue |
+    $files = @(Get-ChildItem -Path $OutputDir -Filter "Pulse_Results_*.txt" -ErrorAction SilentlyContinue |
                Sort-Object LastWriteTime -Descending)
     if ($files.Count -eq 0) {
         $empty = New-Object System.Windows.Forms.ListViewItem("No history yet")

@@ -1,10 +1,10 @@
-# pixellot-vpu-tools
+# Pulse — Pixellot Diagnostic Toolset
 
 PowerShell diagnostic tools for Pixellot VPU field support.
 
 ---
 
-## VPUDiagnosticTool.ps1 — VPU Diagnostic Tool Suite
+## Pulse.ps1 — Pixellot Diagnostic Toolset
 
 An all-in-one GUI diagnostic tool for Pixellot VPUs. Covers camera NIC and cable health, network connectivity, PoE/NIC hardware, Pixellot services, system and disk health, and event monitoring. Displays live results in an interactive interface and provides plain-language next-step guidance for both technical and non-technical users.
 
@@ -12,19 +12,19 @@ An all-in-one GUI diagnostic tool for Pixellot VPUs. Covers camera NIC and cable
 
 #### Option 1 — Double-click launcher (recommended for field use)
 
-Download the latest `VPU Diagnostic Tool Launcher (version).bat` from the [Releases page](https://github.com/ianmoore-playon/vpu-diagnostic-tools/releases/latest) to the VPU and double-click it. A UAC prompt will appear — click **Yes**. The GUI opens and the diagnostic begins when you click **Run Full Diagnostic**.
+Download the latest `Pulse.bat` from the [Releases page](https://github.com/ianmoore-playon/vpu-diagnostic-tools/releases/latest) to the VPU and double-click it. A UAC prompt will appear — click **Yes**. The GUI opens and the diagnostic begins when you click **Run Full Diagnostic**.
 
 #### Option 2 — PowerShell one-liner
 
 Open any PowerShell window on the VPU and paste:
 
 ```powershell
-irm 'https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/VPUDiagnosticTool.ps1' | iex
+irm 'https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/Pulse.ps1' | iex
 ```
 
 A UAC prompt will appear. Click **Yes**. A GUI window opens and the diagnostic begins when you click **Run Full Diagnostic**.
 
-Results are also saved automatically to a `.txt` file in `CameraLink_Results\` next to the script (or on the Desktop when run via the one-liner).
+Results are also saved automatically to a `.txt` file in `Pulse_Results\` next to the script (or on the Desktop when run via the one-liner).
 
 ### What it checks
 
@@ -70,7 +70,7 @@ The diagnostic engine runs in a background runspace so the GUI never freezes dur
 
 ### Output files
 
-Each run saves a timestamped `.txt` file to `CameraLink_Results\` in the script directory (or Desktop when run via the one-liner). Use **Export Report** in the GUI to open the file, **Copy Results** to copy the log to clipboard, or **Save Log** to save to a custom location.
+Each run saves a timestamped `.txt` file to `Pulse_Results\` in the script directory (or Desktop when run via the one-liner). Use **Export Report** in the GUI to open the file, **Copy Results** to copy the log to clipboard, or **Save Log** to save to a custom location.
 
 ### Changelog
 
