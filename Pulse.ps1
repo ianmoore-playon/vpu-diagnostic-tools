@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.22"
+$ScriptVersion = "1.0.23"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -477,6 +477,7 @@ $form.Controls.AddRange(@($lblVpuVal, $pnlSideDot, $lblSideStatus))
 
 
 # ---------- Load panel modules -----------------------------------------------
+$script:allNavPanels = @()   # modules append via +=; full assignment follows at form-load
 . "$ModulesDir\SystemOverview.psm1"
 . "$ModulesDir\CameraConnectivity.psm1"
 . "$ModulesDir\NetworkDiagnostics.psm1"

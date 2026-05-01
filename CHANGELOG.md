@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.23] - 2026-05-01
+
+### Fixed
+
+- **`op_Addition` crash on launch** — `$script:allNavPanels` was not initialized before module dot-sources, so the first `+=` in `SystemInformation.psm1` set it to a single Panel instead of an array. `FullDiagnostic.psm1`'s subsequent `+=` then crashed with "Panel does not contain method op_Addition". Fixed by initializing `$script:allNavPanels = @()` immediately before the module load block in `Pulse.ps1`.
+
+---
+
 ## [1.0.22] - 2026-05-01
 
 ### Security
