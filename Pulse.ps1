@@ -5,8 +5,22 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.21"
-$script:FeedbackToken = ""   # GitHub fine-grained PAT: issues:write on vpu-diagnostic-tools
+$ScriptVersion = "1.0.22"
+
+# Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
+$script:FeedbackToken = ""
+try {
+    $keyPath = "C:\ProgramData\Pulse\feedback.key"
+    if (Test-Path $keyPath) {
+        Add-Type -AssemblyName System.Security
+        $enc   = [System.IO.File]::ReadAllBytes($keyPath)
+        $bytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
+            $enc, $null, [System.Security.Cryptography.DataProtectionScope]::LocalMachine
+        )
+        $script:FeedbackToken = [System.Text.Encoding]::UTF8.GetString($bytes)
+        [System.Array]::Clear($bytes, 0, $bytes.Length)
+    }
+} catch { $script:FeedbackToken = "" }
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {

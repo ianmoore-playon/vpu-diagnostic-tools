@@ -10,6 +10,15 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.22] - 2026-05-01
+
+### Security
+
+- **Feedback token now stored with Windows DPAPI encryption** — the GitHub PAT is no longer held in plain text. It is encrypted on each machine using `ProtectedData` with `LocalMachine` scope (AES-256, machine-specific key derived by Windows) and stored at `C:\ProgramData\Pulse\feedback.key`. The ciphertext is useless on any other machine. Pulse decrypts the token in memory at startup and clears the byte array immediately after. Plain text never touches disk or the repo.
+- **`Set-FeedbackToken.ps1` added** — a one-time setup script (run as Administrator on each VPU) that accepts the token via secure prompt or `-Token` parameter, encrypts it, and writes the key file.
+
+---
+
 ## [1.0.21] - 2026-05-01
 
 ### Added
