@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.26] - 2026-05-01
+
+### Fixed
+
+- **Port Tests and Domain Tests cards still stuck at "--" (root cause fix)** — diagnostic tracing revealed that writes to `$sync["_nc_*"]` keys inside the `Set-NetCard` helper function were silently not propagating to the main `$NetScript` scriptblock body, despite `Set-NetCard "NetInternet"` working correctly. Root cause appears to be a PowerShell function-scope / scriptblock closure interaction where subscript assignments on the synchronized hashtable inside a function do not reflect back to the enclosing scriptblock's variable view after a `foreach` loop has executed. Fixed by writing `_nc_*` and `_ncs_*` values directly from the main body of `$NetScript` after each `Set-NetCard` call, bypassing the function entirely for those keys.
+
+---
+
 ## [1.0.25] - 2026-05-01
 
 ### Fixed

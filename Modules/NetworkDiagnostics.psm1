@@ -124,9 +124,11 @@ $NetScript = {
         Net-Log "Internet" "Reachable" "Pass"
         $sync.NetBasicOk = $true
         Set-NetCard "NetInternet" "Online" "ok"
+        $sync["_nc_NetInternet"] = "Online"; $sync["_ncs_NetInternet"] = "ok"
     } else {
         Net-Log "Internet" "No response - check uplink adapter" "Fail"
         Set-NetCard "NetInternet" "Offline" "fail"
+        $sync["_nc_NetInternet"] = "Offline"; $sync["_ncs_NetInternet"] = "fail"
     }
 
     if ($sync.NetCancelled) { $sync.NetRunning = $false; $sync.NetComplete = $true; return }
@@ -180,6 +182,8 @@ $NetScript = {
     }
     $sync.NetPortPass = $portPass; $sync.NetPortFail = $portFail; $sync.NetPortInfo = $portInfo
     Set-NetCard "NetPorts" (if ($portFail -eq 0) { "$portPass passed" } else { "$portFail failed" }) (if ($portFail -eq 0) { "ok" } else { "fail" })
+    $sync["_nc_NetPorts"]  = if ($portFail -eq 0) { "$portPass passed" } else { "$portFail failed" }
+    $sync["_ncs_NetPorts"] = if ($portFail -eq 0) { "ok" } else { "fail" }
 
     if ($sync.NetCancelled) { $sync.NetRunning = $false; $sync.NetComplete = $true; return }
 
@@ -206,6 +210,8 @@ $NetScript = {
     }
     $sync.NetDomainPass = $domPass; $sync.NetDomainFail = $domFail; $sync.NetDomainInfo = $domInfo
     Set-NetCard "NetDomains" (if ($domFail -eq 0) { "$domPass resolved" } else { "$domFail failed" }) (if ($domFail -eq 0) { "ok" } else { "fail" })
+    $sync["_nc_NetDomains"]  = if ($domFail -eq 0) { "$domPass resolved" } else { "$domFail failed" }
+    $sync["_ncs_NetDomains"] = if ($domFail -eq 0) { "ok" } else { "fail" }
 
     $sync.NetAllClear = ($portFail -eq 0) -and ($domFail -eq 0)
     $sync.NetStep     = if ($sync.NetAllClear) { "All network tests passed." } else { "Network tests complete. Review results." }
