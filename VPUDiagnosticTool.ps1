@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "VPU Diagnostic Tool Launcher (version).bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.12"
+$ScriptVersion = "1.0.14"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -204,7 +204,7 @@ $AnchorTR   = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.F
 
 # Layout constants — typed [int] so arithmetic never fails on malformed environments
 [int]$HdrH     = 68
-[int]$TabH     = 52
+[int]$TabH     = 64
 [int]$SbarH    = 28
 [int]$SideW    = 0                              # no sidebar
 [int]$ContentX = 0
@@ -439,6 +439,134 @@ $form.Controls.AddRange(@($lblVpuVal, $pnlSideDot, $lblSideStatus))
 $pnlReports  = New-StubPanel "Reports"  "Generate and manage diagnostic reports."
 $pnlSettings = New-StubPanel "Settings" "Configure tool behavior and preferences."
 
+# ---- Completion Toast -------------------------------------------------------
+# Floating notification anchored top-right; shown by the watcher timer below.
+$pnlToast = New-Object System.Windows.Forms.Panel
+$pnlToast.Size      = New-Object System.Drawing.Size(430, 62)
+$pnlToast.Location  = New-Object System.Drawing.Point(840, ([int]$ContentY + 10))
+$pnlToast.BackColor = [System.Drawing.Color]::FromArgb(18, 28, 46)
+$pnlToast.Visible   = $false
+$pnlToast.Anchor    = $AnchorTR
+$form.Controls.Add($pnlToast)
+$pnlToast.BringToFront()
+
+$pnlToast.Add_Paint({
+    $g = $args[1].Graphics
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $bp  = [GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, ([int]$this.Width - 1), ([int]$this.Height - 1))), 8)
+    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(51, 65, 85), 1)
+    $g.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
+})
+
+$pnlToastAccent = New-Object System.Windows.Forms.Panel
+$pnlToastAccent.Size      = New-Object System.Drawing.Size(5, 62)
+$pnlToastAccent.Location  = New-Object System.Drawing.Point(0, 0)
+$pnlToastAccent.BackColor = $ColGreen
+$pnlToast.Controls.Add($pnlToastAccent)
+
+$lblToastIcon = New-Object System.Windows.Forms.Label
+$lblToastIcon.Text      = [char]0xE73E
+$lblToastIcon.Font      = New-Object System.Drawing.Font("Segoe MDL2 Assets", 18)
+$lblToastIcon.ForeColor = $ColGreen
+$lblToastIcon.Location  = New-Object System.Drawing.Point(16, 12)
+$lblToastIcon.Size      = New-Object System.Drawing.Size(36, 36)
+$lblToastIcon.BackColor = [System.Drawing.Color]::Transparent
+$pnlToast.Controls.Add($lblToastIcon)
+
+$lblToastText = New-Object System.Windows.Forms.Label
+$lblToastText.Text      = ""
+$lblToastText.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10.5)
+$lblToastText.ForeColor = $ColGreen
+$lblToastText.Location  = New-Object System.Drawing.Point(60, 9)
+$lblToastText.Size      = New-Object System.Drawing.Size(330, 24)
+$lblToastText.BackColor = [System.Drawing.Color]::Transparent
+$pnlToast.Controls.Add($lblToastText)
+
+$lblToastSub = New-Object System.Windows.Forms.Label
+$lblToastSub.Text      = ""
+$lblToastSub.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)
+$lblToastSub.ForeColor = $ColMuted
+$lblToastSub.Location  = New-Object System.Drawing.Point(60, 34)
+$lblToastSub.Size      = New-Object System.Drawing.Size(330, 16)
+$lblToastSub.BackColor = [System.Drawing.Color]::Transparent
+$pnlToast.Controls.Add($lblToastSub)
+
+$btnToastDismiss = New-Object System.Windows.Forms.Button
+$btnToastDismiss.Text      = [char]0xE711  # MDL2 Cancel/X glyph
+$btnToastDismiss.Font      = New-Object System.Drawing.Font("Segoe MDL2 Assets", 8)
+$btnToastDismiss.ForeColor = $ColMuted
+$btnToastDismiss.BackColor = [System.Drawing.Color]::Transparent
+$btnToastDismiss.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnToastDismiss.FlatAppearance.BorderSize = 0
+$btnToastDismiss.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(44, 59, 80)
+$btnToastDismiss.Size      = New-Object System.Drawing.Size(24, 24)
+$btnToastDismiss.Location  = New-Object System.Drawing.Point(398, 4)
+$btnToastDismiss.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$pnlToast.Controls.Add($btnToastDismiss)
+$btnToastDismiss.Add_Click({ $pnlToast.Visible = $false })
+
+# Watcher timer — fires every 400ms, shows toast when any module completes
+$toastPrevState = @{
+    Complete=0; NetComplete=0; SvcComplete=0; DiskComplete=0
+    EvtComplete=0; HwComplete=0; SysInfoComplete=0
+}
+$toastModuleMeta = @{
+    Complete        = @{ Name="Camera Connectivity";    AllClearKey="AllClear";    CardKeys=@() }
+    NetComplete     = @{ Name="Network Configuration";  AllClearKey="NetAllClear"; CardKeys=@() }
+    SvcComplete     = @{ Name="Pixellot Services";      AllClearKey=$null;         CardKeys=@("SvcStatus") }
+    DiskComplete    = @{ Name="Disk Health";            AllClearKey=$null;         CardKeys=@("DiskStatus","MemStatus") }
+    EvtComplete     = @{ Name="Event Logs";             AllClearKey=$null;         CardKeys=@("EvtStatus") }
+    HwComplete      = @{ Name="VPU Hardware";           AllClearKey=$null;         CardKeys=@("HwGpu","HwMonitor","HwMmk") }
+    SysInfoComplete = @{ Name="System Information";     AllClearKey=$null;         CardKeys=@() }
+}
+
+$timerToast = New-Object System.Windows.Forms.Timer
+$timerToast.Interval = 400
+$timerToast.Add_Tick({
+    # Auto-hide when any new run starts
+    $anyRunning = $sync.Running -or $sync.NetRunning -or $sync.SvcRunning -or
+                  $sync.DiskRunning -or $sync.EvtRunning -or $sync.HwRunning -or $sync.SysInfoRunning
+    if ($anyRunning -and $pnlToast.Visible) { $pnlToast.Visible = $false }
+
+    foreach ($key in $toastModuleMeta.Keys) {
+        $nowDone = $sync[$key] -eq $true
+        if ($nowDone -and ($toastPrevState[$key] -eq 0)) {
+            $toastPrevState[$key] = 1
+            $meta = $toastModuleMeta[$key]
+
+            # Determine pass/warn/fail
+            $isOk = $true; $isWarn = $false
+            if ($meta.AllClearKey) {
+                $isOk = $sync[$meta.AllClearKey] -eq $true
+            } elseif ($meta.CardKeys.Count -gt 0) {
+                $anyFail = @($meta.CardKeys | Where-Object { $sync.Cards[$_].Status -eq "fail" })
+                $anyWarn = @($meta.CardKeys | Where-Object { $sync.Cards[$_].Status -eq "warn" })
+                $isOk    = $anyFail.Count -eq 0
+                $isWarn  = $isOk -and $anyWarn.Count -gt 0
+            }
+
+            $clr  = if ($isOk -and -not $isWarn) { $ColGreen } elseif ($isWarn) { $ColYellow } else { $ColRed }
+            $icon = if ($isOk -and -not $isWarn) { [char]0xE73E } elseif ($isWarn) { [char]0xE7BA } else { [char]0xEA39 }
+            $msg  = "$($meta.Name)  —  " + $(if ($isOk -and -not $isWarn) { "All Clear" } elseif ($isWarn) { "Warning" } else { "Issues Found" })
+            $sub  = "Completed $(Get-Date -Format 'HH:mm:ss')   |   Click X to dismiss"
+
+            $pnlToastAccent.BackColor = $clr
+            $lblToastIcon.Text        = $icon
+            $lblToastIcon.ForeColor   = $clr
+            $lblToastText.Text        = $msg
+            $lblToastText.ForeColor   = $clr
+            $lblToastSub.Text         = $sub
+            $pnlToast.Visible         = $true
+            $pnlToast.BringToFront()
+        }
+        # Reset state when module resets (new run)
+        if (-not $sync[$key] -and ($toastPrevState[$key] -eq 1)) {
+            $toastPrevState[$key] = 0
+        }
+    }
+})
+$timerToast.Start()
+
 # ---------- Nav panel registry (must be after all panels created) ------------
 $script:allNavPanels = @(
     $pnlSysOverview,$center,$pnlGuide,$pnlHistory,$pnlHelp,$pnlNetwork,
@@ -506,7 +634,7 @@ $form.Add_Load({
 })
 
 $form.Add_FormClosing({
-    $timer.Stop(); $netTimer.Stop(); $svcTimer.Stop(); $diskTimer.Stop(); $evtTimer.Stop(); $hwTimer.Stop(); $sysInfoTimer.Stop()
+    $timer.Stop(); $netTimer.Stop(); $svcTimer.Stop(); $diskTimer.Stop(); $evtTimer.Stop(); $hwTimer.Stop(); $sysInfoTimer.Stop(); $timerToast.Stop()
     $sync.Cancelled=$true; $sync.NetCancelled=$true; $sync.SvcCancelled=$true; $sync.DiskCancelled=$true; $sync.EvtCancelled=$true; $sync.HwCancelled=$true; $sync.SysInfoCancelled=$true
     try { if ($script:runspace)    { $script:runspace.Close();    $script:runspace.Dispose()    } } catch { }
     try { if ($script:netRunspace) { $script:netRunspace.Close(); $script:netRunspace.Dispose() } } catch { }

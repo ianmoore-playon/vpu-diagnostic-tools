@@ -10,6 +10,16 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.14] - 2026-04-30
+
+### Changed
+
+- **Hub tiles enlarged** — Home page cards increased from 234×128 to 296×200 px (4 columns, 296 px each, 16 px gap, 24 px margins — fills the full 1280 px width). Icon glyph 16 pt → 22 pt, title font 9.5 pt → 11 pt Semibold, description font 8 pt → 8.5 pt with more vertical space for wrapping.
+- **Tab bar taller** — `$TabH` 52 → 64 px. Icon font 13 → 15 pt, label font 7.5 → 8.5 pt. Both positioned dynamically so the icon + label stack is always vertically centred regardless of tab height.
+- **Completion toast notification** — a 430×62 px floating panel appears anchored to the top-right of the content area whenever any module's diagnostic finishes. Shows module name, All Clear / Warning / Issues Found status with matching color (green/amber/red), a timestamp, and a dismiss button. Auto-hides when the next run starts. Driven by a 400 ms watcher timer; does not modify any individual module.
+
+---
+
 ## [1.0.13] - 2026-04-30
 
 ### Changed

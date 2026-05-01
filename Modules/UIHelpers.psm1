@@ -106,15 +106,18 @@ function New-TabButton {
         $fg = if ($t.Active) { [System.Drawing.Color]::White } else { [System.Drawing.Color]::FromArgb(148,163,184) }
         $iBrush = New-Object System.Drawing.SolidBrush($fg)
         $tBrush = New-Object System.Drawing.SolidBrush($fg)
-        $iFont  = New-Object System.Drawing.Font("Segoe MDL2 Assets", 13)
-        $tFont  = New-Object System.Drawing.Font("Segoe UI", 7.5)
+        $iFont  = New-Object System.Drawing.Font("Segoe MDL2 Assets", 15)
+        $tFont  = New-Object System.Drawing.Font("Segoe UI", 8.5)
         $iStr   = [string]$t.Icon
         $tStr   = $t.Label
         $iSz    = $g.MeasureString($iStr, $iFont)
         $tSz    = $g.MeasureString($tStr, $tFont)
         $bW     = [int]$s.Width
-        $g.DrawString($iStr, $iFont, $iBrush, [int](($bW - $iSz.Width) / 2), 5)
-        $g.DrawString($tStr, $tFont, $tBrush, [int](($bW - $tSz.Width) / 2), 27)
+        $bH     = [int]$s.Height
+        $iY     = [int](($bH - [int]$iSz.Height - [int]$tSz.Height - 5) / 2)
+        $tY     = $iY + [int]$iSz.Height + 5
+        $g.DrawString($iStr, $iFont, $iBrush, [int](($bW - $iSz.Width) / 2), $iY)
+        $g.DrawString($tStr, $tFont, $tBrush, [int](($bW - $tSz.Width) / 2), $tY)
         if ($t.Active) {
             $acPen = New-Object System.Drawing.Pen($ColAccent, 2)
             $g.DrawLine($acPen, 8, ([int]$s.Height - 1), ($bW - 8), ([int]$s.Height - 1))
