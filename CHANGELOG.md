@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.21] - 2026-05-01
+
+### Added
+
+- **In-app feedback form** — the Help/About panel now includes a "Submit Feedback" section at the bottom. Users select a type (Bug Report or Suggestion), enter details, and optionally attach system info (hostname, OS, Pulse version, VPU model). Submissions are POSTed directly to GitHub Issues via the API. If GitHub is unreachable, the formatted feedback is copied to the clipboard as a fallback.
+
+---
+
 ## [1.0.20] - 2026-05-01
 
 ### Fixed

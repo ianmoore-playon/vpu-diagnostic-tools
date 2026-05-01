@@ -1,11 +1,12 @@
 ﻿# =============================================================================
-#  Pulse.ps1  -  Pulse - Pixellot Diagnostic Toolset
+#  Pulse.ps1  -  Pulse - Pixellot Unified Live System Evaluator
 #  Loads modules from .\Modules\ and runs the GUI.
 #
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.20"
+$ScriptVersion = "1.0.21"
+$script:FeedbackToken = ""   # GitHub fine-grained PAT: issues:write on vpu-diagnostic-tools
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -181,13 +182,13 @@ $sync = [hashtable]::Synchronized(@{
 # ---------- Form + layout ----------------------------------------------------
 # ---------- Form ------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Pulse - Pixellot Diagnostic Toolset"
+$form.Text = "Pulse - Pixellot Unified Live System Evaluator"
 $form.ClientSize = New-Object System.Drawing.Size(1280, 760)
 $form.MinimumSize = $form.Size
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.BackColor = $ColBg
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
-$form.MaximizeBox = $true
+$form.MaximizeBox = $false
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
 $AssetsDir = Join-Path $PSScriptRoot "Assets"
@@ -256,7 +257,7 @@ $lblHdrTitle.Location  = New-Object System.Drawing.Point(64, 10)
 $lblHdrTitle.Size      = New-Object System.Drawing.Size(700, 26)
 $pnlHeader.Controls.Add($lblHdrTitle)
 $lblHdrSub = New-Object System.Windows.Forms.Label
-$lblHdrSub.Text      = "A Pixellot Diagnostic Toolset"
+$lblHdrSub.Text      = "Pixellot Unified Live System Evaluator"
 $lblHdrSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
 $lblHdrSub.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
 $lblHdrSub.Location  = New-Object System.Drawing.Point(66, 38)
