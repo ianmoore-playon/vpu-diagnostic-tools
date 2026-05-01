@@ -10,6 +10,19 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.29] - 2026-05-01
+
+### Fixed
+
+- **SportzCast port tests corrected** — TCP 1935 was pointing at `pixellot.stream` (wrong destination). Cross-referencing the official Pixellot firewall article and packet capture confirmed SportzCast traffic goes to `sportzcast.net`. Both entries now use `scorebot.sportzcast.net` and are promoted to `Reliable=$true` (plain TCP connect).
+
+### Added
+
+- **TCP 1402 port test** — added as a representative test for the 1400–1405 range, confirmed active in packet capture against `scorebot.sportzcast.net`.
+- **gocanopy.io domain test** — missing from domain list despite being in the official Pixellot firewall article (Canopy remote monitoring).
+
+---
+
 ## [1.0.28] - 2026-05-01
 
 ### Changed

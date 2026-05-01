@@ -11,7 +11,8 @@ $PortTests = @(
     [PSCustomObject]@{ Protocol="UDP"; Port=123;  ProbeHost="0.us.pool.ntp.org";      Reliable=$true;  Purpose="Clock synchronization (NTP)";              Note="Real NTP request. PASS confirms clock sync is working." },
     [PSCustomObject]@{ Protocol="TCP"; Port=443;  ProbeHost="pixellot.tv";            Reliable=$true;  Purpose="System ops, remote mgmt, video stream";    Note="" },
     [PSCustomObject]@{ Protocol="UDP"; Port=443;  ProbeHost="prod-echo.pixellot.tv";  Reliable=$true;  Purpose="Video streaming - Zixi fallback on 443";   Note="Firewall must allow outbound UDP 443 to Pixellot servers." },
-    [PSCustomObject]@{ Protocol="TCP"; Port=1935; ProbeHost="pixellot.stream";        Reliable=$false; Purpose="SportzCast remote management";             Note="Also covers ports 1400-1405. Dynamic stream server." },
+    [PSCustomObject]@{ Protocol="TCP"; Port=1402; ProbeHost="scorebot.sportzcast.net"; Reliable=$true;  Purpose="SportzCast data transmission (1400-1405)";  Note="Firewall must allow outbound TCP 1400-1405 to SportzCast servers." },
+    [PSCustomObject]@{ Protocol="TCP"; Port=1935; ProbeHost="scorebot.sportzcast.net"; Reliable=$true;  Purpose="SportzCast remote management";              Note="Firewall must allow outbound TCP 1935 to SportzCast servers." },
     [PSCustomObject]@{ Protocol="UDP"; Port=2088; ProbeHost="prod-echo.pixellot.tv";  Reliable=$true;  Purpose="Video streaming - Zixi primary";           Note="Firewall must allow outbound UDP 2088 to Pixellot servers." },
     [PSCustomObject]@{ Protocol="TCP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$false; Purpose="Graphics and watermark generation";        Note="Does not accept raw probes. See *.app.singular.live domain test." },
     [PSCustomObject]@{ Protocol="UDP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$false; Purpose="Graphics and watermark generation";        Note="UDP returns no response on working VPUs. See domain test." }
@@ -28,7 +29,8 @@ $DomainTests = @(
     [PSCustomObject]@{ Domain="logmein.com";                    Wildcard=$true;  Purpose="Windows remote control";                              Note="Required for Windows-based Pixellots." },
     [PSCustomObject]@{ Domain="s3.amazonaws.com";               Wildcard=$false; Purpose="Canopy remote monitoring (leaf-swu)";                 Note="" },
     [PSCustomObject]@{ Domain="leaf-uploads.s3.amazonaws.com";  Wildcard=$false; Purpose="Canopy uploads";                                     Note="" },
-    [PSCustomObject]@{ Domain="leaf-downloads.s3.amazonaws.com"; Wildcard=$false; Purpose="Canopy downloads";                                  Note="" }
+    [PSCustomObject]@{ Domain="leaf-downloads.s3.amazonaws.com"; Wildcard=$false; Purpose="Canopy downloads";                                  Note="" },
+    [PSCustomObject]@{ Domain="gocanopy.io";                     Wildcard=$true;  Purpose="Canopy remote system management and monitoring";     Note="" }
 )
 
 # ---------- Network diagnostic engine (runs in its own background runspace) --
