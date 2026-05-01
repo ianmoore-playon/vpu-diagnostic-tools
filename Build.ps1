@@ -1,6 +1,7 @@
 ﻿# =============================================================================
 #  Build.ps1  -  Combines Pulse.ps1 + all module files into a single Run.ps1
-#  (Legacy build step - Pulse.bat now launches Pulse.ps1 directly.)
+#  Required for VPU deployment: .psm1 files cannot be dot-sourced on VPUs
+#  (Windows file association opens them in Notepad instead of executing).
 # =============================================================================
 
 $dest   = $PSScriptRoot

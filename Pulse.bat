@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 :: Console appearance
-title Pulse — Pixellot Diagnostic Toolset
+title Pulse - Pixellot Diagnostic Toolset
 mode con cols=72 lines=32
 
 :: Disable QuickEdit so accidental clicks don't freeze the window
@@ -11,7 +11,19 @@ PowerShell -NoProfile -Command "$k=Add-Type -Name 'CMode' -Namespace 'Win32' -Pa
 :: Request elevation - Program Files requires admin write access
 net session >nul 2>&1
 if %errorLevel% neq 0 (
+    echo    Requesting administrator access...
     PowerShell -NoProfile -Command "Start-Process '%~f0' -Verb RunAs"
+    if !ERRORLEVEL! neq 0 (
+        echo.
+        echo  ==============================================================
+        echo    ERROR: Could not launch as administrator.
+        echo.
+        echo    Right-click Pulse.bat and choose 'Run as administrator'.
+        echo    If a UAC prompt appears, click Yes.
+        echo  ==============================================================
+        echo.
+        pause
+    )
     exit /b
 )
 
@@ -20,8 +32,8 @@ cls
 echo.
 echo  +==============================================================+
 echo  ^|                                                              ^|
-echo  ^|         PULSE — PIXELLOT DIAGNOSTIC TOOLSET                  ^|
-echo  ^|         A Pixellot Diagnostic Toolset                        ^|
+echo  ^|         PULSE - PIXELLOT DIAGNOSTIC TOOLSET                 ^|
+echo  ^|         A Pixellot Diagnostic Toolset                       ^|
 echo  ^|                                                              ^|
 echo  +==============================================================+
 echo.
@@ -67,7 +79,7 @@ if exist "%InstallDir%\.commit" (
 :: Force re-download if Run.ps1 is missing regardless of version check
 if not exist "%InstallDir%\Run.ps1" set "NeedDownload=1"
 
-:: ---- Download (only when needed) -------------------------------------------
+:: ---- Download + build (only when needed) -----------------------------------
 if "!NeedDownload!"=="1" (
     if "!LocalVersion!"=="not installed" (
         echo    Installing Pulse for the first time...
@@ -121,6 +133,15 @@ if "!NeedDownload!"=="1" (
     PowerShell -NoProfile -Command "try { $w = Invoke-WebRequest 'https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/commits/main' -UseBasicParsing -TimeoutSec 10; $s = (ConvertFrom-Json $w.Content).sha; [System.IO.File]::WriteAllText('%InstallDir%\.commit', $s) } catch { }"
 )
 
+:: ---- Launcher log ----------------------------------------------------------
+set "LogDir=%InstallDir%\logs"
+if not exist "%LogDir%" mkdir "%LogDir%" 2>nul
+set "LogFile=%LogDir%\launcher.log"
+
+set "_LaunchVer=!LocalVersion!"
+if not "!RemoteVersion!"=="" set "_LaunchVer=!RemoteVersion!"
+>> "%LogFile%" echo [%DATE% %TIME%] Pulse v!_LaunchVer! launcher started
+
 :: ---- Launch ----------------------------------------------------------------
 echo.
 echo  ==============================================================
@@ -134,4 +155,29 @@ echo    This window will remain open while the application runs.
 echo    Do NOT close it  --  minimise it instead.
 echo  ==============================================================
 echo.
+if not exist "%InstallDir%\Run.ps1" (
+    >> "%LogFile%" echo [%DATE% %TIME%] ERROR: Run.ps1 not found - installation may be corrupt
+    echo.
+    echo  ==============================================================
+    echo    ERROR: Run.ps1 not found at %InstallDir%
+    echo    Delete the folder %InstallDir% and re-run this launcher.
+    echo  ==============================================================
+    echo.
+    pause
+    exit /b 1
+)
+>> "%LogFile%" echo [%DATE% %TIME%] Launching Run.ps1
 PowerShell -NoProfile -ExecutionPolicy Bypass -File "%InstallDir%\Run.ps1"
+set _ExitCode=!ERRORLEVEL!
+if !_ExitCode! neq 0 (
+    >> "%LogFile%" echo [%DATE% %TIME%] ERROR: Application exited with code !_ExitCode!
+    echo.
+    echo  ==============================================================
+    echo    The application exited with an error ^(code: !_ExitCode!^).
+    echo    If this keeps happening, delete %InstallDir% and re-run.
+    echo  ==============================================================
+    echo.
+    pause
+) else (
+    >> "%LogFile%" echo [%DATE% %TIME%] Application closed normally
+)

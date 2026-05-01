@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.18"
+$ScriptVersion = "1.0.19"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -20,6 +20,9 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 $OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
 $OutputDir         = Join-Path $OutputBaseDir "Pulse_Results"
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
+$LogDir  = Join-Path $OutputDir "logs"
+if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir | Out-Null }
+try { Start-Transcript -Path (Join-Path $LogDir "session_$(Get-Date -Format 'yyyyMMdd_HHmmss').log") -ErrorAction SilentlyContinue } catch { }
 $NicDriverPatterns = @("Intel(R) 82574L*", "Intel(R) I210*", "Intel(R) I211*", "Intel(R) I350*", "Intel(R) I354*")
 
 function Get-AdlinkCardInfo {
@@ -686,3 +689,4 @@ $form.Add_FormClosing({
 })
 
 [System.Windows.Forms.Application]::Run($form)
+try { Stop-Transcript -ErrorAction SilentlyContinue } catch { }

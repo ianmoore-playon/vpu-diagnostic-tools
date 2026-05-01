@@ -10,6 +10,20 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.19] - 2026-04-30
+
+### Added
+
+- **Launcher log** — `Pulse.bat` appends timestamped events to `%ProgramFiles%\Pulse\logs\launcher.log` on each run: version launched, errors, and exit status.
+- **GUI session transcript** — `Pulse.ps1` calls `Start-Transcript` at startup, writing a per-session log to `Pulse_Results\logs\session_YYYYMMDD_HHMMSS.log`. Captures all PowerShell output and errors for the duration of the GUI session.
+
+### Fixed
+
+- **Launcher crash (red line, window closes)** — `Pulse.bat` now pauses with a clear error message if the UAC elevation request fails, if `Run.ps1` is missing after install, or if the application exits with a non-zero error code. Previously, the window closed immediately with no visible explanation.
+- **`Build.ps1` comment corrected** — comment previously stated the build step was no longer used; corrected to explain why it is required (`.psm1` files open in Notepad on VPUs due to Windows file association).
+
+---
+
 ## [1.0.18] - 2026-04-30
 
 ### Fixed
