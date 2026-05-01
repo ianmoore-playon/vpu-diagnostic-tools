@@ -39,15 +39,15 @@ $SvcScript = {
         }
     }
 
-    # VPU.exe — informational; not running is normal when cameras are idle
+    # VPU.exe - informational; not running is normal when cameras are idle
     if (-not $sync.SvcCancelled) {
         $vpuProc = @(Get-Process -Name "VPU" -ErrorAction SilentlyContinue)
         if ($vpuProc.Count -gt 0) {
             $pidStr = ($vpuProc | ForEach-Object { $_.Id }) -join ", "
-            Svc-Log "VPU.exe" "Running  (PID $pidStr)  — cameras active" "Pass"
+            Svc-Log "VPU.exe" "Running  (PID $pidStr)  - cameras active" "Pass"
             $sync.Cards["SvcVpu"] = @{ Value = "Active"; Status = "ok" }
         } else {
-            Svc-Log "VPU.exe" "Not running  — normal when cameras are idle" "Gray"
+            Svc-Log "VPU.exe" "Not running  - normal when cameras are idle" "Gray"
             $sync.Cards["SvcVpu"] = @{ Value = "Idle"; Status = "neutral" }
         }
     }
@@ -94,7 +94,7 @@ $SvcScript = {
         $noun = if ($critFail -eq 1) { "process" } else { "processes" }
         $sync.Cards["SvcStatus"] = @{ Value="$critFail required $noun not running"; Status="fail" }
     } elseif ($warnCount -gt 0) {
-        $sync.Cards["SvcStatus"] = @{ Value="Core OK — Scoreconnect needs attention"; Status="warn" }
+        $sync.Cards["SvcStatus"] = @{ Value="Core OK - Scoreconnect needs attention"; Status="warn" }
     } else {
         $sync.Cards["SvcStatus"] = @{ Value="All core processes running"; Status="ok" }
     }

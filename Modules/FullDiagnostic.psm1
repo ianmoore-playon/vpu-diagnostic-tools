@@ -56,7 +56,7 @@ function Get-FdModuleSummary {
             return if ($v -and $v -ne "--") { $v } else { "Hardware details collected" }
         }
         1 { # Network Configuration
-            if ($Worst -eq "ok") { return "Internet connected — all ports and domains reachable" }
+            if ($Worst -eq "ok") { return "Internet connected - all ports and domains reachable" }
             $parts = @()
             foreach ($k in @("NetInternet","NetPorts","NetDomains")) {
                 if ($sync.Cards.ContainsKey($k)) {
@@ -86,7 +86,7 @@ function Get-FdModuleSummary {
             $v = if ($sync.Cards.ContainsKey("EvtStatus")) { $sync.Cards["EvtStatus"].Value } else { "" }
             if (-not $v -or $v -eq "--") { return "No critical errors found in recent logs" }
             if ($Worst -eq "ok")         { return "No critical errors found in recent logs" }
-            if ($v -match "^(\d+)\s+error") { return "$($Matches[1]) system errors in recent logs — click View to review" }
+            if ($v -match "^(\d+)\s+error") { return "$($Matches[1]) system errors in recent logs - click View to review" }
             return $v
         }
     }
@@ -99,7 +99,7 @@ function Get-FdActionText {
     if ($Worst -notin @("fail","warn")) { return "" }
     switch ($Idx) {
         0 { return "Verify hardware meets minimum VPU specifications" }
-        1 { return "Check network cable, router, and firewall — ensure Pixellot ports are open" }
+        1 { return "Check network cable, router, and firewall - ensure Pixellot ports are open" }
         2 { return "Inspect camera cable connections for damage or loose RJ45 connectors" }
         3 {
             $v = if ($sync.Cards.ContainsKey("SvcStatus")) { $sync.Cards["SvcStatus"].Value } else { "" }
@@ -107,8 +107,8 @@ function Get-FdActionText {
             if ($v -like "*Scoreconnect*") { return "Restart the Scoreconnect service from the Services tab" }
             return "Open the Services tab to review process and service status"
         }
-        4 { return "Reconnect monitor, keyboard, or mouse — check USB and display cable connections" }
-        5 { return "Free disk space if critically low — run chkdsk for drive errors" }
+        4 { return "Reconnect monitor, keyboard, or mouse - check USB and display cable connections" }
+        5 { return "Free disk space if critically low - run chkdsk for drive errors" }
         6 { return "Open Event Logs to investigate hardware or driver-related errors" }
     }
     return ""
@@ -168,7 +168,7 @@ $lblFdBannerIcon.AutoSize  = $true
 $lblFdBannerIcon.BackColor = [System.Drawing.Color]::Transparent
 $pnlFdBanner.Controls.Add($lblFdBannerIcon)
 
-# Line 1 — bold summary ("2 critical, 1 warning detected")
+# Line 1 - bold summary ("2 critical, 1 warning detected")
 $lblFdBannerText = New-Object System.Windows.Forms.Label
 $lblFdBannerText.Font        = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
 $lblFdBannerText.ForeColor   = $ColGreen
@@ -178,7 +178,7 @@ $lblFdBannerText.BackColor   = [System.Drawing.Color]::Transparent
 $lblFdBannerText.UseMnemonic = $false
 $pnlFdBanner.Controls.Add($lblFdBannerText)
 
-# Line 2 — muted detail ("Camera Connectivity (Critical)   |   Event Viewer (Warning)")
+# Line 2 - muted detail ("Camera Connectivity (Critical)   |   Event Viewer (Warning)")
 $lblFdBannerDetail = New-Object System.Windows.Forms.Label
 $lblFdBannerDetail.Font        = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $lblFdBannerDetail.ForeColor   = $ColMuted
@@ -231,7 +231,7 @@ foreach ($mod in $fdModuleDefs) {
     $sDot.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 10, 10)), 5))
     $rPnl.Controls.Add($sDot)
 
-    # Severity label (top line) — "Waiting" / "Running" / "Healthy" / "Warning" / "Critical"
+    # Severity label (top line) - "Waiting" / "Running" / "Healthy" / "Warning" / "Critical"
     $sLbl = New-Object System.Windows.Forms.Label
     $sLbl.Text      = "Waiting"
     $sLbl.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
@@ -252,7 +252,7 @@ foreach ($mod in $fdModuleDefs) {
     $vLbl.UseMnemonic = $false
     $rPnl.Controls.Add($vLbl)
 
-    # Suggested action (bottom line — hidden for passing modules)
+    # Suggested action (bottom line - hidden for passing modules)
     $aLbl = New-Object System.Windows.Forms.Label
     $aLbl.Text        = ""
     $aLbl.Font        = New-Object System.Drawing.Font("Segoe UI", 8)
@@ -264,7 +264,7 @@ foreach ($mod in $fdModuleDefs) {
     $aLbl.UseMnemonic = $false
     $rPnl.Controls.Add($aLbl)
 
-    # View button — neutral until complete, accented for issues
+    # View button - neutral until complete, accented for issues
     $vBtn = New-Object System.Windows.Forms.Button
     $vBtn.Text      = "View  >"
     $vBtn.Size      = New-Object System.Drawing.Size(96, 30)
@@ -369,7 +369,7 @@ $timerFullDiag.Add_Tick({
             continue
         }
 
-        # ---- Module in this run — not yet done --------------------------------
+        # ---- Module in this run - not yet done --------------------------------
         if (-not $complete) {
             $allDone = $false
             if ($running) {
@@ -380,7 +380,7 @@ $timerFullDiag.Add_Tick({
             continue
         }
 
-        # ---- Module complete — accumulate counts ------------------------------
+        # ---- Module complete - accumulate counts ------------------------------
         $worst         = Get-WorstCardStatus $mod.CardKeys
         $row.LastWorst = $worst
 
@@ -399,7 +399,7 @@ $timerFullDiag.Add_Tick({
             $row.ValueLbl.Text       = Get-FdModuleSummary $i $worst
             $row.ValueLbl.ForeColor  = if ($worst -in @("fail","warn")) { $ColText } else { $ColMuted }
 
-            # Suggested action — shown only for Warning / Critical
+            # Suggested action - shown only for Warning / Critical
             $action = Get-FdActionText $i $worst
             if ($action) {
                 $row.ActionLbl.Text      = ">> " + $action
@@ -424,7 +424,7 @@ $timerFullDiag.Add_Tick({
         }
     }
 
-    # ---- All modules done — show banner & enable buttons ---------------------
+    # ---- All modules done - show banner & enable buttons ---------------------
     if (-not $allDone) { return }
 
     $timerFullDiag.Stop()
@@ -443,7 +443,7 @@ $timerFullDiag.Add_Tick({
         $parts = @()
         if ($critCount -gt 0) { $parts += "$critCount critical" }
         if ($warnCount -gt 0) { $parts += "$warnCount warning$(if($warnCount -ne 1){'s'})" }
-        $lblFdBannerText.Text      = ($parts -join ", ") + " detected — review highlighted modules below"
+        $lblFdBannerText.Text      = ($parts -join ", ") + " detected - review highlighted modules below"
         $lblFdBannerText.ForeColor = $ColRed
 
         # Detail line: module names + severity
@@ -460,7 +460,7 @@ $timerFullDiag.Add_Tick({
         $lblFdBannerIcon.Text      = [char]0xE73E   # checkmark
         $lblFdBannerIcon.ForeColor = $ColGreen
 
-        $lblFdBannerText.Text      = "All $($fdModuleDefs.Count) checks passed — no issues detected"
+        $lblFdBannerText.Text      = "All $($fdModuleDefs.Count) checks passed - no issues detected"
         $lblFdBannerText.ForeColor = $ColGreen
 
         $lblFdBannerDetail.Text      = "No action required. This VPU appears healthy."
@@ -532,7 +532,7 @@ function Start-FullDiagnostic {
     $btnFdRerunFailed.Enabled = $false
     $script:fdStartTime       = Get-Date
     $script:fdSpinIdx         = 0
-    $lblFdSub.Text            = "Running all checks — this takes about 60 seconds..."
+    $lblFdSub.Text            = "Running all checks - this takes about 60 seconds..."
 
     foreach ($row in $fdRows) {
         $row.Dot.BackColor       = $ColMuted

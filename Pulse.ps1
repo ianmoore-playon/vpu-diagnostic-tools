@@ -1,5 +1,5 @@
 ﻿# =============================================================================
-#  Pulse.ps1  -  Pulse — Pixellot Diagnostic Toolset
+#  Pulse.ps1  -  Pulse - Pixellot Diagnostic Toolset
 #  Loads modules from .\Modules\ and runs the GUI.
 #
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
@@ -181,7 +181,7 @@ $sync = [hashtable]::Synchronized(@{
 # ---------- Form + layout ----------------------------------------------------
 # ---------- Form ------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Pulse — Pixellot Diagnostic Toolset"
+$form.Text = "Pulse - Pixellot Diagnostic Toolset"
 $form.ClientSize = New-Object System.Drawing.Size(1280, 760)
 $form.MinimumSize = $form.Size
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
@@ -218,7 +218,7 @@ $AnchorBLR  = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.F
 $AnchorBL   = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
 $AnchorTR   = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.Forms.AnchorStyles]::Right
 
-# Layout constants — typed [int] so arithmetic never fails on malformed environments
+# Layout constants - typed [int] so arithmetic never fails on malformed environments
 [int]$HdrH     = 68
 [int]$TabH     = 64
 [int]$SbarH    = 28
@@ -227,7 +227,7 @@ $AnchorTR   = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.F
 [int]$ContentY = $HdrH + $TabH                 # 120
 [int]$ContentH = 760 - $HdrH - $TabH - $SbarH  # 612
 [int]$ContentW = 1280                           # full-width content area
-# Legacy aliases — Phase 2 will rewrite panel modules to use ContentW/ContentH directly
+# Legacy aliases - Phase 2 will rewrite panel modules to use ContentW/ContentH directly
 [int]$WideW    = $ContentW
 [int]$NarrowW  = $ContentW
 [int]$RightX   = $ContentW
@@ -435,7 +435,7 @@ $navOverview = New-NavButton ""; $navTests    = New-NavButton ""
 $navHistory  = New-NavButton ""; $navHelp     = New-NavButton ""
 $form.Controls.AddRange(@($navSettings,$navAbout,$navOverview,$navTests,$navHistory,$navHelp))
 
-# Update notification — placed in header
+# Update notification - placed in header
 $lblUpdate = New-Object System.Windows.Forms.Label
 $lblUpdate.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)
 $lblUpdate.ForeColor = [System.Drawing.Color]::FromArgb(251, 191, 36)
@@ -459,7 +459,7 @@ $btnUpdate.Visible   = $false
 $btnUpdate.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 116, 24)), 5))
 $pnlHeader.Controls.Add($btnUpdate)
 
-# Compat controls referenced by timer code — hidden, off-screen
+# Compat controls referenced by timer code - hidden, off-screen
 $lblVpuVal     = New-Object System.Windows.Forms.Label; $lblVpuVal.Visible     = $false
 $pnlSideDot    = New-Object System.Windows.Forms.Panel; $pnlSideDot.Visible    = $false; $pnlSideDot.BackColor = $ColGreen
 $lblSideStatus = New-Object System.Windows.Forms.Label; $lblSideStatus.Visible = $false
@@ -547,7 +547,7 @@ $btnToastDismiss.Cursor    = [System.Windows.Forms.Cursors]::Hand
 $pnlToast.Controls.Add($btnToastDismiss)
 $btnToastDismiss.Add_Click({ $pnlToast.Visible = $false })
 
-# Watcher timer — fires every 400ms, shows toast when any module completes
+# Watcher timer - fires every 400ms, shows toast when any module completes
 $toastPrevState = @{
     Complete=0; NetComplete=0; SvcComplete=0; DiskComplete=0
     EvtComplete=0; HwComplete=0; SysInfoComplete=0
@@ -589,7 +589,7 @@ $timerToast.Add_Tick({
 
             $clr  = if ($isOk -and -not $isWarn) { $ColGreen } elseif ($isWarn) { $ColYellow } else { $ColRed }
             $icon = if ($isOk -and -not $isWarn) { [char]0xE73E } elseif ($isWarn) { [char]0xE7BA } else { [char]0xEA39 }
-            $msg  = "$($meta.Name)  —  " + $(if ($isOk -and -not $isWarn) { "All Clear" } elseif ($isWarn) { "Warning" } else { "Issues Found" })
+            $msg  = "$($meta.Name)  -  " + $(if ($isOk -and -not $isWarn) { "All Clear" } elseif ($isWarn) { "Warning" } else { "Issues Found" })
             $sub  = "Completed $(Get-Date -Format 'HH:mm:ss')   |   Click X to dismiss"
 
             $pnlToastAccent.BackColor = $clr

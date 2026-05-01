@@ -133,9 +133,9 @@ $DiskScript = {
 
         # Threshold guidance
         if ($lvl -eq "Fail") {
-            Disk-Log "  >> Action" "Critically low — free space immediately or VPU may stop recording" "Fail"
+            Disk-Log "  >> Action" "Critically low - free space immediately or VPU may stop recording" "Fail"
         } elseif ($lvl -eq "Warn") {
-            Disk-Log "  >> Action" "Space getting low — review large files and clear old recordings or logs" "Warn"
+            Disk-Log "  >> Action" "Space getting low - review large files and clear old recordings or logs" "Warn"
         }
 
         $volKey = "DiskVol_$($vol.DeviceID -replace ':','')"
@@ -178,9 +178,9 @@ $DiskScript = {
                      else { "Pass" }
             Disk-Log $pp.Label $szStr $lvl
             if ($lvl -eq "Fail") {
-                Disk-Log "  >> Action" "Unusually large — investigate and clear if safe" "Fail"
+                Disk-Log "  >> Action" "Unusually large - investigate and clear if safe" "Fail"
             } elseif ($lvl -eq "Warn") {
-                Disk-Log "  >> Action" "Growing large — consider cleaning up old files" "Warn"
+                Disk-Log "  >> Action" "Growing large - consider cleaning up old files" "Warn"
             }
         } catch {
             Disk-Log $pp.Label "Could not read (access error)" "Warn"
@@ -226,7 +226,7 @@ $DiskScript = {
 
         $top = $dirSizes | Sort-Object Size -Descending | Select-Object -First 8
         if ($top.Count -gt 0) {
-            Disk-Log "$($vol.DeviceID)\ — top folders" "" "Section"
+            Disk-Log "$($vol.DeviceID)\ - top folders" "" "Section"
             foreach ($d in $top) {
                 $bar = "#" * [int]([math]::Min(($d.Size / $vol.Size) * 20, 20))
                 Disk-Log "  $($d.Name)" "$(Format-Size $d.Size)  $bar" "Info"
@@ -274,8 +274,8 @@ $DiskScript = {
         if ($diskEvents.Count -gt 10) {
             Disk-Log "  (and $($diskEvents.Count - 10) more)" "Open Event Logs tab for full list" "Gray"
         }
-        Disk-Log "  >> Action" "Disk errors detected — check cables, run chkdsk, or replace suspect drive" "Fail"
-        $sync.Cards["DiskVol_$($osDrive -replace ':','')"] = @{ Value = "$errCount disk error(s) — $cardFreeGB GB free"; Status = $overallWorst }
+        Disk-Log "  >> Action" "Disk errors detected - check cables, run chkdsk, or replace suspect drive" "Fail"
+        $sync.Cards["DiskVol_$($osDrive -replace ':','')"] = @{ Value = "$errCount disk error(s) - $cardFreeGB GB free"; Status = $overallWorst }
     }
 
     $sync.DiskStep = "Complete"; $sync.DiskRunning=$false; $sync.DiskComplete=$true

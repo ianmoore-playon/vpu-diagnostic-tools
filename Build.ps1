@@ -22,13 +22,13 @@ if (-not (Test-Path $modDir)) {
 }
 
 $out = [System.Collections.Generic.List[string]]::new()
-foreach ($line in (Get-Content "$dest\Pulse.ps1")) {
+foreach ($line in (Get-Content "$dest\Pulse.ps1" -Encoding UTF8)) {
     $injected = $false
     foreach ($mod in $mods) {
         if ($line.Trim() -eq ('. "$ModulesDir\' + $mod + '.psm1"')) {
             $modPath = "$modDir\$mod.psm1"
             if (Test-Path $modPath) {
-                $out.AddRange([string[]](Get-Content $modPath))
+                $out.AddRange([string[]](Get-Content $modPath -Encoding UTF8))
             } else {
                 Write-Warning "Module not found: $modPath"
             }

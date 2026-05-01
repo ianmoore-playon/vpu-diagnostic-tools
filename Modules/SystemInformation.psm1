@@ -127,7 +127,7 @@ $SysInfoScript = {
         if ($disks.Count -eq 0) { Si-Log "Disks" "None detected" "Warn" }
         foreach ($d in $disks) {
             $sizeGB = "{0:F0} GB" -f ([double]$d.Size / 1073741824.0)
-            Si-Log "Disk $($d.Index) — $($d.Model)" "$sizeGB  [$($d.InterfaceType)]"               "Info"
+            Si-Log "Disk $($d.Index) - $($d.Model)" "$sizeGB  [$($d.InterfaceType)]"               "Info"
             if ($d.SerialNumber -and $d.SerialNumber.Trim()) {
                 Si-Log "  Serial" $d.SerialNumber.Trim()                                            "Gray"
             }
@@ -144,7 +144,7 @@ $SysInfoScript = {
                   Where-Object { $_.PhysicalAdapter -eq $true } | Sort-Object Index)
         if ($nics.Count -eq 0) { Si-Log "NICs" "None detected" "Warn" }
         foreach ($nic in $nics) {
-            $mac = if ($nic.MACAddress) { $nic.MACAddress } else { "—" }
+            $mac = if ($nic.MACAddress) { $nic.MACAddress } else { "-" }
             Si-Log $nic.Name $mac "Info"
             if ($nic.Speed -and [long]$nic.Speed -gt 0) {
                 $spd = [long]$nic.Speed
