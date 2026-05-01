@@ -338,27 +338,21 @@ $pnlStatusBar.Controls.Add($lblSbarLastRun)
 $lblHdrVer.Location = New-Object System.Drawing.Point(1110, 0)
 $pnlStatusBar.Controls.Add($lblHdrVer)
 
-$btnTheme = New-Object System.Windows.Forms.Button
-$btnTheme.Text      = if ($VpuTheme -eq "light") { "Dark Mode" } else { "Light Mode" }
-$btnTheme.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
-$btnTheme.Size      = New-Object System.Drawing.Size(110, 20)
-$btnTheme.Location  = New-Object System.Drawing.Point(960, 4)
-$btnTheme.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnTheme.FlatAppearance.BorderColor = $ColBorder
-$btnTheme.FlatAppearance.BorderSize  = 1
-$btnTheme.BackColor = $ColCard
-$btnTheme.ForeColor = $ColMuted
-$btnTheme.Cursor    = [System.Windows.Forms.Cursors]::Hand
-$btnTheme.Anchor    = $AnchorTR
-$pnlStatusBar.Controls.Add($btnTheme)
-$btnTheme.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,110,20)),4))
-$btnTheme.Add_Click({
-    $newTheme = if ($VpuTheme -eq "dark") { "light" } else { "dark" }
-    try { [System.IO.File]::WriteAllText($SettingsPath, "{`"Theme`":`"$newTheme`"}") } catch { }
-    $runScript = if ($PSCommandPath -and (Test-Path $PSCommandPath)) { $PSCommandPath } else { Join-Path $PSScriptRoot "Run.ps1" }
-    Start-Process "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$runScript`""
-    $form.Close()
-})
+$btnSbarSettings = New-Object System.Windows.Forms.Button
+$btnSbarSettings.Text      = "Settings"
+$btnSbarSettings.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+$btnSbarSettings.Size      = New-Object System.Drawing.Size(90, 20)
+$btnSbarSettings.Location  = New-Object System.Drawing.Point(980, 4)
+$btnSbarSettings.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnSbarSettings.FlatAppearance.BorderColor = $ColBorder
+$btnSbarSettings.FlatAppearance.BorderSize  = 1
+$btnSbarSettings.BackColor = $ColCard
+$btnSbarSettings.ForeColor = $ColMuted
+$btnSbarSettings.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnSbarSettings.Anchor    = $AnchorTR
+$pnlStatusBar.Controls.Add($btnSbarSettings)
+$btnSbarSettings.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,90,20)),4))
+$btnSbarSettings.Add_Click({ $navSettings.PerformClick() })
 
 # ---- Tab navigation bar ----------------------------------------------------
 $pnlTabBar = New-Object System.Windows.Forms.Panel
@@ -375,7 +369,7 @@ $sepTab.BackColor = [System.Drawing.Color]::FromArgb(51, 65, 85)
 $sepTab.Anchor    = $AnchorTLR
 $pnlTabBar.Controls.Add($sepTab)
 
-$tabW = 126  # 9 tabs × 126px = 1134px; Run Diagnostic button starts at 1142
+$tabW = 142  # 9 tabs × 142px ≈ 1280px
 $navSysOverview = New-TabButton "Home"                 0xE80F  (0 * $tabW)  $tabW
 $navSysInfo     = New-TabButton "System Information"   0xE9A0  (1 * $tabW)  $tabW
 $navNetConfig   = New-TabButton "Network"              0xE701  (2 * $tabW)  $tabW
@@ -389,7 +383,7 @@ $navReports     = New-TabButton "Reports"              0xE7C3  (8 * $tabW)  $tab
 $btnTabFullDiag = New-Object System.Windows.Forms.Button
 $btnTabFullDiag.Text      = [char]0x25B6 + "  Run Diagnostic"
 $btnTabFullDiag.Size      = New-Object System.Drawing.Size(132, 38)
-$btnTabFullDiag.Location  = New-Object System.Drawing.Point(1142, 13)
+$btnTabFullDiag.Location  = New-Object System.Drawing.Point(1004, 15)
 $btnTabFullDiag.BackColor = $ColAccent
 $btnTabFullDiag.ForeColor = [System.Drawing.Color]::White
 $btnTabFullDiag.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -402,7 +396,7 @@ $btnTabFullDiag.Region    = New-Object System.Drawing.Region([GfxHelper]::Rounde
 
 $pnlTabBar.Controls.AddRange(@(
     $navSysOverview,$navSysInfo,$navNetConfig,$navCamera,$navServices,
-    $navPoE,$navDisk,$navEvents,$navReports,$btnTabFullDiag
+    $navPoE,$navDisk,$navEvents,$navReports
 ))
 
 # ---- Tab hover tooltips -----------------------------------------------------
@@ -458,6 +452,7 @@ $btnUpdate.Cursor    = [System.Windows.Forms.Cursors]::Hand
 $btnUpdate.Visible   = $false
 $btnUpdate.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 116, 24)), 5))
 $pnlHeader.Controls.Add($btnUpdate)
+$pnlHeader.Controls.Add($btnTabFullDiag)
 
 # Compat controls referenced by timer code - hidden, off-screen
 $lblVpuVal     = New-Object System.Windows.Forms.Label; $lblVpuVal.Visible     = $false
@@ -479,7 +474,58 @@ $form.Controls.AddRange(@($lblVpuVal, $pnlSideDot, $lblSideStatus))
 . "$ModulesDir\SystemInformation.psm1"
 . "$ModulesDir\FullDiagnostic.psm1"
 $pnlReports  = New-StubPanel "Reports"  "Generate and manage diagnostic reports."
-$pnlSettings = New-StubPanel "Settings" "Configure tool behavior and preferences."
+$pnlSettings = New-Object System.Windows.Forms.Panel
+$pnlSettings.Size     = New-Object System.Drawing.Size($WideW, $ContentH)
+$pnlSettings.Location = New-Object System.Drawing.Point($SideW, $ContentY)
+$pnlSettings.BackColor = $ColBg; $pnlSettings.Visible = $false; $pnlSettings.Anchor = $AnchorTLRB
+$form.Controls.Add($pnlSettings)
+
+$lblSetTitle = New-Object System.Windows.Forms.Label; $lblSetTitle.Text = "Settings"
+$lblSetTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lblSetTitle.ForeColor = $ColText
+$lblSetTitle.Location = New-Object System.Drawing.Point(10,16); $lblSetTitle.AutoSize = $true
+$pnlSettings.Controls.Add($lblSetTitle)
+
+$lblSetSub = New-Object System.Windows.Forms.Label
+$lblSetSub.Text = "Configure tool options."
+$lblSetSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblSetSub.ForeColor = $ColMuted
+$lblSetSub.Location = New-Object System.Drawing.Point(10,42); $lblSetSub.AutoSize = $true
+$pnlSettings.Controls.Add($lblSetSub)
+
+$sepSetTop = New-Object System.Windows.Forms.Panel
+$sepSetTop.Size = New-Object System.Drawing.Size(1240,1); $sepSetTop.Location = New-Object System.Drawing.Point(10,68)
+$sepSetTop.BackColor = $ColBorder; $pnlSettings.Controls.Add($sepSetTop)
+
+$lblSetAppearance = New-Object System.Windows.Forms.Label; $lblSetAppearance.Text = "Appearance"
+$lblSetAppearance.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblSetAppearance.ForeColor = $ColText
+$lblSetAppearance.Location = New-Object System.Drawing.Point(10,82); $lblSetAppearance.AutoSize = $true
+$pnlSettings.Controls.Add($lblSetAppearance)
+
+$lblSetThemeName = New-Object System.Windows.Forms.Label; $lblSetThemeName.Text = "Theme"
+$lblSetThemeName.Font = New-Object System.Drawing.Font("Segoe UI",9); $lblSetThemeName.ForeColor = $ColText
+$lblSetThemeName.Location = New-Object System.Drawing.Point(10,112); $lblSetThemeName.AutoSize = $true
+$pnlSettings.Controls.Add($lblSetThemeName)
+
+$lblSetThemeDesc = New-Object System.Windows.Forms.Label
+$lblSetThemeDesc.Text = "Current: $(if($VpuTheme -eq 'light'){'Light'}else{'Dark'}) Mode.  Switching restarts the application."
+$lblSetThemeDesc.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblSetThemeDesc.ForeColor = $ColMuted
+$lblSetThemeDesc.Location = New-Object System.Drawing.Point(10,132); $lblSetThemeDesc.AutoSize = $true
+$pnlSettings.Controls.Add($lblSetThemeDesc)
+
+$btnSetTheme = New-Object System.Windows.Forms.Button
+$btnSetTheme.Text = if ($VpuTheme -eq "light") { "  Switch to Dark Mode" } else { "  Switch to Light Mode" }
+$btnSetTheme.Size = New-Object System.Drawing.Size(200,40); $btnSetTheme.Location = New-Object System.Drawing.Point(10,162)
+$btnSetTheme.BackColor = $ColAccent; $btnSetTheme.ForeColor = [System.Drawing.Color]::White
+$btnSetTheme.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnSetTheme.FlatAppearance.BorderSize = 0
+$btnSetTheme.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $btnSetTheme.Cursor = [System.Windows.Forms.Cursors]::Hand
+$btnSetTheme.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,200,40)),6))
+$pnlSettings.Controls.Add($btnSetTheme)
+$btnSetTheme.Add_Click({
+    $newTheme = if ($VpuTheme -eq "dark") { "light" } else { "dark" }
+    try { [System.IO.File]::WriteAllText($SettingsPath, "{`"Theme`":`"$newTheme`"}") } catch { }
+    $runScript = if ($PSCommandPath -and (Test-Path $PSCommandPath)) { $PSCommandPath } else { Join-Path $PSScriptRoot "Run.ps1" }
+    Start-Process "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$runScript`""
+    $form.Close()
+})
 
 # ---- Completion Toast -------------------------------------------------------
 # Floating notification anchored top-right; shown by the watcher timer below.
