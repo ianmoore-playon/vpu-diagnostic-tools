@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "VPU Diagnostic Tool Launcher (version).bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.14"
+$ScriptVersion = "1.0.15"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -225,38 +225,27 @@ $pnlHeader.BackColor = $ColSidebar
 $pnlHeader.Anchor    = $AnchorTLR
 $form.Controls.Add($pnlHeader)
 
-$logoHorizPath = Join-Path $AssetsDir "logo-horizontal.png"
-if (Test-Path $logoHorizPath) {
-    $picHdrLogo = New-Object System.Windows.Forms.PictureBox
-    $picHdrLogo.SizeMode  = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
-    $picHdrLogo.Location  = New-Object System.Drawing.Point(12, 8)
-    $picHdrLogo.Size      = New-Object System.Drawing.Size(380, 52)
-    $picHdrLogo.BackColor = [System.Drawing.Color]::Transparent
-    $picHdrLogo.Image     = [System.Drawing.Image]::FromFile($logoHorizPath)
-    $pnlHeader.Controls.Add($picHdrLogo)
-} else {
-    $lblHdrIcon = New-Object System.Windows.Forms.Label
-    $lblHdrIcon.Text      = [char]0xF785
-    $lblHdrIcon.Font      = New-Object System.Drawing.Font("Segoe MDL2 Assets", 22)
-    $lblHdrIcon.ForeColor = $ColAccent
-    $lblHdrIcon.Location  = New-Object System.Drawing.Point(14, 10)
-    $lblHdrIcon.Size      = New-Object System.Drawing.Size(46, 46)
-    $pnlHeader.Controls.Add($lblHdrIcon)
-    $lblHdrTitle = New-Object System.Windows.Forms.Label
-    $lblHdrTitle.Text      = "VPU Diagnostic Tool Suite"
-    $lblHdrTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
-    $lblHdrTitle.ForeColor = [System.Drawing.Color]::White
-    $lblHdrTitle.Location  = New-Object System.Drawing.Point(64, 10)
-    $lblHdrTitle.Size      = New-Object System.Drawing.Size(700, 26)
-    $pnlHeader.Controls.Add($lblHdrTitle)
-    $lblHdrSub = New-Object System.Windows.Forms.Label
-    $lblHdrSub.Text      = "All-in-one diagnostic and troubleshooting tool for Pixellot VPU systems."
-    $lblHdrSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
-    $lblHdrSub.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
-    $lblHdrSub.Location  = New-Object System.Drawing.Point(66, 38)
-    $lblHdrSub.Size      = New-Object System.Drawing.Size(560, 16)
-    $pnlHeader.Controls.Add($lblHdrSub)
-}
+$lblHdrIcon = New-Object System.Windows.Forms.Label
+$lblHdrIcon.Text      = [char]0xF785
+$lblHdrIcon.Font      = New-Object System.Drawing.Font("Segoe MDL2 Assets", 22)
+$lblHdrIcon.ForeColor = $ColAccent
+$lblHdrIcon.Location  = New-Object System.Drawing.Point(14, 10)
+$lblHdrIcon.Size      = New-Object System.Drawing.Size(46, 46)
+$pnlHeader.Controls.Add($lblHdrIcon)
+$lblHdrTitle = New-Object System.Windows.Forms.Label
+$lblHdrTitle.Text      = "VPU Diagnostic Tool Suite"
+$lblHdrTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
+$lblHdrTitle.ForeColor = [System.Drawing.Color]::White
+$lblHdrTitle.Location  = New-Object System.Drawing.Point(64, 10)
+$lblHdrTitle.Size      = New-Object System.Drawing.Size(700, 26)
+$pnlHeader.Controls.Add($lblHdrTitle)
+$lblHdrSub = New-Object System.Windows.Forms.Label
+$lblHdrSub.Text      = "All-in-one diagnostic and troubleshooting tool for Pixellot VPU systems."
+$lblHdrSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+$lblHdrSub.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+$lblHdrSub.Location  = New-Object System.Drawing.Point(66, 38)
+$lblHdrSub.Size      = New-Object System.Drawing.Size(560, 16)
+$pnlHeader.Controls.Add($lblHdrSub)
 
 $lblHdrVer = New-Object System.Windows.Forms.Label
 $lblHdrVer.Text      = "Version $ScriptVersion"

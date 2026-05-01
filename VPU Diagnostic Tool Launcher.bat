@@ -41,10 +41,12 @@ if exist "%InstallDir%\version.txt" (
     set /p LocalVersion=<"%InstallDir%\version.txt"
 )
 
-:: Check for existing install and compare SHA against GitHub
+:: Check for an existing installation and compare SHA against GitHub.
+:: Note: no | pipe in the PS command - use variable assignment instead to
+:: avoid CMD misinterpreting | inside a parenthesised block.
 if exist "%InstallDir%\.commit" (
     echo    Checking for updates...
-    PowerShell -NoProfile -Command "try { $s = (Invoke-WebRequest 'https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/commits/main' -UseBasicParsing -TimeoutSec 10 | ConvertFrom-Json).sha; $s | Set-Content '%TEMP%\vpu-sha.txt' -NoNewline } catch { Set-Content '%TEMP%\vpu-sha.txt' 'OFFLINE' -NoNewline }"
+    PowerShell -NoProfile -Command "try { $w = Invoke-WebRequest 'https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/commits/main' -UseBasicParsing -TimeoutSec 10; $s = (ConvertFrom-Json $w.Content).sha; Set-Content '%TEMP%\vpu-sha.txt' $s -NoNewline } catch { Set-Content '%TEMP%\vpu-sha.txt' 'OFFLINE' -NoNewline }"
     set /p RemoteSHA=<"%TEMP%\vpu-sha.txt"
     set /p LocalSHA=<"%InstallDir%\.commit"
     del "%TEMP%\vpu-sha.txt" >nul 2>&1
@@ -72,7 +74,7 @@ if "!NeedDownload!"=="1" (
     )
     echo.
     echo    Downloading...
-    PowerShell -NoProfile -ExecutionPolicy Bypass -Command "$zip = '%TEMP%\vpu-diag.zip'; $stage = '%TEMP%\vpu-diag-stage'; if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }; Invoke-WebRequest 'https://github.com/ianmoore-playon/vpu-diagnostic-tools/archive/refs/heads/main.zip' -OutFile $zip; Expand-Archive $zip $stage -Force; $src = Join-Path $stage 'vpu-diagnostic-tools-main'; if (Test-Path '%InstallDir%') { Remove-Item '%InstallDir%' -Recurse -Force }; Move-Item $src '%InstallDir%'; Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item $zip -ErrorAction SilentlyContinue; Get-ChildItem '%InstallDir%' -Recurse | Unblock-File"
+    PowerShell -NoProfile -ExecutionPolicy Bypass -Command "$zip = '%TEMP%\vpu-diag.zip'; $stage = '%TEMP%\vpu-diag-stage'; if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }; Invoke-WebRequest 'https://github.com/ianmoore-playon/vpu-diagnostic-tools/archive/refs/heads/main.zip' -OutFile $zip; Expand-Archive $zip $stage -Force; $src = Join-Path $stage 'vpu-diagnostic-tools-main'; if (Test-Path '%InstallDir%') { Remove-Item '%InstallDir%' -Recurse -Force }; Move-Item $src '%InstallDir%'; Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item $zip -ErrorAction SilentlyContinue"
     if !ERRORLEVEL! neq 0 (
         echo.
         echo  ==============================================================
@@ -82,13 +84,14 @@ if "!NeedDownload!"=="1" (
         pause
         exit /b 1
     )
+    PowerShell -NoProfile -Command "foreach ($f in (Get-ChildItem '%InstallDir%' -Recurse)) { try { Unblock-File $f.FullName } catch {} }"
 
     if exist "%InstallDir%\version.txt" (
         set /p RemoteVersion=<"%InstallDir%\version.txt"
         if "!LocalVersion!"=="not installed" (
             echo    Installed    :  v!RemoteVersion!
         ) else (
-            echo    Updated      :  v!LocalVersion!  ->  v!RemoteVersion!
+            echo    Updated      :  v!LocalVersion!  -^>  v!RemoteVersion!
         )
     )
 
@@ -106,8 +109,8 @@ if "!NeedDownload!"=="1" (
     )
     echo    Done.
 
-    :: Record installed commit SHA for future update checks
-    PowerShell -NoProfile -Command "try { $s = (Invoke-WebRequest 'https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/commits/main' -UseBasicParsing -TimeoutSec 10 | ConvertFrom-Json).sha; [System.IO.File]::WriteAllText('%InstallDir%\.commit', $s) } catch { }"
+    :: Record installed commit SHA for future update checks (no | pipe used)
+    PowerShell -NoProfile -Command "try { $w = Invoke-WebRequest 'https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/commits/main' -UseBasicParsing -TimeoutSec 10; $s = (ConvertFrom-Json $w.Content).sha; [System.IO.File]::WriteAllText('%InstallDir%\.commit', $s) } catch { }"
 )
 
 :: ---- Launch ----------------------------------------------------------------

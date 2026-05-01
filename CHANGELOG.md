@@ -12,9 +12,15 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ## [1.0.15] - 2026-04-30
 
+### Fixed
+
+- **Launcher `->` redirect bug** — the version update line (`v1.0.13 → v1.0.14`) was being parsed by CMD as a stdout redirect (`>`), swallowing the line and generating `'update' is not recognized` errors. Escaped as `-^>`.
+- **Pipe operators in BAT `if` blocks** — `|` characters inside PowerShell `-Command` strings nested in parenthesised `if (...)` blocks were misinterpreted by CMD. All SHA-fetch, SHA-record, and Unblock-File calls rewritten to avoid `|` entirely.
+- **Header logo** — the `logo-horizontal.png` asset has no alpha channel (solid white background), which clashed with the dark navy header. Image loading removed; header now always renders with the icon glyph + text labels.
+
 ### Changed
 
-- **Launcher console UI** — the CMD window is now sized (72×32), cleared on launch, and shows a formatted header with the tool name and subtitle. Version tracking added: shows installed version on up-to-date runs, "v1.0.13 → v1.0.14" on updates, and "Installing for the first time" on fresh installs. A persistent close-warning is printed before any download or launch step. Error messages are clearly prefixed with `ERROR:`.
+- **Launcher console UI** — the CMD window is now sized (72×32), cleared on launch, and shows a formatted header with the tool name and subtitle. Version tracking added: shows installed version on up-to-date runs, "v1.0.14 → v1.0.15" on updates, and "Installing for the first time" on fresh installs. A persistent close-warning is printed before any download or launch step. Error messages are clearly prefixed with `ERROR:`.
 - **`version.txt`** added to repo root — a single-line file containing the current version string, read by the launcher to display human-readable version numbers without parsing the PS1 source.
 - **`Build.ps1` silenced** — `Write-Host` calls replaced with `Write-Verbose` so the BAT owns all console messaging; Build errors still surface via `Write-Error` and the ERRORLEVEL check.
 
