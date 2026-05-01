@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "VPU Diagnostic Tool Launcher (version).bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.15"
+$ScriptVersion = "1.0.16"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -251,11 +251,9 @@ $lblHdrVer = New-Object System.Windows.Forms.Label
 $lblHdrVer.Text      = "Version $ScriptVersion"
 $lblHdrVer.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
 $lblHdrVer.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
-$lblHdrVer.Location  = New-Object System.Drawing.Point(1090, 10)
-$lblHdrVer.Size      = New-Object System.Drawing.Size(160, 16)
+$lblHdrVer.Size      = New-Object System.Drawing.Size(160, $SbarH)
 $lblHdrVer.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
 $lblHdrVer.Anchor    = $AnchorTR
-$pnlHeader.Controls.Add($lblHdrVer)
 
 $pnlBadge = New-Object System.Windows.Forms.Panel
 $pnlBadge.Size      = New-Object System.Drawing.Size(120, 28)
@@ -321,6 +319,9 @@ $lblSbarLastRun.Size      = New-Object System.Drawing.Size(400, $SbarH)
 $lblSbarLastRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 $pnlStatusBar.Controls.Add($lblSbarLastRun)
 
+$lblHdrVer.Location = New-Object System.Drawing.Point(1110, 0)
+$pnlStatusBar.Controls.Add($lblHdrVer)
+
 # ---- Tab navigation bar ----------------------------------------------------
 $pnlTabBar = New-Object System.Windows.Forms.Panel
 $pnlTabBar.Size      = New-Object System.Drawing.Size(1280, $TabH)
@@ -344,7 +345,7 @@ $navCamera      = New-TabButton "Camera"               0xE722  (3 * $tabW)  $tab
 $navServices    = New-TabButton "Services"             0xE9F5  (4 * $tabW)  $tabW
 $navPoE         = New-TabButton "Hardware"             0xE7E8  (5 * $tabW)  $tabW
 $navDisk        = New-TabButton "Disks"                0xEDA2  (6 * $tabW)  $tabW
-$navEvents      = New-TabButton "Event Logs"           0xE7BA  (7 * $tabW)  $tabW
+$navEvents      = New-TabButton "OS Event Logs"        0xE7BA  (7 * $tabW)  $tabW
 $navReports     = New-TabButton "Reports"              0xE7C3  (8 * $tabW)  $tabW
 
 $pnlTabBar.Controls.AddRange(@(
@@ -365,7 +366,7 @@ $tabTip.SetToolTip($navCamera,      "Camera NIC link speeds, cable-fault detecti
 $tabTip.SetToolTip($navServices,    "Running status of Pixellot agent, encoder, and support services")
 $tabTip.SetToolTip($navPoE,         "PoE card power budget, per-port voltage and current, and connected peripheral devices")
 $tabTip.SetToolTip($navDisk,        "Drive free space, disk health, and system memory availability")
-$tabTip.SetToolTip($navEvents,      "Recent Windows system errors filtered for hardware and service-related issues")
+$tabTip.SetToolTip($navEvents,      "Recent OS system errors filtered for hardware and service-related issues")
 $tabTip.SetToolTip($navReports,     "View, copy, or export previously saved diagnostic reports")
 
 # Helper for hidden compat buttons (no tab appearance needed)

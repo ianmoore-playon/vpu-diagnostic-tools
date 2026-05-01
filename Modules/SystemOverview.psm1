@@ -69,14 +69,14 @@ function New-SectionCard {
 }
 
 $hubCardDefs = @(
-    @{Nav="navSysInfo";     Title="System Overview";       Desc="Hardware and OS information";        Icon=0xE80F; R=0;C=0}
-    @{Nav="navNetConfig";   Title="Network Configuration"; Desc="IP, DNS, firewall and connectivity"; Icon=0xE701;R=0;C=1}
-    @{Nav="navCamera";      Title="Camera Connectivity";   Desc="Cameras, NICs and link status";      Icon=0xE722;R=0;C=2}
-    @{Nav="navServices";    Title="Pixellot Services";     Desc="Services status and logs";            Icon=0xE9F5;R=0;C=3}
-    @{Nav="navPoE";         Title="VPU Hardware";           Desc="GPU, peripherals, PoE and NIC uptime"; Icon=0xE7E8;R=1;C=0}
-    @{Nav="navDisk";        Title="System & Disk Health";  Desc="Disk space, performance and health"; Icon=0xEDA2;R=1;C=1}
-    @{Nav="navEvents";      Title="Event Viewer";           Desc="Critical and warning events";        Icon=0xE7BA;R=1;C=2}
-    @{Nav="navReports";     Title="Reports";                Desc="Generate and export reports";        Icon=0xE7C3;R=1;C=3}
+    @{Nav="navSysInfo";  Title="System Information"; Desc="CPU, RAM, GPU, storage and NIC inventory";               Icon=0xE80F; R=0;C=0}
+    @{Nav="navNetConfig";Title="Network";            Desc="Internet, port connectivity and DNS for Pixellot";        Icon=0xE701; R=0;C=1}
+    @{Nav="navCamera";   Title="Camera";             Desc="NIC link speeds, cable faults, ping and RTSP checks";     Icon=0xE722; R=0;C=2}
+    @{Nav="navServices"; Title="Services";           Desc="Pixellot agent, encoder and support services status";     Icon=0xE9F5; R=0;C=3}
+    @{Nav="navPoE";      Title="Hardware";           Desc="PoE NIC budget, GPU, peripherals and NIC uptime";         Icon=0xE7E8; R=1;C=0}
+    @{Nav="navDisk";     Title="Disks";              Desc="Drive space, SMART health and disk event log errors";     Icon=0xEDA2; R=1;C=1}
+    @{Nav="navEvents";   Title="OS Event Logs";      Desc="Recent OS errors filtered for hardware and services";     Icon=0xE7BA; R=1;C=2}
+    @{Nav="navReports";  Title="Reports";            Desc="View, copy and export saved diagnostic reports";          Icon=0xE7C3; R=1;C=3}
 )
 $hCW = 296; $hCH = 200; $hGap = 16
 $hRowY = @(90, 306)

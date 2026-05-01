@@ -83,7 +83,7 @@ $pnlEvents.Size = New-Object System.Drawing.Size($WideW,$ContentH)
 $pnlEvents.Location = New-Object System.Drawing.Point($SideW,$ContentY)
 $pnlEvents.BackColor = $ColBg; $pnlEvents.Visible = $false; $pnlEvents.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlEvents)
-$lblEvtTitle = New-Object System.Windows.Forms.Label; $lblEvtTitle.Text = "Event Logs"
+$lblEvtTitle = New-Object System.Windows.Forms.Label; $lblEvtTitle.Text = "OS Event Logs"
 $lblEvtTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lblEvtTitle.ForeColor = $ColText
 $lblEvtTitle.Location = New-Object System.Drawing.Point(10,16); $lblEvtTitle.AutoSize = $true
 $pnlEvents.Controls.Add($lblEvtTitle)

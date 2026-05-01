@@ -138,15 +138,13 @@ $DiskScript = {
             Disk-Log "  >> Action" "Space getting low — review large files and clear old recordings or logs" "Warn"
         }
 
+        $volKey = "DiskVol_$($vol.DeviceID -replace ':','')"
+        $volSt  = if ($lvl -eq "Fail") { "fail" } elseif ($lvl -eq "Warn") { "warn" } else { "ok" }
+        $sync.Cards[$volKey] = @{ Value = "$freeGB GB free  ($freePct% free)"; Status = $volSt }
         if ($vol.DeviceID -eq $osDrive) { $cardFreeGB = $freeGB; $cardPct = $usedPct }
     }
 
     if ($volumes.Count -eq 0) { Disk-Log "Volumes" "No fixed volumes detected" "Warn"; $overallWorst = "fail" }
-
-    $sync.Cards["DiskStatus"] = @{
-        Value  = "$osDrive $cardFreeGB GB free  ($cardPct% used)"
-        Status = $overallWorst
-    }
 
     # ── 3. Pixellot Storage Paths ─────────────────────────────────────────────
     if ($sync.DiskCancelled) { $sync.DiskRunning=$false; $sync.DiskComplete=$true; return }
@@ -277,7 +275,7 @@ $DiskScript = {
             Disk-Log "  (and $($diskEvents.Count - 10) more)" "Open Event Logs tab for full list" "Gray"
         }
         Disk-Log "  >> Action" "Disk errors detected — check cables, run chkdsk, or replace suspect drive" "Fail"
-        $sync.Cards["DiskStatus"] = @{ Value = "$errCount disk error(s) in event log — $osDrive $cardFreeGB GB free"; Status = $overallWorst }
+        $sync.Cards["DiskVol_$($osDrive -replace ':','')"] = @{ Value = "$errCount disk error(s) — $cardFreeGB GB free"; Status = $overallWorst }
     }
 
     $sync.DiskStep = "Complete"; $sync.DiskRunning=$false; $sync.DiskComplete=$true
@@ -316,6 +314,7 @@ $pnlDisk.BackColor = $ColBg; $pnlDisk.Visible = $false; $pnlDisk.Anchor = $Ancho
 $form.Controls.Add($pnlDisk)
 $lblDiskTitle = New-Object System.Windows.Forms.Label; $lblDiskTitle.Text = "System & Disk Health"
 $lblDiskTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lblDiskTitle.ForeColor = $ColText
+$lblDiskTitle.UseMnemonic = $false
 $lblDiskTitle.Location = New-Object System.Drawing.Point(10,16); $lblDiskTitle.AutoSize = $true
 $pnlDisk.Controls.Add($lblDiskTitle)
 $lblDiskSub = New-Object System.Windows.Forms.Label
@@ -323,9 +322,16 @@ $lblDiskSub.Text = "Physical drive health, volume free space, Pixellot storage p
 $lblDiskSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblDiskSub.ForeColor = $ColMuted
 $lblDiskSub.Location = New-Object System.Drawing.Point(10,42); $lblDiskSub.Size = New-Object System.Drawing.Size(1240,18)
 $pnlDisk.Controls.Add($lblDiskSub)
-$diskCardDefs = @(
-    @{ Key="DiskStatus"; Title="Disk Space";   Sub="C: free space";   X=10;  Icon=[char]0xEDA2; W=250 }
-)
+$diskVolumes = @(Get-WmiObject Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Sort-Object DeviceID)
+$diskCardDefs = @(); $diskXPos = 10
+foreach ($diskVol in $diskVolumes) {
+    $drvKey = "DiskVol_$($diskVol.DeviceID -replace ':','')"
+    $diskCardDefs += @{ Key=$drvKey; Title="$($diskVol.DeviceID) Space"; Sub="$($diskVol.DeviceID) free space"; X=$diskXPos; Icon=[char]0xEDA2; W=250 }
+    $diskXPos += 260
+}
+if ($diskCardDefs.Count -eq 0) {
+    $diskCardDefs = @( @{ Key="DiskVol_C"; Title="C: Space"; Sub="C: free space"; X=10; Icon=[char]0xEDA2; W=250 } )
+}
 $diskCards = @{}
 foreach ($cd in $diskCardDefs) {
     $c = New-StatusCard -Title $cd.Title -X $cd.X -Y 68 -Icon $cd.Icon -Sub $cd.Sub -CardW $cd.W -CardH 90
@@ -362,8 +368,10 @@ $script:diskRunspace = $null; $script:diskSpinIdx = 0
 $btnDiskRun.Add_Click({
     if ($sync.DiskRunning) { return }
     $sync.DiskCancelled = $false
-    $sync.Cards["DiskStatus"] = @{ Value="--"; Status="neutral" }
-    foreach ($key in $diskCards.Keys) { Update-CardStatus -Card $diskCards[$key] -Value "--" -Status "neutral" }
+    foreach ($key in $diskCards.Keys) {
+        $sync.Cards[$key] = @{ Value="--"; Status="neutral" }
+        Update-CardStatus -Card $diskCards[$key] -Value "--" -Status "neutral"
+    }
     $dgvDiskLog.Rows.Clear(); $btnDiskRun.Enabled=$false; $btnDiskRun.Text="  Running..."
     $btnDiskCancel.Visible=$true; $script:diskSpinIdx=0
     $lblDiskStatus.ForeColor=$ColAccent; $lblDiskStatus.Text=" |  Starting..."

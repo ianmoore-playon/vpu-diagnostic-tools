@@ -65,10 +65,9 @@ $HwScript = {
         Hw-Log "Keyboard" $(if($kbdOk){"Connected"}else{"None"}) $(if($kbdOk){"Pass"}else{"Warn"})
     } catch { Hw-Log "Keyboard" "Query failed" "Warn" }
 
-    $m = if ($monCount -gt 0) { [char]0x2713 } else { [char]0x2717 }
-    $ms = if ($mouseOk)       { [char]0x2713 } else { [char]0x2717 }
-    $kb = if ($kbdOk)         { [char]0x2713 } else { [char]0x2717 }
-    $mmkStr    = "Mon:$m  Mouse:$ms  KB:$kb"
+    $ms = if ($mouseOk) { [char]0x2713 } else { [char]0x2717 }
+    $kb = if ($kbdOk)   { [char]0x2713 } else { [char]0x2717 }
+    $mmkStr    = "Mouse:$ms  KB:$kb"
     $mmkStatus = if ($mouseOk -and $kbdOk) { "ok" } else { "warn" }
     $sync.Cards["HwMmk"] = @{ Value=$mmkStr; Status=$mmkStatus }
     if ($sync.HwCancelled) { $sync.HwRunning=$false; $sync.HwComplete=$true; return }
@@ -153,7 +152,7 @@ $pnlPoE.Controls.Add($lblHwSub)
 $hwCardDefs = @(
     @{ Key="HwGpu";     Title="GPU";     Sub="Graphics adapter";  X=10;  Icon=[char]0xE7F4; W=400 }
     @{ Key="HwMonitor"; Title="Monitor"; Sub="Display connected";  X=420; Icon=[char]0xE7F4; W=400 }
-    @{ Key="HwMmk";     Title="MMK";     Sub="Mouse & keyboard";   X=830; Icon=[char]0xE7C8; W=400 }
+    @{ Key="HwMmk";     Title="Input Devices"; Sub="Keyboard & mouse"; X=830; Icon=[char]0xE7C8; W=400 }
 )
 $hwCards = @{}
 foreach ($cd in $hwCardDefs) {

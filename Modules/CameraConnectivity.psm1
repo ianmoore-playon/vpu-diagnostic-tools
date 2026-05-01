@@ -1024,7 +1024,7 @@ $btnGoGuide.Size = New-Object System.Drawing.Size(239, 34); $btnGoGuide.Location
 $btnGoGuide.BackColor = $ColAccent; $btnGoGuide.ForeColor = [System.Drawing.Color]::White
 $btnGoGuide.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnGoGuide.FlatAppearance.BorderSize = 0
 $btnGoGuide.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-$btnGoGuide.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnGoGuide.Visible = $false
+$btnGoGuide.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnGoGuide.Visible = $true
 $right.Controls.Add($btnGoGuide)
 $btnGoGuide.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 239, 34)), 6))
 
@@ -1150,7 +1150,7 @@ $timer.Add_Tick({
         $trend = Get-PortTrendSummary
         $trendSuffix = if ($trend) { "   .   $trend" } else { "" }
         $lblLastRunVal.Text = "$($sync.LastRunLine)   $dt$trendSuffix"
-        $btnGoGuide.Visible = ((@($sync.PortResults) | Where-Object { $_.Result -eq "FAIL" }).Count -gt 0)
+        $btnGoGuide.Visible = $true
         Update-GuidePortDropdown
     }
 })
@@ -1180,7 +1180,7 @@ $btnRun.Add_Click({
     $item2 = $null; while ($sync.SummaryQueue.TryDequeue([ref]$item2)) { }
     $script:allLogItems.Clear()
 
-    $dgvLog.Rows.Clear(); $rtbSteps.Text = "Diagnostic running..."; $btnGoGuide.Visible = $false
+    $dgvLog.Rows.Clear(); $rtbSteps.Text = "Diagnostic running..."
     $btnRun.Enabled = $false; $btnRun.Text = "  Running..."
     $btnRetest.Enabled = $false
     $script:spinIdx = 0; $lblStatus.ForeColor = $ColAccent; $lblStatus.Text = " |  Starting..."
