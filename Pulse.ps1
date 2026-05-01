@@ -375,7 +375,7 @@ $sepTab.BackColor = [System.Drawing.Color]::FromArgb(51, 65, 85)
 $sepTab.Anchor    = $AnchorTLR
 $pnlTabBar.Controls.Add($sepTab)
 
-$tabW = 142  # 9 tabs × 142px ≈ 1280px
+$tabW = 126  # 9 tabs × 126px = 1134px; Run Diagnostic button starts at 1142
 $navSysOverview = New-TabButton "Home"                 0xE80F  (0 * $tabW)  $tabW
 $navSysInfo     = New-TabButton "System Information"   0xE9A0  (1 * $tabW)  $tabW
 $navNetConfig   = New-TabButton "Network"              0xE701  (2 * $tabW)  $tabW
