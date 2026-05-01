@@ -44,7 +44,7 @@ echo  --------------------------------------------------------------
 echo.
 
 :: ---- Deploy token (contents:read PAT — allows download from private repo) --
-set "VPU_DEPLOY_TOKEN=REPLACE_WITH_DEPLOY_TOKEN"
+set "VPU_DEPLOY_TOKEN=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"
 
 :: ---- Version and install state --------------------------------------------
 set "InstallDir=%ProgramFiles%\Pulse"

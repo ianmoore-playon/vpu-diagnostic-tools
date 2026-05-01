@@ -1,18 +1,14 @@
 # =============================================================================
 #  Set-FeedbackToken.ps1  -  Encrypts and stores the Pulse feedback token
 #
-#  Run once on each VPU after installing Pulse:
+#  Called automatically by Pulse.bat on first install. Can also be re-run
+#  manually to rotate the token:
 #    PowerShell -NoProfile -ExecutionPolicy Bypass -File Set-FeedbackToken.ps1
-#
-#  Or pass the token directly (e.g. via remote script):
-#    PowerShell -NoProfile -ExecutionPolicy Bypass -File Set-FeedbackToken.ps1 -Token "github_pat_..."
 #
 #  The token is encrypted using Windows DPAPI (LocalMachine scope) and stored
 #  at C:\ProgramData\Pulse\feedback.key. The ciphertext is machine-specific —
 #  it cannot be decrypted on any other machine.
 # =============================================================================
-
-param([string]$Token = "")
 
 # Require admin
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -20,18 +16,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     exit 1
 }
 
-# Prompt securely if no token supplied
-if (-not $Token) {
-    $secure = Read-Host "Enter the Pulse feedback token" -AsSecureString
-    $bstr   = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-    try { $Token = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr) }
-    finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
-}
-
-if (-not $Token.Trim()) {
-    Write-Error "No token provided. Aborting."
-    exit 1
-}
+$Token = "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"   # issues:write
 
 Add-Type -AssemblyName System.Security
 
@@ -42,18 +27,13 @@ if (-not (Test-Path $keyDir)) {
     New-Item -ItemType Directory -Path $keyDir -Force | Out-Null
 }
 
-$bytes     = [System.Text.Encoding]::UTF8.GetBytes($Token.Trim())
+$bytes     = [System.Text.Encoding]::UTF8.GetBytes($Token)
 $encrypted = [System.Security.Cryptography.ProtectedData]::Protect(
     $bytes, $null, [System.Security.Cryptography.DataProtectionScope]::LocalMachine
 )
 [System.IO.File]::WriteAllBytes($keyPath, $encrypted)
 
-# Clear plaintext from memory
 [System.Array]::Clear($bytes, 0, $bytes.Length)
 $Token = $null
 
-Write-Host ""
-Write-Host "  Feedback token encrypted and saved." -ForegroundColor Green
-Write-Host "  Location : $keyPath"
-Write-Host "  Scope    : LocalMachine (this machine only)"
-Write-Host ""
+Write-Host "  Feedback token configured." -ForegroundColor Green
