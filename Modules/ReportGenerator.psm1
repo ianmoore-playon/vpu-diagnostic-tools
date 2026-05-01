@@ -22,29 +22,19 @@ function Update-HistoryList {
         }
         $resultText = "Unknown"; $resultColor = $ColMuted; $summary = ""
         try {
-            $lines = Get-Content -Path $f.FullName -ErrorAction Stop
+            $lines = Get-Content -Path $f.FullName -Tail 100 -ErrorAction Stop
             $statusLine = $lines | Where-Object { $_ -match '^STATUS:' } | Select-Object -Last 1
+            $failLines  = @($lines | Where-Object { $_ -match 'DEGRADED' })
             if ($statusLine -match 'ALL_CLEAR') {
                 $resultText = "All Clear"; $resultColor = $ColGreen; $summary = "All ports healthy"
-            } elseif ($statusLine -match 'ISSUES_FOUND') {
+            } elseif ($statusLine -match 'ISSUES_FOUND' -or $failLines.Count -gt 0) {
                 $resultText = "Issues Found"; $resultColor = $ColRed
-                $failLines = @($lines | Where-Object { $_ -match 'DEGRADED' })
                 $ports = $failLines | ForEach-Object {
                     if ($_ -match '^\s+(.+?)\s{2,}DEGRADED') { $Matches[1].Trim() }
                 } | Where-Object { $_ }
                 $summary = "$($failLines.Count) fault(s)" + $(if ($ports) { " - " + ($ports -join ", ") } else { "" })
-            } else {
-                # Fallback for files written before v1.5.0
-                $failLines = @($lines | Where-Object { $_ -match 'DEGRADED' })
-                if ($failLines.Count -gt 0) {
-                    $resultText = "Issues Found"; $resultColor = $ColRed
-                    $ports = $failLines | ForEach-Object {
-                        if ($_ -match '^\s+(.+?)\s{2,}DEGRADED') { $Matches[1].Trim() }
-                    } | Where-Object { $_ }
-                    $summary = "$($failLines.Count) fault(s)" + $(if ($ports) { " - " + ($ports -join ", ") } else { "" })
-                } elseif (@($lines | Where-Object { $_ -match 'Complete' }).Count -gt 0) {
-                    $resultText = "All Clear"; $resultColor = $ColGreen; $summary = "All ports healthy"
-                }
+            } elseif (@($lines | Where-Object { $_ -match 'Complete' }).Count -gt 0) {
+                $resultText = "All Clear"; $resultColor = $ColGreen; $summary = "All ports healthy"
             }
         } catch { }
         $sizeKb = [math]::Round($f.Length / 1KB, 1)

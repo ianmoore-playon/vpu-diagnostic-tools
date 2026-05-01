@@ -73,6 +73,9 @@ if ($VpuTheme -eq "light") {
     $ColLogCyan    = [System.Drawing.Color]::FromArgb(14,  116, 144)
     $ColLogText    = [System.Drawing.Color]::FromArgb(30,  41,  59)
     $ColLogLabel   = [System.Drawing.Color]::FromArgb(100, 116, 139)
+    $ColFailBg     = [System.Drawing.Color]::FromArgb(254, 226, 226)
+    $ColWarnBg     = [System.Drawing.Color]::FromArgb(254, 243, 199)
+    $ColOkBg       = [System.Drawing.Color]::FromArgb(220, 252, 231)
 } else {
     # ---- Dark palette (default) ---------------------------------------------
     $ColSidebar    = [System.Drawing.Color]::FromArgb(15,  22,  36)
@@ -97,6 +100,9 @@ if ($VpuTheme -eq "light") {
     $ColLogCyan    = [System.Drawing.Color]::FromArgb(103, 232, 249)
     $ColLogText    = [System.Drawing.Color]::FromArgb(203, 213, 225)
     $ColLogLabel   = [System.Drawing.Color]::FromArgb(100, 116, 139)
+    $ColFailBg     = [System.Drawing.Color]::FromArgb(62,  28,  28)
+    $ColWarnBg     = [System.Drawing.Color]::FromArgb(58,  50,  16)
+    $ColOkBg       = [System.Drawing.Color]::FromArgb(15,  50,  28)
 }
 
 # ---------- GUI Helper Functions --------------------------------------------

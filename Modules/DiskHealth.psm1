@@ -34,14 +34,15 @@ $DiskScript = {
         }
     } catch {}
 
-    # SMART failure prediction (root\wmi namespace)
-    $smartFail = $false
+    # SMART failure prediction - build per-disk-index hashtable so attribution is correct on multi-disk systems
+    $smartFails = @{}
     try {
-        $smartObjs = @(Get-WmiObject -Namespace root\wmi -Class MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue)
-        $smartFail = ($smartObjs | Where-Object { $_.PredictFailure }).Count -gt 0
+        @(Get-WmiObject -Namespace root\wmi -Class MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue) |
+            Where-Object { $_.PredictFailure } |
+            ForEach-Object { if ($_.InstanceName -match '(\d+)') { $smartFails[[string]$Matches[1]] = $true } }
     } catch {}
 
-    $physDisks = @(Get-WmiObject Win32_DiskDrive -ErrorAction SilentlyContinue | Sort-Object Index)
+    $physDisks = @(Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | Sort-Object Index)
     foreach ($phys in $physDisks) {
         if ($sync.DiskCancelled) { $sync.DiskRunning=$false; $sync.DiskComplete=$true; return }
 
@@ -70,7 +71,7 @@ $DiskScript = {
                 default     { "Info" }
             }
         }
-        if ($smartFail -and $healthLvl -eq "Pass") { $healthStr = "SMART Predict Failure"; $healthLvl = "Fail" }
+        if ($smartFails.ContainsKey([string]$phys.Index) -and $healthLvl -eq "Pass") { $healthStr = "SMART Predict Failure"; $healthLvl = "Fail" }
         if ($healthLvl -in @("Warn","Fail")) { $overallWorst = if ($healthLvl -eq "Fail") { "fail" } elseif ($overallWorst -ne "fail") { "warn" } else { $overallWorst } }
 
         $typeLabel = if ($mediaType -ne "Unknown") { "  [$mediaType]" } else { "" }
@@ -90,7 +91,7 @@ $DiskScript = {
     # Pixellot path patterns used to identify recording/storage drives
     $pixStorePaths = @("Pixellot\recordings","Pixellot\data","Pixellot\Data","recordings")
 
-    $volumes = @(Get-WmiObject Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Sort-Object DeviceID)
+    $volumes = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Sort-Object DeviceID)
     $cardFreeGB = 0; $cardPct = 0
 
     foreach ($vol in $volumes) {
@@ -118,10 +119,10 @@ $DiskScript = {
         if (-not $roles) { $roles += if ($totalGB -gt 200) { "Storage" } else { "Data" } }
         $roleLabel = " [$($roles -join ' / ')]"
 
-        # Thresholds: absolute free space takes priority over percentage
+        # Thresholds: absolute free space + percentage (tighter % catches large drives)
         $lvl = "Pass"
-        if ($freeGB -lt 5  -or $usedPct -gt 95) { $lvl = "Fail" }
-        elseif ($freeGB -lt 15 -or $usedPct -gt 85) { $lvl = "Warn" }
+        if ($freeGB -lt 5  -or $usedPct -gt 97) { $lvl = "Fail" }
+        elseif ($freeGB -lt 15 -or $usedPct -gt 90) { $lvl = "Warn" }
 
         if ($lvl -eq "Fail" -and $overallWorst -ne "fail")            { $overallWorst = "fail" }
         elseif ($lvl -eq "Warn" -and $overallWorst -notin @("fail","warn")) { $overallWorst = "warn" }
@@ -169,7 +170,7 @@ $DiskScript = {
             continue
         }
         try {
-            $sz = (Get-ChildItem $pp.Path -Recurse -File -Force -ErrorAction SilentlyContinue |
+            $sz = (Get-ChildItem $pp.Path -Recurse -Depth 3 -File -Force -ErrorAction SilentlyContinue |
                    Measure-Object Length -Sum).Sum
             if (-not $sz) { $sz = 0 }
             $szStr = Format-Size $sz
@@ -193,7 +194,7 @@ $DiskScript = {
             $testPath = "$($vol.DeviceID)\$pp"
             if (Test-Path $testPath -ErrorAction SilentlyContinue) {
                 try {
-                    $sz = (Get-ChildItem $testPath -Recurse -File -Force -ErrorAction SilentlyContinue |
+                    $sz = (Get-ChildItem $testPath -Recurse -Depth 3 -File -Force -ErrorAction SilentlyContinue |
                            Measure-Object Length -Sum).Sum
                     Disk-Log "Recordings ($($vol.DeviceID))" (Format-Size $sz) "Info"
                 } catch { Disk-Log "Recordings ($($vol.DeviceID))" "Found (size unavailable)" "Info" }
@@ -207,6 +208,7 @@ $DiskScript = {
     $sync.DiskStep = "Finding large folders..."
     Disk-Section "Largest Top-Level Folders"
 
+    $scanSw = [System.Diagnostics.Stopwatch]::StartNew()
     foreach ($vol in $volumes) {
         if ($sync.DiskCancelled) { $sync.DiskRunning=$false; $sync.DiskComplete=$true; return }
         if (-not $vol.Size -or $vol.Size -eq 0) { continue }
@@ -216,9 +218,9 @@ $DiskScript = {
 
         $dirSizes = @()
         foreach ($dir in $topDirs) {
-            if ($sync.DiskCancelled) { break }
+            if ($sync.DiskCancelled -or $scanSw.Elapsed.TotalSeconds -gt 30) { break }
             try {
-                $sz = (Get-ChildItem $dir.FullName -Recurse -File -Force -ErrorAction SilentlyContinue |
+                $sz = (Get-ChildItem $dir.FullName -Recurse -Depth 3 -File -Force -ErrorAction SilentlyContinue |
                        Measure-Object Length -Sum).Sum
                 if ($sz -gt 0) { $dirSizes += [PSCustomObject]@{ Name=$dir.Name; Path=$dir.FullName; Size=$sz } }
             } catch { }
@@ -248,28 +250,28 @@ $DiskScript = {
 
     $diskEvents = @()
     try {
-        $diskEvents = @(Get-EventLog -LogName System -EntryType Error,Warning -After $since -ErrorAction Stop |
+        $diskEvents = @(Get-WinEvent -FilterHashtable @{ LogName='System'; Level=@(1,2,3); StartTime=$since } -ErrorAction Stop |
             Where-Object {
-                ($diskEvtSources -contains $_.Source) -or ($diskEvtIds -contains $_.EventID)
-            } | Sort-Object TimeGenerated -Descending | Select-Object -First 20)
+                ($diskEvtSources -contains $_.ProviderName) -or ($diskEvtIds -contains $_.Id)
+            } | Select-Object -First 20)
     } catch {}
 
     if ($diskEvents.Count -eq 0) {
         Disk-Log "Disk events" "No disk-related errors in the last 48 hours" "Pass"
     } else {
-        $errCount  = ($diskEvents | Where-Object { $_.EntryType -eq "Error"   }).Count
-        $warnCount = ($diskEvents | Where-Object { $_.EntryType -eq "Warning" }).Count
+        $errCount  = ($diskEvents | Where-Object { $_.Level -in @(1,2) }).Count
+        $warnCount = ($diskEvents | Where-Object { $_.Level -eq 3 }).Count
         $summaryLvl = if ($errCount -gt 0) { "Fail" } else { "Warn" }
         Disk-Log "Events found" "$errCount error(s), $warnCount warning(s)" $summaryLvl
         if ($summaryLvl -eq "Fail" -and $overallWorst -ne "fail") { $overallWorst = "fail" }
         elseif ($summaryLvl -eq "Warn" -and $overallWorst -notin @("fail","warn")) { $overallWorst = "warn" }
 
         foreach ($ev in ($diskEvents | Select-Object -First 10)) {
-            $evLvl  = if ($ev.EntryType -eq "Error") { "Fail" } else { "Warn" }
-            $evTime = $ev.TimeGenerated.ToString("MM/dd HH:mm")
+            $evLvl  = if ($ev.Level -in @(1,2)) { "Fail" } else { "Warn" }
+            $evTime = $ev.TimeCreated.ToString("MM/dd HH:mm")
             $evMsg  = ($ev.Message -split "`n")[0].Trim()
             if ($evMsg.Length -gt 100) { $evMsg = $evMsg.Substring(0,97) + "..." }
-            Disk-Log "  $evTime  ID $($ev.EventID)  $($ev.Source)" $evMsg $evLvl
+            Disk-Log "  $evTime  ID $($ev.Id)  $($ev.ProviderName)" $evMsg $evLvl
         }
         if ($diskEvents.Count -gt 10) {
             Disk-Log "  (and $($diskEvents.Count - 10) more)" "Open Event Logs tab for full list" "Gray"
@@ -277,6 +279,9 @@ $DiskScript = {
         Disk-Log "  >> Action" "Disk errors detected - check cables, run chkdsk, or replace suspect drive" "Fail"
         $sync.Cards["DiskVol_$($osDrive -replace ':','')"] = @{ Value = "$errCount disk error(s) - $cardFreeGB GB free"; Status = $overallWorst }
     }
+
+    $diskStatusVal = switch ($overallWorst) { "fail"{"Issues detected"} "warn"{"Warnings found"} default{"Healthy"} }
+    $sync.Cards["DiskStatus"] = @{ Value=$diskStatusVal; Status=$overallWorst }
 
     $sync.DiskStep = "Complete"; $sync.DiskRunning=$false; $sync.DiskComplete=$true
 }
@@ -322,7 +327,7 @@ $lblDiskSub.Text = "Physical drive health, volume free space, Pixellot storage p
 $lblDiskSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblDiskSub.ForeColor = $ColMuted
 $lblDiskSub.Location = New-Object System.Drawing.Point(10,42); $lblDiskSub.Size = New-Object System.Drawing.Size(1240,18)
 $pnlDisk.Controls.Add($lblDiskSub)
-$diskVolumes = @(Get-WmiObject Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Sort-Object DeviceID)
+$diskVolumes = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Sort-Object DeviceID)
 $diskCardDefs = @(); $diskXPos = 10
 foreach ($diskVol in $diskVolumes) {
     $drvKey = "DiskVol_$($diskVol.DeviceID -replace ':','')"
@@ -367,10 +372,10 @@ $lblDiskLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblDiskLogHd
 $pnlDisk.Controls.Add($lblDiskLogHdr)
 $dgvDiskLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
 $pnlDisk.Controls.Add($dgvDiskLog)
-$script:diskRunspace = $null; $script:diskSpinIdx = 0
+$script:diskRunspace = $null; $script:diskPs = $null; $script:diskSpinIdx = 0
 
 
-$btnDiskRun.Add_Click({
+function Start-DiskDiagnostic {
     if ($sync.DiskRunning) { return }
     $sync.DiskCancelled = $false
     foreach ($key in $diskCards.Keys) {
@@ -381,12 +386,15 @@ $btnDiskRun.Add_Click({
     $btnDiskCancel.Visible=$true; $script:diskSpinIdx=0
     $lblDiskStatus.ForeColor=$ColAccent; $lblDiskStatus.Text=" |  Starting..."
     if ($script:diskRunspace) { try { $script:diskRunspace.Close() } catch { } }
+    if ($script:diskPs) { try { $script:diskPs.Dispose() } catch { }; $script:diskPs = $null }
     $script:diskRunspace = [runspacefactory]::CreateRunspace()
     $script:diskRunspace.ApartmentState="STA"; $script:diskRunspace.ThreadOptions="ReuseThread"; $script:diskRunspace.Open()
-    $ps = [powershell]::Create(); $ps.Runspace=$script:diskRunspace
-    $ps.AddScript($DiskScript) | Out-Null
-    $ps.AddParameters(@{ sync=$sync }) | Out-Null
-    $ps.BeginInvoke() | Out-Null; $diskTimer.Start()
-})
+    $script:diskPs = [powershell]::Create(); $script:diskPs.Runspace=$script:diskRunspace
+    $script:diskPs.AddScript($DiskScript) | Out-Null
+    $script:diskPs.AddParameters(@{ sync=$sync }) | Out-Null
+    $script:diskPs.BeginInvoke() | Out-Null; $diskTimer.Start()
+}
+
+$btnDiskRun.Add_Click({ Start-DiskDiagnostic })
 $btnDiskCancel.Add_Click({ $sync.DiskCancelled=$true; $btnDiskCancel.Visible=$false })
 

@@ -54,11 +54,6 @@ $NetScript = {
     }
     function Set-NetCard {
         param([string]$Key, [string]$Value, [string]$Status)
-        # Write directly to outer synchronized hashtable — avoids inner-hashtable
-        # visibility issues between the runspace thread and the UI timer thread.
-        $sync["NetCard_${Key}_V"] = $Value
-        $sync["NetCard_${Key}_S"] = $Status
-        # Also mirror into sync.Cards so FullDiagnostic summary can read it.
         $sync.Cards[$Key] = @{ Value = $Value; Status = $Status }
     }
     function Test-TcpConnect {
@@ -226,19 +221,19 @@ $netTimer.Add_Tick({
         if ($netItem.L -eq "Section") {
             $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
             $rtbNetLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 7.5, [System.Drawing.FontStyle]::Bold)
-            $rtbNetLog.SelectionColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+            $rtbNetLog.SelectionColor = $ColMuted
             $rtbNetLog.AppendText("`n  $($netItem.Result.ToUpper())`n")
         } else {
             $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
-            $rtbNetLog.SelectionColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+            $rtbNetLog.SelectionColor = $ColLogLabel
             $rtbNetLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 8)
             $rtbNetLog.AppendText(("{0,-22}" -f $netItem.Label))
             $col = switch ($netItem.L) {
-                "Pass" { [System.Drawing.Color]::FromArgb(74,  222, 128) }
-                "Fail" { [System.Drawing.Color]::FromArgb(252, 165, 165) }
-                "Warn" { [System.Drawing.Color]::FromArgb(253, 224, 71)  }
-                "Gray" { [System.Drawing.Color]::FromArgb(100, 116, 139) }
-                default{ [System.Drawing.Color]::FromArgb(203, 213, 225) }
+                "Pass" { $ColLogPass }
+                "Fail" { $ColLogFail }
+                "Warn" { $ColLogWarn }
+                "Gray" { $ColMuted   }
+                default{ $ColLogText }
             }
             $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
             $rtbNetLog.SelectionColor = $col
@@ -248,11 +243,11 @@ $netTimer.Add_Tick({
         $rtbNetLog.ScrollToCaret()
     }
 
-    # Update net cards from top-level sync keys (reliable cross-thread visibility)
     foreach ($netKey in $netCards.Keys) {
-        $ncV = $sync["NetCard_${netKey}_V"]
-        $ncS = $sync["NetCard_${netKey}_S"]
-        if ($ncV) { Update-CardStatus -Card $netCards[$netKey] -Value $ncV -Status $ncS }
+        $sc = $sync.Cards[$netKey]
+        if ($sc -and $sc.Value -and $sc.Value -ne $netCards[$netKey].ValueLabel.Text) {
+            Update-CardStatus -Card $netCards[$netKey] -Value $sc.Value -Status $sc.Status
+        }
     }
 
     if ($sync.NetRunning) {
@@ -344,7 +339,7 @@ $pnlNetwork.Controls.Add($lblNetLogHdr)
 
 $rtbNetLog = New-Object System.Windows.Forms.RichTextBox
 $rtbNetLog.Size = New-Object System.Drawing.Size(1240, 336); $rtbNetLog.Location = New-Object System.Drawing.Point(10, 266)
-$rtbNetLog.BackColor = $ColLogBg; $rtbNetLog.ForeColor = [System.Drawing.Color]::FromArgb(203, 213, 225)
+$rtbNetLog.BackColor = $ColLogBg; $rtbNetLog.ForeColor = $ColLogText
 $rtbNetLog.Font = New-Object System.Drawing.Font("Consolas", 8); $rtbNetLog.ReadOnly = $true
 $rtbNetLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
 $rtbNetLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
@@ -353,22 +348,15 @@ $rtbNetLog.Text = "Click 'Run Network Test' to begin."
 $pnlNetwork.Controls.Add($rtbNetLog)
 
 $script:netRunspace = $null
+$script:netPs       = $null
 $script:netSpinIdx  = 0
 
-# All panels registered here - after every panel is created - so Show-Panel
-# can hide them all before making the target visible.
-$script:allNavPanels = @(
-    $pnlSysOverview,$center,$pnlGuide,$pnlHistory,$pnlHelp,$pnlNetwork,
-    $pnlPoE,$pnlServices,$pnlDisk,$pnlEvents,$pnlReports,$pnlSettings
-)
 
-
-$btnNetRun.Add_Click({
+function Start-NetDiagnostic {
     if ($sync.NetRunning) { return }
     $sync.NetCancelled = $false
     foreach ($k in @("NetInternet","NetPorts","NetDomains")) {
-        $sync["NetCard_${k}_V"] = "--"
-        $sync["NetCard_${k}_S"] = "neutral"
+        $sync.Cards[$k] = @{ Value="--"; Status="neutral" }
     }
     foreach ($k in $netCards.Keys) { Update-CardStatus -Card $netCards[$k] -Value "--" -Status "neutral" }
     $rtbNetLog.Clear()
@@ -378,6 +366,7 @@ $btnNetRun.Add_Click({
     $script:netSpinIdx = 0
 
     if ($script:netRunspace) { try { $script:netRunspace.Close() } catch { } }
+    if ($script:netPs) { try { $script:netPs.Dispose() } catch { }; $script:netPs = $null }
     $script:netRunspace = [runspacefactory]::CreateRunspace()
     $script:netRunspace.ApartmentState = "STA"
     $script:netRunspace.ThreadOptions  = "ReuseThread"
@@ -386,12 +375,14 @@ $btnNetRun.Add_Click({
     $script:netRunspace.SessionStateProxy.SetVariable("PortTests",    $PortTests)
     $script:netRunspace.SessionStateProxy.SetVariable("DomainTests",  $DomainTests)
     $script:netRunspace.SessionStateProxy.SetVariable("NetTimeoutMs", $NetTimeoutMs)
-    $ps = [powershell]::Create()
-    $ps.Runspace = $script:netRunspace
-    $ps.AddScript($NetScript) | Out-Null
-    $ps.BeginInvoke() | Out-Null
+    $script:netPs = [powershell]::Create()
+    $script:netPs.Runspace = $script:netRunspace
+    $script:netPs.AddScript($NetScript) | Out-Null
+    $script:netPs.BeginInvoke() | Out-Null
     $netTimer.Start()
-})
+}
+
+$btnNetRun.Add_Click({ Start-NetDiagnostic })
 
 $btnNetCancel.Add_Click({
     $sync.NetCancelled = $true

@@ -90,7 +90,7 @@ $HwScript = {
     Hw-Section "PoE Status"
     if ($sync.PoeAvailable -and $sync.PoePortData.Count -gt 0) {
         Hw-Log "Total Budget" ("{0:F1} W  (Consumed: {1:F1} W)" -f $sync.PoeTotal, $sync.PoeConsumed) "Info"
-        Hw-Log "NIC Temp"     ("{0:F1} C" -f $sync.PoeTemp) "Info"
+        Hw-Log "NIC Temp"     ("{0:F1}$([char]0xB0)C" -f $sync.PoeTemp) "Info"
         foreach ($p in @($sync.PoePortData)) {
             $stateStr = if ($p.PoeOn) { "PoE ON" } else { "PoE OFF" }
             $lvl      = if ($p.PoeOn) { "Pass" } else { "Gray" }
@@ -195,10 +195,10 @@ $pnlPoE.Controls.Add($lblHwLogHdr)
 $dgvHwLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
 $pnlPoE.Controls.Add($dgvHwLog)
 
-$script:hwRunspace = $null; $script:hwSpinIdx = 0
+$script:hwRunspace = $null; $script:hwPs = $null; $script:hwSpinIdx = 0
 
 
-$btnHwRun.Add_Click({
+function Start-HwDiagnostic {
     if ($sync.HwRunning) { return }
     $sync.HwCancelled = $false
     foreach ($key in $hwCards.Keys) { $sync.Cards[$key] = @{ Value="--"; Status="neutral" } }
@@ -207,11 +207,14 @@ $btnHwRun.Add_Click({
     $btnHwCancel.Visible=$true; $script:hwSpinIdx=0
     $lblHwStatus.ForeColor=$ColAccent; $lblHwStatus.Text=" |  Starting..."
     if ($script:hwRunspace) { try { $script:hwRunspace.Close() } catch { } }
+    if ($script:hwPs) { try { $script:hwPs.Dispose() } catch { }; $script:hwPs = $null }
     $script:hwRunspace = [runspacefactory]::CreateRunspace()
     $script:hwRunspace.ApartmentState="STA"; $script:hwRunspace.ThreadOptions="ReuseThread"; $script:hwRunspace.Open()
-    $ps = [powershell]::Create(); $ps.Runspace=$script:hwRunspace
-    $ps.AddScript($HwScript) | Out-Null
-    $ps.AddParameters(@{ sync=$sync }) | Out-Null
-    $ps.BeginInvoke() | Out-Null; $hwTimer.Start()
-})
+    $script:hwPs = [powershell]::Create(); $script:hwPs.Runspace=$script:hwRunspace
+    $script:hwPs.AddScript($HwScript) | Out-Null
+    $script:hwPs.AddParameters(@{ sync=$sync }) | Out-Null
+    $script:hwPs.BeginInvoke() | Out-Null; $hwTimer.Start()
+}
+
+$btnHwRun.Add_Click({ Start-HwDiagnostic })
 $btnHwCancel.Add_Click({ $sync.HwCancelled=$true; $btnHwCancel.Visible=$false })

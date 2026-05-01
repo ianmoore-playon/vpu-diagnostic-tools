@@ -10,6 +10,35 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.20] - 2026-05-01
+
+### Fixed
+
+- **Full Diagnostic — Disk module never flagged issues** — `$DiskScript` now writes `$sync.Cards["DiskStatus"]` at completion so `Get-WorstCardStatus` can detect disk failures. Previously the card key was never written and the Full Diagnostic row always stayed neutral.
+- **Full Diagnostic — reflection-based button invocation removed** — `Invoke-ButtonClick` used `GetType().GetMethod('OnClick', NonPublic)` to fire hidden panel buttons, which silently no-ops when a button's parent panel is not visible. Replaced with direct named-function calls (`Start-XxxDiagnostic`) across all seven modules; `FullDiagnostic.psm1` calls these functions directly via `& $Mod.RunFn`.
+- **PowerShell runspace instances never disposed** — all modules stored `[powershell]::Create()` in a local `$ps` variable that was unreachable after `BeginInvoke()`. Each module now stores `$script:xPs` and calls `.Dispose()` at the start of the next run, preventing handle and memory leaks on re-runs.
+- **Disk Health — SMART failure mis-attributed to wrong drive** — a single boolean flag was set when any disk predicted failure, then applied to all disks. Replaced with a per-disk hashtable keyed by `PhysicalDisk.Index`; only the drive that predicted failure is flagged.
+- **Disk Health — free-space thresholds tightened** — critical threshold raised from >95% to >97% used; warning threshold raised from >85% to >90% used, reducing false positives on typical VPU storage layouts.
+- **Disk Health — top-folder scan could freeze for minutes** — `Get-ChildItem -Recurse` on `C:\Users`, `C:\Windows\Temp`, and `C:\Pixellot` could run indefinitely. Added `-Depth 3` cap and a 30-second `Stopwatch` guard with `$sync.DiskCancelled` check to all recursive scans in Sections 3 and 4.
+- **Event Logs — `Get-EventLog` replaced with `Get-WinEvent`** — `Get-EventLog` is absent from PowerShell 7+ and was the cause of silent event-log failures on newer PS builds. Both modules (EventLogs.psm1, DiskHealth.psm1) now use `Get-WinEvent -FilterHashtable` with correct `Level`, `TimeCreated`, and `ProviderName` property names.
+- **Event Logs — display limits raised** — errors shown per log raised from 10 to 20; warnings raised from 5 to 10. Warning card threshold changed to trigger on any warnings (was >20).
+- **Network Diagnostics — flat `$sync` key workaround removed** — `Set-NetCard` previously wrote duplicate entries to flat `$sync` keys in addition to `$sync.Cards`. `$sync.Cards` is itself a `[hashtable]::Synchronized`, so the flat-key workaround was redundant. Timer tick and click-handler reset updated to read `$sync.Cards` directly.
+- **Network Diagnostics — duplicate `$script:allNavPanels` assignment removed** — `NetworkDiagnostics.psm1` contained a stale `$script:allNavPanels = @(...)` block that was missing `$pnlSysInfo` and `$pnlFullDiag`. This overwrote the authoritative assignment in `Pulse.ps1`. Removed; `Pulse.ps1` is now the single source of truth.
+- **Network Diagnostics — hardcoded RGB colors replaced with theme variables** — timer tick log coloring used `[System.Drawing.Color]::FromArgb(...)` literals instead of `$Col*` theme variables, causing colors to break when switching between light and dark themes.
+- **Hardware — degree symbol rendered as literal text** — temperature display showed `C` instead of `°C`. Fixed by using `[char]0xB0`.
+- **Camera Connectivity — app log read unbounded** — `Get-Content` on the Pixellot application log read the entire file, which can exceed 500 MB. Now reads only the last 5 000 lines via `-Tail 5000`.
+- **Camera Connectivity — `Get-AdapterPeakSpeedMbps` poll loop not cancellable** — the inner adapter polling loop had no cancellation check. Added `if ($sync.Cancelled) { break }` to respect the cancel signal.
+- **Report Generator — full file read on every history load** — `Get-Content` read entire report files to parse result status; replaced with `Get-Content -Tail 100`. Duplicate DEGRADED-parsing code paths deduplicated into a single conditional chain.
+- **WMI calls replaced with CIM** — `Get-WmiObject Win32_DiskDrive` and `Win32_LogicalDisk` replaced with `Get-CimInstance` equivalents in `DiskHealth.psm1`. `Get-WmiObject` is removed in PowerShell 7+.
+- **Full Diagnostic — row and banner tint colors are now theme-aware** — previously hardcoded `FromArgb` values for fail/warn/ok row backgrounds and banners. Now use `$ColFailBg`, `$ColWarnBg`, `$ColOkBg` defined in both light and dark palettes in `UIHelpers.psm1`.
+- **Full Diagnostic — `CardKeys` for Disk module corrected** — `CardKeys` previously included `"MemStatus"` which was never written, causing `Get-WorstCardStatus` to always return neutral. Fixed to `@("DiskStatus")` only.
+
+### Changed
+
+- **Help / About content rewritten** — all 11 help sections updated to match the current UI: tab names, card names, button labels, and known FAQ answers. Removed all references to stale features ("Isolate tab", "Copy Summary", "Phase 1/2/3/4", "Run ID").
+
+---
+
 ## [1.0.19] - 2026-04-30
 
 ### Added

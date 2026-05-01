@@ -49,6 +49,7 @@ $DiagScript = {
         param([string]$AdapterName, [int]$SampleSeconds = 12, [int]$IntervalMs = 750)
         $peak = 0; $deadline = (Get-Date).AddSeconds($SampleSeconds)
         while ((Get-Date) -lt $deadline) {
+            if ($sync.Cancelled) { break }
             $s = Get-AdapterSpeedMbps -AdapterName $AdapterName
             if ($s -gt $peak) { $peak = $s }
             if ($peak -ge 1000) { break }
@@ -519,7 +520,7 @@ $DiagScript = {
     if ($latestLog) {
         $sync.AppLogTime = $latestLog.LastWriteTime
         Add-Log ("  Log file : {0}  ({1} KB  Modified: {2})" -f $latestLog.Name, [math]::Round($latestLog.Length/1KB,1), $latestLog.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")) "Info"
-        $logContent = Get-Content -Path $latestLog.FullName -ErrorAction SilentlyContinue
+        $logContent = Get-Content -Path $latestLog.FullName -Tail 5000 -ErrorAction SilentlyContinue
         if ($logContent) {
             $failCounts = @{}; $successIPs = @{}; $models = @{}; $exitCodes = @{}
             $sessions = 0; $lastIp = $null
@@ -1073,6 +1074,7 @@ foreach ($pair in @(("btnExport","Export Report",536),("btnCopySummary","Copy Su
 
 # ---------- Timer (polls $sync every 300ms, updates UI) ---------------------
 $script:runspace    = $null
+$script:diagPs      = $null
 $script:spinIdx     = 0
 $script:logMode     = "Highlights"
 $script:allLogItems = [System.Collections.ArrayList]::new()
@@ -1161,7 +1163,7 @@ $timer.Add_Tick({
 })
 
 # ---------- Button Handlers -------------------------------------------------
-$btnRun.Add_Click({
+function Start-CameraConnDiagnostic {
     if ($sync.Running) { return }
 
     # Prune log folder - keep the 49 most recent files (new run will be the 50th)
@@ -1191,16 +1193,17 @@ $btnRun.Add_Click({
     $script:spinIdx = 0; $lblStatus.ForeColor = $ColAccent; $lblStatus.Text = " |  Starting..."
 
     if ($script:runspace) { try { $script:runspace.Close() } catch { } }
+    if ($script:diagPs) { try { $script:diagPs.Dispose() } catch { }; $script:diagPs = $null }
     $script:runspace = [runspacefactory]::CreateRunspace()
     $script:runspace.ApartmentState = "STA"
     $script:runspace.ThreadOptions  = "ReuseThread"
     $script:runspace.Open()
 
-    $ps = [powershell]::Create()
-    $ps.Runspace = $script:runspace
-    $ps.AddScript($DiagScript) | Out-Null
+    $script:diagPs = [powershell]::Create()
+    $script:diagPs.Runspace = $script:runspace
+    $script:diagPs.AddScript($DiagScript) | Out-Null
     $filterNicVal = if ($cboNic.SelectedIndex -gt 0) { ($cboNic.SelectedItem -as [string]) -replace '\s+\(.*', '' } else { "" }
-    $ps.AddParameters(@{
+    $script:diagPs.AddParameters(@{
         sync               = $sync
         NicDriverPatterns  = $NicDriverPatterns
         RenegotiateWaitSec = $RenegotiateWaitSec
@@ -1215,9 +1218,11 @@ $btnRun.Add_Click({
         PoeDllPath         = if ($PoeDllPath) { $PoeDllPath } else { "" }
         PoeMgmtSupported   = if ($script:nicCardInfo) { [bool]$script:nicCardInfo.PoeMgmtSupported } else { $true }
     }) | Out-Null
-    $ps.BeginInvoke() | Out-Null
+    $script:diagPs.BeginInvoke() | Out-Null
     $timer.Start()
-})
+}
+
+$btnRun.Add_Click({ Start-CameraConnDiagnostic })
 
 $btnRetest.Add_Click({ $btnRun.PerformClick() })
 

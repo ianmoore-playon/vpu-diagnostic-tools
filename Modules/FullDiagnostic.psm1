@@ -9,13 +9,13 @@
 # RunFn: returns a Button reference for Invoke-ButtonClick, or the string "SysInfo".
 # This enables both full and partial (failed-only) re-runs.
 $fdModuleDefs = @(
-    @{ Name="System Overview";       Icon=0xE80F; NavBtn={$navSysInfo};   RunFn={return "SysInfo"};        CompleteFn={$sync.SysInfoComplete}; RunningFn={$sync.SysInfoRunning}; CardKeys=@("SysInfo") }
-    @{ Name="Network Configuration"; Icon=0xE701; NavBtn={$navNetConfig}; RunFn={return $btnNetRun};       CompleteFn={$sync.NetComplete};     RunningFn={$sync.NetRunning};     CardKeys=@("NetInternet","NetPorts","NetDomains") }
-    @{ Name="Camera Connectivity";   Icon=0xE722; NavBtn={$navCamera};    RunFn={return $btnRun};           CompleteFn={$sync.Complete};        RunningFn={$sync.Running};        CardKeys=@("SmartSpeed","PingCHU","ChuDetect","PoEBudget") }
-    @{ Name="Pixellot Services";     Icon=0xE9F5; NavBtn={$navServices};  RunFn={return $btnSvcRun};       CompleteFn={$sync.SvcComplete};     RunningFn={$sync.SvcRunning};     CardKeys=@("SvcStatus") }
-    @{ Name="VPU Hardware";          Icon=0xE7E8; NavBtn={$navPoE};       RunFn={return $btnHwRun};        CompleteFn={$sync.HwComplete};      RunningFn={$sync.HwRunning};      CardKeys=@("HwGpu","HwMonitor","HwMmk") }
-    @{ Name="Disk & System Health";  Icon=0xEDA2; NavBtn={$navDisk};      RunFn={return $btnDiskRun};      CompleteFn={$sync.DiskComplete};    RunningFn={$sync.DiskRunning};    CardKeys=@("DiskStatus","MemStatus") }
-    @{ Name="Event Viewer";          Icon=0xE7BA; NavBtn={$navEvents};    RunFn={return $btnEvtRun};       CompleteFn={$sync.EvtComplete};     RunningFn={$sync.EvtRunning};     CardKeys=@("EvtStatus") }
+    @{ Name="System Overview";       Icon=0xE80F; NavBtn={$navSysInfo};   RunFn={Start-SysInfoCollection};    CompleteFn={$sync.SysInfoComplete}; RunningFn={$sync.SysInfoRunning}; CardKeys=@("SysInfo") }
+    @{ Name="Network Configuration"; Icon=0xE701; NavBtn={$navNetConfig}; RunFn={Start-NetDiagnostic};        CompleteFn={$sync.NetComplete};     RunningFn={$sync.NetRunning};     CardKeys=@("NetInternet","NetPorts","NetDomains") }
+    @{ Name="Camera Connectivity";   Icon=0xE722; NavBtn={$navCamera};    RunFn={Start-CameraConnDiagnostic}; CompleteFn={$sync.Complete};        RunningFn={$sync.Running};        CardKeys=@("SmartSpeed","PingCHU","ChuDetect","PoEBudget") }
+    @{ Name="Pixellot Services";     Icon=0xE9F5; NavBtn={$navServices};  RunFn={Start-SvcDiagnostic};        CompleteFn={$sync.SvcComplete};     RunningFn={$sync.SvcRunning};     CardKeys=@("SvcStatus") }
+    @{ Name="VPU Hardware";          Icon=0xE7E8; NavBtn={$navPoE};       RunFn={Start-HwDiagnostic};         CompleteFn={$sync.HwComplete};      RunningFn={$sync.HwRunning};      CardKeys=@("HwGpu","HwMonitor","HwMmk") }
+    @{ Name="Disk & System Health";  Icon=0xEDA2; NavBtn={$navDisk};      RunFn={Start-DiskDiagnostic};       CompleteFn={$sync.DiskComplete};    RunningFn={$sync.DiskRunning};    CardKeys=@("DiskStatus") }
+    @{ Name="Event Viewer";          Icon=0xE7BA; NavBtn={$navEvents};    RunFn={Start-EvtDiagnostic};        CompleteFn={$sync.EvtComplete};     RunningFn={$sync.EvtRunning};     CardKeys=@("EvtStatus") }
 )
 
 # Indices being re-run in a partial run; empty means all modules.
@@ -114,15 +114,10 @@ function Get-FdActionText {
     return ""
 }
 
-# Fire a module's diagnostic.  RunFn returns either a Button or the string "SysInfo".
+# Fire a module's diagnostic by calling its named Start-* function directly.
 function Invoke-FdModule {
     param([hashtable]$Mod)
-    $rf = & $Mod.RunFn
-    if ($rf -is [string] -and $rf -eq "SysInfo") {
-        Start-SysInfoCollection
-    } else {
-        Invoke-ButtonClick $rf
-    }
+    & $Mod.RunFn
 }
 
 # --- Panel -------------------------------------------------------------------
@@ -409,9 +404,9 @@ $timerFullDiag.Add_Tick({
 
             # Background tint for issue rows
             if ($worst -eq "fail") {
-                $row.Panel.BackColor = [System.Drawing.Color]::FromArgb(62, 28, 28)
+                $row.Panel.BackColor = $ColFailBg
             } elseif ($worst -eq "warn") {
-                $row.Panel.BackColor = [System.Drawing.Color]::FromArgb(58, 50, 16)
+                $row.Panel.BackColor = $ColWarnBg
             }
 
             # Accent the View button for anything that needs attention
@@ -434,7 +429,7 @@ $timerFullDiag.Add_Tick({
     $totalIssues = $critCount + $warnCount
     if ($totalIssues -gt 0) {
         # --- Issues found banner ---
-        $pnlFdBanner.BackColor = [System.Drawing.Color]::FromArgb(62, 22, 22)
+        $pnlFdBanner.BackColor = $ColFailBg
 
         $lblFdBannerIcon.Text      = [char]0xE783   # warning circle
         $lblFdBannerIcon.ForeColor = $ColRed
@@ -455,7 +450,7 @@ $timerFullDiag.Add_Tick({
 
     } else {
         # --- All clear banner ---
-        $pnlFdBanner.BackColor = [System.Drawing.Color]::FromArgb(15, 50, 28)
+        $pnlFdBanner.BackColor = $ColOkBg
 
         $lblFdBannerIcon.Text      = [char]0xE73E   # checkmark
         $lblFdBannerIcon.ForeColor = $ColGreen
@@ -475,15 +470,6 @@ $timerFullDiag.Add_Tick({
 
 $btnFdRerun.Add_Click({ Start-FullDiagnostic })
 $btnFdRerunFailed.Add_Click({ Start-FailedDiagnostic })
-
-# PerformClick() silently no-ops when a button's parent panel is hidden
-# (WinForms CanSelect requires Enabled + all ancestors visible).
-# Invoke OnClick directly to bypass that check.
-function Invoke-ButtonClick {
-    param([System.Windows.Forms.Button]$Btn)
-    $mi = $Btn.GetType().GetMethod('OnClick', [System.Reflection.BindingFlags]'Instance,NonPublic')
-    $mi.Invoke($Btn, @([System.EventArgs]::Empty))
-}
 
 # --- Partial re-run (failed / warning modules only) --------------------------
 function Start-FailedDiagnostic {

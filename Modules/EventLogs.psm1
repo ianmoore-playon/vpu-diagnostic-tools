@@ -20,26 +20,26 @@ $EvtScript = {
         $sync.EvtStep = "Reading $logName events..."
         Evt-Section $logName
         try {
-            $evts = @(Get-EventLog -LogName $logName -EntryType Error,Warning -After $since -Newest 100 -ErrorAction Stop)
-            $errs = @($evts | Where-Object { $_.EntryType -eq "Error" })
-            $wrns = @($evts | Where-Object { $_.EntryType -eq "Warning" })
+            $evts = @(Get-WinEvent -FilterHashtable @{ LogName=$logName; Level=@(1,2,3); StartTime=$since } -MaxEvents 100 -ErrorAction Stop)
+            $errs = @($evts | Where-Object { $_.Level -in @(1,2) })
+            $wrns = @($evts | Where-Object { $_.Level -eq 3 })
             $totalErrors += $errs.Count; $totalWarns += $wrns.Count
             if ($evts.Count -eq 0) {
                 Evt-Log "Last ${EvtHours}h" "No errors or warnings" "Pass"
             } else {
                 Evt-Log "Errors (last ${EvtHours}h)"   "$($errs.Count)" $(if($errs.Count-gt0){"Fail"}else{"Pass"})
-                Evt-Log "Warnings (last ${EvtHours}h)" "$($wrns.Count)" $(if($wrns.Count-gt20){"Warn"}else{"Info"})
-                foreach ($ev in ($errs | Select-Object -First 10)) {
+                Evt-Log "Warnings (last ${EvtHours}h)" "$($wrns.Count)" $(if($wrns.Count-gt0){"Warn"}else{"Info"})
+                foreach ($ev in ($errs | Select-Object -First 20)) {
                     if ($sync.EvtCancelled) { break }
                     $msg = (($ev.Message -split "`n")[0] -replace '\s+',' ').Trim()
                     if ($msg.Length -gt 72) { $msg = $msg.Substring(0,69)+"..." }
-                    Evt-Log "$($ev.TimeGenerated.ToString('MM/dd HH:mm'))  $($ev.Source)" $msg "Fail"
+                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  $($ev.ProviderName)" $msg "Fail"
                 }
-                foreach ($ev in ($wrns | Select-Object -First 5)) {
+                foreach ($ev in ($wrns | Select-Object -First 10)) {
                     if ($sync.EvtCancelled) { break }
                     $msg = (($ev.Message -split "`n")[0] -replace '\s+',' ').Trim()
                     if ($msg.Length -gt 72) { $msg = $msg.Substring(0,69)+"..." }
-                    Evt-Log "$($ev.TimeGenerated.ToString('MM/dd HH:mm'))  $($ev.Source)" $msg "Warn"
+                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  $($ev.ProviderName)" $msg "Warn"
                 }
             }
         } catch { Evt-Log $logName "Error reading event log" "Warn" }
@@ -47,7 +47,7 @@ $EvtScript = {
 
     $sync.Cards["EvtStatus"] = @{
         Value  = if($totalErrors-gt0){"$totalErrors errors"}elseif($totalWarns-gt0){"$totalWarns warns"}else{"Clean"}
-        Status = if($totalErrors-gt0){"fail"}elseif($totalWarns-gt20){"warn"}else{"ok"}
+        Status = if($totalErrors-gt0){"fail"}elseif($totalWarns-gt0){"warn"}else{"ok"}
     }
     $sync.EvtStep = "Complete"; $sync.EvtRunning=$false; $sync.EvtComplete=$true
 }
@@ -130,10 +130,10 @@ $lblEvtLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblEvtLogHdr.
 $pnlEvents.Controls.Add($lblEvtLogHdr)
 $dgvEvtLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
 $pnlEvents.Controls.Add($dgvEvtLog)
-$script:evtRunspace = $null; $script:evtSpinIdx = 0
+$script:evtRunspace = $null; $script:evtPs = $null; $script:evtSpinIdx = 0
 
 
-$btnEvtRun.Add_Click({
+function Start-EvtDiagnostic {
     if ($sync.EvtRunning) { return }
     $sync.EvtCancelled = $false
     $sync.Cards["EvtStatus"] = @{ Value="--"; Status="neutral" }
@@ -142,12 +142,15 @@ $btnEvtRun.Add_Click({
     $btnEvtCancel.Visible=$true; $script:evtSpinIdx=0
     $lblEvtStatus.ForeColor=$ColAccent; $lblEvtStatus.Text=" |  Starting..."
     if ($script:evtRunspace) { try { $script:evtRunspace.Close() } catch { } }
+    if ($script:evtPs) { try { $script:evtPs.Dispose() } catch { }; $script:evtPs = $null }
     $script:evtRunspace = [runspacefactory]::CreateRunspace()
     $script:evtRunspace.ApartmentState="STA"; $script:evtRunspace.ThreadOptions="ReuseThread"; $script:evtRunspace.Open()
-    $ps = [powershell]::Create(); $ps.Runspace=$script:evtRunspace
-    $ps.AddScript($EvtScript) | Out-Null
-    $ps.AddParameters(@{ sync=$sync; EvtHours=24 }) | Out-Null
-    $ps.BeginInvoke() | Out-Null; $evtTimer.Start()
-})
+    $script:evtPs = [powershell]::Create(); $script:evtPs.Runspace=$script:evtRunspace
+    $script:evtPs.AddScript($EvtScript) | Out-Null
+    $script:evtPs.AddParameters(@{ sync=$sync; EvtHours=24 }) | Out-Null
+    $script:evtPs.BeginInvoke() | Out-Null; $evtTimer.Start()
+}
+
+$btnEvtRun.Add_Click({ Start-EvtDiagnostic })
 $btnEvtCancel.Add_Click({ $sync.EvtCancelled=$true; $btnEvtCancel.Visible=$false })
 

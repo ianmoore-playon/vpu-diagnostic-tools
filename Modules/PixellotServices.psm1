@@ -195,10 +195,10 @@ $pnlServices.Controls.Add($lblSvcLogHdr)
 
 $dgvSvcLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
 $pnlServices.Controls.Add($dgvSvcLog)
-$script:svcRunspace = $null; $script:svcSpinIdx = 0
+$script:svcRunspace = $null; $script:svcPs = $null; $script:svcSpinIdx = 0
 
 
-$btnSvcRun.Add_Click({
+function Start-SvcDiagnostic {
     if ($sync.SvcRunning) { return }
     $sync.SvcCancelled = $false
     foreach ($key in $svcCards.Keys) {
@@ -209,11 +209,14 @@ $btnSvcRun.Add_Click({
     $btnSvcCancel.Visible=$true; $script:svcSpinIdx=0
     $lblSvcStatus.ForeColor=$ColAccent; $lblSvcStatus.Text=" |  Starting..."
     if ($script:svcRunspace) { try { $script:svcRunspace.Close() } catch { } }
+    if ($script:svcPs) { try { $script:svcPs.Dispose() } catch { }; $script:svcPs = $null }
     $script:svcRunspace = [runspacefactory]::CreateRunspace()
     $script:svcRunspace.ApartmentState="STA"; $script:svcRunspace.ThreadOptions="ReuseThread"; $script:svcRunspace.Open()
-    $ps = [powershell]::Create(); $ps.Runspace=$script:svcRunspace
-    $ps.AddScript($SvcScript) | Out-Null
-    $ps.AddParameters(@{ sync=$sync }) | Out-Null
-    $ps.BeginInvoke() | Out-Null; $svcTimer.Start()
-})
+    $script:svcPs = [powershell]::Create(); $script:svcPs.Runspace=$script:svcRunspace
+    $script:svcPs.AddScript($SvcScript) | Out-Null
+    $script:svcPs.AddParameters(@{ sync=$sync }) | Out-Null
+    $script:svcPs.BeginInvoke() | Out-Null; $svcTimer.Start()
+}
+
+$btnSvcRun.Add_Click({ Start-SvcDiagnostic })
 $btnSvcCancel.Add_Click({ $sync.SvcCancelled=$true; $btnSvcCancel.Visible=$false })
