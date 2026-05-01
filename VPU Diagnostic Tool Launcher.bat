@@ -73,9 +73,17 @@ if "!NeedDownload!"=="1" (
         echo    Installing VPU Diagnostic Tool Suite for the first time...
     )
     echo.
-    echo    Downloading...
-    PowerShell -NoProfile -ExecutionPolicy Bypass -Command "$zip = '%TEMP%\vpu-diag.zip'; $stage = '%TEMP%\vpu-diag-stage'; if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }; Invoke-WebRequest 'https://github.com/ianmoore-playon/vpu-diagnostic-tools/archive/refs/heads/main.zip' -OutFile $zip; Expand-Archive $zip $stage -Force; $src = Join-Path $stage 'vpu-diagnostic-tools-main'; if (Test-Path '%InstallDir%') { Remove-Item '%InstallDir%' -Recurse -Force }; Move-Item $src '%InstallDir%'; Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item $zip -ErrorAction SilentlyContinue"
-    if !ERRORLEVEL! neq 0 (
+    set "VPU_INST=%InstallDir%"
+    PowerShell -NoProfile -Command "$wc=New-Object Net.WebClient; try { $wc.DownloadFile('https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/main/Download.ps1','%TEMP%\vpu-dl.ps1') } catch { }"
+    if exist "%TEMP%\vpu-dl.ps1" (
+        PowerShell -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\vpu-dl.ps1"
+    ) else (
+        echo    Downloading...
+        PowerShell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; $z='%TEMP%\vpu-diag.zip'; $s='%TEMP%\vpu-diag-stage'; if(Test-Path $s){Remove-Item $s -Recurse -Force}; Invoke-WebRequest 'https://github.com/ianmoore-playon/vpu-diagnostic-tools/archive/refs/heads/main.zip' -OutFile $z; Expand-Archive $z $s -Force; $r=Join-Path $s 'vpu-diagnostic-tools-main'; if(Test-Path '%InstallDir%'){Remove-Item '%InstallDir%' -Recurse -Force}; Move-Item $r '%InstallDir%'; Remove-Item $s -Recurse -Force -EA SilentlyContinue; Remove-Item $z -EA SilentlyContinue"
+    )
+    set DL_ERR=!ERRORLEVEL!
+    del "%TEMP%\vpu-dl.ps1" >nul 2>&1
+    if !DL_ERR! neq 0 (
         echo.
         echo  ==============================================================
         echo    ERROR: Download failed. Check your internet connection.
