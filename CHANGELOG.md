@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.28] - 2026-05-01
+
+### Changed
+
+- **UDP 443 and UDP 2088 upgraded to reliable tests** — Wireshark analysis of Pixellot's own VPU Manager network check revealed a dedicated echo server at `prod-echo.pixellot.tv`. The server responds to UDP packets with payload `"testing UDP on port <PORT>"` by echoing the same string back. Both ports now use this endpoint with a new `Test-UdpEcho` function and are promoted from gray INFO rows to real PASS/FAIL tests. TCP 1935 and TCP/UDP 5672 remain INFO-only pending stream capture analysis.
+
+---
+
 ## [1.0.27] - 2026-05-01
 
 ### Fixed

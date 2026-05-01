@@ -10,9 +10,9 @@ $PortTests = @(
     [PSCustomObject]@{ Protocol="TCP"; Port=53;   ProbeHost="8.8.8.8";               Reliable=$true;  Purpose="DNS";                                      Note="" },
     [PSCustomObject]@{ Protocol="UDP"; Port=123;  ProbeHost="0.us.pool.ntp.org";      Reliable=$true;  Purpose="Clock synchronization (NTP)";              Note="Real NTP request. PASS confirms clock sync is working." },
     [PSCustomObject]@{ Protocol="TCP"; Port=443;  ProbeHost="pixellot.tv";            Reliable=$true;  Purpose="System ops, remote mgmt, video stream";    Note="" },
-    [PSCustomObject]@{ Protocol="UDP"; Port=443;  ProbeHost="pixellot.stream";        Reliable=$false; Purpose="Video streaming - Zixi fallback on 443";   Note="Dynamic stream server. See *.pixellot.stream domain test." },
+    [PSCustomObject]@{ Protocol="UDP"; Port=443;  ProbeHost="prod-echo.pixellot.tv";  Reliable=$true;  Purpose="Video streaming - Zixi fallback on 443";   Note="Firewall must allow outbound UDP 443 to Pixellot servers." },
     [PSCustomObject]@{ Protocol="TCP"; Port=1935; ProbeHost="pixellot.stream";        Reliable=$false; Purpose="SportzCast remote management";             Note="Also covers ports 1400-1405. Dynamic stream server." },
-    [PSCustomObject]@{ Protocol="UDP"; Port=2088; ProbeHost="pixellot.stream";        Reliable=$false; Purpose="Video streaming - Zixi primary";           Note="Dynamic stream server. See *.pixellot.stream domain test." },
+    [PSCustomObject]@{ Protocol="UDP"; Port=2088; ProbeHost="prod-echo.pixellot.tv";  Reliable=$true;  Purpose="Video streaming - Zixi primary";           Note="Firewall must allow outbound UDP 2088 to Pixellot servers." },
     [PSCustomObject]@{ Protocol="TCP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$false; Purpose="Graphics and watermark generation";        Note="Does not accept raw probes. See *.app.singular.live domain test." },
     [PSCustomObject]@{ Protocol="UDP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$false; Purpose="Graphics and watermark generation";        Note="UDP returns no response on working VPUs. See domain test." }
 )
@@ -103,6 +103,23 @@ $NetScript = {
             return ($r -and $r.Length -ge 48)
         } catch { return $false }
     }
+    function Test-UdpEcho {
+        param([string]$Server, [int]$Port, [int]$TimeoutMs)
+        try {
+            $ar = [System.Net.Dns]::BeginGetHostAddresses($Server, $null, $null)
+            if (-not $ar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
+            $addrs = [System.Net.Dns]::EndGetHostAddresses($ar)
+            if (-not $addrs -or $addrs.Length -eq 0) { return $false }
+            $payload = [System.Text.Encoding]::ASCII.GetBytes("testing UDP on port $Port")
+            $udp = New-Object System.Net.Sockets.UdpClient
+            $udp.Client.ReceiveTimeout = $TimeoutMs
+            $ep = New-Object System.Net.IPEndPoint($addrs[0], $Port)
+            $udp.Send($payload, $payload.Length, $ep) | Out-Null
+            $r = $udp.Receive([ref]$ep)
+            $udp.Close()
+            return ([System.Text.Encoding]::ASCII.GetString($r) -eq "testing UDP on port $Port")
+        } catch { return $false }
+    }
     function Resolve-DomainAsync {
         param([string]$Domain, [int]$TimeoutMs)
         try {
@@ -172,6 +189,7 @@ $NetScript = {
         if      ($pt.Protocol -eq "TCP")                            { $ok = Test-TcpConnect  -HostName $pt.ProbeHost -Port $pt.Port -TimeoutMs $NetTimeoutMs }
         elseif  ($pt.Protocol -eq "UDP" -and $pt.Port -eq 53)      { $ok = Test-UdpDns  -Server $pt.ProbeHost -TimeoutMs $NetTimeoutMs }
         elseif  ($pt.Protocol -eq "UDP" -and $pt.Port -eq 123)     { $ok = Test-UdpNtp  -Server $pt.ProbeHost -TimeoutMs $NetTimeoutMs }
+        elseif  ($pt.Protocol -eq "UDP")                            { $ok = Test-UdpEcho -Server $pt.ProbeHost -Port $pt.Port -TimeoutMs $NetTimeoutMs }
         if ($ok) {
             Net-Log $label "PASS  $($pt.Purpose)" "Pass"; $portPass++
         } else {
