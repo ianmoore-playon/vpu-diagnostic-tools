@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 :: Console appearance
-title Pulse - Pixellot Diagnostic Toolset
+title Pulse - Pixellot Unified Live System Evaluator
 mode con cols=72 lines=32
 
 :: Disable QuickEdit so accidental clicks don't freeze the window
@@ -32,8 +32,8 @@ cls
 echo.
 echo  +==============================================================+
 echo  ^|                                                              ^|
-echo  ^|         PULSE - PIXELLOT DIAGNOSTIC TOOLSET                 ^|
-echo  ^|         A Pixellot Diagnostic Toolset                       ^|
+echo  ^|         PULSE - PIXELLOT UNIFIED LIVE SYSTEM EVALUATOR       ^|
+echo  ^|         Pixellot Unified Live System Evaluator              ^|
 echo  ^|                                                              ^|
 echo  +==============================================================+
 echo.
@@ -128,6 +128,23 @@ if "!NeedDownload!"=="1" (
         exit /b 1
     )
     echo    Done.
+
+    :: ---- Feedback token setup (first install only) -------------------------
+    if not exist "C:\ProgramData\Pulse\feedback.key" (
+        echo.
+        echo  --------------------------------------------------------------
+        echo    Feedback token setup  ^(one-time^)
+        echo    This enables the in-app feedback feature.
+        echo  --------------------------------------------------------------
+        echo.
+        PowerShell -NoProfile -ExecutionPolicy Bypass -File "%InstallDir%\Set-FeedbackToken.ps1"
+        if !ERRORLEVEL! neq 0 (
+            echo.
+            echo    Note: feedback will not be active. Run Set-FeedbackToken.ps1
+            echo    from %InstallDir% to configure it later.
+        )
+        echo.
+    )
 
     :: Record installed commit SHA for future update checks (no | pipe used)
     PowerShell -NoProfile -Command "try { $w = Invoke-WebRequest 'https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/commits/main' -UseBasicParsing -TimeoutSec 10; $s = (ConvertFrom-Json $w.Content).sha; [System.IO.File]::WriteAllText('%InstallDir%\.commit', $s) } catch { }"
