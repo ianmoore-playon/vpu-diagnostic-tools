@@ -64,8 +64,8 @@ if exist "%InstallDir%\.commit" (
     )
 )
 
-:: Force re-download if Pulse.ps1 is missing regardless of version check
-if not exist "%InstallDir%\Pulse.ps1" set "NeedDownload=1"
+:: Force re-download if Run.ps1 is missing regardless of version check
+if not exist "%InstallDir%\Run.ps1" set "NeedDownload=1"
 
 :: ---- Download (only when needed) -------------------------------------------
 if "!NeedDownload!"=="1" (
@@ -103,6 +103,18 @@ if "!NeedDownload!"=="1" (
         )
     )
 
+    echo.
+    echo    Building launcher...
+    PowerShell -NoProfile -ExecutionPolicy Bypass -File "%InstallDir%\Build.ps1"
+    if !ERRORLEVEL! neq 0 (
+        echo.
+        echo  ==============================================================
+        echo    ERROR: Build step failed. See errors above.
+        echo  ==============================================================
+        echo.
+        pause
+        exit /b 1
+    )
     echo    Done.
 
     :: Record installed commit SHA for future update checks (no | pipe used)
@@ -122,4 +134,4 @@ echo    This window will remain open while the application runs.
 echo    Do NOT close it  --  minimise it instead.
 echo  ==============================================================
 echo.
-PowerShell -NoProfile -ExecutionPolicy Bypass -File "%InstallDir%\Pulse.ps1"
+PowerShell -NoProfile -ExecutionPolicy Bypass -File "%InstallDir%\Run.ps1"

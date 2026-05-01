@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.18] - 2026-04-30
+
+### Fixed
+
+- **Build step restored** — `Pulse.bat` now runs `Build.ps1` → `Run.ps1` again. On VPUs, `.psm1` files cannot be dot-sourced directly — they open in Notepad instead of being executed. The Build step inlines all modules into a single `Run.ps1`, avoiding all `.psm1` execution entirely. The `[int]` layout-constant constraints already in `Pulse.ps1` prevent the `op_Subtraction` error that previously affected the combined file.
+
+---
+
 ## [1.0.17] - 2026-04-30
 
 ### Changed
