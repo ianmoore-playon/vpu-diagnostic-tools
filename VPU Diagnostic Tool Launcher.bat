@@ -18,17 +18,16 @@ if %errorLevel% neq 0 (
 :: ---- Header ----------------------------------------------------------------
 cls
 echo.
-echo  +--------------------------------------------------------------+
+echo  +==============================================================+
 echo  ^|                                                              ^|
 echo  ^|         VPU DIAGNOSTIC TOOL SUITE                           ^|
 echo  ^|         Pixellot VPU Field Diagnostic Utility               ^|
 echo  ^|                                                              ^|
-echo  +--------------------------------------------------------------+
+echo  +==============================================================+
 echo.
 echo    WARNING: Do NOT close this window while the tool is running.
 echo    Closing this window will also close the application.
 echo    You may minimise it, but do not close it.
-echo.
 echo  --------------------------------------------------------------
 echo.
 
@@ -59,14 +58,14 @@ if exist "%InstallDir%\.commit" (
         set "NeedDownload=0"
     ) else (
         echo    Installed  :  v!LocalVersion!
-        echo    Update found - downloading latest version...
+        echo    Update found. Downloading latest version...
     )
 )
 
 :: Force re-download if Run.ps1 is missing regardless of version check
 if not exist "%InstallDir%\Run.ps1" set "NeedDownload=1"
 
-:: ---- Download + build (only when needed) ----------------------------------
+:: ---- Download + build (only when needed) -----------------------------------
 if "!NeedDownload!"=="1" (
     if "!LocalVersion!"=="not installed" (
         echo    Installing VPU Diagnostic Tool Suite for the first time...
@@ -76,7 +75,9 @@ if "!NeedDownload!"=="1" (
     PowerShell -NoProfile -ExecutionPolicy Bypass -Command "$zip = '%TEMP%\vpu-diag.zip'; $stage = '%TEMP%\vpu-diag-stage'; if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }; Invoke-WebRequest 'https://github.com/ianmoore-playon/vpu-diagnostic-tools/archive/refs/heads/main.zip' -OutFile $zip; Expand-Archive $zip $stage -Force; $src = Join-Path $stage 'vpu-diagnostic-tools-main'; if (Test-Path '%InstallDir%') { Remove-Item '%InstallDir%' -Recurse -Force }; Move-Item $src '%InstallDir%'; Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item $zip -ErrorAction SilentlyContinue; Get-ChildItem '%InstallDir%' -Recurse | Unblock-File"
     if !ERRORLEVEL! neq 0 (
         echo.
+        echo  ==============================================================
         echo    ERROR: Download failed. Check your internet connection.
+        echo  ==============================================================
         echo.
         pause
         exit /b 1
@@ -96,12 +97,14 @@ if "!NeedDownload!"=="1" (
     PowerShell -NoProfile -ExecutionPolicy Bypass -File "%InstallDir%\Build.ps1"
     if !ERRORLEVEL! neq 0 (
         echo.
+        echo  ==============================================================
         echo    ERROR: Build step failed. See errors above.
+        echo  ==============================================================
         echo.
         pause
         exit /b 1
     )
-    echo    Build complete.
+    echo    Done.
 
     :: Record installed commit SHA for future update checks
     PowerShell -NoProfile -Command "try { $s = (Invoke-WebRequest 'https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/commits/main' -UseBasicParsing -TimeoutSec 10 | ConvertFrom-Json).sha; [System.IO.File]::WriteAllText('%InstallDir%\.commit', $s) } catch { }"
@@ -109,15 +112,15 @@ if "!NeedDownload!"=="1" (
 
 :: ---- Launch ----------------------------------------------------------------
 echo.
-echo  --------------------------------------------------------------
+echo  ==============================================================
 if "!RemoteVersion!"=="" (
-    echo    Launching  v!LocalVersion!  ...
+    echo    Launching  VPU Diagnostic Tool Suite  v!LocalVersion!
 ) else (
-    echo    Launching  v!RemoteVersion!  ...
+    echo    Launching  VPU Diagnostic Tool Suite  v!RemoteVersion!
 )
 echo.
 echo    This window will remain open while the application runs.
-echo    Do NOT close it - minimise it instead.
-echo  --------------------------------------------------------------
+echo    Do NOT close it  --  minimise it instead.
+echo  ==============================================================
 echo.
 PowerShell -NoProfile -ExecutionPolicy Bypass -File "%InstallDir%\Run.ps1"
