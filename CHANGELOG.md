@@ -10,6 +10,18 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.27] - 2026-05-01
+
+### Fixed
+
+- **INFO port rows rendered yellow** (issue #26) — `Reliable=$false` port tests (UDP 443, TCP/UDP 1935, UDP 2088, TCP/UDP 5672) and the `pixellot.stream` domain INFO row were logged with `"Warn"` level, rendering yellow. Changed to `"Gray"` since these are expected informational rows, not warnings.
+
+### Added
+
+- **Failure action banner** (issue #28) — after a network test completes with port or domain failures, a dark red banner appears below the status cards with IT-actionable text: port failures prompt checking firewall/router/content-filter policy; DNS failures prompt checking DNS server settings on the adapter. Banner is hidden on the next run and not shown when all tests pass.
+
+---
+
 ## [1.0.26] - 2026-05-01
 
 ### Fixed

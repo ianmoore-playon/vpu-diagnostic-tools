@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.26"
+$ScriptVersion = "1.0.27"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -3099,7 +3099,7 @@ $NetScript = {
         $sync.NetStep = "Testing $($pt.Protocol) $($pt.Port) ? $($pt.ProbeHost)..."
         $label = "$($pt.Protocol) $($pt.Port)"
         if (-not $pt.Reliable) {
-            Net-Log $label "INFO - $($pt.Purpose)" "Warn"
+            Net-Log $label "INFO - $($pt.Purpose)" "Gray"
             if ($pt.Note) { Net-Log "  " $pt.Note "Gray" }
             $portInfo++; continue
         }
@@ -3130,7 +3130,7 @@ $NetScript = {
         if ($sync.NetCancelled) { break }
         $sync.NetStep = "Resolving $($dt.Domain)..."
         if ($dt.Note -like "*DNS not expected*") {
-            Net-Log $dt.Domain "INFO - stream-only destination (DNS resolution not expected)" "Warn"
+            Net-Log $dt.Domain "INFO - stream-only destination (DNS resolution not expected)" "Gray"
             $domInfo++; continue
         }
         $addrs = Resolve-DomainAsync -Domain $dt.Domain -TimeoutMs $NetTimeoutMs
@@ -3215,6 +3215,13 @@ $netTimer.Add_Tick({
         $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Network Test"
         $lblNetStatus.ForeColor = $ColMuted
         $lblNetStatus.Text = "  $($sync.NetStep)"
+        $lines = @()
+        if ($sync.NetPortFail   -gt 0) { $lines += "Port failures — check the firewall and router. Confirm the uplink adapter is not blocked by a content filter or VLAN policy." }
+        if ($sync.NetDomainFail -gt 0) { $lines += "DNS failures — check DNS server settings on this adapter. Confirm the VPU can reach its configured DNS server." }
+        if ($lines.Count -gt 0) {
+            $lblNetActionText.Text = $lines -join "   |   "
+            $pnlNetAction.Visible  = $true
+        }
     }
 })
 
@@ -3253,10 +3260,40 @@ foreach ($cd in $netCardDefs) {
     $pnlNetwork.Controls.Add($c.Panel)
 }
 
+# Failure action banner (shown after run when any test fails)
+$pnlNetAction = New-Object System.Windows.Forms.Panel
+$pnlNetAction.Size      = New-Object System.Drawing.Size(1240, 56)
+$pnlNetAction.Location  = New-Object System.Drawing.Point(10, 162)
+$pnlNetAction.BackColor = [System.Drawing.Color]::FromArgb(75, 20, 20)
+$pnlNetAction.Visible   = $false
+$pnlNetwork.Controls.Add($pnlNetAction)
+
+$pnlNetActionBar = New-Object System.Windows.Forms.Panel
+$pnlNetActionBar.Size      = New-Object System.Drawing.Size(4, 56)
+$pnlNetActionBar.Location  = New-Object System.Drawing.Point(0, 0)
+$pnlNetActionBar.BackColor = [System.Drawing.Color]::FromArgb(210, 55, 55)
+$pnlNetAction.Controls.Add($pnlNetActionBar)
+
+$lblNetActionIcon = New-Object System.Windows.Forms.Label
+$lblNetActionIcon.Text      = [char]0x26A0
+$lblNetActionIcon.Font      = New-Object System.Drawing.Font("Segoe UI Symbol", 14)
+$lblNetActionIcon.ForeColor = [System.Drawing.Color]::FromArgb(210, 100, 100)
+$lblNetActionIcon.Location  = New-Object System.Drawing.Point(14, 14)
+$lblNetActionIcon.AutoSize  = $true
+$pnlNetAction.Controls.Add($lblNetActionIcon)
+
+$lblNetActionText = New-Object System.Windows.Forms.Label
+$lblNetActionText.Text      = ""
+$lblNetActionText.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblNetActionText.ForeColor = [System.Drawing.Color]::FromArgb(240, 190, 190)
+$lblNetActionText.Location  = New-Object System.Drawing.Point(44, 8)
+$lblNetActionText.Size      = New-Object System.Drawing.Size(1186, 40)
+$pnlNetAction.Controls.Add($lblNetActionText)
+
 # Run / Cancel buttons
 $btnNetRun = New-Object System.Windows.Forms.Button
 $btnNetRun.Text = [char]0x25B6 + "  Run Network Test"
-$btnNetRun.Size = New-Object System.Drawing.Size(240, 40); $btnNetRun.Location = New-Object System.Drawing.Point(10, 170)
+$btnNetRun.Size = New-Object System.Drawing.Size(240, 40); $btnNetRun.Location = New-Object System.Drawing.Point(10, 226)
 $btnNetRun.BackColor = $ColAccent; $btnNetRun.ForeColor = [System.Drawing.Color]::White
 $btnNetRun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnNetRun.FlatAppearance.BorderSize = 0
 $btnNetRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
@@ -3266,7 +3303,7 @@ $pnlNetwork.Controls.Add($btnNetRun)
 $btnNetRun.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 240, 40)), 6))
 
 $btnNetCancel = New-Object System.Windows.Forms.Button; $btnNetCancel.Text = "Cancel"
-$btnNetCancel.Size = New-Object System.Drawing.Size(110, 40); $btnNetCancel.Location = New-Object System.Drawing.Point(258, 170)
+$btnNetCancel.Size = New-Object System.Drawing.Size(110, 40); $btnNetCancel.Location = New-Object System.Drawing.Point(258, 226)
 $btnNetCancel.BackColor = $ColRed; $btnNetCancel.ForeColor = [System.Drawing.Color]::White
 $btnNetCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnNetCancel.FlatAppearance.BorderSize = 0
 $btnNetCancel.Font = New-Object System.Drawing.Font("Segoe UI", 10)
@@ -3276,21 +3313,21 @@ $btnNetCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect
 
 $lblNetEta = New-Object System.Windows.Forms.Label; $lblNetEta.Text = "est. ~20 sec"
 $lblNetEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblNetEta.ForeColor = $ColMuted
-$lblNetEta.Location = New-Object System.Drawing.Point(378,180); $lblNetEta.AutoSize = $true
+$lblNetEta.Location = New-Object System.Drawing.Point(378,236); $lblNetEta.AutoSize = $true
 $pnlNetwork.Controls.Add($lblNetEta)
 
 $lblNetStatus = New-Object System.Windows.Forms.Label; $lblNetStatus.Text = ""
 $lblNetStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblNetStatus.ForeColor = $ColMuted
-$lblNetStatus.Location = New-Object System.Drawing.Point(10, 218); $lblNetStatus.Size = New-Object System.Drawing.Size(1240, 18)
+$lblNetStatus.Location = New-Object System.Drawing.Point(10, 274); $lblNetStatus.Size = New-Object System.Drawing.Size(1240, 18)
 $pnlNetwork.Controls.Add($lblNetStatus)
 
 $lblNetLogHdr = New-Object System.Windows.Forms.Label; $lblNetLogHdr.Text = "Test Results"
 $lblNetLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10); $lblNetLogHdr.ForeColor = $ColText
-$lblNetLogHdr.Location = New-Object System.Drawing.Point(10, 242); $lblNetLogHdr.AutoSize = $true
+$lblNetLogHdr.Location = New-Object System.Drawing.Point(10, 298); $lblNetLogHdr.AutoSize = $true
 $pnlNetwork.Controls.Add($lblNetLogHdr)
 
 $rtbNetLog = New-Object System.Windows.Forms.RichTextBox
-$rtbNetLog.Size = New-Object System.Drawing.Size(1240, 336); $rtbNetLog.Location = New-Object System.Drawing.Point(10, 266)
+$rtbNetLog.Size = New-Object System.Drawing.Size(1240, 280); $rtbNetLog.Location = New-Object System.Drawing.Point(10, 322)
 $rtbNetLog.BackColor = $ColLogBg; $rtbNetLog.ForeColor = $ColLogText
 $rtbNetLog.Font = New-Object System.Drawing.Font("Consolas", 8); $rtbNetLog.ReadOnly = $true
 $rtbNetLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -3313,6 +3350,7 @@ function Start-NetDiagnostic {
         $sync["_ncs_$k"] = "neutral"
     }
     foreach ($k in $netCards.Keys) { Update-CardStatus -Card $netCards[$k] -Value "--" -Status "neutral" }
+    $pnlNetAction.Visible = $false
     $rtbNetLog.Clear()
     $btnNetRun.Enabled = $false; $btnNetRun.Text = "  Running..."
     $btnNetCancel.Visible = $true
