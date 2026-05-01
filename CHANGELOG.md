@@ -10,6 +10,75 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.30] - 2026-05-01
+
+### Changed
+
+- **TCP 5672 upgraded to reliable test** — `app.singular.live` is behind Cloudflare Spectrum which proxies TCP on arbitrary ports, so a plain TCP connect gives a valid firewall signal. Promoted to `Reliable=$true`. Failure note updated to explain the real-world impact: blocking TCP 5672 prevents scoreboards and watermarks from appearing on stream. UDP 5672 remains INFO pending a capture during an active Singular session.
+
+---
+
+## [1.0.29] - 2026-05-01
+
+### Fixed
+
+- **SportzCast port tests corrected** — TCP 1935 was pointing at `pixellot.stream` (wrong destination). Cross-referencing the official Pixellot firewall article and packet capture confirmed SportzCast traffic goes to `sportzcast.net`. Both entries now use `scorebot.sportzcast.net` and are promoted to `Reliable=$true` (plain TCP connect).
+
+### Added
+
+- **TCP 1402 port test** — added as a representative test for the 1400–1405 range, confirmed active in packet capture against `scorebot.sportzcast.net`.
+- **gocanopy.io domain test** — missing from domain list despite being in the official Pixellot firewall article (Canopy remote monitoring).
+
+---
+
+## [1.0.28] - 2026-05-01
+
+### Changed
+
+- **UDP 443 and UDP 2088 upgraded to reliable tests** — Wireshark analysis of Pixellot's own VPU Manager network check revealed a dedicated echo server at `prod-echo.pixellot.tv`. The server responds to UDP packets with payload `"testing UDP on port <PORT>"` by echoing the same string back. Both ports now use this endpoint with a new `Test-UdpEcho` function and are promoted from gray INFO rows to real PASS/FAIL tests. TCP 1935 and TCP/UDP 5672 remain INFO-only pending stream capture analysis.
+
+---
+
+## [1.0.27] - 2026-05-01
+
+### Fixed
+
+- **INFO port rows rendered yellow** (issue #26) — `Reliable=$false` port tests (UDP 443, TCP/UDP 1935, UDP 2088, TCP/UDP 5672) and the `pixellot.stream` domain INFO row were logged with `"Warn"` level, rendering yellow. Changed to `"Gray"` since these are expected informational rows, not warnings.
+
+### Added
+
+- **Failure action banner** (issue #28) — after a network test completes with port or domain failures, a dark red banner appears below the status cards with IT-actionable text: port failures prompt checking firewall/router/content-filter policy; DNS failures prompt checking DNS server settings on the adapter. Banner is hidden on the next run and not shown when all tests pass.
+
+---
+
+## [1.0.26] - 2026-05-01
+
+### Fixed
+
+- **Port Tests and Domain Tests cards still stuck at "--" (root cause fix)** — diagnostic tracing revealed that writes to `$sync["_nc_*"]` keys inside the `Set-NetCard` helper function were silently not propagating to the main `$NetScript` scriptblock body, despite `Set-NetCard "NetInternet"` working correctly. Root cause appears to be a PowerShell function-scope / scriptblock closure interaction where subscript assignments on the synchronized hashtable inside a function do not reflect back to the enclosing scriptblock's variable view after a `foreach` loop has executed. Fixed by writing `_nc_*` and `_ncs_*` values directly from the main body of `$NetScript` after each `Set-NetCard` call, bypassing the function entirely for those keys.
+
+---
+
+## [1.0.25] - 2026-05-01
+
+### Fixed
+
+- **Port Tests and Domain Tests cards stuck at "--" (v2 fix)** — the v1.0.24 fix read card values from the inner `$sync.Cards` hashtable (unsynchronized), which was not guaranteed to be visible across threads even after the `$sync.NetComplete` memory barrier. Rewrote `Set-NetCard` to dual-write values directly into the synchronized `$sync` hashtable via `$sync["_nc_$Key"]` / `$sync["_ncs_$Key"]` keys; the timer tick and completion handler now read the same synchronized keys, ensuring full acquire/release visibility on every access via `Monitor.Enter/Exit`.
+
+### Changed
+
+- **Time format** — all user-visible timestamps (toast completion, Full Diagnostic sub-label, System Info "Collected at") now display in 12-hour AM/PM format (`h:mm:ss tt`) instead of 24-hour military time.
+
+---
+
+## [1.0.24] - 2026-05-01
+
+### Fixed
+
+- **Port Tests and Domain Tests cards stuck at "--"** — a memory-ordering race between the background network test runspace and the UI timer caused card values written to the inner (unsynchronized) `$sync.Cards` hashtable to be invisible to the timer tick that also detected test completion. The timer tick read the inner hashtable before the acquire memory barrier fired (from reading `$sync.NetComplete`), so it saw stale `"--"` values and skipped the update. Fixed by adding a forced card sync inside the completion handler, where the memory barrier from reading `$sync.NetComplete` guarantees all background-thread writes are visible.
+
+---
+
 ## [1.0.23] - 2026-05-01
 
 ### Fixed

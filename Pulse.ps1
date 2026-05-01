@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.23"
+$ScriptVersion = "1.0.30"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -652,7 +652,7 @@ $timerToast.Add_Tick({
             $clr  = if ($isOk -and -not $isWarn) { $ColGreen } elseif ($isWarn) { $ColYellow } else { $ColRed }
             $icon = if ($isOk -and -not $isWarn) { [char]0xE73E } elseif ($isWarn) { [char]0xE7BA } else { [char]0xEA39 }
             $msg  = "$($meta.Name)  -  " + $(if ($isOk -and -not $isWarn) { "All Clear" } elseif ($isWarn) { "Warning" } else { "Issues Found" })
-            $sub  = "Completed $(Get-Date -Format 'HH:mm:ss')   |   Click X to dismiss"
+            $sub  = "Completed $(Get-Date -Format 'h:mm:ss tt')   |   Click X to dismiss"
 
             $pnlToastAccent.BackColor = $clr
             $lblToastIcon.Text        = $icon

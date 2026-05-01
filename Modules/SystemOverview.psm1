@@ -19,7 +19,7 @@ $lblHubTitle.Size      = New-Object System.Drawing.Size(700, 34)
 $pnlSysOverview.Controls.Add($lblHubTitle)
 
 $lblHubSub = New-Object System.Windows.Forms.Label
-$lblHubSub.Text      = "All-in-one diagnostic and troubleshooting tool for Pixellot VPU systems."
+$lblHubSub.Text      = "Pixellot Unified Live System Evaluator — identify and resolve VPU issues fast."
 $lblHubSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
 $lblHubSub.ForeColor = $ColMuted
 $lblHubSub.Location  = New-Object System.Drawing.Point(24, 58)

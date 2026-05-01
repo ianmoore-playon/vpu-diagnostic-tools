@@ -10,10 +10,11 @@ $PortTests = @(
     [PSCustomObject]@{ Protocol="TCP"; Port=53;   ProbeHost="8.8.8.8";               Reliable=$true;  Purpose="DNS";                                      Note="" },
     [PSCustomObject]@{ Protocol="UDP"; Port=123;  ProbeHost="0.us.pool.ntp.org";      Reliable=$true;  Purpose="Clock synchronization (NTP)";              Note="Real NTP request. PASS confirms clock sync is working." },
     [PSCustomObject]@{ Protocol="TCP"; Port=443;  ProbeHost="pixellot.tv";            Reliable=$true;  Purpose="System ops, remote mgmt, video stream";    Note="" },
-    [PSCustomObject]@{ Protocol="UDP"; Port=443;  ProbeHost="pixellot.stream";        Reliable=$false; Purpose="Video streaming - Zixi fallback on 443";   Note="Dynamic stream server. See *.pixellot.stream domain test." },
-    [PSCustomObject]@{ Protocol="TCP"; Port=1935; ProbeHost="pixellot.stream";        Reliable=$false; Purpose="SportzCast remote management";             Note="Also covers ports 1400-1405. Dynamic stream server." },
-    [PSCustomObject]@{ Protocol="UDP"; Port=2088; ProbeHost="pixellot.stream";        Reliable=$false; Purpose="Video streaming - Zixi primary";           Note="Dynamic stream server. See *.pixellot.stream domain test." },
-    [PSCustomObject]@{ Protocol="TCP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$false; Purpose="Graphics and watermark generation";        Note="Does not accept raw probes. See *.app.singular.live domain test." },
+    [PSCustomObject]@{ Protocol="UDP"; Port=443;  ProbeHost="prod-echo.pixellot.tv";  Reliable=$true;  Purpose="Video streaming - Zixi fallback on 443";   Note="Firewall must allow outbound UDP 443 to Pixellot servers." },
+    [PSCustomObject]@{ Protocol="TCP"; Port=1402; ProbeHost="scorebot.sportzcast.net"; Reliable=$true;  Purpose="SportzCast data transmission (1400-1405)";  Note="Firewall must allow outbound TCP 1400-1405 to SportzCast servers." },
+    [PSCustomObject]@{ Protocol="TCP"; Port=1935; ProbeHost="scorebot.sportzcast.net"; Reliable=$true;  Purpose="SportzCast remote management";              Note="Firewall must allow outbound TCP 1935 to SportzCast servers." },
+    [PSCustomObject]@{ Protocol="UDP"; Port=2088; ProbeHost="prod-echo.pixellot.tv";  Reliable=$true;  Purpose="Video streaming - Zixi primary";           Note="Firewall must allow outbound UDP 2088 to Pixellot servers." },
+    [PSCustomObject]@{ Protocol="TCP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$true;  Purpose="Graphics and watermark generation";        Note="Firewall must allow outbound TCP 5672 to Singular. Blocking this port prevents scoreboards and watermarks from appearing on stream." },
     [PSCustomObject]@{ Protocol="UDP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$false; Purpose="Graphics and watermark generation";        Note="UDP returns no response on working VPUs. See domain test." }
 )
 
@@ -28,7 +29,8 @@ $DomainTests = @(
     [PSCustomObject]@{ Domain="logmein.com";                    Wildcard=$true;  Purpose="Windows remote control";                              Note="Required for Windows-based Pixellots." },
     [PSCustomObject]@{ Domain="s3.amazonaws.com";               Wildcard=$false; Purpose="Canopy remote monitoring (leaf-swu)";                 Note="" },
     [PSCustomObject]@{ Domain="leaf-uploads.s3.amazonaws.com";  Wildcard=$false; Purpose="Canopy uploads";                                     Note="" },
-    [PSCustomObject]@{ Domain="leaf-downloads.s3.amazonaws.com"; Wildcard=$false; Purpose="Canopy downloads";                                  Note="" }
+    [PSCustomObject]@{ Domain="leaf-downloads.s3.amazonaws.com"; Wildcard=$false; Purpose="Canopy downloads";                                  Note="" },
+    [PSCustomObject]@{ Domain="gocanopy.io";                     Wildcard=$true;  Purpose="Canopy remote system management and monitoring";     Note="" }
 )
 
 # ---------- Network diagnostic engine (runs in its own background runspace) --
@@ -54,7 +56,9 @@ $NetScript = {
     }
     function Set-NetCard {
         param([string]$Key, [string]$Value, [string]$Status)
-        $sync.Cards[$Key] = @{ Value = $Value; Status = $Status }
+        $sync.Cards[$Key]   = @{ Value = $Value; Status = $Status }
+        $sync["_nc_$Key"]   = $Value    # direct write to synchronized hashtable — guaranteed cross-thread visibility
+        $sync["_ncs_$Key"]  = $Status
     }
     function Test-TcpConnect {
         param([string]$HostName, [int]$Port, [int]$TimeoutMs)
@@ -101,6 +105,23 @@ $NetScript = {
             return ($r -and $r.Length -ge 48)
         } catch { return $false }
     }
+    function Test-UdpEcho {
+        param([string]$Server, [int]$Port, [int]$TimeoutMs)
+        try {
+            $ar = [System.Net.Dns]::BeginGetHostAddresses($Server, $null, $null)
+            if (-not $ar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
+            $addrs = [System.Net.Dns]::EndGetHostAddresses($ar)
+            if (-not $addrs -or $addrs.Length -eq 0) { return $false }
+            $payload = [System.Text.Encoding]::ASCII.GetBytes("testing UDP on port $Port")
+            $udp = New-Object System.Net.Sockets.UdpClient
+            $udp.Client.ReceiveTimeout = $TimeoutMs
+            $ep = New-Object System.Net.IPEndPoint($addrs[0], $Port)
+            $udp.Send($payload, $payload.Length, $ep) | Out-Null
+            $r = $udp.Receive([ref]$ep)
+            $udp.Close()
+            return ([System.Text.Encoding]::ASCII.GetString($r) -eq "testing UDP on port $Port")
+        } catch { return $false }
+    }
     function Resolve-DomainAsync {
         param([string]$Domain, [int]$TimeoutMs)
         try {
@@ -122,9 +143,11 @@ $NetScript = {
         Net-Log "Internet" "Reachable" "Pass"
         $sync.NetBasicOk = $true
         Set-NetCard "NetInternet" "Online" "ok"
+        $sync["_nc_NetInternet"] = "Online"; $sync["_ncs_NetInternet"] = "ok"
     } else {
         Net-Log "Internet" "No response - check uplink adapter" "Fail"
         Set-NetCard "NetInternet" "Offline" "fail"
+        $sync["_nc_NetInternet"] = "Offline"; $sync["_ncs_NetInternet"] = "fail"
     }
 
     if ($sync.NetCancelled) { $sync.NetRunning = $false; $sync.NetComplete = $true; return }
@@ -160,7 +183,7 @@ $NetScript = {
         $sync.NetStep = "Testing $($pt.Protocol) $($pt.Port) ? $($pt.ProbeHost)..."
         $label = "$($pt.Protocol) $($pt.Port)"
         if (-not $pt.Reliable) {
-            Net-Log $label "INFO - $($pt.Purpose)" "Warn"
+            Net-Log $label "INFO - $($pt.Purpose)" "Gray"
             if ($pt.Note) { Net-Log "  " $pt.Note "Gray" }
             $portInfo++; continue
         }
@@ -168,6 +191,7 @@ $NetScript = {
         if      ($pt.Protocol -eq "TCP")                            { $ok = Test-TcpConnect  -HostName $pt.ProbeHost -Port $pt.Port -TimeoutMs $NetTimeoutMs }
         elseif  ($pt.Protocol -eq "UDP" -and $pt.Port -eq 53)      { $ok = Test-UdpDns  -Server $pt.ProbeHost -TimeoutMs $NetTimeoutMs }
         elseif  ($pt.Protocol -eq "UDP" -and $pt.Port -eq 123)     { $ok = Test-UdpNtp  -Server $pt.ProbeHost -TimeoutMs $NetTimeoutMs }
+        elseif  ($pt.Protocol -eq "UDP")                            { $ok = Test-UdpEcho -Server $pt.ProbeHost -Port $pt.Port -TimeoutMs $NetTimeoutMs }
         if ($ok) {
             Net-Log $label "PASS  $($pt.Purpose)" "Pass"; $portPass++
         } else {
@@ -178,6 +202,8 @@ $NetScript = {
     }
     $sync.NetPortPass = $portPass; $sync.NetPortFail = $portFail; $sync.NetPortInfo = $portInfo
     Set-NetCard "NetPorts" (if ($portFail -eq 0) { "$portPass passed" } else { "$portFail failed" }) (if ($portFail -eq 0) { "ok" } else { "fail" })
+    $sync["_nc_NetPorts"]  = if ($portFail -eq 0) { "$portPass passed" } else { "$portFail failed" }
+    $sync["_ncs_NetPorts"] = if ($portFail -eq 0) { "ok" } else { "fail" }
 
     if ($sync.NetCancelled) { $sync.NetRunning = $false; $sync.NetComplete = $true; return }
 
@@ -189,7 +215,7 @@ $NetScript = {
         if ($sync.NetCancelled) { break }
         $sync.NetStep = "Resolving $($dt.Domain)..."
         if ($dt.Note -like "*DNS not expected*") {
-            Net-Log $dt.Domain "INFO - stream-only destination (DNS resolution not expected)" "Warn"
+            Net-Log $dt.Domain "INFO - stream-only destination (DNS resolution not expected)" "Gray"
             $domInfo++; continue
         }
         $addrs = Resolve-DomainAsync -Domain $dt.Domain -TimeoutMs $NetTimeoutMs
@@ -204,6 +230,8 @@ $NetScript = {
     }
     $sync.NetDomainPass = $domPass; $sync.NetDomainFail = $domFail; $sync.NetDomainInfo = $domInfo
     Set-NetCard "NetDomains" (if ($domFail -eq 0) { "$domPass resolved" } else { "$domFail failed" }) (if ($domFail -eq 0) { "ok" } else { "fail" })
+    $sync["_nc_NetDomains"]  = if ($domFail -eq 0) { "$domPass resolved" } else { "$domFail failed" }
+    $sync["_ncs_NetDomains"] = if ($domFail -eq 0) { "ok" } else { "fail" }
 
     $sync.NetAllClear = ($portFail -eq 0) -and ($domFail -eq 0)
     $sync.NetStep     = if ($sync.NetAllClear) { "All network tests passed." } else { "Network tests complete. Review results." }
@@ -244,9 +272,10 @@ $netTimer.Add_Tick({
     }
 
     foreach ($netKey in $netCards.Keys) {
-        $sc = $sync.Cards[$netKey]
-        if ($sc -and $sc.Value -and $sc.Value -ne $netCards[$netKey].ValueLabel.Text) {
-            Update-CardStatus -Card $netCards[$netKey] -Value $sc.Value -Status $sc.Status
+        $val = $sync["_nc_$netKey"]
+        $sts = $sync["_ncs_$netKey"]
+        if ($val -and $val -ne $netCards[$netKey].ValueLabel.Text) {
+            Update-CardStatus -Card $netCards[$netKey] -Value $val -Status $sts
         }
     }
 
@@ -258,11 +287,26 @@ $netTimer.Add_Tick({
     }
 
     if ($sync.NetComplete -and -not $sync.NetRunning) {
+        # Final sync reads directly from the synchronized hashtable — guaranteed visibility.
+        foreach ($netKey in $netCards.Keys) {
+            $val = $sync["_nc_$netKey"]
+            $sts = $sync["_ncs_$netKey"]
+            if ($val) {
+                Update-CardStatus -Card $netCards[$netKey] -Value $val -Status $sts
+            }
+        }
         $netTimer.Stop()
         $btnNetCancel.Visible = $false
         $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Network Test"
         $lblNetStatus.ForeColor = $ColMuted
         $lblNetStatus.Text = "  $($sync.NetStep)"
+        $lines = @()
+        if ($sync.NetPortFail   -gt 0) { $lines += "Port failures — check the firewall and router. Confirm the uplink adapter is not blocked by a content filter or VLAN policy." }
+        if ($sync.NetDomainFail -gt 0) { $lines += "DNS failures — check DNS server settings on this adapter. Confirm the VPU can reach its configured DNS server." }
+        if ($lines.Count -gt 0) {
+            $lblNetActionText.Text = $lines -join "   |   "
+            $pnlNetAction.Visible  = $true
+        }
     }
 })
 
@@ -301,10 +345,40 @@ foreach ($cd in $netCardDefs) {
     $pnlNetwork.Controls.Add($c.Panel)
 }
 
+# Failure action banner (shown after run when any test fails)
+$pnlNetAction = New-Object System.Windows.Forms.Panel
+$pnlNetAction.Size      = New-Object System.Drawing.Size(1240, 56)
+$pnlNetAction.Location  = New-Object System.Drawing.Point(10, 162)
+$pnlNetAction.BackColor = [System.Drawing.Color]::FromArgb(75, 20, 20)
+$pnlNetAction.Visible   = $false
+$pnlNetwork.Controls.Add($pnlNetAction)
+
+$pnlNetActionBar = New-Object System.Windows.Forms.Panel
+$pnlNetActionBar.Size      = New-Object System.Drawing.Size(4, 56)
+$pnlNetActionBar.Location  = New-Object System.Drawing.Point(0, 0)
+$pnlNetActionBar.BackColor = [System.Drawing.Color]::FromArgb(210, 55, 55)
+$pnlNetAction.Controls.Add($pnlNetActionBar)
+
+$lblNetActionIcon = New-Object System.Windows.Forms.Label
+$lblNetActionIcon.Text      = [char]0x26A0
+$lblNetActionIcon.Font      = New-Object System.Drawing.Font("Segoe UI Symbol", 14)
+$lblNetActionIcon.ForeColor = [System.Drawing.Color]::FromArgb(210, 100, 100)
+$lblNetActionIcon.Location  = New-Object System.Drawing.Point(14, 14)
+$lblNetActionIcon.AutoSize  = $true
+$pnlNetAction.Controls.Add($lblNetActionIcon)
+
+$lblNetActionText = New-Object System.Windows.Forms.Label
+$lblNetActionText.Text      = ""
+$lblNetActionText.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblNetActionText.ForeColor = [System.Drawing.Color]::FromArgb(240, 190, 190)
+$lblNetActionText.Location  = New-Object System.Drawing.Point(44, 8)
+$lblNetActionText.Size      = New-Object System.Drawing.Size(1186, 40)
+$pnlNetAction.Controls.Add($lblNetActionText)
+
 # Run / Cancel buttons
 $btnNetRun = New-Object System.Windows.Forms.Button
 $btnNetRun.Text = [char]0x25B6 + "  Run Network Test"
-$btnNetRun.Size = New-Object System.Drawing.Size(240, 40); $btnNetRun.Location = New-Object System.Drawing.Point(10, 170)
+$btnNetRun.Size = New-Object System.Drawing.Size(240, 40); $btnNetRun.Location = New-Object System.Drawing.Point(10, 226)
 $btnNetRun.BackColor = $ColAccent; $btnNetRun.ForeColor = [System.Drawing.Color]::White
 $btnNetRun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnNetRun.FlatAppearance.BorderSize = 0
 $btnNetRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
@@ -314,7 +388,7 @@ $pnlNetwork.Controls.Add($btnNetRun)
 $btnNetRun.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 240, 40)), 6))
 
 $btnNetCancel = New-Object System.Windows.Forms.Button; $btnNetCancel.Text = "Cancel"
-$btnNetCancel.Size = New-Object System.Drawing.Size(110, 40); $btnNetCancel.Location = New-Object System.Drawing.Point(258, 170)
+$btnNetCancel.Size = New-Object System.Drawing.Size(110, 40); $btnNetCancel.Location = New-Object System.Drawing.Point(258, 226)
 $btnNetCancel.BackColor = $ColRed; $btnNetCancel.ForeColor = [System.Drawing.Color]::White
 $btnNetCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnNetCancel.FlatAppearance.BorderSize = 0
 $btnNetCancel.Font = New-Object System.Drawing.Font("Segoe UI", 10)
@@ -324,21 +398,21 @@ $btnNetCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect
 
 $lblNetEta = New-Object System.Windows.Forms.Label; $lblNetEta.Text = "est. ~20 sec"
 $lblNetEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblNetEta.ForeColor = $ColMuted
-$lblNetEta.Location = New-Object System.Drawing.Point(378,180); $lblNetEta.AutoSize = $true
+$lblNetEta.Location = New-Object System.Drawing.Point(378,236); $lblNetEta.AutoSize = $true
 $pnlNetwork.Controls.Add($lblNetEta)
 
 $lblNetStatus = New-Object System.Windows.Forms.Label; $lblNetStatus.Text = ""
 $lblNetStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblNetStatus.ForeColor = $ColMuted
-$lblNetStatus.Location = New-Object System.Drawing.Point(10, 218); $lblNetStatus.Size = New-Object System.Drawing.Size(1240, 18)
+$lblNetStatus.Location = New-Object System.Drawing.Point(10, 274); $lblNetStatus.Size = New-Object System.Drawing.Size(1240, 18)
 $pnlNetwork.Controls.Add($lblNetStatus)
 
 $lblNetLogHdr = New-Object System.Windows.Forms.Label; $lblNetLogHdr.Text = "Test Results"
 $lblNetLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10); $lblNetLogHdr.ForeColor = $ColText
-$lblNetLogHdr.Location = New-Object System.Drawing.Point(10, 242); $lblNetLogHdr.AutoSize = $true
+$lblNetLogHdr.Location = New-Object System.Drawing.Point(10, 298); $lblNetLogHdr.AutoSize = $true
 $pnlNetwork.Controls.Add($lblNetLogHdr)
 
 $rtbNetLog = New-Object System.Windows.Forms.RichTextBox
-$rtbNetLog.Size = New-Object System.Drawing.Size(1240, 336); $rtbNetLog.Location = New-Object System.Drawing.Point(10, 266)
+$rtbNetLog.Size = New-Object System.Drawing.Size(1240, 280); $rtbNetLog.Location = New-Object System.Drawing.Point(10, 322)
 $rtbNetLog.BackColor = $ColLogBg; $rtbNetLog.ForeColor = $ColLogText
 $rtbNetLog.Font = New-Object System.Drawing.Font("Consolas", 8); $rtbNetLog.ReadOnly = $true
 $rtbNetLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -356,9 +430,12 @@ function Start-NetDiagnostic {
     if ($sync.NetRunning) { return }
     $sync.NetCancelled = $false
     foreach ($k in @("NetInternet","NetPorts","NetDomains")) {
-        $sync.Cards[$k] = @{ Value="--"; Status="neutral" }
+        $sync.Cards[$k]  = @{ Value="--"; Status="neutral" }
+        $sync["_nc_$k"]  = "--"
+        $sync["_ncs_$k"] = "neutral"
     }
     foreach ($k in $netCards.Keys) { Update-CardStatus -Card $netCards[$k] -Value "--" -Status "neutral" }
+    $pnlNetAction.Visible = $false
     $rtbNetLog.Clear()
     $btnNetRun.Enabled = $false; $btnNetRun.Text = "  Running..."
     $btnNetCancel.Visible = $true
