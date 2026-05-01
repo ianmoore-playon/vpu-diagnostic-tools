@@ -70,6 +70,13 @@ if (-not $PoeDllPath) {
     }
 }
 
+# ---------- Theme settings ---------------------------------------------------
+$SettingsPath = Join-Path $PSScriptRoot "settings.json"
+$VpuTheme = "dark"
+if (Test-Path $SettingsPath) {
+    try { $s = Get-Content $SettingsPath -Raw | ConvertFrom-Json; if ($s.Theme -eq "light") { $VpuTheme = "light" } } catch { }
+}
+
 # ---------- Load modules (dot-sourced into this scope) -----------------------
 $ModulesDir = Join-Path $PSScriptRoot "Modules"
 . "$ModulesDir\UIHelpers.psm1"
@@ -321,6 +328,28 @@ $pnlStatusBar.Controls.Add($lblSbarLastRun)
 
 $lblHdrVer.Location = New-Object System.Drawing.Point(1110, 0)
 $pnlStatusBar.Controls.Add($lblHdrVer)
+
+$btnTheme = New-Object System.Windows.Forms.Button
+$btnTheme.Text      = if ($VpuTheme -eq "light") { "Dark Mode" } else { "Light Mode" }
+$btnTheme.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+$btnTheme.Size      = New-Object System.Drawing.Size(110, 20)
+$btnTheme.Location  = New-Object System.Drawing.Point(960, 4)
+$btnTheme.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnTheme.FlatAppearance.BorderColor = $ColBorder
+$btnTheme.FlatAppearance.BorderSize  = 1
+$btnTheme.BackColor = $ColCard
+$btnTheme.ForeColor = $ColMuted
+$btnTheme.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnTheme.Anchor    = $AnchorTR
+$pnlStatusBar.Controls.Add($btnTheme)
+$btnTheme.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,110,20)),4))
+$btnTheme.Add_Click({
+    $newTheme = if ($VpuTheme -eq "dark") { "light" } else { "dark" }
+    try { [System.IO.File]::WriteAllText($SettingsPath, "{`"Theme`":`"$newTheme`"}") } catch { }
+    $runScript = if ($PSCommandPath -and (Test-Path $PSCommandPath)) { $PSCommandPath } else { Join-Path $PSScriptRoot "Run.ps1" }
+    Start-Process "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$runScript`""
+    $form.Close()
+})
 
 # ---- Tab navigation bar ----------------------------------------------------
 $pnlTabBar = New-Object System.Windows.Forms.Panel

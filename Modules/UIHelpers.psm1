@@ -49,23 +49,55 @@ public static class AdlinkPoE {
 "@
 }
 
-$ColSidebar  = [System.Drawing.Color]::FromArgb(15,  22,  36)
-$ColNavHover = [System.Drawing.Color]::FromArgb(38,  52,  70)
-$ColNavActive= [System.Drawing.Color]::FromArgb(37,  99, 235)
-$ColAccent   = [System.Drawing.Color]::FromArgb(59, 130, 246)
-$ColBg       = [System.Drawing.Color]::FromArgb(10,  16,  30)
-$ColCard     = [System.Drawing.Color]::FromArgb(22,  32,  50)
-$ColBorder   = [System.Drawing.Color]::FromArgb(44,  59,  80)
-$ColText     = [System.Drawing.Color]::FromArgb(220, 228, 240)
-$ColMuted    = [System.Drawing.Color]::FromArgb(110, 128, 155)
-$ColGreen    = [System.Drawing.Color]::FromArgb(34,  197,  94)
-$ColRed      = [System.Drawing.Color]::FromArgb(239,  68,  68)
-$ColYellow   = [System.Drawing.Color]::FromArgb(234, 179,   8)
-$ColLogBg    = [System.Drawing.Color]::FromArgb(6,   10,  20)
-# Badge tint backgrounds (dark theme — coloured bg with matching text)
-$ColBadgeOkBg  = [System.Drawing.Color]::FromArgb(15,  58,  35)
-$ColBadgeErrBg = [System.Drawing.Color]::FromArgb(90,  18,  18)
-$ColBadgeRunBg = [System.Drawing.Color]::FromArgb(80,  48,   8)
+if ($VpuTheme -eq "light") {
+    # ---- Light palette -------------------------------------------------------
+    $ColSidebar    = [System.Drawing.Color]::FromArgb(248, 250, 252)
+    $ColNavHover   = [System.Drawing.Color]::FromArgb(226, 232, 240)
+    $ColNavActive  = [System.Drawing.Color]::FromArgb(37,  99,  235)
+    $ColAccent     = [System.Drawing.Color]::FromArgb(37,  99,  235)
+    $ColBg         = [System.Drawing.Color]::FromArgb(241, 245, 249)
+    $ColCard       = [System.Drawing.Color]::FromArgb(255, 255, 255)
+    $ColBorder     = [System.Drawing.Color]::FromArgb(203, 213, 225)
+    $ColText       = [System.Drawing.Color]::FromArgb(15,  23,  42)
+    $ColMuted      = [System.Drawing.Color]::FromArgb(100, 116, 139)
+    $ColGreen      = [System.Drawing.Color]::FromArgb(22,  163,  74)
+    $ColRed        = [System.Drawing.Color]::FromArgb(220,  38,  38)
+    $ColYellow     = [System.Drawing.Color]::FromArgb(161,  98,   7)
+    $ColLogBg      = [System.Drawing.Color]::FromArgb(248, 250, 252)
+    $ColBadgeOkBg  = [System.Drawing.Color]::FromArgb(220, 252, 231)
+    $ColBadgeErrBg = [System.Drawing.Color]::FromArgb(254, 226, 226)
+    $ColBadgeRunBg = [System.Drawing.Color]::FromArgb(254, 243, 199)
+    $ColLogPass    = [System.Drawing.Color]::FromArgb(21,  128,  61)
+    $ColLogFail    = [System.Drawing.Color]::FromArgb(185,  28,  28)
+    $ColLogWarn    = [System.Drawing.Color]::FromArgb(146,  64,  14)
+    $ColLogCyan    = [System.Drawing.Color]::FromArgb(14,  116, 144)
+    $ColLogText    = [System.Drawing.Color]::FromArgb(30,  41,  59)
+    $ColLogLabel   = [System.Drawing.Color]::FromArgb(100, 116, 139)
+} else {
+    # ---- Dark palette (default) ---------------------------------------------
+    $ColSidebar    = [System.Drawing.Color]::FromArgb(15,  22,  36)
+    $ColNavHover   = [System.Drawing.Color]::FromArgb(38,  52,  70)
+    $ColNavActive  = [System.Drawing.Color]::FromArgb(37,  99, 235)
+    $ColAccent     = [System.Drawing.Color]::FromArgb(59, 130, 246)
+    $ColBg         = [System.Drawing.Color]::FromArgb(10,  16,  30)
+    $ColCard       = [System.Drawing.Color]::FromArgb(22,  32,  50)
+    $ColBorder     = [System.Drawing.Color]::FromArgb(44,  59,  80)
+    $ColText       = [System.Drawing.Color]::FromArgb(220, 228, 240)
+    $ColMuted      = [System.Drawing.Color]::FromArgb(110, 128, 155)
+    $ColGreen      = [System.Drawing.Color]::FromArgb(34,  197,  94)
+    $ColRed        = [System.Drawing.Color]::FromArgb(239,  68,  68)
+    $ColYellow     = [System.Drawing.Color]::FromArgb(234, 179,   8)
+    $ColLogBg      = [System.Drawing.Color]::FromArgb(6,   10,  20)
+    $ColBadgeOkBg  = [System.Drawing.Color]::FromArgb(15,  58,  35)
+    $ColBadgeErrBg = [System.Drawing.Color]::FromArgb(90,  18,  18)
+    $ColBadgeRunBg = [System.Drawing.Color]::FromArgb(80,  48,   8)
+    $ColLogPass    = [System.Drawing.Color]::FromArgb(74,  222, 128)
+    $ColLogFail    = [System.Drawing.Color]::FromArgb(252, 165, 165)
+    $ColLogWarn    = [System.Drawing.Color]::FromArgb(253, 224,  71)
+    $ColLogCyan    = [System.Drawing.Color]::FromArgb(103, 232, 249)
+    $ColLogText    = [System.Drawing.Color]::FromArgb(203, 213, 225)
+    $ColLogLabel   = [System.Drawing.Color]::FromArgb(100, 116, 139)
+}
 
 # ---------- GUI Helper Functions --------------------------------------------
 function New-SidebarButton {
@@ -103,7 +135,7 @@ function New-TabButton {
         $g.SmoothingMode     = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
         $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAlias
         $t  = $s.Tag
-        $fg = if ($t.Active) { [System.Drawing.Color]::White } else { [System.Drawing.Color]::FromArgb(148,163,184) }
+        $fg = if ($t.Active) { [System.Drawing.Color]::White } else { $ColMuted }
         $iBrush = New-Object System.Drawing.SolidBrush($fg)
         $tBrush = New-Object System.Drawing.SolidBrush($fg)
         $iFont  = New-Object System.Drawing.Font("Segoe MDL2 Assets", 15)
@@ -142,7 +174,7 @@ function New-StatusCard {
         $pW = [int]$this.Width; $pH = [int]$this.Height
         if ($this.Tag) {
             $iFont  = New-Object System.Drawing.Font("Segoe MDL2 Assets", 26)
-            $iBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(44, 59, 80))
+            $iBrush = New-Object System.Drawing.SolidBrush($ColBorder)
             $iStr   = [string]$this.Tag
             $iSz    = $g.MeasureString($iStr, $iFont)
             $ix     = $pW - [int]$iSz.Width  - 10
@@ -152,7 +184,7 @@ function New-StatusCard {
         }
         $rr = New-Object System.Drawing.Rectangle(0, 0, ($pW - 1), ($pH - 1))
         $bp = [GfxHelper]::RoundedRect($rr, 8)
-        $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(44, 59, 80), 1)
+        $pen = New-Object System.Drawing.Pen($ColBorder, 1)
         $g.DrawPath($pen, $bp)
         $pen.Dispose(); $bp.Dispose()
     })
@@ -269,15 +301,15 @@ function New-LogGrid {
     $dgv.MultiSelect    = $false
     $dgv.CellBorderStyle = [System.Windows.Forms.DataGridViewCellBorderStyle]::None
     $dgv.DefaultCellStyle.BackColor         = $ColLogBg
-    $dgv.DefaultCellStyle.ForeColor         = [System.Drawing.Color]::FromArgb(203, 213, 225)
+    $dgv.DefaultCellStyle.ForeColor         = $ColLogText
     $dgv.DefaultCellStyle.Font              = New-Object System.Drawing.Font("Consolas", 8)
     $dgv.DefaultCellStyle.SelectionBackColor = $ColNavHover
-    $dgv.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::FromArgb(203, 213, 225)
+    $dgv.DefaultCellStyle.SelectionForeColor = $ColLogText
     $dgv.DefaultCellStyle.Padding           = New-Object System.Windows.Forms.Padding(4, 0, 4, 0)
     $c0 = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $c0.Name = "Label"; $c0.Width = $LabelColW; $c0.MinimumWidth = $LabelColW
     $c0.Resizable = [System.Windows.Forms.DataGridViewTriState]::False
-    $c0.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+    $c0.DefaultCellStyle.ForeColor = $ColLogLabel
     $dgv.Columns.Add($c0) | Out-Null
     $c1 = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $c1.Name = "Result"; $c1.AutoSizeMode = [System.Windows.Forms.DataGridViewAutoSizeColumnMode]::Fill
@@ -290,21 +322,21 @@ function Add-LogRow {
     if ($Level -eq "Section") {
         $i = $Grid.Rows.Add("", "  $($Result.ToUpper())")
         $r = $Grid.Rows[$i]
-        $r.DefaultCellStyle.BackColor         = [System.Drawing.Color]::FromArgb(6, 10, 20)
-        $r.DefaultCellStyle.ForeColor         = [System.Drawing.Color]::FromArgb(100, 116, 139)
+        $r.DefaultCellStyle.BackColor         = $ColLogBg
+        $r.DefaultCellStyle.ForeColor         = $ColMuted
         $r.DefaultCellStyle.Font              = New-Object System.Drawing.Font("Consolas", 7.5, [System.Drawing.FontStyle]::Bold)
-        $r.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(6, 10, 20)
-        $r.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+        $r.DefaultCellStyle.SelectionBackColor = $ColLogBg
+        $r.DefaultCellStyle.SelectionForeColor = $ColMuted
     } else {
         $i = $Grid.Rows.Add($Label, $Result)
         $r = $Grid.Rows[$i]
         $col = switch ($Level) {
-            "Pass" { [System.Drawing.Color]::FromArgb(74,  222, 128) }
-            "Fail" { [System.Drawing.Color]::FromArgb(252, 165, 165) }
-            "Warn" { [System.Drawing.Color]::FromArgb(253, 224, 71)  }
-            "Cyan" { [System.Drawing.Color]::FromArgb(103, 232, 249) }
-            "Gray" { [System.Drawing.Color]::FromArgb(100, 116, 139) }
-            default{ [System.Drawing.Color]::FromArgb(203, 213, 225) }
+            "Pass" { $ColLogPass  }
+            "Fail" { $ColLogFail  }
+            "Warn" { $ColLogWarn  }
+            "Cyan" { $ColLogCyan  }
+            "Gray" { $ColMuted    }
+            default{ $ColLogText  }
         }
         $r.Cells[1].Style.ForeColor = $col
     }
