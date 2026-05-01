@@ -10,6 +10,16 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.15] - 2026-04-30
+
+### Changed
+
+- **Launcher console UI** — the CMD window is now sized (72×32), cleared on launch, and shows a formatted header with the tool name and subtitle. Version tracking added: shows installed version on up-to-date runs, "v1.0.13 → v1.0.14" on updates, and "Installing for the first time" on fresh installs. A persistent close-warning is printed before any download or launch step. Error messages are clearly prefixed with `ERROR:`.
+- **`version.txt`** added to repo root — a single-line file containing the current version string, read by the launcher to display human-readable version numbers without parsing the PS1 source.
+- **`Build.ps1` silenced** — `Write-Host` calls replaced with `Write-Verbose` so the BAT owns all console messaging; Build errors still surface via `Write-Error` and the ERRORLEVEL check.
+
+---
+
 ## [1.0.14] - 2026-04-30
 
 ### Changed

@@ -11,7 +11,7 @@ $mods   = @(
     'DiskHealth','EventLogs','SystemInformation','FullDiagnostic'
 )
 
-Write-Host "Building combined launcher..."
+Write-Verbose "Building combined launcher..."
 
 if (-not (Test-Path "$dest\VPUDiagnosticTool.ps1")) {
     Write-Error "VPUDiagnosticTool.ps1 not found in $dest"; exit 1
@@ -42,4 +42,4 @@ foreach ($line in (Get-Content "$dest\VPUDiagnosticTool.ps1")) {
     $out,
     [System.Text.UTF8Encoding]::new($false)
 )
-Write-Host "Done - Run.ps1 built ($($out.Count) lines)"
+Write-Verbose "Done - Run.ps1 built ($($out.Count) lines)"
