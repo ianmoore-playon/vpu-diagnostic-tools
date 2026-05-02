@@ -130,10 +130,35 @@ $hwTimer.Add_Tick({
     }
     if ($sync.HwComplete -and -not $sync.HwRunning) {
         $hwTimer.Stop(); $btnHwCancel.Visible=$false
-        $btnHwRun.Enabled=$true; $btnHwRun.Text=[char]0x25B6+"  Check Hardware"
-        $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="  $($sync.HwStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
+        $btnHwRun.Enabled=$true; $btnHwRun.Text=[char]0x25B6+"  Run Full Diagnostic"
+        $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
         # Refresh the port diagram with current link state (#7)
         try { Update-HwPortDiagram } catch { }
+
+        # Update Overall Status pill from worst card status
+        $hwWorst = "ok"
+        $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
+        foreach ($k in @("HwGpu","HwMonitor","HwMmk")) {
+            if ($sync.Cards.ContainsKey($k)) {
+                $s = $sync.Cards[$k].Status
+                if ($s -and $pri[$s] -gt $pri[$hwWorst]) { $hwWorst = $s }
+            }
+        }
+        Set-SectionPill $hwHeader $hwWorst
+
+        # Build Summary
+        $sumItems = @()
+        $gpuC = $sync.Cards["HwGpu"]
+        if ($gpuC -and $gpuC.Value -ne "--") { $sumItems += @{ Status="ok"; Text="GPU detected: $($gpuC.Value)" } }
+        $monC = $sync.Cards["HwMonitor"]
+        if ($monC) { $sumItems += @{ Status=$monC.Status; Text="Monitor: $($monC.Value)" } }
+        $mmkC = $sync.Cards["HwMmk"]
+        if ($mmkC) { $sumItems += @{ Status=$mmkC.Status; Text="Input devices: $($mmkC.Value)" } }
+        if ($sync.NicLinkUptimes -and $sync.NicLinkUptimes.Count -gt 0) {
+            $sumItems += @{ Status="ok"; Text="$($sync.NicLinkUptimes.Count) NIC ports reporting link uptime" }
+        }
+        if ($sumItems.Count -eq 0) { $sumItems = @(@{ Status="neutral"; Text="No hardware data collected" }) }
+        Set-SummaryItems $hwSummary $sumItems
     }
 })
 
@@ -145,67 +170,43 @@ $pnlPoE.Location = New-Object System.Drawing.Point($SideW,$ContentY)
 $pnlPoE.BackColor = $ColBg; $pnlPoE.Visible = $false; $pnlPoE.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlPoE)
 
-$lblHwTitle = New-Object System.Windows.Forms.Label; $lblHwTitle.Text = "VPU Hardware"
-$lblHwTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lblHwTitle.ForeColor = $ColText
-$lblHwTitle.Location = New-Object System.Drawing.Point(10,16); $lblHwTitle.AutoSize = $true
-$pnlPoE.Controls.Add($lblHwTitle)
+# v1.0.43 redesign — section header (with status pill) + cards + NIC port diagram + action bar
+$hwHeader = New-SectionHeader -Parent $pnlPoE `
+    -Title    "PoE / NIC Hardware" `
+    -Subtitle "GPU, peripherals, NIC link uptime, PoE power, and physical port layout."
 
-$lblHwSub = New-Object System.Windows.Forms.Label
-$lblHwSub.Text = "GPU model, peripheral connections, NIC link uptime, and PoE power status."
-$lblHwSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblHwSub.ForeColor = $ColMuted
-$lblHwSub.Location = New-Object System.Drawing.Point(10,42); $lblHwSub.Size = New-Object System.Drawing.Size(1240,18)
-$pnlPoE.Controls.Add($lblHwSub)
-
-# PoE / NIC uptime data is gathered by the Camera Connectivity module — surface a notice
-# if it hasn't been run yet so users don't think the values are missing.
-$script:hwSubDefault = $lblHwSub.Text
+# When Camera Connectivity hasn't run, surface a yellow note in the subtitle position.
+$script:hwSubDefault = $hwHeader.Subtitle.Text
 $pnlPoE.Add_VisibleChanged({
     if (-not $pnlPoE.Visible) { return }
     if (-not $sync.NicLinkUptimes -or $sync.NicLinkUptimes.Count -eq 0) {
-        $lblHwSub.Text      = "Run Camera Connectivity first to populate PoE budget and NIC uptime."
-        $lblHwSub.ForeColor = $ColYellow
+        $hwHeader.Subtitle.Text      = "Run Camera Connectivity first to populate PoE budget and NIC uptime."
+        $hwHeader.Subtitle.ForeColor = $ColYellow
     } else {
-        $lblHwSub.Text      = $script:hwSubDefault
-        $lblHwSub.ForeColor = $ColMuted
+        $hwHeader.Subtitle.Text      = $script:hwSubDefault
+        $hwHeader.Subtitle.ForeColor = $ColMuted
     }
 })
 
+# 3 status cards — GPU / Monitor / Input — at Y=110
 $hwCardDefs = @(
-    @{ Key="HwGpu";     Title="GPU";     Sub="Graphics adapter";  X=10;  Icon=[char]0xE7F4; W=400 }
-    @{ Key="HwMonitor"; Title="Monitor"; Sub="Display connected";  X=420; Icon=[char]0xE7F4; W=400 }
-    @{ Key="HwMmk";     Title="Input Devices"; Sub="Keyboard & mouse"; X=830; Icon=[char]0xE7C8; W=400 }
+    @{ Key="HwGpu";     Title="GPU";           Sub="Graphics adapter";   X=28;   Icon=[char]0xE7F4; W=400 }
+    @{ Key="HwMonitor"; Title="Monitor";       Sub="Display connected";  X=440;  Icon=[char]0xE7F4; W=400 }
+    @{ Key="HwMmk";     Title="Input Devices"; Sub="Keyboard & mouse";   X=852;  Icon=[char]0xE7C8; W=400 }
 )
 $hwCards = @{}
 foreach ($cd in $hwCardDefs) {
-    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y 68 -Icon $cd.Icon -Sub $cd.Sub -CardW $cd.W -CardH 90
+    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y 110 -Icon $cd.Icon -Sub $cd.Sub -CardW $cd.W -CardH 90
     $hwCards[$cd.Key] = $c; $pnlPoE.Controls.Add($c.Panel)
 }
 
-$btnHwRun = New-Object System.Windows.Forms.Button; $btnHwRun.Text = [char]0x25B6 + "  Check Hardware"
-$btnHwRun.Size = New-Object System.Drawing.Size(220,40); $btnHwRun.Location = New-Object System.Drawing.Point(10,170)
-$btnHwRun.BackColor = $ColAccent; $btnHwRun.ForeColor = [System.Drawing.Color]::White
-$btnHwRun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnHwRun.FlatAppearance.BorderSize = 0
-$btnHwRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10)
-$btnHwRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft; $btnHwRun.Cursor = [System.Windows.Forms.Cursors]::Hand
-$pnlPoE.Controls.Add($btnHwRun)
-$btnHwRun.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,220,40)),6))
-
-$btnHwCancel = New-Object System.Windows.Forms.Button; $btnHwCancel.Text = "Cancel"
-$btnHwCancel.Size = New-Object System.Drawing.Size(100,40); $btnHwCancel.Location = New-Object System.Drawing.Point(238,170)
-$btnHwCancel.BackColor = $ColRed; $btnHwCancel.ForeColor = [System.Drawing.Color]::White
-$btnHwCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnHwCancel.FlatAppearance.BorderSize = 0
-$btnHwCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnHwCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnHwCancel.Visible = $false
-$pnlPoE.Controls.Add($btnHwCancel)
-$btnHwCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
-
-$lblHwEta = New-Object System.Windows.Forms.Label; $lblHwEta.Text = "est. ~3 sec"
-$lblHwEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblHwEta.ForeColor = $ColMuted
-$lblHwEta.Location = New-Object System.Drawing.Point(348,180); $lblHwEta.AutoSize = $true
-$pnlPoE.Controls.Add($lblHwEta)
-
-$lblHwStatus = New-Object System.Windows.Forms.Label; $lblHwStatus.Text = ""
-$lblHwStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblHwStatus.ForeColor = $ColMuted
-$lblHwStatus.Location = New-Object System.Drawing.Point(10,218); $lblHwStatus.Size = New-Object System.Drawing.Size(1240,18)
+$lblHwStatus = New-Object System.Windows.Forms.Label
+$lblHwStatus.Text      = ""
+$lblHwStatus.Font      = New-Object System.Drawing.Font("Consolas", 8)
+$lblHwStatus.ForeColor = $ColMuted
+$lblHwStatus.Location  = New-Object System.Drawing.Point(28, 686)
+$lblHwStatus.Size      = New-Object System.Drawing.Size(($pnlPoE.Width - 56), 16)
+$lblHwStatus.Anchor    = $AnchorBLR
 $pnlPoE.Controls.Add($lblHwStatus)
 
 # ---- NIC Port Layout — horizontal "card + ports below" mockup-style design (#7) -------
@@ -221,7 +222,7 @@ $lblHwPortHdr = New-Object System.Windows.Forms.Label
 $lblHwPortHdr.Text      = "NIC Port Layout"
 $lblHwPortHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
 $lblHwPortHdr.ForeColor = $ColText
-$lblHwPortHdr.Location  = New-Object System.Drawing.Point(10, 242)
+$lblHwPortHdr.Location  = New-Object System.Drawing.Point(28, 218)
 $lblHwPortHdr.AutoSize  = $true
 $pnlPoE.Controls.Add($lblHwPortHdr)
 
@@ -229,7 +230,7 @@ $lblHwPortSub = New-Object System.Windows.Forms.Label
 $lblHwPortSub.Text      = "Physical port mapping with live link state. Port 1 sits next to the status light on the actual card."
 $lblHwPortSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $lblHwPortSub.ForeColor = $ColMuted
-$lblHwPortSub.Location  = New-Object System.Drawing.Point(140, 245)
+$lblHwPortSub.Location  = New-Object System.Drawing.Point(158, 221)
 $lblHwPortSub.AutoSize  = $true
 $pnlPoE.Controls.Add($lblHwPortSub)
 
@@ -237,10 +238,10 @@ $pnlPoE.Controls.Add($lblHwPortSub)
 # NIC bracket outline, jack rectangles, status light, and leader lines from each
 # jack down to its info box.
 $pnlHwNicCanvas = New-Object System.Windows.Forms.Panel
-$pnlHwNicCanvas.Size      = New-Object System.Drawing.Size(990, 230)
-$pnlHwNicCanvas.Location  = New-Object System.Drawing.Point(10, 270)
+$pnlHwNicCanvas.Size      = New-Object System.Drawing.Size(990, 200)
+$pnlHwNicCanvas.Location  = New-Object System.Drawing.Point(28, 246)
 $pnlHwNicCanvas.BackColor = $ColCard
-$pnlHwNicCanvas.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 990, 230)), 8))
+$pnlHwNicCanvas.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 990, 200)), 8))
 $pnlPoE.Controls.Add($pnlHwNicCanvas)
 
 # Constants for the canvas Paint — easier to tune without touching multiple call sites.
@@ -258,9 +259,9 @@ $script:nicJackStartX = [int](( ($pnlHwNicCanvas.Width) - $script:nicJackRowW + 
 $script:nicLightX     = $script:nicJackStartX - $script:nicStatusOffX
 # Port info boxes sit below the canvas — record their target connection points so
 # the leader lines can dock correctly.
-$script:nicPortBoxY   = 510          # absolute Y of port info boxes (in pnlPoE coords)
-$script:nicCanvasBaseY= 270          # absolute Y of canvas top-left
-$script:nicPortBoxW   = 230          # width of each port info box
+$script:nicPortBoxY   = 460          # absolute Y of port info boxes (in pnlPoE coords)
+$script:nicCanvasBaseY= 246          # absolute Y of canvas top-left
+$script:nicPortBoxW   = 240          # width of each port info box
 $script:nicPortBoxH   = 110
 
 # Custom Paint — draws PCB rectangle, 4 RJ45 jack openings, status light next to Port 1,
@@ -324,7 +325,7 @@ $script:hwPortLedColors = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
 # 4 port info boxes — horizontal row below the canvas. Port 1 leftmost, Port 4 rightmost
 # (matches photo orientation and the canvas above).
 $script:hwPortTiles = @()
-$portBoxStartX = 10
+$portBoxStartX = 28
 $portBoxGap    = 12
 for ($p = 0; $p -lt 4; $p++) {
     $portNum = $p + 1   # left-to-right: 1, 2, 3, 4
@@ -403,7 +404,7 @@ for ($p = 0; $p -lt 4; $p++) {
 # So sidebar gets ~250 wide.
 $pnlHwNicInfo = New-Object System.Windows.Forms.Panel
 $pnlHwNicInfo.Size      = New-Object System.Drawing.Size(240, 150)
-$pnlHwNicInfo.Location  = New-Object System.Drawing.Point(1010, 270)
+$pnlHwNicInfo.Location  = New-Object System.Drawing.Point(1024, 246)
 $pnlHwNicInfo.BackColor = $ColCard
 $pnlHwNicInfo.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 240, 150)), 8))
 $pnlPoE.Controls.Add($pnlHwNicInfo)
@@ -441,7 +442,7 @@ foreach ($row in $infoRows) {
 # Status Legend card
 $pnlHwLegend = New-Object System.Windows.Forms.Panel
 $pnlHwLegend.Size      = New-Object System.Drawing.Size(240, 130)
-$pnlHwLegend.Location  = New-Object System.Drawing.Point(1010, 432)
+$pnlHwLegend.Location  = New-Object System.Drawing.Point(1024, 408)
 $pnlHwLegend.BackColor = $ColCard
 $pnlHwLegend.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 240, 130)), 8))
 $pnlPoE.Controls.Add($pnlHwLegend)
@@ -478,15 +479,50 @@ foreach ($it in $legendItems) {
     $ly += 22
 }
 
-$lblHwLogHdr = New-Object System.Windows.Forms.Label; $lblHwLogHdr.Text = "Hardware Details"
-$lblHwLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblHwLogHdr.ForeColor = $ColText
-$lblHwLogHdr.Location = New-Object System.Drawing.Point(10, 624); $lblHwLogHdr.AutoSize = $true
-$pnlPoE.Controls.Add($lblHwLogHdr)
+# Hardware Details log card — sits left, Summary panel sits right
+$hwLogCard = New-Object System.Windows.Forms.Panel
+$hwLogCard.Size      = New-Object System.Drawing.Size(740, 90)
+$hwLogCard.Location  = New-Object System.Drawing.Point(28, 588)
+$hwLogCard.BackColor = $ColCard
+$hwLogCard.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 740, 90)), 8))
+$pnlPoE.Controls.Add($hwLogCard)
 
-# Smaller log under the port diagram — just enough for the GPU/Monitor/Input details and
-# any extra runtime messages. Anchored bottom-stretch so it grows with the window.
-$dgvHwLog = New-LogGrid -X 10 -Y 648 -W 1240 -H 100
-$pnlPoE.Controls.Add($dgvHwLog)
+$lblHwLogHdr = New-Object System.Windows.Forms.Label
+$lblHwLogHdr.Text      = "Hardware Details"
+$lblHwLogHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$lblHwLogHdr.ForeColor = $ColText
+$lblHwLogHdr.Location  = New-Object System.Drawing.Point(16, 10)
+$lblHwLogHdr.AutoSize  = $true
+$hwLogCard.Controls.Add($lblHwLogHdr)
+
+$dgvHwLog = New-LogGrid -X 8 -Y 32 -W 724 -H 50
+$hwLogCard.Controls.Add($dgvHwLog)
+
+$hwSummary = New-SummaryPanel -Parent $pnlPoE -X 784 -Y 588 -W 480 -H 90 -Title "Summary"
+Set-SummaryItems $hwSummary @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" })
+
+# Bottom action bar
+$hwActions = New-ActionBar -Parent $pnlPoE -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$btnHwRun    = $hwActions.PrimaryBtn
+$btnHwExport = $hwActions.ExportBtn
+
+$btnHwCancel = New-Object System.Windows.Forms.Button
+$btnHwCancel.Text      = "Cancel"
+$btnHwCancel.Size      = New-Object System.Drawing.Size(110, 36)
+$btnHwCancel.Location  = New-Object System.Drawing.Point(168, 10)
+$btnHwCancel.BackColor = $ColRed
+$btnHwCancel.ForeColor = [System.Drawing.Color]::White
+$btnHwCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnHwCancel.FlatAppearance.BorderSize = 0
+$btnHwCancel.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
+$btnHwCancel.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnHwCancel.Visible   = $false
+$btnHwCancel.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 36)), 6))
+$hwActions.Bar.Controls.Add($btnHwCancel)
+
+$lblHwEta = New-Object System.Windows.Forms.Label
+$lblHwEta.Visible = $false
+$pnlPoE.Controls.Add($lblHwEta)
 
 # Refresh function — populates the 4 tiles from Get-NetAdapter, sorted by MAC ascending
 # so index 0 of sorted = Port 1 (lowest MAC). Tiles are arranged top-to-bottom 4,3,2,1

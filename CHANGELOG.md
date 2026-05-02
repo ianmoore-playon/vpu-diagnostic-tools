@@ -10,6 +10,24 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.43] - 2026-05-01
+
+### Changed
+
+- **Redesign Wave B/C — full panel rollout** (closes #4 and #46) — every panel now uses the v1.0.42 design language: section header (title + subtitle + Overall Status pill), grouped content cards, Summary panel, and bottom action bar.
+  - **Pixellot Services:** 6 service cards in a row, Service Details log card (left), Summary panel (right), action bar.
+  - **Disk & System Health:** SMART / Disk Errors / per-volume cards row, Health Report log card (left), Summary panel (right), action bar.
+  - **Event Viewer:** Event Status card, Event Log card (left), Summary panel (right), action bar.
+  - **PoE / NIC Hardware:** GPU / Monitor / Input cards top row, NIC Port Layout (canvas + 4 port detail boxes) below, NIC Information + Status Legend sidebar, smaller Hardware Details log + Summary panel, action bar.
+  - **System Information:** 6 summary cards top row, System Inventory log card (left), Summary panel (right), action bar with Refresh as the primary action.
+  - **Reports:** Past Diagnostic Runs list inside a card, action bar with Refresh + Open Reports Folder.
+  - **Settings:** grouped cards — General (theme toggle), Reports (output dir + open folder), Feedback (token state) on the left; About Pulse card on the right; action bar with Restore Defaults + Save Settings.
+  - **About & Help:** section header with version pill, existing Help content + feedback form retained.
+- **Camera Connectivity** kept its existing internal layout (interactive Fault Isolator wizard, port grid, history) — the new chrome wraps it but the body wasn't restructured.
+- Each panel's completion handler now updates the Overall Status pill (auto-derived from worst card status) and the Summary panel (color-coded check-bullet list of outcomes).
+
+---
+
 ## [1.0.42] - 2026-05-01
 
 ### Changed

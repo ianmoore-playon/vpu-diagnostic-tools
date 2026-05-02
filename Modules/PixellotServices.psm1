@@ -121,8 +121,40 @@ $svcTimer.Add_Tick({
     }
     if ($sync.SvcComplete -and -not $sync.SvcRunning) {
         $svcTimer.Stop(); $btnSvcCancel.Visible=$false
-        $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Check Services"
-        $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="  $($sync.SvcStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
+        $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Run Full Diagnostic"
+        $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
+
+        # Update Overall Status pill from worst card status (v1.0.43)
+        $svcWorst = "ok"
+        $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
+        foreach ($k in @("SvcAgent","SvcKeepAgentUp","SvcCoordinator","SvcLogMeIn","SvcVpu","SvcScoreconnect","SvcStatus")) {
+            if ($sync.Cards.ContainsKey($k)) {
+                $s = $sync.Cards[$k].Status
+                if ($s -and $pri[$s] -gt $pri[$svcWorst]) { $svcWorst = $s }
+            }
+        }
+        Set-SectionPill $svcHeader $svcWorst
+
+        # Build Summary bullets
+        $sumItems = @()
+        $statusVal = $sync.Cards["SvcStatus"].Value
+        $statusSt  = $sync.Cards["SvcStatus"].Status
+        if ($statusVal -and $statusVal -ne "--") {
+            $sumItems += @{ Status=$statusSt; Text=$statusVal }
+        }
+        foreach ($k in @("SvcAgent","SvcKeepAgentUp","SvcCoordinator")) {
+            $c = $sync.Cards[$k]
+            if ($c -and $c.Value -and $c.Value -ne "--") {
+                $label = switch ($k) { "SvcAgent"{"Agent"} "SvcKeepAgentUp"{"Watchdog (KeepAgentUp)"} "SvcCoordinator"{"Coordinator"} }
+                if ($c.Status -eq "ok") { $sumItems += @{ Status="ok"; Text="$label is running" } }
+                else { $sumItems += @{ Status=$c.Status; Text="$label - $($c.Value)" } }
+            }
+        }
+        $vpuC = $sync.Cards["SvcVpu"]
+        if ($vpuC -and $vpuC.Value -eq "Active") { $sumItems += @{ Status="ok"; Text="VPU.exe is encoding (cameras active)" } }
+        elseif ($vpuC) { $sumItems += @{ Status="neutral"; Text="VPU.exe is not running (normal between streams)" } }
+        if ($sumItems.Count -eq 0) { $sumItems = @(@{ Status="neutral"; Text="No service data collected" }) }
+        Set-SummaryItems $svcSummary $sumItems
     }
 })
 
@@ -134,67 +166,82 @@ $pnlServices.Location = New-Object System.Drawing.Point($SideW,$ContentY)
 $pnlServices.BackColor = $ColBg; $pnlServices.Visible = $false; $pnlServices.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlServices)
 
-$lblSvcTitle = New-Object System.Windows.Forms.Label; $lblSvcTitle.Text = "Pixellot Services"
-$lblSvcTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lblSvcTitle.ForeColor = $ColText
-$lblSvcTitle.Location = New-Object System.Drawing.Point(10,16); $lblSvcTitle.AutoSize = $true
-$pnlServices.Controls.Add($lblSvcTitle)
+# v1.0.43 redesign: section header + 6 service cards + log/summary split + action bar
+$svcHeader = New-SectionHeader -Parent $pnlServices `
+    -Title    "Pixellot Services" `
+    -Subtitle "Running status of core Pixellot processes, remote access, and Scoreconnect service."
 
-$lblSvcSub = New-Object System.Windows.Forms.Label
-$lblSvcSub.Text = "Running status of core Pixellot processes, remote access, and Scoreconnect service."
-$lblSvcSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblSvcSub.ForeColor = $ColMuted
-$lblSvcSub.Location = New-Object System.Drawing.Point(10,42); $lblSvcSub.Size = New-Object System.Drawing.Size(1240,18)
-$pnlServices.Controls.Add($lblSvcSub)
-
-# 6 service cards: Agent, KeepAgentUp, Coordinator, LogMeIn, VPU, Scoreconnect
-# Layout: 6 cards across 1260px with 12px gaps  →  W=200, step=212
+# 6 service cards in a row at Y=110
 $svcCardDefs = @(
-    @{ Key="SvcAgent";        Title="Agent";        Sub="Core process";   X=10;   Icon=[char]0xE9F5; W=200 }
-    @{ Key="SvcKeepAgentUp";  Title="KeepAgentUp";  Sub="Watchdog";       X=222;  Icon=[char]0xE9F5; W=200 }
-    @{ Key="SvcCoordinator";  Title="Coordinator";  Sub="Core process";   X=434;  Icon=[char]0xE9F5; W=200 }
-    @{ Key="SvcLogMeIn";      Title="LogMeIn";      Sub="Remote access";  X=646;  Icon=[char]0xE9F5; W=200 }
-    @{ Key="SvcVpu";          Title="VPU";          Sub="Only runs during active streams"; X=858;  Icon=[char]0xE9F5; W=200 }
-    @{ Key="SvcScoreconnect"; Title="Scoreconnect"; Sub="Score overlay";  X=1070; Icon=[char]0xE9F5; W=200 }
+    @{ Key="SvcAgent";        Title="Agent";        Sub="Core process";                     Icon=[char]0xE9F5 }
+    @{ Key="SvcKeepAgentUp";  Title="KeepAgentUp";  Sub="Watchdog";                         Icon=[char]0xE9F5 }
+    @{ Key="SvcCoordinator";  Title="Coordinator";  Sub="Core process";                     Icon=[char]0xE9F5 }
+    @{ Key="SvcLogMeIn";      Title="LogMeIn";      Sub="Remote access";                    Icon=[char]0xE9F5 }
+    @{ Key="SvcVpu";          Title="VPU";          Sub="Only runs during active streams";  Icon=[char]0xE9F5 }
+    @{ Key="SvcScoreconnect"; Title="Scoreconnect"; Sub="Score overlay";                    Icon=[char]0xE9F5 }
 )
 $svcCards = @{}
+$svcCardW = 200; $svcCardGap = 12; $svcCardX = 28
 foreach ($cd in $svcCardDefs) {
-    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y 68 -Icon $cd.Icon -Sub $cd.Sub -CardW $cd.W -CardH 90
-    $svcCards[$cd.Key] = $c; $pnlServices.Controls.Add($c.Panel)
+    $c = New-StatusCard -Title $cd.Title -X $svcCardX -Y 110 -Icon $cd.Icon -Sub $cd.Sub -CardW $svcCardW -CardH 90
+    $svcCards[$cd.Key] = $c
+    $pnlServices.Controls.Add($c.Panel)
+    $svcCardX += $svcCardW + $svcCardGap
 }
 
-$btnSvcRun = New-Object System.Windows.Forms.Button; $btnSvcRun.Text = [char]0x25B6 + "  Check Services"
-$btnSvcRun.Size = New-Object System.Drawing.Size(220,40); $btnSvcRun.Location = New-Object System.Drawing.Point(10,170)
-$btnSvcRun.BackColor = $ColAccent; $btnSvcRun.ForeColor = [System.Drawing.Color]::White
-$btnSvcRun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnSvcRun.FlatAppearance.BorderSize = 0
-$btnSvcRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10)
-$btnSvcRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft; $btnSvcRun.Cursor = [System.Windows.Forms.Cursors]::Hand
-$pnlServices.Controls.Add($btnSvcRun)
-$btnSvcRun.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,220,40)),6))
+# Log card (left) + Summary panel (right) — two-column body
+$svcLogCard = New-Object System.Windows.Forms.Panel
+$svcLogCard.Size      = New-Object System.Drawing.Size(800, 460)
+$svcLogCard.Location  = New-Object System.Drawing.Point(28, 220)
+$svcLogCard.BackColor = $ColCard
+$svcLogCard.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 800, 460)), 8))
+$pnlServices.Controls.Add($svcLogCard)
 
-$lblSvcEta = New-Object System.Windows.Forms.Label; $lblSvcEta.Text = "est. ~3 sec"
-$lblSvcEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblSvcEta.ForeColor = $ColMuted
-$lblSvcEta.Location = New-Object System.Drawing.Point(240,180); $lblSvcEta.AutoSize = $true
-$pnlServices.Controls.Add($lblSvcEta)
+$lblSvcLogHdr = New-Object System.Windows.Forms.Label
+$lblSvcLogHdr.Text      = "Service Details"
+$lblSvcLogHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$lblSvcLogHdr.ForeColor = $ColText
+$lblSvcLogHdr.Location  = New-Object System.Drawing.Point(16, 12)
+$lblSvcLogHdr.AutoSize  = $true
+$svcLogCard.Controls.Add($lblSvcLogHdr)
 
-$btnSvcCancel = New-Object System.Windows.Forms.Button; $btnSvcCancel.Text = "Cancel"
-$btnSvcCancel.Size = New-Object System.Drawing.Size(100,40); $btnSvcCancel.Location = New-Object System.Drawing.Point(340,170)
-$btnSvcCancel.BackColor = $ColRed; $btnSvcCancel.ForeColor = [System.Drawing.Color]::White
-$btnSvcCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnSvcCancel.FlatAppearance.BorderSize = 0
-$btnSvcCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnSvcCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnSvcCancel.Visible = $false
-$pnlServices.Controls.Add($btnSvcCancel)
-$btnSvcCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
+$dgvSvcLog = New-LogGrid -X 8 -Y 38 -W 784 -H 414
+$svcLogCard.Controls.Add($dgvSvcLog)
 
-$lblSvcStatus = New-Object System.Windows.Forms.Label; $lblSvcStatus.Text = ""
-$lblSvcStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblSvcStatus.ForeColor = $ColMuted
-$lblSvcStatus.Location = New-Object System.Drawing.Point(10,218); $lblSvcStatus.Size = New-Object System.Drawing.Size(1240,18)
+$svcSummary = New-SummaryPanel -Parent $pnlServices -X 844 -Y 220 -W 420 -H 460 -Title "Summary"
+Set-SummaryItems $svcSummary @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" })
+
+# Bottom action bar
+$svcActions = New-ActionBar -Parent $pnlServices -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$btnSvcRun    = $svcActions.PrimaryBtn
+$btnSvcExport = $svcActions.ExportBtn
+
+$btnSvcCancel = New-Object System.Windows.Forms.Button
+$btnSvcCancel.Text      = "Cancel"
+$btnSvcCancel.Size      = New-Object System.Drawing.Size(110, 36)
+$btnSvcCancel.Location  = New-Object System.Drawing.Point(168, 10)
+$btnSvcCancel.BackColor = $ColRed
+$btnSvcCancel.ForeColor = [System.Drawing.Color]::White
+$btnSvcCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnSvcCancel.FlatAppearance.BorderSize = 0
+$btnSvcCancel.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
+$btnSvcCancel.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnSvcCancel.Visible   = $false
+$btnSvcCancel.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 36)), 6))
+$svcActions.Bar.Controls.Add($btnSvcCancel)
+
+$lblSvcStatus = New-Object System.Windows.Forms.Label
+$lblSvcStatus.Text      = ""
+$lblSvcStatus.Font      = New-Object System.Drawing.Font("Consolas", 8)
+$lblSvcStatus.ForeColor = $ColMuted
+$lblSvcStatus.Location  = New-Object System.Drawing.Point(28, 686)
+$lblSvcStatus.Size      = New-Object System.Drawing.Size(($pnlServices.Width - 56), 16)
+$lblSvcStatus.Anchor    = $AnchorBLR
 $pnlServices.Controls.Add($lblSvcStatus)
 
-$lblSvcLogHdr = New-Object System.Windows.Forms.Label; $lblSvcLogHdr.Text = "Service Details"
-$lblSvcLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblSvcLogHdr.ForeColor = $ColText
-$lblSvcLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblSvcLogHdr.AutoSize = $true
-$pnlServices.Controls.Add($lblSvcLogHdr)
-
-$dgvSvcLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
-$pnlServices.Controls.Add($dgvSvcLog)
+$lblSvcEta = New-Object System.Windows.Forms.Label
+$lblSvcEta.Visible = $false  # ETA is implicit from the action button now
+$pnlServices.Controls.Add($lblSvcEta)
 $script:svcRunspace = $null; $script:svcPs = $null; $script:svcSpinIdx = 0
 
 

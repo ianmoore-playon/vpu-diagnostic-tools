@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.42"
+$ScriptVersion = "1.0.43"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -528,51 +528,156 @@ $pnlSettings.Location = New-Object System.Drawing.Point($SideW, $ContentY)
 $pnlSettings.BackColor = $ColBg; $pnlSettings.Visible = $false; $pnlSettings.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlSettings)
 
-$lblSetTitle = New-Object System.Windows.Forms.Label; $lblSetTitle.Text = "Settings"
-$lblSetTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lblSetTitle.ForeColor = $ColText
-$lblSetTitle.Location = New-Object System.Drawing.Point(10,16); $lblSetTitle.AutoSize = $true
-$pnlSettings.Controls.Add($lblSetTitle)
+# v1.0.43 redesign — section header + grouped settings cards + action bar
+$setHeader = New-SectionHeader -Parent $pnlSettings `
+    -Title    "Settings" `
+    -Subtitle "Configure tool behavior and preferences."
 
-$lblSetSub = New-Object System.Windows.Forms.Label
-$lblSetSub.Text = "Configure tool options."
-$lblSetSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblSetSub.ForeColor = $ColMuted
-$lblSetSub.Location = New-Object System.Drawing.Point(10,42); $lblSetSub.AutoSize = $true
-$pnlSettings.Controls.Add($lblSetSub)
+# Card factory — a titled, bordered container that holds a labelled control row.
+function _NewSetCard {
+    param([int]$Y, [int]$H, [string]$Title)
+    $card = New-Object System.Windows.Forms.Panel
+    $card.Size      = New-Object System.Drawing.Size(620, $H)
+    $card.Location  = New-Object System.Drawing.Point(28, $Y)
+    $card.BackColor = $ColCard
+    $card.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 620, $H)), 8))
+    $pnlSettings.Controls.Add($card)
+    $hdr = New-Object System.Windows.Forms.Label
+    $hdr.Text      = $Title
+    $hdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+    $hdr.ForeColor = $ColText
+    $hdr.Location  = New-Object System.Drawing.Point(16, 12)
+    $hdr.Size      = New-Object System.Drawing.Size(580, 20)
+    $card.Controls.Add($hdr)
+    return $card
+}
 
-$sepSetTop = New-Object System.Windows.Forms.Panel
-$sepSetTop.Size = New-Object System.Drawing.Size(1240,1); $sepSetTop.Location = New-Object System.Drawing.Point(10,68)
-$sepSetTop.BackColor = $ColBorder; $pnlSettings.Controls.Add($sepSetTop)
+# General — Theme toggle (existing functionality)
+$cardGeneral = _NewSetCard -Y 110 -H 130 -Title "General"
 
-$lblSetAppearance = New-Object System.Windows.Forms.Label; $lblSetAppearance.Text = "Appearance"
-$lblSetAppearance.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblSetAppearance.ForeColor = $ColText
-$lblSetAppearance.Location = New-Object System.Drawing.Point(10,82); $lblSetAppearance.AutoSize = $true
-$pnlSettings.Controls.Add($lblSetAppearance)
-
-$lblSetThemeName = New-Object System.Windows.Forms.Label; $lblSetThemeName.Text = "Theme"
-$lblSetThemeName.Font = New-Object System.Drawing.Font("Segoe UI",9); $lblSetThemeName.ForeColor = $ColText
-$lblSetThemeName.Location = New-Object System.Drawing.Point(10,112); $lblSetThemeName.AutoSize = $true
-$pnlSettings.Controls.Add($lblSetThemeName)
+$lblSetThemeName = New-Object System.Windows.Forms.Label
+$lblSetThemeName.Text      = "Theme"
+$lblSetThemeName.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
+$lblSetThemeName.ForeColor = $ColText
+$lblSetThemeName.Location  = New-Object System.Drawing.Point(16, 44)
+$lblSetThemeName.AutoSize  = $true
+$cardGeneral.Controls.Add($lblSetThemeName)
 
 $lblSetThemeDesc = New-Object System.Windows.Forms.Label
-$lblSetThemeDesc.Text = "Current: $(if($VpuTheme -eq 'light'){'Light'}else{'Dark'}) Mode.  Switching restarts the application."
-$lblSetThemeDesc.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblSetThemeDesc.ForeColor = $ColMuted
-$lblSetThemeDesc.Location = New-Object System.Drawing.Point(10,132); $lblSetThemeDesc.AutoSize = $true
-$pnlSettings.Controls.Add($lblSetThemeDesc)
+$lblSetThemeDesc.Text      = "Current: $(if($VpuTheme -eq 'light'){'Light'}else{'Dark'}) Mode. Switching restarts the application."
+$lblSetThemeDesc.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblSetThemeDesc.ForeColor = $ColMuted
+$lblSetThemeDesc.Location  = New-Object System.Drawing.Point(16, 64)
+$lblSetThemeDesc.Size      = New-Object System.Drawing.Size(440, 18)
+$cardGeneral.Controls.Add($lblSetThemeDesc)
 
 $btnSetTheme = New-Object System.Windows.Forms.Button
-$btnSetTheme.Text = if ($VpuTheme -eq "light") { "  Switch to Dark Mode" } else { "  Switch to Light Mode" }
-$btnSetTheme.Size = New-Object System.Drawing.Size(200,40); $btnSetTheme.Location = New-Object System.Drawing.Point(10,162)
-$btnSetTheme.BackColor = $ColAccent; $btnSetTheme.ForeColor = [System.Drawing.Color]::White
-$btnSetTheme.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnSetTheme.FlatAppearance.BorderSize = 0
-$btnSetTheme.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $btnSetTheme.Cursor = [System.Windows.Forms.Cursors]::Hand
-$btnSetTheme.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,200,40)),6))
-$pnlSettings.Controls.Add($btnSetTheme)
+$btnSetTheme.Text      = if ($VpuTheme -eq "light") { "Switch to Dark Mode" } else { "Switch to Light Mode" }
+$btnSetTheme.Size      = New-Object System.Drawing.Size(180, 32)
+$btnSetTheme.Location  = New-Object System.Drawing.Point(424, 50)
+$btnSetTheme.BackColor = $ColAccent
+$btnSetTheme.ForeColor = [System.Drawing.Color]::White
+$btnSetTheme.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnSetTheme.FlatAppearance.BorderSize = 0
+$btnSetTheme.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
+$btnSetTheme.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnSetTheme.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 32)), 6))
+$cardGeneral.Controls.Add($btnSetTheme)
 $btnSetTheme.Add_Click({
     $newTheme = if ($VpuTheme -eq "dark") { "light" } else { "dark" }
     try { [System.IO.File]::WriteAllText($SettingsPath, "{`"Theme`":`"$newTheme`"}") } catch { }
     $runScript = if ($PSCommandPath -and (Test-Path $PSCommandPath)) { $PSCommandPath } else { Join-Path $PSScriptRoot "Run.ps1" }
     Start-Process "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$runScript`""
     $form.Close()
+})
+
+# Reports — output directory shortcut
+$cardReports = _NewSetCard -Y 252 -H 110 -Title "Reports"
+$lblSetDirName = New-Object System.Windows.Forms.Label
+$lblSetDirName.Text      = "Output Directory"
+$lblSetDirName.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
+$lblSetDirName.ForeColor = $ColText
+$lblSetDirName.Location  = New-Object System.Drawing.Point(16, 44)
+$lblSetDirName.AutoSize  = $true
+$cardReports.Controls.Add($lblSetDirName)
+
+$lblSetDirPath = New-Object System.Windows.Forms.Label
+$lblSetDirPath.Text      = $OutputDir
+$lblSetDirPath.Font      = New-Object System.Drawing.Font("Consolas", 8.5)
+$lblSetDirPath.ForeColor = $ColMuted
+$lblSetDirPath.Location  = New-Object System.Drawing.Point(16, 64)
+$lblSetDirPath.Size      = New-Object System.Drawing.Size(440, 18)
+$cardReports.Controls.Add($lblSetDirPath)
+
+$btnSetOpenDir = New-Object System.Windows.Forms.Button
+$btnSetOpenDir.Text      = "Open Folder"
+$btnSetOpenDir.Size      = New-Object System.Drawing.Size(180, 32)
+$btnSetOpenDir.Location  = New-Object System.Drawing.Point(424, 50)
+$btnSetOpenDir.BackColor = $ColCard
+$btnSetOpenDir.ForeColor = $ColText
+$btnSetOpenDir.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnSetOpenDir.FlatAppearance.BorderColor = $ColBorder
+$btnSetOpenDir.FlatAppearance.BorderSize  = 1
+$btnSetOpenDir.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$btnSetOpenDir.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnSetOpenDir.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 32)), 6))
+$cardReports.Controls.Add($btnSetOpenDir)
+$btnSetOpenDir.Add_Click({ if (Test-Path $OutputDir) { Start-Process explorer.exe $OutputDir } })
+
+# Feedback — token configuration shortcut
+$cardFeedback = _NewSetCard -Y 374 -H 110 -Title "Feedback"
+$lblSetFbName = New-Object System.Windows.Forms.Label
+$lblSetFbName.Text      = "GitHub Token"
+$lblSetFbName.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
+$lblSetFbName.ForeColor = $ColText
+$lblSetFbName.Location  = New-Object System.Drawing.Point(16, 44)
+$lblSetFbName.AutoSize  = $true
+$cardFeedback.Controls.Add($lblSetFbName)
+
+$lblSetFbState = New-Object System.Windows.Forms.Label
+$lblSetFbState.Text      = if ($script:FeedbackToken) { "Configured. Feedback will post directly to the tools team." } else { "Not configured. Feedback will be copied to clipboard as a fallback." }
+$lblSetFbState.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblSetFbState.ForeColor = if ($script:FeedbackToken) { $ColGreen } else { $ColYellow }
+$lblSetFbState.Location  = New-Object System.Drawing.Point(16, 64)
+$lblSetFbState.Size      = New-Object System.Drawing.Size(440, 18)
+$cardFeedback.Controls.Add($lblSetFbState)
+
+# About card on the right column — version + license + repo link
+$cardAbout = New-Object System.Windows.Forms.Panel
+$cardAbout.Size      = New-Object System.Drawing.Size(580, 374)
+$cardAbout.Location  = New-Object System.Drawing.Point(672, 110)
+$cardAbout.BackColor = $ColCard
+$cardAbout.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 580, 374)), 8))
+$pnlSettings.Controls.Add($cardAbout)
+
+$lblAbHdr = New-Object System.Windows.Forms.Label
+$lblAbHdr.Text      = "About Pulse"
+$lblAbHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
+$lblAbHdr.ForeColor = $ColText
+$lblAbHdr.Location  = New-Object System.Drawing.Point(20, 18)
+$lblAbHdr.AutoSize  = $true
+$cardAbout.Controls.Add($lblAbHdr)
+
+$lblAbBody = New-Object System.Windows.Forms.Label
+$lblAbBody.Text      = ("Pulse — Pixellot Unified Live System Evaluator`n" +
+                       "Version: $ScriptVersion`n" +
+                       "Repository: github.com/ianmoore-playon/vpu-diagnostic-tools`n" +
+                       "License: Internal use within PlayOn Sports / NFHS Network.`n`n" +
+                       "Pulse is an in-house diagnostic tool for Pixellot VPU systems. " +
+                       "It checks network connectivity, services, hardware, disks, event logs, " +
+                       "and camera link state — exporting a single shareable report for IT triage.")
+$lblAbBody.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$lblAbBody.ForeColor = $ColText
+$lblAbBody.Location  = New-Object System.Drawing.Point(20, 48)
+$lblAbBody.Size      = New-Object System.Drawing.Size(540, 280)
+$cardAbout.Controls.Add($lblAbBody)
+
+# Action bar — Restore Defaults + Save (placeholder for now; theme-toggle saves on its own)
+$setActions = New-ActionBar -Parent $pnlSettings -Y 700 -ExportText "Restore Defaults" -PrimaryText "Save Settings"
+$setActions.PrimaryBtn.Add_Click({ [System.Windows.Forms.MessageBox]::Show("Settings saved.", "Pulse Settings", "OK", "Information") | Out-Null })
+$setActions.ExportBtn.Add_Click({
+    $r = [System.Windows.Forms.MessageBox]::Show("Restore default settings? This will reset the theme to Dark and clear customisations.", "Restore Defaults", "YesNo", "Warning")
+    if ($r -eq "Yes") { try { Remove-Item $SettingsPath -ErrorAction SilentlyContinue } catch { } }
 })
 
 # ---- Completion Toast -------------------------------------------------------

@@ -10,17 +10,16 @@ $pnlHelp.BackColor = $ColBg; $pnlHelp.Visible = $false
 $pnlHelp.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlHelp)
 
-$lblHelpTitle = New-Object System.Windows.Forms.Label
-$lblHelpTitle.Text = "How to Use This Tool"
-$lblHelpTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
-$lblHelpTitle.ForeColor = $ColText
-$lblHelpTitle.Location = New-Object System.Drawing.Point(10, 16); $lblHelpTitle.AutoSize = $true
-$pnlHelp.Controls.Add($lblHelpTitle)
+# v1.0.43 redesign — section header + guide content + feedback section
+$helpHeader = New-SectionHeader -Parent $pnlHelp `
+    -Title    "About & Help" `
+    -Subtitle "How to use Pulse, FAQ, and a feedback form for reporting issues."
+Set-SectionPill $helpHeader "ok" "Pulse $ScriptVersion"
 
 # Help content — anchored top only so feedback section can sit at the bottom
 $rtbHelp = New-Object System.Windows.Forms.RichTextBox
-$rtbHelp.Size = New-Object System.Drawing.Size(1240, ($ContentH - 240))
-$rtbHelp.Location = New-Object System.Drawing.Point(24, 46)
+$rtbHelp.Size = New-Object System.Drawing.Size(($pnlHelp.Width - 56), ($ContentH - 320))
+$rtbHelp.Location = New-Object System.Drawing.Point(28, 110)
 $rtbHelp.Anchor = $AnchorTLR
 $rtbHelp.BackColor = $ColBg; $rtbHelp.ForeColor = $ColText
 $rtbHelp.Font = New-Object System.Drawing.Font("Segoe UI", 9); $rtbHelp.ReadOnly = $true

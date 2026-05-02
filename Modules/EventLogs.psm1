@@ -111,8 +111,19 @@ $evtTimer.Add_Tick({
     }
     if ($sync.EvtComplete -and -not $sync.EvtRunning) {
         $evtTimer.Stop(); $btnEvtCancel.Visible=$false
-        $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Check Event Log"
-        $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="  $($sync.EvtStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
+        $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Run Full Diagnostic"
+        $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
+
+        $evtC = $sync.Cards["EvtStatus"]
+        $evtSt = if ($evtC) { $evtC.Status } else { "neutral" }
+        Set-SectionPill $evtHeader $evtSt
+        $sumItems = @()
+        if ($evtC -and $evtC.Value -ne "--") {
+            if ($evtSt -eq "ok") { $sumItems += @{ Status="ok"; Text="No critical errors found in recent logs" } }
+            else { $sumItems += @{ Status=$evtSt; Text="Event log: $($evtC.Value)" } }
+        }
+        if ($sumItems.Count -eq 0) { $sumItems = @(@{ Status="neutral"; Text="No event log data collected" }) }
+        Set-SummaryItems $evtSummary $sumItems
     }
 })
 
@@ -123,53 +134,74 @@ $pnlEvents.Size = New-Object System.Drawing.Size($WideW,$ContentH)
 $pnlEvents.Location = New-Object System.Drawing.Point($SideW,$ContentY)
 $pnlEvents.BackColor = $ColBg; $pnlEvents.Visible = $false; $pnlEvents.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlEvents)
-$lblEvtTitle = New-Object System.Windows.Forms.Label; $lblEvtTitle.Text = "OS Event Logs"
-$lblEvtTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lblEvtTitle.ForeColor = $ColText
-$lblEvtTitle.Location = New-Object System.Drawing.Point(10,16); $lblEvtTitle.AutoSize = $true
-$pnlEvents.Controls.Add($lblEvtTitle)
-$lblEvtSub = New-Object System.Windows.Forms.Label
-$lblEvtSub.Text = "Recent errors and warnings from the System and Application Windows event logs (last 24 hours)."
-$lblEvtSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblEvtSub.ForeColor = $ColMuted
-$lblEvtSub.Location = New-Object System.Drawing.Point(10,42); $lblEvtSub.Size = New-Object System.Drawing.Size(1240,18)
-$pnlEvents.Controls.Add($lblEvtSub)
+# v1.0.43 redesign — section header + status card + log/summary split + action bar
+$evtHeader = New-SectionHeader -Parent $pnlEvents `
+    -Title    "Event Viewer" `
+    -Subtitle "Recent errors and warnings from the System and Application logs, categorised by source type."
+
 $evtCardDefs = @(
-    @{ Key="EvtStatus"; Title="Event Status"; Sub="Errors / warnings (24h)"; X=10; Icon=[char]0xE7BA; W=280 }
+    @{ Key="EvtStatus"; Title="Event Status"; Sub="Errors / warnings (24h)"; Icon=[char]0xE7BA }
 )
 $evtCards = @{}
+$evtCardX = 28
 foreach ($cd in $evtCardDefs) {
-    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y 68 -Icon $cd.Icon -Sub $cd.Sub -CardW $cd.W -CardH 90
-    $evtCards[$cd.Key] = $c; $pnlEvents.Controls.Add($c.Panel)
+    $c = New-StatusCard -Title $cd.Title -X $evtCardX -Y 110 -Icon $cd.Icon -Sub $cd.Sub -CardW 320 -CardH 90
+    $evtCards[$cd.Key] = $c
+    $pnlEvents.Controls.Add($c.Panel)
+    $evtCardX += 332
 }
-$btnEvtRun = New-Object System.Windows.Forms.Button; $btnEvtRun.Text = [char]0x25B6 + "  Check Event Log"
-$btnEvtRun.Size = New-Object System.Drawing.Size(220,40); $btnEvtRun.Location = New-Object System.Drawing.Point(10,170)
-$btnEvtRun.BackColor = $ColAccent; $btnEvtRun.ForeColor = [System.Drawing.Color]::White
-$btnEvtRun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnEvtRun.FlatAppearance.BorderSize = 0
-$btnEvtRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10)
-$btnEvtRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft; $btnEvtRun.Cursor = [System.Windows.Forms.Cursors]::Hand
-$pnlEvents.Controls.Add($btnEvtRun)
-$btnEvtRun.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,220,40)),6))
-$btnEvtCancel = New-Object System.Windows.Forms.Button; $btnEvtCancel.Text = "Cancel"
-$btnEvtCancel.Size = New-Object System.Drawing.Size(100,40); $btnEvtCancel.Location = New-Object System.Drawing.Point(238,170)
-$btnEvtCancel.BackColor = $ColRed; $btnEvtCancel.ForeColor = [System.Drawing.Color]::White
-$btnEvtCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnEvtCancel.FlatAppearance.BorderSize = 0
-$btnEvtCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnEvtCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnEvtCancel.Visible = $false
-$pnlEvents.Controls.Add($btnEvtCancel)
-$btnEvtCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
 
-$lblEvtEta = New-Object System.Windows.Forms.Label; $lblEvtEta.Text = "est. ~5 sec"
-$lblEvtEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblEvtEta.ForeColor = $ColMuted
-$lblEvtEta.Location = New-Object System.Drawing.Point(348,180); $lblEvtEta.AutoSize = $true
-$pnlEvents.Controls.Add($lblEvtEta)
-$lblEvtStatus = New-Object System.Windows.Forms.Label; $lblEvtStatus.Text = ""
-$lblEvtStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblEvtStatus.ForeColor = $ColMuted
-$lblEvtStatus.Location = New-Object System.Drawing.Point(10,218); $lblEvtStatus.Size = New-Object System.Drawing.Size(1240,18)
+$evtLogCard = New-Object System.Windows.Forms.Panel
+$evtLogCard.Size      = New-Object System.Drawing.Size(800, 460)
+$evtLogCard.Location  = New-Object System.Drawing.Point(28, 220)
+$evtLogCard.BackColor = $ColCard
+$evtLogCard.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 800, 460)), 8))
+$pnlEvents.Controls.Add($evtLogCard)
+
+$lblEvtLogHdr = New-Object System.Windows.Forms.Label
+$lblEvtLogHdr.Text      = "Event Log"
+$lblEvtLogHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$lblEvtLogHdr.ForeColor = $ColText
+$lblEvtLogHdr.Location  = New-Object System.Drawing.Point(16, 12)
+$lblEvtLogHdr.AutoSize  = $true
+$evtLogCard.Controls.Add($lblEvtLogHdr)
+
+$dgvEvtLog = New-LogGrid -X 8 -Y 38 -W 784 -H 414
+$evtLogCard.Controls.Add($dgvEvtLog)
+
+$evtSummary = New-SummaryPanel -Parent $pnlEvents -X 844 -Y 220 -W 420 -H 460 -Title "Summary"
+Set-SummaryItems $evtSummary @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" })
+
+$evtActions = New-ActionBar -Parent $pnlEvents -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$btnEvtRun    = $evtActions.PrimaryBtn
+$btnEvtExport = $evtActions.ExportBtn
+
+$btnEvtCancel = New-Object System.Windows.Forms.Button
+$btnEvtCancel.Text      = "Cancel"
+$btnEvtCancel.Size      = New-Object System.Drawing.Size(110, 36)
+$btnEvtCancel.Location  = New-Object System.Drawing.Point(168, 10)
+$btnEvtCancel.BackColor = $ColRed
+$btnEvtCancel.ForeColor = [System.Drawing.Color]::White
+$btnEvtCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnEvtCancel.FlatAppearance.BorderSize = 0
+$btnEvtCancel.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
+$btnEvtCancel.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnEvtCancel.Visible   = $false
+$btnEvtCancel.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 36)), 6))
+$evtActions.Bar.Controls.Add($btnEvtCancel)
+
+$lblEvtStatus = New-Object System.Windows.Forms.Label
+$lblEvtStatus.Text      = ""
+$lblEvtStatus.Font      = New-Object System.Drawing.Font("Consolas", 8)
+$lblEvtStatus.ForeColor = $ColMuted
+$lblEvtStatus.Location  = New-Object System.Drawing.Point(28, 686)
+$lblEvtStatus.Size      = New-Object System.Drawing.Size(($pnlEvents.Width - 56), 16)
+$lblEvtStatus.Anchor    = $AnchorBLR
 $pnlEvents.Controls.Add($lblEvtStatus)
-$lblEvtLogHdr = New-Object System.Windows.Forms.Label; $lblEvtLogHdr.Text = "Event Log"
-$lblEvtLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblEvtLogHdr.ForeColor = $ColText
-$lblEvtLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblEvtLogHdr.AutoSize = $true
-$pnlEvents.Controls.Add($lblEvtLogHdr)
-$dgvEvtLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
-$pnlEvents.Controls.Add($dgvEvtLog)
+
+$lblEvtEta = New-Object System.Windows.Forms.Label
+$lblEvtEta.Visible = $false
+$pnlEvents.Controls.Add($lblEvtEta)
 $script:evtRunspace = $null; $script:evtPs = $null; $script:evtSpinIdx = 0
 
 
