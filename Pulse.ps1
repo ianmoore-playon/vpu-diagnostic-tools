@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.37"
+$ScriptVersion = "1.0.38"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -216,11 +216,14 @@ $sync = [hashtable]::Synchronized(@{
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Pulse - Pixellot Unified Live System Evaluator"
 $form.ClientSize = New-Object System.Drawing.Size(1280, 760)
+# Enforce minimum AT the default client size so panels never have to render
+# in a smaller area than they were laid out for. Combined with AutoScroll on
+# FullDiagnostic (#59), this keeps the bottom action buttons reachable.
 $form.MinimumSize = $form.Size
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.BackColor = $ColBg
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
-$form.MaximizeBox = $false
+$form.MaximizeBox = $true
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
 $AssetsDir = Join-Path $PSScriptRoot "Assets"
@@ -656,10 +659,17 @@ $timerToast.Add_Tick({
         $script:toastShownAt = $null
     }
 
+    # Suppress per-module toasts while a Full Diagnostic is in progress (#57).
+    # The consolidated summary toast is fired below when FullDiagToastReady flips true.
+    $inFullDiag = $sync.FullDiagInProgress -eq $true
+
     foreach ($key in $toastModuleMeta.Keys) {
         $nowDone = $sync[$key] -eq $true
         if ($nowDone -and ($toastPrevState[$key] -eq 0)) {
             $toastPrevState[$key] = 1
+            # Skip the per-module toast during a Full Diagnostic — but still update
+            # state so the next individual run starts from a clean transition.
+            if ($inFullDiag) { continue }
             $meta = $toastModuleMeta[$key]
 
             # Determine pass/warn/fail
@@ -731,6 +741,43 @@ $timerToast.Add_Tick({
         if (-not $sync[$key] -and ($toastPrevState[$key] -eq 1)) {
             $toastPrevState[$key] = 0
         }
+    }
+
+    # Consolidated Full Diagnostic summary toast (#57). Fires once when the
+    # FullDiagnostic completion handler sets FullDiagToastReady. Replaces the
+    # 7 per-module toasts that were previously firing in rapid succession.
+    if ($sync.FullDiagToastReady -eq $true) {
+        $sync.FullDiagToastReady = $false
+        $s = $sync.FullDiagSummary
+        if ($s -and $s.TotalIssues -eq 0) {
+            $clr  = $ColGreen
+            $icon = [char]0xE73E
+            $msg  = "Full Diagnostic complete  -  All Clear"
+            $sub  = "All checks passed   |   $(Get-Date -Format 'h:mm tt')"
+            $auto = $true
+        } elseif ($s) {
+            $clr  = if ($s.CritCount -gt 0) { $ColRed } else { $ColYellow }
+            $icon = if ($s.CritCount -gt 0) { [char]0xEA39 } else { [char]0xE7BA }
+            $issuesParts = @()
+            if ($s.CritCount -gt 0) { $issuesParts += "$($s.CritCount) critical" }
+            if ($s.WarnCount -gt 0) { $issuesParts += "$($s.WarnCount) warning$(if($s.WarnCount -ne 1){'s'})" }
+            $msg  = "Full Diagnostic complete  -  $($issuesParts -join ', ')"
+            $modList = @($s.CritNames + $s.WarnNames) | Select-Object -First 3
+            $more    = if (($s.CritNames.Count + $s.WarnNames.Count) -gt 3) { ", ..." } else { "" }
+            $sub  = "$($modList -join ', ')$more   |   $(Get-Date -Format 'h:mm tt')"
+            $auto = $false
+        } else {
+            $clr=$ColMuted; $icon=[char]0xE946; $msg="Full Diagnostic complete"; $sub=Get-Date -Format 'h:mm tt'; $auto=$true
+        }
+        $pnlToastAccent.BackColor = $clr
+        $lblToastIcon.Text        = $icon
+        $lblToastIcon.ForeColor   = $clr
+        $lblToastText.Text        = $msg
+        $lblToastText.ForeColor   = $clr
+        $lblToastSub.Text         = $sub
+        $pnlToast.Visible         = $true
+        $pnlToast.BringToFront()
+        $script:toastShownAt = if ($auto) { Get-Date } else { $null }
     }
 })
 $timerToast.Start()

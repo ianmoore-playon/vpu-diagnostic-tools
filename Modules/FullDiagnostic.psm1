@@ -121,12 +121,16 @@ function Invoke-FdModule {
 }
 
 # --- Panel -------------------------------------------------------------------
+# AutoScroll lets the panel scroll vertically when the 7 module rows + bottom
+# buttons exceed the available content height (e.g. on smaller windows or after
+# the row-height bump from v1.0.33). Fix for #59.
 $pnlFullDiag = New-Object System.Windows.Forms.Panel
-$pnlFullDiag.Size      = New-Object System.Drawing.Size($ContentW, $ContentH)
-$pnlFullDiag.Location  = New-Object System.Drawing.Point(0, $ContentY)
-$pnlFullDiag.BackColor = $ColBg
-$pnlFullDiag.Anchor    = $AnchorTLRB
-$pnlFullDiag.Visible   = $false
+$pnlFullDiag.Size       = New-Object System.Drawing.Size($ContentW, $ContentH)
+$pnlFullDiag.Location   = New-Object System.Drawing.Point(0, $ContentY)
+$pnlFullDiag.BackColor  = $ColBg
+$pnlFullDiag.Anchor     = $AnchorTLRB
+$pnlFullDiag.Visible    = $false
+$pnlFullDiag.AutoScroll = $true
 $form.Controls.Add($pnlFullDiag)
 $script:allNavPanels += $pnlFullDiag
 
@@ -466,6 +470,18 @@ $timerFullDiag.Add_Tick({
     $btnFdRerun.Enabled       = $true
     $btnFdRerunFailed.Visible = ($totalIssues -gt 0)
     $btnFdRerunFailed.Enabled = ($totalIssues -gt 0)
+
+    # Hand off to toast timer for the consolidated summary toast (#57).
+    # FullDiagInProgress was suppressing per-module toasts during the run.
+    $sync.FullDiagSummary = @{
+        TotalIssues = $totalIssues
+        CritCount   = $critCount
+        WarnCount   = $warnCount
+        CritNames   = @($critNames)
+        WarnNames   = @($warnNames)
+    }
+    $sync.FullDiagInProgress = $false
+    $sync.FullDiagToastReady = $true
 })
 
 $btnFdRerun.Add_Click({ Start-FullDiagnostic })
@@ -510,6 +526,10 @@ function Start-FailedDiagnostic {
 function Start-FullDiagnostic {
     Show-Panel $pnlFullDiag
     Set-ActiveNav $navSysOverview
+
+    # Suppress per-module toasts while Full Diagnostic is running (#57).
+    # The toast timer reads this flag and fires only the consolidated summary at end.
+    $sync.FullDiagInProgress = $true
 
     $script:fdRerunIndices    = @()
     $pnlFdBanner.Visible      = $false

@@ -104,14 +104,27 @@ foreach ($hc in $hubCardDefs) {
 }
 
 $pnlSysOverview.Add_SizeChanged({
-    $pw   = $pnlSysOverview.Width
-    $hCW  = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
-    for ($i = 0; $i -lt $script:hubTiles.Count; $i++) {
-        $col = $i % $hCols; $row = [int]($i / $hCols)
-        $script:hubTiles[$i].Location = New-Object System.Drawing.Point(($hMargin + $col*($hCW+$hGap)), (90 + $row*($hCH+$hGap)))
-        $script:hubTiles[$i].Size     = New-Object System.Drawing.Size($hCW, $hCH)
+    # Suspend layout while we move all 8 tiles — without this, each Location/Size
+    # change triggers an intermediate paint at a different intermediate position,
+    # which is what made the tiles appear "stuck" after resize-back (#58).
+    $pnlSysOverview.SuspendLayout()
+    try {
+        $pw   = $pnlSysOverview.Width
+        $hCW  = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
+        for ($i = 0; $i -lt $script:hubTiles.Count; $i++) {
+            $col = $i % $hCols; $row = [int]($i / $hCols)
+            $tile = $script:hubTiles[$i]
+            $tile.Location = New-Object System.Drawing.Point(($hMargin + $col*($hCW+$hGap)), (90 + $row*($hCH+$hGap)))
+            $tile.Size     = New-Object System.Drawing.Size($hCW, $hCH)
+            # Refresh the rounded-rect Region to match the new size — without this
+            # the clip stays at the old bounds and content gets cut off / mis-aligned.
+            $tile.Region   = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $hCW, $hCH)), 10))
+            $tile.Invalidate()
+        }
+        $btnHubLastReport.Location = New-Object System.Drawing.Point($hMargin, (90 + $hRows*($hCH+$hGap) + 10))
+    } finally {
+        $pnlSysOverview.ResumeLayout()
     }
-    $btnHubLastReport.Location = New-Object System.Drawing.Point($hMargin, (90 + $hRows*($hCH+$hGap) + 10))
 })
 
 $btnHubLastReport = New-Object System.Windows.Forms.Button

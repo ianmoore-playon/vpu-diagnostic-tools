@@ -283,9 +283,13 @@ function Show-Panel {
     if ($script:allNavPanels) {
         foreach ($p in $script:allNavPanels) { if ($p -is [System.Windows.Forms.Control]) { $p.Visible = $false } }
     }
-    $Panel.Visible   = $true
-    $right.Visible        = $ShowRight
-    $rightBorder.Visible  = $ShowRight
+    $Panel.Visible = $true
+    # Defensive: ensure the target panel is on top of any other Z-order siblings.
+    # Without this, late-added overlays (e.g. toast, tab bar) can mask a panel that
+    # was added earlier — manifests as "Settings button does nothing" (#56).
+    try { $Panel.BringToFront() } catch { }
+    if ($right)       { $right.Visible       = $ShowRight }
+    if ($rightBorder) { $rightBorder.Visible = $ShowRight }
 }
 
 function New-LogGrid {

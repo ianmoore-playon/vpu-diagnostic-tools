@@ -10,6 +10,20 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.38] - 2026-05-01
+
+### Fixed
+
+- **Settings button now reliably navigates to Settings panel** (closes #56) — added `$Panel.BringToFront()` to `Show-Panel` (`Modules/UIHelpers.psm1`) so the target panel is always on top of any z-order siblings. Without this, the Settings panel could be masked by a later-added overlay control. Also guarded `$right.Visible` access against null.
+- **Full Diagnostic page now scrolls when content exceeds height** (closes #59) — `$pnlFullDiag.AutoScroll = $true`. With the v1.0.33 row-height bump (54 → 64), the 7 module rows + bottom buttons could exceed the available content area on smaller windows. Bottom buttons (Re-run All / Issues Only / Back to Home) are now always reachable via scroll. Re-enabled `MaximizeBox` so users can also expand the window for full-height view.
+- **Home tiles no longer drift after window resize-back** (closes #58) — added `SuspendLayout` / `ResumeLayout` around the resize handler, refreshed each tile's rounded-rect `Region` to match its new size, and added explicit `Invalidate()` so tiles repaint cleanly. Tiles now restore their original 4×2 grid when the window returns to its original size.
+
+### Changed
+
+- **Toast notifications consolidated during Full Diagnostic** (closes #57) — per-module toasts are suppressed via a new `$sync.FullDiagInProgress` flag while a Full Diagnostic is running. A single summary toast fires when all 7 modules complete: `"Full Diagnostic complete  -  2 critical, 1 warning"` with a detail line listing the affected module names. Per-module toasts still fire when modules are run independently from their own tabs.
+
+---
+
 ## [1.0.37] - 2026-05-01
 
 ### Added
