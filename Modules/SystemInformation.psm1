@@ -260,15 +260,19 @@ function Start-SysInfoCollection {
     if ($script:sysInfoRunspace) {
         try { $script:sysInfoRunspace.Close(); $script:sysInfoRunspace.Dispose() } catch { }
     }
+    if ($script:sysInfoPs) {
+        try { $script:sysInfoPs.Dispose() } catch { }; $script:sysInfoPs = $null
+    }
     $script:sysInfoRunspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
     $script:sysInfoRunspace.ApartmentState = "STA"
     $script:sysInfoRunspace.ThreadOptions  = "ReuseThread"
     $script:sysInfoRunspace.Open()
-    $script:sysInfoRunspace.SessionStateProxy.SetVariable("sync", $sync)
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $script:sysInfoRunspace
-    $ps.AddScript($SysInfoScript).AddArgument($sync) | Out-Null
-    $ps.BeginInvoke() | Out-Null
+    # Pass $sync to the runspace via AddArgument only — using SessionStateProxy.SetVariable
+    # AND AddArgument both was wasted work and made the contract ambiguous.
+    $script:sysInfoPs = [System.Management.Automation.PowerShell]::Create()
+    $script:sysInfoPs.Runspace = $script:sysInfoRunspace
+    $script:sysInfoPs.AddScript($SysInfoScript).AddArgument($sync) | Out-Null
+    $script:sysInfoPs.BeginInvoke() | Out-Null
     $sysInfoTimer.Start()
 }
 

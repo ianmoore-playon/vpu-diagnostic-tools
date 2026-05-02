@@ -186,6 +186,7 @@ $btnFbSend.Add_Click({
     $lblFbStatus.ForeColor = $ColMuted
     $lblFbStatus.Text      = "Submitting..."
 
+    $wc = $null
     try {
         $wc = New-Object System.Net.WebClient
         $wc.Headers.Add("Authorization",        "Bearer $script:FeedbackToken")
@@ -204,6 +205,7 @@ $btnFbSend.Add_Click({
         $lblFbStatus.ForeColor = $ColYellow
         $lblFbStatus.Text      = "Could not reach GitHub. Feedback copied to clipboard."
     } finally {
+        if ($wc) { try { $wc.Dispose() } catch { } }
         $btnFbSend.Enabled = $true
     }
 })

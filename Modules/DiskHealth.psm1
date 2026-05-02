@@ -211,6 +211,12 @@ $DiskScript = {
     $scanSw = [System.Diagnostics.Stopwatch]::StartNew()
     foreach ($vol in $volumes) {
         if ($sync.DiskCancelled) { $sync.DiskRunning=$false; $sync.DiskComplete=$true; return }
+        # Global 30s budget across all volumes — previously the inner break only exited
+        # the directory loop, so a 4-volume system could spend 120s scanning.
+        if ($scanSw.Elapsed.TotalSeconds -gt 30) {
+            Disk-Log "Top folder scan" "Stopped after 30s budget — partial results above" "Gray"
+            break
+        }
         if (-not $vol.Size -or $vol.Size -eq 0) { continue }
 
         $topDirs = @(Get-ChildItem "$($vol.DeviceID)\" -Directory -Force -ErrorAction SilentlyContinue |

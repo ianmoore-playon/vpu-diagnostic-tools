@@ -16,12 +16,17 @@ $HwScript = {
         $sync.HwQueue.Enqueue(@{ Label=""; Result=$Title; L="Section" }) }
 
     # -- GPU model ---------------------------------------------------------------
+    # Prefer discrete GPU over integrated (Intel UHD/HD Graphics) when both are present.
+    # The Pixellot encoding workload runs on the discrete card; surfacing the iGPU
+    # mis-leads IT teams diagnosing performance issues.
     $sync.HwStep = "Querying GPU..."
     Hw-Section "Graphics"
     try {
-        $gpu = Get-CimInstance Win32_VideoController -ErrorAction Stop |
-               Where-Object { $_.Name -notlike "*Remote*" -and $_.Name -notlike "*Virtual*" } |
-               Select-Object -First 1
+        $gpus = @(Get-CimInstance Win32_VideoController -ErrorAction Stop |
+                  Where-Object { $_.Name -notlike "*Remote*" -and $_.Name -notlike "*Virtual*" })
+        $discrete = @($gpus | Where-Object { $_.Name -notlike "*Intel*" -and $_.Name -notlike "*Microsoft*" })
+        if ($discrete.Count -gt 0) { $gpus = $discrete }
+        $gpu = $gpus | Select-Object -First 1
         $gpuName = if ($gpu) { $gpu.Name } else { "Not detected" }
         Hw-Log "GPU" $gpuName "Info"
         $sync.Cards["HwGpu"] = @{ Value=$gpuName; Status="neutral" }

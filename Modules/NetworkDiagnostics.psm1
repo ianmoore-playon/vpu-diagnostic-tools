@@ -62,16 +62,19 @@ $NetScript = {
     }
     function Test-TcpConnect {
         param([string]$HostName, [int]$Port, [int]$TimeoutMs)
+        $tcp = $null
         try {
             $tcp = New-Object System.Net.Sockets.TcpClient
             $c   = $tcp.BeginConnect($HostName, $Port, $null, $null)
             $ok  = $c.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
             if ($ok) { try { $tcp.EndConnect($c) } catch { $ok = $false } }
-            $tcp.Close(); return $ok
+            return $ok
         } catch { return $false }
+        finally { if ($tcp) { try { $tcp.Close() } catch { } } }
     }
     function Test-UdpDns {
         param([string]$Server, [int]$TimeoutMs)
+        $udp = $null
         try {
             $udp = New-Object System.Net.Sockets.UdpClient
             $udp.Client.ReceiveTimeout = $TimeoutMs
@@ -84,12 +87,13 @@ $NetScript = {
             $ep = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Parse($Server), 53)
             $udp.Send($q, $q.Length, $ep) | Out-Null
             $r  = $udp.Receive([ref]$ep)
-            $udp.Close()
             return ($r -and $r.Length -gt 6 -and ($r[3] -band 0x0F) -eq 0)
         } catch { return $false }
+        finally { if ($udp) { try { $udp.Close() } catch { } } }
     }
     function Test-UdpNtp {
         param([string]$Server, [int]$TimeoutMs)
+        $udp = $null
         try {
             $ar = [System.Net.Dns]::BeginGetHostAddresses($Server, $null, $null)
             if (-not $ar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
@@ -101,12 +105,13 @@ $NetScript = {
             $ep = New-Object System.Net.IPEndPoint($addrs[0], 123)
             $udp.Send($pkt, 48, $ep) | Out-Null
             $r = $udp.Receive([ref]$ep)
-            $udp.Close()
             return ($r -and $r.Length -ge 48)
         } catch { return $false }
+        finally { if ($udp) { try { $udp.Close() } catch { } } }
     }
     function Test-UdpEcho {
         param([string]$Server, [int]$Port, [int]$TimeoutMs)
+        $udp = $null
         try {
             $ar = [System.Net.Dns]::BeginGetHostAddresses($Server, $null, $null)
             if (-not $ar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
@@ -118,9 +123,9 @@ $NetScript = {
             $ep = New-Object System.Net.IPEndPoint($addrs[0], $Port)
             $udp.Send($payload, $payload.Length, $ep) | Out-Null
             $r = $udp.Receive([ref]$ep)
-            $udp.Close()
             return ([System.Text.Encoding]::ASCII.GetString($r) -eq "testing UDP on port $Port")
         } catch { return $false }
+        finally { if ($udp) { try { $udp.Close() } catch { } } }
     }
     function Resolve-DomainAsync {
         param([string]$Domain, [int]$TimeoutMs)

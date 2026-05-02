@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.31"
+$ScriptVersion = "1.0.32"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -30,6 +30,16 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     }
     exit
 }
+
+# ---------- Network defaults -------------------------------------------------
+# Force TLS 1.2 (preserve any higher protocols already enabled). Older VPU images
+# default to TLS 1.0/1.1 which GitHub no longer accepts, breaking update checks.
+[System.Net.ServicePointManager]::SecurityProtocol = `
+    [System.Net.SecurityProtocolType]::Tls12 -bor `
+    [System.Net.ServicePointManager]::SecurityProtocol
+
+# Self-update download URL — used by the CameraConnectivity Update Now button.
+$global:ScriptUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/Run.ps1"
 
 # ---------- Configuration ----------------------------------------------------
 $OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
@@ -1047,13 +1057,19 @@ $DiagScript = {
 
     function Test-TcpPort {
         param([string]$IP, [int]$Port, [int]$TimeoutMs = 2000)
+        $tcp = $null
         try {
             $tcp = New-Object System.Net.Sockets.TcpClient
             $c   = $tcp.BeginConnect($IP, $Port, $null, $null)
             $ok  = $c.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
-            if ($ok) { $tcp.EndConnect($c) }
-            $tcp.Close(); return $ok
+            # Without the inner try/catch, an EndConnect failure (host unreachable, RST)
+            # bubbles to the outer catch and the function returns $false correctly — but
+            # without it AsyncWaitHandle returning $true on a refused connection caused
+            # closed ports to be reported as open. Mirrors NetworkDiagnostics.psm1.
+            if ($ok) { try { $tcp.EndConnect($c) } catch { $ok = $false } }
+            return $ok
         } catch { return $false }
+        finally { if ($tcp) { try { $tcp.Close() } catch { } } }
     }
 
     # -- Init ------------------------------------------------------------------
@@ -2201,7 +2217,10 @@ $btnAdapterSettings.Add_Click({ Start-Process "ncpa.cpl" })
 $btnUpdate.Add_Click({
     $btnUpdate.Text = "  Launching..."; $btnUpdate.Enabled = $false
     try {
-        Start-Process PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"irm '$ScriptUrl' | iex`""
+        if (-not $global:ScriptUrl) {
+            throw "Update URL not configured (ScriptUrl is empty)."
+        }
+        Start-Process PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm '$global:ScriptUrl' | iex`""
         $form.Close()
     } catch {
         $btnUpdate.Enabled = $true; $btnUpdate.Text = "  Update Now"
@@ -2997,16 +3016,19 @@ $NetScript = {
     }
     function Test-TcpConnect {
         param([string]$HostName, [int]$Port, [int]$TimeoutMs)
+        $tcp = $null
         try {
             $tcp = New-Object System.Net.Sockets.TcpClient
             $c   = $tcp.BeginConnect($HostName, $Port, $null, $null)
             $ok  = $c.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
             if ($ok) { try { $tcp.EndConnect($c) } catch { $ok = $false } }
-            $tcp.Close(); return $ok
+            return $ok
         } catch { return $false }
+        finally { if ($tcp) { try { $tcp.Close() } catch { } } }
     }
     function Test-UdpDns {
         param([string]$Server, [int]$TimeoutMs)
+        $udp = $null
         try {
             $udp = New-Object System.Net.Sockets.UdpClient
             $udp.Client.ReceiveTimeout = $TimeoutMs
@@ -3019,12 +3041,13 @@ $NetScript = {
             $ep = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Parse($Server), 53)
             $udp.Send($q, $q.Length, $ep) | Out-Null
             $r  = $udp.Receive([ref]$ep)
-            $udp.Close()
             return ($r -and $r.Length -gt 6 -and ($r[3] -band 0x0F) -eq 0)
         } catch { return $false }
+        finally { if ($udp) { try { $udp.Close() } catch { } } }
     }
     function Test-UdpNtp {
         param([string]$Server, [int]$TimeoutMs)
+        $udp = $null
         try {
             $ar = [System.Net.Dns]::BeginGetHostAddresses($Server, $null, $null)
             if (-not $ar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
@@ -3036,12 +3059,13 @@ $NetScript = {
             $ep = New-Object System.Net.IPEndPoint($addrs[0], 123)
             $udp.Send($pkt, 48, $ep) | Out-Null
             $r = $udp.Receive([ref]$ep)
-            $udp.Close()
             return ($r -and $r.Length -ge 48)
         } catch { return $false }
+        finally { if ($udp) { try { $udp.Close() } catch { } } }
     }
     function Test-UdpEcho {
         param([string]$Server, [int]$Port, [int]$TimeoutMs)
+        $udp = $null
         try {
             $ar = [System.Net.Dns]::BeginGetHostAddresses($Server, $null, $null)
             if (-not $ar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
@@ -3053,9 +3077,9 @@ $NetScript = {
             $ep = New-Object System.Net.IPEndPoint($addrs[0], $Port)
             $udp.Send($payload, $payload.Length, $ep) | Out-Null
             $r = $udp.Receive([ref]$ep)
-            $udp.Close()
             return ([System.Text.Encoding]::ASCII.GetString($r) -eq "testing UDP on port $Port")
         } catch { return $false }
+        finally { if ($udp) { try { $udp.Close() } catch { } } }
     }
     function Resolve-DomainAsync {
         param([string]$Domain, [int]$TimeoutMs)
@@ -3693,6 +3717,7 @@ $btnFbSend.Add_Click({
     $lblFbStatus.ForeColor = $ColMuted
     $lblFbStatus.Text      = "Submitting..."
 
+    $wc = $null
     try {
         $wc = New-Object System.Net.WebClient
         $wc.Headers.Add("Authorization",        "Bearer $script:FeedbackToken")
@@ -3711,6 +3736,7 @@ $btnFbSend.Add_Click({
         $lblFbStatus.ForeColor = $ColYellow
         $lblFbStatus.Text      = "Could not reach GitHub. Feedback copied to clipboard."
     } finally {
+        if ($wc) { try { $wc.Dispose() } catch { } }
         $btnFbSend.Enabled = $true
     }
 })
@@ -3732,12 +3758,17 @@ $HwScript = {
         $sync.HwQueue.Enqueue(@{ Label=""; Result=$Title; L="Section" }) }
 
     # -- GPU model ---------------------------------------------------------------
+    # Prefer discrete GPU over integrated (Intel UHD/HD Graphics) when both are present.
+    # The Pixellot encoding workload runs on the discrete card; surfacing the iGPU
+    # mis-leads IT teams diagnosing performance issues.
     $sync.HwStep = "Querying GPU..."
     Hw-Section "Graphics"
     try {
-        $gpu = Get-CimInstance Win32_VideoController -ErrorAction Stop |
-               Where-Object { $_.Name -notlike "*Remote*" -and $_.Name -notlike "*Virtual*" } |
-               Select-Object -First 1
+        $gpus = @(Get-CimInstance Win32_VideoController -ErrorAction Stop |
+                  Where-Object { $_.Name -notlike "*Remote*" -and $_.Name -notlike "*Virtual*" })
+        $discrete = @($gpus | Where-Object { $_.Name -notlike "*Intel*" -and $_.Name -notlike "*Microsoft*" })
+        if ($discrete.Count -gt 0) { $gpus = $discrete }
+        $gpu = $gpus | Select-Object -First 1
         $gpuName = if ($gpu) { $gpu.Name } else { "Not detected" }
         Hw-Log "GPU" $gpuName "Info"
         $sync.Cards["HwGpu"] = @{ Value=$gpuName; Status="neutral" }
@@ -4369,6 +4400,12 @@ $DiskScript = {
     $scanSw = [System.Diagnostics.Stopwatch]::StartNew()
     foreach ($vol in $volumes) {
         if ($sync.DiskCancelled) { $sync.DiskRunning=$false; $sync.DiskComplete=$true; return }
+        # Global 30s budget across all volumes — previously the inner break only exited
+        # the directory loop, so a 4-volume system could spend 120s scanning.
+        if ($scanSw.Elapsed.TotalSeconds -gt 30) {
+            Disk-Log "Top folder scan" "Stopped after 30s budget — partial results above" "Gray"
+            break
+        }
         if (-not $vol.Size -or $vol.Size -eq 0) { continue }
 
         $topDirs = @(Get-ChildItem "$($vol.DeviceID)\" -Directory -Force -ErrorAction SilentlyContinue |
@@ -4974,15 +5011,19 @@ function Start-SysInfoCollection {
     if ($script:sysInfoRunspace) {
         try { $script:sysInfoRunspace.Close(); $script:sysInfoRunspace.Dispose() } catch { }
     }
+    if ($script:sysInfoPs) {
+        try { $script:sysInfoPs.Dispose() } catch { }; $script:sysInfoPs = $null
+    }
     $script:sysInfoRunspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
     $script:sysInfoRunspace.ApartmentState = "STA"
     $script:sysInfoRunspace.ThreadOptions  = "ReuseThread"
     $script:sysInfoRunspace.Open()
-    $script:sysInfoRunspace.SessionStateProxy.SetVariable("sync", $sync)
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $script:sysInfoRunspace
-    $ps.AddScript($SysInfoScript).AddArgument($sync) | Out-Null
-    $ps.BeginInvoke() | Out-Null
+    # Pass $sync to the runspace via AddArgument only — using SessionStateProxy.SetVariable
+    # AND AddArgument both was wasted work and made the contract ambiguous.
+    $script:sysInfoPs = [System.Management.Automation.PowerShell]::Create()
+    $script:sysInfoPs.Runspace = $script:sysInfoRunspace
+    $script:sysInfoPs.AddScript($SysInfoScript).AddArgument($sync) | Out-Null
+    $script:sysInfoPs.BeginInvoke() | Out-Null
     $sysInfoTimer.Start()
 }
 
@@ -5762,11 +5803,12 @@ $form.Add_Load({
         if ($osCaption) { $lblVpuVal.Text = "$($env:COMPUTERNAME)  .  $($osCaption -replace 'Microsoft Windows ','Win ')" }
     } catch { }
 
-    # Async update check - compares remote $ScriptVersion to current; shows notice if newer
+    # Async update check - compares remote $ScriptVersion to current; shows notice if newer.
+    # Stash $wc and the event subscription so FormClosing can clean them up.
     try {
-        $wc = New-Object System.Net.WebClient
-        if ($env:VPU_DEPLOY_TOKEN) { $wc.Headers.Add("Authorization", "Bearer $env:VPU_DEPLOY_TOKEN") }
-        Register-ObjectEvent -InputObject $wc -EventName DownloadStringCompleted `
+        $script:updateWc = New-Object System.Net.WebClient
+        if ($env:VPU_DEPLOY_TOKEN) { $script:updateWc.Headers.Add("Authorization", "Bearer $env:VPU_DEPLOY_TOKEN") }
+        $script:updateSub = Register-ObjectEvent -InputObject $script:updateWc -EventName DownloadStringCompleted `
             -MessageData @{ Sync = $sync; CurVer = $ScriptVersion } -Action {
             try {
                 $data = $Event.MessageData
@@ -5777,9 +5819,9 @@ $form.Add_Load({
                     }
                 }
             } catch { }
-        } | Out-Null
+        }
         $rawUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/Pulse.ps1"
-        $wc.DownloadStringAsync([uri]$rawUrl)
+        $script:updateWc.DownloadStringAsync([uri]$rawUrl)
     } catch { }
 })
 
@@ -5793,6 +5835,9 @@ $form.Add_FormClosing({
     try { if ($script:evtRunspace) { $script:evtRunspace.Close(); $script:evtRunspace.Dispose() } } catch { }
     try { if ($script:hwRunspace)      { $script:hwRunspace.Close();      $script:hwRunspace.Dispose()      } } catch { }
     try { if ($script:sysInfoRunspace) { $script:sysInfoRunspace.Close(); $script:sysInfoRunspace.Dispose() } } catch { }
+    try { if ($script:sysInfoPs)       { $script:sysInfoPs.Dispose() } } catch { }
+    try { if ($script:updateSub) { Unregister-Event -SubscriptionId $script:updateSub.Id -ErrorAction SilentlyContinue; $script:updateSub | Remove-Job -Force -ErrorAction SilentlyContinue } } catch { }
+    try { if ($script:updateWc)  { $script:updateWc.Dispose() } } catch { }
 })
 
 [System.Windows.Forms.Application]::Run($form)

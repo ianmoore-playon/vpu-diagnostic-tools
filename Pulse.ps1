@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.31"
+$ScriptVersion = "1.0.32"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -30,6 +30,16 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     }
     exit
 }
+
+# ---------- Network defaults -------------------------------------------------
+# Force TLS 1.2 (preserve any higher protocols already enabled). Older VPU images
+# default to TLS 1.0/1.1 which GitHub no longer accepts, breaking update checks.
+[System.Net.ServicePointManager]::SecurityProtocol = `
+    [System.Net.SecurityProtocolType]::Tls12 -bor `
+    [System.Net.ServicePointManager]::SecurityProtocol
+
+# Self-update download URL — used by the CameraConnectivity Update Now button.
+$global:ScriptUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/Run.ps1"
 
 # ---------- Configuration ----------------------------------------------------
 $OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
@@ -718,11 +728,12 @@ $form.Add_Load({
         if ($osCaption) { $lblVpuVal.Text = "$($env:COMPUTERNAME)  .  $($osCaption -replace 'Microsoft Windows ','Win ')" }
     } catch { }
 
-    # Async update check - compares remote $ScriptVersion to current; shows notice if newer
+    # Async update check - compares remote $ScriptVersion to current; shows notice if newer.
+    # Stash $wc and the event subscription so FormClosing can clean them up.
     try {
-        $wc = New-Object System.Net.WebClient
-        if ($env:VPU_DEPLOY_TOKEN) { $wc.Headers.Add("Authorization", "Bearer $env:VPU_DEPLOY_TOKEN") }
-        Register-ObjectEvent -InputObject $wc -EventName DownloadStringCompleted `
+        $script:updateWc = New-Object System.Net.WebClient
+        if ($env:VPU_DEPLOY_TOKEN) { $script:updateWc.Headers.Add("Authorization", "Bearer $env:VPU_DEPLOY_TOKEN") }
+        $script:updateSub = Register-ObjectEvent -InputObject $script:updateWc -EventName DownloadStringCompleted `
             -MessageData @{ Sync = $sync; CurVer = $ScriptVersion } -Action {
             try {
                 $data = $Event.MessageData
@@ -733,9 +744,9 @@ $form.Add_Load({
                     }
                 }
             } catch { }
-        } | Out-Null
+        }
         $rawUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/Pulse.ps1"
-        $wc.DownloadStringAsync([uri]$rawUrl)
+        $script:updateWc.DownloadStringAsync([uri]$rawUrl)
     } catch { }
 })
 
@@ -749,6 +760,9 @@ $form.Add_FormClosing({
     try { if ($script:evtRunspace) { $script:evtRunspace.Close(); $script:evtRunspace.Dispose() } } catch { }
     try { if ($script:hwRunspace)      { $script:hwRunspace.Close();      $script:hwRunspace.Dispose()      } } catch { }
     try { if ($script:sysInfoRunspace) { $script:sysInfoRunspace.Close(); $script:sysInfoRunspace.Dispose() } } catch { }
+    try { if ($script:sysInfoPs)       { $script:sysInfoPs.Dispose() } } catch { }
+    try { if ($script:updateSub) { Unregister-Event -SubscriptionId $script:updateSub.Id -ErrorAction SilentlyContinue; $script:updateSub | Remove-Job -Force -ErrorAction SilentlyContinue } } catch { }
+    try { if ($script:updateWc)  { $script:updateWc.Dispose() } } catch { }
 })
 
 [System.Windows.Forms.Application]::Run($form)

@@ -10,6 +10,30 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.32] - 2026-05-01
+
+### Fixed
+
+- **Wave 2 bug fixes (closes #47, #49, #50, #51, #52, #53, #54, #55)**:
+  - Hardware GPU card now prefers discrete over integrated (#47) — was showing Intel UHD Graphics 630 even on systems with a discrete GPU. Filter mirrors SystemInformation.psm1.
+  - CameraConnectivity Update Now button now uses `$global:ScriptUrl` defined in Pulse.ps1 (#49). Removed `-WindowStyle Hidden` so update errors are visible. Added empty-URL guard.
+  - NetworkDiagnostics Test-TcpConnect / Test-UdpDns / Test-UdpNtp / Test-UdpEcho now use try/finally to dispose sockets on exception paths (#50). Same fix applied to CameraConnectivity Test-TcpPort.
+  - CameraConnectivity Test-TcpPort now wraps EndConnect in try/catch (#51) — was reporting refused/RST connections as open. Mirrors NetworkDiagnostics pattern.
+  - Pulse update-check WebClient and HelpAbout feedback WebClient now disposed properly (#52). Update-check event subscription unregistered on form close.
+  - SystemInformation runspace no longer passes `$sync` twice via SetVariable + AddArgument (#53). PowerShell handle stored as `$script:sysInfoPs` and disposed on form close.
+  - DiskHealth top-folder scan timeout now breaks out of the volume loop, not just the directory loop (#54) — was running up to 4× over budget on multi-volume systems.
+
+### Added
+
+- **TLS 1.2 enforcement** at startup (#55) — older VPU images defaulted to TLS 1.0/1.1 which GitHub no longer accepts, breaking the update check. Now bitwise-OR'd with whatever protocols are already enabled.
+- **`$global:ScriptUrl`** variable defined at startup for the self-update flow.
+
+### Note
+
+- #48 (FullDiagnostic runspace serialization) is intentionally deferred — higher risk than the rest of Wave 2 and warrants standalone testing.
+
+---
+
 ## [1.0.31] - 2026-05-01
 
 ### Changed
