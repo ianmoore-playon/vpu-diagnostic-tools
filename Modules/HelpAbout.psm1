@@ -39,7 +39,10 @@ $helpSections = @(
     @{ H="Event Logs tab"; B="Reads System and Application event logs and displays errors and warnings from the last 24 hours. A high error count (especially disk, NTFS, or driver errors) often correlates with hardware problems seen in other tabs.`n`nUp to 20 errors and 10 warnings are shown per log. Use Event Viewer (eventvwr.msc) to see the full list with all details." }
     @{ H="Reports tab"; B="Lists all past Full Diagnostic runs stored in the Pulse_Results folder. Double-click any row to open the full report in Notepad. Green rows are all-clear; red rows show which ports had faults.`n`nReports are saved automatically after each Camera diagnostic run." }
     @{ H="What is a SmartSpeed event?"; B="Intel SmartSpeed Event ID 40 fires when the NIC tried to establish a gigabit link but the physical medium could not sustain it. It only fires on physical-layer failures - it never fires when a device (like an OCR camera) simply does not support gigabit.`n`nAny non-zero SmartSpeed count on a camera NIC is definitive evidence of a cable, connector, or NIC fault. Zero events on a 100 Mbps port means the device is 100-Mbps-only and gigabit was never attempted." }
-    @{ H="Frequently asked questions"; B="Q: VPU.exe shows Not running - is that a problem?`nA: No. VPU.exe only runs when cameras are actively streaming. It is normal for it to be absent between games.`n`nQ: A NIC port shows No link - is that a fault?`nA: No link is normal for ports that do not have a camera connected. Only ports with a camera attached that show 100 Mbps are faults.`n`nQ: Network tests fail for pixellot.stream - is that a problem?`nA: pixellot.stream is marked INFO because it is a dynamic streaming server that does not respond to raw probes. Check the domain test result for pixellot.stream instead.`n`nQ: The tool says it cannot read the event log - what does that mean?`nA: This can happen if the Windows Event Log service is stopped or the account running the tool lacks permission. Restart the service via services.msc." }
+    @{ H="Camera Fault Isolator"; B="The Camera tab includes a guided fault-isolation wizard accessible via the Open Fault Isolator button. The wizard walks through a four-phase swap test to identify whether a degraded port is caused by the NIC, the cable, or the camera itself.`n`nPhase 1 captures the baseline link speed for the suspect port. Phase 2 swaps the cable to a known-good port to test if the fault follows the NIC port. Phase 3 swaps the cable to test if the fault follows the cable. Phase 4 swaps the camera to test if the fault follows the camera.`n`nEach phase produces a plain-language verdict, and the wizard concludes with a Run Full Diagnostic action to confirm the fix." }
+    @{ H="System Information sections"; B="The System Information tab surfaces hardware specs and configuration details:`n`n- Pixellot Software: registry-derived App Version, System Image Version, and Package Dependencies.`n- Operating System / System: edition, build, manufacturer, model, BIOS, serial number.`n- Time & Locale: timezone, NTP server, W32Time service status. Flags UTC default as a likely misconfiguration.`n- Pixellot Calibrations: scans known calibration paths and lists files with last-modified times.`n- Installed Software: counts installed apps and flags known-conflicting software (other AV, OBS, BitTorrent, etc.)." }
+    @{ H="Frequently asked questions"; B="Q: VPU.exe shows Not streaming - is that a problem?`nA: No. VPU.exe only runs when cameras are actively streaming. It is normal for it to be absent between games.`n`nQ: A NIC port shows No link - is that a fault?`nA: No link is normal for ports that do not have a camera connected. Only ports with a camera attached that show 100 Mbps are faults.`n`nQ: Network tests fail for pixellot.stream - is that a problem?`nA: pixellot.stream is no longer probed directly. Reliable port tests now hit Pixellot's prod-echo.pixellot.tv echo server, and the pixellot.stream domain shows an INFO row in the domain test (it is a stream-only destination).`n`nQ: The tool says it cannot read the event log - what does that mean?`nA: This can happen if the Windows Event Log service is stopped or the account running the tool lacks permission. Restart the service via services.msc." }
+    @{ H="About Pulse"; B="Pulse — Pixellot Unified Live System Evaluator`nVersion: see the header bar`nRepository: https://github.com/ianmoore-playon/vpu-diagnostic-tools`nLicense: Internal use within PlayOn Sports / NFHS Network. Not for external distribution.`n`nFeedback and bug reports go through the Submit Feedback form below — these are routed directly to the tools team. The form requires a feedback token configured at install time; if the token is missing, feedback is copied to the clipboard for manual handoff." }
 )
 $firstHelp = $true
 foreach ($s in $helpSections) {
@@ -72,7 +75,7 @@ $lblFbTitle.Anchor    = $AnchorBL
 $pnlHelp.Controls.Add($lblFbTitle)
 
 $lblFbSub = New-Object System.Windows.Forms.Label
-$lblFbSub.Text      = "Report a bug or suggest an improvement — submitted directly as a GitHub issue."
+$lblFbSub.Text      = "Report a problem or suggest an improvement — sent directly to the Pixellot tools team."
 $lblFbSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $lblFbSub.ForeColor = $ColMuted
 $lblFbSub.Location  = New-Object System.Drawing.Point(24, ($ContentH - 163))
@@ -186,6 +189,7 @@ $btnFbSend.Add_Click({
     $lblFbStatus.ForeColor = $ColMuted
     $lblFbStatus.Text      = "Submitting..."
 
+    $wc = $null
     try {
         $wc = New-Object System.Net.WebClient
         $wc.Headers.Add("Authorization",        "Bearer $script:FeedbackToken")
@@ -204,6 +208,7 @@ $btnFbSend.Add_Click({
         $lblFbStatus.ForeColor = $ColYellow
         $lblFbStatus.Text      = "Could not reach GitHub. Feedback copied to clipboard."
     } finally {
+        if ($wc) { try { $wc.Dispose() } catch { } }
         $btnFbSend.Enabled = $true
     }
 })

@@ -19,7 +19,7 @@ $lblHubTitle.Size      = New-Object System.Drawing.Size(700, 34)
 $pnlSysOverview.Controls.Add($lblHubTitle)
 
 $lblHubSub = New-Object System.Windows.Forms.Label
-$lblHubSub.Text      = "Pixellot Unified Live System Evaluator — identify and resolve VPU issues fast."
+$lblHubSub.Text      = "Select a module below, or run a Full Diagnostic for a complete system check."
 $lblHubSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
 $lblHubSub.ForeColor = $ColMuted
 $lblHubSub.Location  = New-Object System.Drawing.Point(24, 58)
@@ -69,14 +69,14 @@ function New-SectionCard {
 }
 
 $hubCardDefs = @(
-    @{Nav="navSysInfo";  Title="System Information"; Desc="CPU, RAM, GPU, storage and NIC inventory";               Icon=0xE80F; R=0;C=0}
-    @{Nav="navNetConfig";Title="Network";            Desc="Internet, port connectivity and DNS for Pixellot";        Icon=0xE701; R=0;C=1}
-    @{Nav="navCamera";   Title="Camera";             Desc="NIC link speeds, cable faults, ping and RTSP checks";     Icon=0xE722; R=0;C=2}
-    @{Nav="navServices"; Title="Services";           Desc="Pixellot agent, encoder and support services status";     Icon=0xE9F5; R=0;C=3}
-    @{Nav="navPoE";      Title="Hardware";           Desc="PoE NIC budget, GPU, peripherals and NIC uptime";         Icon=0xE7E8; R=1;C=0}
-    @{Nav="navDisk";     Title="Disks";              Desc="Drive space, SMART health and disk event log errors";     Icon=0xEDA2; R=1;C=1}
-    @{Nav="navEvents";   Title="OS Event Logs";      Desc="Recent OS errors filtered for hardware and services";     Icon=0xE7BA; R=1;C=2}
-    @{Nav="navReports";  Title="Reports";            Desc="View, copy and export saved diagnostic reports";          Icon=0xE7C3; R=1;C=3}
+    @{Nav="navSysInfo";  Title="System Information"; Desc="Hardware specs, OS version, uptime, and Pixellot software versions"; Icon=0xE80F; R=0;C=0}
+    @{Nav="navNetConfig";Title="Network";            Desc="Test required ports and domain DNS; identify firewall blocks";       Icon=0xE701; R=0;C=1}
+    @{Nav="navCamera";   Title="Camera";             Desc="Detect cameras and test connectivity; identify cable or PoE faults"; Icon=0xE722; R=0;C=2}
+    @{Nav="navServices"; Title="Services";           Desc="Verify Pixellot agent, encoder, watchdog, and remote services";      Icon=0xE9F5; R=0;C=3}
+    @{Nav="navPoE";      Title="Hardware";           Desc="PoE budget, GPU, monitor, peripherals, and NIC link uptime";         Icon=0xE7E8; R=1;C=0}
+    @{Nav="navDisk";     Title="Disks";              Desc="Free space, SMART health, and disk-related event log errors";        Icon=0xEDA2; R=1;C=1}
+    @{Nav="navEvents";   Title="OS Event Logs";      Desc="Recent OS errors filtered to VPU-relevant providers";                Icon=0xE7BA; R=1;C=2}
+    @{Nav="navReports";  Title="Reports";            Desc="View, copy, and export saved diagnostic reports";                    Icon=0xE7C3; R=1;C=3}
 )
 $hCH = 200; $hGap = 16; $hMargin = 24; $hCols = 4; $hRows = 2
 $hubNavLookup = @{
@@ -103,15 +103,52 @@ foreach ($hc in $hubCardDefs) {
     foreach ($ctrl in @($cp.Controls)) { $ctrl.Add_Click($clickBlock) }
 }
 
-$pnlSysOverview.Add_SizeChanged({
-    $pw   = $pnlSysOverview.Width
-    $hCW  = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
+# Recalculate tile positions deterministically. This is called both on initial
+# layout and on every SizeChanged event. Using a function avoids any event-handler
+# closure capture issues that v1.0.38's inline handler may have hit (#61).
+function Update-HubTileLayout {
+    if (-not $script:hubTiles -or $script:hubTiles.Count -eq 0) { return }
+    $pw = $pnlSysOverview.ClientSize.Width
+    if ($pw -le 0) { return }
+    $hCW = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
+    if ($hCW -lt 50) { $hCW = 50 }
     for ($i = 0; $i -lt $script:hubTiles.Count; $i++) {
-        $col = $i % $hCols; $row = [int]($i / $hCols)
-        $script:hubTiles[$i].Location = New-Object System.Drawing.Point(($hMargin + $col*($hCW+$hGap)), (90 + $row*($hCH+$hGap)))
-        $script:hubTiles[$i].Size     = New-Object System.Drawing.Size($hCW, $hCH)
+        $col  = $i % $hCols
+        $row  = [int]($i / $hCols)
+        $tile = $script:hubTiles[$i]
+        if (-not $tile) { continue }
+        $newX = $hMargin + $col * ($hCW + $hGap)
+        $newY = 90 + $row * ($hCH + $hGap)
+        # Disable WinForms anchor-based auto-resize on each tile — manual placement
+        # is the sole source of truth here.
+        $tile.Anchor   = [System.Windows.Forms.AnchorStyles]::None
+        $tile.Bounds   = New-Object System.Drawing.Rectangle($newX, $newY, $hCW, $hCH)
+        $tile.Region   = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $hCW, $hCH)), 10))
     }
-    $btnHubLastReport.Location = New-Object System.Drawing.Point($hMargin, (90 + $hRows*($hCH+$hGap) + 10))
+    if ($btnHubLastReport) {
+        $btnHubLastReport.Location = New-Object System.Drawing.Point($hMargin, (90 + $hRows*($hCH+$hGap) + 10))
+    }
+    if ($lblHubLastRun) {
+        $lblHubLastRun.Location = New-Object System.Drawing.Point(($hMargin + 196), (90 + $hRows*($hCH+$hGap) + 21))
+    }
+    $pnlSysOverview.Invalidate($true)  # force the parent to repaint with new tile positions
+}
+
+# Run once after creation so initial layout matches whatever the actual panel width is.
+Update-HubTileLayout
+
+# Debounce SizeChanged — drag events fire dozens of times per second; running the
+# layout on every one causes intermediate paints to leak through. Coalesce to a
+# single recalc 80ms after the last event.
+$script:hubResizeTimer = New-Object System.Windows.Forms.Timer
+$script:hubResizeTimer.Interval = 80
+$script:hubResizeTimer.Add_Tick({
+    $script:hubResizeTimer.Stop()
+    Update-HubTileLayout
+})
+$pnlSysOverview.Add_SizeChanged({
+    $script:hubResizeTimer.Stop()
+    $script:hubResizeTimer.Start()
 })
 
 $btnHubLastReport = New-Object System.Windows.Forms.Button
@@ -132,5 +169,48 @@ $btnHubLastReport.Add_Click({
               Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($latest) { Start-Process notepad.exe $latest.FullName }
     else { [System.Windows.Forms.MessageBox]::Show("No reports found yet.", "Open Last Report", "OK", "Information") | Out-Null }
+})
+
+# ---- Last-run summary row -------------------------------------------------------
+# Surfaces date, overall result, and VPU model from the most recent report so users
+# can see at a glance whether anything has been run on this machine and how it went.
+$lblHubLastRun = New-Object System.Windows.Forms.Label
+$lblHubLastRun.Text      = ""
+$lblHubLastRun.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$lblHubLastRun.ForeColor = $ColMuted
+$lblHubLastRun.Location  = New-Object System.Drawing.Point(220, 535)
+$lblHubLastRun.Size      = New-Object System.Drawing.Size(900, 22)
+$lblHubLastRun.AutoEllipsis = $true
+$pnlSysOverview.Controls.Add($lblHubLastRun)
+
+# Refresh the summary every time the panel becomes visible (cheap — one file stat + ~10 lines read)
+$pnlSysOverview.Add_VisibleChanged({
+    if (-not $pnlSysOverview.Visible) { return }
+    try {
+        $latest = Get-ChildItem -Path $OutputDir -Filter "Pulse_Results_*.txt" -ErrorAction SilentlyContinue |
+                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if (-not $latest) {
+            $lblHubLastRun.Text      = "No diagnostic has been run yet."
+            $lblHubLastRun.ForeColor = $ColMuted
+            return
+        }
+        $head = Get-Content $latest.FullName -TotalCount 25 -ErrorAction SilentlyContinue
+        # Try to extract VPU model and overall result from the first 25 lines
+        $model = ($head | Where-Object { $_ -match '^VPU Model\s*:\s*(.+)$' } | Select-Object -First 1) -replace '^VPU Model\s*:\s*',''
+        $overall = ($head | Where-Object { $_ -match '^(Overall|Result|Status)\s*:\s*(.+)$' } | Select-Object -First 1)
+        $whenStr = $latest.LastWriteTime.ToString("MMM d, h:mm tt")
+        $modelStr = if ($model) { " — $model" } else { "" }
+        $resStr = if ($overall) { ($overall -replace '^[^:]+:\s*','') } else { "" }
+        $color = if ($resStr -match 'fail|error|critical') { $ColRed } `
+                 elseif ($resStr -match 'warn|issue|degrad') { $ColYellow } `
+                 elseif ($resStr) { $ColGreen } `
+                 else { $ColMuted }
+        $resBlock = if ($resStr) { "   |   $resStr" } else { "" }
+        $lblHubLastRun.Text      = "Last run: $whenStr$modelStr$resBlock"
+        $lblHubLastRun.ForeColor = $color
+    } catch {
+        $lblHubLastRun.Text = "Last run: report unreadable"
+        $lblHubLastRun.ForeColor = $ColMuted
+    }
 })
 

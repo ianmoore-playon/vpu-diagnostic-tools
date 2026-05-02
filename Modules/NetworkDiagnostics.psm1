@@ -62,16 +62,19 @@ $NetScript = {
     }
     function Test-TcpConnect {
         param([string]$HostName, [int]$Port, [int]$TimeoutMs)
+        $tcp = $null
         try {
             $tcp = New-Object System.Net.Sockets.TcpClient
             $c   = $tcp.BeginConnect($HostName, $Port, $null, $null)
             $ok  = $c.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
             if ($ok) { try { $tcp.EndConnect($c) } catch { $ok = $false } }
-            $tcp.Close(); return $ok
+            return $ok
         } catch { return $false }
+        finally { if ($tcp) { try { $tcp.Close() } catch { } } }
     }
     function Test-UdpDns {
         param([string]$Server, [int]$TimeoutMs)
+        $udp = $null
         try {
             $udp = New-Object System.Net.Sockets.UdpClient
             $udp.Client.ReceiveTimeout = $TimeoutMs
@@ -84,12 +87,13 @@ $NetScript = {
             $ep = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Parse($Server), 53)
             $udp.Send($q, $q.Length, $ep) | Out-Null
             $r  = $udp.Receive([ref]$ep)
-            $udp.Close()
             return ($r -and $r.Length -gt 6 -and ($r[3] -band 0x0F) -eq 0)
         } catch { return $false }
+        finally { if ($udp) { try { $udp.Close() } catch { } } }
     }
     function Test-UdpNtp {
         param([string]$Server, [int]$TimeoutMs)
+        $udp = $null
         try {
             $ar = [System.Net.Dns]::BeginGetHostAddresses($Server, $null, $null)
             if (-not $ar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
@@ -101,12 +105,13 @@ $NetScript = {
             $ep = New-Object System.Net.IPEndPoint($addrs[0], 123)
             $udp.Send($pkt, 48, $ep) | Out-Null
             $r = $udp.Receive([ref]$ep)
-            $udp.Close()
             return ($r -and $r.Length -ge 48)
         } catch { return $false }
+        finally { if ($udp) { try { $udp.Close() } catch { } } }
     }
     function Test-UdpEcho {
         param([string]$Server, [int]$Port, [int]$TimeoutMs)
+        $udp = $null
         try {
             $ar = [System.Net.Dns]::BeginGetHostAddresses($Server, $null, $null)
             if (-not $ar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
@@ -118,9 +123,9 @@ $NetScript = {
             $ep = New-Object System.Net.IPEndPoint($addrs[0], $Port)
             $udp.Send($payload, $payload.Length, $ep) | Out-Null
             $r = $udp.Receive([ref]$ep)
-            $udp.Close()
             return ([System.Text.Encoding]::ASCII.GetString($r) -eq "testing UDP on port $Port")
         } catch { return $false }
+        finally { if ($udp) { try { $udp.Close() } catch { } } }
     }
     function Resolve-DomainAsync {
         param([string]$Domain, [int]$TimeoutMs)
@@ -248,9 +253,9 @@ $netTimer.Add_Tick({
         # Render to rtbNetLog
         if ($netItem.L -eq "Section") {
             $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
-            $rtbNetLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 7.5, [System.Drawing.FontStyle]::Bold)
-            $rtbNetLog.SelectionColor = $ColMuted
-            $rtbNetLog.AppendText("`n  $($netItem.Result.ToUpper())`n")
+            $rtbNetLog.SelectionFont  = New-Object System.Drawing.Font("Segoe UI Semibold", 9, [System.Drawing.FontStyle]::Bold)
+            $rtbNetLog.SelectionColor = $ColText
+            $rtbNetLog.AppendText("`n`n  $($netItem.Result.ToUpper())`n")
         } else {
             $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
             $rtbNetLog.SelectionColor = $ColLogLabel
@@ -288,18 +293,25 @@ $netTimer.Add_Tick({
 
     if ($sync.NetComplete -and -not $sync.NetRunning) {
         # Final sync reads directly from the synchronized hashtable — guaranteed visibility.
+        # We ALSO backfill $sync.Cards from the _nc_/_ncs_ keys so FullDiagnostic's
+        # Get-WorstCardStatus (which reads $sync.Cards[$key].Status) sees the correct
+        # state. Writes inside the background runspace's Set-NetCard function don't
+        # reliably propagate to the inner unsynchronized Cards hashtable — same
+        # function-scope quirk we hit in v1.0.26 (#60).
         foreach ($netKey in $netCards.Keys) {
             $val = $sync["_nc_$netKey"]
             $sts = $sync["_ncs_$netKey"]
             if ($val) {
                 Update-CardStatus -Card $netCards[$netKey] -Value $val -Status $sts
+                $sync.Cards[$netKey] = @{ Value = $val; Status = $sts }
             }
         }
         $netTimer.Stop()
         $btnNetCancel.Visible = $false
         $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Network Test"
+        $lblNetEta.Visible = $false
         $lblNetStatus.ForeColor = $ColMuted
-        $lblNetStatus.Text = "  $($sync.NetStep)"
+        $lblNetStatus.Text = "  $($sync.NetStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
         $lines = @()
         if ($sync.NetPortFail   -gt 0) { $lines += "Port failures — check the firewall and router. Confirm the uplink adapter is not blocked by a content filter or VLAN policy." }
         if ($sync.NetDomainFail -gt 0) { $lines += "DNS failures — check DNS server settings on this adapter. Confirm the VPU can reach its configured DNS server." }
@@ -396,10 +408,26 @@ $btnNetCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnNetCancel.Visib
 $pnlNetwork.Controls.Add($btnNetCancel)
 $btnNetCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 40)), 6))
 
-$lblNetEta = New-Object System.Windows.Forms.Label; $lblNetEta.Text = "est. ~20 sec"
+$lblNetEta = New-Object System.Windows.Forms.Label; $lblNetEta.Text = "est. ~15 sec"
 $lblNetEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblNetEta.ForeColor = $ColMuted
 $lblNetEta.Location = New-Object System.Drawing.Point(378,236); $lblNetEta.AutoSize = $true
 $pnlNetwork.Controls.Add($lblNetEta)
+
+# "Open Network Settings" — shortcut to ncpa.cpl for adapter changes
+$btnNetSettings = New-Object System.Windows.Forms.Button
+$btnNetSettings.Text      = "Open Network Settings"
+$btnNetSettings.Size      = New-Object System.Drawing.Size(180, 40)
+$btnNetSettings.Location  = New-Object System.Drawing.Point(1070, 226)
+$btnNetSettings.Anchor    = $AnchorTR
+$btnNetSettings.BackColor = $ColNavHover
+$btnNetSettings.ForeColor = $ColText
+$btnNetSettings.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnNetSettings.FlatAppearance.BorderSize = 0
+$btnNetSettings.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$btnNetSettings.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnNetSettings.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 40)), 6))
+$btnNetSettings.Add_Click({ try { Start-Process ncpa.cpl } catch { } })
+$pnlNetwork.Controls.Add($btnNetSettings)
 
 $lblNetStatus = New-Object System.Windows.Forms.Label; $lblNetStatus.Text = ""
 $lblNetStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblNetStatus.ForeColor = $ColMuted
@@ -436,6 +464,7 @@ function Start-NetDiagnostic {
     }
     foreach ($k in $netCards.Keys) { Update-CardStatus -Card $netCards[$k] -Value "--" -Status "neutral" }
     $pnlNetAction.Visible = $false
+    $lblNetEta.Visible = $true
     $rtbNetLog.Clear()
     $btnNetRun.Enabled = $false; $btnNetRun.Text = "  Running..."
     $btnNetCancel.Visible = $true

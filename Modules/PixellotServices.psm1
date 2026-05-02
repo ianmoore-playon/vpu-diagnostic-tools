@@ -48,7 +48,7 @@ $SvcScript = {
             $sync.Cards["SvcVpu"] = @{ Value = "Active"; Status = "ok" }
         } else {
             Svc-Log "VPU.exe" "Not running  - normal when cameras are idle" "Gray"
-            $sync.Cards["SvcVpu"] = @{ Value = "Idle"; Status = "neutral" }
+            $sync.Cards["SvcVpu"] = @{ Value = "Not streaming"; Status = "neutral" }
         }
     }
 
@@ -122,7 +122,7 @@ $svcTimer.Add_Tick({
     if ($sync.SvcComplete -and -not $sync.SvcRunning) {
         $svcTimer.Stop(); $btnSvcCancel.Visible=$false
         $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Check Services"
-        $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="  $($sync.SvcStep)"
+        $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="  $($sync.SvcStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 
@@ -152,7 +152,7 @@ $svcCardDefs = @(
     @{ Key="SvcKeepAgentUp";  Title="KeepAgentUp";  Sub="Watchdog";       X=222;  Icon=[char]0xE9F5; W=200 }
     @{ Key="SvcCoordinator";  Title="Coordinator";  Sub="Core process";   X=434;  Icon=[char]0xE9F5; W=200 }
     @{ Key="SvcLogMeIn";      Title="LogMeIn";      Sub="Remote access";  X=646;  Icon=[char]0xE9F5; W=200 }
-    @{ Key="SvcVpu";          Title="VPU";          Sub="Camera encoder"; X=858;  Icon=[char]0xE9F5; W=200 }
+    @{ Key="SvcVpu";          Title="VPU";          Sub="Only runs during active streams"; X=858;  Icon=[char]0xE9F5; W=200 }
     @{ Key="SvcScoreconnect"; Title="Scoreconnect"; Sub="Score overlay";  X=1070; Icon=[char]0xE9F5; W=200 }
 )
 $svcCards = @{}

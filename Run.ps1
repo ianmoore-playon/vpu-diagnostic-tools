@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.30"
+$ScriptVersion = "1.0.41"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -30,6 +30,16 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     }
     exit
 }
+
+# ---------- Network defaults -------------------------------------------------
+# Force TLS 1.2 (preserve any higher protocols already enabled). Older VPU images
+# default to TLS 1.0/1.1 which GitHub no longer accepts, breaking update checks.
+[System.Net.ServicePointManager]::SecurityProtocol = `
+    [System.Net.SecurityProtocolType]::Tls12 -bor `
+    [System.Net.ServicePointManager]::SecurityProtocol
+
+# Self-update download URL — used by the CameraConnectivity Update Now button.
+$global:ScriptUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/Run.ps1"
 
 # ---------- Configuration ----------------------------------------------------
 $OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
@@ -382,9 +392,13 @@ function Show-Panel {
     if ($script:allNavPanels) {
         foreach ($p in $script:allNavPanels) { if ($p -is [System.Windows.Forms.Control]) { $p.Visible = $false } }
     }
-    $Panel.Visible   = $true
-    $right.Visible        = $ShowRight
-    $rightBorder.Visible  = $ShowRight
+    $Panel.Visible = $true
+    # Defensive: ensure the target panel is on top of any other Z-order siblings.
+    # Without this, late-added overlays (e.g. toast, tab bar) can mask a panel that
+    # was added earlier — manifests as "Settings button does nothing" (#56).
+    try { $Panel.BringToFront() } catch { }
+    if ($right)       { $right.Visible       = $ShowRight }
+    if ($rightBorder) { $rightBorder.Visible = $ShowRight }
 }
 
 function New-LogGrid {
@@ -486,6 +500,14 @@ $sync = [hashtable]::Synchronized(@{
         HwMonitor   = @{ Value = "--"; Status = "neutral" }
         HwMmk       = @{ Value = "--"; Status = "neutral" }
         SysInfo     = @{ Value = "--"; Status = "neutral" }
+        SiModel     = @{ Value = "--"; Status = "neutral" }
+        SiOs        = @{ Value = "--"; Status = "neutral" }
+        SiUptime    = @{ Value = "--"; Status = "neutral" }
+        SiCpu       = @{ Value = "--"; Status = "neutral" }
+        SiRam       = @{ Value = "--"; Status = "neutral" }
+        SiStorage   = @{ Value = "--"; Status = "neutral" }
+        DiskSmart   = @{ Value = "--"; Status = "neutral" }
+        DiskErrors  = @{ Value = "--"; Status = "neutral" }
     }
     PortResults     = [System.Collections.ArrayList]::new()
     CamResults      = [System.Collections.ArrayList]::new()
@@ -547,11 +569,14 @@ $sync = [hashtable]::Synchronized(@{
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Pulse - Pixellot Unified Live System Evaluator"
 $form.ClientSize = New-Object System.Drawing.Size(1280, 760)
+# Enforce minimum AT the default client size so panels never have to render
+# in a smaller area than they were laid out for. Combined with AutoScroll on
+# FullDiagnostic (#59), this keeps the bottom action buttons reachable.
 $form.MinimumSize = $form.Size
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.BackColor = $ColBg
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
-$form.MaximizeBox = $false
+$form.MaximizeBox = $true
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
 $AssetsDir = Join-Path $PSScriptRoot "Assets"
@@ -746,17 +771,17 @@ $navReports     = New-TabButton "Reports"              0xE7C3  (8 * $tabW)  $tab
 
 $btnTabFullDiag = New-Object System.Windows.Forms.Button
 $btnTabFullDiag.Text      = [char]0x25B6 + "  Run Diagnostic"
-$btnTabFullDiag.Size      = New-Object System.Drawing.Size(132, 38)
-$btnTabFullDiag.Location  = New-Object System.Drawing.Point(1004, 15)
+$btnTabFullDiag.Size      = New-Object System.Drawing.Size(170, 46)
+$btnTabFullDiag.Location  = New-Object System.Drawing.Point(966, 11)
 $btnTabFullDiag.BackColor = $ColAccent
 $btnTabFullDiag.ForeColor = [System.Drawing.Color]::White
 $btnTabFullDiag.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $btnTabFullDiag.FlatAppearance.BorderSize = 0
-$btnTabFullDiag.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
+$btnTabFullDiag.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
 $btnTabFullDiag.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 $btnTabFullDiag.Cursor    = [System.Windows.Forms.Cursors]::Hand
 $btnTabFullDiag.Anchor    = $AnchorTR
-$btnTabFullDiag.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,132,38)),6))
+$btnTabFullDiag.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,170,46)),6))
 
 $pnlTabBar.Controls.AddRange(@(
     $navSysOverview,$navSysInfo,$navNetConfig,$navCamera,$navServices,
@@ -848,7 +873,7 @@ $lblHubTitle.Size      = New-Object System.Drawing.Size(700, 34)
 $pnlSysOverview.Controls.Add($lblHubTitle)
 
 $lblHubSub = New-Object System.Windows.Forms.Label
-$lblHubSub.Text      = "Pixellot Unified Live System Evaluator — identify and resolve VPU issues fast."
+$lblHubSub.Text      = "Select a module below, or run a Full Diagnostic for a complete system check."
 $lblHubSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
 $lblHubSub.ForeColor = $ColMuted
 $lblHubSub.Location  = New-Object System.Drawing.Point(24, 58)
@@ -898,14 +923,14 @@ function New-SectionCard {
 }
 
 $hubCardDefs = @(
-    @{Nav="navSysInfo";  Title="System Information"; Desc="CPU, RAM, GPU, storage and NIC inventory";               Icon=0xE80F; R=0;C=0}
-    @{Nav="navNetConfig";Title="Network";            Desc="Internet, port connectivity and DNS for Pixellot";        Icon=0xE701; R=0;C=1}
-    @{Nav="navCamera";   Title="Camera";             Desc="NIC link speeds, cable faults, ping and RTSP checks";     Icon=0xE722; R=0;C=2}
-    @{Nav="navServices"; Title="Services";           Desc="Pixellot agent, encoder and support services status";     Icon=0xE9F5; R=0;C=3}
-    @{Nav="navPoE";      Title="Hardware";           Desc="PoE NIC budget, GPU, peripherals and NIC uptime";         Icon=0xE7E8; R=1;C=0}
-    @{Nav="navDisk";     Title="Disks";              Desc="Drive space, SMART health and disk event log errors";     Icon=0xEDA2; R=1;C=1}
-    @{Nav="navEvents";   Title="OS Event Logs";      Desc="Recent OS errors filtered for hardware and services";     Icon=0xE7BA; R=1;C=2}
-    @{Nav="navReports";  Title="Reports";            Desc="View, copy and export saved diagnostic reports";          Icon=0xE7C3; R=1;C=3}
+    @{Nav="navSysInfo";  Title="System Information"; Desc="Hardware specs, OS version, uptime, and Pixellot software versions"; Icon=0xE80F; R=0;C=0}
+    @{Nav="navNetConfig";Title="Network";            Desc="Test required ports and domain DNS; identify firewall blocks";       Icon=0xE701; R=0;C=1}
+    @{Nav="navCamera";   Title="Camera";             Desc="Detect cameras and test connectivity; identify cable or PoE faults"; Icon=0xE722; R=0;C=2}
+    @{Nav="navServices"; Title="Services";           Desc="Verify Pixellot agent, encoder, watchdog, and remote services";      Icon=0xE9F5; R=0;C=3}
+    @{Nav="navPoE";      Title="Hardware";           Desc="PoE budget, GPU, monitor, peripherals, and NIC link uptime";         Icon=0xE7E8; R=1;C=0}
+    @{Nav="navDisk";     Title="Disks";              Desc="Free space, SMART health, and disk-related event log errors";        Icon=0xEDA2; R=1;C=1}
+    @{Nav="navEvents";   Title="OS Event Logs";      Desc="Recent OS errors filtered to VPU-relevant providers";                Icon=0xE7BA; R=1;C=2}
+    @{Nav="navReports";  Title="Reports";            Desc="View, copy, and export saved diagnostic reports";                    Icon=0xE7C3; R=1;C=3}
 )
 $hCH = 200; $hGap = 16; $hMargin = 24; $hCols = 4; $hRows = 2
 $hubNavLookup = @{
@@ -932,15 +957,52 @@ foreach ($hc in $hubCardDefs) {
     foreach ($ctrl in @($cp.Controls)) { $ctrl.Add_Click($clickBlock) }
 }
 
-$pnlSysOverview.Add_SizeChanged({
-    $pw   = $pnlSysOverview.Width
-    $hCW  = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
+# Recalculate tile positions deterministically. This is called both on initial
+# layout and on every SizeChanged event. Using a function avoids any event-handler
+# closure capture issues that v1.0.38's inline handler may have hit (#61).
+function Update-HubTileLayout {
+    if (-not $script:hubTiles -or $script:hubTiles.Count -eq 0) { return }
+    $pw = $pnlSysOverview.ClientSize.Width
+    if ($pw -le 0) { return }
+    $hCW = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
+    if ($hCW -lt 50) { $hCW = 50 }
     for ($i = 0; $i -lt $script:hubTiles.Count; $i++) {
-        $col = $i % $hCols; $row = [int]($i / $hCols)
-        $script:hubTiles[$i].Location = New-Object System.Drawing.Point(($hMargin + $col*($hCW+$hGap)), (90 + $row*($hCH+$hGap)))
-        $script:hubTiles[$i].Size     = New-Object System.Drawing.Size($hCW, $hCH)
+        $col  = $i % $hCols
+        $row  = [int]($i / $hCols)
+        $tile = $script:hubTiles[$i]
+        if (-not $tile) { continue }
+        $newX = $hMargin + $col * ($hCW + $hGap)
+        $newY = 90 + $row * ($hCH + $hGap)
+        # Disable WinForms anchor-based auto-resize on each tile — manual placement
+        # is the sole source of truth here.
+        $tile.Anchor   = [System.Windows.Forms.AnchorStyles]::None
+        $tile.Bounds   = New-Object System.Drawing.Rectangle($newX, $newY, $hCW, $hCH)
+        $tile.Region   = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $hCW, $hCH)), 10))
     }
-    $btnHubLastReport.Location = New-Object System.Drawing.Point($hMargin, (90 + $hRows*($hCH+$hGap) + 10))
+    if ($btnHubLastReport) {
+        $btnHubLastReport.Location = New-Object System.Drawing.Point($hMargin, (90 + $hRows*($hCH+$hGap) + 10))
+    }
+    if ($lblHubLastRun) {
+        $lblHubLastRun.Location = New-Object System.Drawing.Point(($hMargin + 196), (90 + $hRows*($hCH+$hGap) + 21))
+    }
+    $pnlSysOverview.Invalidate($true)  # force the parent to repaint with new tile positions
+}
+
+# Run once after creation so initial layout matches whatever the actual panel width is.
+Update-HubTileLayout
+
+# Debounce SizeChanged — drag events fire dozens of times per second; running the
+# layout on every one causes intermediate paints to leak through. Coalesce to a
+# single recalc 80ms after the last event.
+$script:hubResizeTimer = New-Object System.Windows.Forms.Timer
+$script:hubResizeTimer.Interval = 80
+$script:hubResizeTimer.Add_Tick({
+    $script:hubResizeTimer.Stop()
+    Update-HubTileLayout
+})
+$pnlSysOverview.Add_SizeChanged({
+    $script:hubResizeTimer.Stop()
+    $script:hubResizeTimer.Start()
 })
 
 $btnHubLastReport = New-Object System.Windows.Forms.Button
@@ -961,6 +1023,49 @@ $btnHubLastReport.Add_Click({
               Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($latest) { Start-Process notepad.exe $latest.FullName }
     else { [System.Windows.Forms.MessageBox]::Show("No reports found yet.", "Open Last Report", "OK", "Information") | Out-Null }
+})
+
+# ---- Last-run summary row -------------------------------------------------------
+# Surfaces date, overall result, and VPU model from the most recent report so users
+# can see at a glance whether anything has been run on this machine and how it went.
+$lblHubLastRun = New-Object System.Windows.Forms.Label
+$lblHubLastRun.Text      = ""
+$lblHubLastRun.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$lblHubLastRun.ForeColor = $ColMuted
+$lblHubLastRun.Location  = New-Object System.Drawing.Point(220, 535)
+$lblHubLastRun.Size      = New-Object System.Drawing.Size(900, 22)
+$lblHubLastRun.AutoEllipsis = $true
+$pnlSysOverview.Controls.Add($lblHubLastRun)
+
+# Refresh the summary every time the panel becomes visible (cheap — one file stat + ~10 lines read)
+$pnlSysOverview.Add_VisibleChanged({
+    if (-not $pnlSysOverview.Visible) { return }
+    try {
+        $latest = Get-ChildItem -Path $OutputDir -Filter "Pulse_Results_*.txt" -ErrorAction SilentlyContinue |
+                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if (-not $latest) {
+            $lblHubLastRun.Text      = "No diagnostic has been run yet."
+            $lblHubLastRun.ForeColor = $ColMuted
+            return
+        }
+        $head = Get-Content $latest.FullName -TotalCount 25 -ErrorAction SilentlyContinue
+        # Try to extract VPU model and overall result from the first 25 lines
+        $model = ($head | Where-Object { $_ -match '^VPU Model\s*:\s*(.+)$' } | Select-Object -First 1) -replace '^VPU Model\s*:\s*',''
+        $overall = ($head | Where-Object { $_ -match '^(Overall|Result|Status)\s*:\s*(.+)$' } | Select-Object -First 1)
+        $whenStr = $latest.LastWriteTime.ToString("MMM d, h:mm tt")
+        $modelStr = if ($model) { " — $model" } else { "" }
+        $resStr = if ($overall) { ($overall -replace '^[^:]+:\s*','') } else { "" }
+        $color = if ($resStr -match 'fail|error|critical') { $ColRed } `
+                 elseif ($resStr -match 'warn|issue|degrad') { $ColYellow } `
+                 elseif ($resStr) { $ColGreen } `
+                 else { $ColMuted }
+        $resBlock = if ($resStr) { "   |   $resStr" } else { "" }
+        $lblHubLastRun.Text      = "Last run: $whenStr$modelStr$resBlock"
+        $lblHubLastRun.ForeColor = $color
+    } catch {
+        $lblHubLastRun.Text = "Last run: report unreadable"
+        $lblHubLastRun.ForeColor = $ColMuted
+    }
 })
 
 # =============================================================================
@@ -1047,13 +1152,19 @@ $DiagScript = {
 
     function Test-TcpPort {
         param([string]$IP, [int]$Port, [int]$TimeoutMs = 2000)
+        $tcp = $null
         try {
             $tcp = New-Object System.Net.Sockets.TcpClient
             $c   = $tcp.BeginConnect($IP, $Port, $null, $null)
             $ok  = $c.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
-            if ($ok) { $tcp.EndConnect($c) }
-            $tcp.Close(); return $ok
+            # Without the inner try/catch, an EndConnect failure (host unreachable, RST)
+            # bubbles to the outer catch and the function returns $false correctly — but
+            # without it AsyncWaitHandle returning $true on a refused connection caused
+            # closed ports to be reported as open. Mirrors NetworkDiagnostics.psm1.
+            if ($ok) { try { $tcp.EndConnect($c) } catch { $ok = $false } }
+            return $ok
         } catch { return $false }
+        finally { if ($tcp) { try { $tcp.Close() } catch { } } }
     }
 
     # -- Init ------------------------------------------------------------------
@@ -2201,7 +2312,10 @@ $btnAdapterSettings.Add_Click({ Start-Process "ncpa.cpl" })
 $btnUpdate.Add_Click({
     $btnUpdate.Text = "  Launching..."; $btnUpdate.Enabled = $false
     try {
-        Start-Process PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"irm '$ScriptUrl' | iex`""
+        if (-not $global:ScriptUrl) {
+            throw "Update URL not configured (ScriptUrl is empty)."
+        }
+        Start-Process PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm '$global:ScriptUrl' | iex`""
         $form.Close()
     } catch {
         $btnUpdate.Enabled = $true; $btnUpdate.Text = "  Update Now"
@@ -2997,16 +3111,19 @@ $NetScript = {
     }
     function Test-TcpConnect {
         param([string]$HostName, [int]$Port, [int]$TimeoutMs)
+        $tcp = $null
         try {
             $tcp = New-Object System.Net.Sockets.TcpClient
             $c   = $tcp.BeginConnect($HostName, $Port, $null, $null)
             $ok  = $c.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
             if ($ok) { try { $tcp.EndConnect($c) } catch { $ok = $false } }
-            $tcp.Close(); return $ok
+            return $ok
         } catch { return $false }
+        finally { if ($tcp) { try { $tcp.Close() } catch { } } }
     }
     function Test-UdpDns {
         param([string]$Server, [int]$TimeoutMs)
+        $udp = $null
         try {
             $udp = New-Object System.Net.Sockets.UdpClient
             $udp.Client.ReceiveTimeout = $TimeoutMs
@@ -3019,12 +3136,13 @@ $NetScript = {
             $ep = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Parse($Server), 53)
             $udp.Send($q, $q.Length, $ep) | Out-Null
             $r  = $udp.Receive([ref]$ep)
-            $udp.Close()
             return ($r -and $r.Length -gt 6 -and ($r[3] -band 0x0F) -eq 0)
         } catch { return $false }
+        finally { if ($udp) { try { $udp.Close() } catch { } } }
     }
     function Test-UdpNtp {
         param([string]$Server, [int]$TimeoutMs)
+        $udp = $null
         try {
             $ar = [System.Net.Dns]::BeginGetHostAddresses($Server, $null, $null)
             if (-not $ar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
@@ -3036,12 +3154,13 @@ $NetScript = {
             $ep = New-Object System.Net.IPEndPoint($addrs[0], 123)
             $udp.Send($pkt, 48, $ep) | Out-Null
             $r = $udp.Receive([ref]$ep)
-            $udp.Close()
             return ($r -and $r.Length -ge 48)
         } catch { return $false }
+        finally { if ($udp) { try { $udp.Close() } catch { } } }
     }
     function Test-UdpEcho {
         param([string]$Server, [int]$Port, [int]$TimeoutMs)
+        $udp = $null
         try {
             $ar = [System.Net.Dns]::BeginGetHostAddresses($Server, $null, $null)
             if (-not $ar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
@@ -3053,9 +3172,9 @@ $NetScript = {
             $ep = New-Object System.Net.IPEndPoint($addrs[0], $Port)
             $udp.Send($payload, $payload.Length, $ep) | Out-Null
             $r = $udp.Receive([ref]$ep)
-            $udp.Close()
             return ([System.Text.Encoding]::ASCII.GetString($r) -eq "testing UDP on port $Port")
         } catch { return $false }
+        finally { if ($udp) { try { $udp.Close() } catch { } } }
     }
     function Resolve-DomainAsync {
         param([string]$Domain, [int]$TimeoutMs)
@@ -3183,9 +3302,9 @@ $netTimer.Add_Tick({
         # Render to rtbNetLog
         if ($netItem.L -eq "Section") {
             $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
-            $rtbNetLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 7.5, [System.Drawing.FontStyle]::Bold)
-            $rtbNetLog.SelectionColor = $ColMuted
-            $rtbNetLog.AppendText("`n  $($netItem.Result.ToUpper())`n")
+            $rtbNetLog.SelectionFont  = New-Object System.Drawing.Font("Segoe UI Semibold", 9, [System.Drawing.FontStyle]::Bold)
+            $rtbNetLog.SelectionColor = $ColText
+            $rtbNetLog.AppendText("`n`n  $($netItem.Result.ToUpper())`n")
         } else {
             $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
             $rtbNetLog.SelectionColor = $ColLogLabel
@@ -3223,18 +3342,25 @@ $netTimer.Add_Tick({
 
     if ($sync.NetComplete -and -not $sync.NetRunning) {
         # Final sync reads directly from the synchronized hashtable — guaranteed visibility.
+        # We ALSO backfill $sync.Cards from the _nc_/_ncs_ keys so FullDiagnostic's
+        # Get-WorstCardStatus (which reads $sync.Cards[$key].Status) sees the correct
+        # state. Writes inside the background runspace's Set-NetCard function don't
+        # reliably propagate to the inner unsynchronized Cards hashtable — same
+        # function-scope quirk we hit in v1.0.26 (#60).
         foreach ($netKey in $netCards.Keys) {
             $val = $sync["_nc_$netKey"]
             $sts = $sync["_ncs_$netKey"]
             if ($val) {
                 Update-CardStatus -Card $netCards[$netKey] -Value $val -Status $sts
+                $sync.Cards[$netKey] = @{ Value = $val; Status = $sts }
             }
         }
         $netTimer.Stop()
         $btnNetCancel.Visible = $false
         $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Network Test"
+        $lblNetEta.Visible = $false
         $lblNetStatus.ForeColor = $ColMuted
-        $lblNetStatus.Text = "  $($sync.NetStep)"
+        $lblNetStatus.Text = "  $($sync.NetStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
         $lines = @()
         if ($sync.NetPortFail   -gt 0) { $lines += "Port failures — check the firewall and router. Confirm the uplink adapter is not blocked by a content filter or VLAN policy." }
         if ($sync.NetDomainFail -gt 0) { $lines += "DNS failures — check DNS server settings on this adapter. Confirm the VPU can reach its configured DNS server." }
@@ -3331,10 +3457,26 @@ $btnNetCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnNetCancel.Visib
 $pnlNetwork.Controls.Add($btnNetCancel)
 $btnNetCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 40)), 6))
 
-$lblNetEta = New-Object System.Windows.Forms.Label; $lblNetEta.Text = "est. ~20 sec"
+$lblNetEta = New-Object System.Windows.Forms.Label; $lblNetEta.Text = "est. ~15 sec"
 $lblNetEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblNetEta.ForeColor = $ColMuted
 $lblNetEta.Location = New-Object System.Drawing.Point(378,236); $lblNetEta.AutoSize = $true
 $pnlNetwork.Controls.Add($lblNetEta)
+
+# "Open Network Settings" — shortcut to ncpa.cpl for adapter changes
+$btnNetSettings = New-Object System.Windows.Forms.Button
+$btnNetSettings.Text      = "Open Network Settings"
+$btnNetSettings.Size      = New-Object System.Drawing.Size(180, 40)
+$btnNetSettings.Location  = New-Object System.Drawing.Point(1070, 226)
+$btnNetSettings.Anchor    = $AnchorTR
+$btnNetSettings.BackColor = $ColNavHover
+$btnNetSettings.ForeColor = $ColText
+$btnNetSettings.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnNetSettings.FlatAppearance.BorderSize = 0
+$btnNetSettings.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$btnNetSettings.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnNetSettings.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 40)), 6))
+$btnNetSettings.Add_Click({ try { Start-Process ncpa.cpl } catch { } })
+$pnlNetwork.Controls.Add($btnNetSettings)
 
 $lblNetStatus = New-Object System.Windows.Forms.Label; $lblNetStatus.Text = ""
 $lblNetStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblNetStatus.ForeColor = $ColMuted
@@ -3371,6 +3513,7 @@ function Start-NetDiagnostic {
     }
     foreach ($k in $netCards.Keys) { Update-CardStatus -Card $netCards[$k] -Value "--" -Status "neutral" }
     $pnlNetAction.Visible = $false
+    $lblNetEta.Visible = $true
     $rtbNetLog.Clear()
     $btnNetRun.Enabled = $false; $btnNetRun.Text = "  Running..."
     $btnNetCancel.Visible = $true
@@ -3546,7 +3689,10 @@ $helpSections = @(
     @{ H="Event Logs tab"; B="Reads System and Application event logs and displays errors and warnings from the last 24 hours. A high error count (especially disk, NTFS, or driver errors) often correlates with hardware problems seen in other tabs.`n`nUp to 20 errors and 10 warnings are shown per log. Use Event Viewer (eventvwr.msc) to see the full list with all details." }
     @{ H="Reports tab"; B="Lists all past Full Diagnostic runs stored in the Pulse_Results folder. Double-click any row to open the full report in Notepad. Green rows are all-clear; red rows show which ports had faults.`n`nReports are saved automatically after each Camera diagnostic run." }
     @{ H="What is a SmartSpeed event?"; B="Intel SmartSpeed Event ID 40 fires when the NIC tried to establish a gigabit link but the physical medium could not sustain it. It only fires on physical-layer failures - it never fires when a device (like an OCR camera) simply does not support gigabit.`n`nAny non-zero SmartSpeed count on a camera NIC is definitive evidence of a cable, connector, or NIC fault. Zero events on a 100 Mbps port means the device is 100-Mbps-only and gigabit was never attempted." }
-    @{ H="Frequently asked questions"; B="Q: VPU.exe shows Not running - is that a problem?`nA: No. VPU.exe only runs when cameras are actively streaming. It is normal for it to be absent between games.`n`nQ: A NIC port shows No link - is that a fault?`nA: No link is normal for ports that do not have a camera connected. Only ports with a camera attached that show 100 Mbps are faults.`n`nQ: Network tests fail for pixellot.stream - is that a problem?`nA: pixellot.stream is marked INFO because it is a dynamic streaming server that does not respond to raw probes. Check the domain test result for pixellot.stream instead.`n`nQ: The tool says it cannot read the event log - what does that mean?`nA: This can happen if the Windows Event Log service is stopped or the account running the tool lacks permission. Restart the service via services.msc." }
+    @{ H="Camera Fault Isolator"; B="The Camera tab includes a guided fault-isolation wizard accessible via the Open Fault Isolator button. The wizard walks through a four-phase swap test to identify whether a degraded port is caused by the NIC, the cable, or the camera itself.`n`nPhase 1 captures the baseline link speed for the suspect port. Phase 2 swaps the cable to a known-good port to test if the fault follows the NIC port. Phase 3 swaps the cable to test if the fault follows the cable. Phase 4 swaps the camera to test if the fault follows the camera.`n`nEach phase produces a plain-language verdict, and the wizard concludes with a Run Full Diagnostic action to confirm the fix." }
+    @{ H="System Information sections"; B="The System Information tab surfaces hardware specs and configuration details:`n`n- Pixellot Software: registry-derived App Version, System Image Version, and Package Dependencies.`n- Operating System / System: edition, build, manufacturer, model, BIOS, serial number.`n- Time & Locale: timezone, NTP server, W32Time service status. Flags UTC default as a likely misconfiguration.`n- Pixellot Calibrations: scans known calibration paths and lists files with last-modified times.`n- Installed Software: counts installed apps and flags known-conflicting software (other AV, OBS, BitTorrent, etc.)." }
+    @{ H="Frequently asked questions"; B="Q: VPU.exe shows Not streaming - is that a problem?`nA: No. VPU.exe only runs when cameras are actively streaming. It is normal for it to be absent between games.`n`nQ: A NIC port shows No link - is that a fault?`nA: No link is normal for ports that do not have a camera connected. Only ports with a camera attached that show 100 Mbps are faults.`n`nQ: Network tests fail for pixellot.stream - is that a problem?`nA: pixellot.stream is no longer probed directly. Reliable port tests now hit Pixellot's prod-echo.pixellot.tv echo server, and the pixellot.stream domain shows an INFO row in the domain test (it is a stream-only destination).`n`nQ: The tool says it cannot read the event log - what does that mean?`nA: This can happen if the Windows Event Log service is stopped or the account running the tool lacks permission. Restart the service via services.msc." }
+    @{ H="About Pulse"; B="Pulse — Pixellot Unified Live System Evaluator`nVersion: see the header bar`nRepository: https://github.com/ianmoore-playon/vpu-diagnostic-tools`nLicense: Internal use within PlayOn Sports / NFHS Network. Not for external distribution.`n`nFeedback and bug reports go through the Submit Feedback form below — these are routed directly to the tools team. The form requires a feedback token configured at install time; if the token is missing, feedback is copied to the clipboard for manual handoff." }
 )
 $firstHelp = $true
 foreach ($s in $helpSections) {
@@ -3579,7 +3725,7 @@ $lblFbTitle.Anchor    = $AnchorBL
 $pnlHelp.Controls.Add($lblFbTitle)
 
 $lblFbSub = New-Object System.Windows.Forms.Label
-$lblFbSub.Text      = "Report a bug or suggest an improvement — submitted directly as a GitHub issue."
+$lblFbSub.Text      = "Report a problem or suggest an improvement — sent directly to the Pixellot tools team."
 $lblFbSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $lblFbSub.ForeColor = $ColMuted
 $lblFbSub.Location  = New-Object System.Drawing.Point(24, ($ContentH - 163))
@@ -3693,6 +3839,7 @@ $btnFbSend.Add_Click({
     $lblFbStatus.ForeColor = $ColMuted
     $lblFbStatus.Text      = "Submitting..."
 
+    $wc = $null
     try {
         $wc = New-Object System.Net.WebClient
         $wc.Headers.Add("Authorization",        "Bearer $script:FeedbackToken")
@@ -3711,6 +3858,7 @@ $btnFbSend.Add_Click({
         $lblFbStatus.ForeColor = $ColYellow
         $lblFbStatus.Text      = "Could not reach GitHub. Feedback copied to clipboard."
     } finally {
+        if ($wc) { try { $wc.Dispose() } catch { } }
         $btnFbSend.Enabled = $true
     }
 })
@@ -3732,12 +3880,17 @@ $HwScript = {
         $sync.HwQueue.Enqueue(@{ Label=""; Result=$Title; L="Section" }) }
 
     # -- GPU model ---------------------------------------------------------------
+    # Prefer discrete GPU over integrated (Intel UHD/HD Graphics) when both are present.
+    # The Pixellot encoding workload runs on the discrete card; surfacing the iGPU
+    # mis-leads IT teams diagnosing performance issues.
     $sync.HwStep = "Querying GPU..."
     Hw-Section "Graphics"
     try {
-        $gpu = Get-CimInstance Win32_VideoController -ErrorAction Stop |
-               Where-Object { $_.Name -notlike "*Remote*" -and $_.Name -notlike "*Virtual*" } |
-               Select-Object -First 1
+        $gpus = @(Get-CimInstance Win32_VideoController -ErrorAction Stop |
+                  Where-Object { $_.Name -notlike "*Remote*" -and $_.Name -notlike "*Virtual*" })
+        $discrete = @($gpus | Where-Object { $_.Name -notlike "*Intel*" -and $_.Name -notlike "*Microsoft*" })
+        if ($discrete.Count -gt 0) { $gpus = $discrete }
+        $gpu = $gpus | Select-Object -First 1
         $gpuName = if ($gpu) { $gpu.Name } else { "Not detected" }
         Hw-Log "GPU" $gpuName "Info"
         $sync.Cards["HwGpu"] = @{ Value=$gpuName; Status="neutral" }
@@ -3842,7 +3995,9 @@ $hwTimer.Add_Tick({
     if ($sync.HwComplete -and -not $sync.HwRunning) {
         $hwTimer.Stop(); $btnHwCancel.Visible=$false
         $btnHwRun.Enabled=$true; $btnHwRun.Text=[char]0x25B6+"  Check Hardware"
-        $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="  $($sync.HwStep)"
+        $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="  $($sync.HwStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
+        # Refresh the port diagram with current link state (#7)
+        try { Update-HwPortDiagram } catch { }
     }
 })
 
@@ -3864,6 +4019,20 @@ $lblHwSub.Text = "GPU model, peripheral connections, NIC link uptime, and PoE po
 $lblHwSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblHwSub.ForeColor = $ColMuted
 $lblHwSub.Location = New-Object System.Drawing.Point(10,42); $lblHwSub.Size = New-Object System.Drawing.Size(1240,18)
 $pnlPoE.Controls.Add($lblHwSub)
+
+# PoE / NIC uptime data is gathered by the Camera Connectivity module — surface a notice
+# if it hasn't been run yet so users don't think the values are missing.
+$script:hwSubDefault = $lblHwSub.Text
+$pnlPoE.Add_VisibleChanged({
+    if (-not $pnlPoE.Visible) { return }
+    if (-not $sync.NicLinkUptimes -or $sync.NicLinkUptimes.Count -eq 0) {
+        $lblHwSub.Text      = "Run Camera Connectivity first to populate PoE budget and NIC uptime."
+        $lblHwSub.ForeColor = $ColYellow
+    } else {
+        $lblHwSub.Text      = $script:hwSubDefault
+        $lblHwSub.ForeColor = $ColMuted
+    }
+})
 
 $hwCardDefs = @(
     @{ Key="HwGpu";     Title="GPU";     Sub="Graphics adapter";  X=10;  Icon=[char]0xE7F4; W=400 }
@@ -3893,7 +4062,7 @@ $btnHwCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnHwCancel.
 $pnlPoE.Controls.Add($btnHwCancel)
 $btnHwCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
 
-$lblHwEta = New-Object System.Windows.Forms.Label; $lblHwEta.Text = "est. ~5 sec"
+$lblHwEta = New-Object System.Windows.Forms.Label; $lblHwEta.Text = "est. ~3 sec"
 $lblHwEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblHwEta.ForeColor = $ColMuted
 $lblHwEta.Location = New-Object System.Drawing.Point(348,180); $lblHwEta.AutoSize = $true
 $pnlPoE.Controls.Add($lblHwEta)
@@ -3903,13 +4072,415 @@ $lblHwStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblHwStatus.F
 $lblHwStatus.Location = New-Object System.Drawing.Point(10,218); $lblHwStatus.Size = New-Object System.Drawing.Size(1240,18)
 $pnlPoE.Controls.Add($lblHwStatus)
 
+# ---- NIC Port Layout — horizontal "card + ports below" mockup-style design (#7) -------
+# Layout from top to bottom in the panel area Y=242..602:
+#   1. Section header at Y=242
+#   2. Stylized NIC bracket render at Y=266 (~80 high) with 4 jack rectangles + status light
+#   3. Leader lines (drawn in Paint) from each jack down to its info box
+#   4. Row of 4 port info boxes at Y=380, ~120 high, with port number / status / speed / duplex / errors
+#   5. Hardware Details log below at Y=508
+# Right sidebar (always visible) at X=1010, W=240: NIC Info card + Status Legend card.
+
+$lblHwPortHdr = New-Object System.Windows.Forms.Label
+$lblHwPortHdr.Text      = "NIC Port Layout"
+$lblHwPortHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
+$lblHwPortHdr.ForeColor = $ColText
+$lblHwPortHdr.Location  = New-Object System.Drawing.Point(10, 242)
+$lblHwPortHdr.AutoSize  = $true
+$pnlPoE.Controls.Add($lblHwPortHdr)
+
+$lblHwPortSub = New-Object System.Windows.Forms.Label
+$lblHwPortSub.Text      = "Physical port mapping with live link state. Port 1 sits next to the status light on the actual card."
+$lblHwPortSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblHwPortSub.ForeColor = $ColMuted
+$lblHwPortSub.Location  = New-Object System.Drawing.Point(140, 245)
+$lblHwPortSub.AutoSize  = $true
+$pnlPoE.Controls.Add($lblHwPortSub)
+
+# Container panel for the card-and-ports visualization. Custom Paint event draws the
+# NIC bracket outline, jack rectangles, status light, and leader lines from each
+# jack down to its info box.
+$pnlHwNicCanvas = New-Object System.Windows.Forms.Panel
+$pnlHwNicCanvas.Size      = New-Object System.Drawing.Size(990, 230)
+$pnlHwNicCanvas.Location  = New-Object System.Drawing.Point(10, 270)
+$pnlHwNicCanvas.BackColor = $ColCard
+$pnlHwNicCanvas.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 990, 230)), 8))
+$pnlPoE.Controls.Add($pnlHwNicCanvas)
+
+# Constants for the canvas Paint — easier to tune without touching multiple call sites.
+$script:nicCardY      = 18           # top of the card body inside the canvas
+$script:nicCardH      = 90           # card body height (PCB area)
+$script:nicJackY      = 38           # top of the jack openings (relative to canvas)
+$script:nicJackH      = 36           # jack rectangle height
+$script:nicJackW      = 64           # jack rectangle width
+$script:nicJackGap    = 14           # gap between jacks
+# Center the row of 4 jacks within the canvas. Status light sits to the LEFT of port 1.
+# Total jack-row width = 4*64 + 3*14 = 298. Plus status-light area (~40) on the left.
+$script:nicJackRowW   = 4 * $script:nicJackW + 3 * $script:nicJackGap   # 298
+$script:nicStatusOffX = 36           # status light is this far left of port 1
+$script:nicJackStartX = [int](( ($pnlHwNicCanvas.Width) - $script:nicJackRowW + $script:nicStatusOffX) / 2)
+$script:nicLightX     = $script:nicJackStartX - $script:nicStatusOffX
+# Port info boxes sit below the canvas — record their target connection points so
+# the leader lines can dock correctly.
+$script:nicPortBoxY   = 510          # absolute Y of port info boxes (in pnlPoE coords)
+$script:nicCanvasBaseY= 270          # absolute Y of canvas top-left
+$script:nicPortBoxW   = 230          # width of each port info box
+$script:nicPortBoxH   = 110
+
+# Custom Paint — draws PCB rectangle, 4 RJ45 jack openings, status light next to Port 1,
+# and short connector stubs hanging down from each jack. Full leader lines are drawn
+# on the parent pnlPoE Paint event since they cross panel boundaries.
+$pnlHwNicCanvas.Add_Paint({
+    $g = $args[1].Graphics
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $cw = $pnlHwNicCanvas.Width
+    # PCB body — soft green-tinted rectangle to evoke the PCB without using a photo
+    $pcbColor = [System.Drawing.Color]::FromArgb(28, 56, 38)
+    $pcbBrush = New-Object System.Drawing.SolidBrush($pcbColor)
+    $pcbRect  = New-Object System.Drawing.Rectangle(20, $script:nicCardY, ($cw - 40), $script:nicCardH)
+    $g.FillRectangle($pcbBrush, $pcbRect); $pcbBrush.Dispose()
+    $pcbPen   = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(60, 120, 80), 1)
+    $g.DrawRectangle($pcbPen, $pcbRect); $pcbPen.Dispose()
+    # Bracket strip — metallic gray band along the bottom
+    $brkBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(140, 145, 152))
+    $brkRect  = New-Object System.Drawing.Rectangle(20, ($script:nicCardY + $script:nicCardH), ($cw - 40), 18)
+    $g.FillRectangle($brkBrush, $brkRect); $brkBrush.Dispose()
+    # Status light — small green LED next to Port 1 (bottom-left jack position)
+    $litX = $script:nicLightX
+    $litY = $script:nicJackY + ($script:nicJackH / 2) - 5
+    $litBrush = New-Object System.Drawing.SolidBrush($ColGreen)
+    $g.FillEllipse($litBrush, $litX, $litY, 10, 10); $litBrush.Dispose()
+    # Tiny "PWR" label under the status light for clarity
+    $hintFont = New-Object System.Drawing.Font("Segoe UI", 7)
+    $hintBrush = New-Object System.Drawing.SolidBrush($ColMuted)
+    $g.DrawString("PWR", $hintFont, $hintBrush, ($litX - 6), ($litY + 14))
+    $hintFont.Dispose(); $hintBrush.Dispose()
+    # 4 RJ45 jack openings (Port 1 leftmost — matches photo)
+    $jackBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(15, 25, 35))
+    $jackPen   = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(80, 90, 100), 1)
+    for ($p = 0; $p -lt 4; $p++) {
+        $jx = $script:nicJackStartX + $p * ($script:nicJackW + $script:nicJackGap)
+        $jackRect = New-Object System.Drawing.Rectangle($jx, $script:nicJackY, $script:nicJackW, $script:nicJackH)
+        $g.FillRectangle($jackBrush, $jackRect)
+        $g.DrawRectangle($jackPen, $jackRect)
+        # "Port N" label below each jack
+        $lblFont  = New-Object System.Drawing.Font("Segoe UI", 7.5)
+        $lblBrush = New-Object System.Drawing.SolidBrush($ColMuted)
+        $g.DrawString("Port $($p + 1)", $lblFont, $lblBrush, ($jx + 12), ($script:nicJackY + $script:nicJackH + 22))
+        $lblFont.Dispose(); $lblBrush.Dispose()
+    }
+    $jackBrush.Dispose(); $jackPen.Dispose()
+
+    # Per-port colored LED dots inside each jack — fill in based on $script:hwPortLedColors
+    if ($script:hwPortLedColors -and $script:hwPortLedColors.Count -ge 4) {
+        for ($p = 0; $p -lt 4; $p++) {
+            $jx = $script:nicJackStartX + $p * ($script:nicJackW + $script:nicJackGap)
+            $ledX = $jx + ($script:nicJackW / 2) - 4
+            $ledY = $script:nicJackY + $script:nicJackH - 12
+            $ledBrush = New-Object System.Drawing.SolidBrush($script:hwPortLedColors[$p])
+            $g.FillEllipse($ledBrush, $ledX, $ledY, 8, 8)
+            $ledBrush.Dispose()
+        }
+    }
+})
+$script:hwPortLedColors = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
+
+# 4 port info boxes — horizontal row below the canvas. Port 1 leftmost, Port 4 rightmost
+# (matches photo orientation and the canvas above).
+$script:hwPortTiles = @()
+$portBoxStartX = 10
+$portBoxGap    = 12
+for ($p = 0; $p -lt 4; $p++) {
+    $portNum = $p + 1   # left-to-right: 1, 2, 3, 4
+    $tileX   = $portBoxStartX + $p * ($script:nicPortBoxW + $portBoxGap)
+    $tile = New-Object System.Windows.Forms.Panel
+    $tile.Size      = New-Object System.Drawing.Size($script:nicPortBoxW, $script:nicPortBoxH)
+    $tile.Location  = New-Object System.Drawing.Point($tileX, $script:nicPortBoxY)
+    $tile.BackColor = $ColCard
+    $tile.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $script:nicPortBoxW, $script:nicPortBoxH)), 6))
+    $pnlPoE.Controls.Add($tile)
+
+    # Header row — Port N + status icon + status text
+    $lblNum = New-Object System.Windows.Forms.Label
+    $lblNum.Text      = "Port $portNum"
+    $lblNum.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10.5)
+    $lblNum.ForeColor = $ColText
+    $lblNum.Location  = New-Object System.Drawing.Point(12, 8)
+    $lblNum.Size      = New-Object System.Drawing.Size(80, 20)
+    $tile.Controls.Add($lblNum)
+
+    $lblStatusIcon = New-Object System.Windows.Forms.Label
+    $lblStatusIcon.Text      = [char]0x26AB   # neutral dot until populated
+    $lblStatusIcon.Font      = New-Object System.Drawing.Font("Segoe UI Symbol", 10)
+    $lblStatusIcon.ForeColor = $ColMuted
+    $lblStatusIcon.Location  = New-Object System.Drawing.Point(96, 8)
+    $lblStatusIcon.Size      = New-Object System.Drawing.Size(18, 20)
+    $tile.Controls.Add($lblStatusIcon)
+
+    $lblStatusText = New-Object System.Windows.Forms.Label
+    $lblStatusText.Text      = "--"
+    $lblStatusText.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
+    $lblStatusText.ForeColor = $ColMuted
+    $lblStatusText.Location  = New-Object System.Drawing.Point(116, 9)
+    $lblStatusText.Size      = New-Object System.Drawing.Size(100, 20)
+    $tile.Controls.Add($lblStatusText)
+
+    # Detail rows: Speed / Duplex / MAC / Errors
+    function _AddPortRow {
+        param($parent, $y, $label, $valueRef, $ColMuted, $ColText)
+        $lblL = New-Object System.Windows.Forms.Label
+        $lblL.Text      = "$label"
+        $lblL.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+        $lblL.ForeColor = $ColMuted
+        $lblL.Location  = New-Object System.Drawing.Point(12, $y)
+        $lblL.Size      = New-Object System.Drawing.Size(60, 16)
+        $parent.Controls.Add($lblL)
+        $lblV = New-Object System.Windows.Forms.Label
+        $lblV.Text      = "--"
+        $lblV.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+        $lblV.ForeColor = $ColText
+        $lblV.Location  = New-Object System.Drawing.Point(72, $y)
+        $lblV.Size      = New-Object System.Drawing.Size(150, 16)
+        $parent.Controls.Add($lblV)
+        return $lblV
+    }
+    $lblSpeedV  = _AddPortRow $tile 36 "Speed:"  $null $ColMuted $ColText
+    $lblDuplexV = _AddPortRow $tile 54 "Duplex:" $null $ColMuted $ColText
+    $lblMacV    = _AddPortRow $tile 72 "MAC:"    $null $ColMuted $ColText
+    $lblMacV.Font = New-Object System.Drawing.Font("Consolas", 8)
+    $lblErrV    = _AddPortRow $tile 90 "Errors:" $null $ColMuted $ColText
+
+    $script:hwPortTiles += @{
+        PortNum   = $portNum
+        Tile      = $tile
+        StatusIcn = $lblStatusIcon
+        StatusTxt = $lblStatusText
+        SpeedV    = $lblSpeedV
+        DuplexV   = $lblDuplexV
+        MacV      = $lblMacV
+        ErrV      = $lblErrV
+    }
+}
+
+# Right sidebar — NIC Information card + Status Legend
+# X = 1010 puts it past the 990-wide canvas (which starts at X=10). Full panel width is 1280.
+# So sidebar gets ~250 wide.
+$pnlHwNicInfo = New-Object System.Windows.Forms.Panel
+$pnlHwNicInfo.Size      = New-Object System.Drawing.Size(240, 150)
+$pnlHwNicInfo.Location  = New-Object System.Drawing.Point(1010, 270)
+$pnlHwNicInfo.BackColor = $ColCard
+$pnlHwNicInfo.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 240, 150)), 8))
+$pnlPoE.Controls.Add($pnlHwNicInfo)
+
+$lblNicInfoHdr = New-Object System.Windows.Forms.Label
+$lblNicInfoHdr.Text      = "NIC Information"
+$lblNicInfoHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5)
+$lblNicInfoHdr.ForeColor = $ColText
+$lblNicInfoHdr.Location  = New-Object System.Drawing.Point(12, 10)
+$lblNicInfoHdr.AutoSize  = $true
+$pnlHwNicInfo.Controls.Add($lblNicInfoHdr)
+
+$script:hwNicInfoLines = @{}
+$infoRows = @("Model","MAC Base","Driver","Total ports")
+$ny = 32
+foreach ($row in $infoRows) {
+    $lblL = New-Object System.Windows.Forms.Label
+    $lblL.Text      = "$($row):"
+    $lblL.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lblL.ForeColor = $ColMuted
+    $lblL.Location  = New-Object System.Drawing.Point(12, $ny)
+    $lblL.Size      = New-Object System.Drawing.Size(76, 16)
+    $pnlHwNicInfo.Controls.Add($lblL)
+    $lblV = New-Object System.Windows.Forms.Label
+    $lblV.Text      = "--"
+    $lblV.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lblV.ForeColor = $ColText
+    $lblV.Location  = New-Object System.Drawing.Point(88, $ny)
+    $lblV.Size      = New-Object System.Drawing.Size(140, 16)
+    $pnlHwNicInfo.Controls.Add($lblV)
+    $script:hwNicInfoLines[$row] = $lblV
+    $ny += 22
+}
+
+# Status Legend card
+$pnlHwLegend = New-Object System.Windows.Forms.Panel
+$pnlHwLegend.Size      = New-Object System.Drawing.Size(240, 130)
+$pnlHwLegend.Location  = New-Object System.Drawing.Point(1010, 432)
+$pnlHwLegend.BackColor = $ColCard
+$pnlHwLegend.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 240, 130)), 8))
+$pnlPoE.Controls.Add($pnlHwLegend)
+
+$lblLegendHdr = New-Object System.Windows.Forms.Label
+$lblLegendHdr.Text      = "Status Legend"
+$lblLegendHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5)
+$lblLegendHdr.ForeColor = $ColText
+$lblLegendHdr.Location  = New-Object System.Drawing.Point(12, 10)
+$lblLegendHdr.AutoSize  = $true
+$pnlHwLegend.Controls.Add($lblLegendHdr)
+
+$legendItems = @(
+    @{ Color=$ColGreen;  Text="Linked - 1 Gbps healthy" },
+    @{ Color=$ColYellow; Text="Degraded - sub-gigabit" },
+    @{ Color=$ColMuted;  Text="No cable / disabled" },
+    @{ Color=$ColRed;    Text="Error / fault" }
+)
+$ly = 34
+foreach ($it in $legendItems) {
+    $dot = New-Object System.Windows.Forms.Panel
+    $dot.Size      = New-Object System.Drawing.Size(10, 10)
+    $dot.Location  = New-Object System.Drawing.Point(14, ($ly + 4))
+    $dot.BackColor = $it.Color
+    $dot.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 10, 10)), 5))
+    $pnlHwLegend.Controls.Add($dot)
+    $lblL = New-Object System.Windows.Forms.Label
+    $lblL.Text      = $it.Text
+    $lblL.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lblL.ForeColor = $ColText
+    $lblL.Location  = New-Object System.Drawing.Point(32, $ly)
+    $lblL.Size      = New-Object System.Drawing.Size(200, 18)
+    $pnlHwLegend.Controls.Add($lblL)
+    $ly += 22
+}
+
 $lblHwLogHdr = New-Object System.Windows.Forms.Label; $lblHwLogHdr.Text = "Hardware Details"
 $lblHwLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblHwLogHdr.ForeColor = $ColText
-$lblHwLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblHwLogHdr.AutoSize = $true
+$lblHwLogHdr.Location = New-Object System.Drawing.Point(10, 624); $lblHwLogHdr.AutoSize = $true
 $pnlPoE.Controls.Add($lblHwLogHdr)
 
-$dgvHwLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
+# Smaller log under the port diagram — just enough for the GPU/Monitor/Input details and
+# any extra runtime messages. Anchored bottom-stretch so it grows with the window.
+$dgvHwLog = New-LogGrid -X 10 -Y 648 -W 1240 -H 100
 $pnlPoE.Controls.Add($dgvHwLog)
+
+# Refresh function — populates the 4 tiles from Get-NetAdapter, sorted by MAC ascending
+# so index 0 of sorted = Port 1 (lowest MAC). Tiles are arranged top-to-bottom 4,3,2,1
+# so we index them in reverse.
+function Update-HwPortDiagram {
+    # Try the Pixellot-NIC driver patterns first (Intel I210/I211/I350/I354/82574L).
+    $sortedNics = @()
+    try {
+        $allNics = @(Get-NetAdapter -ErrorAction SilentlyContinue)
+        $matched = @()
+        foreach ($nic in $allNics) {
+            if (-not $nic.InterfaceDescription -or -not $nic.MacAddress) { continue }
+            foreach ($pat in $NicDriverPatterns) {
+                if ($nic.InterfaceDescription -like $pat) { $matched += $nic; break }
+            }
+        }
+        $sortedNics = @($matched | Sort-Object MacAddress)
+    } catch { }
+
+    # Fallback: if no NICs match the strict driver patterns, show ALL physical adapters
+    # sorted by MAC. Better to display SOMETHING than blank tiles.
+    if ($sortedNics.Count -eq 0) {
+        try {
+            $sortedNics = @(
+                Get-NetAdapter -Physical -ErrorAction SilentlyContinue |
+                    Where-Object { $_.MacAddress } |
+                    Sort-Object MacAddress |
+                    Select-Object -First 4
+            )
+        } catch { }
+    }
+
+    # Tiles are indexed 0..3 corresponding to port numbers 1..4 (left to right).
+    # sortedNics is also 0..N where index 0 is the lowest MAC = Port 1.
+    $ledColors = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
+    for ($tileIdx = 0; $tileIdx -lt 4; $tileIdx++) {
+        $tile = $script:hwPortTiles[$tileIdx]
+        $portNum  = $tile.PortNum
+        $sortIdx  = $portNum - 1
+        if ($sortIdx -lt $sortedNics.Count) {
+            $nic = $sortedNics[$sortIdx]
+            $mac = $nic.MacAddress
+            $speed = $nic.LinkSpeed
+            $status = $nic.Status
+            $isUp = ($status -eq "Up")
+            # Speed label: short form
+            $speedLabel = if ($speed -and $speed -match '(\d+)\s*Gbps')      { "$($Matches[1]) Gbps" } `
+                          elseif ($speed -and $speed -match '(\d+)\s*Mbps') { "$($Matches[1]) Mbps" } `
+                          elseif ($isUp)                                     { "Up" } `
+                          else                                                { "--" }
+            # Color tier: green = 1 Gbps healthy, yellow = sub-gigabit linked, gray = no link
+            $tier = if (-not $isUp)                            { "off"  } `
+                    elseif ($speed -match '^1\s*Gbps')         { "ok"   } `
+                    elseif ($speed -match '(100|10)\s*Mbps')   { "warn" } `
+                    else                                       { "info" }
+            $accentColor = switch ($tier) {
+                "ok"   { $ColGreen }
+                "warn" { $ColYellow }
+                "off"  { $ColMuted }
+                default{ $ColAccent }
+            }
+            $statusText = switch ($tier) {
+                "ok"   { "Linked" }
+                "warn" { "Degraded" }
+                "off"  { "No Link" }
+                default{ "Linked" }
+            }
+            $duplexLabel = if ($nic.FullDuplex -eq $true) { "Full" } `
+                           elseif ($nic.FullDuplex -eq $false) { "Half" } `
+                           else { "--" }
+            # Errors counter — try Get-NetAdapterStatistics for cumulative bad packets
+            $errCount = "--"
+            try {
+                $stats = Get-NetAdapterStatistics -Name $nic.Name -ErrorAction SilentlyContinue
+                if ($stats) {
+                    $err = [long]([long]$stats.OutboundPacketsWithErrors + [long]$stats.ReceivedPacketsWithErrors)
+                    $errCount = "$err"
+                }
+            } catch { }
+
+            $tile.StatusIcn.Text      = if ($tier -eq "off") { [char]0x26AB } elseif ($tier -eq "warn") { [char]0x26A0 } else { [char]0x25CF }
+            $tile.StatusIcn.ForeColor = $accentColor
+            $tile.StatusTxt.Text      = $statusText
+            $tile.StatusTxt.ForeColor = $accentColor
+            $tile.SpeedV.Text         = $speedLabel
+            $tile.SpeedV.ForeColor    = if ($isUp) { $accentColor } else { $ColMuted }
+            $tile.DuplexV.Text        = $duplexLabel
+            $tile.MacV.Text           = $mac
+            $tile.ErrV.Text           = $errCount
+            $tile.ErrV.ForeColor      = if ($errCount -ne "--" -and [int]$errCount -gt 0) { $ColYellow } else { $ColText }
+            $ledColors[$portNum - 1]  = $accentColor
+        } else {
+            $tile.StatusIcn.Text      = [char]0x26AB
+            $tile.StatusIcn.ForeColor = $ColMuted
+            $tile.StatusTxt.Text      = "Not detected"
+            $tile.StatusTxt.ForeColor = $ColMuted
+            $tile.SpeedV.Text         = "--"
+            $tile.DuplexV.Text        = "--"
+            $tile.MacV.Text           = "--"
+            $tile.ErrV.Text           = "--"
+        }
+    }
+
+    # Refresh the in-jack LED colors and repaint the canvas
+    $script:hwPortLedColors = $ledColors
+    if ($pnlHwNicCanvas) { $pnlHwNicCanvas.Invalidate() }
+
+    # Populate the right-sidebar NIC Information card
+    if ($script:hwNicInfoLines) {
+        $modelInfo = $null
+        try { $modelInfo = Get-AdlinkCardInfo $sortedNics } catch { }
+        $modelStr = if ($modelInfo -and $modelInfo.Label) { $modelInfo.Label } `
+                    elseif ($sortedNics.Count -gt 0)       { $sortedNics[0].InterfaceDescription } `
+                    else                                    { "Not detected" }
+        $macBase = if ($sortedNics.Count -gt 0) { $sortedNics[0].MacAddress } else { "--" }
+        $driverState = if ($sortedNics.Count -gt 0 -and $sortedNics[0].Status) { "Loaded" } else { "Not loaded" }
+        $totalPorts  = "$($sortedNics.Count) detected"
+        if ($script:hwNicInfoLines["Model"])       { $script:hwNicInfoLines["Model"].Text       = $modelStr }
+        if ($script:hwNicInfoLines["MAC Base"])    { $script:hwNicInfoLines["MAC Base"].Text    = $macBase }
+        if ($script:hwNicInfoLines["Driver"])      { $script:hwNicInfoLines["Driver"].Text      = $driverState }
+        if ($script:hwNicInfoLines["Driver"])      { $script:hwNicInfoLines["Driver"].ForeColor = if ($driverState -eq "Loaded") { $ColGreen } else { $ColRed } }
+        if ($script:hwNicInfoLines["Total ports"]) { $script:hwNicInfoLines["Total ports"].Text = $totalPorts }
+    }
+}
+
+# Refresh the diagram when the panel becomes visible AND when a hardware diagnostic
+# completes (in case link state changed during the test).
+$pnlPoE.Add_VisibleChanged({
+    if ($pnlPoE.Visible) { try { Update-HwPortDiagram } catch { } }
+})
 
 $script:hwRunspace = $null; $script:hwPs = $null; $script:hwSpinIdx = 0
 
@@ -3984,7 +4555,7 @@ $SvcScript = {
             $sync.Cards["SvcVpu"] = @{ Value = "Active"; Status = "ok" }
         } else {
             Svc-Log "VPU.exe" "Not running  - normal when cameras are idle" "Gray"
-            $sync.Cards["SvcVpu"] = @{ Value = "Idle"; Status = "neutral" }
+            $sync.Cards["SvcVpu"] = @{ Value = "Not streaming"; Status = "neutral" }
         }
     }
 
@@ -4058,7 +4629,7 @@ $svcTimer.Add_Tick({
     if ($sync.SvcComplete -and -not $sync.SvcRunning) {
         $svcTimer.Stop(); $btnSvcCancel.Visible=$false
         $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Check Services"
-        $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="  $($sync.SvcStep)"
+        $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="  $($sync.SvcStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 
@@ -4088,7 +4659,7 @@ $svcCardDefs = @(
     @{ Key="SvcKeepAgentUp";  Title="KeepAgentUp";  Sub="Watchdog";       X=222;  Icon=[char]0xE9F5; W=200 }
     @{ Key="SvcCoordinator";  Title="Coordinator";  Sub="Core process";   X=434;  Icon=[char]0xE9F5; W=200 }
     @{ Key="SvcLogMeIn";      Title="LogMeIn";      Sub="Remote access";  X=646;  Icon=[char]0xE9F5; W=200 }
-    @{ Key="SvcVpu";          Title="VPU";          Sub="Camera encoder"; X=858;  Icon=[char]0xE9F5; W=200 }
+    @{ Key="SvcVpu";          Title="VPU";          Sub="Only runs during active streams"; X=858;  Icon=[char]0xE9F5; W=200 }
     @{ Key="SvcScoreconnect"; Title="Scoreconnect"; Sub="Score overlay";  X=1070; Icon=[char]0xE9F5; W=200 }
 )
 $svcCards = @{}
@@ -4179,6 +4750,9 @@ $DiskScript = {
 
     $overallWorst = "ok"
     $osDrive      = $env:SystemDrive  # e.g. "C:"
+    # Per-card aggregates surfaced as DiskSmart (#8) and DiskErrors (#9)
+    $smartFailCount = 0
+    $smartTotal     = 0
 
     # ── 1. Physical Drives ────────────────────────────────────────────────────
     $sync.DiskStep = "Inventorying physical drives..."
@@ -4230,7 +4804,11 @@ $DiskScript = {
             }
         }
         if ($smartFails.ContainsKey([string]$phys.Index) -and $healthLvl -eq "Pass") { $healthStr = "SMART Predict Failure"; $healthLvl = "Fail" }
-        if ($healthLvl -in @("Warn","Fail")) { $overallWorst = if ($healthLvl -eq "Fail") { "fail" } elseif ($overallWorst -ne "fail") { "warn" } else { $overallWorst } }
+        if ($healthLvl -in @("Warn","Fail")) {
+            $overallWorst = if ($healthLvl -eq "Fail") { "fail" } elseif ($overallWorst -ne "fail") { "warn" } else { $overallWorst }
+            $smartFailCount++
+        }
+        $smartTotal++
 
         $typeLabel = if ($mediaType -ne "Unknown") { "  [$mediaType]" } else { "" }
         Disk-Log "Disk $($phys.Index)  $($phys.Model)" "$sizeStr  $($phys.InterfaceType)$typeLabel" "Info"
@@ -4369,6 +4947,12 @@ $DiskScript = {
     $scanSw = [System.Diagnostics.Stopwatch]::StartNew()
     foreach ($vol in $volumes) {
         if ($sync.DiskCancelled) { $sync.DiskRunning=$false; $sync.DiskComplete=$true; return }
+        # Global 30s budget across all volumes — previously the inner break only exited
+        # the directory loop, so a 4-volume system could spend 120s scanning.
+        if ($scanSw.Elapsed.TotalSeconds -gt 30) {
+            Disk-Log "Top folder scan" "Stopped after 30s budget — partial results above" "Gray"
+            break
+        }
         if (-not $vol.Size -or $vol.Size -eq 0) { continue }
 
         $topDirs = @(Get-ChildItem "$($vol.DeviceID)\" -Directory -Force -ErrorAction SilentlyContinue |
@@ -4441,6 +5025,26 @@ $DiskScript = {
     $diskStatusVal = switch ($overallWorst) { "fail"{"Issues detected"} "warn"{"Warnings found"} default{"Healthy"} }
     $sync.Cards["DiskStatus"] = @{ Value=$diskStatusVal; Status=$overallWorst }
 
+    # SMART summary card (#8) — counts unhealthy/predict-failure drives among physical disks
+    $smartVal = if ($smartTotal -eq 0) { "No disks detected" } `
+                elseif ($smartFailCount -eq 0) { "All $smartTotal healthy" } `
+                else { "$smartFailCount of $smartTotal unhealthy" }
+    $smartStatus = if ($smartTotal -eq 0) { "neutral" } `
+                   elseif ($smartFailCount -eq 0) { "ok" } `
+                   else { "fail" }
+    $sync.Cards["DiskSmart"] = @{ Value=$smartVal; Status=$smartStatus }
+
+    # Disk errors card (#9) — count from the disk-related event log scan above
+    $diskErrCount = ($diskEvents | Where-Object { $_.Level -in @(1,2) }).Count
+    $diskWarnCount = ($diskEvents | Where-Object { $_.Level -eq 3 }).Count
+    $errVal = if ($diskErrCount -eq 0 -and $diskWarnCount -eq 0) { "Clean (48 h)" } `
+              elseif ($diskErrCount -gt 0) { "$diskErrCount error(s)" } `
+              else { "$diskWarnCount warning(s)" }
+    $errStatus = if ($diskErrCount -gt 0) { "fail" } `
+                 elseif ($diskWarnCount -gt 0) { "warn" } `
+                 else { "ok" }
+    $sync.Cards["DiskErrors"] = @{ Value=$errVal; Status=$errStatus }
+
     $sync.DiskStep = "Complete"; $sync.DiskRunning=$false; $sync.DiskComplete=$true
 }
 
@@ -4464,7 +5068,7 @@ $diskTimer.Add_Tick({
     if ($sync.DiskComplete -and -not $sync.DiskRunning) {
         $diskTimer.Stop(); $btnDiskCancel.Visible=$false
         $btnDiskRun.Enabled=$true; $btnDiskRun.Text=[char]0x25B6+"  Check System Health"
-        $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="  $($sync.DiskStep)"
+        $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="  $($sync.DiskStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 
@@ -4487,13 +5091,20 @@ $lblDiskSub.Location = New-Object System.Drawing.Point(10,42); $lblDiskSub.Size 
 $pnlDisk.Controls.Add($lblDiskSub)
 $diskVolumes = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Sort-Object DeviceID)
 $diskCardDefs = @(); $diskXPos = 10
+# Lead with the SMART health card (#8) and disk-error card (#9), then per-volume cards.
+# The two new cards are populated by the background script via $sync.Cards["DiskSmart"]
+# and $sync.Cards["DiskErrors"] keys.
+$diskCardDefs += @{ Key="DiskSmart";  Title="SMART Health";  Sub="Per-drive predictive failure";   X=$diskXPos; Icon=[char]0xE9D9; W=240 }
+$diskXPos += 250
+$diskCardDefs += @{ Key="DiskErrors"; Title="Disk Errors";   Sub="System log, last 48 h";          X=$diskXPos; Icon=[char]0xE7BA; W=240 }
+$diskXPos += 250
 foreach ($diskVol in $diskVolumes) {
     $drvKey = "DiskVol_$($diskVol.DeviceID -replace ':','')"
-    $diskCardDefs += @{ Key=$drvKey; Title="$($diskVol.DeviceID) Space"; Sub="$($diskVol.DeviceID) free space"; X=$diskXPos; Icon=[char]0xEDA2; W=250 }
-    $diskXPos += 260
+    $diskCardDefs += @{ Key=$drvKey; Title="$($diskVol.DeviceID) Space"; Sub="$($diskVol.DeviceID) free space"; X=$diskXPos; Icon=[char]0xEDA2; W=240 }
+    $diskXPos += 250
 }
-if ($diskCardDefs.Count -eq 0) {
-    $diskCardDefs = @( @{ Key="DiskVol_C"; Title="C: Space"; Sub="C: free space"; X=10; Icon=[char]0xEDA2; W=250 } )
+if ($diskVolumes.Count -eq 0) {
+    $diskCardDefs += @{ Key="DiskVol_C"; Title="C: Space"; Sub="C: free space"; X=$diskXPos; Icon=[char]0xEDA2; W=240 }
 }
 $diskCards = @{}
 foreach ($cd in $diskCardDefs) {
@@ -4516,7 +5127,7 @@ $btnDiskCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnDiskCan
 $pnlDisk.Controls.Add($btnDiskCancel)
 $btnDiskCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
 
-$lblDiskEta = New-Object System.Windows.Forms.Label; $lblDiskEta.Text = "est. ~30 sec"
+$lblDiskEta = New-Object System.Windows.Forms.Label; $lblDiskEta.Text = "est. ~15 sec"
 $lblDiskEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblDiskEta.ForeColor = $ColMuted
 $lblDiskEta.Location = New-Object System.Drawing.Point(368,180); $lblDiskEta.AutoSize = $true
 $pnlDisk.Controls.Add($lblDiskEta)
@@ -4570,8 +5181,25 @@ $EvtScript = {
     function Evt-Section { param([string]$Title)
         $sync.EvtQueue.Enqueue(@{ Label=""; Result=$Title; L="Section" }) }
 
+    # Provider-name → category map. Used to classify event sources into actionable
+    # buckets so agents can tell at a glance whether errors are hardware (Disk/Driver)
+    # vs software (Service/App). The wildcard match is on the ProviderName from the
+    # Windows event log (e.g. "Microsoft-Windows-DistributedCOM", "disk", "Service Control Manager").
+    function Get-EvtCategory {
+        param([string]$ProviderName)
+        $p = $ProviderName.ToLower()
+        if ($p -match '^(disk|ntfs|volsnap|volmgr|partmgr|storahci|storport|storvsc|fvevol|hidserv|usbstor)') { return "Disk" }
+        if ($p -match '(driver|wudfrd|cdrom|usb|hid|netbt|tcpip|bowser|netio|smb|kernel)') { return "Driver" }
+        if ($p -match '(service control manager|wininit|usermodepowerservice|securitycenter|workstation|server|browser|w32time|spooler)') { return "Service" }
+        if ($p -match '(application|application error|\.net|wer|sidebyside|esent|user profile|appx|search|setup|distributedcom|wmi)') { return "App" }
+        if ($p -match '(network|tcpip|netbt|dhcp|dnsapi|netio|nlasvc|wlan|wifi)') { return "Network" }
+        return "Other"
+    }
+
     $since = (Get-Date).AddHours(-$EvtHours)
     $totalErrors = 0; $totalWarns = 0
+    # Per-category error/warn tallies for the card label
+    $catTotals = @{ Disk = 0; Driver = 0; Service = 0; App = 0; Network = 0; Other = 0 }
 
     foreach ($logName in @("System","Application")) {
         if ($sync.EvtCancelled) { break }
@@ -4582,30 +5210,53 @@ $EvtScript = {
             $errs = @($evts | Where-Object { $_.Level -in @(1,2) })
             $wrns = @($evts | Where-Object { $_.Level -eq 3 })
             $totalErrors += $errs.Count; $totalWarns += $wrns.Count
+
+            # Tally by category for the summary card
+            foreach ($e in $errs) {
+                $cat = Get-EvtCategory -ProviderName $e.ProviderName
+                $catTotals[$cat] = $catTotals[$cat] + 1
+            }
+
             if ($evts.Count -eq 0) {
                 Evt-Log "Last ${EvtHours}h" "No errors or warnings" "Pass"
             } else {
-                Evt-Log "Errors (last ${EvtHours}h)"   "$($errs.Count)" $(if($errs.Count-gt0){"Fail"}else{"Pass"})
-                Evt-Log "Warnings (last ${EvtHours}h)" "$($wrns.Count)" $(if($wrns.Count-gt0){"Warn"}else{"Info"})
+                Evt-Log "Errors (last ${EvtHours}h)"   "$($errs.Count)" $(if($errs.Count -gt 0){"Fail"}else{"Pass"})
+                Evt-Log "Warnings (last ${EvtHours}h)" "$($wrns.Count)" $(if($wrns.Count -gt 0){"Warn"}else{"Info"})
                 foreach ($ev in ($errs | Select-Object -First 20)) {
                     if ($sync.EvtCancelled) { break }
                     $msg = (($ev.Message -split "`n")[0] -replace '\s+',' ').Trim()
-                    if ($msg.Length -gt 72) { $msg = $msg.Substring(0,69)+"..." }
-                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  $($ev.ProviderName)" $msg "Fail"
+                    if ($msg.Length -gt 64) { $msg = $msg.Substring(0,61)+"..." }
+                    $cat = Get-EvtCategory -ProviderName $ev.ProviderName
+                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  [$cat] $($ev.ProviderName)" $msg "Fail"
                 }
                 foreach ($ev in ($wrns | Select-Object -First 10)) {
                     if ($sync.EvtCancelled) { break }
                     $msg = (($ev.Message -split "`n")[0] -replace '\s+',' ').Trim()
-                    if ($msg.Length -gt 72) { $msg = $msg.Substring(0,69)+"..." }
-                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  $($ev.ProviderName)" $msg "Warn"
+                    if ($msg.Length -gt 64) { $msg = $msg.Substring(0,61)+"..." }
+                    $cat = Get-EvtCategory -ProviderName $ev.ProviderName
+                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  [$cat] $($ev.ProviderName)" $msg "Warn"
                 }
             }
         } catch { Evt-Log $logName "Error reading event log" "Warn" }
     }
 
+    # Build a category breakdown for the card label — only show non-zero categories,
+    # ordered by severity-of-implication (Disk → Driver → Service → Network → App → Other)
+    $catOrder = @("Disk","Driver","Service","Network","App","Other")
+    $catParts = @()
+    foreach ($c in $catOrder) {
+        if ($catTotals[$c] -gt 0) { $catParts += "$($catTotals[$c]) $($c.ToLower())" }
+    }
+    $cardValue = if ($totalErrors -gt 0) {
+        if ($catParts.Count -gt 0) { ($catParts -join " / ") } else { "$totalErrors errors" }
+    } elseif ($totalWarns -gt 0) {
+        "$totalWarns warns"
+    } else {
+        "Clean"
+    }
     $sync.Cards["EvtStatus"] = @{
-        Value  = if($totalErrors-gt0){"$totalErrors errors"}elseif($totalWarns-gt0){"$totalWarns warns"}else{"Clean"}
-        Status = if($totalErrors-gt0){"fail"}elseif($totalWarns-gt0){"warn"}else{"ok"}
+        Value  = $cardValue
+        Status = if($totalErrors -gt 0){"fail"}elseif($totalWarns -gt 0){"warn"}else{"ok"}
     }
     $sync.EvtStep = "Complete"; $sync.EvtRunning=$false; $sync.EvtComplete=$true
 }
@@ -4630,7 +5281,7 @@ $evtTimer.Add_Tick({
     if ($sync.EvtComplete -and -not $sync.EvtRunning) {
         $evtTimer.Stop(); $btnEvtCancel.Visible=$false
         $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Check Event Log"
-        $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="  $($sync.EvtStep)"
+        $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="  $($sync.EvtStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 
@@ -4736,9 +5387,9 @@ $SysInfoScript = {
         $pxVer  = if ($pxReg.PSObject.Properties['Version']      -and $pxReg.Version)      { $pxReg.Version }      else { "Not found" }
         $pxImg  = if ($pxReg.PSObject.Properties['ImageVersion'] -and $pxReg.ImageVersion) { $pxReg.ImageVersion } else { "Not found" }
         $pxDeps = if ($pxReg.PSObject.Properties['Dependencies'] -and $pxReg.Dependencies) { $pxReg.Dependencies } else { "Not found" }
-        Si-Log "Software Version"    $pxVer  "Info"
-        Si-Log "Image Version"       $pxImg  "Info"
-        Si-Log "Dependency Version"  $pxDeps "Info"
+        Si-Log "App Version"           $pxVer  "Info"
+        Si-Log "System Image Version"  $pxImg  "Info"
+        Si-Log "Package Dependencies"  $pxDeps "Info"
     } catch { Si-Log "Pixellot" "Registry key not found (HKLM:\SOFTWARE\Pixellot)" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -4754,8 +5405,48 @@ $SysInfoScript = {
         Si-Log "Architecture"  $os.OSArchitecture                                                  "Info"
         Si-Log "Install Date"  $os.InstallDate.ToString("yyyy-MM-dd")                             "Info"
         $up = (Get-Date) - $os.LastBootUpTime
-        Si-Log "Uptime"        "$([int][Math]::Floor($up.TotalDays))d $($up.Hours)h $($up.Minutes)m"  "Info"
+        $upStr = "$([int][Math]::Floor($up.TotalDays))d $($up.Hours)h $($up.Minutes)m"
+        Si-Log "Uptime"        $upStr  "Info"
+        # Cards (#5): OS edition (short) + uptime
+        $osShort = ($os.Caption -replace '^Microsoft\s+','' -replace 'Windows\s+','Win ')
+        $sync.Cards["SiOs"]     = @{ Value = "$osShort  ($($os.BuildNumber))"; Status="ok" }
+        $sync.Cards["SiUptime"] = @{ Value = $upStr; Status = if ($up.TotalDays -gt 30) { "warn" } else { "ok" } }
     } catch { Si-Log "OS" "Query failed" "Warn" }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
+    # -- Time & Locale -----------------------------------------------------------
+    # Surface timezone, NTP source, and auto-time setting. VPUs deployed across
+    # regions sometimes inherit a UTC default which throws off scheduled events
+    # and timestamped logs.
+    $sync.SysInfoStep = "Querying time settings..."
+    Si-Section "Time & Locale"
+    try {
+        $tz = Get-CimInstance Win32_TimeZone -ErrorAction Stop
+        Si-Log "Timezone"       "$($tz.Caption)" "Info"
+        Si-Log "System Time"    ((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) "Info"
+
+        # NTP server registry (W32Time service)
+        try {
+            $ntpServer = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters" -ErrorAction Stop).NtpServer
+            if ($ntpServer) { Si-Log "NTP Server" $ntpServer "Info" }
+        } catch { }
+
+        # "Set time automatically" — controlled by W32Time service start type + NtpClient SpecialPollInterval
+        $w32Svc = Get-Service -Name W32Time -ErrorAction SilentlyContinue
+        if ($w32Svc) {
+            if ($w32Svc.Status -eq "Running") {
+                Si-Log "Time Sync" "W32Time service running" "Info"
+            } else {
+                Si-Log "Time Sync" "W32Time service NOT running — automatic time sync disabled" "Warn"
+            }
+        }
+
+        # Suspicious-default warning: UTC is rarely the right choice for a deployed VPU
+        if ($tz.StandardName -match "^UTC$" -or $tz.Caption -match "^\(UTC\)\s*Coordinated") {
+            Si-Log "Timezone Check" "System is set to UTC — confirm this matches the venue's local timezone" "Warn"
+        }
+    } catch { Si-Log "Time & Locale" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
 
@@ -4770,6 +5461,11 @@ $SysInfoScript = {
         $dom = if ($cs.PartOfDomain) { "Domain: $($cs.Domain)" } else { "Workgroup: $($cs.Workgroup)" }
         Si-Log "Network"       $dom                                                                 "Info"
         Si-Log "System Type"   $cs.SystemType                                                       "Info"
+        # Card (#5): manufacturer + model trimmed
+        $modelStr = if ($cs.Manufacturer -and $cs.Model) { "$($cs.Manufacturer)  $($cs.Model)" } `
+                    elseif ($cs.Model) { $cs.Model } else { "Unknown" }
+        if ($modelStr.Length -gt 32) { $modelStr = $modelStr.Substring(0,29) + "..." }
+        $sync.Cards["SiModel"] = @{ Value = $modelStr; Status="neutral" }
     } catch { Si-Log "System" "Query failed" "Warn" }
     try {
         $bios = Get-CimInstance Win32_BIOS -ErrorAction Stop
@@ -4798,6 +5494,9 @@ $SysInfoScript = {
         if ($cpus.Count -gt 0) {
             $fdCpuShort = $cpus[0].Name.Trim() -replace 'Intel\(R\) Core\(TM\) ','Core ' -replace '\(R\)|\(TM\)','' -replace '\s+@\s.*','' -replace '\s+',' '
         }
+        # Card (#5)
+        $cpuCardVal = if ($fdCpuShort.Length -gt 32) { $fdCpuShort.Substring(0,29) + "..." } else { $fdCpuShort }
+        $sync.Cards["SiCpu"] = @{ Value = $cpuCardVal; Status="neutral" }
     } catch { Si-Log "CPU" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -4809,8 +5508,11 @@ $SysInfoScript = {
     try {
         $os2 = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
         $fdRamGB = [int]([double]$os2.TotalVisibleMemorySize / 1048576.0 + 0.5)
+        $fdRamFreeGB = [double]$os2.FreePhysicalMemory / 1048576.0
         Si-Log "Total RAM"  ("{0:F1} GB" -f ([double]$os2.TotalVisibleMemorySize / 1048576.0))     "Info"
-        Si-Log "Available"  ("{0:F1} GB" -f ([double]$os2.FreePhysicalMemory     / 1048576.0))     "Info"
+        Si-Log "Available"  ("{0:F1} GB" -f $fdRamFreeGB)                                          "Info"
+        # Card (#5): total + free
+        $sync.Cards["SiRam"] = @{ Value = ("{0} GB total / {1:F1} GB free" -f $fdRamGB, $fdRamFreeGB); Status="ok" }
         $slots = @(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue)
         $n = 1
         foreach ($s in $slots) {
@@ -4861,6 +5563,15 @@ $SysInfoScript = {
                 Si-Log "  Serial" $d.SerialNumber.Trim()                                            "Gray"
             }
         }
+        # Card (#5): system drive free space
+        $sysDrive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$($env:SystemDrive)'" -ErrorAction SilentlyContinue
+        if ($sysDrive) {
+            $freeGB  = [math]::Round($sysDrive.FreeSpace / 1GB, 1)
+            $totalGB = [math]::Round($sysDrive.Size      / 1GB, 1)
+            $usedPct = [math]::Round((1 - $sysDrive.FreeSpace/$sysDrive.Size) * 100)
+            $stStatus = if ($freeGB -lt 5) { "fail" } elseif ($freeGB -lt 15) { "warn" } else { "ok" }
+            $sync.Cards["SiStorage"] = @{ Value = "$freeGB GB free of $totalGB GB ($usedPct% used)"; Status=$stStatus }
+        }
     } catch { Si-Log "Storage" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -4888,6 +5599,89 @@ $SysInfoScript = {
             Si-Log "  Status" $connStr $connLvl
         }
     } catch { Si-Log "NICs" "Query failed" "Warn" }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
+    # -- Pixellot Calibrations ---------------------------------------------------
+    # Surface known calibration directories and per-camera calibration files.
+    # Helps field techs confirm a calibration was applied and which file is active.
+    $sync.SysInfoStep = "Querying camera calibrations..."
+    Si-Section "Pixellot Calibrations"
+    $calibPaths = @(
+        "C:\Pixellot\calibration"
+        "C:\Pixellot\Calibration"
+        "C:\Pixellot\Data\Calibration"
+        "C:\Program Files\Pixellot\calibration"
+        "C:\ProgramData\Pixellot\calibration"
+    )
+    $calibFound = $false
+    foreach ($cp in $calibPaths) {
+        if (Test-Path $cp) {
+            $calibFound = $true
+            Si-Log "Calibration Path" $cp "Info"
+            try {
+                $files = @(Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue |
+                           Sort-Object LastWriteTime -Descending | Select-Object -First 12)
+                if ($files.Count -eq 0) {
+                    Si-Log "  Files" "Directory exists but is empty" "Warn"
+                } else {
+                    foreach ($f in $files) {
+                        $age = (Get-Date) - $f.LastWriteTime
+                        $ageStr = if ($age.TotalDays -ge 1) { "$([int]$age.TotalDays)d ago" } `
+                                  elseif ($age.TotalHours -ge 1) { "$([int]$age.TotalHours)h ago" } `
+                                  else { "$([int]$age.TotalMinutes)m ago" }
+                        Si-Log "  $($f.Name)" "$ageStr   ($('{0:F0}' -f ($f.Length / 1024)) KB)" "Gray"
+                    }
+                }
+            } catch { Si-Log "  Files" "Read failed" "Warn" }
+        }
+    }
+    if (-not $calibFound) {
+        Si-Log "Calibrations" "No calibration directory found in standard locations" "Gray"
+    }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
+    # -- Installed Software ------------------------------------------------------
+    # Scan registry uninstall keys (faster than Win32_Product, which triggers MSI re-validation).
+    # Flag anything matching the unwanted-app patterns; surface counts only to keep the log readable.
+    $sync.SysInfoStep = "Scanning installed software..."
+    Si-Section "Installed Software"
+    try {
+        $unwantedPatterns = @(
+            "OBS Studio", "vMix", "Wirecast", "XSplit",
+            "Norton", "McAfee", "Avast", "AVG", "Bitdefender", "Kaspersky",
+            "Bonjour", "iTunes", "QuickTime",
+            "Yahoo", "Ask Toolbar", "Coupon", "WebDiscover",
+            "Steam", "Epic Games", "Origin", "Battle.net",
+            "BitTorrent", "uTorrent", "qBittorrent"
+        )
+        $regPaths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        )
+        $apps = @(
+            foreach ($p in $regPaths) {
+                Get-ItemProperty $p -ErrorAction SilentlyContinue |
+                    Where-Object { $_.DisplayName -and -not $_.SystemComponent } |
+                    Select-Object DisplayName, Publisher, DisplayVersion, InstallDate
+            }
+        ) | Sort-Object DisplayName -Unique
+        Si-Log "Total Installed" "$($apps.Count) applications" "Info"
+
+        $flagged = @($apps | Where-Object {
+            $name = $_.DisplayName
+            $unwantedPatterns | Where-Object { $name -like "*$_*" } | Select-Object -First 1
+        })
+        if ($flagged.Count -gt 0) {
+            Si-Log "Flagged Apps" "$($flagged.Count) potentially-conflicting applications detected" "Warn"
+            foreach ($app in $flagged) {
+                Si-Log "  $($app.DisplayName)" "$($app.Publisher) — confirm this is intentional" "Warn"
+            }
+        } else {
+            Si-Log "Flagged Apps" "None — no known-conflicting software detected" "Pass"
+        }
+    } catch { Si-Log "Installed Software" "Scan failed" "Warn" }
 
     $ramStr = if ($fdRamGB -gt 0) { "$fdRamGB GB RAM" } else { "RAM unknown" }
     $sync.Cards["SysInfo"] = @{ Value = "$fdCpuShort   |   $ramStr"; Status = "ok" }
@@ -4942,7 +5736,27 @@ $lblSiStatus.Location  = New-Object System.Drawing.Point(162, 94)
 $lblSiStatus.Size      = New-Object System.Drawing.Size(400, 18)
 $pnlSysInfo.Controls.Add($lblSiStatus)
 
-$siGrid = New-LogGrid -X 30 -Y 130 -W ($ContentW - 60) -H ($ContentH - 140) -LabelColW 240
+# Summary cards (#5) — surface model / OS / uptime / CPU / RAM / storage at a glance.
+# Background script writes values via $sync.Cards["SiModel"] etc.; the timer refreshes
+# the visible labels just like the other modules.
+$siCardDefs = @(
+    @{ Key="SiModel";   Title="Model";    Sub="Manufacturer + product";    Icon=[char]0xE7F8 }
+    @{ Key="SiOs";      Title="OS";       Sub="Edition + build";           Icon=[char]0xE770 }
+    @{ Key="SiUptime";  Title="Uptime";   Sub="Since last boot";           Icon=[char]0xE823 }
+    @{ Key="SiCpu";     Title="CPU";      Sub="Processor";                 Icon=[char]0xE950 }
+    @{ Key="SiRam";     Title="RAM";      Sub="Installed memory";          Icon=[char]0xEDA2 }
+    @{ Key="SiStorage"; Title="Storage";  Sub="System drive free space";   Icon=[char]0xE8B7 }
+)
+$siCards = @{}
+$siCardW = 200; $siCardGap = 10; $siCardX = 30
+foreach ($scd in $siCardDefs) {
+    $sc = New-StatusCard -Title $scd.Title -X $siCardX -Y 130 -Icon $scd.Icon -Sub $scd.Sub -CardW $siCardW -CardH 80
+    $siCards[$scd.Key] = $sc
+    $pnlSysInfo.Controls.Add($sc.Panel)
+    $siCardX += $siCardW + $siCardGap
+}
+
+$siGrid = New-LogGrid -X 30 -Y 224 -W ($ContentW - 60) -H ($ContentH - 234) -LabelColW 240
 $pnlSysInfo.Controls.Add($siGrid)
 
 # ---------- Timer -----------------------------------------------------------
@@ -4952,6 +5766,13 @@ $sysInfoTimer.Add_Tick({
     $item = $null
     while ($sync.SysInfoQueue.TryDequeue([ref]$item)) {
         Add-LogRow $siGrid $item.Label $item.Result $item.L
+    }
+    # Refresh the summary cards from $sync.Cards (#5)
+    foreach ($key in $siCards.Keys) {
+        $sc = $sync.Cards[$key]
+        if ($sc -and $siCards[$key].ValueLabel.Text -ne $sc.Value) {
+            Update-CardStatus -Card $siCards[$key] -Value $sc.Value -Status $sc.Status
+        }
     }
     if ($sync.SysInfoComplete) {
         $sysInfoTimer.Stop()
@@ -4966,6 +5787,11 @@ $sysInfoTimer.Add_Tick({
 function Start-SysInfoCollection {
     if ($sync.SysInfoRunning) { return }
     $siGrid.Rows.Clear()
+    # Reset the summary cards on refresh (#5)
+    foreach ($key in $siCards.Keys) {
+        $sync.Cards[$key] = @{ Value="--"; Status="neutral" }
+        Update-CardStatus -Card $siCards[$key] -Value "--" -Status "neutral"
+    }
     $btnSiRefresh.Enabled  = $false
     $lblSiStatus.Text      = "Collecting..."
     $sync.SysInfoComplete  = $false
@@ -4974,15 +5800,19 @@ function Start-SysInfoCollection {
     if ($script:sysInfoRunspace) {
         try { $script:sysInfoRunspace.Close(); $script:sysInfoRunspace.Dispose() } catch { }
     }
+    if ($script:sysInfoPs) {
+        try { $script:sysInfoPs.Dispose() } catch { }; $script:sysInfoPs = $null
+    }
     $script:sysInfoRunspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
     $script:sysInfoRunspace.ApartmentState = "STA"
     $script:sysInfoRunspace.ThreadOptions  = "ReuseThread"
     $script:sysInfoRunspace.Open()
-    $script:sysInfoRunspace.SessionStateProxy.SetVariable("sync", $sync)
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $script:sysInfoRunspace
-    $ps.AddScript($SysInfoScript).AddArgument($sync) | Out-Null
-    $ps.BeginInvoke() | Out-Null
+    # Pass $sync to the runspace via AddArgument only — using SessionStateProxy.SetVariable
+    # AND AddArgument both was wasted work and made the contract ambiguous.
+    $script:sysInfoPs = [System.Management.Automation.PowerShell]::Create()
+    $script:sysInfoPs.Runspace = $script:sysInfoRunspace
+    $script:sysInfoPs.AddScript($SysInfoScript).AddArgument($sync) | Out-Null
+    $script:sysInfoPs.BeginInvoke() | Out-Null
     $sysInfoTimer.Start()
 }
 
@@ -5022,10 +5852,15 @@ function Get-WorstCardStatus {
     $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
     $worst = "neutral"
     foreach ($k in $Keys) {
-        if ($sync.Cards.ContainsKey($k)) {
-            $s = $sync.Cards[$k].Status
-            if ($pri.ContainsKey($s) -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
-        }
+        # Prefer the synchronized _ncs_* key when present — these are written directly
+        # to the synchronized $sync hashtable from background runspaces and have
+        # guaranteed cross-thread visibility. Falls back to $sync.Cards[$k].Status
+        # for modules that don't use the _ncs_ pattern. Same fix as v1.0.26 — the
+        # nested $sync.Cards hashtable is unsynchronized and writes from inside
+        # functions called from background runspaces don't reliably propagate (#60).
+        $s = $sync["_ncs_$k"]
+        if (-not $s -and $sync.Cards.ContainsKey($k)) { $s = $sync.Cards[$k].Status }
+        if ($s -and $pri.ContainsKey($s) -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
     }
     return $worst
 }
@@ -5034,10 +5869,10 @@ function Get-ModuleSummaryText {
     param([string[]]$Keys)
     $parts = @()
     foreach ($k in $Keys) {
-        if ($sync.Cards.ContainsKey($k)) {
-            $v = $sync.Cards[$k].Value
-            if ($v -and $v -ne "--") { $parts += $v }
-        }
+        # Same _nc_/Cards fallback chain as Get-WorstCardStatus (#60)
+        $v = $sync["_nc_$k"]
+        if (-not $v -and $sync.Cards.ContainsKey($k)) { $v = $sync.Cards[$k].Value }
+        if ($v -and $v -ne "--") { $parts += $v }
     }
     return ($parts -join "   |   ")
 }
@@ -5048,18 +5883,25 @@ function Get-FdModuleSummary {
     switch ($Idx) {
         0 { # System Overview
             $v = if ($sync.Cards.ContainsKey("SysInfo")) { $sync.Cards["SysInfo"].Value } else { "" }
-            return if ($v -and $v -ne "--") { $v } else { "Hardware details collected" }
+            # PS 5.1: `return if (...)` is invalid (if is a statement, not expression).
+            # Wrap in $() or assign first.
+            if ($v -and $v -ne "--") { return $v } else { return "Hardware details collected" }
         }
         1 { # Network Configuration
             if ($Worst -eq "ok") { return "Internet connected - all ports and domains reachable" }
             $parts = @()
             foreach ($k in @("NetInternet","NetPorts","NetDomains")) {
-                if ($sync.Cards.ContainsKey($k)) {
-                    $c = $sync.Cards[$k]
-                    if ($c.Status -ne "ok" -and $c.Value -and $c.Value -ne "--") { $parts += $c.Value }
+                # Read from the synchronized _nc_/_ncs_ keys preferentially (#60)
+                $val = $sync["_nc_$k"]
+                $sts = $sync["_ncs_$k"]
+                if (-not $val -and $sync.Cards.ContainsKey($k)) {
+                    $val = $sync.Cards[$k].Value
+                    $sts = $sync.Cards[$k].Status
                 }
+                if ($sts -ne "ok" -and $val -and $val -ne "--") { $parts += $val }
             }
-            return if ($parts) { $parts -join "   |   " } else { Get-ModuleSummaryText @("NetInternet","NetPorts","NetDomains") }
+            if ($parts.Count -gt 0) { return ($parts -join "   |   ") }
+            return Get-ModuleSummaryText @("NetInternet","NetPorts","NetDomains")
         }
         2 { # Camera Connectivity
             if ($Worst -eq "ok") { return "All cameras online and responding normally" }
@@ -5069,7 +5911,7 @@ function Get-FdModuleSummary {
             $v = if ($sync.Cards.ContainsKey("SvcStatus")) { $sync.Cards["SvcStatus"].Value } else { "" }
             if ($Worst -eq "ok") { return "All Pixellot services running" }
             if ($v -eq "None found") { return "No Pixellot services detected on this VPU" }
-            return if ($v -and $v -ne "--") { $v } else { "Service check complete" }
+            if ($v -and $v -ne "--") { return $v } else { return "Service check complete" }
         }
         4 { # VPU Hardware
             return Get-ModuleSummaryText @("HwGpu","HwMonitor","HwMmk")
@@ -5116,12 +5958,16 @@ function Invoke-FdModule {
 }
 
 # --- Panel -------------------------------------------------------------------
+# AutoScroll lets the panel scroll vertically when the 7 module rows + bottom
+# buttons exceed the available content height (e.g. on smaller windows or after
+# the row-height bump from v1.0.33). Fix for #59.
 $pnlFullDiag = New-Object System.Windows.Forms.Panel
-$pnlFullDiag.Size      = New-Object System.Drawing.Size($ContentW, $ContentH)
-$pnlFullDiag.Location  = New-Object System.Drawing.Point(0, $ContentY)
-$pnlFullDiag.BackColor = $ColBg
-$pnlFullDiag.Anchor    = $AnchorTLRB
-$pnlFullDiag.Visible   = $false
+$pnlFullDiag.Size       = New-Object System.Drawing.Size($ContentW, $ContentH)
+$pnlFullDiag.Location   = New-Object System.Drawing.Point(0, $ContentY)
+$pnlFullDiag.BackColor  = $ColBg
+$pnlFullDiag.Anchor     = $AnchorTLRB
+$pnlFullDiag.Visible    = $false
+$pnlFullDiag.AutoScroll = $true
 $form.Controls.Add($pnlFullDiag)
 $script:allNavPanels += $pnlFullDiag
 
@@ -5134,7 +5980,7 @@ $lblFdTitle.AutoSize  = $true
 $pnlFullDiag.Controls.Add($lblFdTitle)
 
 $lblFdSub = New-Object System.Windows.Forms.Label
-$lblFdSub.Text      = "Runs all checks and summarises results."
+$lblFdSub.Text      = "Checks all modules and highlights issues with recommended actions."
 $lblFdSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
 $lblFdSub.ForeColor = $ColMuted
 $lblFdSub.Location  = New-Object System.Drawing.Point(30, 56)
@@ -5181,7 +6027,7 @@ $pnlFdBanner.Controls.Add($lblFdBannerDetail)
 # --- Module rows (one per module) --------------------------------------------
 $fdRows        = @()
 $script:fdRowY = 150     # first row top (banner bottom = 84+54=138, gap=12)
-$fdRowH        = 54
+$fdRowH        = 64
 $fdRowGap      = 6
 
 foreach ($mod in $fdModuleDefs) {
@@ -5242,13 +6088,13 @@ foreach ($mod in $fdModuleDefs) {
     $vLbl.UseMnemonic = $false
     $rPnl.Controls.Add($vLbl)
 
-    # Suggested action (bottom line - hidden for passing modules)
+    # Suggested action (bottom line - hidden for passing modules; wraps to 2 lines if needed)
     $aLbl = New-Object System.Windows.Forms.Label
     $aLbl.Text        = ""
-    $aLbl.Font        = New-Object System.Drawing.Font("Segoe UI", 8)
+    $aLbl.Font        = New-Object System.Drawing.Font("Segoe UI", 8.5)
     $aLbl.ForeColor   = $ColYellow
-    $aLbl.Location    = New-Object System.Drawing.Point(406, 31)
-    $aLbl.Size        = New-Object System.Drawing.Size(686, 17)
+    $aLbl.Location    = New-Object System.Drawing.Point(406, 32)
+    $aLbl.Size        = New-Object System.Drawing.Size(686, 28)
     $aLbl.BackColor   = [System.Drawing.Color]::Transparent
     $aLbl.Visible     = $false
     $aLbl.UseMnemonic = $false
@@ -5258,7 +6104,7 @@ foreach ($mod in $fdModuleDefs) {
     $vBtn = New-Object System.Windows.Forms.Button
     $vBtn.Text      = "View  >"
     $vBtn.Size      = New-Object System.Drawing.Size(96, 30)
-    $vBtn.Location  = New-Object System.Drawing.Point(1110, 12)
+    $vBtn.Location  = New-Object System.Drawing.Point(1110, 17)
     $vBtn.BackColor = $ColNavHover
     $vBtn.ForeColor = $ColText
     $vBtn.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -5283,12 +6129,12 @@ foreach ($mod in $fdModuleDefs) {
     $script:fdRowY += $fdRowH + $fdRowGap
 }
 
-# --- Bottom buttons (Re-run All | Re-run Failed | Back to Home) --------------
-# Rows end at 150 + 7*(54+6) = 570.  Buttons at 582.
+# --- Bottom buttons (Re-run All | Re-run Issues | Back to Home) --------------
+# Rows end at 150 + 7*(64+6) = 640.  Buttons at 652.
 $btnFdRerun = New-Object System.Windows.Forms.Button
 $btnFdRerun.Text      = [char]0x25B6 + "  Re-run All"
 $btnFdRerun.Size      = New-Object System.Drawing.Size(172, 40)
-$btnFdRerun.Location  = New-Object System.Drawing.Point(30, 582)
+$btnFdRerun.Location  = New-Object System.Drawing.Point(30, 652)
 $btnFdRerun.BackColor = $ColAccent
 $btnFdRerun.ForeColor = [System.Drawing.Color]::White
 $btnFdRerun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -5300,9 +6146,9 @@ $btnFdRerun.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRec
 $pnlFullDiag.Controls.Add($btnFdRerun)
 
 $btnFdRerunFailed = New-Object System.Windows.Forms.Button
-$btnFdRerunFailed.Text      = "Re-run Failed Only"
+$btnFdRerunFailed.Text      = "Re-run Issues Only"
 $btnFdRerunFailed.Size      = New-Object System.Drawing.Size(190, 40)
-$btnFdRerunFailed.Location  = New-Object System.Drawing.Point(214, 582)
+$btnFdRerunFailed.Location  = New-Object System.Drawing.Point(214, 652)
 $btnFdRerunFailed.BackColor = $ColNavHover
 $btnFdRerunFailed.ForeColor = $ColYellow
 $btnFdRerunFailed.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -5317,7 +6163,7 @@ $pnlFullDiag.Controls.Add($btnFdRerunFailed)
 $btnFdBack = New-Object System.Windows.Forms.Button
 $btnFdBack.Text      = "<  Back to Home"
 $btnFdBack.Size      = New-Object System.Drawing.Size(160, 40)
-$btnFdBack.Location  = New-Object System.Drawing.Point(418, 582)
+$btnFdBack.Location  = New-Object System.Drawing.Point(418, 652)
 $btnFdBack.BackColor = $ColNavHover
 $btnFdBack.ForeColor = $ColText
 $btnFdBack.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -5380,7 +6226,7 @@ $timerFullDiag.Add_Tick({
         # Paint the row only once (ViewBtn.Enabled flips false -> true as the guard).
         if (-not $row.ViewBtn.Enabled) {
             $dotColor  = switch ($worst) { "fail"{$ColRed} "warn"{$ColYellow} "ok"{$ColGreen} default{$ColMuted} }
-            $severityT = switch ($worst) { "fail"{"Critical"} "warn"{"Warning"} "ok"{"Healthy"} default{"Complete"} }
+            $severityT = switch ($worst) { "fail"{"Critical"} "warn"{"Warning"} "ok"{"Healthy"} default{"Healthy"} }
 
             $row.Dot.BackColor       = $dotColor
             $row.StatusLbl.Text      = $severityT
@@ -5392,7 +6238,7 @@ $timerFullDiag.Add_Tick({
             # Suggested action - shown only for Warning / Critical
             $action = Get-FdActionText $i $worst
             if ($action) {
-                $row.ActionLbl.Text      = ">> " + $action
+                $row.ActionLbl.Text      = $action
                 $row.ActionLbl.ForeColor = if ($worst -eq "fail") { $ColRed } else { $ColYellow }
                 $row.ActionLbl.Visible   = $true
             }
@@ -5461,6 +6307,18 @@ $timerFullDiag.Add_Tick({
     $btnFdRerun.Enabled       = $true
     $btnFdRerunFailed.Visible = ($totalIssues -gt 0)
     $btnFdRerunFailed.Enabled = ($totalIssues -gt 0)
+
+    # Hand off to toast timer for the consolidated summary toast (#57).
+    # FullDiagInProgress was suppressing per-module toasts during the run.
+    $sync.FullDiagSummary = @{
+        TotalIssues = $totalIssues
+        CritCount   = $critCount
+        WarnCount   = $warnCount
+        CritNames   = @($critNames)
+        WarnNames   = @($warnNames)
+    }
+    $sync.FullDiagInProgress = $false
+    $sync.FullDiagToastReady = $true
 })
 
 $btnFdRerun.Add_Click({ Start-FullDiagnostic })
@@ -5505,6 +6363,10 @@ function Start-FailedDiagnostic {
 function Start-FullDiagnostic {
     Show-Panel $pnlFullDiag
     Set-ActiveNav $navSysOverview
+
+    # Suppress per-module toasts while Full Diagnostic is running (#57).
+    # The toast timer reads this flag and fires only the consolidated summary at end.
+    $sync.FullDiagInProgress = $true
 
     $script:fdRerunIndices    = @()
     $pnlFdBanner.Visible      = $false
@@ -5674,12 +6536,25 @@ $timerToast.Add_Tick({
     # Auto-hide when any new run starts
     $anyRunning = $sync.Running -or $sync.NetRunning -or $sync.SvcRunning -or
                   $sync.DiskRunning -or $sync.EvtRunning -or $sync.HwRunning -or $sync.SysInfoRunning
-    if ($anyRunning -and $pnlToast.Visible) { $pnlToast.Visible = $false }
+    if ($anyRunning -and $pnlToast.Visible) { $pnlToast.Visible = $false; $script:toastShownAt = $null }
+
+    # Auto-dismiss all-clear toasts after 8 seconds (sticky for warnings/issues)
+    if ($script:toastShownAt -and $pnlToast.Visible -and ((Get-Date) - $script:toastShownAt).TotalSeconds -ge 8) {
+        $pnlToast.Visible = $false
+        $script:toastShownAt = $null
+    }
+
+    # Suppress per-module toasts while a Full Diagnostic is in progress (#57).
+    # The consolidated summary toast is fired below when FullDiagToastReady flips true.
+    $inFullDiag = $sync.FullDiagInProgress -eq $true
 
     foreach ($key in $toastModuleMeta.Keys) {
         $nowDone = $sync[$key] -eq $true
         if ($nowDone -and ($toastPrevState[$key] -eq 0)) {
             $toastPrevState[$key] = 1
+            # Skip the per-module toast during a Full Diagnostic — but still update
+            # state so the next individual run starts from a clean transition.
+            if ($inFullDiag) { continue }
             $meta = $toastModuleMeta[$key]
 
             # Determine pass/warn/fail
@@ -5696,7 +6571,39 @@ $timerToast.Add_Tick({
             $clr  = if ($isOk -and -not $isWarn) { $ColGreen } elseif ($isWarn) { $ColYellow } else { $ColRed }
             $icon = if ($isOk -and -not $isWarn) { [char]0xE73E } elseif ($isWarn) { [char]0xE7BA } else { [char]0xEA39 }
             $msg  = "$($meta.Name)  -  " + $(if ($isOk -and -not $isWarn) { "All Clear" } elseif ($isWarn) { "Warning" } else { "Issues Found" })
-            $sub  = "Completed $(Get-Date -Format 'h:mm:ss tt')   |   Click X to dismiss"
+
+            # Build detail + next-step hint per module (#12). Counts come from $sync;
+            # next-step points to the relevant tab when issues are found.
+            $detail = ""
+            switch ($key) {
+                "NetComplete" {
+                    if ($isOk -and -not $isWarn) { $detail = "All ports and domains reachable" }
+                    else {
+                        $pf = [int]$sync.NetPortFail; $df = [int]$sync.NetDomainFail
+                        $detail = "$pf port / $df domain failure(s) — open Network tab to inspect"
+                    }
+                }
+                "SvcComplete" {
+                    $detail = if ($isOk) { "All required services running" } else { "Service issues — open Services tab to inspect" }
+                }
+                "DiskComplete" {
+                    $detail = if ($isOk) { "All drives healthy" } else { "Disk issues — open Disks tab to inspect" }
+                }
+                "EvtComplete" {
+                    $ev = $sync.Cards["EvtStatus"].Value
+                    $detail = if ($isOk) { "$ev — no recent OS errors" } else { "$ev — open Event Logs tab to inspect" }
+                }
+                "HwComplete" {
+                    $detail = if ($isOk) { "GPU, monitor, and peripherals OK" } else { "Hardware issues — open Hardware tab to inspect" }
+                }
+                "SysInfoComplete" {
+                    $detail = "System inventory collected"
+                }
+                default {
+                    $detail = if ($isOk) { "No issues found" } else { "Open the relevant tab to inspect" }
+                }
+            }
+            $sub  = "$detail   |   $(Get-Date -Format 'h:mm tt')"
 
             $pnlToastAccent.BackColor = $clr
             $lblToastIcon.Text        = $icon
@@ -5706,11 +6613,56 @@ $timerToast.Add_Tick({
             $lblToastSub.Text         = $sub
             $pnlToast.Visible         = $true
             $pnlToast.BringToFront()
+
+            # Auto-dismiss for all-clear after 8 seconds; warnings/issues stay sticky
+            # so they don't disappear before the agent has a chance to read them.
+            if ($isOk -and -not $isWarn) {
+                $script:toastShownAt = Get-Date
+            } else {
+                $script:toastShownAt = $null
+            }
         }
         # Reset state when module resets (new run)
         if (-not $sync[$key] -and ($toastPrevState[$key] -eq 1)) {
             $toastPrevState[$key] = 0
         }
+    }
+
+    # Consolidated Full Diagnostic summary toast (#57). Fires once when the
+    # FullDiagnostic completion handler sets FullDiagToastReady. Replaces the
+    # 7 per-module toasts that were previously firing in rapid succession.
+    if ($sync.FullDiagToastReady -eq $true) {
+        $sync.FullDiagToastReady = $false
+        $s = $sync.FullDiagSummary
+        if ($s -and $s.TotalIssues -eq 0) {
+            $clr  = $ColGreen
+            $icon = [char]0xE73E
+            $msg  = "Full Diagnostic complete  -  All Clear"
+            $sub  = "All checks passed   |   $(Get-Date -Format 'h:mm tt')"
+            $auto = $true
+        } elseif ($s) {
+            $clr  = if ($s.CritCount -gt 0) { $ColRed } else { $ColYellow }
+            $icon = if ($s.CritCount -gt 0) { [char]0xEA39 } else { [char]0xE7BA }
+            $issuesParts = @()
+            if ($s.CritCount -gt 0) { $issuesParts += "$($s.CritCount) critical" }
+            if ($s.WarnCount -gt 0) { $issuesParts += "$($s.WarnCount) warning$(if($s.WarnCount -ne 1){'s'})" }
+            $msg  = "Full Diagnostic complete  -  $($issuesParts -join ', ')"
+            $modList = @($s.CritNames + $s.WarnNames) | Select-Object -First 3
+            $more    = if (($s.CritNames.Count + $s.WarnNames.Count) -gt 3) { ", ..." } else { "" }
+            $sub  = "$($modList -join ', ')$more   |   $(Get-Date -Format 'h:mm tt')"
+            $auto = $false
+        } else {
+            $clr=$ColMuted; $icon=[char]0xE946; $msg="Full Diagnostic complete"; $sub=Get-Date -Format 'h:mm tt'; $auto=$true
+        }
+        $pnlToastAccent.BackColor = $clr
+        $lblToastIcon.Text        = $icon
+        $lblToastIcon.ForeColor   = $clr
+        $lblToastText.Text        = $msg
+        $lblToastText.ForeColor   = $clr
+        $lblToastSub.Text         = $sub
+        $pnlToast.Visible         = $true
+        $pnlToast.BringToFront()
+        $script:toastShownAt = if ($auto) { Get-Date } else { $null }
     }
 })
 $timerToast.Start()
@@ -5762,11 +6714,12 @@ $form.Add_Load({
         if ($osCaption) { $lblVpuVal.Text = "$($env:COMPUTERNAME)  .  $($osCaption -replace 'Microsoft Windows ','Win ')" }
     } catch { }
 
-    # Async update check - compares remote $ScriptVersion to current; shows notice if newer
+    # Async update check - compares remote $ScriptVersion to current; shows notice if newer.
+    # Stash $wc and the event subscription so FormClosing can clean them up.
     try {
-        $wc = New-Object System.Net.WebClient
-        if ($env:VPU_DEPLOY_TOKEN) { $wc.Headers.Add("Authorization", "Bearer $env:VPU_DEPLOY_TOKEN") }
-        Register-ObjectEvent -InputObject $wc -EventName DownloadStringCompleted `
+        $script:updateWc = New-Object System.Net.WebClient
+        if ($env:VPU_DEPLOY_TOKEN) { $script:updateWc.Headers.Add("Authorization", "Bearer $env:VPU_DEPLOY_TOKEN") }
+        $script:updateSub = Register-ObjectEvent -InputObject $script:updateWc -EventName DownloadStringCompleted `
             -MessageData @{ Sync = $sync; CurVer = $ScriptVersion } -Action {
             try {
                 $data = $Event.MessageData
@@ -5777,9 +6730,9 @@ $form.Add_Load({
                     }
                 }
             } catch { }
-        } | Out-Null
+        }
         $rawUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/Pulse.ps1"
-        $wc.DownloadStringAsync([uri]$rawUrl)
+        $script:updateWc.DownloadStringAsync([uri]$rawUrl)
     } catch { }
 })
 
@@ -5793,6 +6746,9 @@ $form.Add_FormClosing({
     try { if ($script:evtRunspace) { $script:evtRunspace.Close(); $script:evtRunspace.Dispose() } } catch { }
     try { if ($script:hwRunspace)      { $script:hwRunspace.Close();      $script:hwRunspace.Dispose()      } } catch { }
     try { if ($script:sysInfoRunspace) { $script:sysInfoRunspace.Close(); $script:sysInfoRunspace.Dispose() } } catch { }
+    try { if ($script:sysInfoPs)       { $script:sysInfoPs.Dispose() } } catch { }
+    try { if ($script:updateSub) { Unregister-Event -SubscriptionId $script:updateSub.Id -ErrorAction SilentlyContinue; $script:updateSub | Remove-Job -Force -ErrorAction SilentlyContinue } } catch { }
+    try { if ($script:updateWc)  { $script:updateWc.Dispose() } } catch { }
 })
 
 [System.Windows.Forms.Application]::Run($form)

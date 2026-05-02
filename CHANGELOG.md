@@ -10,6 +10,150 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.41] - 2026-05-01
+
+### Added
+
+- **NIC port diagram on Hardware tab** (closes #7) — visual representation of the 4-port NIC inspired by the user-provided mockup. Stylized PCB + bracket render in the upper area with 4 RJ45 jack openings, each containing an in-jack LED that mirrors the link state (green / yellow / gray). A "PWR" status-light marker sits next to Port 1 to match the physical reference on the actual card.
+- **4 port detail boxes** below the rendering — horizontal row, Port 1 leftmost (matching the photo orientation). Each box shows port number, status icon + label (Linked / Degraded / No Link / Not detected), Speed, Duplex, MAC address, and Errors counter (from `Get-NetAdapterStatistics`).
+- **Right sidebar** with NIC Information card (Model from `Get-AdlinkCardInfo`, MAC base, Driver state, Total ports detected) and a Status Legend explaining the color coding.
+- Port mapping uses ascending MAC sort — lowest MAC = Port 1, confirmed in field with Intel I210 / I350 cards. Falls back to all physical adapters sorted by MAC when the strict driver-pattern filter doesn't match.
+- Refreshes when the panel becomes visible and when the Hardware diagnostic completes.
+
+---
+
+## [1.0.40] - 2026-05-01
+
+### Fixed
+
+- **PowerShell 5.1 syntax error spam during Full Diagnostic** — `Get-FdModuleSummary` had three `return if (...) { ... } else { ... }` patterns. PS 5.1 treats `if` as a statement (not an expression) so this throws `"The term 'if' is not recognized..."` repeatedly during module summary generation. Replaced with explicit `if/else { return X }` form. Pre-existing bug; surfaced in v1.0.38 testing.
+
+---
+
+## [1.0.39] - 2026-05-01
+
+### Fixed
+
+- **FullDiagnostic Network row reports correct severity when ports/domains fail** (closes #60) — the Network module's CardKeys are `NetInternet`, `NetPorts`, `NetDomains`, but `Get-WorstCardStatus` was reading the inner `$sync.Cards[$key].Status` which is the unsynchronized hashtable. The background runspace's `Set-NetCard` function couldn't reliably propagate writes to it (same function-scope quirk as v1.0.26). Fixed by:
+  - `Get-WorstCardStatus` and `Get-ModuleSummaryText` now prefer the synchronized `_ncs_*` and `_nc_*` keys when present, falling back to `$sync.Cards` for modules that don't use the pattern.
+  - Network timer completion handler now backfills `$sync.Cards` from the synchronized keys (defense in depth).
+- **Home tile drift on resize fixed properly** (closes #61, supersedes v1.0.38 partial fix) — the previous SuspendLayout/ResumeLayout approach didn't fully prevent intermediate layout states. Replaced with:
+  - Extracted layout to `Update-HubTileLayout` function for deterministic recalc.
+  - Each tile pinned to `Anchor = None` to prevent any WinForms auto-positioning.
+  - Tile bounds set via single `$tile.Bounds` assignment instead of separate Location + Size (atomic).
+  - Debounced SizeChanged → 80ms timer coalesces drag events into one final recalc.
+  - Parent panel `Invalidate(true)` forces a clean repaint with the new tile positions.
+
+---
+
+## [1.0.38] - 2026-05-01
+
+### Fixed
+
+- **Settings button now reliably navigates to Settings panel** (closes #56) — added `$Panel.BringToFront()` to `Show-Panel` (`Modules/UIHelpers.psm1`) so the target panel is always on top of any z-order siblings. Without this, the Settings panel could be masked by a later-added overlay control. Also guarded `$right.Visible` access against null.
+- **Full Diagnostic page now scrolls when content exceeds height** (closes #59) — `$pnlFullDiag.AutoScroll = $true`. With the v1.0.33 row-height bump (54 → 64), the 7 module rows + bottom buttons could exceed the available content area on smaller windows. Bottom buttons (Re-run All / Issues Only / Back to Home) are now always reachable via scroll. Re-enabled `MaximizeBox` so users can also expand the window for full-height view.
+- **Home tiles no longer drift after window resize-back** (closes #58) — added `SuspendLayout` / `ResumeLayout` around the resize handler, refreshed each tile's rounded-rect `Region` to match its new size, and added explicit `Invalidate()` so tiles repaint cleanly. Tiles now restore their original 4×2 grid when the window returns to its original size.
+
+### Changed
+
+- **Toast notifications consolidated during Full Diagnostic** (closes #57) — per-module toasts are suppressed via a new `$sync.FullDiagInProgress` flag while a Full Diagnostic is running. A single summary toast fires when all 7 modules complete: `"Full Diagnostic complete  -  2 critical, 1 warning"` with a detail line listing the affected module names. Per-module toasts still fire when modules are run independently from their own tabs.
+
+---
+
+## [1.0.37] - 2026-05-01
+
+### Added
+
+- **System Information summary cards** (closes #5) — six top-row cards surface the most-asked details at a glance: Model, OS edition + build, Uptime, CPU, RAM (total + free), and System Drive Storage. The detailed log stays below for full inventory. Cards are color-coded — Storage goes warn under 15 GB free / fail under 5 GB; Uptime warns above 30 days (suggesting the VPU is overdue for a reboot).
+
+---
+
+## [1.0.36] - 2026-05-01
+
+### Changed
+
+- **Toast notifications: detail + next-step hint** (closes #12) — toast subtitle now includes module-specific detail (e.g. `"2 port / 1 domain failure(s) — open Network tab to inspect"`) instead of a generic dismiss reminder. All-clear toasts auto-dismiss after 8 seconds; warning/issue toasts stay sticky until manually dismissed (so agents have time to read them).
+
+---
+
+## [1.0.35] - 2026-05-01
+
+### Added
+
+- **Event Logs categorization** (closes #29, #44) — `ProviderName` now mapped to one of six categories: Disk, Driver, Service, Network, App, Other. The summary card replaces the bare `"$totalErrors errors"` with a category breakdown like `"3 disk / 1 driver / 2 app"`. Per-row labels prepend a `[Disk]` / `[Driver]` / `[Service]` badge so agents can scan the log without reading every provider name.
+- **SMART Health card** on the Disks tab (closes #8) — surfaces aggregate predictive-failure status across physical drives (`"All 2 healthy"` / `"1 of 2 unhealthy"`).
+- **Disk Errors card** on the Disks tab (closes #9) — counts disk-related event log errors over the last 48h (already scanned by the existing `Disk Event Log Errors` section), promoted from log row to prominent card.
+- **Home last-run summary** (closes #39) — Home tab now shows date, VPU model, and overall result of the most recent diagnostic next to the Open Last Report button. Refreshes whenever the Home panel becomes visible.
+
+---
+
+## [1.0.34] - 2026-05-01
+
+### Added
+
+- **System Information — Time & Locale section** (#20) — surfaces timezone, system time, NTP server (from W32Time registry), and W32Time service status. Flags UTC default as a likely misconfiguration.
+- **System Information — Pixellot Calibrations section** (#18) — scans 5 known calibration paths under `C:\Pixellot\` and lists the most recent 12 files per path with last-modified age and size. Surfaces "no calibration directory found" when none exist.
+- **System Information — Installed Software section** (#19) — counts installed applications via the registry uninstall keys (faster than Win32_Product) and flags known-conflicting software: third-party AV, broadcast/streaming tools (OBS, vMix, etc.), torrent clients, gaming launchers, and toolbar/coupon software.
+- **Help — Camera Fault Isolator + System Information sections** (#17) — added two new help entries describing the existing Camera fault-isolation wizard and the System Information sub-sections.
+- **Help — About Pulse section** (#24) — added an About entry with version pointer, repository link, and license note.
+
+---
+
+## [1.0.33] - 2026-05-01
+
+### Added
+
+- **Last-run timestamps on diagnostic status labels** (#42) — Network, Event Logs, Disk Health, Hardware, and Services tabs now append `Last run: h:mm tt` to the status line after a run completes. Helps agents tell at a glance whether the data on screen is fresh.
+- **"Open Network Settings" button** in the Network tab (#21) — opens `ncpa.cpl` for direct access to adapter configuration.
+- **Camera Connectivity dependency notice** on the Hardware tab (#27) — when navigated-to before Camera Connectivity has run, the subtitle changes to `"Run Camera Connectivity first to populate PoE budget and NIC uptime."`
+
+### Changed
+
+- **Larger Run Diagnostic header button** (#22) — bumped from 132×38 to 170×46, font from 8.5pt to 10pt semibold. More obvious as the primary action.
+- **Network log section headers more visible** (#40) — switched from 7.5pt Consolas / muted color to 9pt Segoe UI Semibold / primary text color. Extra leading newline for separation.
+- **FullDiagnostic row height** (#41) — bumped from 54px to 64px with action label at Y=32 / height=28. Action text no longer cramped against the row bottom; text wraps cleanly.
+- **Network ETA hides on completion** (#36) — was showing `est. ~20 sec` indefinitely after the run; now hides until next run.
+- **ETA estimates recalibrated** (#11) — Network 20→15s, Hardware 5→3s, Disk 30→15s based on observed runtimes.
+
+---
+
+## [1.0.32] - 2026-05-01
+
+### Fixed
+
+- **Wave 2 bug fixes (closes #47, #49, #50, #51, #52, #53, #54, #55)**:
+  - Hardware GPU card now prefers discrete over integrated (#47) — was showing Intel UHD Graphics 630 even on systems with a discrete GPU. Filter mirrors SystemInformation.psm1.
+  - CameraConnectivity Update Now button now uses `$global:ScriptUrl` defined in Pulse.ps1 (#49). Removed `-WindowStyle Hidden` so update errors are visible. Added empty-URL guard.
+  - NetworkDiagnostics Test-TcpConnect / Test-UdpDns / Test-UdpNtp / Test-UdpEcho now use try/finally to dispose sockets on exception paths (#50). Same fix applied to CameraConnectivity Test-TcpPort.
+  - CameraConnectivity Test-TcpPort now wraps EndConnect in try/catch (#51) — was reporting refused/RST connections as open. Mirrors NetworkDiagnostics pattern.
+  - Pulse update-check WebClient and HelpAbout feedback WebClient now disposed properly (#52). Update-check event subscription unregistered on form close.
+  - SystemInformation runspace no longer passes `$sync` twice via SetVariable + AddArgument (#53). PowerShell handle stored as `$script:sysInfoPs` and disposed on form close.
+  - DiskHealth top-folder scan timeout now breaks out of the volume loop, not just the directory loop (#54) — was running up to 4× over budget on multi-volume systems.
+
+### Added
+
+- **TLS 1.2 enforcement** at startup (#55) — older VPU images defaulted to TLS 1.0/1.1 which GitHub no longer accepts, breaking the update check. Now bitwise-OR'd with whatever protocols are already enabled.
+- **`$global:ScriptUrl`** variable defined at startup for the self-update flow.
+
+### Note
+
+- #48 (FullDiagnostic runspace serialization) is intentionally deferred — higher risk than the rest of Wave 2 and warrants standalone testing.
+
+---
+
+## [1.0.31] - 2026-05-01
+
+### Changed
+
+- **Wave 1 text/label polish (closes #25, #30, #31, #32, #33, #34, #37, #38, #43)** — agent-friendly language pass across the UI:
+  - FullDiagnostic: severity default label "Complete" → "Healthy" (#25); "Re-run Failed Only" → "Re-run Issues Only" (#30); stripped `>>` prefix from action text (#31); subtitle replaced with task-focused description (#33).
+  - SystemOverview: replaced product-tagline subtitle with action-oriented guidance (#32); rewrote all 8 tile descriptions to be specific and task-focused (#43).
+  - PixellotServices: VPU.exe card "Idle" → "Not streaming" with sub-label "Only runs during active streams" (#34).
+  - HelpAbout: removed "GitHub" reference from feedback subtitle (#37).
+  - SystemInformation: renamed registry-derived labels to agent-friendly ("App Version", "System Image Version", "Package Dependencies") (#38).
+
+---
+
 ## [1.0.30] - 2026-05-01
 
 ### Changed

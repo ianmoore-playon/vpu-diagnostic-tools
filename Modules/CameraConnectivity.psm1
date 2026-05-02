@@ -82,13 +82,19 @@ $DiagScript = {
 
     function Test-TcpPort {
         param([string]$IP, [int]$Port, [int]$TimeoutMs = 2000)
+        $tcp = $null
         try {
             $tcp = New-Object System.Net.Sockets.TcpClient
             $c   = $tcp.BeginConnect($IP, $Port, $null, $null)
             $ok  = $c.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
-            if ($ok) { $tcp.EndConnect($c) }
-            $tcp.Close(); return $ok
+            # Without the inner try/catch, an EndConnect failure (host unreachable, RST)
+            # bubbles to the outer catch and the function returns $false correctly — but
+            # without it AsyncWaitHandle returning $true on a refused connection caused
+            # closed ports to be reported as open. Mirrors NetworkDiagnostics.psm1.
+            if ($ok) { try { $tcp.EndConnect($c) } catch { $ok = $false } }
+            return $ok
         } catch { return $false }
+        finally { if ($tcp) { try { $tcp.Close() } catch { } } }
     }
 
     # -- Init ------------------------------------------------------------------
@@ -1236,7 +1242,10 @@ $btnAdapterSettings.Add_Click({ Start-Process "ncpa.cpl" })
 $btnUpdate.Add_Click({
     $btnUpdate.Text = "  Launching..."; $btnUpdate.Enabled = $false
     try {
-        Start-Process PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"irm '$ScriptUrl' | iex`""
+        if (-not $global:ScriptUrl) {
+            throw "Update URL not configured (ScriptUrl is empty)."
+        }
+        Start-Process PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm '$global:ScriptUrl' | iex`""
         $form.Close()
     } catch {
         $btnUpdate.Enabled = $true; $btnUpdate.Text = "  Update Now"

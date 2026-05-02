@@ -1,3 +1,6 @@
 Logs/
 Pulse_Results_*.txt
 *copy*.ps1
+*.pcapng
+*.pcap
+Pulse_Results/

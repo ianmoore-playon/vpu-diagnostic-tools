@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.30"
+$ScriptVersion = "1.0.41"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -30,6 +30,16 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     }
     exit
 }
+
+# ---------- Network defaults -------------------------------------------------
+# Force TLS 1.2 (preserve any higher protocols already enabled). Older VPU images
+# default to TLS 1.0/1.1 which GitHub no longer accepts, breaking update checks.
+[System.Net.ServicePointManager]::SecurityProtocol = `
+    [System.Net.SecurityProtocolType]::Tls12 -bor `
+    [System.Net.ServicePointManager]::SecurityProtocol
+
+# Self-update download URL — used by the CameraConnectivity Update Now button.
+$global:ScriptUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/Run.ps1"
 
 # ---------- Configuration ----------------------------------------------------
 $OutputBaseDir     = if ($PSScriptRoot) { $PSScriptRoot } else { [Environment]::GetFolderPath('Desktop') }
@@ -137,6 +147,14 @@ $sync = [hashtable]::Synchronized(@{
         HwMonitor   = @{ Value = "--"; Status = "neutral" }
         HwMmk       = @{ Value = "--"; Status = "neutral" }
         SysInfo     = @{ Value = "--"; Status = "neutral" }
+        SiModel     = @{ Value = "--"; Status = "neutral" }
+        SiOs        = @{ Value = "--"; Status = "neutral" }
+        SiUptime    = @{ Value = "--"; Status = "neutral" }
+        SiCpu       = @{ Value = "--"; Status = "neutral" }
+        SiRam       = @{ Value = "--"; Status = "neutral" }
+        SiStorage   = @{ Value = "--"; Status = "neutral" }
+        DiskSmart   = @{ Value = "--"; Status = "neutral" }
+        DiskErrors  = @{ Value = "--"; Status = "neutral" }
     }
     PortResults     = [System.Collections.ArrayList]::new()
     CamResults      = [System.Collections.ArrayList]::new()
@@ -198,11 +216,14 @@ $sync = [hashtable]::Synchronized(@{
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Pulse - Pixellot Unified Live System Evaluator"
 $form.ClientSize = New-Object System.Drawing.Size(1280, 760)
+# Enforce minimum AT the default client size so panels never have to render
+# in a smaller area than they were laid out for. Combined with AutoScroll on
+# FullDiagnostic (#59), this keeps the bottom action buttons reachable.
 $form.MinimumSize = $form.Size
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.BackColor = $ColBg
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
-$form.MaximizeBox = $false
+$form.MaximizeBox = $true
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
 $AssetsDir = Join-Path $PSScriptRoot "Assets"
@@ -397,17 +418,17 @@ $navReports     = New-TabButton "Reports"              0xE7C3  (8 * $tabW)  $tab
 
 $btnTabFullDiag = New-Object System.Windows.Forms.Button
 $btnTabFullDiag.Text      = [char]0x25B6 + "  Run Diagnostic"
-$btnTabFullDiag.Size      = New-Object System.Drawing.Size(132, 38)
-$btnTabFullDiag.Location  = New-Object System.Drawing.Point(1004, 15)
+$btnTabFullDiag.Size      = New-Object System.Drawing.Size(170, 46)
+$btnTabFullDiag.Location  = New-Object System.Drawing.Point(966, 11)
 $btnTabFullDiag.BackColor = $ColAccent
 $btnTabFullDiag.ForeColor = [System.Drawing.Color]::White
 $btnTabFullDiag.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $btnTabFullDiag.FlatAppearance.BorderSize = 0
-$btnTabFullDiag.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
+$btnTabFullDiag.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
 $btnTabFullDiag.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 $btnTabFullDiag.Cursor    = [System.Windows.Forms.Cursors]::Hand
 $btnTabFullDiag.Anchor    = $AnchorTR
-$btnTabFullDiag.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,132,38)),6))
+$btnTabFullDiag.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,170,46)),6))
 
 $pnlTabBar.Controls.AddRange(@(
     $navSysOverview,$navSysInfo,$navNetConfig,$navCamera,$navServices,
@@ -630,12 +651,25 @@ $timerToast.Add_Tick({
     # Auto-hide when any new run starts
     $anyRunning = $sync.Running -or $sync.NetRunning -or $sync.SvcRunning -or
                   $sync.DiskRunning -or $sync.EvtRunning -or $sync.HwRunning -or $sync.SysInfoRunning
-    if ($anyRunning -and $pnlToast.Visible) { $pnlToast.Visible = $false }
+    if ($anyRunning -and $pnlToast.Visible) { $pnlToast.Visible = $false; $script:toastShownAt = $null }
+
+    # Auto-dismiss all-clear toasts after 8 seconds (sticky for warnings/issues)
+    if ($script:toastShownAt -and $pnlToast.Visible -and ((Get-Date) - $script:toastShownAt).TotalSeconds -ge 8) {
+        $pnlToast.Visible = $false
+        $script:toastShownAt = $null
+    }
+
+    # Suppress per-module toasts while a Full Diagnostic is in progress (#57).
+    # The consolidated summary toast is fired below when FullDiagToastReady flips true.
+    $inFullDiag = $sync.FullDiagInProgress -eq $true
 
     foreach ($key in $toastModuleMeta.Keys) {
         $nowDone = $sync[$key] -eq $true
         if ($nowDone -and ($toastPrevState[$key] -eq 0)) {
             $toastPrevState[$key] = 1
+            # Skip the per-module toast during a Full Diagnostic — but still update
+            # state so the next individual run starts from a clean transition.
+            if ($inFullDiag) { continue }
             $meta = $toastModuleMeta[$key]
 
             # Determine pass/warn/fail
@@ -652,7 +686,39 @@ $timerToast.Add_Tick({
             $clr  = if ($isOk -and -not $isWarn) { $ColGreen } elseif ($isWarn) { $ColYellow } else { $ColRed }
             $icon = if ($isOk -and -not $isWarn) { [char]0xE73E } elseif ($isWarn) { [char]0xE7BA } else { [char]0xEA39 }
             $msg  = "$($meta.Name)  -  " + $(if ($isOk -and -not $isWarn) { "All Clear" } elseif ($isWarn) { "Warning" } else { "Issues Found" })
-            $sub  = "Completed $(Get-Date -Format 'h:mm:ss tt')   |   Click X to dismiss"
+
+            # Build detail + next-step hint per module (#12). Counts come from $sync;
+            # next-step points to the relevant tab when issues are found.
+            $detail = ""
+            switch ($key) {
+                "NetComplete" {
+                    if ($isOk -and -not $isWarn) { $detail = "All ports and domains reachable" }
+                    else {
+                        $pf = [int]$sync.NetPortFail; $df = [int]$sync.NetDomainFail
+                        $detail = "$pf port / $df domain failure(s) — open Network tab to inspect"
+                    }
+                }
+                "SvcComplete" {
+                    $detail = if ($isOk) { "All required services running" } else { "Service issues — open Services tab to inspect" }
+                }
+                "DiskComplete" {
+                    $detail = if ($isOk) { "All drives healthy" } else { "Disk issues — open Disks tab to inspect" }
+                }
+                "EvtComplete" {
+                    $ev = $sync.Cards["EvtStatus"].Value
+                    $detail = if ($isOk) { "$ev — no recent OS errors" } else { "$ev — open Event Logs tab to inspect" }
+                }
+                "HwComplete" {
+                    $detail = if ($isOk) { "GPU, monitor, and peripherals OK" } else { "Hardware issues — open Hardware tab to inspect" }
+                }
+                "SysInfoComplete" {
+                    $detail = "System inventory collected"
+                }
+                default {
+                    $detail = if ($isOk) { "No issues found" } else { "Open the relevant tab to inspect" }
+                }
+            }
+            $sub  = "$detail   |   $(Get-Date -Format 'h:mm tt')"
 
             $pnlToastAccent.BackColor = $clr
             $lblToastIcon.Text        = $icon
@@ -662,11 +728,56 @@ $timerToast.Add_Tick({
             $lblToastSub.Text         = $sub
             $pnlToast.Visible         = $true
             $pnlToast.BringToFront()
+
+            # Auto-dismiss for all-clear after 8 seconds; warnings/issues stay sticky
+            # so they don't disappear before the agent has a chance to read them.
+            if ($isOk -and -not $isWarn) {
+                $script:toastShownAt = Get-Date
+            } else {
+                $script:toastShownAt = $null
+            }
         }
         # Reset state when module resets (new run)
         if (-not $sync[$key] -and ($toastPrevState[$key] -eq 1)) {
             $toastPrevState[$key] = 0
         }
+    }
+
+    # Consolidated Full Diagnostic summary toast (#57). Fires once when the
+    # FullDiagnostic completion handler sets FullDiagToastReady. Replaces the
+    # 7 per-module toasts that were previously firing in rapid succession.
+    if ($sync.FullDiagToastReady -eq $true) {
+        $sync.FullDiagToastReady = $false
+        $s = $sync.FullDiagSummary
+        if ($s -and $s.TotalIssues -eq 0) {
+            $clr  = $ColGreen
+            $icon = [char]0xE73E
+            $msg  = "Full Diagnostic complete  -  All Clear"
+            $sub  = "All checks passed   |   $(Get-Date -Format 'h:mm tt')"
+            $auto = $true
+        } elseif ($s) {
+            $clr  = if ($s.CritCount -gt 0) { $ColRed } else { $ColYellow }
+            $icon = if ($s.CritCount -gt 0) { [char]0xEA39 } else { [char]0xE7BA }
+            $issuesParts = @()
+            if ($s.CritCount -gt 0) { $issuesParts += "$($s.CritCount) critical" }
+            if ($s.WarnCount -gt 0) { $issuesParts += "$($s.WarnCount) warning$(if($s.WarnCount -ne 1){'s'})" }
+            $msg  = "Full Diagnostic complete  -  $($issuesParts -join ', ')"
+            $modList = @($s.CritNames + $s.WarnNames) | Select-Object -First 3
+            $more    = if (($s.CritNames.Count + $s.WarnNames.Count) -gt 3) { ", ..." } else { "" }
+            $sub  = "$($modList -join ', ')$more   |   $(Get-Date -Format 'h:mm tt')"
+            $auto = $false
+        } else {
+            $clr=$ColMuted; $icon=[char]0xE946; $msg="Full Diagnostic complete"; $sub=Get-Date -Format 'h:mm tt'; $auto=$true
+        }
+        $pnlToastAccent.BackColor = $clr
+        $lblToastIcon.Text        = $icon
+        $lblToastIcon.ForeColor   = $clr
+        $lblToastText.Text        = $msg
+        $lblToastText.ForeColor   = $clr
+        $lblToastSub.Text         = $sub
+        $pnlToast.Visible         = $true
+        $pnlToast.BringToFront()
+        $script:toastShownAt = if ($auto) { Get-Date } else { $null }
     }
 })
 $timerToast.Start()
@@ -718,11 +829,12 @@ $form.Add_Load({
         if ($osCaption) { $lblVpuVal.Text = "$($env:COMPUTERNAME)  .  $($osCaption -replace 'Microsoft Windows ','Win ')" }
     } catch { }
 
-    # Async update check - compares remote $ScriptVersion to current; shows notice if newer
+    # Async update check - compares remote $ScriptVersion to current; shows notice if newer.
+    # Stash $wc and the event subscription so FormClosing can clean them up.
     try {
-        $wc = New-Object System.Net.WebClient
-        if ($env:VPU_DEPLOY_TOKEN) { $wc.Headers.Add("Authorization", "Bearer $env:VPU_DEPLOY_TOKEN") }
-        Register-ObjectEvent -InputObject $wc -EventName DownloadStringCompleted `
+        $script:updateWc = New-Object System.Net.WebClient
+        if ($env:VPU_DEPLOY_TOKEN) { $script:updateWc.Headers.Add("Authorization", "Bearer $env:VPU_DEPLOY_TOKEN") }
+        $script:updateSub = Register-ObjectEvent -InputObject $script:updateWc -EventName DownloadStringCompleted `
             -MessageData @{ Sync = $sync; CurVer = $ScriptVersion } -Action {
             try {
                 $data = $Event.MessageData
@@ -733,9 +845,9 @@ $form.Add_Load({
                     }
                 }
             } catch { }
-        } | Out-Null
+        }
         $rawUrl = "https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/refs/heads/main/Pulse.ps1"
-        $wc.DownloadStringAsync([uri]$rawUrl)
+        $script:updateWc.DownloadStringAsync([uri]$rawUrl)
     } catch { }
 })
 
@@ -749,6 +861,9 @@ $form.Add_FormClosing({
     try { if ($script:evtRunspace) { $script:evtRunspace.Close(); $script:evtRunspace.Dispose() } } catch { }
     try { if ($script:hwRunspace)      { $script:hwRunspace.Close();      $script:hwRunspace.Dispose()      } } catch { }
     try { if ($script:sysInfoRunspace) { $script:sysInfoRunspace.Close(); $script:sysInfoRunspace.Dispose() } } catch { }
+    try { if ($script:sysInfoPs)       { $script:sysInfoPs.Dispose() } } catch { }
+    try { if ($script:updateSub) { Unregister-Event -SubscriptionId $script:updateSub.Id -ErrorAction SilentlyContinue; $script:updateSub | Remove-Job -Force -ErrorAction SilentlyContinue } } catch { }
+    try { if ($script:updateWc)  { $script:updateWc.Dispose() } } catch { }
 })
 
 [System.Windows.Forms.Application]::Run($form)

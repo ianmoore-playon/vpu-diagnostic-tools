@@ -12,8 +12,25 @@ $EvtScript = {
     function Evt-Section { param([string]$Title)
         $sync.EvtQueue.Enqueue(@{ Label=""; Result=$Title; L="Section" }) }
 
+    # Provider-name → category map. Used to classify event sources into actionable
+    # buckets so agents can tell at a glance whether errors are hardware (Disk/Driver)
+    # vs software (Service/App). The wildcard match is on the ProviderName from the
+    # Windows event log (e.g. "Microsoft-Windows-DistributedCOM", "disk", "Service Control Manager").
+    function Get-EvtCategory {
+        param([string]$ProviderName)
+        $p = $ProviderName.ToLower()
+        if ($p -match '^(disk|ntfs|volsnap|volmgr|partmgr|storahci|storport|storvsc|fvevol|hidserv|usbstor)') { return "Disk" }
+        if ($p -match '(driver|wudfrd|cdrom|usb|hid|netbt|tcpip|bowser|netio|smb|kernel)') { return "Driver" }
+        if ($p -match '(service control manager|wininit|usermodepowerservice|securitycenter|workstation|server|browser|w32time|spooler)') { return "Service" }
+        if ($p -match '(application|application error|\.net|wer|sidebyside|esent|user profile|appx|search|setup|distributedcom|wmi)') { return "App" }
+        if ($p -match '(network|tcpip|netbt|dhcp|dnsapi|netio|nlasvc|wlan|wifi)') { return "Network" }
+        return "Other"
+    }
+
     $since = (Get-Date).AddHours(-$EvtHours)
     $totalErrors = 0; $totalWarns = 0
+    # Per-category error/warn tallies for the card label
+    $catTotals = @{ Disk = 0; Driver = 0; Service = 0; App = 0; Network = 0; Other = 0 }
 
     foreach ($logName in @("System","Application")) {
         if ($sync.EvtCancelled) { break }
@@ -24,30 +41,53 @@ $EvtScript = {
             $errs = @($evts | Where-Object { $_.Level -in @(1,2) })
             $wrns = @($evts | Where-Object { $_.Level -eq 3 })
             $totalErrors += $errs.Count; $totalWarns += $wrns.Count
+
+            # Tally by category for the summary card
+            foreach ($e in $errs) {
+                $cat = Get-EvtCategory -ProviderName $e.ProviderName
+                $catTotals[$cat] = $catTotals[$cat] + 1
+            }
+
             if ($evts.Count -eq 0) {
                 Evt-Log "Last ${EvtHours}h" "No errors or warnings" "Pass"
             } else {
-                Evt-Log "Errors (last ${EvtHours}h)"   "$($errs.Count)" $(if($errs.Count-gt0){"Fail"}else{"Pass"})
-                Evt-Log "Warnings (last ${EvtHours}h)" "$($wrns.Count)" $(if($wrns.Count-gt0){"Warn"}else{"Info"})
+                Evt-Log "Errors (last ${EvtHours}h)"   "$($errs.Count)" $(if($errs.Count -gt 0){"Fail"}else{"Pass"})
+                Evt-Log "Warnings (last ${EvtHours}h)" "$($wrns.Count)" $(if($wrns.Count -gt 0){"Warn"}else{"Info"})
                 foreach ($ev in ($errs | Select-Object -First 20)) {
                     if ($sync.EvtCancelled) { break }
                     $msg = (($ev.Message -split "`n")[0] -replace '\s+',' ').Trim()
-                    if ($msg.Length -gt 72) { $msg = $msg.Substring(0,69)+"..." }
-                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  $($ev.ProviderName)" $msg "Fail"
+                    if ($msg.Length -gt 64) { $msg = $msg.Substring(0,61)+"..." }
+                    $cat = Get-EvtCategory -ProviderName $ev.ProviderName
+                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  [$cat] $($ev.ProviderName)" $msg "Fail"
                 }
                 foreach ($ev in ($wrns | Select-Object -First 10)) {
                     if ($sync.EvtCancelled) { break }
                     $msg = (($ev.Message -split "`n")[0] -replace '\s+',' ').Trim()
-                    if ($msg.Length -gt 72) { $msg = $msg.Substring(0,69)+"..." }
-                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  $($ev.ProviderName)" $msg "Warn"
+                    if ($msg.Length -gt 64) { $msg = $msg.Substring(0,61)+"..." }
+                    $cat = Get-EvtCategory -ProviderName $ev.ProviderName
+                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  [$cat] $($ev.ProviderName)" $msg "Warn"
                 }
             }
         } catch { Evt-Log $logName "Error reading event log" "Warn" }
     }
 
+    # Build a category breakdown for the card label — only show non-zero categories,
+    # ordered by severity-of-implication (Disk → Driver → Service → Network → App → Other)
+    $catOrder = @("Disk","Driver","Service","Network","App","Other")
+    $catParts = @()
+    foreach ($c in $catOrder) {
+        if ($catTotals[$c] -gt 0) { $catParts += "$($catTotals[$c]) $($c.ToLower())" }
+    }
+    $cardValue = if ($totalErrors -gt 0) {
+        if ($catParts.Count -gt 0) { ($catParts -join " / ") } else { "$totalErrors errors" }
+    } elseif ($totalWarns -gt 0) {
+        "$totalWarns warns"
+    } else {
+        "Clean"
+    }
     $sync.Cards["EvtStatus"] = @{
-        Value  = if($totalErrors-gt0){"$totalErrors errors"}elseif($totalWarns-gt0){"$totalWarns warns"}else{"Clean"}
-        Status = if($totalErrors-gt0){"fail"}elseif($totalWarns-gt0){"warn"}else{"ok"}
+        Value  = $cardValue
+        Status = if($totalErrors -gt 0){"fail"}elseif($totalWarns -gt 0){"warn"}else{"ok"}
     }
     $sync.EvtStep = "Complete"; $sync.EvtRunning=$false; $sync.EvtComplete=$true
 }
@@ -72,7 +112,7 @@ $evtTimer.Add_Tick({
     if ($sync.EvtComplete -and -not $sync.EvtRunning) {
         $evtTimer.Stop(); $btnEvtCancel.Visible=$false
         $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Check Event Log"
-        $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="  $($sync.EvtStep)"
+        $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="  $($sync.EvtStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 

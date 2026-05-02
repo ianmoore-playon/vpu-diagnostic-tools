@@ -27,10 +27,15 @@ function Get-WorstCardStatus {
     $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
     $worst = "neutral"
     foreach ($k in $Keys) {
-        if ($sync.Cards.ContainsKey($k)) {
-            $s = $sync.Cards[$k].Status
-            if ($pri.ContainsKey($s) -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
-        }
+        # Prefer the synchronized _ncs_* key when present — these are written directly
+        # to the synchronized $sync hashtable from background runspaces and have
+        # guaranteed cross-thread visibility. Falls back to $sync.Cards[$k].Status
+        # for modules that don't use the _ncs_ pattern. Same fix as v1.0.26 — the
+        # nested $sync.Cards hashtable is unsynchronized and writes from inside
+        # functions called from background runspaces don't reliably propagate (#60).
+        $s = $sync["_ncs_$k"]
+        if (-not $s -and $sync.Cards.ContainsKey($k)) { $s = $sync.Cards[$k].Status }
+        if ($s -and $pri.ContainsKey($s) -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
     }
     return $worst
 }
@@ -39,10 +44,10 @@ function Get-ModuleSummaryText {
     param([string[]]$Keys)
     $parts = @()
     foreach ($k in $Keys) {
-        if ($sync.Cards.ContainsKey($k)) {
-            $v = $sync.Cards[$k].Value
-            if ($v -and $v -ne "--") { $parts += $v }
-        }
+        # Same _nc_/Cards fallback chain as Get-WorstCardStatus (#60)
+        $v = $sync["_nc_$k"]
+        if (-not $v -and $sync.Cards.ContainsKey($k)) { $v = $sync.Cards[$k].Value }
+        if ($v -and $v -ne "--") { $parts += $v }
     }
     return ($parts -join "   |   ")
 }
@@ -53,18 +58,25 @@ function Get-FdModuleSummary {
     switch ($Idx) {
         0 { # System Overview
             $v = if ($sync.Cards.ContainsKey("SysInfo")) { $sync.Cards["SysInfo"].Value } else { "" }
-            return if ($v -and $v -ne "--") { $v } else { "Hardware details collected" }
+            # PS 5.1: `return if (...)` is invalid (if is a statement, not expression).
+            # Wrap in $() or assign first.
+            if ($v -and $v -ne "--") { return $v } else { return "Hardware details collected" }
         }
         1 { # Network Configuration
             if ($Worst -eq "ok") { return "Internet connected - all ports and domains reachable" }
             $parts = @()
             foreach ($k in @("NetInternet","NetPorts","NetDomains")) {
-                if ($sync.Cards.ContainsKey($k)) {
-                    $c = $sync.Cards[$k]
-                    if ($c.Status -ne "ok" -and $c.Value -and $c.Value -ne "--") { $parts += $c.Value }
+                # Read from the synchronized _nc_/_ncs_ keys preferentially (#60)
+                $val = $sync["_nc_$k"]
+                $sts = $sync["_ncs_$k"]
+                if (-not $val -and $sync.Cards.ContainsKey($k)) {
+                    $val = $sync.Cards[$k].Value
+                    $sts = $sync.Cards[$k].Status
                 }
+                if ($sts -ne "ok" -and $val -and $val -ne "--") { $parts += $val }
             }
-            return if ($parts) { $parts -join "   |   " } else { Get-ModuleSummaryText @("NetInternet","NetPorts","NetDomains") }
+            if ($parts.Count -gt 0) { return ($parts -join "   |   ") }
+            return Get-ModuleSummaryText @("NetInternet","NetPorts","NetDomains")
         }
         2 { # Camera Connectivity
             if ($Worst -eq "ok") { return "All cameras online and responding normally" }
@@ -74,7 +86,7 @@ function Get-FdModuleSummary {
             $v = if ($sync.Cards.ContainsKey("SvcStatus")) { $sync.Cards["SvcStatus"].Value } else { "" }
             if ($Worst -eq "ok") { return "All Pixellot services running" }
             if ($v -eq "None found") { return "No Pixellot services detected on this VPU" }
-            return if ($v -and $v -ne "--") { $v } else { "Service check complete" }
+            if ($v -and $v -ne "--") { return $v } else { return "Service check complete" }
         }
         4 { # VPU Hardware
             return Get-ModuleSummaryText @("HwGpu","HwMonitor","HwMmk")
@@ -121,12 +133,16 @@ function Invoke-FdModule {
 }
 
 # --- Panel -------------------------------------------------------------------
+# AutoScroll lets the panel scroll vertically when the 7 module rows + bottom
+# buttons exceed the available content height (e.g. on smaller windows or after
+# the row-height bump from v1.0.33). Fix for #59.
 $pnlFullDiag = New-Object System.Windows.Forms.Panel
-$pnlFullDiag.Size      = New-Object System.Drawing.Size($ContentW, $ContentH)
-$pnlFullDiag.Location  = New-Object System.Drawing.Point(0, $ContentY)
-$pnlFullDiag.BackColor = $ColBg
-$pnlFullDiag.Anchor    = $AnchorTLRB
-$pnlFullDiag.Visible   = $false
+$pnlFullDiag.Size       = New-Object System.Drawing.Size($ContentW, $ContentH)
+$pnlFullDiag.Location   = New-Object System.Drawing.Point(0, $ContentY)
+$pnlFullDiag.BackColor  = $ColBg
+$pnlFullDiag.Anchor     = $AnchorTLRB
+$pnlFullDiag.Visible    = $false
+$pnlFullDiag.AutoScroll = $true
 $form.Controls.Add($pnlFullDiag)
 $script:allNavPanels += $pnlFullDiag
 
@@ -139,7 +155,7 @@ $lblFdTitle.AutoSize  = $true
 $pnlFullDiag.Controls.Add($lblFdTitle)
 
 $lblFdSub = New-Object System.Windows.Forms.Label
-$lblFdSub.Text      = "Runs all checks and summarises results."
+$lblFdSub.Text      = "Checks all modules and highlights issues with recommended actions."
 $lblFdSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
 $lblFdSub.ForeColor = $ColMuted
 $lblFdSub.Location  = New-Object System.Drawing.Point(30, 56)
@@ -186,7 +202,7 @@ $pnlFdBanner.Controls.Add($lblFdBannerDetail)
 # --- Module rows (one per module) --------------------------------------------
 $fdRows        = @()
 $script:fdRowY = 150     # first row top (banner bottom = 84+54=138, gap=12)
-$fdRowH        = 54
+$fdRowH        = 64
 $fdRowGap      = 6
 
 foreach ($mod in $fdModuleDefs) {
@@ -247,13 +263,13 @@ foreach ($mod in $fdModuleDefs) {
     $vLbl.UseMnemonic = $false
     $rPnl.Controls.Add($vLbl)
 
-    # Suggested action (bottom line - hidden for passing modules)
+    # Suggested action (bottom line - hidden for passing modules; wraps to 2 lines if needed)
     $aLbl = New-Object System.Windows.Forms.Label
     $aLbl.Text        = ""
-    $aLbl.Font        = New-Object System.Drawing.Font("Segoe UI", 8)
+    $aLbl.Font        = New-Object System.Drawing.Font("Segoe UI", 8.5)
     $aLbl.ForeColor   = $ColYellow
-    $aLbl.Location    = New-Object System.Drawing.Point(406, 31)
-    $aLbl.Size        = New-Object System.Drawing.Size(686, 17)
+    $aLbl.Location    = New-Object System.Drawing.Point(406, 32)
+    $aLbl.Size        = New-Object System.Drawing.Size(686, 28)
     $aLbl.BackColor   = [System.Drawing.Color]::Transparent
     $aLbl.Visible     = $false
     $aLbl.UseMnemonic = $false
@@ -263,7 +279,7 @@ foreach ($mod in $fdModuleDefs) {
     $vBtn = New-Object System.Windows.Forms.Button
     $vBtn.Text      = "View  >"
     $vBtn.Size      = New-Object System.Drawing.Size(96, 30)
-    $vBtn.Location  = New-Object System.Drawing.Point(1110, 12)
+    $vBtn.Location  = New-Object System.Drawing.Point(1110, 17)
     $vBtn.BackColor = $ColNavHover
     $vBtn.ForeColor = $ColText
     $vBtn.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -288,12 +304,12 @@ foreach ($mod in $fdModuleDefs) {
     $script:fdRowY += $fdRowH + $fdRowGap
 }
 
-# --- Bottom buttons (Re-run All | Re-run Failed | Back to Home) --------------
-# Rows end at 150 + 7*(54+6) = 570.  Buttons at 582.
+# --- Bottom buttons (Re-run All | Re-run Issues | Back to Home) --------------
+# Rows end at 150 + 7*(64+6) = 640.  Buttons at 652.
 $btnFdRerun = New-Object System.Windows.Forms.Button
 $btnFdRerun.Text      = [char]0x25B6 + "  Re-run All"
 $btnFdRerun.Size      = New-Object System.Drawing.Size(172, 40)
-$btnFdRerun.Location  = New-Object System.Drawing.Point(30, 582)
+$btnFdRerun.Location  = New-Object System.Drawing.Point(30, 652)
 $btnFdRerun.BackColor = $ColAccent
 $btnFdRerun.ForeColor = [System.Drawing.Color]::White
 $btnFdRerun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -305,9 +321,9 @@ $btnFdRerun.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRec
 $pnlFullDiag.Controls.Add($btnFdRerun)
 
 $btnFdRerunFailed = New-Object System.Windows.Forms.Button
-$btnFdRerunFailed.Text      = "Re-run Failed Only"
+$btnFdRerunFailed.Text      = "Re-run Issues Only"
 $btnFdRerunFailed.Size      = New-Object System.Drawing.Size(190, 40)
-$btnFdRerunFailed.Location  = New-Object System.Drawing.Point(214, 582)
+$btnFdRerunFailed.Location  = New-Object System.Drawing.Point(214, 652)
 $btnFdRerunFailed.BackColor = $ColNavHover
 $btnFdRerunFailed.ForeColor = $ColYellow
 $btnFdRerunFailed.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -322,7 +338,7 @@ $pnlFullDiag.Controls.Add($btnFdRerunFailed)
 $btnFdBack = New-Object System.Windows.Forms.Button
 $btnFdBack.Text      = "<  Back to Home"
 $btnFdBack.Size      = New-Object System.Drawing.Size(160, 40)
-$btnFdBack.Location  = New-Object System.Drawing.Point(418, 582)
+$btnFdBack.Location  = New-Object System.Drawing.Point(418, 652)
 $btnFdBack.BackColor = $ColNavHover
 $btnFdBack.ForeColor = $ColText
 $btnFdBack.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -385,7 +401,7 @@ $timerFullDiag.Add_Tick({
         # Paint the row only once (ViewBtn.Enabled flips false -> true as the guard).
         if (-not $row.ViewBtn.Enabled) {
             $dotColor  = switch ($worst) { "fail"{$ColRed} "warn"{$ColYellow} "ok"{$ColGreen} default{$ColMuted} }
-            $severityT = switch ($worst) { "fail"{"Critical"} "warn"{"Warning"} "ok"{"Healthy"} default{"Complete"} }
+            $severityT = switch ($worst) { "fail"{"Critical"} "warn"{"Warning"} "ok"{"Healthy"} default{"Healthy"} }
 
             $row.Dot.BackColor       = $dotColor
             $row.StatusLbl.Text      = $severityT
@@ -397,7 +413,7 @@ $timerFullDiag.Add_Tick({
             # Suggested action - shown only for Warning / Critical
             $action = Get-FdActionText $i $worst
             if ($action) {
-                $row.ActionLbl.Text      = ">> " + $action
+                $row.ActionLbl.Text      = $action
                 $row.ActionLbl.ForeColor = if ($worst -eq "fail") { $ColRed } else { $ColYellow }
                 $row.ActionLbl.Visible   = $true
             }
@@ -466,6 +482,18 @@ $timerFullDiag.Add_Tick({
     $btnFdRerun.Enabled       = $true
     $btnFdRerunFailed.Visible = ($totalIssues -gt 0)
     $btnFdRerunFailed.Enabled = ($totalIssues -gt 0)
+
+    # Hand off to toast timer for the consolidated summary toast (#57).
+    # FullDiagInProgress was suppressing per-module toasts during the run.
+    $sync.FullDiagSummary = @{
+        TotalIssues = $totalIssues
+        CritCount   = $critCount
+        WarnCount   = $warnCount
+        CritNames   = @($critNames)
+        WarnNames   = @($warnNames)
+    }
+    $sync.FullDiagInProgress = $false
+    $sync.FullDiagToastReady = $true
 })
 
 $btnFdRerun.Add_Click({ Start-FullDiagnostic })
@@ -510,6 +538,10 @@ function Start-FailedDiagnostic {
 function Start-FullDiagnostic {
     Show-Panel $pnlFullDiag
     Set-ActiveNav $navSysOverview
+
+    # Suppress per-module toasts while Full Diagnostic is running (#57).
+    # The toast timer reads this flag and fires only the consolidated summary at end.
+    $sync.FullDiagInProgress = $true
 
     $script:fdRerunIndices    = @()
     $pnlFdBanner.Visible      = $false

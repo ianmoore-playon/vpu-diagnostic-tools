@@ -22,9 +22,9 @@ $SysInfoScript = {
         $pxVer  = if ($pxReg.PSObject.Properties['Version']      -and $pxReg.Version)      { $pxReg.Version }      else { "Not found" }
         $pxImg  = if ($pxReg.PSObject.Properties['ImageVersion'] -and $pxReg.ImageVersion) { $pxReg.ImageVersion } else { "Not found" }
         $pxDeps = if ($pxReg.PSObject.Properties['Dependencies'] -and $pxReg.Dependencies) { $pxReg.Dependencies } else { "Not found" }
-        Si-Log "Software Version"    $pxVer  "Info"
-        Si-Log "Image Version"       $pxImg  "Info"
-        Si-Log "Dependency Version"  $pxDeps "Info"
+        Si-Log "App Version"           $pxVer  "Info"
+        Si-Log "System Image Version"  $pxImg  "Info"
+        Si-Log "Package Dependencies"  $pxDeps "Info"
     } catch { Si-Log "Pixellot" "Registry key not found (HKLM:\SOFTWARE\Pixellot)" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -40,8 +40,48 @@ $SysInfoScript = {
         Si-Log "Architecture"  $os.OSArchitecture                                                  "Info"
         Si-Log "Install Date"  $os.InstallDate.ToString("yyyy-MM-dd")                             "Info"
         $up = (Get-Date) - $os.LastBootUpTime
-        Si-Log "Uptime"        "$([int][Math]::Floor($up.TotalDays))d $($up.Hours)h $($up.Minutes)m"  "Info"
+        $upStr = "$([int][Math]::Floor($up.TotalDays))d $($up.Hours)h $($up.Minutes)m"
+        Si-Log "Uptime"        $upStr  "Info"
+        # Cards (#5): OS edition (short) + uptime
+        $osShort = ($os.Caption -replace '^Microsoft\s+','' -replace 'Windows\s+','Win ')
+        $sync.Cards["SiOs"]     = @{ Value = "$osShort  ($($os.BuildNumber))"; Status="ok" }
+        $sync.Cards["SiUptime"] = @{ Value = $upStr; Status = if ($up.TotalDays -gt 30) { "warn" } else { "ok" } }
     } catch { Si-Log "OS" "Query failed" "Warn" }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
+    # -- Time & Locale -----------------------------------------------------------
+    # Surface timezone, NTP source, and auto-time setting. VPUs deployed across
+    # regions sometimes inherit a UTC default which throws off scheduled events
+    # and timestamped logs.
+    $sync.SysInfoStep = "Querying time settings..."
+    Si-Section "Time & Locale"
+    try {
+        $tz = Get-CimInstance Win32_TimeZone -ErrorAction Stop
+        Si-Log "Timezone"       "$($tz.Caption)" "Info"
+        Si-Log "System Time"    ((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) "Info"
+
+        # NTP server registry (W32Time service)
+        try {
+            $ntpServer = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters" -ErrorAction Stop).NtpServer
+            if ($ntpServer) { Si-Log "NTP Server" $ntpServer "Info" }
+        } catch { }
+
+        # "Set time automatically" — controlled by W32Time service start type + NtpClient SpecialPollInterval
+        $w32Svc = Get-Service -Name W32Time -ErrorAction SilentlyContinue
+        if ($w32Svc) {
+            if ($w32Svc.Status -eq "Running") {
+                Si-Log "Time Sync" "W32Time service running" "Info"
+            } else {
+                Si-Log "Time Sync" "W32Time service NOT running — automatic time sync disabled" "Warn"
+            }
+        }
+
+        # Suspicious-default warning: UTC is rarely the right choice for a deployed VPU
+        if ($tz.StandardName -match "^UTC$" -or $tz.Caption -match "^\(UTC\)\s*Coordinated") {
+            Si-Log "Timezone Check" "System is set to UTC — confirm this matches the venue's local timezone" "Warn"
+        }
+    } catch { Si-Log "Time & Locale" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
 
@@ -56,6 +96,11 @@ $SysInfoScript = {
         $dom = if ($cs.PartOfDomain) { "Domain: $($cs.Domain)" } else { "Workgroup: $($cs.Workgroup)" }
         Si-Log "Network"       $dom                                                                 "Info"
         Si-Log "System Type"   $cs.SystemType                                                       "Info"
+        # Card (#5): manufacturer + model trimmed
+        $modelStr = if ($cs.Manufacturer -and $cs.Model) { "$($cs.Manufacturer)  $($cs.Model)" } `
+                    elseif ($cs.Model) { $cs.Model } else { "Unknown" }
+        if ($modelStr.Length -gt 32) { $modelStr = $modelStr.Substring(0,29) + "..." }
+        $sync.Cards["SiModel"] = @{ Value = $modelStr; Status="neutral" }
     } catch { Si-Log "System" "Query failed" "Warn" }
     try {
         $bios = Get-CimInstance Win32_BIOS -ErrorAction Stop
@@ -84,6 +129,9 @@ $SysInfoScript = {
         if ($cpus.Count -gt 0) {
             $fdCpuShort = $cpus[0].Name.Trim() -replace 'Intel\(R\) Core\(TM\) ','Core ' -replace '\(R\)|\(TM\)','' -replace '\s+@\s.*','' -replace '\s+',' '
         }
+        # Card (#5)
+        $cpuCardVal = if ($fdCpuShort.Length -gt 32) { $fdCpuShort.Substring(0,29) + "..." } else { $fdCpuShort }
+        $sync.Cards["SiCpu"] = @{ Value = $cpuCardVal; Status="neutral" }
     } catch { Si-Log "CPU" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -95,8 +143,11 @@ $SysInfoScript = {
     try {
         $os2 = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
         $fdRamGB = [int]([double]$os2.TotalVisibleMemorySize / 1048576.0 + 0.5)
+        $fdRamFreeGB = [double]$os2.FreePhysicalMemory / 1048576.0
         Si-Log "Total RAM"  ("{0:F1} GB" -f ([double]$os2.TotalVisibleMemorySize / 1048576.0))     "Info"
-        Si-Log "Available"  ("{0:F1} GB" -f ([double]$os2.FreePhysicalMemory     / 1048576.0))     "Info"
+        Si-Log "Available"  ("{0:F1} GB" -f $fdRamFreeGB)                                          "Info"
+        # Card (#5): total + free
+        $sync.Cards["SiRam"] = @{ Value = ("{0} GB total / {1:F1} GB free" -f $fdRamGB, $fdRamFreeGB); Status="ok" }
         $slots = @(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue)
         $n = 1
         foreach ($s in $slots) {
@@ -147,6 +198,15 @@ $SysInfoScript = {
                 Si-Log "  Serial" $d.SerialNumber.Trim()                                            "Gray"
             }
         }
+        # Card (#5): system drive free space
+        $sysDrive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$($env:SystemDrive)'" -ErrorAction SilentlyContinue
+        if ($sysDrive) {
+            $freeGB  = [math]::Round($sysDrive.FreeSpace / 1GB, 1)
+            $totalGB = [math]::Round($sysDrive.Size      / 1GB, 1)
+            $usedPct = [math]::Round((1 - $sysDrive.FreeSpace/$sysDrive.Size) * 100)
+            $stStatus = if ($freeGB -lt 5) { "fail" } elseif ($freeGB -lt 15) { "warn" } else { "ok" }
+            $sync.Cards["SiStorage"] = @{ Value = "$freeGB GB free of $totalGB GB ($usedPct% used)"; Status=$stStatus }
+        }
     } catch { Si-Log "Storage" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -174,6 +234,89 @@ $SysInfoScript = {
             Si-Log "  Status" $connStr $connLvl
         }
     } catch { Si-Log "NICs" "Query failed" "Warn" }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
+    # -- Pixellot Calibrations ---------------------------------------------------
+    # Surface known calibration directories and per-camera calibration files.
+    # Helps field techs confirm a calibration was applied and which file is active.
+    $sync.SysInfoStep = "Querying camera calibrations..."
+    Si-Section "Pixellot Calibrations"
+    $calibPaths = @(
+        "C:\Pixellot\calibration"
+        "C:\Pixellot\Calibration"
+        "C:\Pixellot\Data\Calibration"
+        "C:\Program Files\Pixellot\calibration"
+        "C:\ProgramData\Pixellot\calibration"
+    )
+    $calibFound = $false
+    foreach ($cp in $calibPaths) {
+        if (Test-Path $cp) {
+            $calibFound = $true
+            Si-Log "Calibration Path" $cp "Info"
+            try {
+                $files = @(Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue |
+                           Sort-Object LastWriteTime -Descending | Select-Object -First 12)
+                if ($files.Count -eq 0) {
+                    Si-Log "  Files" "Directory exists but is empty" "Warn"
+                } else {
+                    foreach ($f in $files) {
+                        $age = (Get-Date) - $f.LastWriteTime
+                        $ageStr = if ($age.TotalDays -ge 1) { "$([int]$age.TotalDays)d ago" } `
+                                  elseif ($age.TotalHours -ge 1) { "$([int]$age.TotalHours)h ago" } `
+                                  else { "$([int]$age.TotalMinutes)m ago" }
+                        Si-Log "  $($f.Name)" "$ageStr   ($('{0:F0}' -f ($f.Length / 1024)) KB)" "Gray"
+                    }
+                }
+            } catch { Si-Log "  Files" "Read failed" "Warn" }
+        }
+    }
+    if (-not $calibFound) {
+        Si-Log "Calibrations" "No calibration directory found in standard locations" "Gray"
+    }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
+    # -- Installed Software ------------------------------------------------------
+    # Scan registry uninstall keys (faster than Win32_Product, which triggers MSI re-validation).
+    # Flag anything matching the unwanted-app patterns; surface counts only to keep the log readable.
+    $sync.SysInfoStep = "Scanning installed software..."
+    Si-Section "Installed Software"
+    try {
+        $unwantedPatterns = @(
+            "OBS Studio", "vMix", "Wirecast", "XSplit",
+            "Norton", "McAfee", "Avast", "AVG", "Bitdefender", "Kaspersky",
+            "Bonjour", "iTunes", "QuickTime",
+            "Yahoo", "Ask Toolbar", "Coupon", "WebDiscover",
+            "Steam", "Epic Games", "Origin", "Battle.net",
+            "BitTorrent", "uTorrent", "qBittorrent"
+        )
+        $regPaths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        )
+        $apps = @(
+            foreach ($p in $regPaths) {
+                Get-ItemProperty $p -ErrorAction SilentlyContinue |
+                    Where-Object { $_.DisplayName -and -not $_.SystemComponent } |
+                    Select-Object DisplayName, Publisher, DisplayVersion, InstallDate
+            }
+        ) | Sort-Object DisplayName -Unique
+        Si-Log "Total Installed" "$($apps.Count) applications" "Info"
+
+        $flagged = @($apps | Where-Object {
+            $name = $_.DisplayName
+            $unwantedPatterns | Where-Object { $name -like "*$_*" } | Select-Object -First 1
+        })
+        if ($flagged.Count -gt 0) {
+            Si-Log "Flagged Apps" "$($flagged.Count) potentially-conflicting applications detected" "Warn"
+            foreach ($app in $flagged) {
+                Si-Log "  $($app.DisplayName)" "$($app.Publisher) — confirm this is intentional" "Warn"
+            }
+        } else {
+            Si-Log "Flagged Apps" "None — no known-conflicting software detected" "Pass"
+        }
+    } catch { Si-Log "Installed Software" "Scan failed" "Warn" }
 
     $ramStr = if ($fdRamGB -gt 0) { "$fdRamGB GB RAM" } else { "RAM unknown" }
     $sync.Cards["SysInfo"] = @{ Value = "$fdCpuShort   |   $ramStr"; Status = "ok" }
@@ -228,7 +371,27 @@ $lblSiStatus.Location  = New-Object System.Drawing.Point(162, 94)
 $lblSiStatus.Size      = New-Object System.Drawing.Size(400, 18)
 $pnlSysInfo.Controls.Add($lblSiStatus)
 
-$siGrid = New-LogGrid -X 30 -Y 130 -W ($ContentW - 60) -H ($ContentH - 140) -LabelColW 240
+# Summary cards (#5) — surface model / OS / uptime / CPU / RAM / storage at a glance.
+# Background script writes values via $sync.Cards["SiModel"] etc.; the timer refreshes
+# the visible labels just like the other modules.
+$siCardDefs = @(
+    @{ Key="SiModel";   Title="Model";    Sub="Manufacturer + product";    Icon=[char]0xE7F8 }
+    @{ Key="SiOs";      Title="OS";       Sub="Edition + build";           Icon=[char]0xE770 }
+    @{ Key="SiUptime";  Title="Uptime";   Sub="Since last boot";           Icon=[char]0xE823 }
+    @{ Key="SiCpu";     Title="CPU";      Sub="Processor";                 Icon=[char]0xE950 }
+    @{ Key="SiRam";     Title="RAM";      Sub="Installed memory";          Icon=[char]0xEDA2 }
+    @{ Key="SiStorage"; Title="Storage";  Sub="System drive free space";   Icon=[char]0xE8B7 }
+)
+$siCards = @{}
+$siCardW = 200; $siCardGap = 10; $siCardX = 30
+foreach ($scd in $siCardDefs) {
+    $sc = New-StatusCard -Title $scd.Title -X $siCardX -Y 130 -Icon $scd.Icon -Sub $scd.Sub -CardW $siCardW -CardH 80
+    $siCards[$scd.Key] = $sc
+    $pnlSysInfo.Controls.Add($sc.Panel)
+    $siCardX += $siCardW + $siCardGap
+}
+
+$siGrid = New-LogGrid -X 30 -Y 224 -W ($ContentW - 60) -H ($ContentH - 234) -LabelColW 240
 $pnlSysInfo.Controls.Add($siGrid)
 
 # ---------- Timer -----------------------------------------------------------
@@ -238,6 +401,13 @@ $sysInfoTimer.Add_Tick({
     $item = $null
     while ($sync.SysInfoQueue.TryDequeue([ref]$item)) {
         Add-LogRow $siGrid $item.Label $item.Result $item.L
+    }
+    # Refresh the summary cards from $sync.Cards (#5)
+    foreach ($key in $siCards.Keys) {
+        $sc = $sync.Cards[$key]
+        if ($sc -and $siCards[$key].ValueLabel.Text -ne $sc.Value) {
+            Update-CardStatus -Card $siCards[$key] -Value $sc.Value -Status $sc.Status
+        }
     }
     if ($sync.SysInfoComplete) {
         $sysInfoTimer.Stop()
@@ -252,6 +422,11 @@ $sysInfoTimer.Add_Tick({
 function Start-SysInfoCollection {
     if ($sync.SysInfoRunning) { return }
     $siGrid.Rows.Clear()
+    # Reset the summary cards on refresh (#5)
+    foreach ($key in $siCards.Keys) {
+        $sync.Cards[$key] = @{ Value="--"; Status="neutral" }
+        Update-CardStatus -Card $siCards[$key] -Value "--" -Status "neutral"
+    }
     $btnSiRefresh.Enabled  = $false
     $lblSiStatus.Text      = "Collecting..."
     $sync.SysInfoComplete  = $false
@@ -260,15 +435,19 @@ function Start-SysInfoCollection {
     if ($script:sysInfoRunspace) {
         try { $script:sysInfoRunspace.Close(); $script:sysInfoRunspace.Dispose() } catch { }
     }
+    if ($script:sysInfoPs) {
+        try { $script:sysInfoPs.Dispose() } catch { }; $script:sysInfoPs = $null
+    }
     $script:sysInfoRunspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
     $script:sysInfoRunspace.ApartmentState = "STA"
     $script:sysInfoRunspace.ThreadOptions  = "ReuseThread"
     $script:sysInfoRunspace.Open()
-    $script:sysInfoRunspace.SessionStateProxy.SetVariable("sync", $sync)
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $script:sysInfoRunspace
-    $ps.AddScript($SysInfoScript).AddArgument($sync) | Out-Null
-    $ps.BeginInvoke() | Out-Null
+    # Pass $sync to the runspace via AddArgument only — using SessionStateProxy.SetVariable
+    # AND AddArgument both was wasted work and made the contract ambiguous.
+    $script:sysInfoPs = [System.Management.Automation.PowerShell]::Create()
+    $script:sysInfoPs.Runspace = $script:sysInfoRunspace
+    $script:sysInfoPs.AddScript($SysInfoScript).AddArgument($sync) | Out-Null
+    $script:sysInfoPs.BeginInvoke() | Out-Null
     $sysInfoTimer.Start()
 }
 
