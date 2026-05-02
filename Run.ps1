@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.38"
+$ScriptVersion = "1.0.39"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -957,28 +957,52 @@ foreach ($hc in $hubCardDefs) {
     foreach ($ctrl in @($cp.Controls)) { $ctrl.Add_Click($clickBlock) }
 }
 
-$pnlSysOverview.Add_SizeChanged({
-    # Suspend layout while we move all 8 tiles — without this, each Location/Size
-    # change triggers an intermediate paint at a different intermediate position,
-    # which is what made the tiles appear "stuck" after resize-back (#58).
-    $pnlSysOverview.SuspendLayout()
-    try {
-        $pw   = $pnlSysOverview.Width
-        $hCW  = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
-        for ($i = 0; $i -lt $script:hubTiles.Count; $i++) {
-            $col = $i % $hCols; $row = [int]($i / $hCols)
-            $tile = $script:hubTiles[$i]
-            $tile.Location = New-Object System.Drawing.Point(($hMargin + $col*($hCW+$hGap)), (90 + $row*($hCH+$hGap)))
-            $tile.Size     = New-Object System.Drawing.Size($hCW, $hCH)
-            # Refresh the rounded-rect Region to match the new size — without this
-            # the clip stays at the old bounds and content gets cut off / mis-aligned.
-            $tile.Region   = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $hCW, $hCH)), 10))
-            $tile.Invalidate()
-        }
-        $btnHubLastReport.Location = New-Object System.Drawing.Point($hMargin, (90 + $hRows*($hCH+$hGap) + 10))
-    } finally {
-        $pnlSysOverview.ResumeLayout()
+# Recalculate tile positions deterministically. This is called both on initial
+# layout and on every SizeChanged event. Using a function avoids any event-handler
+# closure capture issues that v1.0.38's inline handler may have hit (#61).
+function Update-HubTileLayout {
+    if (-not $script:hubTiles -or $script:hubTiles.Count -eq 0) { return }
+    $pw = $pnlSysOverview.ClientSize.Width
+    if ($pw -le 0) { return }
+    $hCW = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
+    if ($hCW -lt 50) { $hCW = 50 }
+    for ($i = 0; $i -lt $script:hubTiles.Count; $i++) {
+        $col  = $i % $hCols
+        $row  = [int]($i / $hCols)
+        $tile = $script:hubTiles[$i]
+        if (-not $tile) { continue }
+        $newX = $hMargin + $col * ($hCW + $hGap)
+        $newY = 90 + $row * ($hCH + $hGap)
+        # Disable WinForms anchor-based auto-resize on each tile — manual placement
+        # is the sole source of truth here.
+        $tile.Anchor   = [System.Windows.Forms.AnchorStyles]::None
+        $tile.Bounds   = New-Object System.Drawing.Rectangle($newX, $newY, $hCW, $hCH)
+        $tile.Region   = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $hCW, $hCH)), 10))
     }
+    if ($btnHubLastReport) {
+        $btnHubLastReport.Location = New-Object System.Drawing.Point($hMargin, (90 + $hRows*($hCH+$hGap) + 10))
+    }
+    if ($lblHubLastRun) {
+        $lblHubLastRun.Location = New-Object System.Drawing.Point(($hMargin + 196), (90 + $hRows*($hCH+$hGap) + 21))
+    }
+    $pnlSysOverview.Invalidate($true)  # force the parent to repaint with new tile positions
+}
+
+# Run once after creation so initial layout matches whatever the actual panel width is.
+Update-HubTileLayout
+
+# Debounce SizeChanged — drag events fire dozens of times per second; running the
+# layout on every one causes intermediate paints to leak through. Coalesce to a
+# single recalc 80ms after the last event.
+$script:hubResizeTimer = New-Object System.Windows.Forms.Timer
+$script:hubResizeTimer.Interval = 80
+$script:hubResizeTimer.Add_Tick({
+    $script:hubResizeTimer.Stop()
+    Update-HubTileLayout
+})
+$pnlSysOverview.Add_SizeChanged({
+    $script:hubResizeTimer.Stop()
+    $script:hubResizeTimer.Start()
 })
 
 $btnHubLastReport = New-Object System.Windows.Forms.Button
@@ -3318,11 +3342,17 @@ $netTimer.Add_Tick({
 
     if ($sync.NetComplete -and -not $sync.NetRunning) {
         # Final sync reads directly from the synchronized hashtable — guaranteed visibility.
+        # We ALSO backfill $sync.Cards from the _nc_/_ncs_ keys so FullDiagnostic's
+        # Get-WorstCardStatus (which reads $sync.Cards[$key].Status) sees the correct
+        # state. Writes inside the background runspace's Set-NetCard function don't
+        # reliably propagate to the inner unsynchronized Cards hashtable — same
+        # function-scope quirk we hit in v1.0.26 (#60).
         foreach ($netKey in $netCards.Keys) {
             $val = $sync["_nc_$netKey"]
             $sts = $sync["_ncs_$netKey"]
             if ($val) {
                 Update-CardStatus -Card $netCards[$netKey] -Value $val -Status $sts
+                $sync.Cards[$netKey] = @{ Value = $val; Status = $sts }
             }
         }
         $netTimer.Stop()
@@ -5418,10 +5448,15 @@ function Get-WorstCardStatus {
     $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
     $worst = "neutral"
     foreach ($k in $Keys) {
-        if ($sync.Cards.ContainsKey($k)) {
-            $s = $sync.Cards[$k].Status
-            if ($pri.ContainsKey($s) -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
-        }
+        # Prefer the synchronized _ncs_* key when present — these are written directly
+        # to the synchronized $sync hashtable from background runspaces and have
+        # guaranteed cross-thread visibility. Falls back to $sync.Cards[$k].Status
+        # for modules that don't use the _ncs_ pattern. Same fix as v1.0.26 — the
+        # nested $sync.Cards hashtable is unsynchronized and writes from inside
+        # functions called from background runspaces don't reliably propagate (#60).
+        $s = $sync["_ncs_$k"]
+        if (-not $s -and $sync.Cards.ContainsKey($k)) { $s = $sync.Cards[$k].Status }
+        if ($s -and $pri.ContainsKey($s) -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
     }
     return $worst
 }
@@ -5430,10 +5465,10 @@ function Get-ModuleSummaryText {
     param([string[]]$Keys)
     $parts = @()
     foreach ($k in $Keys) {
-        if ($sync.Cards.ContainsKey($k)) {
-            $v = $sync.Cards[$k].Value
-            if ($v -and $v -ne "--") { $parts += $v }
-        }
+        # Same _nc_/Cards fallback chain as Get-WorstCardStatus (#60)
+        $v = $sync["_nc_$k"]
+        if (-not $v -and $sync.Cards.ContainsKey($k)) { $v = $sync.Cards[$k].Value }
+        if ($v -and $v -ne "--") { $parts += $v }
     }
     return ($parts -join "   |   ")
 }

@@ -293,11 +293,17 @@ $netTimer.Add_Tick({
 
     if ($sync.NetComplete -and -not $sync.NetRunning) {
         # Final sync reads directly from the synchronized hashtable — guaranteed visibility.
+        # We ALSO backfill $sync.Cards from the _nc_/_ncs_ keys so FullDiagnostic's
+        # Get-WorstCardStatus (which reads $sync.Cards[$key].Status) sees the correct
+        # state. Writes inside the background runspace's Set-NetCard function don't
+        # reliably propagate to the inner unsynchronized Cards hashtable — same
+        # function-scope quirk we hit in v1.0.26 (#60).
         foreach ($netKey in $netCards.Keys) {
             $val = $sync["_nc_$netKey"]
             $sts = $sync["_ncs_$netKey"]
             if ($val) {
                 Update-CardStatus -Card $netCards[$netKey] -Value $val -Status $sts
+                $sync.Cards[$netKey] = @{ Value = $val; Status = $sts }
             }
         }
         $netTimer.Stop()

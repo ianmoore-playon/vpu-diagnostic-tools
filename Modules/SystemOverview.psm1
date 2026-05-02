@@ -103,28 +103,52 @@ foreach ($hc in $hubCardDefs) {
     foreach ($ctrl in @($cp.Controls)) { $ctrl.Add_Click($clickBlock) }
 }
 
-$pnlSysOverview.Add_SizeChanged({
-    # Suspend layout while we move all 8 tiles — without this, each Location/Size
-    # change triggers an intermediate paint at a different intermediate position,
-    # which is what made the tiles appear "stuck" after resize-back (#58).
-    $pnlSysOverview.SuspendLayout()
-    try {
-        $pw   = $pnlSysOverview.Width
-        $hCW  = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
-        for ($i = 0; $i -lt $script:hubTiles.Count; $i++) {
-            $col = $i % $hCols; $row = [int]($i / $hCols)
-            $tile = $script:hubTiles[$i]
-            $tile.Location = New-Object System.Drawing.Point(($hMargin + $col*($hCW+$hGap)), (90 + $row*($hCH+$hGap)))
-            $tile.Size     = New-Object System.Drawing.Size($hCW, $hCH)
-            # Refresh the rounded-rect Region to match the new size — without this
-            # the clip stays at the old bounds and content gets cut off / mis-aligned.
-            $tile.Region   = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $hCW, $hCH)), 10))
-            $tile.Invalidate()
-        }
-        $btnHubLastReport.Location = New-Object System.Drawing.Point($hMargin, (90 + $hRows*($hCH+$hGap) + 10))
-    } finally {
-        $pnlSysOverview.ResumeLayout()
+# Recalculate tile positions deterministically. This is called both on initial
+# layout and on every SizeChanged event. Using a function avoids any event-handler
+# closure capture issues that v1.0.38's inline handler may have hit (#61).
+function Update-HubTileLayout {
+    if (-not $script:hubTiles -or $script:hubTiles.Count -eq 0) { return }
+    $pw = $pnlSysOverview.ClientSize.Width
+    if ($pw -le 0) { return }
+    $hCW = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
+    if ($hCW -lt 50) { $hCW = 50 }
+    for ($i = 0; $i -lt $script:hubTiles.Count; $i++) {
+        $col  = $i % $hCols
+        $row  = [int]($i / $hCols)
+        $tile = $script:hubTiles[$i]
+        if (-not $tile) { continue }
+        $newX = $hMargin + $col * ($hCW + $hGap)
+        $newY = 90 + $row * ($hCH + $hGap)
+        # Disable WinForms anchor-based auto-resize on each tile — manual placement
+        # is the sole source of truth here.
+        $tile.Anchor   = [System.Windows.Forms.AnchorStyles]::None
+        $tile.Bounds   = New-Object System.Drawing.Rectangle($newX, $newY, $hCW, $hCH)
+        $tile.Region   = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $hCW, $hCH)), 10))
     }
+    if ($btnHubLastReport) {
+        $btnHubLastReport.Location = New-Object System.Drawing.Point($hMargin, (90 + $hRows*($hCH+$hGap) + 10))
+    }
+    if ($lblHubLastRun) {
+        $lblHubLastRun.Location = New-Object System.Drawing.Point(($hMargin + 196), (90 + $hRows*($hCH+$hGap) + 21))
+    }
+    $pnlSysOverview.Invalidate($true)  # force the parent to repaint with new tile positions
+}
+
+# Run once after creation so initial layout matches whatever the actual panel width is.
+Update-HubTileLayout
+
+# Debounce SizeChanged — drag events fire dozens of times per second; running the
+# layout on every one causes intermediate paints to leak through. Coalesce to a
+# single recalc 80ms after the last event.
+$script:hubResizeTimer = New-Object System.Windows.Forms.Timer
+$script:hubResizeTimer.Interval = 80
+$script:hubResizeTimer.Add_Tick({
+    $script:hubResizeTimer.Stop()
+    Update-HubTileLayout
+})
+$pnlSysOverview.Add_SizeChanged({
+    $script:hubResizeTimer.Stop()
+    $script:hubResizeTimer.Start()
 })
 
 $btnHubLastReport = New-Object System.Windows.Forms.Button

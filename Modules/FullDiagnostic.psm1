@@ -27,10 +27,15 @@ function Get-WorstCardStatus {
     $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
     $worst = "neutral"
     foreach ($k in $Keys) {
-        if ($sync.Cards.ContainsKey($k)) {
-            $s = $sync.Cards[$k].Status
-            if ($pri.ContainsKey($s) -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
-        }
+        # Prefer the synchronized _ncs_* key when present — these are written directly
+        # to the synchronized $sync hashtable from background runspaces and have
+        # guaranteed cross-thread visibility. Falls back to $sync.Cards[$k].Status
+        # for modules that don't use the _ncs_ pattern. Same fix as v1.0.26 — the
+        # nested $sync.Cards hashtable is unsynchronized and writes from inside
+        # functions called from background runspaces don't reliably propagate (#60).
+        $s = $sync["_ncs_$k"]
+        if (-not $s -and $sync.Cards.ContainsKey($k)) { $s = $sync.Cards[$k].Status }
+        if ($s -and $pri.ContainsKey($s) -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
     }
     return $worst
 }
@@ -39,10 +44,10 @@ function Get-ModuleSummaryText {
     param([string[]]$Keys)
     $parts = @()
     foreach ($k in $Keys) {
-        if ($sync.Cards.ContainsKey($k)) {
-            $v = $sync.Cards[$k].Value
-            if ($v -and $v -ne "--") { $parts += $v }
-        }
+        # Same _nc_/Cards fallback chain as Get-WorstCardStatus (#60)
+        $v = $sync["_nc_$k"]
+        if (-not $v -and $sync.Cards.ContainsKey($k)) { $v = $sync.Cards[$k].Value }
+        if ($v -and $v -ne "--") { $parts += $v }
     }
     return ($parts -join "   |   ")
 }

@@ -10,6 +10,22 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.39] - 2026-05-01
+
+### Fixed
+
+- **FullDiagnostic Network row reports correct severity when ports/domains fail** (closes #60) — the Network module's CardKeys are `NetInternet`, `NetPorts`, `NetDomains`, but `Get-WorstCardStatus` was reading the inner `$sync.Cards[$key].Status` which is the unsynchronized hashtable. The background runspace's `Set-NetCard` function couldn't reliably propagate writes to it (same function-scope quirk as v1.0.26). Fixed by:
+  - `Get-WorstCardStatus` and `Get-ModuleSummaryText` now prefer the synchronized `_ncs_*` and `_nc_*` keys when present, falling back to `$sync.Cards` for modules that don't use the pattern.
+  - Network timer completion handler now backfills `$sync.Cards` from the synchronized keys (defense in depth).
+- **Home tile drift on resize fixed properly** (closes #61, supersedes v1.0.38 partial fix) — the previous SuspendLayout/ResumeLayout approach didn't fully prevent intermediate layout states. Replaced with:
+  - Extracted layout to `Update-HubTileLayout` function for deterministic recalc.
+  - Each tile pinned to `Anchor = None` to prevent any WinForms auto-positioning.
+  - Tile bounds set via single `$tile.Bounds` assignment instead of separate Location + Size (atomic).
+  - Debounced SizeChanged → 80ms timer coalesces drag events into one final recalc.
+  - Parent panel `Invalidate(true)` forces a clean repaint with the new tile positions.
+
+---
+
 ## [1.0.38] - 2026-05-01
 
 ### Fixed
