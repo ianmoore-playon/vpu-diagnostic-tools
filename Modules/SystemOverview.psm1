@@ -121,6 +121,9 @@ $hubCardDefs = @(
 
 # Tile geometry — derived from panel width (resizes responsively).
 # ContentArea: $WideW = 1280, margin 28 each side, gap 16, 4 cols ⇒ tile ≈ 290 wide.
+# IMPORTANT: layout is index-based ($i % cols, $i / cols) — the R/C fields in
+# $hubCardDefs are documentation only; do NOT rely on them at runtime, otherwise
+# any drift in the foreach order silently dislocates tiles.
 $hCH = 200; $hGap = 16; $hMargin = 28; $hCols = 4; $hRows = 2
 
 $hubNavLookup = @{
@@ -134,13 +137,16 @@ $hubNavLookup = @{
     navReports     = $navReports
 }
 
+# Build tiles at (0,0); a single deterministic Update-HubTileLayout pass below
+# places them. Reading $pnlSysOverview.Width at this point can return the
+# pre-handle-create design-time value, which is why earlier versions
+# occasionally rendered tiles 3/6/7 in the wrong row.
 $script:hubTiles = @()
+$tileIdx = 0
 foreach ($hc in $hubCardDefs) {
-    $hCW  = [int](($pnlSysOverview.Width - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
-    if ($hCW -lt 50) { $hCW = 50 }
-    $hx   = $hMargin + $hc.C * ($hCW + $hGap)
-    $hy   = 110 + $hc.R * ($hCH + $hGap)
-    $cp   = New-HubTile -Title $hc.Title -Desc $hc.Desc -IconCode $hc.Icon -X $hx -Y $hy -W $hCW -H $hCH -IconColor $hc.Color
+    $cp = New-HubTile -Title $hc.Title -Desc $hc.Desc -IconCode $hc.Icon `
+                      -X 0 -Y 0 -W 100 -H $hCH -IconColor $hc.Color
+    $cp.Tag | Add-Member -NotePropertyName HubIndex -NotePropertyValue $tileIdx -Force
     $pnlSysOverview.Controls.Add($cp)
     $script:hubTiles += $cp
 
@@ -148,15 +154,18 @@ foreach ($hc in $hubCardDefs) {
     $clickBlock = { $navBtn.PerformClick() }.GetNewClosure()
     $cp.Add_Click($clickBlock)
     foreach ($ctrl in @($cp.Controls)) { $ctrl.Add_Click($clickBlock); $ctrl.Cursor = [System.Windows.Forms.Cursors]::Hand }
+    $tileIdx++
 }
 
 # ---- Resize handling -------------------------------------------------------
-# Same deterministic recalc + debounce pattern from v1.0.39 (#61). Re-runs the
-# full layout via Update-HubTileLayout to avoid drift on window resize.
+# Single source of truth for tile positions. Always uses index-based math
+# (no R/C fields), with a fixed-width fallback for the initial pass before
+# the form has a window handle.
 function Update-HubTileLayout {
     if (-not $script:hubTiles -or $script:hubTiles.Count -eq 0) { return }
     $pw = $pnlSysOverview.ClientSize.Width
-    if ($pw -le 0) { return }
+    if ($pw -le 0) { $pw = $pnlSysOverview.Width }
+    if ($pw -le 0) { $pw = $ContentW }   # final fallback (1280)
     $hCW = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
     if ($hCW -lt 50) { $hCW = 50 }
     for ($i = 0; $i -lt $script:hubTiles.Count; $i++) {
@@ -172,6 +181,8 @@ function Update-HubTileLayout {
     }
     if ($pnlHubActions) {
         $pnlHubActions.Location = New-Object System.Drawing.Point($hMargin, (110 + $hRows*($hCH+$hGap) + 12))
+        $newActW = $pw - 2*$hMargin
+        if ($newActW -gt 100) { $pnlHubActions.Width = $newActW }
     }
     $pnlSysOverview.Invalidate($true)
 }
@@ -188,6 +199,12 @@ $pnlSysOverview.Add_SizeChanged({
     $script:hubResizeTimer.Stop()
     $script:hubResizeTimer.Start()
 })
+
+# Re-layout once the handle exists (real ClientSize available) and again any
+# time the user navigates back to Home — guards against the rare race where
+# the initial pass ran before the form was sized.
+$pnlSysOverview.Add_HandleCreated({ Update-HubTileLayout })
+$pnlSysOverview.Add_VisibleChanged({ if ($pnlSysOverview.Visible) { Update-HubTileLayout } })
 
 # ---- Bottom action row -----------------------------------------------------
 # Run Full Diagnostic (primary) + Open Last Report (secondary), with last-run

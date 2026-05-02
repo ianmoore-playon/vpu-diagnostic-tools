@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.45"
+$ScriptVersion = "1.0.46"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -1196,6 +1196,9 @@ $hubCardDefs = @(
 
 # Tile geometry — derived from panel width (resizes responsively).
 # ContentArea: $WideW = 1280, margin 28 each side, gap 16, 4 cols ⇒ tile ≈ 290 wide.
+# IMPORTANT: layout is index-based ($i % cols, $i / cols) — the R/C fields in
+# $hubCardDefs are documentation only; do NOT rely on them at runtime, otherwise
+# any drift in the foreach order silently dislocates tiles.
 $hCH = 200; $hGap = 16; $hMargin = 28; $hCols = 4; $hRows = 2
 
 $hubNavLookup = @{
@@ -1209,13 +1212,16 @@ $hubNavLookup = @{
     navReports     = $navReports
 }
 
+# Build tiles at (0,0); a single deterministic Update-HubTileLayout pass below
+# places them. Reading $pnlSysOverview.Width at this point can return the
+# pre-handle-create design-time value, which is why earlier versions
+# occasionally rendered tiles 3/6/7 in the wrong row.
 $script:hubTiles = @()
+$tileIdx = 0
 foreach ($hc in $hubCardDefs) {
-    $hCW  = [int](($pnlSysOverview.Width - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
-    if ($hCW -lt 50) { $hCW = 50 }
-    $hx   = $hMargin + $hc.C * ($hCW + $hGap)
-    $hy   = 110 + $hc.R * ($hCH + $hGap)
-    $cp   = New-HubTile -Title $hc.Title -Desc $hc.Desc -IconCode $hc.Icon -X $hx -Y $hy -W $hCW -H $hCH -IconColor $hc.Color
+    $cp = New-HubTile -Title $hc.Title -Desc $hc.Desc -IconCode $hc.Icon `
+                      -X 0 -Y 0 -W 100 -H $hCH -IconColor $hc.Color
+    $cp.Tag | Add-Member -NotePropertyName HubIndex -NotePropertyValue $tileIdx -Force
     $pnlSysOverview.Controls.Add($cp)
     $script:hubTiles += $cp
 
@@ -1223,15 +1229,18 @@ foreach ($hc in $hubCardDefs) {
     $clickBlock = { $navBtn.PerformClick() }.GetNewClosure()
     $cp.Add_Click($clickBlock)
     foreach ($ctrl in @($cp.Controls)) { $ctrl.Add_Click($clickBlock); $ctrl.Cursor = [System.Windows.Forms.Cursors]::Hand }
+    $tileIdx++
 }
 
 # ---- Resize handling -------------------------------------------------------
-# Same deterministic recalc + debounce pattern from v1.0.39 (#61). Re-runs the
-# full layout via Update-HubTileLayout to avoid drift on window resize.
+# Single source of truth for tile positions. Always uses index-based math
+# (no R/C fields), with a fixed-width fallback for the initial pass before
+# the form has a window handle.
 function Update-HubTileLayout {
     if (-not $script:hubTiles -or $script:hubTiles.Count -eq 0) { return }
     $pw = $pnlSysOverview.ClientSize.Width
-    if ($pw -le 0) { return }
+    if ($pw -le 0) { $pw = $pnlSysOverview.Width }
+    if ($pw -le 0) { $pw = $ContentW }   # final fallback (1280)
     $hCW = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
     if ($hCW -lt 50) { $hCW = 50 }
     for ($i = 0; $i -lt $script:hubTiles.Count; $i++) {
@@ -1247,6 +1256,8 @@ function Update-HubTileLayout {
     }
     if ($pnlHubActions) {
         $pnlHubActions.Location = New-Object System.Drawing.Point($hMargin, (110 + $hRows*($hCH+$hGap) + 12))
+        $newActW = $pw - 2*$hMargin
+        if ($newActW -gt 100) { $pnlHubActions.Width = $newActW }
     }
     $pnlSysOverview.Invalidate($true)
 }
@@ -1263,6 +1274,12 @@ $pnlSysOverview.Add_SizeChanged({
     $script:hubResizeTimer.Stop()
     $script:hubResizeTimer.Start()
 })
+
+# Re-layout once the handle exists (real ClientSize available) and again any
+# time the user navigates back to Home — guards against the rare race where
+# the initial pass ran before the form was sized.
+$pnlSysOverview.Add_HandleCreated({ Update-HubTileLayout })
+$pnlSysOverview.Add_VisibleChanged({ if ($pnlSysOverview.Visible) { Update-HubTileLayout } })
 
 # ---- Bottom action row -----------------------------------------------------
 # Run Full Diagnostic (primary) + Open Last Report (secondary), with last-run
@@ -2133,132 +2150,92 @@ $DiagScript = {
 }
 
 
-# ---- Camera Connectivity (was "Center Panel") ------------------------------
+# ---- Camera Connectivity (v1.0.46 redesign — section header + two-column) --
 $center = New-Object System.Windows.Forms.Panel
-$center.Size      = New-Object System.Drawing.Size($NarrowW, $ContentH)
+$center.Size      = New-Object System.Drawing.Size($WideW, $ContentH)
 $center.Location  = New-Object System.Drawing.Point($SideW, $ContentY)
 $center.BackColor = $ColBg
 $center.Anchor    = $AnchorTLRB
 $center.Visible   = $false
 $form.Controls.Add($center)
 
-# NIC scope selector (moved from sidebar into camera panel)
-# NOTE: Camera panel keeps its custom layout (Fault Isolator wizard, port grid,
-# history) — the v1.0.42 section-header pattern would require shifting ~30
-# controls, deferred to a focused Camera redesign pass.
+# Section header — title / subtitle / Overall Status pill (top-right)
+$camHeader = New-SectionHeader -Parent $center `
+    -Title    "Camera Connectivity" `
+    -Subtitle "Validate link speed, ping cameras, and isolate physical-layer faults"
+
+# ---- Toolbar strip (Y=110..168): Test Scope + Run hint + Detected NIC card --
+$pnlCamToolbar = New-Object System.Windows.Forms.Panel
+$pnlCamToolbar.Size      = New-Object System.Drawing.Size(1224, 58)
+$pnlCamToolbar.Location  = New-Object System.Drawing.Point(28, 110)
+$pnlCamToolbar.BackColor = $ColCard
+$pnlCamToolbar.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 1224, 58)), 8))
+$pnlCamToolbar.Anchor    = $AnchorTLR
+$center.Controls.Add($pnlCamToolbar)
+
 $lblNicHdr = New-Object System.Windows.Forms.Label
 $lblNicHdr.Text      = "Test Scope"
 $lblNicHdr.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)
 $lblNicHdr.ForeColor = $ColMuted
-$lblNicHdr.Location  = New-Object System.Drawing.Point(10, 16)
+$lblNicHdr.BackColor = [System.Drawing.Color]::Transparent
+$lblNicHdr.Location  = New-Object System.Drawing.Point(16, 6)
 $lblNicHdr.AutoSize  = $true
-$center.Controls.Add($lblNicHdr)
+$pnlCamToolbar.Controls.Add($lblNicHdr)
 
 $cboNic = New-Object System.Windows.Forms.ComboBox
-$cboNic.Size          = New-Object System.Drawing.Size(180, 22)
-$cboNic.Location      = New-Object System.Drawing.Point(10, 34)
+$cboNic.Size          = New-Object System.Drawing.Size(220, 22)
+$cboNic.Location      = New-Object System.Drawing.Point(16, 26)
 $cboNic.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-$cboNic.BackColor     = $ColCard
+$cboNic.BackColor     = $ColBg
 $cboNic.Font          = New-Object System.Drawing.Font("Segoe UI", 8.5)
-$center.Controls.Add($cboNic)
-
-$btnRun = New-Object System.Windows.Forms.Button
-$btnRun.Text      = [char]0x25B6 + "  Run Full Diagnostic"
-$btnRun.Size      = New-Object System.Drawing.Size(270, 40)
-$btnRun.Location  = New-Object System.Drawing.Point(200, 14)
-$btnRun.BackColor = $ColAccent
-$btnRun.ForeColor = [System.Drawing.Color]::White
-$btnRun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnRun.FlatAppearance.BorderSize = 0
-$btnRun.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
-$btnRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-$btnRun.Cursor    = [System.Windows.Forms.Cursors]::Hand
-$center.Controls.Add($btnRun)
-$btnRun.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 270, 40)), 7))
-
-$btnRetest = New-Object System.Windows.Forms.Button
-$btnRetest.Text      = "Retest Last Step"
-$btnRetest.Size      = New-Object System.Drawing.Size(160, 40)
-$btnRetest.Location  = New-Object System.Drawing.Point(478, 14)
-$btnRetest.BackColor = $ColNavHover
-$btnRetest.ForeColor = $ColText
-$btnRetest.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnRetest.FlatAppearance.BorderSize = 0
-$btnRetest.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
-$btnRetest.Cursor    = [System.Windows.Forms.Cursors]::Hand
-$btnRetest.Enabled   = $false
-$center.Controls.Add($btnRetest)
-$btnRetest.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 160, 40)), 7))
-
-$lblEta = New-Object System.Windows.Forms.Label; $lblEta.Text = "est. ~2 min"
-$lblEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblEta.ForeColor = $ColMuted
-$lblEta.Location = New-Object System.Drawing.Point(480, 24); $lblEta.AutoSize = $true
-$center.Controls.Add($lblEta)
-
-$btnCancel = New-Object System.Windows.Forms.Button
-$btnCancel.Text      = "Cancel"
-$btnCancel.Size      = New-Object System.Drawing.Size(110, 40)
-$btnCancel.Location  = New-Object System.Drawing.Point(646, 14)
-$btnCancel.BackColor = $ColRed
-$btnCancel.ForeColor = [System.Drawing.Color]::White
-$btnCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnCancel.FlatAppearance.BorderSize = 0
-$btnCancel.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
-$btnCancel.Cursor    = [System.Windows.Forms.Cursors]::Hand
-$btnCancel.Visible   = $false
-$center.Controls.Add($btnCancel)
-$btnCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 40)), 7))
+$pnlCamToolbar.Controls.Add($cboNic)
 
 $lblRunSteps = New-Object System.Windows.Forms.Label
 $lblRunSteps.Text      = "Runs: Port Speed  *  Ping  *  ARP  *  CHU Detection"
-$lblRunSteps.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+$lblRunSteps.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $lblRunSteps.ForeColor = $ColMuted
-$lblRunSteps.Location  = New-Object System.Drawing.Point(200, 60)
-$lblRunSteps.Size      = New-Object System.Drawing.Size(560, 18)
-$center.Controls.Add($lblRunSteps)
+$lblRunSteps.BackColor = [System.Drawing.Color]::Transparent
+$lblRunSteps.Location  = New-Object System.Drawing.Point(252, 28)
+$lblRunSteps.Size      = New-Object System.Drawing.Size(580, 18)
+$pnlCamToolbar.Controls.Add($lblRunSteps)
 
 $lblNicCardHdr = New-Object System.Windows.Forms.Label
-$lblNicCardHdr.Text      = "NIC Card"
+$lblNicCardHdr.Text      = "Detected NIC"
 $lblNicCardHdr.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)
 $lblNicCardHdr.ForeColor = $ColMuted
-$lblNicCardHdr.Location  = New-Object System.Drawing.Point(780, 16)
-$lblNicCardHdr.AutoSize  = $true
-$center.Controls.Add($lblNicCardHdr)
+$lblNicCardHdr.BackColor = [System.Drawing.Color]::Transparent
+$lblNicCardHdr.Location  = New-Object System.Drawing.Point(880, 6)
+$lblNicCardHdr.Size      = New-Object System.Drawing.Size(330, 16)
+$lblNicCardHdr.Anchor    = $AnchorTR
+$pnlCamToolbar.Controls.Add($lblNicCardHdr)
 
 $lblNicCardVal = New-Object System.Windows.Forms.Label
 $lblNicCardVal.Text      = "Detecting..."
 $lblNicCardVal.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $lblNicCardVal.ForeColor = $ColText
-$lblNicCardVal.Location  = New-Object System.Drawing.Point(780, 34)
-$lblNicCardVal.AutoSize  = $true
-$center.Controls.Add($lblNicCardVal)
+$lblNicCardVal.BackColor = [System.Drawing.Color]::Transparent
+$lblNicCardVal.Location  = New-Object System.Drawing.Point(880, 28)
+$lblNicCardVal.Size      = New-Object System.Drawing.Size(330, 22)
+$lblNicCardVal.Anchor    = $AnchorTR
+$pnlCamToolbar.Controls.Add($lblNicCardVal)
 
-$lblCurStat = New-Object System.Windows.Forms.Label; $lblCurStat.Text = "Current Results"
-$lblCurStat.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10); $lblCurStat.ForeColor = $ColText
-$lblCurStat.Location = New-Object System.Drawing.Point(10, 88); $lblCurStat.AutoSize = $true
-$center.Controls.Add($lblCurStat)
+# Hidden compat: $btnRetest is wired by the timer/handlers but the redesigned
+# bottom action bar replaces it. Keep as off-screen no-op so click code paths
+# don't NPE.
+$btnRetest = New-Object System.Windows.Forms.Button
+$btnRetest.Visible = $false
+$btnRetest.Size    = New-Object System.Drawing.Size(0, 0)
+$center.Controls.Add($btnRetest)
 
-$lnkClear = New-Object System.Windows.Forms.LinkLabel; $lnkClear.Text = "Clear"
-$lnkClear.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lnkClear.LinkColor = $ColMuted
-$lnkClear.Location = New-Object System.Drawing.Point(1220, 90); $lnkClear.AutoSize = $true
-$center.Controls.Add($lnkClear)
+# Hidden compat ETA label — surfaced via $lblStatus during runs.
+$lblEta = New-Object System.Windows.Forms.Label
+$lblEta.Text    = "est. ~2 min"
+$lblEta.Visible = $false
+$center.Controls.Add($lblEta)
 
-# Fixed bottom-row cards: SmartSpeed, Ping, ARP, CHU, PoE  (244px each, 10px gaps - fills 1260px)
-$cardDefs = @(
-    @{Key="SmartSpeed"; Title="SmartSpeed";    Sub="Intel events (48h)"; X=10;   Y=204; Icon=[char]0xE7BA; W=244}
-    @{Key="PingCHU";    Title="Ping (CHU)";    Sub="Camera head unit";   X=264;  Y=204; Icon=[char]0xE701; W=244}
-    @{Key="ArpEntry";   Title="ARP Entry";     Sub="L2 neighbor table";  X=518;  Y=204; Icon=[char]0xE9D5; W=244}
-    @{Key="ChuDetect";  Title="CHU Detection"; Sub="Camera response";    X=772;  Y=204; Icon=[char]0xE722; W=244}
-    @{Key="PoEBudget";  Title="PoE Budget";    Sub="ADLINK SmartPoE";    X=1026; Y=204; Icon=[char]0xE7E8; W=244}
-)
-$cards = @{}
-foreach ($cd in $cardDefs) {
-    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y $cd.Y -Icon $cd.Icon -Sub $cd.Sub -CardW $cd.W -CardH 90
-    $cards[$cd.Key] = $c
-    $center.Controls.Add($c.Panel)
-}
-
-# Dynamic top-row cards: one per camera NIC, ordered by physical PCI port position
+# ---- Port cards row (Y=176..266) — one per detected camera NIC -------------
+# Dynamic card layout, fits inside $center.Width - 56 (matches toolbar strip).
+$portRowY = 176; $portRowW = 1224; $portRowX0 = 28
 $script:detectedNics = @(Get-NetAdapter | Where-Object {
     $d = $_.InterfaceDescription
     ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
@@ -2266,16 +2243,17 @@ $script:detectedNics = @(Get-NetAdapter | Where-Object {
     try { (Get-NetAdapterHardwareInfo -Name $_.Name -ErrorAction Stop).Function } catch { 999 }
 }, Name)
 
+$cards = @{}
 if ($script:detectedNics.Count -gt 0) {
     $numPorts  = $script:detectedNics.Count
-    $portCardW = [int]((1260 - ($numPorts - 1) * 10) / $numPorts)
-    $portCardX = 10; $portNum = 1
+    $portCardW = [int](($portRowW - ($numPorts - 1) * 10) / $numPorts)
+    $portCardX = $portRowX0; $portNum = 1
     foreach ($n in $script:detectedNics) {
-        $c = New-StatusCard -Title "P$portNum" -Sub $n.Name -X $portCardX -Y 106 -CardW $portCardW -CardH 90
+        $c = New-StatusCard -Title "P$portNum" -Sub $n.Name -X $portCardX -Y $portRowY -CardW $portCardW -CardH 90
         $cards[$n.Name] = $c
         $sync.Cards[$n.Name] = @{ Value = "--"; Status = "neutral" }
         $center.Controls.Add($c.Panel)
-        # Click a degraded port card ? jump to Guide with that port pre-selected
+        # Click a degraded port card → jump to Fault Isolator wizard with that port pre-selected
         $capturedName = $n.Name
         $portClickHandler = {
             $navTests.PerformClick()
@@ -2294,144 +2272,238 @@ if ($script:detectedNics.Count -gt 0) {
     }
 }
 
-$pnlSummaryCard = New-Object System.Windows.Forms.Panel
-$pnlSummaryCard.Size = New-Object System.Drawing.Size(1260, 56); $pnlSummaryCard.Location = New-Object System.Drawing.Point(10, 304)
-$pnlSummaryCard.BackColor = $ColCard
-$pnlSummaryCard.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 1260, 56)), 8))
-$pnlSummaryCard.Add_Paint({
-    $g = $args[1].Graphics
-    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $rr  = New-Object System.Drawing.Rectangle(0, 0, 1259, 55)
-    $bp  = [GfxHelper]::RoundedRect($rr, 8)
-    $pen = New-Object System.Drawing.Pen($ColBorder, 1)
-    $g.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
-})
-$center.Controls.Add($pnlSummaryCard)
+# ---- Status cards row (Y=274..364): SmartSpeed, Ping, ARP, CHU, PoE --------
+$statusRowY = 274
+$statusCardW = [int](($portRowW - 4*10) / 5)   # ≈ 236
+$statusDefs = @(
+    @{Key="SmartSpeed"; Title="SmartSpeed";    Sub="Intel events (48h)"; Icon=[char]0xE7BA}
+    @{Key="PingCHU";    Title="Ping (CHU)";    Sub="Camera head unit";   Icon=[char]0xE701}
+    @{Key="ArpEntry";   Title="ARP Entry";     Sub="L2 neighbor table";  Icon=[char]0xE9D5}
+    @{Key="ChuDetect";  Title="CHU Detection"; Sub="Camera response";    Icon=[char]0xE722}
+    @{Key="PoEBudget";  Title="PoE Budget";    Sub="ADLINK SmartPoE";    Icon=[char]0xE7E8}
+)
+$statusX = $portRowX0
+foreach ($cd in $statusDefs) {
+    $c = New-StatusCard -Title $cd.Title -X $statusX -Y $statusRowY -Icon $cd.Icon -Sub $cd.Sub -CardW $statusCardW -CardH 90
+    $cards[$cd.Key] = $c
+    $center.Controls.Add($c.Panel)
+    $statusX += $statusCardW + 10
+}
 
-$lblLastRun = New-Object System.Windows.Forms.Label; $lblLastRun.Text = "Last Run Summary"
-$lblLastRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5); $lblLastRun.ForeColor = $ColText
-$lblLastRun.BackColor = [System.Drawing.Color]::Transparent
-$lblLastRun.Location = New-Object System.Drawing.Point(14, 7); $lblLastRun.AutoSize = $true
-$pnlSummaryCard.Controls.Add($lblLastRun)
+# ---- Two-column main area (Y=372..680) -------------------------------------
+# LEFT (28..824 = 796 wide): Live Log card with Highlights/Detailed toggle + grid
+# RIGHT (840..1252 = 412 wide): Guidance card with rtbSteps + Open Fault Isolator
+$logCardX = 28; $logCardW = 796
+$gdCardX  = 840; $gdCardW  = 412
+$mainCardY = 372; $mainCardH = 308
 
-$lblLastRunVal = New-Object System.Windows.Forms.Label; $lblLastRunVal.Text = "No runs yet"
-$lblLastRunVal.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblLastRunVal.ForeColor = $ColMuted
+# --- LEFT: Live Log card ---
+$pnlLogCard = New-Object System.Windows.Forms.Panel
+$pnlLogCard.Size      = New-Object System.Drawing.Size($logCardW, $mainCardH)
+$pnlLogCard.Location  = New-Object System.Drawing.Point($logCardX, $mainCardY)
+$pnlLogCard.BackColor = $ColCard
+$pnlLogCard.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $logCardW, $mainCardH)), 8))
+$center.Controls.Add($pnlLogCard)
+
+$lblLogHdr = New-Object System.Windows.Forms.Label
+$lblLogHdr.Text      = "Live Log"
+$lblLogHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$lblLogHdr.ForeColor = $ColText
+$lblLogHdr.BackColor = [System.Drawing.Color]::Transparent
+$lblLogHdr.Location  = New-Object System.Drawing.Point(16, 12)
+$lblLogHdr.AutoSize  = $true
+$pnlLogCard.Controls.Add($lblLogHdr)
+
+$btnLogHighlights = New-Object System.Windows.Forms.Button
+$btnLogHighlights.Text      = "Highlights"
+$btnLogHighlights.Size      = New-Object System.Drawing.Size(82, 22)
+$btnLogHighlights.Location  = New-Object System.Drawing.Point(($logCardW - 188), 11)
+$btnLogHighlights.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnLogHighlights.FlatAppearance.BorderSize = 0
+$btnLogHighlights.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)
+$btnLogHighlights.BackColor = $ColAccent
+$btnLogHighlights.ForeColor = [System.Drawing.Color]::White
+$btnLogHighlights.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnLogHighlights.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,82,22)),4))
+$pnlLogCard.Controls.Add($btnLogHighlights)
+
+$btnLogDetailed = New-Object System.Windows.Forms.Button
+$btnLogDetailed.Text      = "Detailed"
+$btnLogDetailed.Size      = New-Object System.Drawing.Size(74, 22)
+$btnLogDetailed.Location  = New-Object System.Drawing.Point(($logCardW - 100), 11)
+$btnLogDetailed.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnLogDetailed.FlatAppearance.BorderSize = 0
+$btnLogDetailed.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)
+$btnLogDetailed.BackColor = $ColNavHover
+$btnLogDetailed.ForeColor = $ColMuted
+$btnLogDetailed.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnLogDetailed.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,74,22)),4))
+$pnlLogCard.Controls.Add($btnLogDetailed)
+
+$lblStatus = New-Object System.Windows.Forms.Label
+$lblStatus.Text      = ""
+$lblStatus.Font      = New-Object System.Drawing.Font("Consolas", 8)
+$lblStatus.ForeColor = $ColMuted
+$lblStatus.BackColor = [System.Drawing.Color]::Transparent
+$lblStatus.Location  = New-Object System.Drawing.Point(16, 40)
+$lblStatus.Size      = New-Object System.Drawing.Size(($logCardW - 32), 18)
+$pnlLogCard.Controls.Add($lblStatus)
+
+$dgvLog = New-LogGrid -X 8 -Y 62 -W ($logCardW - 16) -H ($mainCardH - 70) -LabelColW 180
+$pnlLogCard.Controls.Add($dgvLog)
+
+# --- RIGHT: Guidance card ---
+$pnlGuideCard = New-Object System.Windows.Forms.Panel
+$pnlGuideCard.Size      = New-Object System.Drawing.Size($gdCardW, $mainCardH)
+$pnlGuideCard.Location  = New-Object System.Drawing.Point($gdCardX, $mainCardY)
+$pnlGuideCard.BackColor = $ColCard
+$pnlGuideCard.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $gdCardW, $mainCardH)), 8))
+$pnlGuideCard.Anchor    = $AnchorTR
+$center.Controls.Add($pnlGuideCard)
+
+$lblGdHdr = New-Object System.Windows.Forms.Label
+$lblGdHdr.Text      = "Next Steps & Guidance"
+$lblGdHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$lblGdHdr.ForeColor = $ColText
+$lblGdHdr.BackColor = [System.Drawing.Color]::Transparent
+$lblGdHdr.Location  = New-Object System.Drawing.Point(16, 12)
+$lblGdHdr.AutoSize  = $true
+$pnlGuideCard.Controls.Add($lblGdHdr)
+
+$lblLastRunVal = New-Object System.Windows.Forms.Label
+$lblLastRunVal.Text      = "No runs yet"
+$lblLastRunVal.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+$lblLastRunVal.ForeColor = $ColMuted
 $lblLastRunVal.BackColor = [System.Drawing.Color]::Transparent
-$lblLastRunVal.Location = New-Object System.Drawing.Point(14, 28); $lblLastRunVal.Size = New-Object System.Drawing.Size(1230, 18)
-$pnlSummaryCard.Controls.Add($lblLastRunVal)
-
-$lblLogHdr = New-Object System.Windows.Forms.Label; $lblLogHdr.Text = "Live Log"
-$lblLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10); $lblLogHdr.ForeColor = $ColText
-$lblLogHdr.Location = New-Object System.Drawing.Point(10, 370); $lblLogHdr.AutoSize = $true
-$center.Controls.Add($lblLogHdr)
-
-$btnLogHighlights = New-Object System.Windows.Forms.Button; $btnLogHighlights.Text = "Highlights"
-$btnLogHighlights.Size = New-Object System.Drawing.Size(90, 22); $btnLogHighlights.Location = New-Object System.Drawing.Point(1070, 369)
-$btnLogHighlights.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnLogHighlights.FlatAppearance.BorderSize = 0
-$btnLogHighlights.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
-$btnLogHighlights.BackColor = $ColAccent; $btnLogHighlights.ForeColor = [System.Drawing.Color]::White
-$btnLogHighlights.Cursor = [System.Windows.Forms.Cursors]::Hand
-$center.Controls.Add($btnLogHighlights)
-$btnLogHighlights.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,90,22)),4))
-
-$btnLogDetailed = New-Object System.Windows.Forms.Button; $btnLogDetailed.Text = "Detailed"
-$btnLogDetailed.Size = New-Object System.Drawing.Size(80, 22); $btnLogDetailed.Location = New-Object System.Drawing.Point(1170, 369)
-$btnLogDetailed.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnLogDetailed.FlatAppearance.BorderSize = 0
-$btnLogDetailed.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
-$btnLogDetailed.BackColor = $ColNavHover; $btnLogDetailed.ForeColor = $ColMuted
-$btnLogDetailed.Cursor = [System.Windows.Forms.Cursors]::Hand
-$center.Controls.Add($btnLogDetailed)
-$btnLogDetailed.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,80,22)),4))
-
-$lblStatus = New-Object System.Windows.Forms.Label; $lblStatus.Text = ""
-$lblStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblStatus.ForeColor = $ColMuted
-$lblStatus.Location = New-Object System.Drawing.Point(10, 392); $lblStatus.Size = New-Object System.Drawing.Size(1260, 18)
-$center.Controls.Add($lblStatus)
-
-$dgvLog = New-LogGrid -X 10 -Y 412 -W 1260 -H 190 -LabelColW 180
-$center.Controls.Add($dgvLog)
-
-# ---- Right Panel (Camera Connectivity only) --------------------------------
-$rightBorder = New-Object System.Windows.Forms.Panel
-$rightBorder.Size      = New-Object System.Drawing.Size(1, $ContentH)
-$rightBorder.Location  = New-Object System.Drawing.Point($RightX, $ContentY)
-$rightBorder.BackColor = $ColBorder
-$rightBorder.Anchor    = $AnchorTRB
-$form.Controls.Add($rightBorder)
-
-$right = New-Object System.Windows.Forms.Panel
-$right.Size      = New-Object System.Drawing.Size($RightW, $ContentH)
-$right.Location  = New-Object System.Drawing.Point(([int]$RightX + 1), $ContentY)
-$right.BackColor = $ColCard
-$right.Anchor    = $AnchorTRB
-$form.Controls.Add($right)
-
-# Blue "Next Steps / Guidance" header bar
-$pnlNextHdr = New-Object System.Windows.Forms.Panel
-$pnlNextHdr.Size = New-Object System.Drawing.Size(259, 36); $pnlNextHdr.Location = New-Object System.Drawing.Point(0, 0)
-$pnlNextHdr.BackColor = $ColAccent
-$right.Controls.Add($pnlNextHdr)
-$lblNextHdr = New-Object System.Windows.Forms.Label; $lblNextHdr.Text = "Next Steps / Guidance"
-$lblNextHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5); $lblNextHdr.ForeColor = [System.Drawing.Color]::White
-$lblNextHdr.Location = New-Object System.Drawing.Point(12, 8); $lblNextHdr.AutoSize = $true
-$pnlNextHdr.Controls.Add($lblNextHdr)
+$lblLastRunVal.Location  = New-Object System.Drawing.Point(16, 32)
+$lblLastRunVal.Size      = New-Object System.Drawing.Size(($gdCardW - 32), 16)
+$lblLastRunVal.AutoEllipsis = $true
+$pnlGuideCard.Controls.Add($lblLastRunVal)
 
 $rtbSteps = New-Object System.Windows.Forms.RichTextBox
-$rtbSteps.Size = New-Object System.Drawing.Size(239, 380); $rtbSteps.Location = New-Object System.Drawing.Point(10, 44); $rtbSteps.Anchor = $AnchorTLRB
-$rtbSteps.BackColor = $ColCard; $rtbSteps.ForeColor = $ColText
-$rtbSteps.Font = New-Object System.Drawing.Font("Segoe UI", 9); $rtbSteps.ReadOnly = $true
+$rtbSteps.Size        = New-Object System.Drawing.Size(($gdCardW - 32), ($mainCardH - 130))
+$rtbSteps.Location    = New-Object System.Drawing.Point(16, 56)
+$rtbSteps.BackColor   = $ColCard
+$rtbSteps.ForeColor   = $ColText
+$rtbSteps.Font        = New-Object System.Drawing.Font("Segoe UI", 9)
+$rtbSteps.ReadOnly    = $true
 $rtbSteps.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-$rtbSteps.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
-$rtbSteps.Text = "Run the diagnostic to`nsee guidance here."
-$right.Controls.Add($rtbSteps)
+$rtbSteps.ScrollBars  = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
+$rtbSteps.Text        = "Run the diagnostic to see guidance here."
+$pnlGuideCard.Controls.Add($rtbSteps)
 
 $btnGoGuide = New-Object System.Windows.Forms.Button
-$btnGoGuide.Text = "Open Fault Isolator  ?"
-$btnGoGuide.Size = New-Object System.Drawing.Size(239, 34); $btnGoGuide.Location = New-Object System.Drawing.Point(10, 432)
-$btnGoGuide.BackColor = $ColAccent; $btnGoGuide.ForeColor = [System.Drawing.Color]::White
-$btnGoGuide.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnGoGuide.FlatAppearance.BorderSize = 0
-$btnGoGuide.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-$btnGoGuide.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnGoGuide.Visible = $true
-$right.Controls.Add($btnGoGuide)
-$btnGoGuide.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 239, 34)), 6))
+$btnGoGuide.Text      = "Open Fault Isolator  " + [char]0x2192
+$btnGoGuide.Size      = New-Object System.Drawing.Size(($gdCardW - 32), 32)
+$btnGoGuide.Location  = New-Object System.Drawing.Point(16, ($mainCardH - 64))
+$btnGoGuide.BackColor = $ColAccent
+$btnGoGuide.ForeColor = [System.Drawing.Color]::White
+$btnGoGuide.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnGoGuide.FlatAppearance.BorderSize = 0
+$btnGoGuide.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
+$btnGoGuide.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnGoGuide.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, ($gdCardW - 32), 32)), 6))
+$pnlGuideCard.Controls.Add($btnGoGuide)
 
-$sepAct = New-Object System.Windows.Forms.Panel; $sepAct.Size = New-Object System.Drawing.Size(239, 1)
-$sepAct.Location = New-Object System.Drawing.Point(10, 474); $sepAct.BackColor = $ColBorder
-$sepAct.Anchor = $AnchorBLR
-$right.Controls.Add($sepAct)
-
-$lblActHdr = New-Object System.Windows.Forms.Label; $lblActHdr.Text = "Actions"
-$lblActHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10); $lblActHdr.ForeColor = $ColText
-$lblActHdr.Location = New-Object System.Drawing.Point(10, 482); $lblActHdr.AutoSize = $true
-$lblActHdr.Anchor = $AnchorBL
-$right.Controls.Add($lblActHdr)
-
-$btnAdapterSettings = New-Object System.Windows.Forms.Button; $btnAdapterSettings.Text = "Open Adapter Settings"
-$btnAdapterSettings.Size = New-Object System.Drawing.Size(239, 28); $btnAdapterSettings.Location = New-Object System.Drawing.Point(10, 504)
-$btnAdapterSettings.Anchor = $AnchorBLR
+$btnAdapterSettings = New-Object System.Windows.Forms.Button
+$btnAdapterSettings.Text      = "Open Adapter Settings"
+$btnAdapterSettings.Size      = New-Object System.Drawing.Size(($gdCardW - 32), 28)
+$btnAdapterSettings.Location  = New-Object System.Drawing.Point(16, ($mainCardH - 28))
 $btnAdapterSettings.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnAdapterSettings.FlatAppearance.BorderColor = $ColBorder; $btnAdapterSettings.FlatAppearance.BorderSize = 1
-$btnAdapterSettings.BackColor = $ColNavHover; $btnAdapterSettings.ForeColor = $ColText
-$btnAdapterSettings.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-$btnAdapterSettings.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-$btnAdapterSettings.Cursor = [System.Windows.Forms.Cursors]::Hand
-$right.Controls.Add($btnAdapterSettings)
-$btnAdapterSettings.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 239, 28)), 5))
+$btnAdapterSettings.FlatAppearance.BorderColor = $ColBorder
+$btnAdapterSettings.FlatAppearance.BorderSize  = 1
+$btnAdapterSettings.BackColor = $ColBg
+$btnAdapterSettings.ForeColor = $ColText
+$btnAdapterSettings.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$btnAdapterSettings.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnAdapterSettings.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, ($gdCardW - 32), 28)), 5))
+# Move Adapter Settings just below the rtbSteps area; Open Fault Isolator stays primary above it.
+$btnAdapterSettings.Location  = New-Object System.Drawing.Point(16, ($mainCardH - 30))
+$btnGoGuide.Location          = New-Object System.Drawing.Point(16, ($mainCardH - 66))
+$rtbSteps.Size                = New-Object System.Drawing.Size(($gdCardW - 32), ($mainCardH - 132))
+$pnlGuideCard.Controls.Add($btnAdapterSettings)
 
-foreach ($pair in @(("btnExport","Export Report",536),("btnCopySummary","Copy Summary",568),("btnCopy","Copy Log",600),("btnSave","Save Log",632))) {
-    $b = New-Object System.Windows.Forms.Button; $b.Text = $pair[1]
-    $b.Size = New-Object System.Drawing.Size(239, 28); $b.Location = New-Object System.Drawing.Point(10, $pair[2])
-    $b.Anchor = $AnchorBLR
-    $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $b.FlatAppearance.BorderColor = $ColBorder; $b.FlatAppearance.BorderSize = 1
-    $b.BackColor = $ColNavHover; $b.ForeColor = $ColText
-    $b.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $b.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $b.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $right.Controls.Add($b)
-    $b.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 239, 28)), 5))
-    Set-Variable -Name $pair[0] -Value $b
-}
+# Hidden Clear link compat — replaced by per-row clear behavior on rerun.
+$lnkClear = New-Object System.Windows.Forms.LinkLabel
+$lnkClear.Visible = $false
+$lnkClear.Size    = New-Object System.Drawing.Size(0, 0)
+$center.Controls.Add($lnkClear)
+
+# ---- Bottom action bar (Y=698) — Export | Run / Cancel --------------------
+$camActions = New-ActionBar -Parent $center -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$btnRun     = $camActions.PrimaryBtn
+$btnExport  = $camActions.ExportBtn
+
+$btnCancel = New-Object System.Windows.Forms.Button
+$btnCancel.Text      = "Cancel"
+$btnCancel.Size      = New-Object System.Drawing.Size(110, 36)
+$btnCancel.Location  = New-Object System.Drawing.Point(($camActions.Bar.Width - 320), 10)
+$btnCancel.BackColor = $ColRed
+$btnCancel.ForeColor = [System.Drawing.Color]::White
+$btnCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnCancel.FlatAppearance.BorderSize = 0
+$btnCancel.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
+$btnCancel.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnCancel.Visible   = $false
+$btnCancel.Anchor    = $AnchorTR
+$btnCancel.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 36)), 6))
+$camActions.Bar.Controls.Add($btnCancel)
+
+# Secondary actions (Copy Summary, Copy Log, Save Log) — small text buttons in
+# the action bar to keep them discoverable without bloating the layout.
+$btnCopySummary = New-Object System.Windows.Forms.Button
+$btnCopySummary.Text      = "Copy Summary"
+$btnCopySummary.Size      = New-Object System.Drawing.Size(120, 36)
+$btnCopySummary.Location  = New-Object System.Drawing.Point(170, 10)
+$btnCopySummary.BackColor = $ColCard
+$btnCopySummary.ForeColor = $ColText
+$btnCopySummary.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnCopySummary.FlatAppearance.BorderColor = $ColBorder
+$btnCopySummary.FlatAppearance.BorderSize  = 1
+$btnCopySummary.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$btnCopySummary.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnCopySummary.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 120, 36)), 6))
+$camActions.Bar.Controls.Add($btnCopySummary)
+
+$btnCopy = New-Object System.Windows.Forms.Button
+$btnCopy.Text      = "Copy Log"
+$btnCopy.Size      = New-Object System.Drawing.Size(90, 36)
+$btnCopy.Location  = New-Object System.Drawing.Point(298, 10)
+$btnCopy.BackColor = $ColCard
+$btnCopy.ForeColor = $ColText
+$btnCopy.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnCopy.FlatAppearance.BorderColor = $ColBorder
+$btnCopy.FlatAppearance.BorderSize  = 1
+$btnCopy.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$btnCopy.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnCopy.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 90, 36)), 6))
+$camActions.Bar.Controls.Add($btnCopy)
+
+$btnSave = New-Object System.Windows.Forms.Button
+$btnSave.Text      = "Save Log"
+$btnSave.Size      = New-Object System.Drawing.Size(90, 36)
+$btnSave.Location  = New-Object System.Drawing.Point(396, 10)
+$btnSave.BackColor = $ColCard
+$btnSave.ForeColor = $ColText
+$btnSave.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnSave.FlatAppearance.BorderColor = $ColBorder
+$btnSave.FlatAppearance.BorderSize  = 1
+$btnSave.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$btnSave.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnSave.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 90, 36)), 6))
+$camActions.Bar.Controls.Add($btnSave)
+
+# ---- $right / $rightBorder compat stubs ----------------------------------
+# Show-Panel toggles these via its $ShowRight parameter; keep zero-sized hidden
+# stubs so the legacy "Show-Panel $center $true" call doesn't NPE. Camera
+# Connectivity now contains its guidance card inside $center, so these are
+# never actually visible.
+$rightBorder = New-Object System.Windows.Forms.Panel
+$rightBorder.Size = New-Object System.Drawing.Size(0, 0); $rightBorder.Visible = $false
+$form.Controls.Add($rightBorder)
+$right = New-Object System.Windows.Forms.Panel
+$right.Size = New-Object System.Drawing.Size(0, 0); $right.Visible = $false
+$form.Controls.Add($right)
 
 # ---------- Timer (polls $sync every 300ms, updates UI) ---------------------
 $script:runspace    = $null
@@ -2478,6 +2550,10 @@ $timer.Add_Tick({
         $lblSbarStatus.Text = "Status: Running"
         $lblSideStatus.Text = "Running..."; $pnlSideDot.BackColor = $ColAccent
         if (-not $btnCancel.Visible) { $btnCancel.Visible = $true }
+        # Update Camera section header pill (v1.0.46 redesign)
+        if ($camHeader -and $camHeader.PillTitle.Text -ne "Running") {
+            Set-SectionPill $camHeader "neutral" "Running"
+        }
     }
 
     if ($sync.UpdateAvailable -and -not $lblUpdate.Visible) {
@@ -2503,12 +2579,14 @@ $timer.Add_Tick({
             $pnlBadgeDot.BackColor = $ColGreen
             $pnlSbarDot.BackColor = $ColGreen; $lblSbarStatus.Text = "Status: All Clear"
             $pnlSideDot.BackColor = $ColGreen; $lblSideStatus.Text = "All Clear"
+            if ($camHeader) { Set-SectionPill $camHeader "ok" "All Clear" }
         } else {
             $pnlBadge.BackColor = $ColBadgeErrBg
             $lblBadge.ForeColor = $ColRed; $lblBadge.Text = "Issues Found"
             $pnlBadgeDot.BackColor = $ColRed
             $pnlSbarDot.BackColor = $ColRed; $lblSbarStatus.Text = "Status: Issues Found"
             $pnlSideDot.BackColor = $ColRed; $lblSideStatus.Text = "Issues Found"
+            if ($camHeader) { Set-SectionPill $camHeader "fail" "Issues Found" }
         }
         $lblSbarLastRun.Text = "Last Run: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
 
@@ -2549,6 +2627,8 @@ function Start-CameraConnDiagnostic {
     $script:allLogItems.Clear()
 
     $dgvLog.Rows.Clear(); $rtbSteps.Text = "Diagnostic running..."
+    if ($camHeader) { Set-SectionPill $camHeader "neutral" "Running" }
+    $lblLastRunVal.Text = "Running diagnostic..."
     $btnRun.Enabled = $false; $btnRun.Text = "  Running..."
     $btnRetest.Enabled = $false
     $script:spinIdx = 0; $lblStatus.ForeColor = $ColAccent; $lblStatus.Text = " |  Starting..."
@@ -7428,7 +7508,7 @@ $script:allNavPanels = @(
 $navSysOverview.Add_Click({ Show-Panel $pnlSysOverview; Set-ActiveNav $navSysOverview })
 $navSysInfo.Add_Click({     Show-Panel $pnlSysInfo;     Set-ActiveNav $navSysInfo })
 $navNetConfig.Add_Click({   Show-Panel $pnlNetwork;     Set-ActiveNav $navNetConfig })
-$navCamera.Add_Click({      Show-Panel $center $true;   Set-ActiveNav $navCamera; Show-OverviewSteps })
+$navCamera.Add_Click({      Show-Panel $center;         Set-ActiveNav $navCamera; Show-OverviewSteps })
 $navPoE.Add_Click({         Show-Panel $pnlPoE;         Set-ActiveNav $navPoE })
 $navServices.Add_Click({    Show-Panel $pnlServices;    Set-ActiveNav $navServices })
 $navDisk.Add_Click({        Show-Panel $pnlDisk;        Set-ActiveNav $navDisk })

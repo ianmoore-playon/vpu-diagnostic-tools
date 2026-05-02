@@ -10,6 +10,20 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.46] - 2026-05-02
+
+### Changed
+
+- **Camera Connectivity panel redesign** — adopts the same section-header pattern as Network/Disk/Services/etc. Single full-width panel (no separate right column) with: section title + Overall Status pill at top; toolbar strip with Test Scope dropdown and detected NIC card; port cards row; status cards row (SmartSpeed / Ping / ARP / CHU / PoE); two-column main with Live Log on the left and "Next Steps & Guidance" card on the right; bottom action bar (Export / Run / Cancel + Copy Summary, Copy Log, Save Log). The Open Fault Isolator button is the primary action inside the guidance card. The old standalone "Last Run Summary" strip is folded into the guidance card.
+- **Camera section header pill** — driven by the timer: shows "Running" (neutral) during a run, "All Clear" (green) on success, "Issues Found" (red) on failure. Mirrors the Pulse-wide overall status pattern.
+
+### Fixed
+
+- **Home page tile positioning** — tiles 4, 7, and 8 (Pixellot Services, Event Viewer, Reports) intermittently rendered one row lower than intended, leaving holes in row 0 col 3 and row 1 cols 2–3 and overlapping the bottom action bar. Root cause was the foreach loop reading `$pnlSysOverview.Width` before the form's window handle was created, which produced an inconsistent first-pass layout. Tiles are now built at (0,0) and positioned by a single deterministic `Update-HubTileLayout` call that runs again on `HandleCreated` and `VisibleChanged`. Layout is purely index-based; the `R`/`C` fields in `$hubCardDefs` are documentation only.
+- **`Show-Panel $center $true`** — second arg dropped now that Camera Connectivity owns its guidance card. `$right` and `$rightBorder` remain as zero-sized hidden stubs to keep the rest of `Show-Panel` happy.
+
+---
+
 ## [1.0.45] - 2026-05-02
 
 ### Fixed

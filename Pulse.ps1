@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.45"
+$ScriptVersion = "1.0.46"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -915,7 +915,7 @@ $script:allNavPanels = @(
 $navSysOverview.Add_Click({ Show-Panel $pnlSysOverview; Set-ActiveNav $navSysOverview })
 $navSysInfo.Add_Click({     Show-Panel $pnlSysInfo;     Set-ActiveNav $navSysInfo })
 $navNetConfig.Add_Click({   Show-Panel $pnlNetwork;     Set-ActiveNav $navNetConfig })
-$navCamera.Add_Click({      Show-Panel $center $true;   Set-ActiveNav $navCamera; Show-OverviewSteps })
+$navCamera.Add_Click({      Show-Panel $center;         Set-ActiveNav $navCamera; Show-OverviewSteps })
 $navPoE.Add_Click({         Show-Panel $pnlPoE;         Set-ActiveNav $navPoE })
 $navServices.Add_Click({    Show-Panel $pnlServices;    Set-ActiveNav $navServices })
 $navDisk.Add_Click({        Show-Panel $pnlDisk;        Set-ActiveNav $navDisk })
