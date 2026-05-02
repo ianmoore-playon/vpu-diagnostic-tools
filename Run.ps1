@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.33"
+$ScriptVersion = "1.0.34"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -3588,7 +3588,10 @@ $helpSections = @(
     @{ H="Event Logs tab"; B="Reads System and Application event logs and displays errors and warnings from the last 24 hours. A high error count (especially disk, NTFS, or driver errors) often correlates with hardware problems seen in other tabs.`n`nUp to 20 errors and 10 warnings are shown per log. Use Event Viewer (eventvwr.msc) to see the full list with all details." }
     @{ H="Reports tab"; B="Lists all past Full Diagnostic runs stored in the Pulse_Results folder. Double-click any row to open the full report in Notepad. Green rows are all-clear; red rows show which ports had faults.`n`nReports are saved automatically after each Camera diagnostic run." }
     @{ H="What is a SmartSpeed event?"; B="Intel SmartSpeed Event ID 40 fires when the NIC tried to establish a gigabit link but the physical medium could not sustain it. It only fires on physical-layer failures - it never fires when a device (like an OCR camera) simply does not support gigabit.`n`nAny non-zero SmartSpeed count on a camera NIC is definitive evidence of a cable, connector, or NIC fault. Zero events on a 100 Mbps port means the device is 100-Mbps-only and gigabit was never attempted." }
-    @{ H="Frequently asked questions"; B="Q: VPU.exe shows Not running - is that a problem?`nA: No. VPU.exe only runs when cameras are actively streaming. It is normal for it to be absent between games.`n`nQ: A NIC port shows No link - is that a fault?`nA: No link is normal for ports that do not have a camera connected. Only ports with a camera attached that show 100 Mbps are faults.`n`nQ: Network tests fail for pixellot.stream - is that a problem?`nA: pixellot.stream is marked INFO because it is a dynamic streaming server that does not respond to raw probes. Check the domain test result for pixellot.stream instead.`n`nQ: The tool says it cannot read the event log - what does that mean?`nA: This can happen if the Windows Event Log service is stopped or the account running the tool lacks permission. Restart the service via services.msc." }
+    @{ H="Camera Fault Isolator"; B="The Camera tab includes a guided fault-isolation wizard accessible via the Open Fault Isolator button. The wizard walks through a four-phase swap test to identify whether a degraded port is caused by the NIC, the cable, or the camera itself.`n`nPhase 1 captures the baseline link speed for the suspect port. Phase 2 swaps the cable to a known-good port to test if the fault follows the NIC port. Phase 3 swaps the cable to test if the fault follows the cable. Phase 4 swaps the camera to test if the fault follows the camera.`n`nEach phase produces a plain-language verdict, and the wizard concludes with a Run Full Diagnostic action to confirm the fix." }
+    @{ H="System Information sections"; B="The System Information tab surfaces hardware specs and configuration details:`n`n- Pixellot Software: registry-derived App Version, System Image Version, and Package Dependencies.`n- Operating System / System: edition, build, manufacturer, model, BIOS, serial number.`n- Time & Locale: timezone, NTP server, W32Time service status. Flags UTC default as a likely misconfiguration.`n- Pixellot Calibrations: scans known calibration paths and lists files with last-modified times.`n- Installed Software: counts installed apps and flags known-conflicting software (other AV, OBS, BitTorrent, etc.)." }
+    @{ H="Frequently asked questions"; B="Q: VPU.exe shows Not streaming - is that a problem?`nA: No. VPU.exe only runs when cameras are actively streaming. It is normal for it to be absent between games.`n`nQ: A NIC port shows No link - is that a fault?`nA: No link is normal for ports that do not have a camera connected. Only ports with a camera attached that show 100 Mbps are faults.`n`nQ: Network tests fail for pixellot.stream - is that a problem?`nA: pixellot.stream is no longer probed directly. Reliable port tests now hit Pixellot's prod-echo.pixellot.tv echo server, and the pixellot.stream domain shows an INFO row in the domain test (it is a stream-only destination).`n`nQ: The tool says it cannot read the event log - what does that mean?`nA: This can happen if the Windows Event Log service is stopped or the account running the tool lacks permission. Restart the service via services.msc." }
+    @{ H="About Pulse"; B="Pulse — Pixellot Unified Live System Evaluator`nVersion: see the header bar`nRepository: https://github.com/ianmoore-playon/vpu-diagnostic-tools`nLicense: Internal use within PlayOn Sports / NFHS Network. Not for external distribution.`n`nFeedback and bug reports go through the Submit Feedback form below — these are routed directly to the tools team. The form requires a feedback token configured at install time; if the token is missing, feedback is copied to the clipboard for manual handoff." }
 )
 $firstHelp = $true
 foreach ($s in $helpSections) {
@@ -4828,6 +4831,41 @@ $SysInfoScript = {
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
 
+    # -- Time & Locale -----------------------------------------------------------
+    # Surface timezone, NTP source, and auto-time setting. VPUs deployed across
+    # regions sometimes inherit a UTC default which throws off scheduled events
+    # and timestamped logs.
+    $sync.SysInfoStep = "Querying time settings..."
+    Si-Section "Time & Locale"
+    try {
+        $tz = Get-CimInstance Win32_TimeZone -ErrorAction Stop
+        Si-Log "Timezone"       "$($tz.Caption)" "Info"
+        Si-Log "System Time"    ((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) "Info"
+
+        # NTP server registry (W32Time service)
+        try {
+            $ntpServer = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters" -ErrorAction Stop).NtpServer
+            if ($ntpServer) { Si-Log "NTP Server" $ntpServer "Info" }
+        } catch { }
+
+        # "Set time automatically" — controlled by W32Time service start type + NtpClient SpecialPollInterval
+        $w32Svc = Get-Service -Name W32Time -ErrorAction SilentlyContinue
+        if ($w32Svc) {
+            if ($w32Svc.Status -eq "Running") {
+                Si-Log "Time Sync" "W32Time service running" "Info"
+            } else {
+                Si-Log "Time Sync" "W32Time service NOT running — automatic time sync disabled" "Warn"
+            }
+        }
+
+        # Suspicious-default warning: UTC is rarely the right choice for a deployed VPU
+        if ($tz.StandardName -match "^UTC$" -or $tz.Caption -match "^\(UTC\)\s*Coordinated") {
+            Si-Log "Timezone Check" "System is set to UTC — confirm this matches the venue's local timezone" "Warn"
+        }
+    } catch { Si-Log "Time & Locale" "Query failed" "Warn" }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
     # -- System ------------------------------------------------------------------
     $sync.SysInfoStep = "Querying system info..."
     Si-Section "System"
@@ -4957,6 +4995,89 @@ $SysInfoScript = {
             Si-Log "  Status" $connStr $connLvl
         }
     } catch { Si-Log "NICs" "Query failed" "Warn" }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
+    # -- Pixellot Calibrations ---------------------------------------------------
+    # Surface known calibration directories and per-camera calibration files.
+    # Helps field techs confirm a calibration was applied and which file is active.
+    $sync.SysInfoStep = "Querying camera calibrations..."
+    Si-Section "Pixellot Calibrations"
+    $calibPaths = @(
+        "C:\Pixellot\calibration"
+        "C:\Pixellot\Calibration"
+        "C:\Pixellot\Data\Calibration"
+        "C:\Program Files\Pixellot\calibration"
+        "C:\ProgramData\Pixellot\calibration"
+    )
+    $calibFound = $false
+    foreach ($cp in $calibPaths) {
+        if (Test-Path $cp) {
+            $calibFound = $true
+            Si-Log "Calibration Path" $cp "Info"
+            try {
+                $files = @(Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue |
+                           Sort-Object LastWriteTime -Descending | Select-Object -First 12)
+                if ($files.Count -eq 0) {
+                    Si-Log "  Files" "Directory exists but is empty" "Warn"
+                } else {
+                    foreach ($f in $files) {
+                        $age = (Get-Date) - $f.LastWriteTime
+                        $ageStr = if ($age.TotalDays -ge 1) { "$([int]$age.TotalDays)d ago" } `
+                                  elseif ($age.TotalHours -ge 1) { "$([int]$age.TotalHours)h ago" } `
+                                  else { "$([int]$age.TotalMinutes)m ago" }
+                        Si-Log "  $($f.Name)" "$ageStr   ($('{0:F0}' -f ($f.Length / 1024)) KB)" "Gray"
+                    }
+                }
+            } catch { Si-Log "  Files" "Read failed" "Warn" }
+        }
+    }
+    if (-not $calibFound) {
+        Si-Log "Calibrations" "No calibration directory found in standard locations" "Gray"
+    }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
+    # -- Installed Software ------------------------------------------------------
+    # Scan registry uninstall keys (faster than Win32_Product, which triggers MSI re-validation).
+    # Flag anything matching the unwanted-app patterns; surface counts only to keep the log readable.
+    $sync.SysInfoStep = "Scanning installed software..."
+    Si-Section "Installed Software"
+    try {
+        $unwantedPatterns = @(
+            "OBS Studio", "vMix", "Wirecast", "XSplit",
+            "Norton", "McAfee", "Avast", "AVG", "Bitdefender", "Kaspersky",
+            "Bonjour", "iTunes", "QuickTime",
+            "Yahoo", "Ask Toolbar", "Coupon", "WebDiscover",
+            "Steam", "Epic Games", "Origin", "Battle.net",
+            "BitTorrent", "uTorrent", "qBittorrent"
+        )
+        $regPaths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        )
+        $apps = @(
+            foreach ($p in $regPaths) {
+                Get-ItemProperty $p -ErrorAction SilentlyContinue |
+                    Where-Object { $_.DisplayName -and -not $_.SystemComponent } |
+                    Select-Object DisplayName, Publisher, DisplayVersion, InstallDate
+            }
+        ) | Sort-Object DisplayName -Unique
+        Si-Log "Total Installed" "$($apps.Count) applications" "Info"
+
+        $flagged = @($apps | Where-Object {
+            $name = $_.DisplayName
+            $unwantedPatterns | Where-Object { $name -like "*$_*" } | Select-Object -First 1
+        })
+        if ($flagged.Count -gt 0) {
+            Si-Log "Flagged Apps" "$($flagged.Count) potentially-conflicting applications detected" "Warn"
+            foreach ($app in $flagged) {
+                Si-Log "  $($app.DisplayName)" "$($app.Publisher) — confirm this is intentional" "Warn"
+            }
+        } else {
+            Si-Log "Flagged Apps" "None — no known-conflicting software detected" "Pass"
+        }
+    } catch { Si-Log "Installed Software" "Scan failed" "Warn" }
 
     $ramStr = if ($fdRamGB -gt 0) { "$fdRamGB GB RAM" } else { "RAM unknown" }
     $sync.Cards["SysInfo"] = @{ Value = "$fdCpuShort   |   $ramStr"; Status = "ok" }

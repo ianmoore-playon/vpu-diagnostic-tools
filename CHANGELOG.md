@@ -10,6 +10,18 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.34] - 2026-05-01
+
+### Added
+
+- **System Information — Time & Locale section** (#20) — surfaces timezone, system time, NTP server (from W32Time registry), and W32Time service status. Flags UTC default as a likely misconfiguration.
+- **System Information — Pixellot Calibrations section** (#18) — scans 5 known calibration paths under `C:\Pixellot\` and lists the most recent 12 files per path with last-modified age and size. Surfaces "no calibration directory found" when none exist.
+- **System Information — Installed Software section** (#19) — counts installed applications via the registry uninstall keys (faster than Win32_Product) and flags known-conflicting software: third-party AV, broadcast/streaming tools (OBS, vMix, etc.), torrent clients, gaming launchers, and toolbar/coupon software.
+- **Help — Camera Fault Isolator + System Information sections** (#17) — added two new help entries describing the existing Camera fault-isolation wizard and the System Information sub-sections.
+- **Help — About Pulse section** (#24) — added an About entry with version pointer, repository link, and license note.
+
+---
+
 ## [1.0.33] - 2026-05-01
 
 ### Added

@@ -45,6 +45,41 @@ $SysInfoScript = {
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
 
+    # -- Time & Locale -----------------------------------------------------------
+    # Surface timezone, NTP source, and auto-time setting. VPUs deployed across
+    # regions sometimes inherit a UTC default which throws off scheduled events
+    # and timestamped logs.
+    $sync.SysInfoStep = "Querying time settings..."
+    Si-Section "Time & Locale"
+    try {
+        $tz = Get-CimInstance Win32_TimeZone -ErrorAction Stop
+        Si-Log "Timezone"       "$($tz.Caption)" "Info"
+        Si-Log "System Time"    ((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) "Info"
+
+        # NTP server registry (W32Time service)
+        try {
+            $ntpServer = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters" -ErrorAction Stop).NtpServer
+            if ($ntpServer) { Si-Log "NTP Server" $ntpServer "Info" }
+        } catch { }
+
+        # "Set time automatically" — controlled by W32Time service start type + NtpClient SpecialPollInterval
+        $w32Svc = Get-Service -Name W32Time -ErrorAction SilentlyContinue
+        if ($w32Svc) {
+            if ($w32Svc.Status -eq "Running") {
+                Si-Log "Time Sync" "W32Time service running" "Info"
+            } else {
+                Si-Log "Time Sync" "W32Time service NOT running — automatic time sync disabled" "Warn"
+            }
+        }
+
+        # Suspicious-default warning: UTC is rarely the right choice for a deployed VPU
+        if ($tz.StandardName -match "^UTC$" -or $tz.Caption -match "^\(UTC\)\s*Coordinated") {
+            Si-Log "Timezone Check" "System is set to UTC — confirm this matches the venue's local timezone" "Warn"
+        }
+    } catch { Si-Log "Time & Locale" "Query failed" "Warn" }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
     # -- System ------------------------------------------------------------------
     $sync.SysInfoStep = "Querying system info..."
     Si-Section "System"
@@ -174,6 +209,89 @@ $SysInfoScript = {
             Si-Log "  Status" $connStr $connLvl
         }
     } catch { Si-Log "NICs" "Query failed" "Warn" }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
+    # -- Pixellot Calibrations ---------------------------------------------------
+    # Surface known calibration directories and per-camera calibration files.
+    # Helps field techs confirm a calibration was applied and which file is active.
+    $sync.SysInfoStep = "Querying camera calibrations..."
+    Si-Section "Pixellot Calibrations"
+    $calibPaths = @(
+        "C:\Pixellot\calibration"
+        "C:\Pixellot\Calibration"
+        "C:\Pixellot\Data\Calibration"
+        "C:\Program Files\Pixellot\calibration"
+        "C:\ProgramData\Pixellot\calibration"
+    )
+    $calibFound = $false
+    foreach ($cp in $calibPaths) {
+        if (Test-Path $cp) {
+            $calibFound = $true
+            Si-Log "Calibration Path" $cp "Info"
+            try {
+                $files = @(Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue |
+                           Sort-Object LastWriteTime -Descending | Select-Object -First 12)
+                if ($files.Count -eq 0) {
+                    Si-Log "  Files" "Directory exists but is empty" "Warn"
+                } else {
+                    foreach ($f in $files) {
+                        $age = (Get-Date) - $f.LastWriteTime
+                        $ageStr = if ($age.TotalDays -ge 1) { "$([int]$age.TotalDays)d ago" } `
+                                  elseif ($age.TotalHours -ge 1) { "$([int]$age.TotalHours)h ago" } `
+                                  else { "$([int]$age.TotalMinutes)m ago" }
+                        Si-Log "  $($f.Name)" "$ageStr   ($('{0:F0}' -f ($f.Length / 1024)) KB)" "Gray"
+                    }
+                }
+            } catch { Si-Log "  Files" "Read failed" "Warn" }
+        }
+    }
+    if (-not $calibFound) {
+        Si-Log "Calibrations" "No calibration directory found in standard locations" "Gray"
+    }
+
+    if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
+
+    # -- Installed Software ------------------------------------------------------
+    # Scan registry uninstall keys (faster than Win32_Product, which triggers MSI re-validation).
+    # Flag anything matching the unwanted-app patterns; surface counts only to keep the log readable.
+    $sync.SysInfoStep = "Scanning installed software..."
+    Si-Section "Installed Software"
+    try {
+        $unwantedPatterns = @(
+            "OBS Studio", "vMix", "Wirecast", "XSplit",
+            "Norton", "McAfee", "Avast", "AVG", "Bitdefender", "Kaspersky",
+            "Bonjour", "iTunes", "QuickTime",
+            "Yahoo", "Ask Toolbar", "Coupon", "WebDiscover",
+            "Steam", "Epic Games", "Origin", "Battle.net",
+            "BitTorrent", "uTorrent", "qBittorrent"
+        )
+        $regPaths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        )
+        $apps = @(
+            foreach ($p in $regPaths) {
+                Get-ItemProperty $p -ErrorAction SilentlyContinue |
+                    Where-Object { $_.DisplayName -and -not $_.SystemComponent } |
+                    Select-Object DisplayName, Publisher, DisplayVersion, InstallDate
+            }
+        ) | Sort-Object DisplayName -Unique
+        Si-Log "Total Installed" "$($apps.Count) applications" "Info"
+
+        $flagged = @($apps | Where-Object {
+            $name = $_.DisplayName
+            $unwantedPatterns | Where-Object { $name -like "*$_*" } | Select-Object -First 1
+        })
+        if ($flagged.Count -gt 0) {
+            Si-Log "Flagged Apps" "$($flagged.Count) potentially-conflicting applications detected" "Warn"
+            foreach ($app in $flagged) {
+                Si-Log "  $($app.DisplayName)" "$($app.Publisher) — confirm this is intentional" "Warn"
+            }
+        } else {
+            Si-Log "Flagged Apps" "None — no known-conflicting software detected" "Pass"
+        }
+    } catch { Si-Log "Installed Software" "Scan failed" "Warn" }
 
     $ramStr = if ($fdRamGB -gt 0) { "$fdRamGB GB RAM" } else { "RAM unknown" }
     $sync.Cards["SysInfo"] = @{ Value = "$fdCpuShort   |   $ramStr"; Status = "ok" }
