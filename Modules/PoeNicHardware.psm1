@@ -132,6 +132,8 @@ $hwTimer.Add_Tick({
         $hwTimer.Stop(); $btnHwCancel.Visible=$false
         $btnHwRun.Enabled=$true; $btnHwRun.Text=[char]0x25B6+"  Check Hardware"
         $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="  $($sync.HwStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
+        # Refresh the port diagram with current link state (#7)
+        try { Update-HwPortDiagram } catch { }
     }
 })
 
@@ -206,13 +208,415 @@ $lblHwStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblHwStatus.F
 $lblHwStatus.Location = New-Object System.Drawing.Point(10,218); $lblHwStatus.Size = New-Object System.Drawing.Size(1240,18)
 $pnlPoE.Controls.Add($lblHwStatus)
 
+# ---- NIC Port Layout — horizontal "card + ports below" mockup-style design (#7) -------
+# Layout from top to bottom in the panel area Y=242..602:
+#   1. Section header at Y=242
+#   2. Stylized NIC bracket render at Y=266 (~80 high) with 4 jack rectangles + status light
+#   3. Leader lines (drawn in Paint) from each jack down to its info box
+#   4. Row of 4 port info boxes at Y=380, ~120 high, with port number / status / speed / duplex / errors
+#   5. Hardware Details log below at Y=508
+# Right sidebar (always visible) at X=1010, W=240: NIC Info card + Status Legend card.
+
+$lblHwPortHdr = New-Object System.Windows.Forms.Label
+$lblHwPortHdr.Text      = "NIC Port Layout"
+$lblHwPortHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
+$lblHwPortHdr.ForeColor = $ColText
+$lblHwPortHdr.Location  = New-Object System.Drawing.Point(10, 242)
+$lblHwPortHdr.AutoSize  = $true
+$pnlPoE.Controls.Add($lblHwPortHdr)
+
+$lblHwPortSub = New-Object System.Windows.Forms.Label
+$lblHwPortSub.Text      = "Physical port mapping with live link state. Port 1 sits next to the status light on the actual card."
+$lblHwPortSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblHwPortSub.ForeColor = $ColMuted
+$lblHwPortSub.Location  = New-Object System.Drawing.Point(140, 245)
+$lblHwPortSub.AutoSize  = $true
+$pnlPoE.Controls.Add($lblHwPortSub)
+
+# Container panel for the card-and-ports visualization. Custom Paint event draws the
+# NIC bracket outline, jack rectangles, status light, and leader lines from each
+# jack down to its info box.
+$pnlHwNicCanvas = New-Object System.Windows.Forms.Panel
+$pnlHwNicCanvas.Size      = New-Object System.Drawing.Size(990, 230)
+$pnlHwNicCanvas.Location  = New-Object System.Drawing.Point(10, 270)
+$pnlHwNicCanvas.BackColor = $ColCard
+$pnlHwNicCanvas.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 990, 230)), 8))
+$pnlPoE.Controls.Add($pnlHwNicCanvas)
+
+# Constants for the canvas Paint — easier to tune without touching multiple call sites.
+$script:nicCardY      = 18           # top of the card body inside the canvas
+$script:nicCardH      = 90           # card body height (PCB area)
+$script:nicJackY      = 38           # top of the jack openings (relative to canvas)
+$script:nicJackH      = 36           # jack rectangle height
+$script:nicJackW      = 64           # jack rectangle width
+$script:nicJackGap    = 14           # gap between jacks
+# Center the row of 4 jacks within the canvas. Status light sits to the LEFT of port 1.
+# Total jack-row width = 4*64 + 3*14 = 298. Plus status-light area (~40) on the left.
+$script:nicJackRowW   = 4 * $script:nicJackW + 3 * $script:nicJackGap   # 298
+$script:nicStatusOffX = 36           # status light is this far left of port 1
+$script:nicJackStartX = [int](( ($pnlHwNicCanvas.Width) - $script:nicJackRowW + $script:nicStatusOffX) / 2)
+$script:nicLightX     = $script:nicJackStartX - $script:nicStatusOffX
+# Port info boxes sit below the canvas — record their target connection points so
+# the leader lines can dock correctly.
+$script:nicPortBoxY   = 510          # absolute Y of port info boxes (in pnlPoE coords)
+$script:nicCanvasBaseY= 270          # absolute Y of canvas top-left
+$script:nicPortBoxW   = 230          # width of each port info box
+$script:nicPortBoxH   = 110
+
+# Custom Paint — draws PCB rectangle, 4 RJ45 jack openings, status light next to Port 1,
+# and short connector stubs hanging down from each jack. Full leader lines are drawn
+# on the parent pnlPoE Paint event since they cross panel boundaries.
+$pnlHwNicCanvas.Add_Paint({
+    $g = $args[1].Graphics
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $cw = $pnlHwNicCanvas.Width
+    # PCB body — soft green-tinted rectangle to evoke the PCB without using a photo
+    $pcbColor = [System.Drawing.Color]::FromArgb(28, 56, 38)
+    $pcbBrush = New-Object System.Drawing.SolidBrush($pcbColor)
+    $pcbRect  = New-Object System.Drawing.Rectangle(20, $script:nicCardY, ($cw - 40), $script:nicCardH)
+    $g.FillRectangle($pcbBrush, $pcbRect); $pcbBrush.Dispose()
+    $pcbPen   = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(60, 120, 80), 1)
+    $g.DrawRectangle($pcbPen, $pcbRect); $pcbPen.Dispose()
+    # Bracket strip — metallic gray band along the bottom
+    $brkBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(140, 145, 152))
+    $brkRect  = New-Object System.Drawing.Rectangle(20, ($script:nicCardY + $script:nicCardH), ($cw - 40), 18)
+    $g.FillRectangle($brkBrush, $brkRect); $brkBrush.Dispose()
+    # Status light — small green LED next to Port 1 (bottom-left jack position)
+    $litX = $script:nicLightX
+    $litY = $script:nicJackY + ($script:nicJackH / 2) - 5
+    $litBrush = New-Object System.Drawing.SolidBrush($ColGreen)
+    $g.FillEllipse($litBrush, $litX, $litY, 10, 10); $litBrush.Dispose()
+    # Tiny "PWR" label under the status light for clarity
+    $hintFont = New-Object System.Drawing.Font("Segoe UI", 7)
+    $hintBrush = New-Object System.Drawing.SolidBrush($ColMuted)
+    $g.DrawString("PWR", $hintFont, $hintBrush, ($litX - 6), ($litY + 14))
+    $hintFont.Dispose(); $hintBrush.Dispose()
+    # 4 RJ45 jack openings (Port 1 leftmost — matches photo)
+    $jackBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(15, 25, 35))
+    $jackPen   = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(80, 90, 100), 1)
+    for ($p = 0; $p -lt 4; $p++) {
+        $jx = $script:nicJackStartX + $p * ($script:nicJackW + $script:nicJackGap)
+        $jackRect = New-Object System.Drawing.Rectangle($jx, $script:nicJackY, $script:nicJackW, $script:nicJackH)
+        $g.FillRectangle($jackBrush, $jackRect)
+        $g.DrawRectangle($jackPen, $jackRect)
+        # "Port N" label below each jack
+        $lblFont  = New-Object System.Drawing.Font("Segoe UI", 7.5)
+        $lblBrush = New-Object System.Drawing.SolidBrush($ColMuted)
+        $g.DrawString("Port $($p + 1)", $lblFont, $lblBrush, ($jx + 12), ($script:nicJackY + $script:nicJackH + 22))
+        $lblFont.Dispose(); $lblBrush.Dispose()
+    }
+    $jackBrush.Dispose(); $jackPen.Dispose()
+
+    # Per-port colored LED dots inside each jack — fill in based on $script:hwPortLedColors
+    if ($script:hwPortLedColors -and $script:hwPortLedColors.Count -ge 4) {
+        for ($p = 0; $p -lt 4; $p++) {
+            $jx = $script:nicJackStartX + $p * ($script:nicJackW + $script:nicJackGap)
+            $ledX = $jx + ($script:nicJackW / 2) - 4
+            $ledY = $script:nicJackY + $script:nicJackH - 12
+            $ledBrush = New-Object System.Drawing.SolidBrush($script:hwPortLedColors[$p])
+            $g.FillEllipse($ledBrush, $ledX, $ledY, 8, 8)
+            $ledBrush.Dispose()
+        }
+    }
+})
+$script:hwPortLedColors = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
+
+# 4 port info boxes — horizontal row below the canvas. Port 1 leftmost, Port 4 rightmost
+# (matches photo orientation and the canvas above).
+$script:hwPortTiles = @()
+$portBoxStartX = 10
+$portBoxGap    = 12
+for ($p = 0; $p -lt 4; $p++) {
+    $portNum = $p + 1   # left-to-right: 1, 2, 3, 4
+    $tileX   = $portBoxStartX + $p * ($script:nicPortBoxW + $portBoxGap)
+    $tile = New-Object System.Windows.Forms.Panel
+    $tile.Size      = New-Object System.Drawing.Size($script:nicPortBoxW, $script:nicPortBoxH)
+    $tile.Location  = New-Object System.Drawing.Point($tileX, $script:nicPortBoxY)
+    $tile.BackColor = $ColCard
+    $tile.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $script:nicPortBoxW, $script:nicPortBoxH)), 6))
+    $pnlPoE.Controls.Add($tile)
+
+    # Header row — Port N + status icon + status text
+    $lblNum = New-Object System.Windows.Forms.Label
+    $lblNum.Text      = "Port $portNum"
+    $lblNum.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10.5)
+    $lblNum.ForeColor = $ColText
+    $lblNum.Location  = New-Object System.Drawing.Point(12, 8)
+    $lblNum.Size      = New-Object System.Drawing.Size(80, 20)
+    $tile.Controls.Add($lblNum)
+
+    $lblStatusIcon = New-Object System.Windows.Forms.Label
+    $lblStatusIcon.Text      = [char]0x26AB   # neutral dot until populated
+    $lblStatusIcon.Font      = New-Object System.Drawing.Font("Segoe UI Symbol", 10)
+    $lblStatusIcon.ForeColor = $ColMuted
+    $lblStatusIcon.Location  = New-Object System.Drawing.Point(96, 8)
+    $lblStatusIcon.Size      = New-Object System.Drawing.Size(18, 20)
+    $tile.Controls.Add($lblStatusIcon)
+
+    $lblStatusText = New-Object System.Windows.Forms.Label
+    $lblStatusText.Text      = "--"
+    $lblStatusText.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
+    $lblStatusText.ForeColor = $ColMuted
+    $lblStatusText.Location  = New-Object System.Drawing.Point(116, 9)
+    $lblStatusText.Size      = New-Object System.Drawing.Size(100, 20)
+    $tile.Controls.Add($lblStatusText)
+
+    # Detail rows: Speed / Duplex / MAC / Errors
+    function _AddPortRow {
+        param($parent, $y, $label, $valueRef, $ColMuted, $ColText)
+        $lblL = New-Object System.Windows.Forms.Label
+        $lblL.Text      = "$label"
+        $lblL.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+        $lblL.ForeColor = $ColMuted
+        $lblL.Location  = New-Object System.Drawing.Point(12, $y)
+        $lblL.Size      = New-Object System.Drawing.Size(60, 16)
+        $parent.Controls.Add($lblL)
+        $lblV = New-Object System.Windows.Forms.Label
+        $lblV.Text      = "--"
+        $lblV.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+        $lblV.ForeColor = $ColText
+        $lblV.Location  = New-Object System.Drawing.Point(72, $y)
+        $lblV.Size      = New-Object System.Drawing.Size(150, 16)
+        $parent.Controls.Add($lblV)
+        return $lblV
+    }
+    $lblSpeedV  = _AddPortRow $tile 36 "Speed:"  $null $ColMuted $ColText
+    $lblDuplexV = _AddPortRow $tile 54 "Duplex:" $null $ColMuted $ColText
+    $lblMacV    = _AddPortRow $tile 72 "MAC:"    $null $ColMuted $ColText
+    $lblMacV.Font = New-Object System.Drawing.Font("Consolas", 8)
+    $lblErrV    = _AddPortRow $tile 90 "Errors:" $null $ColMuted $ColText
+
+    $script:hwPortTiles += @{
+        PortNum   = $portNum
+        Tile      = $tile
+        StatusIcn = $lblStatusIcon
+        StatusTxt = $lblStatusText
+        SpeedV    = $lblSpeedV
+        DuplexV   = $lblDuplexV
+        MacV      = $lblMacV
+        ErrV      = $lblErrV
+    }
+}
+
+# Right sidebar — NIC Information card + Status Legend
+# X = 1010 puts it past the 990-wide canvas (which starts at X=10). Full panel width is 1280.
+# So sidebar gets ~250 wide.
+$pnlHwNicInfo = New-Object System.Windows.Forms.Panel
+$pnlHwNicInfo.Size      = New-Object System.Drawing.Size(240, 150)
+$pnlHwNicInfo.Location  = New-Object System.Drawing.Point(1010, 270)
+$pnlHwNicInfo.BackColor = $ColCard
+$pnlHwNicInfo.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 240, 150)), 8))
+$pnlPoE.Controls.Add($pnlHwNicInfo)
+
+$lblNicInfoHdr = New-Object System.Windows.Forms.Label
+$lblNicInfoHdr.Text      = "NIC Information"
+$lblNicInfoHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5)
+$lblNicInfoHdr.ForeColor = $ColText
+$lblNicInfoHdr.Location  = New-Object System.Drawing.Point(12, 10)
+$lblNicInfoHdr.AutoSize  = $true
+$pnlHwNicInfo.Controls.Add($lblNicInfoHdr)
+
+$script:hwNicInfoLines = @{}
+$infoRows = @("Model","MAC Base","Driver","Total ports")
+$ny = 32
+foreach ($row in $infoRows) {
+    $lblL = New-Object System.Windows.Forms.Label
+    $lblL.Text      = "$($row):"
+    $lblL.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lblL.ForeColor = $ColMuted
+    $lblL.Location  = New-Object System.Drawing.Point(12, $ny)
+    $lblL.Size      = New-Object System.Drawing.Size(76, 16)
+    $pnlHwNicInfo.Controls.Add($lblL)
+    $lblV = New-Object System.Windows.Forms.Label
+    $lblV.Text      = "--"
+    $lblV.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lblV.ForeColor = $ColText
+    $lblV.Location  = New-Object System.Drawing.Point(88, $ny)
+    $lblV.Size      = New-Object System.Drawing.Size(140, 16)
+    $pnlHwNicInfo.Controls.Add($lblV)
+    $script:hwNicInfoLines[$row] = $lblV
+    $ny += 22
+}
+
+# Status Legend card
+$pnlHwLegend = New-Object System.Windows.Forms.Panel
+$pnlHwLegend.Size      = New-Object System.Drawing.Size(240, 130)
+$pnlHwLegend.Location  = New-Object System.Drawing.Point(1010, 432)
+$pnlHwLegend.BackColor = $ColCard
+$pnlHwLegend.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 240, 130)), 8))
+$pnlPoE.Controls.Add($pnlHwLegend)
+
+$lblLegendHdr = New-Object System.Windows.Forms.Label
+$lblLegendHdr.Text      = "Status Legend"
+$lblLegendHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5)
+$lblLegendHdr.ForeColor = $ColText
+$lblLegendHdr.Location  = New-Object System.Drawing.Point(12, 10)
+$lblLegendHdr.AutoSize  = $true
+$pnlHwLegend.Controls.Add($lblLegendHdr)
+
+$legendItems = @(
+    @{ Color=$ColGreen;  Text="Linked - 1 Gbps healthy" },
+    @{ Color=$ColYellow; Text="Degraded - sub-gigabit" },
+    @{ Color=$ColMuted;  Text="No cable / disabled" },
+    @{ Color=$ColRed;    Text="Error / fault" }
+)
+$ly = 34
+foreach ($it in $legendItems) {
+    $dot = New-Object System.Windows.Forms.Panel
+    $dot.Size      = New-Object System.Drawing.Size(10, 10)
+    $dot.Location  = New-Object System.Drawing.Point(14, ($ly + 4))
+    $dot.BackColor = $it.Color
+    $dot.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 10, 10)), 5))
+    $pnlHwLegend.Controls.Add($dot)
+    $lblL = New-Object System.Windows.Forms.Label
+    $lblL.Text      = $it.Text
+    $lblL.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lblL.ForeColor = $ColText
+    $lblL.Location  = New-Object System.Drawing.Point(32, $ly)
+    $lblL.Size      = New-Object System.Drawing.Size(200, 18)
+    $pnlHwLegend.Controls.Add($lblL)
+    $ly += 22
+}
+
 $lblHwLogHdr = New-Object System.Windows.Forms.Label; $lblHwLogHdr.Text = "Hardware Details"
 $lblHwLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblHwLogHdr.ForeColor = $ColText
-$lblHwLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblHwLogHdr.AutoSize = $true
+$lblHwLogHdr.Location = New-Object System.Drawing.Point(10, 624); $lblHwLogHdr.AutoSize = $true
 $pnlPoE.Controls.Add($lblHwLogHdr)
 
-$dgvHwLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
+# Smaller log under the port diagram — just enough for the GPU/Monitor/Input details and
+# any extra runtime messages. Anchored bottom-stretch so it grows with the window.
+$dgvHwLog = New-LogGrid -X 10 -Y 648 -W 1240 -H 100
 $pnlPoE.Controls.Add($dgvHwLog)
+
+# Refresh function — populates the 4 tiles from Get-NetAdapter, sorted by MAC ascending
+# so index 0 of sorted = Port 1 (lowest MAC). Tiles are arranged top-to-bottom 4,3,2,1
+# so we index them in reverse.
+function Update-HwPortDiagram {
+    # Try the Pixellot-NIC driver patterns first (Intel I210/I211/I350/I354/82574L).
+    $sortedNics = @()
+    try {
+        $allNics = @(Get-NetAdapter -ErrorAction SilentlyContinue)
+        $matched = @()
+        foreach ($nic in $allNics) {
+            if (-not $nic.InterfaceDescription -or -not $nic.MacAddress) { continue }
+            foreach ($pat in $NicDriverPatterns) {
+                if ($nic.InterfaceDescription -like $pat) { $matched += $nic; break }
+            }
+        }
+        $sortedNics = @($matched | Sort-Object MacAddress)
+    } catch { }
+
+    # Fallback: if no NICs match the strict driver patterns, show ALL physical adapters
+    # sorted by MAC. Better to display SOMETHING than blank tiles.
+    if ($sortedNics.Count -eq 0) {
+        try {
+            $sortedNics = @(
+                Get-NetAdapter -Physical -ErrorAction SilentlyContinue |
+                    Where-Object { $_.MacAddress } |
+                    Sort-Object MacAddress |
+                    Select-Object -First 4
+            )
+        } catch { }
+    }
+
+    # Tiles are indexed 0..3 corresponding to port numbers 1..4 (left to right).
+    # sortedNics is also 0..N where index 0 is the lowest MAC = Port 1.
+    $ledColors = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
+    for ($tileIdx = 0; $tileIdx -lt 4; $tileIdx++) {
+        $tile = $script:hwPortTiles[$tileIdx]
+        $portNum  = $tile.PortNum
+        $sortIdx  = $portNum - 1
+        if ($sortIdx -lt $sortedNics.Count) {
+            $nic = $sortedNics[$sortIdx]
+            $mac = $nic.MacAddress
+            $speed = $nic.LinkSpeed
+            $status = $nic.Status
+            $isUp = ($status -eq "Up")
+            # Speed label: short form
+            $speedLabel = if ($speed -and $speed -match '(\d+)\s*Gbps')      { "$($Matches[1]) Gbps" } `
+                          elseif ($speed -and $speed -match '(\d+)\s*Mbps') { "$($Matches[1]) Mbps" } `
+                          elseif ($isUp)                                     { "Up" } `
+                          else                                                { "--" }
+            # Color tier: green = 1 Gbps healthy, yellow = sub-gigabit linked, gray = no link
+            $tier = if (-not $isUp)                            { "off"  } `
+                    elseif ($speed -match '^1\s*Gbps')         { "ok"   } `
+                    elseif ($speed -match '(100|10)\s*Mbps')   { "warn" } `
+                    else                                       { "info" }
+            $accentColor = switch ($tier) {
+                "ok"   { $ColGreen }
+                "warn" { $ColYellow }
+                "off"  { $ColMuted }
+                default{ $ColAccent }
+            }
+            $statusText = switch ($tier) {
+                "ok"   { "Linked" }
+                "warn" { "Degraded" }
+                "off"  { "No Link" }
+                default{ "Linked" }
+            }
+            $duplexLabel = if ($nic.FullDuplex -eq $true) { "Full" } `
+                           elseif ($nic.FullDuplex -eq $false) { "Half" } `
+                           else { "--" }
+            # Errors counter — try Get-NetAdapterStatistics for cumulative bad packets
+            $errCount = "--"
+            try {
+                $stats = Get-NetAdapterStatistics -Name $nic.Name -ErrorAction SilentlyContinue
+                if ($stats) {
+                    $err = [long]([long]$stats.OutboundPacketsWithErrors + [long]$stats.ReceivedPacketsWithErrors)
+                    $errCount = "$err"
+                }
+            } catch { }
+
+            $tile.StatusIcn.Text      = if ($tier -eq "off") { [char]0x26AB } elseif ($tier -eq "warn") { [char]0x26A0 } else { [char]0x25CF }
+            $tile.StatusIcn.ForeColor = $accentColor
+            $tile.StatusTxt.Text      = $statusText
+            $tile.StatusTxt.ForeColor = $accentColor
+            $tile.SpeedV.Text         = $speedLabel
+            $tile.SpeedV.ForeColor    = if ($isUp) { $accentColor } else { $ColMuted }
+            $tile.DuplexV.Text        = $duplexLabel
+            $tile.MacV.Text           = $mac
+            $tile.ErrV.Text           = $errCount
+            $tile.ErrV.ForeColor      = if ($errCount -ne "--" -and [int]$errCount -gt 0) { $ColYellow } else { $ColText }
+            $ledColors[$portNum - 1]  = $accentColor
+        } else {
+            $tile.StatusIcn.Text      = [char]0x26AB
+            $tile.StatusIcn.ForeColor = $ColMuted
+            $tile.StatusTxt.Text      = "Not detected"
+            $tile.StatusTxt.ForeColor = $ColMuted
+            $tile.SpeedV.Text         = "--"
+            $tile.DuplexV.Text        = "--"
+            $tile.MacV.Text           = "--"
+            $tile.ErrV.Text           = "--"
+        }
+    }
+
+    # Refresh the in-jack LED colors and repaint the canvas
+    $script:hwPortLedColors = $ledColors
+    if ($pnlHwNicCanvas) { $pnlHwNicCanvas.Invalidate() }
+
+    # Populate the right-sidebar NIC Information card
+    if ($script:hwNicInfoLines) {
+        $modelInfo = $null
+        try { $modelInfo = Get-AdlinkCardInfo $sortedNics } catch { }
+        $modelStr = if ($modelInfo -and $modelInfo.Label) { $modelInfo.Label } `
+                    elseif ($sortedNics.Count -gt 0)       { $sortedNics[0].InterfaceDescription } `
+                    else                                    { "Not detected" }
+        $macBase = if ($sortedNics.Count -gt 0) { $sortedNics[0].MacAddress } else { "--" }
+        $driverState = if ($sortedNics.Count -gt 0 -and $sortedNics[0].Status) { "Loaded" } else { "Not loaded" }
+        $totalPorts  = "$($sortedNics.Count) detected"
+        if ($script:hwNicInfoLines["Model"])       { $script:hwNicInfoLines["Model"].Text       = $modelStr }
+        if ($script:hwNicInfoLines["MAC Base"])    { $script:hwNicInfoLines["MAC Base"].Text    = $macBase }
+        if ($script:hwNicInfoLines["Driver"])      { $script:hwNicInfoLines["Driver"].Text      = $driverState }
+        if ($script:hwNicInfoLines["Driver"])      { $script:hwNicInfoLines["Driver"].ForeColor = if ($driverState -eq "Loaded") { $ColGreen } else { $ColRed } }
+        if ($script:hwNicInfoLines["Total ports"]) { $script:hwNicInfoLines["Total ports"].Text = $totalPorts }
+    }
+}
+
+# Refresh the diagram when the panel becomes visible AND when a hardware diagnostic
+# completes (in case link state changed during the test).
+$pnlPoE.Add_VisibleChanged({
+    if ($pnlPoE.Visible) { try { Update-HwPortDiagram } catch { } }
+})
 
 $script:hwRunspace = $null; $script:hwPs = $null; $script:hwSpinIdx = 0
 

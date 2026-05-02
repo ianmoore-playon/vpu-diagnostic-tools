@@ -10,6 +10,18 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.41] - 2026-05-01
+
+### Added
+
+- **NIC port diagram on Hardware tab** (closes #7) — visual representation of the 4-port NIC inspired by the user-provided mockup. Stylized PCB + bracket render in the upper area with 4 RJ45 jack openings, each containing an in-jack LED that mirrors the link state (green / yellow / gray). A "PWR" status-light marker sits next to Port 1 to match the physical reference on the actual card.
+- **4 port detail boxes** below the rendering — horizontal row, Port 1 leftmost (matching the photo orientation). Each box shows port number, status icon + label (Linked / Degraded / No Link / Not detected), Speed, Duplex, MAC address, and Errors counter (from `Get-NetAdapterStatistics`).
+- **Right sidebar** with NIC Information card (Model from `Get-AdlinkCardInfo`, MAC base, Driver state, Total ports detected) and a Status Legend explaining the color coding.
+- Port mapping uses ascending MAC sort — lowest MAC = Port 1, confirmed in field with Intel I210 / I350 cards. Falls back to all physical adapters sorted by MAC when the strict driver-pattern filter doesn't match.
+- Refreshes when the panel becomes visible and when the Hardware diagnostic completes.
+
+---
+
 ## [1.0.40] - 2026-05-01
 
 ### Fixed
