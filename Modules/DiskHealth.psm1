@@ -21,6 +21,9 @@ $DiskScript = {
 
     $overallWorst = "ok"
     $osDrive      = $env:SystemDrive  # e.g. "C:"
+    # Per-card aggregates surfaced as DiskSmart (#8) and DiskErrors (#9)
+    $smartFailCount = 0
+    $smartTotal     = 0
 
     # ── 1. Physical Drives ────────────────────────────────────────────────────
     $sync.DiskStep = "Inventorying physical drives..."
@@ -72,7 +75,11 @@ $DiskScript = {
             }
         }
         if ($smartFails.ContainsKey([string]$phys.Index) -and $healthLvl -eq "Pass") { $healthStr = "SMART Predict Failure"; $healthLvl = "Fail" }
-        if ($healthLvl -in @("Warn","Fail")) { $overallWorst = if ($healthLvl -eq "Fail") { "fail" } elseif ($overallWorst -ne "fail") { "warn" } else { $overallWorst } }
+        if ($healthLvl -in @("Warn","Fail")) {
+            $overallWorst = if ($healthLvl -eq "Fail") { "fail" } elseif ($overallWorst -ne "fail") { "warn" } else { $overallWorst }
+            $smartFailCount++
+        }
+        $smartTotal++
 
         $typeLabel = if ($mediaType -ne "Unknown") { "  [$mediaType]" } else { "" }
         Disk-Log "Disk $($phys.Index)  $($phys.Model)" "$sizeStr  $($phys.InterfaceType)$typeLabel" "Info"
@@ -289,6 +296,26 @@ $DiskScript = {
     $diskStatusVal = switch ($overallWorst) { "fail"{"Issues detected"} "warn"{"Warnings found"} default{"Healthy"} }
     $sync.Cards["DiskStatus"] = @{ Value=$diskStatusVal; Status=$overallWorst }
 
+    # SMART summary card (#8) — counts unhealthy/predict-failure drives among physical disks
+    $smartVal = if ($smartTotal -eq 0) { "No disks detected" } `
+                elseif ($smartFailCount -eq 0) { "All $smartTotal healthy" } `
+                else { "$smartFailCount of $smartTotal unhealthy" }
+    $smartStatus = if ($smartTotal -eq 0) { "neutral" } `
+                   elseif ($smartFailCount -eq 0) { "ok" } `
+                   else { "fail" }
+    $sync.Cards["DiskSmart"] = @{ Value=$smartVal; Status=$smartStatus }
+
+    # Disk errors card (#9) — count from the disk-related event log scan above
+    $diskErrCount = ($diskEvents | Where-Object { $_.Level -in @(1,2) }).Count
+    $diskWarnCount = ($diskEvents | Where-Object { $_.Level -eq 3 }).Count
+    $errVal = if ($diskErrCount -eq 0 -and $diskWarnCount -eq 0) { "Clean (48 h)" } `
+              elseif ($diskErrCount -gt 0) { "$diskErrCount error(s)" } `
+              else { "$diskWarnCount warning(s)" }
+    $errStatus = if ($diskErrCount -gt 0) { "fail" } `
+                 elseif ($diskWarnCount -gt 0) { "warn" } `
+                 else { "ok" }
+    $sync.Cards["DiskErrors"] = @{ Value=$errVal; Status=$errStatus }
+
     $sync.DiskStep = "Complete"; $sync.DiskRunning=$false; $sync.DiskComplete=$true
 }
 
@@ -335,13 +362,20 @@ $lblDiskSub.Location = New-Object System.Drawing.Point(10,42); $lblDiskSub.Size 
 $pnlDisk.Controls.Add($lblDiskSub)
 $diskVolumes = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Sort-Object DeviceID)
 $diskCardDefs = @(); $diskXPos = 10
+# Lead with the SMART health card (#8) and disk-error card (#9), then per-volume cards.
+# The two new cards are populated by the background script via $sync.Cards["DiskSmart"]
+# and $sync.Cards["DiskErrors"] keys.
+$diskCardDefs += @{ Key="DiskSmart";  Title="SMART Health";  Sub="Per-drive predictive failure";   X=$diskXPos; Icon=[char]0xE9D9; W=240 }
+$diskXPos += 250
+$diskCardDefs += @{ Key="DiskErrors"; Title="Disk Errors";   Sub="System log, last 48 h";          X=$diskXPos; Icon=[char]0xE7BA; W=240 }
+$diskXPos += 250
 foreach ($diskVol in $diskVolumes) {
     $drvKey = "DiskVol_$($diskVol.DeviceID -replace ':','')"
-    $diskCardDefs += @{ Key=$drvKey; Title="$($diskVol.DeviceID) Space"; Sub="$($diskVol.DeviceID) free space"; X=$diskXPos; Icon=[char]0xEDA2; W=250 }
-    $diskXPos += 260
+    $diskCardDefs += @{ Key=$drvKey; Title="$($diskVol.DeviceID) Space"; Sub="$($diskVol.DeviceID) free space"; X=$diskXPos; Icon=[char]0xEDA2; W=240 }
+    $diskXPos += 250
 }
-if ($diskCardDefs.Count -eq 0) {
-    $diskCardDefs = @( @{ Key="DiskVol_C"; Title="C: Space"; Sub="C: free space"; X=10; Icon=[char]0xEDA2; W=250 } )
+if ($diskVolumes.Count -eq 0) {
+    $diskCardDefs += @{ Key="DiskVol_C"; Title="C: Space"; Sub="C: free space"; X=$diskXPos; Icon=[char]0xEDA2; W=240 }
 }
 $diskCards = @{}
 foreach ($cd in $diskCardDefs) {

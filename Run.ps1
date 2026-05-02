@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.34"
+$ScriptVersion = "1.0.35"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -971,6 +971,49 @@ $btnHubLastReport.Add_Click({
               Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($latest) { Start-Process notepad.exe $latest.FullName }
     else { [System.Windows.Forms.MessageBox]::Show("No reports found yet.", "Open Last Report", "OK", "Information") | Out-Null }
+})
+
+# ---- Last-run summary row -------------------------------------------------------
+# Surfaces date, overall result, and VPU model from the most recent report so users
+# can see at a glance whether anything has been run on this machine and how it went.
+$lblHubLastRun = New-Object System.Windows.Forms.Label
+$lblHubLastRun.Text      = ""
+$lblHubLastRun.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$lblHubLastRun.ForeColor = $ColMuted
+$lblHubLastRun.Location  = New-Object System.Drawing.Point(220, 535)
+$lblHubLastRun.Size      = New-Object System.Drawing.Size(900, 22)
+$lblHubLastRun.AutoEllipsis = $true
+$pnlSysOverview.Controls.Add($lblHubLastRun)
+
+# Refresh the summary every time the panel becomes visible (cheap — one file stat + ~10 lines read)
+$pnlSysOverview.Add_VisibleChanged({
+    if (-not $pnlSysOverview.Visible) { return }
+    try {
+        $latest = Get-ChildItem -Path $OutputDir -Filter "Pulse_Results_*.txt" -ErrorAction SilentlyContinue |
+                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if (-not $latest) {
+            $lblHubLastRun.Text      = "No diagnostic has been run yet."
+            $lblHubLastRun.ForeColor = $ColMuted
+            return
+        }
+        $head = Get-Content $latest.FullName -TotalCount 25 -ErrorAction SilentlyContinue
+        # Try to extract VPU model and overall result from the first 25 lines
+        $model = ($head | Where-Object { $_ -match '^VPU Model\s*:\s*(.+)$' } | Select-Object -First 1) -replace '^VPU Model\s*:\s*',''
+        $overall = ($head | Where-Object { $_ -match '^(Overall|Result|Status)\s*:\s*(.+)$' } | Select-Object -First 1)
+        $whenStr = $latest.LastWriteTime.ToString("MMM d, h:mm tt")
+        $modelStr = if ($model) { " — $model" } else { "" }
+        $resStr = if ($overall) { ($overall -replace '^[^:]+:\s*','') } else { "" }
+        $color = if ($resStr -match 'fail|error|critical') { $ColRed } `
+                 elseif ($resStr -match 'warn|issue|degrad') { $ColYellow } `
+                 elseif ($resStr) { $ColGreen } `
+                 else { $ColMuted }
+        $resBlock = if ($resStr) { "   |   $resStr" } else { "" }
+        $lblHubLastRun.Text      = "Last run: $whenStr$modelStr$resBlock"
+        $lblHubLastRun.ForeColor = $color
+    } catch {
+        $lblHubLastRun.Text = "Last run: report unreadable"
+        $lblHubLastRun.ForeColor = $ColMuted
+    }
 })
 
 # =============================================================================
@@ -4245,6 +4288,9 @@ $DiskScript = {
 
     $overallWorst = "ok"
     $osDrive      = $env:SystemDrive  # e.g. "C:"
+    # Per-card aggregates surfaced as DiskSmart (#8) and DiskErrors (#9)
+    $smartFailCount = 0
+    $smartTotal     = 0
 
     # ── 1. Physical Drives ────────────────────────────────────────────────────
     $sync.DiskStep = "Inventorying physical drives..."
@@ -4296,7 +4342,11 @@ $DiskScript = {
             }
         }
         if ($smartFails.ContainsKey([string]$phys.Index) -and $healthLvl -eq "Pass") { $healthStr = "SMART Predict Failure"; $healthLvl = "Fail" }
-        if ($healthLvl -in @("Warn","Fail")) { $overallWorst = if ($healthLvl -eq "Fail") { "fail" } elseif ($overallWorst -ne "fail") { "warn" } else { $overallWorst } }
+        if ($healthLvl -in @("Warn","Fail")) {
+            $overallWorst = if ($healthLvl -eq "Fail") { "fail" } elseif ($overallWorst -ne "fail") { "warn" } else { $overallWorst }
+            $smartFailCount++
+        }
+        $smartTotal++
 
         $typeLabel = if ($mediaType -ne "Unknown") { "  [$mediaType]" } else { "" }
         Disk-Log "Disk $($phys.Index)  $($phys.Model)" "$sizeStr  $($phys.InterfaceType)$typeLabel" "Info"
@@ -4513,6 +4563,26 @@ $DiskScript = {
     $diskStatusVal = switch ($overallWorst) { "fail"{"Issues detected"} "warn"{"Warnings found"} default{"Healthy"} }
     $sync.Cards["DiskStatus"] = @{ Value=$diskStatusVal; Status=$overallWorst }
 
+    # SMART summary card (#8) — counts unhealthy/predict-failure drives among physical disks
+    $smartVal = if ($smartTotal -eq 0) { "No disks detected" } `
+                elseif ($smartFailCount -eq 0) { "All $smartTotal healthy" } `
+                else { "$smartFailCount of $smartTotal unhealthy" }
+    $smartStatus = if ($smartTotal -eq 0) { "neutral" } `
+                   elseif ($smartFailCount -eq 0) { "ok" } `
+                   else { "fail" }
+    $sync.Cards["DiskSmart"] = @{ Value=$smartVal; Status=$smartStatus }
+
+    # Disk errors card (#9) — count from the disk-related event log scan above
+    $diskErrCount = ($diskEvents | Where-Object { $_.Level -in @(1,2) }).Count
+    $diskWarnCount = ($diskEvents | Where-Object { $_.Level -eq 3 }).Count
+    $errVal = if ($diskErrCount -eq 0 -and $diskWarnCount -eq 0) { "Clean (48 h)" } `
+              elseif ($diskErrCount -gt 0) { "$diskErrCount error(s)" } `
+              else { "$diskWarnCount warning(s)" }
+    $errStatus = if ($diskErrCount -gt 0) { "fail" } `
+                 elseif ($diskWarnCount -gt 0) { "warn" } `
+                 else { "ok" }
+    $sync.Cards["DiskErrors"] = @{ Value=$errVal; Status=$errStatus }
+
     $sync.DiskStep = "Complete"; $sync.DiskRunning=$false; $sync.DiskComplete=$true
 }
 
@@ -4559,13 +4629,20 @@ $lblDiskSub.Location = New-Object System.Drawing.Point(10,42); $lblDiskSub.Size 
 $pnlDisk.Controls.Add($lblDiskSub)
 $diskVolumes = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Sort-Object DeviceID)
 $diskCardDefs = @(); $diskXPos = 10
+# Lead with the SMART health card (#8) and disk-error card (#9), then per-volume cards.
+# The two new cards are populated by the background script via $sync.Cards["DiskSmart"]
+# and $sync.Cards["DiskErrors"] keys.
+$diskCardDefs += @{ Key="DiskSmart";  Title="SMART Health";  Sub="Per-drive predictive failure";   X=$diskXPos; Icon=[char]0xE9D9; W=240 }
+$diskXPos += 250
+$diskCardDefs += @{ Key="DiskErrors"; Title="Disk Errors";   Sub="System log, last 48 h";          X=$diskXPos; Icon=[char]0xE7BA; W=240 }
+$diskXPos += 250
 foreach ($diskVol in $diskVolumes) {
     $drvKey = "DiskVol_$($diskVol.DeviceID -replace ':','')"
-    $diskCardDefs += @{ Key=$drvKey; Title="$($diskVol.DeviceID) Space"; Sub="$($diskVol.DeviceID) free space"; X=$diskXPos; Icon=[char]0xEDA2; W=250 }
-    $diskXPos += 260
+    $diskCardDefs += @{ Key=$drvKey; Title="$($diskVol.DeviceID) Space"; Sub="$($diskVol.DeviceID) free space"; X=$diskXPos; Icon=[char]0xEDA2; W=240 }
+    $diskXPos += 250
 }
-if ($diskCardDefs.Count -eq 0) {
-    $diskCardDefs = @( @{ Key="DiskVol_C"; Title="C: Space"; Sub="C: free space"; X=10; Icon=[char]0xEDA2; W=250 } )
+if ($diskVolumes.Count -eq 0) {
+    $diskCardDefs += @{ Key="DiskVol_C"; Title="C: Space"; Sub="C: free space"; X=$diskXPos; Icon=[char]0xEDA2; W=240 }
 }
 $diskCards = @{}
 foreach ($cd in $diskCardDefs) {
@@ -4642,8 +4719,25 @@ $EvtScript = {
     function Evt-Section { param([string]$Title)
         $sync.EvtQueue.Enqueue(@{ Label=""; Result=$Title; L="Section" }) }
 
+    # Provider-name → category map. Used to classify event sources into actionable
+    # buckets so agents can tell at a glance whether errors are hardware (Disk/Driver)
+    # vs software (Service/App). The wildcard match is on the ProviderName from the
+    # Windows event log (e.g. "Microsoft-Windows-DistributedCOM", "disk", "Service Control Manager").
+    function Get-EvtCategory {
+        param([string]$ProviderName)
+        $p = $ProviderName.ToLower()
+        if ($p -match '^(disk|ntfs|volsnap|volmgr|partmgr|storahci|storport|storvsc|fvevol|hidserv|usbstor)') { return "Disk" }
+        if ($p -match '(driver|wudfrd|cdrom|usb|hid|netbt|tcpip|bowser|netio|smb|kernel)') { return "Driver" }
+        if ($p -match '(service control manager|wininit|usermodepowerservice|securitycenter|workstation|server|browser|w32time|spooler)') { return "Service" }
+        if ($p -match '(application|application error|\.net|wer|sidebyside|esent|user profile|appx|search|setup|distributedcom|wmi)') { return "App" }
+        if ($p -match '(network|tcpip|netbt|dhcp|dnsapi|netio|nlasvc|wlan|wifi)') { return "Network" }
+        return "Other"
+    }
+
     $since = (Get-Date).AddHours(-$EvtHours)
     $totalErrors = 0; $totalWarns = 0
+    # Per-category error/warn tallies for the card label
+    $catTotals = @{ Disk = 0; Driver = 0; Service = 0; App = 0; Network = 0; Other = 0 }
 
     foreach ($logName in @("System","Application")) {
         if ($sync.EvtCancelled) { break }
@@ -4654,30 +4748,53 @@ $EvtScript = {
             $errs = @($evts | Where-Object { $_.Level -in @(1,2) })
             $wrns = @($evts | Where-Object { $_.Level -eq 3 })
             $totalErrors += $errs.Count; $totalWarns += $wrns.Count
+
+            # Tally by category for the summary card
+            foreach ($e in $errs) {
+                $cat = Get-EvtCategory -ProviderName $e.ProviderName
+                $catTotals[$cat] = $catTotals[$cat] + 1
+            }
+
             if ($evts.Count -eq 0) {
                 Evt-Log "Last ${EvtHours}h" "No errors or warnings" "Pass"
             } else {
-                Evt-Log "Errors (last ${EvtHours}h)"   "$($errs.Count)" $(if($errs.Count-gt0){"Fail"}else{"Pass"})
-                Evt-Log "Warnings (last ${EvtHours}h)" "$($wrns.Count)" $(if($wrns.Count-gt0){"Warn"}else{"Info"})
+                Evt-Log "Errors (last ${EvtHours}h)"   "$($errs.Count)" $(if($errs.Count -gt 0){"Fail"}else{"Pass"})
+                Evt-Log "Warnings (last ${EvtHours}h)" "$($wrns.Count)" $(if($wrns.Count -gt 0){"Warn"}else{"Info"})
                 foreach ($ev in ($errs | Select-Object -First 20)) {
                     if ($sync.EvtCancelled) { break }
                     $msg = (($ev.Message -split "`n")[0] -replace '\s+',' ').Trim()
-                    if ($msg.Length -gt 72) { $msg = $msg.Substring(0,69)+"..." }
-                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  $($ev.ProviderName)" $msg "Fail"
+                    if ($msg.Length -gt 64) { $msg = $msg.Substring(0,61)+"..." }
+                    $cat = Get-EvtCategory -ProviderName $ev.ProviderName
+                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  [$cat] $($ev.ProviderName)" $msg "Fail"
                 }
                 foreach ($ev in ($wrns | Select-Object -First 10)) {
                     if ($sync.EvtCancelled) { break }
                     $msg = (($ev.Message -split "`n")[0] -replace '\s+',' ').Trim()
-                    if ($msg.Length -gt 72) { $msg = $msg.Substring(0,69)+"..." }
-                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  $($ev.ProviderName)" $msg "Warn"
+                    if ($msg.Length -gt 64) { $msg = $msg.Substring(0,61)+"..." }
+                    $cat = Get-EvtCategory -ProviderName $ev.ProviderName
+                    Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  [$cat] $($ev.ProviderName)" $msg "Warn"
                 }
             }
         } catch { Evt-Log $logName "Error reading event log" "Warn" }
     }
 
+    # Build a category breakdown for the card label — only show non-zero categories,
+    # ordered by severity-of-implication (Disk → Driver → Service → Network → App → Other)
+    $catOrder = @("Disk","Driver","Service","Network","App","Other")
+    $catParts = @()
+    foreach ($c in $catOrder) {
+        if ($catTotals[$c] -gt 0) { $catParts += "$($catTotals[$c]) $($c.ToLower())" }
+    }
+    $cardValue = if ($totalErrors -gt 0) {
+        if ($catParts.Count -gt 0) { ($catParts -join " / ") } else { "$totalErrors errors" }
+    } elseif ($totalWarns -gt 0) {
+        "$totalWarns warns"
+    } else {
+        "Clean"
+    }
     $sync.Cards["EvtStatus"] = @{
-        Value  = if($totalErrors-gt0){"$totalErrors errors"}elseif($totalWarns-gt0){"$totalWarns warns"}else{"Clean"}
-        Status = if($totalErrors-gt0){"fail"}elseif($totalWarns-gt0){"warn"}else{"ok"}
+        Value  = $cardValue
+        Status = if($totalErrors -gt 0){"fail"}elseif($totalWarns -gt 0){"warn"}else{"ok"}
     }
     $sync.EvtStep = "Complete"; $sync.EvtRunning=$false; $sync.EvtComplete=$true
 }

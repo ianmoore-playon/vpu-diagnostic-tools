@@ -134,3 +134,46 @@ $btnHubLastReport.Add_Click({
     else { [System.Windows.Forms.MessageBox]::Show("No reports found yet.", "Open Last Report", "OK", "Information") | Out-Null }
 })
 
+# ---- Last-run summary row -------------------------------------------------------
+# Surfaces date, overall result, and VPU model from the most recent report so users
+# can see at a glance whether anything has been run on this machine and how it went.
+$lblHubLastRun = New-Object System.Windows.Forms.Label
+$lblHubLastRun.Text      = ""
+$lblHubLastRun.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$lblHubLastRun.ForeColor = $ColMuted
+$lblHubLastRun.Location  = New-Object System.Drawing.Point(220, 535)
+$lblHubLastRun.Size      = New-Object System.Drawing.Size(900, 22)
+$lblHubLastRun.AutoEllipsis = $true
+$pnlSysOverview.Controls.Add($lblHubLastRun)
+
+# Refresh the summary every time the panel becomes visible (cheap — one file stat + ~10 lines read)
+$pnlSysOverview.Add_VisibleChanged({
+    if (-not $pnlSysOverview.Visible) { return }
+    try {
+        $latest = Get-ChildItem -Path $OutputDir -Filter "Pulse_Results_*.txt" -ErrorAction SilentlyContinue |
+                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if (-not $latest) {
+            $lblHubLastRun.Text      = "No diagnostic has been run yet."
+            $lblHubLastRun.ForeColor = $ColMuted
+            return
+        }
+        $head = Get-Content $latest.FullName -TotalCount 25 -ErrorAction SilentlyContinue
+        # Try to extract VPU model and overall result from the first 25 lines
+        $model = ($head | Where-Object { $_ -match '^VPU Model\s*:\s*(.+)$' } | Select-Object -First 1) -replace '^VPU Model\s*:\s*',''
+        $overall = ($head | Where-Object { $_ -match '^(Overall|Result|Status)\s*:\s*(.+)$' } | Select-Object -First 1)
+        $whenStr = $latest.LastWriteTime.ToString("MMM d, h:mm tt")
+        $modelStr = if ($model) { " — $model" } else { "" }
+        $resStr = if ($overall) { ($overall -replace '^[^:]+:\s*','') } else { "" }
+        $color = if ($resStr -match 'fail|error|critical') { $ColRed } `
+                 elseif ($resStr -match 'warn|issue|degrad') { $ColYellow } `
+                 elseif ($resStr) { $ColGreen } `
+                 else { $ColMuted }
+        $resBlock = if ($resStr) { "   |   $resStr" } else { "" }
+        $lblHubLastRun.Text      = "Last run: $whenStr$modelStr$resBlock"
+        $lblHubLastRun.ForeColor = $color
+    } catch {
+        $lblHubLastRun.Text = "Last run: report unreadable"
+        $lblHubLastRun.ForeColor = $ColMuted
+    }
+})
+

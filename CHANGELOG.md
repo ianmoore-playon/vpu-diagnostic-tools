@@ -10,6 +10,17 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.35] - 2026-05-01
+
+### Added
+
+- **Event Logs categorization** (closes #29, #44) — `ProviderName` now mapped to one of six categories: Disk, Driver, Service, Network, App, Other. The summary card replaces the bare `"$totalErrors errors"` with a category breakdown like `"3 disk / 1 driver / 2 app"`. Per-row labels prepend a `[Disk]` / `[Driver]` / `[Service]` badge so agents can scan the log without reading every provider name.
+- **SMART Health card** on the Disks tab (closes #8) — surfaces aggregate predictive-failure status across physical drives (`"All 2 healthy"` / `"1 of 2 unhealthy"`).
+- **Disk Errors card** on the Disks tab (closes #9) — counts disk-related event log errors over the last 48h (already scanned by the existing `Disk Event Log Errors` section), promoted from log row to prominent card.
+- **Home last-run summary** (closes #39) — Home tab now shows date, VPU model, and overall result of the most recent diagnostic next to the Open Last Report button. Refreshes whenever the Home panel becomes visible.
+
+---
+
 ## [1.0.34] - 2026-05-01
 
 ### Added
