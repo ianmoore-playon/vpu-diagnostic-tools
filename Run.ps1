@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.39"
+$ScriptVersion = "1.0.40"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -5479,18 +5479,25 @@ function Get-FdModuleSummary {
     switch ($Idx) {
         0 { # System Overview
             $v = if ($sync.Cards.ContainsKey("SysInfo")) { $sync.Cards["SysInfo"].Value } else { "" }
-            return if ($v -and $v -ne "--") { $v } else { "Hardware details collected" }
+            # PS 5.1: `return if (...)` is invalid (if is a statement, not expression).
+            # Wrap in $() or assign first.
+            if ($v -and $v -ne "--") { return $v } else { return "Hardware details collected" }
         }
         1 { # Network Configuration
             if ($Worst -eq "ok") { return "Internet connected - all ports and domains reachable" }
             $parts = @()
             foreach ($k in @("NetInternet","NetPorts","NetDomains")) {
-                if ($sync.Cards.ContainsKey($k)) {
-                    $c = $sync.Cards[$k]
-                    if ($c.Status -ne "ok" -and $c.Value -and $c.Value -ne "--") { $parts += $c.Value }
+                # Read from the synchronized _nc_/_ncs_ keys preferentially (#60)
+                $val = $sync["_nc_$k"]
+                $sts = $sync["_ncs_$k"]
+                if (-not $val -and $sync.Cards.ContainsKey($k)) {
+                    $val = $sync.Cards[$k].Value
+                    $sts = $sync.Cards[$k].Status
                 }
+                if ($sts -ne "ok" -and $val -and $val -ne "--") { $parts += $val }
             }
-            return if ($parts) { $parts -join "   |   " } else { Get-ModuleSummaryText @("NetInternet","NetPorts","NetDomains") }
+            if ($parts.Count -gt 0) { return ($parts -join "   |   ") }
+            return Get-ModuleSummaryText @("NetInternet","NetPorts","NetDomains")
         }
         2 { # Camera Connectivity
             if ($Worst -eq "ok") { return "All cameras online and responding normally" }
@@ -5500,7 +5507,7 @@ function Get-FdModuleSummary {
             $v = if ($sync.Cards.ContainsKey("SvcStatus")) { $sync.Cards["SvcStatus"].Value } else { "" }
             if ($Worst -eq "ok") { return "All Pixellot services running" }
             if ($v -eq "None found") { return "No Pixellot services detected on this VPU" }
-            return if ($v -and $v -ne "--") { $v } else { "Service check complete" }
+            if ($v -and $v -ne "--") { return $v } else { return "Service check complete" }
         }
         4 { # VPU Hardware
             return Get-ModuleSummaryText @("HwGpu","HwMonitor","HwMmk")

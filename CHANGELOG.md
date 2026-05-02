@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.40] - 2026-05-01
+
+### Fixed
+
+- **PowerShell 5.1 syntax error spam during Full Diagnostic** — `Get-FdModuleSummary` had three `return if (...) { ... } else { ... }` patterns. PS 5.1 treats `if` as a statement (not an expression) so this throws `"The term 'if' is not recognized..."` repeatedly during module summary generation. Replaced with explicit `if/else { return X }` form. Pre-existing bug; surfaced in v1.0.38 testing.
+
+---
+
 ## [1.0.39] - 2026-05-01
 
 ### Fixed
