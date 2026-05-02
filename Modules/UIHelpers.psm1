@@ -265,17 +265,219 @@ function New-StubPanel {
 
 function Set-ActiveNav {
     param($Active)
-    $tabNavs = @($navSysOverview,$navNetConfig,$navCamera,$navPoE,$navServices,$navDisk,$navEvents,$navReports,$navSysInfo)
+    # Includes the v1.0.42-redesigned sidebar nav (Settings + About are now visible
+    # nav items rather than hidden compat buttons).
+    $tabNavs = @($navSysOverview,$navNetConfig,$navCamera,$navPoE,$navServices,$navDisk,$navEvents,$navReports,$navSysInfo,$navSettings,$navAbout)
     foreach ($nb in $tabNavs) {
+        if (-not $nb) { continue }
+        # New sidebar buttons paint their own background; reset to base sidebar color.
         $nb.BackColor = $ColSidebar
-        if ($nb.Tag -ne $null) { $nb.Tag.Active = $false }
+        if ($nb.Tag -ne $null -and $nb.Tag.PSObject.Properties['Active']) { $nb.Tag.Active = $false }
         $nb.Invalidate()
     }
     if ($Active -and $tabNavs -contains $Active) {
-        $Active.BackColor = $ColNavActive
-        $Active.Tag.Active = $true
+        # Subtle background tint on the active row, plus the in-Paint accent strip.
+        $Active.BackColor = [System.Drawing.Color]::FromArgb(28, 42, 62)
+        if ($Active.Tag -ne $null -and $Active.Tag.PSObject.Properties['Active']) { $Active.Tag.Active = $true }
         $Active.Invalidate()
     }
+}
+
+# ---------- v1.0.42 redesign helpers ---------------------------------------
+# Each redesigned panel uses these for consistent header / summary / action-bar
+# patterns. Existing panels can be migrated incrementally.
+
+# New-SectionHeader: title + subtitle on the left, "Overall Status" pill on the right.
+# Returns a hashtable of references so callers can update the pill state later
+# (PillBg, PillIcon, PillTitle, PillSub).
+function New-SectionHeader {
+    param(
+        [System.Windows.Forms.Panel]$Parent,
+        [string]$Title,
+        [string]$Subtitle,
+        [int]$Y = 24
+    )
+    $lblTitle = New-Object System.Windows.Forms.Label
+    $lblTitle.Text      = $Title
+    $lblTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 16)
+    $lblTitle.ForeColor = $ColText
+    $lblTitle.Location  = New-Object System.Drawing.Point(28, $Y)
+    $lblTitle.Size      = New-Object System.Drawing.Size(900, 30)
+    $Parent.Controls.Add($lblTitle)
+
+    $lblSub = New-Object System.Windows.Forms.Label
+    $lblSub.Text      = $Subtitle
+    $lblSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+    $lblSub.ForeColor = $ColMuted
+    $lblSub.Location  = New-Object System.Drawing.Point(28, ($Y + 32))
+    $lblSub.Size      = New-Object System.Drawing.Size(900, 20)
+    $Parent.Controls.Add($lblSub)
+
+    # "Overall Status" pill on the right — neutral by default; caller updates via Set-SectionPill.
+    $pill = New-Object System.Windows.Forms.Panel
+    $pill.Size      = New-Object System.Drawing.Size(220, 60)
+    $pill.Location  = New-Object System.Drawing.Point(($Parent.Width - 248), $Y)
+    $pill.BackColor = $ColCard
+    $pill.Anchor    = $AnchorTR
+    $pill.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 220, 60)), 8))
+    $Parent.Controls.Add($pill)
+
+    $lblPillLabel = New-Object System.Windows.Forms.Label
+    $lblPillLabel.Text      = "Overall Status"
+    $lblPillLabel.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lblPillLabel.ForeColor = $ColMuted
+    $lblPillLabel.Location  = New-Object System.Drawing.Point(16, 8)
+    $lblPillLabel.Size      = New-Object System.Drawing.Size(140, 16)
+    $pill.Controls.Add($lblPillLabel)
+
+    $lblPillIcon = New-Object System.Windows.Forms.Label
+    $lblPillIcon.Text      = [char]0xE9D5   # info circle (neutral)
+    $lblPillIcon.Font      = New-Object System.Drawing.Font("Segoe MDL2 Assets", 13)
+    $lblPillIcon.ForeColor = $ColMuted
+    $lblPillIcon.Location  = New-Object System.Drawing.Point(16, 28)
+    $lblPillIcon.Size      = New-Object System.Drawing.Size(20, 22)
+    $pill.Controls.Add($lblPillIcon)
+
+    $lblPillTitle = New-Object System.Windows.Forms.Label
+    $lblPillTitle.Text      = "Pending"
+    $lblPillTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
+    $lblPillTitle.ForeColor = $ColMuted
+    $lblPillTitle.Location  = New-Object System.Drawing.Point(40, 28)
+    $lblPillTitle.Size      = New-Object System.Drawing.Size(170, 22)
+    $pill.Controls.Add($lblPillTitle)
+
+    return @{
+        Title    = $lblTitle
+        Subtitle = $lblSub
+        Pill     = $pill
+        PillIcon = $lblPillIcon
+        PillTitle= $lblPillTitle
+    }
+}
+
+# Update the section header's status pill. Status is one of: ok, warn, fail, neutral.
+function Set-SectionPill {
+    param([hashtable]$Header, [string]$Status, [string]$Title = $null)
+    if (-not $Header) { return }
+    $iconChar = switch ($Status) { "ok"{[char]0xE73E} "warn"{[char]0xE7BA} "fail"{[char]0xEA39} default{[char]0xE9D5} }
+    $color    = switch ($Status) { "ok"{$ColGreen}    "warn"{$ColYellow}  "fail"{$ColRed}    default{$ColMuted} }
+    $defaultTitle = switch ($Status) { "ok"{"Healthy"} "warn"{"Warning"} "fail"{"Critical"} default{"Pending"} }
+    $Header.PillIcon.Text      = $iconChar
+    $Header.PillIcon.ForeColor = $color
+    $Header.PillTitle.Text     = if ($Title) { $Title } else { $defaultTitle }
+    $Header.PillTitle.ForeColor= $color
+}
+
+# New-SummaryPanel: bordered card with "Summary" header and a vertically stacked
+# checklist of bullet rows. Caller passes in items as @(@{Status="ok";Text="..."}, ...).
+# Returns a hashtable with the panel + an Update method via Set-SummaryItems.
+function New-SummaryPanel {
+    param(
+        [System.Windows.Forms.Panel]$Parent,
+        [int]$X, [int]$Y, [int]$W, [int]$H,
+        [string]$Title = "Summary"
+    )
+    $card = New-Object System.Windows.Forms.Panel
+    $card.Size      = New-Object System.Drawing.Size($W, $H)
+    $card.Location  = New-Object System.Drawing.Point($X, $Y)
+    $card.BackColor = $ColCard
+    $card.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $W, $H)), 8))
+    $Parent.Controls.Add($card)
+
+    $lblTitle = New-Object System.Windows.Forms.Label
+    $lblTitle.Text      = $Title
+    $lblTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+    $lblTitle.ForeColor = $ColText
+    $lblTitle.Location  = New-Object System.Drawing.Point(16, 14)
+    $lblTitle.Size      = New-Object System.Drawing.Size(($W - 32), 20)
+    $card.Controls.Add($lblTitle)
+
+    $itemsHost = New-Object System.Windows.Forms.Panel
+    $itemsHost.Location  = New-Object System.Drawing.Point(8, 40)
+    $itemsHost.Size      = New-Object System.Drawing.Size(($W - 16), ($H - 48))
+    $itemsHost.BackColor = $ColCard
+    $card.Controls.Add($itemsHost)
+
+    return @{ Card = $card; ItemsHost = $itemsHost }
+}
+
+# Populate a summary panel with check-bullet rows.
+function Set-SummaryItems {
+    param([hashtable]$Summary, [array]$Items)
+    if (-not $Summary -or -not $Summary.ItemsHost) { return }
+    $host = $Summary.ItemsHost
+    $host.Controls.Clear()
+    $rowY = 0
+    foreach ($it in $Items) {
+        $st = if ($it.Status) { $it.Status } else { "ok" }
+        $iconChar = switch ($st) { "ok"{[char]0xE73E} "warn"{[char]0xE7BA} "fail"{[char]0xEA39} default{[char]0xE9D5} }
+        $color    = switch ($st) { "ok"{$ColGreen}    "warn"{$ColYellow}  "fail"{$ColRed}    default{$ColMuted} }
+
+        $lblIcn = New-Object System.Windows.Forms.Label
+        $lblIcn.Text      = $iconChar
+        $lblIcn.Font      = New-Object System.Drawing.Font("Segoe MDL2 Assets", 9)
+        $lblIcn.ForeColor = $color
+        $lblIcn.Location  = New-Object System.Drawing.Point(8, ($rowY + 2))
+        $lblIcn.Size      = New-Object System.Drawing.Size(18, 18)
+        $host.Controls.Add($lblIcn)
+
+        $lblTxt = New-Object System.Windows.Forms.Label
+        $lblTxt.Text      = $it.Text
+        $lblTxt.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+        $lblTxt.ForeColor = $ColText
+        $lblTxt.Location  = New-Object System.Drawing.Point(28, $rowY)
+        $lblTxt.Size      = New-Object System.Drawing.Size(($host.Width - 32), 22)
+        $host.Controls.Add($lblTxt)
+
+        $rowY += 22
+    }
+}
+
+# New-ActionBar: bottom-aligned row with Export (left, secondary) + primary action (right).
+# Returns the export & primary buttons so callers can wire Click handlers.
+function New-ActionBar {
+    param(
+        [System.Windows.Forms.Panel]$Parent,
+        [int]$Y,
+        [string]$ExportText  = "Export Report",
+        [string]$PrimaryText = "Run Full Diagnostic"
+    )
+    $bar = New-Object System.Windows.Forms.Panel
+    $bar.Size      = New-Object System.Drawing.Size(($Parent.Width - 56), 56)
+    $bar.Location  = New-Object System.Drawing.Point(28, $Y)
+    $bar.BackColor = $ColBg
+    $bar.Anchor    = $AnchorBLR
+    $Parent.Controls.Add($bar)
+
+    $btnExport = New-Object System.Windows.Forms.Button
+    $btnExport.Text      = $ExportText
+    $btnExport.Size      = New-Object System.Drawing.Size(160, 36)
+    $btnExport.Location  = New-Object System.Drawing.Point(0, 10)
+    $btnExport.BackColor = $ColCard
+    $btnExport.ForeColor = $ColText
+    $btnExport.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnExport.FlatAppearance.BorderColor = $ColBorder
+    $btnExport.FlatAppearance.BorderSize  = 1
+    $btnExport.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
+    $btnExport.Cursor    = [System.Windows.Forms.Cursors]::Hand
+    $btnExport.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 160, 36)), 6))
+    $bar.Controls.Add($btnExport)
+
+    $btnPrimary = New-Object System.Windows.Forms.Button
+    $btnPrimary.Text      = $PrimaryText
+    $btnPrimary.Size      = New-Object System.Drawing.Size(200, 36)
+    $btnPrimary.Location  = New-Object System.Drawing.Point(($bar.Width - 200), 10)
+    $btnPrimary.BackColor = $ColAccent
+    $btnPrimary.ForeColor = [System.Drawing.Color]::White
+    $btnPrimary.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnPrimary.FlatAppearance.BorderSize = 0
+    $btnPrimary.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5)
+    $btnPrimary.Cursor    = [System.Windows.Forms.Cursors]::Hand
+    $btnPrimary.Anchor    = $AnchorTR
+    $btnPrimary.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 200, 36)), 6))
+    $bar.Controls.Add($btnPrimary)
+
+    return @{ Bar = $bar; ExportBtn = $btnExport; PrimaryBtn = $btnPrimary }
 }
 
 function Show-Panel {

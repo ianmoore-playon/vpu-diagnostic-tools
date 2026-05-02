@@ -10,6 +10,35 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.42] - 2026-05-01
+
+### Changed
+
+- **Major chrome redesign — Wave A pilot** (closes part of #4, partial #46, #16) — replaces the dual top-header + tab-bar with a single left sidebar matching the user-provided mockup.
+  - **Form:** bumped from 1280x760 → 1500x800 to accommodate the 220-wide sidebar without shrinking the content area.
+  - **Sidebar:** vertical nav with icon + label rows: System Overview, Network Configuration, Camera Connectivity, PoE / NIC Hardware, Pixellot Services, Disk & System Health, System Information, Event Viewer, Reports. Settings and About pinned at the bottom of the sidebar.
+  - **Active state:** left blue accent strip + subtle dark tint on the row, drawn in a custom Paint event.
+  - **Removed:** the old top header bar, tab bar, and in-tab Run Diagnostic button. Each redesigned panel now provides its own bottom action bar (Export + Run).
+  - **Bottom status bar:** unified across the form — green dot + "Status: Ready" on the left, "Last Run" mid-bar, "Tool Version: x.y.z" right-aligned.
+- **Home page redesigned** — title "VPU Diagnostic Tool Suite" with descriptive subtitle, 8 mockup-style tiles in a 4×2 grid (each tile has a colored circular icon badge, semibold title, 2-line description). Tiles hover-highlight with the accent color. Bottom action row: prominent **Run Full Diagnostic** (primary) + **Open Last Report** (secondary) + last-run summary text aligned right.
+- **Network Configuration panel redesigned** — full mockup-style layout:
+  - Section header (title + subtitle + Overall Status pill that auto-derives from the worst test result)
+  - Left column: Network Adapters / IP Configuration / Firewall Status cards populated from `Get-NetAdapter`, `Get-NetIPConfiguration`, `Get-NetFirewallProfile` (refresh on panel show, no runspace needed).
+  - Right column: Connectivity Tests log + Summary panel (green-check / yellow-warn / red-fail bullet list of test outcomes).
+  - Bottom action bar: Export Report + Open Network Settings + Run Full Diagnostic + Cancel.
+
+### Added
+
+- **`New-SectionHeader`** helper in `UIHelpers.psm1` — title / subtitle / status pill pattern, applied uniformly to redesigned panels via `Set-SectionPill`.
+- **`New-SummaryPanel`** + **`Set-SummaryItems`** helpers — bordered card with a checklist of color-coded bullet rows, used at the bottom of redesigned panels.
+- **`New-ActionBar`** helper — bottom row with Export (left, secondary) + primary action (right) for every redesigned panel.
+
+### Note
+
+Other panels (Camera, Services, Hardware, Disks, Event Logs, Reports, System Info) still use the previous internal layout — they're wrapped by the new chrome but haven't been redesigned yet. Wave B + C will roll them out one at a time.
+
+---
+
 ## [1.0.41] - 2026-05-01
 
 ### Added
