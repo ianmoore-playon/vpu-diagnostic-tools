@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.35"
+$ScriptVersion = "1.0.36"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -640,7 +640,13 @@ $timerToast.Add_Tick({
     # Auto-hide when any new run starts
     $anyRunning = $sync.Running -or $sync.NetRunning -or $sync.SvcRunning -or
                   $sync.DiskRunning -or $sync.EvtRunning -or $sync.HwRunning -or $sync.SysInfoRunning
-    if ($anyRunning -and $pnlToast.Visible) { $pnlToast.Visible = $false }
+    if ($anyRunning -and $pnlToast.Visible) { $pnlToast.Visible = $false; $script:toastShownAt = $null }
+
+    # Auto-dismiss all-clear toasts after 8 seconds (sticky for warnings/issues)
+    if ($script:toastShownAt -and $pnlToast.Visible -and ((Get-Date) - $script:toastShownAt).TotalSeconds -ge 8) {
+        $pnlToast.Visible = $false
+        $script:toastShownAt = $null
+    }
 
     foreach ($key in $toastModuleMeta.Keys) {
         $nowDone = $sync[$key] -eq $true
@@ -662,7 +668,39 @@ $timerToast.Add_Tick({
             $clr  = if ($isOk -and -not $isWarn) { $ColGreen } elseif ($isWarn) { $ColYellow } else { $ColRed }
             $icon = if ($isOk -and -not $isWarn) { [char]0xE73E } elseif ($isWarn) { [char]0xE7BA } else { [char]0xEA39 }
             $msg  = "$($meta.Name)  -  " + $(if ($isOk -and -not $isWarn) { "All Clear" } elseif ($isWarn) { "Warning" } else { "Issues Found" })
-            $sub  = "Completed $(Get-Date -Format 'h:mm:ss tt')   |   Click X to dismiss"
+
+            # Build detail + next-step hint per module (#12). Counts come from $sync;
+            # next-step points to the relevant tab when issues are found.
+            $detail = ""
+            switch ($key) {
+                "NetComplete" {
+                    if ($isOk -and -not $isWarn) { $detail = "All ports and domains reachable" }
+                    else {
+                        $pf = [int]$sync.NetPortFail; $df = [int]$sync.NetDomainFail
+                        $detail = "$pf port / $df domain failure(s) — open Network tab to inspect"
+                    }
+                }
+                "SvcComplete" {
+                    $detail = if ($isOk) { "All required services running" } else { "Service issues — open Services tab to inspect" }
+                }
+                "DiskComplete" {
+                    $detail = if ($isOk) { "All drives healthy" } else { "Disk issues — open Disks tab to inspect" }
+                }
+                "EvtComplete" {
+                    $ev = $sync.Cards["EvtStatus"].Value
+                    $detail = if ($isOk) { "$ev — no recent OS errors" } else { "$ev — open Event Logs tab to inspect" }
+                }
+                "HwComplete" {
+                    $detail = if ($isOk) { "GPU, monitor, and peripherals OK" } else { "Hardware issues — open Hardware tab to inspect" }
+                }
+                "SysInfoComplete" {
+                    $detail = "System inventory collected"
+                }
+                default {
+                    $detail = if ($isOk) { "No issues found" } else { "Open the relevant tab to inspect" }
+                }
+            }
+            $sub  = "$detail   |   $(Get-Date -Format 'h:mm tt')"
 
             $pnlToastAccent.BackColor = $clr
             $lblToastIcon.Text        = $icon
@@ -672,6 +710,14 @@ $timerToast.Add_Tick({
             $lblToastSub.Text         = $sub
             $pnlToast.Visible         = $true
             $pnlToast.BringToFront()
+
+            # Auto-dismiss for all-clear after 8 seconds; warnings/issues stay sticky
+            # so they don't disappear before the agent has a chance to read them.
+            if ($isOk -and -not $isWarn) {
+                $script:toastShownAt = Get-Date
+            } else {
+                $script:toastShownAt = $null
+            }
         }
         # Reset state when module resets (new run)
         if (-not $sync[$key] -and ($toastPrevState[$key] -eq 1)) {

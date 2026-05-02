@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.36] - 2026-05-01
+
+### Changed
+
+- **Toast notifications: detail + next-step hint** (closes #12) — toast subtitle now includes module-specific detail (e.g. `"2 port / 1 domain failure(s) — open Network tab to inspect"`) instead of a generic dismiss reminder. All-clear toasts auto-dismiss after 8 seconds; warning/issue toasts stay sticky until manually dismissed (so agents have time to read them).
+
+---
+
 ## [1.0.35] - 2026-05-01
 
 ### Added
