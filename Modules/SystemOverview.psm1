@@ -113,7 +113,7 @@ $hubCardDefs = @(
     @{ Nav="navNetConfig";  Title="Network Configuration";  Desc="IP, DNS, firewall, and connectivity tests for required ports";       Icon=0xE701; Color=$accentBlue; R=0; C=1 }
     @{ Nav="navCamera";     Title="Camera Connectivity";    Desc="Cameras, NICs, link status, and the Fault Isolator wizard";          Icon=0xE722; Color=$cyan;       R=0; C=2 }
     @{ Nav="navServices";   Title="Pixellot Services";      Desc="Pixellot agent, encoder, watchdog, and remote service status";       Icon=0xE9F5; Color=$violet;     R=0; C=3 }
-    @{ Nav="navPoE";        Title="PoE / NIC Hardware";     Desc="PoE budget, GPU, monitor, peripherals, and per-port NIC layout";     Icon=0xE7E8; Color=$emerald;    R=1; C=0 }
+    @{ Nav="navPoE";        Title="Hardware & Peripherals"; Desc="GPU, monitor, input devices, PoE budget, and NIC link uptime";       Icon=0xE7E8; Color=$emerald;    R=1; C=0 }
     @{ Nav="navDisk";       Title="System & Disk Health";   Desc="Free space, SMART health, and disk-related event log errors";        Icon=0xEDA2; Color=$amber;      R=1; C=1 }
     @{ Nav="navEvents";     Title="Event Viewer";           Desc="Recent OS errors filtered to VPU-relevant providers";                Icon=0xE7BA; Color=$rose;       R=1; C=2 }
     @{ Nav="navReports";    Title="Reports";                Desc="View, copy, and export saved diagnostic reports";                    Icon=0xE7C3; Color=$indigo;     R=1; C=3 }

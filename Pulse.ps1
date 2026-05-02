@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.46"
+$ScriptVersion = "1.0.47"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -367,7 +367,7 @@ $sbNavY = 86
 $navSysOverview = New-SidebarNavButton "System Overview"        0xE80F $sbNavY; $sbNavY += 42
 $navNetConfig   = New-SidebarNavButton "Network Configuration"  0xE701 $sbNavY; $sbNavY += 42
 $navCamera      = New-SidebarNavButton "Camera Connectivity"    0xE722 $sbNavY; $sbNavY += 42
-$navPoE         = New-SidebarNavButton "PoE / NIC Hardware"     0xE7E8 $sbNavY; $sbNavY += 42
+$navPoE         = New-SidebarNavButton "Hardware & Peripherals" 0xE7E8 $sbNavY; $sbNavY += 42
 $navServices    = New-SidebarNavButton "Pixellot Services"      0xE9F5 $sbNavY; $sbNavY += 42
 $navDisk        = New-SidebarNavButton "Disk & System Health"   0xEDA2 $sbNavY; $sbNavY += 42
 $navSysInfo     = New-SidebarNavButton "System Information"     0xE9A0 $sbNavY; $sbNavY += 42
@@ -405,7 +405,7 @@ $tabTip.SetToolTip($navSysInfo,     "CPU, RAM, GPU, storage, and network adapter
 $tabTip.SetToolTip($navNetConfig,   "Internet access, required port connectivity, and DNS resolution for Pixellot services")
 $tabTip.SetToolTip($navCamera,      "Camera NIC link speeds, cable-fault detection, ping/RTSP checks, and PoE power budget")
 $tabTip.SetToolTip($navServices,    "Running status of Pixellot agent, encoder, and support services")
-$tabTip.SetToolTip($navPoE,         "PoE card power budget, per-port voltage and current, GPU and peripheral status")
+$tabTip.SetToolTip($navPoE,         "GPU, monitor, input devices, PoE budget, and NIC link uptime (NIC port layout lives on Camera Connectivity)")
 $tabTip.SetToolTip($navDisk,        "Drive free space, disk health, and system memory availability")
 $tabTip.SetToolTip($navEvents,      "Recent OS system errors filtered for hardware and service-related issues")
 $tabTip.SetToolTip($navReports,     "View, copy, or export previously saved diagnostic reports")

@@ -10,6 +10,18 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.47] - 2026-05-02
+
+### Changed
+
+- **NIC Port Layout moved from Hardware tab → Camera Connectivity tab.** The diagram (stylized NIC bracket with 4 RJ45 jacks + status light + per-port LEDs), the 4 port detail boxes (Port N / Status / Speed / Duplex / MAC / Errors), the NIC Information sidebar, and the Status Legend all now live on Camera Connectivity, where they belong alongside the camera-port diagnostic results. The Hardware tab focuses on peripherals: GPU, monitor, input devices, PoE budget, and NIC link uptime.
+- **Hardware tab renamed** "PoE / NIC Hardware" → "Hardware & Peripherals" everywhere (sidebar nav, home tile, section header, tooltip).
+- **Camera Connectivity layout reflowed** to fit the diagram: removed the per-NIC P1..P4 status cards row (the diagram + port detail boxes carry that information now); status cards row (SmartSpeed/Ping/ARP/CHU/PoE) shifts down to Y=384; two-column main (Live Log + Guidance) shifts to Y=482 with reduced height (198px). Per-NIC `$cards[$NicName]` entries become hidden stub cards so the diagnostic timer keeps working without NPE.
+- **Diagnostic results mirror onto port detail boxes.** When the camera diagnostic writes per-NIC results into `$sync.Cards[<NicName>]`, the matching port detail box's Status text is updated to show the result (PASS, DEGRADED, etc.) with the appropriate color. Live link state still drives the diagram on every panel show and again after diagnostic completion.
+- **Hardware tab Hardware Details log + Summary panel resized** to fill the 460px gap freed by relocating the diagram.
+
+---
+
 ## [1.0.46] - 2026-05-02
 
 ### Changed
