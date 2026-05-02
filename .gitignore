@@ -4,3 +4,4 @@ Pulse_Results_*.txt
 *.pcapng
 *.pcap
 Pulse_Results/
+settings.json
