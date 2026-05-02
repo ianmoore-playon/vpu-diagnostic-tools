@@ -205,7 +205,7 @@ $SysInfoScript = {
             $totalGB = [math]::Round($sysDrive.Size      / 1GB, 1)
             $usedPct = [math]::Round((1 - $sysDrive.FreeSpace/$sysDrive.Size) * 100)
             $stStatus = if ($freeGB -lt 5) { "fail" } elseif ($freeGB -lt 15) { "warn" } else { "ok" }
-            $sync.Cards["SiStorage"] = @{ Value = "$freeGB GB free of $totalGB GB ($usedPct% used)"; Status=$stStatus }
+            $sync.Cards["SiStorage"] = @{ Value = "$freeGB GB free  ($usedPct% used)"; Status=$stStatus }
         }
     } catch { Si-Log "Storage" "Query failed" "Warn" }
 

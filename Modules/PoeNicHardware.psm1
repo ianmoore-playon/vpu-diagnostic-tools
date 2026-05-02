@@ -573,11 +573,16 @@ function Update-HwPortDiagram {
                           elseif ($speed -and $speed -match '(\d+)\s*Mbps') { "$($Matches[1]) Mbps" } `
                           elseif ($isUp)                                     { "Up" } `
                           else                                                { "--" }
-            # Color tier: green = 1 Gbps healthy, yellow = sub-gigabit linked, gray = no link
-            $tier = if (-not $isUp)                            { "off"  } `
-                    elseif ($speed -match '^1\s*Gbps')         { "ok"   } `
-                    elseif ($speed -match '(100|10)\s*Mbps')   { "warn" } `
-                    else                                       { "info" }
+            # Color tier: green = >=1 Gbps healthy, yellow = sub-gigabit linked, gray = no link
+            # Numeric match handles 1/2.5/5/10 Gbps adapters uniformly. The previous
+            # regex `^1\s*Gbps` failed to match "10 Gbps" because regex `^1` started
+            # matching but `\s*Gbps` then tried to match "0 Gbps" — non-match → fell
+            # through to "info" tier (blue) instead of "ok" (green).
+            $gbpsMatch = [regex]::Match($speed, '(\d+(?:\.\d+)?)\s*Gbps')
+            $tier = if (-not $isUp) { "off" } `
+                    elseif ($gbpsMatch.Success -and ([double]$gbpsMatch.Groups[1].Value) -ge 1) { "ok" } `
+                    elseif ($speed -match '(100|10)\s*Mbps') { "warn" } `
+                    else { "info" }
             $accentColor = switch ($tier) {
                 "ok"   { $ColGreen }
                 "warn" { $ColYellow }

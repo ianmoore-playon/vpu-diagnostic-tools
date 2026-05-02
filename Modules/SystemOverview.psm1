@@ -77,12 +77,13 @@ function New-HubTile {
     $pnl.Controls.Add($iLbl)
 
     $tLbl = New-Object System.Windows.Forms.Label
-    $tLbl.Text      = $Title
-    $tLbl.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
-    $tLbl.ForeColor = $ColText
-    $tLbl.Location  = New-Object System.Drawing.Point(20, 96)
-    $tLbl.Size      = New-Object System.Drawing.Size(([int]$W - 28), 24)
-    $tLbl.BackColor = [System.Drawing.Color]::Transparent
+    $tLbl.Text         = $Title
+    $tLbl.UseMnemonic  = $false  # otherwise `&` is eaten as Alt-key accelerator
+    $tLbl.Font         = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
+    $tLbl.ForeColor    = $ColText
+    $tLbl.Location     = New-Object System.Drawing.Point(20, 96)
+    $tLbl.Size         = New-Object System.Drawing.Size(([int]$W - 28), 24)
+    $tLbl.BackColor    = [System.Drawing.Color]::Transparent
     $pnl.Controls.Add($tLbl)
 
     $dLbl = New-Object System.Windows.Forms.Label

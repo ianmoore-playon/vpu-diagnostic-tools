@@ -173,12 +173,12 @@ $svcHeader = New-SectionHeader -Parent $pnlServices `
 
 # 6 service cards in a row at Y=110
 $svcCardDefs = @(
-    @{ Key="SvcAgent";        Title="Agent";        Sub="Core process";                     Icon=[char]0xE9F5 }
-    @{ Key="SvcKeepAgentUp";  Title="KeepAgentUp";  Sub="Watchdog";                         Icon=[char]0xE9F5 }
-    @{ Key="SvcCoordinator";  Title="Coordinator";  Sub="Core process";                     Icon=[char]0xE9F5 }
-    @{ Key="SvcLogMeIn";      Title="LogMeIn";      Sub="Remote access";                    Icon=[char]0xE9F5 }
-    @{ Key="SvcVpu";          Title="VPU";          Sub="Only runs during active streams";  Icon=[char]0xE9F5 }
-    @{ Key="SvcScoreconnect"; Title="Scoreconnect"; Sub="Score overlay";                    Icon=[char]0xE9F5 }
+    @{ Key="SvcAgent";        Title="Agent";        Sub="Core process";                     Icon=[char]0xE7B8 }  # network/server icon
+    @{ Key="SvcKeepAgentUp";  Title="KeepAgentUp";  Sub="Watchdog";                         Icon=[char]0xE945 }  # lightning / watchdog
+    @{ Key="SvcCoordinator";  Title="Coordinator";  Sub="Core process";                     Icon=[char]0xE9D9 }  # gear stack
+    @{ Key="SvcLogMeIn";      Title="LogMeIn";      Sub="Remote access";                    Icon=[char]0xE839 }  # remote desktop
+    @{ Key="SvcVpu";          Title="VPU";          Sub="Only runs during active streams";  Icon=[char]0xE714 }  # video camera / stream
+    @{ Key="SvcScoreconnect"; Title="Scoreconnect"; Sub="Score overlay";                    Icon=[char]0xE71D }  # scoreboard / clipboard
 )
 $svcCards = @{}
 $svcCardW = 200; $svcCardGap = 12; $svcCardX = 28

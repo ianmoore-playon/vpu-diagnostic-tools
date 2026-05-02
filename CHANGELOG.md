@@ -10,6 +10,26 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.45] - 2026-05-02
+
+### Fixed
+
+- **`DotPanel` errors during diagnostic runs** — Network stub cards (added in v1.0.42 to keep `Update-CardStatus` happy after the visible cards moved into the section header) lacked a `DotPanel` field. `Update-CardStatus` set `$Card.DotPanel.BackColor` and crashed five times per run. Added a hidden Panel as `DotPanel` so all three stubs cover every field the function touches.
+- **Home tile titles dropped the `&` character** — "System & Disk Health" rendered as "System  Disk Health" because WinForms Label treats `&` as an Alt-key accelerator hint by default. Set `UseMnemonic = $false` on the tile title label.
+- **Storage card text overflowed** — "669 GB free of 930.5 GB (28% used)" wrapped to two lines and truncated. Shortened to `"669 GB free  (28% used)"` which fits in the 200-wide card.
+- **PoE port LED color wrong for 10 Gbps** — the regex `^1\s*Gbps` doesn't match "10 Gbps" (`\s*Gbps` can't follow the "0" character), so a 10 Gbps adapter rendered as info-tier (blue) instead of healthy (green). Replaced with a numeric extraction that treats anything ≥ 1 Gbps as healthy.
+
+### Changed
+
+- **Service card icons** — all 6 cards used the same gear glyph; gave each a more specific Segoe MDL2 icon: Agent (server), KeepAgentUp (lightning/watchdog), Coordinator (gear-stack), LogMeIn (remote desktop), VPU (camera), Scoreconnect (clipboard).
+
+### Note
+
+- **Camera Connectivity panel** still uses its custom legacy layout (Fault Isolator wizard, port grid, NIC card label). Adding the section header pattern requires shifting ~30 controls down by 80px and is deferred to a focused Camera-only redesign pass.
+- **Reports "Unknown" result** column reflects how the existing parser reads STATUS markers from older report files — not a redesign bug.
+
+---
+
 ## [1.0.44] - 2026-05-01
 
 ### Fixed

@@ -605,9 +605,11 @@ $pnlNetwork.Controls.Add($lblNetEta)
 $netCards = @{}
 $netCardKeys = @("NetInternet", "NetPorts", "NetDomains")
 foreach ($k in $netCardKeys) {
-    $stub = New-Object System.Windows.Forms.Label
-    $stub.Visible = $false
-    $netCards[$k] = @{ Panel = $stub; ValueLabel = $stub }
+    # Stubs need every field Update-CardStatus touches — ValueLabel, DotPanel, Panel.
+    # DotPanel has its BackColor set, so it has to be a real Panel.
+    $stubLbl = New-Object System.Windows.Forms.Label; $stubLbl.Visible = $false
+    $stubDot = New-Object System.Windows.Forms.Panel; $stubDot.Visible = $false
+    $netCards[$k] = @{ Panel = $stubLbl; ValueLabel = $stubLbl; DotPanel = $stubDot }
 }
 
 $script:netRunspace = $null

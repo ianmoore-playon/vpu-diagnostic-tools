@@ -791,6 +791,9 @@ $center.Visible   = $false
 $form.Controls.Add($center)
 
 # NIC scope selector (moved from sidebar into camera panel)
+# NOTE: Camera panel keeps its custom layout (Fault Isolator wizard, port grid,
+# history) — the v1.0.42 section-header pattern would require shifting ~30
+# controls, deferred to a focused Camera redesign pass.
 $lblNicHdr = New-Object System.Windows.Forms.Label
 $lblNicHdr.Text      = "Test Scope"
 $lblNicHdr.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)

@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.44"
+$ScriptVersion = "1.0.45"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -1152,12 +1152,13 @@ function New-HubTile {
     $pnl.Controls.Add($iLbl)
 
     $tLbl = New-Object System.Windows.Forms.Label
-    $tLbl.Text      = $Title
-    $tLbl.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
-    $tLbl.ForeColor = $ColText
-    $tLbl.Location  = New-Object System.Drawing.Point(20, 96)
-    $tLbl.Size      = New-Object System.Drawing.Size(([int]$W - 28), 24)
-    $tLbl.BackColor = [System.Drawing.Color]::Transparent
+    $tLbl.Text         = $Title
+    $tLbl.UseMnemonic  = $false  # otherwise `&` is eaten as Alt-key accelerator
+    $tLbl.Font         = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
+    $tLbl.ForeColor    = $ColText
+    $tLbl.Location     = New-Object System.Drawing.Point(20, 96)
+    $tLbl.Size         = New-Object System.Drawing.Size(([int]$W - 28), 24)
+    $tLbl.BackColor    = [System.Drawing.Color]::Transparent
     $pnl.Controls.Add($tLbl)
 
     $dLbl = New-Object System.Windows.Forms.Label
@@ -2142,6 +2143,9 @@ $center.Visible   = $false
 $form.Controls.Add($center)
 
 # NIC scope selector (moved from sidebar into camera panel)
+# NOTE: Camera panel keeps its custom layout (Fault Isolator wizard, port grid,
+# history) — the v1.0.42 section-header pattern would require shifting ~30
+# controls, deferred to a focused Camera redesign pass.
 $lblNicHdr = New-Object System.Windows.Forms.Label
 $lblNicHdr.Text      = "Test Scope"
 $lblNicHdr.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)
@@ -3935,9 +3939,11 @@ $pnlNetwork.Controls.Add($lblNetEta)
 $netCards = @{}
 $netCardKeys = @("NetInternet", "NetPorts", "NetDomains")
 foreach ($k in $netCardKeys) {
-    $stub = New-Object System.Windows.Forms.Label
-    $stub.Visible = $false
-    $netCards[$k] = @{ Panel = $stub; ValueLabel = $stub }
+    # Stubs need every field Update-CardStatus touches — ValueLabel, DotPanel, Panel.
+    # DotPanel has its BackColor set, so it has to be a real Panel.
+    $stubLbl = New-Object System.Windows.Forms.Label; $stubLbl.Visible = $false
+    $stubDot = New-Object System.Windows.Forms.Panel; $stubDot.Visible = $false
+    $netCards[$k] = @{ Panel = $stubLbl; ValueLabel = $stubLbl; DotPanel = $stubDot }
 }
 
 $script:netRunspace = $null
@@ -4896,11 +4902,16 @@ function Update-HwPortDiagram {
                           elseif ($speed -and $speed -match '(\d+)\s*Mbps') { "$($Matches[1]) Mbps" } `
                           elseif ($isUp)                                     { "Up" } `
                           else                                                { "--" }
-            # Color tier: green = 1 Gbps healthy, yellow = sub-gigabit linked, gray = no link
-            $tier = if (-not $isUp)                            { "off"  } `
-                    elseif ($speed -match '^1\s*Gbps')         { "ok"   } `
-                    elseif ($speed -match '(100|10)\s*Mbps')   { "warn" } `
-                    else                                       { "info" }
+            # Color tier: green = >=1 Gbps healthy, yellow = sub-gigabit linked, gray = no link
+            # Numeric match handles 1/2.5/5/10 Gbps adapters uniformly. The previous
+            # regex `^1\s*Gbps` failed to match "10 Gbps" because regex `^1` started
+            # matching but `\s*Gbps` then tried to match "0 Gbps" — non-match → fell
+            # through to "info" tier (blue) instead of "ok" (green).
+            $gbpsMatch = [regex]::Match($speed, '(\d+(?:\.\d+)?)\s*Gbps')
+            $tier = if (-not $isUp) { "off" } `
+                    elseif ($gbpsMatch.Success -and ([double]$gbpsMatch.Groups[1].Value) -ge 1) { "ok" } `
+                    elseif ($speed -match '(100|10)\s*Mbps') { "warn" } `
+                    else { "info" }
             $accentColor = switch ($tier) {
                 "ok"   { $ColGreen }
                 "warn" { $ColYellow }
@@ -5175,12 +5186,12 @@ $svcHeader = New-SectionHeader -Parent $pnlServices `
 
 # 6 service cards in a row at Y=110
 $svcCardDefs = @(
-    @{ Key="SvcAgent";        Title="Agent";        Sub="Core process";                     Icon=[char]0xE9F5 }
-    @{ Key="SvcKeepAgentUp";  Title="KeepAgentUp";  Sub="Watchdog";                         Icon=[char]0xE9F5 }
-    @{ Key="SvcCoordinator";  Title="Coordinator";  Sub="Core process";                     Icon=[char]0xE9F5 }
-    @{ Key="SvcLogMeIn";      Title="LogMeIn";      Sub="Remote access";                    Icon=[char]0xE9F5 }
-    @{ Key="SvcVpu";          Title="VPU";          Sub="Only runs during active streams";  Icon=[char]0xE9F5 }
-    @{ Key="SvcScoreconnect"; Title="Scoreconnect"; Sub="Score overlay";                    Icon=[char]0xE9F5 }
+    @{ Key="SvcAgent";        Title="Agent";        Sub="Core process";                     Icon=[char]0xE7B8 }  # network/server icon
+    @{ Key="SvcKeepAgentUp";  Title="KeepAgentUp";  Sub="Watchdog";                         Icon=[char]0xE945 }  # lightning / watchdog
+    @{ Key="SvcCoordinator";  Title="Coordinator";  Sub="Core process";                     Icon=[char]0xE9D9 }  # gear stack
+    @{ Key="SvcLogMeIn";      Title="LogMeIn";      Sub="Remote access";                    Icon=[char]0xE839 }  # remote desktop
+    @{ Key="SvcVpu";          Title="VPU";          Sub="Only runs during active streams";  Icon=[char]0xE714 }  # video camera / stream
+    @{ Key="SvcScoreconnect"; Title="Scoreconnect"; Sub="Score overlay";                    Icon=[char]0xE71D }  # scoreboard / clipboard
 )
 $svcCards = @{}
 $svcCardW = 200; $svcCardGap = 12; $svcCardX = 28
@@ -6193,7 +6204,7 @@ $SysInfoScript = {
             $totalGB = [math]::Round($sysDrive.Size      / 1GB, 1)
             $usedPct = [math]::Round((1 - $sysDrive.FreeSpace/$sysDrive.Size) * 100)
             $stStatus = if ($freeGB -lt 5) { "fail" } elseif ($freeGB -lt 15) { "warn" } else { "ok" }
-            $sync.Cards["SiStorage"] = @{ Value = "$freeGB GB free of $totalGB GB ($usedPct% used)"; Status=$stStatus }
+            $sync.Cards["SiStorage"] = @{ Value = "$freeGB GB free  ($usedPct% used)"; Status=$stStatus }
         }
     } catch { Si-Log "Storage" "Query failed" "Warn" }
 
