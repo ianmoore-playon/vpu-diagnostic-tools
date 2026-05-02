@@ -22,9 +22,9 @@ $SysInfoScript = {
         $pxVer  = if ($pxReg.PSObject.Properties['Version']      -and $pxReg.Version)      { $pxReg.Version }      else { "Not found" }
         $pxImg  = if ($pxReg.PSObject.Properties['ImageVersion'] -and $pxReg.ImageVersion) { $pxReg.ImageVersion } else { "Not found" }
         $pxDeps = if ($pxReg.PSObject.Properties['Dependencies'] -and $pxReg.Dependencies) { $pxReg.Dependencies } else { "Not found" }
-        Si-Log "Software Version"    $pxVer  "Info"
-        Si-Log "Image Version"       $pxImg  "Info"
-        Si-Log "Dependency Version"  $pxDeps "Info"
+        Si-Log "App Version"           $pxVer  "Info"
+        Si-Log "System Image Version"  $pxImg  "Info"
+        Si-Log "Package Dependencies"  $pxDeps "Info"
     } catch { Si-Log "Pixellot" "Registry key not found (HKLM:\SOFTWARE\Pixellot)" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }

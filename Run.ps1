@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.30"
+$ScriptVersion = "1.0.31"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -848,7 +848,7 @@ $lblHubTitle.Size      = New-Object System.Drawing.Size(700, 34)
 $pnlSysOverview.Controls.Add($lblHubTitle)
 
 $lblHubSub = New-Object System.Windows.Forms.Label
-$lblHubSub.Text      = "Pixellot Unified Live System Evaluator — identify and resolve VPU issues fast."
+$lblHubSub.Text      = "Select a module below, or run a Full Diagnostic for a complete system check."
 $lblHubSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
 $lblHubSub.ForeColor = $ColMuted
 $lblHubSub.Location  = New-Object System.Drawing.Point(24, 58)
@@ -898,14 +898,14 @@ function New-SectionCard {
 }
 
 $hubCardDefs = @(
-    @{Nav="navSysInfo";  Title="System Information"; Desc="CPU, RAM, GPU, storage and NIC inventory";               Icon=0xE80F; R=0;C=0}
-    @{Nav="navNetConfig";Title="Network";            Desc="Internet, port connectivity and DNS for Pixellot";        Icon=0xE701; R=0;C=1}
-    @{Nav="navCamera";   Title="Camera";             Desc="NIC link speeds, cable faults, ping and RTSP checks";     Icon=0xE722; R=0;C=2}
-    @{Nav="navServices"; Title="Services";           Desc="Pixellot agent, encoder and support services status";     Icon=0xE9F5; R=0;C=3}
-    @{Nav="navPoE";      Title="Hardware";           Desc="PoE NIC budget, GPU, peripherals and NIC uptime";         Icon=0xE7E8; R=1;C=0}
-    @{Nav="navDisk";     Title="Disks";              Desc="Drive space, SMART health and disk event log errors";     Icon=0xEDA2; R=1;C=1}
-    @{Nav="navEvents";   Title="OS Event Logs";      Desc="Recent OS errors filtered for hardware and services";     Icon=0xE7BA; R=1;C=2}
-    @{Nav="navReports";  Title="Reports";            Desc="View, copy and export saved diagnostic reports";          Icon=0xE7C3; R=1;C=3}
+    @{Nav="navSysInfo";  Title="System Information"; Desc="Hardware specs, OS version, uptime, and Pixellot software versions"; Icon=0xE80F; R=0;C=0}
+    @{Nav="navNetConfig";Title="Network";            Desc="Test required ports and domain DNS; identify firewall blocks";       Icon=0xE701; R=0;C=1}
+    @{Nav="navCamera";   Title="Camera";             Desc="Detect cameras and test connectivity; identify cable or PoE faults"; Icon=0xE722; R=0;C=2}
+    @{Nav="navServices"; Title="Services";           Desc="Verify Pixellot agent, encoder, watchdog, and remote services";      Icon=0xE9F5; R=0;C=3}
+    @{Nav="navPoE";      Title="Hardware";           Desc="PoE budget, GPU, monitor, peripherals, and NIC link uptime";         Icon=0xE7E8; R=1;C=0}
+    @{Nav="navDisk";     Title="Disks";              Desc="Free space, SMART health, and disk-related event log errors";        Icon=0xEDA2; R=1;C=1}
+    @{Nav="navEvents";   Title="OS Event Logs";      Desc="Recent OS errors filtered to VPU-relevant providers";                Icon=0xE7BA; R=1;C=2}
+    @{Nav="navReports";  Title="Reports";            Desc="View, copy, and export saved diagnostic reports";                    Icon=0xE7C3; R=1;C=3}
 )
 $hCH = 200; $hGap = 16; $hMargin = 24; $hCols = 4; $hRows = 2
 $hubNavLookup = @{
@@ -3579,7 +3579,7 @@ $lblFbTitle.Anchor    = $AnchorBL
 $pnlHelp.Controls.Add($lblFbTitle)
 
 $lblFbSub = New-Object System.Windows.Forms.Label
-$lblFbSub.Text      = "Report a bug or suggest an improvement — submitted directly as a GitHub issue."
+$lblFbSub.Text      = "Report a problem or suggest an improvement — sent directly to the Pixellot tools team."
 $lblFbSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $lblFbSub.ForeColor = $ColMuted
 $lblFbSub.Location  = New-Object System.Drawing.Point(24, ($ContentH - 163))
@@ -3984,7 +3984,7 @@ $SvcScript = {
             $sync.Cards["SvcVpu"] = @{ Value = "Active"; Status = "ok" }
         } else {
             Svc-Log "VPU.exe" "Not running  - normal when cameras are idle" "Gray"
-            $sync.Cards["SvcVpu"] = @{ Value = "Idle"; Status = "neutral" }
+            $sync.Cards["SvcVpu"] = @{ Value = "Not streaming"; Status = "neutral" }
         }
     }
 
@@ -4088,7 +4088,7 @@ $svcCardDefs = @(
     @{ Key="SvcKeepAgentUp";  Title="KeepAgentUp";  Sub="Watchdog";       X=222;  Icon=[char]0xE9F5; W=200 }
     @{ Key="SvcCoordinator";  Title="Coordinator";  Sub="Core process";   X=434;  Icon=[char]0xE9F5; W=200 }
     @{ Key="SvcLogMeIn";      Title="LogMeIn";      Sub="Remote access";  X=646;  Icon=[char]0xE9F5; W=200 }
-    @{ Key="SvcVpu";          Title="VPU";          Sub="Camera encoder"; X=858;  Icon=[char]0xE9F5; W=200 }
+    @{ Key="SvcVpu";          Title="VPU";          Sub="Only runs during active streams"; X=858;  Icon=[char]0xE9F5; W=200 }
     @{ Key="SvcScoreconnect"; Title="Scoreconnect"; Sub="Score overlay";  X=1070; Icon=[char]0xE9F5; W=200 }
 )
 $svcCards = @{}
@@ -4736,9 +4736,9 @@ $SysInfoScript = {
         $pxVer  = if ($pxReg.PSObject.Properties['Version']      -and $pxReg.Version)      { $pxReg.Version }      else { "Not found" }
         $pxImg  = if ($pxReg.PSObject.Properties['ImageVersion'] -and $pxReg.ImageVersion) { $pxReg.ImageVersion } else { "Not found" }
         $pxDeps = if ($pxReg.PSObject.Properties['Dependencies'] -and $pxReg.Dependencies) { $pxReg.Dependencies } else { "Not found" }
-        Si-Log "Software Version"    $pxVer  "Info"
-        Si-Log "Image Version"       $pxImg  "Info"
-        Si-Log "Dependency Version"  $pxDeps "Info"
+        Si-Log "App Version"           $pxVer  "Info"
+        Si-Log "System Image Version"  $pxImg  "Info"
+        Si-Log "Package Dependencies"  $pxDeps "Info"
     } catch { Si-Log "Pixellot" "Registry key not found (HKLM:\SOFTWARE\Pixellot)" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -5134,7 +5134,7 @@ $lblFdTitle.AutoSize  = $true
 $pnlFullDiag.Controls.Add($lblFdTitle)
 
 $lblFdSub = New-Object System.Windows.Forms.Label
-$lblFdSub.Text      = "Runs all checks and summarises results."
+$lblFdSub.Text      = "Checks all modules and highlights issues with recommended actions."
 $lblFdSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
 $lblFdSub.ForeColor = $ColMuted
 $lblFdSub.Location  = New-Object System.Drawing.Point(30, 56)
@@ -5300,7 +5300,7 @@ $btnFdRerun.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRec
 $pnlFullDiag.Controls.Add($btnFdRerun)
 
 $btnFdRerunFailed = New-Object System.Windows.Forms.Button
-$btnFdRerunFailed.Text      = "Re-run Failed Only"
+$btnFdRerunFailed.Text      = "Re-run Issues Only"
 $btnFdRerunFailed.Size      = New-Object System.Drawing.Size(190, 40)
 $btnFdRerunFailed.Location  = New-Object System.Drawing.Point(214, 582)
 $btnFdRerunFailed.BackColor = $ColNavHover
@@ -5380,7 +5380,7 @@ $timerFullDiag.Add_Tick({
         # Paint the row only once (ViewBtn.Enabled flips false -> true as the guard).
         if (-not $row.ViewBtn.Enabled) {
             $dotColor  = switch ($worst) { "fail"{$ColRed} "warn"{$ColYellow} "ok"{$ColGreen} default{$ColMuted} }
-            $severityT = switch ($worst) { "fail"{"Critical"} "warn"{"Warning"} "ok"{"Healthy"} default{"Complete"} }
+            $severityT = switch ($worst) { "fail"{"Critical"} "warn"{"Warning"} "ok"{"Healthy"} default{"Healthy"} }
 
             $row.Dot.BackColor       = $dotColor
             $row.StatusLbl.Text      = $severityT
@@ -5392,7 +5392,7 @@ $timerFullDiag.Add_Tick({
             # Suggested action - shown only for Warning / Critical
             $action = Get-FdActionText $i $worst
             if ($action) {
-                $row.ActionLbl.Text      = ">> " + $action
+                $row.ActionLbl.Text      = $action
                 $row.ActionLbl.ForeColor = if ($worst -eq "fail") { $ColRed } else { $ColYellow }
                 $row.ActionLbl.Visible   = $true
             }

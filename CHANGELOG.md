@@ -10,6 +10,19 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.31] - 2026-05-01
+
+### Changed
+
+- **Wave 1 text/label polish (closes #25, #30, #31, #32, #33, #34, #37, #38, #43)** — agent-friendly language pass across the UI:
+  - FullDiagnostic: severity default label "Complete" → "Healthy" (#25); "Re-run Failed Only" → "Re-run Issues Only" (#30); stripped `>>` prefix from action text (#31); subtitle replaced with task-focused description (#33).
+  - SystemOverview: replaced product-tagline subtitle with action-oriented guidance (#32); rewrote all 8 tile descriptions to be specific and task-focused (#43).
+  - PixellotServices: VPU.exe card "Idle" → "Not streaming" with sub-label "Only runs during active streams" (#34).
+  - HelpAbout: removed "GitHub" reference from feedback subtitle (#37).
+  - SystemInformation: renamed registry-derived labels to agent-friendly ("App Version", "System Image Version", "Package Dependencies") (#38).
+
+---
+
 ## [1.0.30] - 2026-05-01
 
 ### Changed

@@ -72,7 +72,7 @@ $lblFbTitle.Anchor    = $AnchorBL
 $pnlHelp.Controls.Add($lblFbTitle)
 
 $lblFbSub = New-Object System.Windows.Forms.Label
-$lblFbSub.Text      = "Report a bug or suggest an improvement — submitted directly as a GitHub issue."
+$lblFbSub.Text      = "Report a problem or suggest an improvement — sent directly to the Pixellot tools team."
 $lblFbSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $lblFbSub.ForeColor = $ColMuted
 $lblFbSub.Location  = New-Object System.Drawing.Point(24, ($ContentH - 163))

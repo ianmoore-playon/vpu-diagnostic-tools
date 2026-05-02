@@ -139,7 +139,7 @@ $lblFdTitle.AutoSize  = $true
 $pnlFullDiag.Controls.Add($lblFdTitle)
 
 $lblFdSub = New-Object System.Windows.Forms.Label
-$lblFdSub.Text      = "Runs all checks and summarises results."
+$lblFdSub.Text      = "Checks all modules and highlights issues with recommended actions."
 $lblFdSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
 $lblFdSub.ForeColor = $ColMuted
 $lblFdSub.Location  = New-Object System.Drawing.Point(30, 56)
@@ -305,7 +305,7 @@ $btnFdRerun.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRec
 $pnlFullDiag.Controls.Add($btnFdRerun)
 
 $btnFdRerunFailed = New-Object System.Windows.Forms.Button
-$btnFdRerunFailed.Text      = "Re-run Failed Only"
+$btnFdRerunFailed.Text      = "Re-run Issues Only"
 $btnFdRerunFailed.Size      = New-Object System.Drawing.Size(190, 40)
 $btnFdRerunFailed.Location  = New-Object System.Drawing.Point(214, 582)
 $btnFdRerunFailed.BackColor = $ColNavHover
@@ -385,7 +385,7 @@ $timerFullDiag.Add_Tick({
         # Paint the row only once (ViewBtn.Enabled flips false -> true as the guard).
         if (-not $row.ViewBtn.Enabled) {
             $dotColor  = switch ($worst) { "fail"{$ColRed} "warn"{$ColYellow} "ok"{$ColGreen} default{$ColMuted} }
-            $severityT = switch ($worst) { "fail"{"Critical"} "warn"{"Warning"} "ok"{"Healthy"} default{"Complete"} }
+            $severityT = switch ($worst) { "fail"{"Critical"} "warn"{"Warning"} "ok"{"Healthy"} default{"Healthy"} }
 
             $row.Dot.BackColor       = $dotColor
             $row.StatusLbl.Text      = $severityT
@@ -397,7 +397,7 @@ $timerFullDiag.Add_Tick({
             # Suggested action - shown only for Warning / Critical
             $action = Get-FdActionText $i $worst
             if ($action) {
-                $row.ActionLbl.Text      = ">> " + $action
+                $row.ActionLbl.Text      = $action
                 $row.ActionLbl.ForeColor = if ($worst -eq "fail") { $ColRed } else { $ColYellow }
                 $row.ActionLbl.Visible   = $true
             }

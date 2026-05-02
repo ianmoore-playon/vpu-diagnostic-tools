@@ -19,7 +19,7 @@ $lblHubTitle.Size      = New-Object System.Drawing.Size(700, 34)
 $pnlSysOverview.Controls.Add($lblHubTitle)
 
 $lblHubSub = New-Object System.Windows.Forms.Label
-$lblHubSub.Text      = "Pixellot Unified Live System Evaluator — identify and resolve VPU issues fast."
+$lblHubSub.Text      = "Select a module below, or run a Full Diagnostic for a complete system check."
 $lblHubSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
 $lblHubSub.ForeColor = $ColMuted
 $lblHubSub.Location  = New-Object System.Drawing.Point(24, 58)
@@ -69,14 +69,14 @@ function New-SectionCard {
 }
 
 $hubCardDefs = @(
-    @{Nav="navSysInfo";  Title="System Information"; Desc="CPU, RAM, GPU, storage and NIC inventory";               Icon=0xE80F; R=0;C=0}
-    @{Nav="navNetConfig";Title="Network";            Desc="Internet, port connectivity and DNS for Pixellot";        Icon=0xE701; R=0;C=1}
-    @{Nav="navCamera";   Title="Camera";             Desc="NIC link speeds, cable faults, ping and RTSP checks";     Icon=0xE722; R=0;C=2}
-    @{Nav="navServices"; Title="Services";           Desc="Pixellot agent, encoder and support services status";     Icon=0xE9F5; R=0;C=3}
-    @{Nav="navPoE";      Title="Hardware";           Desc="PoE NIC budget, GPU, peripherals and NIC uptime";         Icon=0xE7E8; R=1;C=0}
-    @{Nav="navDisk";     Title="Disks";              Desc="Drive space, SMART health and disk event log errors";     Icon=0xEDA2; R=1;C=1}
-    @{Nav="navEvents";   Title="OS Event Logs";      Desc="Recent OS errors filtered for hardware and services";     Icon=0xE7BA; R=1;C=2}
-    @{Nav="navReports";  Title="Reports";            Desc="View, copy and export saved diagnostic reports";          Icon=0xE7C3; R=1;C=3}
+    @{Nav="navSysInfo";  Title="System Information"; Desc="Hardware specs, OS version, uptime, and Pixellot software versions"; Icon=0xE80F; R=0;C=0}
+    @{Nav="navNetConfig";Title="Network";            Desc="Test required ports and domain DNS; identify firewall blocks";       Icon=0xE701; R=0;C=1}
+    @{Nav="navCamera";   Title="Camera";             Desc="Detect cameras and test connectivity; identify cable or PoE faults"; Icon=0xE722; R=0;C=2}
+    @{Nav="navServices"; Title="Services";           Desc="Verify Pixellot agent, encoder, watchdog, and remote services";      Icon=0xE9F5; R=0;C=3}
+    @{Nav="navPoE";      Title="Hardware";           Desc="PoE budget, GPU, monitor, peripherals, and NIC link uptime";         Icon=0xE7E8; R=1;C=0}
+    @{Nav="navDisk";     Title="Disks";              Desc="Free space, SMART health, and disk-related event log errors";        Icon=0xEDA2; R=1;C=1}
+    @{Nav="navEvents";   Title="OS Event Logs";      Desc="Recent OS errors filtered to VPU-relevant providers";                Icon=0xE7BA; R=1;C=2}
+    @{Nav="navReports";  Title="Reports";            Desc="View, copy, and export saved diagnostic reports";                    Icon=0xE7C3; R=1;C=3}
 )
 $hCH = 200; $hGap = 16; $hMargin = 24; $hCols = 4; $hRows = 2
 $hubNavLookup = @{
