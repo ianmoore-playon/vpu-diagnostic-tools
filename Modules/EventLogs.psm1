@@ -72,7 +72,7 @@ $evtTimer.Add_Tick({
     if ($sync.EvtComplete -and -not $sync.EvtRunning) {
         $evtTimer.Stop(); $btnEvtCancel.Visible=$false
         $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Check Event Log"
-        $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="  $($sync.EvtStep)"
+        $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="  $($sync.EvtStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 

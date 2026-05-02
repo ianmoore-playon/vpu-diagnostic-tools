@@ -10,6 +10,24 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.33] - 2026-05-01
+
+### Added
+
+- **Last-run timestamps on diagnostic status labels** (#42) — Network, Event Logs, Disk Health, Hardware, and Services tabs now append `Last run: h:mm tt` to the status line after a run completes. Helps agents tell at a glance whether the data on screen is fresh.
+- **"Open Network Settings" button** in the Network tab (#21) — opens `ncpa.cpl` for direct access to adapter configuration.
+- **Camera Connectivity dependency notice** on the Hardware tab (#27) — when navigated-to before Camera Connectivity has run, the subtitle changes to `"Run Camera Connectivity first to populate PoE budget and NIC uptime."`
+
+### Changed
+
+- **Larger Run Diagnostic header button** (#22) — bumped from 132×38 to 170×46, font from 8.5pt to 10pt semibold. More obvious as the primary action.
+- **Network log section headers more visible** (#40) — switched from 7.5pt Consolas / muted color to 9pt Segoe UI Semibold / primary text color. Extra leading newline for separation.
+- **FullDiagnostic row height** (#41) — bumped from 54px to 64px with action label at Y=32 / height=28. Action text no longer cramped against the row bottom; text wraps cleanly.
+- **Network ETA hides on completion** (#36) — was showing `est. ~20 sec` indefinitely after the run; now hides until next run.
+- **ETA estimates recalibrated** (#11) — Network 20→15s, Hardware 5→3s, Disk 30→15s based on observed runtimes.
+
+---
+
 ## [1.0.32] - 2026-05-01
 
 ### Fixed

@@ -312,7 +312,7 @@ $diskTimer.Add_Tick({
     if ($sync.DiskComplete -and -not $sync.DiskRunning) {
         $diskTimer.Stop(); $btnDiskCancel.Visible=$false
         $btnDiskRun.Enabled=$true; $btnDiskRun.Text=[char]0x25B6+"  Check System Health"
-        $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="  $($sync.DiskStep)"
+        $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="  $($sync.DiskStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 
@@ -364,7 +364,7 @@ $btnDiskCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnDiskCan
 $pnlDisk.Controls.Add($btnDiskCancel)
 $btnDiskCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
 
-$lblDiskEta = New-Object System.Windows.Forms.Label; $lblDiskEta.Text = "est. ~30 sec"
+$lblDiskEta = New-Object System.Windows.Forms.Label; $lblDiskEta.Text = "est. ~15 sec"
 $lblDiskEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblDiskEta.ForeColor = $ColMuted
 $lblDiskEta.Location = New-Object System.Drawing.Point(368,180); $lblDiskEta.AutoSize = $true
 $pnlDisk.Controls.Add($lblDiskEta)

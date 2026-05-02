@@ -131,7 +131,7 @@ $hwTimer.Add_Tick({
     if ($sync.HwComplete -and -not $sync.HwRunning) {
         $hwTimer.Stop(); $btnHwCancel.Visible=$false
         $btnHwRun.Enabled=$true; $btnHwRun.Text=[char]0x25B6+"  Check Hardware"
-        $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="  $($sync.HwStep)"
+        $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="  $($sync.HwStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 
@@ -153,6 +153,20 @@ $lblHwSub.Text = "GPU model, peripheral connections, NIC link uptime, and PoE po
 $lblHwSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblHwSub.ForeColor = $ColMuted
 $lblHwSub.Location = New-Object System.Drawing.Point(10,42); $lblHwSub.Size = New-Object System.Drawing.Size(1240,18)
 $pnlPoE.Controls.Add($lblHwSub)
+
+# PoE / NIC uptime data is gathered by the Camera Connectivity module — surface a notice
+# if it hasn't been run yet so users don't think the values are missing.
+$script:hwSubDefault = $lblHwSub.Text
+$pnlPoE.Add_VisibleChanged({
+    if (-not $pnlPoE.Visible) { return }
+    if (-not $sync.NicLinkUptimes -or $sync.NicLinkUptimes.Count -eq 0) {
+        $lblHwSub.Text      = "Run Camera Connectivity first to populate PoE budget and NIC uptime."
+        $lblHwSub.ForeColor = $ColYellow
+    } else {
+        $lblHwSub.Text      = $script:hwSubDefault
+        $lblHwSub.ForeColor = $ColMuted
+    }
+})
 
 $hwCardDefs = @(
     @{ Key="HwGpu";     Title="GPU";     Sub="Graphics adapter";  X=10;  Icon=[char]0xE7F4; W=400 }
@@ -182,7 +196,7 @@ $btnHwCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnHwCancel.
 $pnlPoE.Controls.Add($btnHwCancel)
 $btnHwCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
 
-$lblHwEta = New-Object System.Windows.Forms.Label; $lblHwEta.Text = "est. ~5 sec"
+$lblHwEta = New-Object System.Windows.Forms.Label; $lblHwEta.Text = "est. ~3 sec"
 $lblHwEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblHwEta.ForeColor = $ColMuted
 $lblHwEta.Location = New-Object System.Drawing.Point(348,180); $lblHwEta.AutoSize = $true
 $pnlPoE.Controls.Add($lblHwEta)

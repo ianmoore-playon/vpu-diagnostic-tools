@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.32"
+$ScriptVersion = "1.0.33"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -756,17 +756,17 @@ $navReports     = New-TabButton "Reports"              0xE7C3  (8 * $tabW)  $tab
 
 $btnTabFullDiag = New-Object System.Windows.Forms.Button
 $btnTabFullDiag.Text      = [char]0x25B6 + "  Run Diagnostic"
-$btnTabFullDiag.Size      = New-Object System.Drawing.Size(132, 38)
-$btnTabFullDiag.Location  = New-Object System.Drawing.Point(1004, 15)
+$btnTabFullDiag.Size      = New-Object System.Drawing.Size(170, 46)
+$btnTabFullDiag.Location  = New-Object System.Drawing.Point(966, 11)
 $btnTabFullDiag.BackColor = $ColAccent
 $btnTabFullDiag.ForeColor = [System.Drawing.Color]::White
 $btnTabFullDiag.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $btnTabFullDiag.FlatAppearance.BorderSize = 0
-$btnTabFullDiag.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
+$btnTabFullDiag.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
 $btnTabFullDiag.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 $btnTabFullDiag.Cursor    = [System.Windows.Forms.Cursors]::Hand
 $btnTabFullDiag.Anchor    = $AnchorTR
-$btnTabFullDiag.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,132,38)),6))
+$btnTabFullDiag.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,170,46)),6))
 
 $pnlTabBar.Controls.AddRange(@(
     $navSysOverview,$navSysInfo,$navNetConfig,$navCamera,$navServices,
@@ -3207,9 +3207,9 @@ $netTimer.Add_Tick({
         # Render to rtbNetLog
         if ($netItem.L -eq "Section") {
             $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
-            $rtbNetLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 7.5, [System.Drawing.FontStyle]::Bold)
-            $rtbNetLog.SelectionColor = $ColMuted
-            $rtbNetLog.AppendText("`n  $($netItem.Result.ToUpper())`n")
+            $rtbNetLog.SelectionFont  = New-Object System.Drawing.Font("Segoe UI Semibold", 9, [System.Drawing.FontStyle]::Bold)
+            $rtbNetLog.SelectionColor = $ColText
+            $rtbNetLog.AppendText("`n`n  $($netItem.Result.ToUpper())`n")
         } else {
             $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
             $rtbNetLog.SelectionColor = $ColLogLabel
@@ -3257,8 +3257,9 @@ $netTimer.Add_Tick({
         $netTimer.Stop()
         $btnNetCancel.Visible = $false
         $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Network Test"
+        $lblNetEta.Visible = $false
         $lblNetStatus.ForeColor = $ColMuted
-        $lblNetStatus.Text = "  $($sync.NetStep)"
+        $lblNetStatus.Text = "  $($sync.NetStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
         $lines = @()
         if ($sync.NetPortFail   -gt 0) { $lines += "Port failures — check the firewall and router. Confirm the uplink adapter is not blocked by a content filter or VLAN policy." }
         if ($sync.NetDomainFail -gt 0) { $lines += "DNS failures — check DNS server settings on this adapter. Confirm the VPU can reach its configured DNS server." }
@@ -3355,10 +3356,26 @@ $btnNetCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnNetCancel.Visib
 $pnlNetwork.Controls.Add($btnNetCancel)
 $btnNetCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 40)), 6))
 
-$lblNetEta = New-Object System.Windows.Forms.Label; $lblNetEta.Text = "est. ~20 sec"
+$lblNetEta = New-Object System.Windows.Forms.Label; $lblNetEta.Text = "est. ~15 sec"
 $lblNetEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblNetEta.ForeColor = $ColMuted
 $lblNetEta.Location = New-Object System.Drawing.Point(378,236); $lblNetEta.AutoSize = $true
 $pnlNetwork.Controls.Add($lblNetEta)
+
+# "Open Network Settings" — shortcut to ncpa.cpl for adapter changes
+$btnNetSettings = New-Object System.Windows.Forms.Button
+$btnNetSettings.Text      = "Open Network Settings"
+$btnNetSettings.Size      = New-Object System.Drawing.Size(180, 40)
+$btnNetSettings.Location  = New-Object System.Drawing.Point(1070, 226)
+$btnNetSettings.Anchor    = $AnchorTR
+$btnNetSettings.BackColor = $ColNavHover
+$btnNetSettings.ForeColor = $ColText
+$btnNetSettings.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnNetSettings.FlatAppearance.BorderSize = 0
+$btnNetSettings.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$btnNetSettings.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnNetSettings.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 40)), 6))
+$btnNetSettings.Add_Click({ try { Start-Process ncpa.cpl } catch { } })
+$pnlNetwork.Controls.Add($btnNetSettings)
 
 $lblNetStatus = New-Object System.Windows.Forms.Label; $lblNetStatus.Text = ""
 $lblNetStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblNetStatus.ForeColor = $ColMuted
@@ -3395,6 +3412,7 @@ function Start-NetDiagnostic {
     }
     foreach ($k in $netCards.Keys) { Update-CardStatus -Card $netCards[$k] -Value "--" -Status "neutral" }
     $pnlNetAction.Visible = $false
+    $lblNetEta.Visible = $true
     $rtbNetLog.Clear()
     $btnNetRun.Enabled = $false; $btnNetRun.Text = "  Running..."
     $btnNetCancel.Visible = $true
@@ -3873,7 +3891,7 @@ $hwTimer.Add_Tick({
     if ($sync.HwComplete -and -not $sync.HwRunning) {
         $hwTimer.Stop(); $btnHwCancel.Visible=$false
         $btnHwRun.Enabled=$true; $btnHwRun.Text=[char]0x25B6+"  Check Hardware"
-        $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="  $($sync.HwStep)"
+        $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="  $($sync.HwStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 
@@ -3895,6 +3913,20 @@ $lblHwSub.Text = "GPU model, peripheral connections, NIC link uptime, and PoE po
 $lblHwSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblHwSub.ForeColor = $ColMuted
 $lblHwSub.Location = New-Object System.Drawing.Point(10,42); $lblHwSub.Size = New-Object System.Drawing.Size(1240,18)
 $pnlPoE.Controls.Add($lblHwSub)
+
+# PoE / NIC uptime data is gathered by the Camera Connectivity module — surface a notice
+# if it hasn't been run yet so users don't think the values are missing.
+$script:hwSubDefault = $lblHwSub.Text
+$pnlPoE.Add_VisibleChanged({
+    if (-not $pnlPoE.Visible) { return }
+    if (-not $sync.NicLinkUptimes -or $sync.NicLinkUptimes.Count -eq 0) {
+        $lblHwSub.Text      = "Run Camera Connectivity first to populate PoE budget and NIC uptime."
+        $lblHwSub.ForeColor = $ColYellow
+    } else {
+        $lblHwSub.Text      = $script:hwSubDefault
+        $lblHwSub.ForeColor = $ColMuted
+    }
+})
 
 $hwCardDefs = @(
     @{ Key="HwGpu";     Title="GPU";     Sub="Graphics adapter";  X=10;  Icon=[char]0xE7F4; W=400 }
@@ -3924,7 +3956,7 @@ $btnHwCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnHwCancel.
 $pnlPoE.Controls.Add($btnHwCancel)
 $btnHwCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
 
-$lblHwEta = New-Object System.Windows.Forms.Label; $lblHwEta.Text = "est. ~5 sec"
+$lblHwEta = New-Object System.Windows.Forms.Label; $lblHwEta.Text = "est. ~3 sec"
 $lblHwEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblHwEta.ForeColor = $ColMuted
 $lblHwEta.Location = New-Object System.Drawing.Point(348,180); $lblHwEta.AutoSize = $true
 $pnlPoE.Controls.Add($lblHwEta)
@@ -4089,7 +4121,7 @@ $svcTimer.Add_Tick({
     if ($sync.SvcComplete -and -not $sync.SvcRunning) {
         $svcTimer.Stop(); $btnSvcCancel.Visible=$false
         $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Check Services"
-        $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="  $($sync.SvcStep)"
+        $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="  $($sync.SvcStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 
@@ -4501,7 +4533,7 @@ $diskTimer.Add_Tick({
     if ($sync.DiskComplete -and -not $sync.DiskRunning) {
         $diskTimer.Stop(); $btnDiskCancel.Visible=$false
         $btnDiskRun.Enabled=$true; $btnDiskRun.Text=[char]0x25B6+"  Check System Health"
-        $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="  $($sync.DiskStep)"
+        $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="  $($sync.DiskStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 
@@ -4553,7 +4585,7 @@ $btnDiskCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnDiskCan
 $pnlDisk.Controls.Add($btnDiskCancel)
 $btnDiskCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
 
-$lblDiskEta = New-Object System.Windows.Forms.Label; $lblDiskEta.Text = "est. ~30 sec"
+$lblDiskEta = New-Object System.Windows.Forms.Label; $lblDiskEta.Text = "est. ~15 sec"
 $lblDiskEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblDiskEta.ForeColor = $ColMuted
 $lblDiskEta.Location = New-Object System.Drawing.Point(368,180); $lblDiskEta.AutoSize = $true
 $pnlDisk.Controls.Add($lblDiskEta)
@@ -4667,7 +4699,7 @@ $evtTimer.Add_Tick({
     if ($sync.EvtComplete -and -not $sync.EvtRunning) {
         $evtTimer.Stop(); $btnEvtCancel.Visible=$false
         $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Check Event Log"
-        $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="  $($sync.EvtStep)"
+        $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="  $($sync.EvtStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 
@@ -5222,7 +5254,7 @@ $pnlFdBanner.Controls.Add($lblFdBannerDetail)
 # --- Module rows (one per module) --------------------------------------------
 $fdRows        = @()
 $script:fdRowY = 150     # first row top (banner bottom = 84+54=138, gap=12)
-$fdRowH        = 54
+$fdRowH        = 64
 $fdRowGap      = 6
 
 foreach ($mod in $fdModuleDefs) {
@@ -5283,13 +5315,13 @@ foreach ($mod in $fdModuleDefs) {
     $vLbl.UseMnemonic = $false
     $rPnl.Controls.Add($vLbl)
 
-    # Suggested action (bottom line - hidden for passing modules)
+    # Suggested action (bottom line - hidden for passing modules; wraps to 2 lines if needed)
     $aLbl = New-Object System.Windows.Forms.Label
     $aLbl.Text        = ""
-    $aLbl.Font        = New-Object System.Drawing.Font("Segoe UI", 8)
+    $aLbl.Font        = New-Object System.Drawing.Font("Segoe UI", 8.5)
     $aLbl.ForeColor   = $ColYellow
-    $aLbl.Location    = New-Object System.Drawing.Point(406, 31)
-    $aLbl.Size        = New-Object System.Drawing.Size(686, 17)
+    $aLbl.Location    = New-Object System.Drawing.Point(406, 32)
+    $aLbl.Size        = New-Object System.Drawing.Size(686, 28)
     $aLbl.BackColor   = [System.Drawing.Color]::Transparent
     $aLbl.Visible     = $false
     $aLbl.UseMnemonic = $false
@@ -5299,7 +5331,7 @@ foreach ($mod in $fdModuleDefs) {
     $vBtn = New-Object System.Windows.Forms.Button
     $vBtn.Text      = "View  >"
     $vBtn.Size      = New-Object System.Drawing.Size(96, 30)
-    $vBtn.Location  = New-Object System.Drawing.Point(1110, 12)
+    $vBtn.Location  = New-Object System.Drawing.Point(1110, 17)
     $vBtn.BackColor = $ColNavHover
     $vBtn.ForeColor = $ColText
     $vBtn.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -5324,12 +5356,12 @@ foreach ($mod in $fdModuleDefs) {
     $script:fdRowY += $fdRowH + $fdRowGap
 }
 
-# --- Bottom buttons (Re-run All | Re-run Failed | Back to Home) --------------
-# Rows end at 150 + 7*(54+6) = 570.  Buttons at 582.
+# --- Bottom buttons (Re-run All | Re-run Issues | Back to Home) --------------
+# Rows end at 150 + 7*(64+6) = 640.  Buttons at 652.
 $btnFdRerun = New-Object System.Windows.Forms.Button
 $btnFdRerun.Text      = [char]0x25B6 + "  Re-run All"
 $btnFdRerun.Size      = New-Object System.Drawing.Size(172, 40)
-$btnFdRerun.Location  = New-Object System.Drawing.Point(30, 582)
+$btnFdRerun.Location  = New-Object System.Drawing.Point(30, 652)
 $btnFdRerun.BackColor = $ColAccent
 $btnFdRerun.ForeColor = [System.Drawing.Color]::White
 $btnFdRerun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -5343,7 +5375,7 @@ $pnlFullDiag.Controls.Add($btnFdRerun)
 $btnFdRerunFailed = New-Object System.Windows.Forms.Button
 $btnFdRerunFailed.Text      = "Re-run Issues Only"
 $btnFdRerunFailed.Size      = New-Object System.Drawing.Size(190, 40)
-$btnFdRerunFailed.Location  = New-Object System.Drawing.Point(214, 582)
+$btnFdRerunFailed.Location  = New-Object System.Drawing.Point(214, 652)
 $btnFdRerunFailed.BackColor = $ColNavHover
 $btnFdRerunFailed.ForeColor = $ColYellow
 $btnFdRerunFailed.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -5358,7 +5390,7 @@ $pnlFullDiag.Controls.Add($btnFdRerunFailed)
 $btnFdBack = New-Object System.Windows.Forms.Button
 $btnFdBack.Text      = "<  Back to Home"
 $btnFdBack.Size      = New-Object System.Drawing.Size(160, 40)
-$btnFdBack.Location  = New-Object System.Drawing.Point(418, 582)
+$btnFdBack.Location  = New-Object System.Drawing.Point(418, 652)
 $btnFdBack.BackColor = $ColNavHover
 $btnFdBack.ForeColor = $ColText
 $btnFdBack.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat

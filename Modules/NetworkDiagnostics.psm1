@@ -253,9 +253,9 @@ $netTimer.Add_Tick({
         # Render to rtbNetLog
         if ($netItem.L -eq "Section") {
             $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
-            $rtbNetLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 7.5, [System.Drawing.FontStyle]::Bold)
-            $rtbNetLog.SelectionColor = $ColMuted
-            $rtbNetLog.AppendText("`n  $($netItem.Result.ToUpper())`n")
+            $rtbNetLog.SelectionFont  = New-Object System.Drawing.Font("Segoe UI Semibold", 9, [System.Drawing.FontStyle]::Bold)
+            $rtbNetLog.SelectionColor = $ColText
+            $rtbNetLog.AppendText("`n`n  $($netItem.Result.ToUpper())`n")
         } else {
             $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
             $rtbNetLog.SelectionColor = $ColLogLabel
@@ -303,8 +303,9 @@ $netTimer.Add_Tick({
         $netTimer.Stop()
         $btnNetCancel.Visible = $false
         $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Network Test"
+        $lblNetEta.Visible = $false
         $lblNetStatus.ForeColor = $ColMuted
-        $lblNetStatus.Text = "  $($sync.NetStep)"
+        $lblNetStatus.Text = "  $($sync.NetStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
         $lines = @()
         if ($sync.NetPortFail   -gt 0) { $lines += "Port failures — check the firewall and router. Confirm the uplink adapter is not blocked by a content filter or VLAN policy." }
         if ($sync.NetDomainFail -gt 0) { $lines += "DNS failures — check DNS server settings on this adapter. Confirm the VPU can reach its configured DNS server." }
@@ -401,10 +402,26 @@ $btnNetCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnNetCancel.Visib
 $pnlNetwork.Controls.Add($btnNetCancel)
 $btnNetCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 40)), 6))
 
-$lblNetEta = New-Object System.Windows.Forms.Label; $lblNetEta.Text = "est. ~20 sec"
+$lblNetEta = New-Object System.Windows.Forms.Label; $lblNetEta.Text = "est. ~15 sec"
 $lblNetEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblNetEta.ForeColor = $ColMuted
 $lblNetEta.Location = New-Object System.Drawing.Point(378,236); $lblNetEta.AutoSize = $true
 $pnlNetwork.Controls.Add($lblNetEta)
+
+# "Open Network Settings" — shortcut to ncpa.cpl for adapter changes
+$btnNetSettings = New-Object System.Windows.Forms.Button
+$btnNetSettings.Text      = "Open Network Settings"
+$btnNetSettings.Size      = New-Object System.Drawing.Size(180, 40)
+$btnNetSettings.Location  = New-Object System.Drawing.Point(1070, 226)
+$btnNetSettings.Anchor    = $AnchorTR
+$btnNetSettings.BackColor = $ColNavHover
+$btnNetSettings.ForeColor = $ColText
+$btnNetSettings.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnNetSettings.FlatAppearance.BorderSize = 0
+$btnNetSettings.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$btnNetSettings.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnNetSettings.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 40)), 6))
+$btnNetSettings.Add_Click({ try { Start-Process ncpa.cpl } catch { } })
+$pnlNetwork.Controls.Add($btnNetSettings)
 
 $lblNetStatus = New-Object System.Windows.Forms.Label; $lblNetStatus.Text = ""
 $lblNetStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblNetStatus.ForeColor = $ColMuted
@@ -441,6 +458,7 @@ function Start-NetDiagnostic {
     }
     foreach ($k in $netCards.Keys) { Update-CardStatus -Card $netCards[$k] -Value "--" -Status "neutral" }
     $pnlNetAction.Visible = $false
+    $lblNetEta.Visible = $true
     $rtbNetLog.Clear()
     $btnNetRun.Enabled = $false; $btnNetRun.Text = "  Running..."
     $btnNetCancel.Visible = $true

@@ -186,7 +186,7 @@ $pnlFdBanner.Controls.Add($lblFdBannerDetail)
 # --- Module rows (one per module) --------------------------------------------
 $fdRows        = @()
 $script:fdRowY = 150     # first row top (banner bottom = 84+54=138, gap=12)
-$fdRowH        = 54
+$fdRowH        = 64
 $fdRowGap      = 6
 
 foreach ($mod in $fdModuleDefs) {
@@ -247,13 +247,13 @@ foreach ($mod in $fdModuleDefs) {
     $vLbl.UseMnemonic = $false
     $rPnl.Controls.Add($vLbl)
 
-    # Suggested action (bottom line - hidden for passing modules)
+    # Suggested action (bottom line - hidden for passing modules; wraps to 2 lines if needed)
     $aLbl = New-Object System.Windows.Forms.Label
     $aLbl.Text        = ""
-    $aLbl.Font        = New-Object System.Drawing.Font("Segoe UI", 8)
+    $aLbl.Font        = New-Object System.Drawing.Font("Segoe UI", 8.5)
     $aLbl.ForeColor   = $ColYellow
-    $aLbl.Location    = New-Object System.Drawing.Point(406, 31)
-    $aLbl.Size        = New-Object System.Drawing.Size(686, 17)
+    $aLbl.Location    = New-Object System.Drawing.Point(406, 32)
+    $aLbl.Size        = New-Object System.Drawing.Size(686, 28)
     $aLbl.BackColor   = [System.Drawing.Color]::Transparent
     $aLbl.Visible     = $false
     $aLbl.UseMnemonic = $false
@@ -263,7 +263,7 @@ foreach ($mod in $fdModuleDefs) {
     $vBtn = New-Object System.Windows.Forms.Button
     $vBtn.Text      = "View  >"
     $vBtn.Size      = New-Object System.Drawing.Size(96, 30)
-    $vBtn.Location  = New-Object System.Drawing.Point(1110, 12)
+    $vBtn.Location  = New-Object System.Drawing.Point(1110, 17)
     $vBtn.BackColor = $ColNavHover
     $vBtn.ForeColor = $ColText
     $vBtn.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -288,12 +288,12 @@ foreach ($mod in $fdModuleDefs) {
     $script:fdRowY += $fdRowH + $fdRowGap
 }
 
-# --- Bottom buttons (Re-run All | Re-run Failed | Back to Home) --------------
-# Rows end at 150 + 7*(54+6) = 570.  Buttons at 582.
+# --- Bottom buttons (Re-run All | Re-run Issues | Back to Home) --------------
+# Rows end at 150 + 7*(64+6) = 640.  Buttons at 652.
 $btnFdRerun = New-Object System.Windows.Forms.Button
 $btnFdRerun.Text      = [char]0x25B6 + "  Re-run All"
 $btnFdRerun.Size      = New-Object System.Drawing.Size(172, 40)
-$btnFdRerun.Location  = New-Object System.Drawing.Point(30, 582)
+$btnFdRerun.Location  = New-Object System.Drawing.Point(30, 652)
 $btnFdRerun.BackColor = $ColAccent
 $btnFdRerun.ForeColor = [System.Drawing.Color]::White
 $btnFdRerun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -307,7 +307,7 @@ $pnlFullDiag.Controls.Add($btnFdRerun)
 $btnFdRerunFailed = New-Object System.Windows.Forms.Button
 $btnFdRerunFailed.Text      = "Re-run Issues Only"
 $btnFdRerunFailed.Size      = New-Object System.Drawing.Size(190, 40)
-$btnFdRerunFailed.Location  = New-Object System.Drawing.Point(214, 582)
+$btnFdRerunFailed.Location  = New-Object System.Drawing.Point(214, 652)
 $btnFdRerunFailed.BackColor = $ColNavHover
 $btnFdRerunFailed.ForeColor = $ColYellow
 $btnFdRerunFailed.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -322,7 +322,7 @@ $pnlFullDiag.Controls.Add($btnFdRerunFailed)
 $btnFdBack = New-Object System.Windows.Forms.Button
 $btnFdBack.Text      = "<  Back to Home"
 $btnFdBack.Size      = New-Object System.Drawing.Size(160, 40)
-$btnFdBack.Location  = New-Object System.Drawing.Point(418, 582)
+$btnFdBack.Location  = New-Object System.Drawing.Point(418, 652)
 $btnFdBack.BackColor = $ColNavHover
 $btnFdBack.ForeColor = $ColText
 $btnFdBack.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat

@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.32"
+$ScriptVersion = "1.0.33"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -407,17 +407,17 @@ $navReports     = New-TabButton "Reports"              0xE7C3  (8 * $tabW)  $tab
 
 $btnTabFullDiag = New-Object System.Windows.Forms.Button
 $btnTabFullDiag.Text      = [char]0x25B6 + "  Run Diagnostic"
-$btnTabFullDiag.Size      = New-Object System.Drawing.Size(132, 38)
-$btnTabFullDiag.Location  = New-Object System.Drawing.Point(1004, 15)
+$btnTabFullDiag.Size      = New-Object System.Drawing.Size(170, 46)
+$btnTabFullDiag.Location  = New-Object System.Drawing.Point(966, 11)
 $btnTabFullDiag.BackColor = $ColAccent
 $btnTabFullDiag.ForeColor = [System.Drawing.Color]::White
 $btnTabFullDiag.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $btnTabFullDiag.FlatAppearance.BorderSize = 0
-$btnTabFullDiag.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
+$btnTabFullDiag.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
 $btnTabFullDiag.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 $btnTabFullDiag.Cursor    = [System.Windows.Forms.Cursors]::Hand
 $btnTabFullDiag.Anchor    = $AnchorTR
-$btnTabFullDiag.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,132,38)),6))
+$btnTabFullDiag.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,170,46)),6))
 
 $pnlTabBar.Controls.AddRange(@(
     $navSysOverview,$navSysInfo,$navNetConfig,$navCamera,$navServices,

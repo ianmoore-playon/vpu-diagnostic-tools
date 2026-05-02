@@ -122,7 +122,7 @@ $svcTimer.Add_Tick({
     if ($sync.SvcComplete -and -not $sync.SvcRunning) {
         $svcTimer.Stop(); $btnSvcCancel.Visible=$false
         $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Check Services"
-        $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="  $($sync.SvcStep)"
+        $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="  $($sync.SvcStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
     }
 })
 
