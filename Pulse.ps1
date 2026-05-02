@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.36"
+$ScriptVersion = "1.0.37"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -147,6 +147,14 @@ $sync = [hashtable]::Synchronized(@{
         HwMonitor   = @{ Value = "--"; Status = "neutral" }
         HwMmk       = @{ Value = "--"; Status = "neutral" }
         SysInfo     = @{ Value = "--"; Status = "neutral" }
+        SiModel     = @{ Value = "--"; Status = "neutral" }
+        SiOs        = @{ Value = "--"; Status = "neutral" }
+        SiUptime    = @{ Value = "--"; Status = "neutral" }
+        SiCpu       = @{ Value = "--"; Status = "neutral" }
+        SiRam       = @{ Value = "--"; Status = "neutral" }
+        SiStorage   = @{ Value = "--"; Status = "neutral" }
+        DiskSmart   = @{ Value = "--"; Status = "neutral" }
+        DiskErrors  = @{ Value = "--"; Status = "neutral" }
     }
     PortResults     = [System.Collections.ArrayList]::new()
     CamResults      = [System.Collections.ArrayList]::new()

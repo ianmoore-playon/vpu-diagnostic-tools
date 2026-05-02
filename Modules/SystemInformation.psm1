@@ -40,7 +40,12 @@ $SysInfoScript = {
         Si-Log "Architecture"  $os.OSArchitecture                                                  "Info"
         Si-Log "Install Date"  $os.InstallDate.ToString("yyyy-MM-dd")                             "Info"
         $up = (Get-Date) - $os.LastBootUpTime
-        Si-Log "Uptime"        "$([int][Math]::Floor($up.TotalDays))d $($up.Hours)h $($up.Minutes)m"  "Info"
+        $upStr = "$([int][Math]::Floor($up.TotalDays))d $($up.Hours)h $($up.Minutes)m"
+        Si-Log "Uptime"        $upStr  "Info"
+        # Cards (#5): OS edition (short) + uptime
+        $osShort = ($os.Caption -replace '^Microsoft\s+','' -replace 'Windows\s+','Win ')
+        $sync.Cards["SiOs"]     = @{ Value = "$osShort  ($($os.BuildNumber))"; Status="ok" }
+        $sync.Cards["SiUptime"] = @{ Value = $upStr; Status = if ($up.TotalDays -gt 30) { "warn" } else { "ok" } }
     } catch { Si-Log "OS" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -91,6 +96,11 @@ $SysInfoScript = {
         $dom = if ($cs.PartOfDomain) { "Domain: $($cs.Domain)" } else { "Workgroup: $($cs.Workgroup)" }
         Si-Log "Network"       $dom                                                                 "Info"
         Si-Log "System Type"   $cs.SystemType                                                       "Info"
+        # Card (#5): manufacturer + model trimmed
+        $modelStr = if ($cs.Manufacturer -and $cs.Model) { "$($cs.Manufacturer)  $($cs.Model)" } `
+                    elseif ($cs.Model) { $cs.Model } else { "Unknown" }
+        if ($modelStr.Length -gt 32) { $modelStr = $modelStr.Substring(0,29) + "..." }
+        $sync.Cards["SiModel"] = @{ Value = $modelStr; Status="neutral" }
     } catch { Si-Log "System" "Query failed" "Warn" }
     try {
         $bios = Get-CimInstance Win32_BIOS -ErrorAction Stop
@@ -119,6 +129,9 @@ $SysInfoScript = {
         if ($cpus.Count -gt 0) {
             $fdCpuShort = $cpus[0].Name.Trim() -replace 'Intel\(R\) Core\(TM\) ','Core ' -replace '\(R\)|\(TM\)','' -replace '\s+@\s.*','' -replace '\s+',' '
         }
+        # Card (#5)
+        $cpuCardVal = if ($fdCpuShort.Length -gt 32) { $fdCpuShort.Substring(0,29) + "..." } else { $fdCpuShort }
+        $sync.Cards["SiCpu"] = @{ Value = $cpuCardVal; Status="neutral" }
     } catch { Si-Log "CPU" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -130,8 +143,11 @@ $SysInfoScript = {
     try {
         $os2 = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
         $fdRamGB = [int]([double]$os2.TotalVisibleMemorySize / 1048576.0 + 0.5)
+        $fdRamFreeGB = [double]$os2.FreePhysicalMemory / 1048576.0
         Si-Log "Total RAM"  ("{0:F1} GB" -f ([double]$os2.TotalVisibleMemorySize / 1048576.0))     "Info"
-        Si-Log "Available"  ("{0:F1} GB" -f ([double]$os2.FreePhysicalMemory     / 1048576.0))     "Info"
+        Si-Log "Available"  ("{0:F1} GB" -f $fdRamFreeGB)                                          "Info"
+        # Card (#5): total + free
+        $sync.Cards["SiRam"] = @{ Value = ("{0} GB total / {1:F1} GB free" -f $fdRamGB, $fdRamFreeGB); Status="ok" }
         $slots = @(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue)
         $n = 1
         foreach ($s in $slots) {
@@ -181,6 +197,15 @@ $SysInfoScript = {
             if ($d.SerialNumber -and $d.SerialNumber.Trim()) {
                 Si-Log "  Serial" $d.SerialNumber.Trim()                                            "Gray"
             }
+        }
+        # Card (#5): system drive free space
+        $sysDrive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$($env:SystemDrive)'" -ErrorAction SilentlyContinue
+        if ($sysDrive) {
+            $freeGB  = [math]::Round($sysDrive.FreeSpace / 1GB, 1)
+            $totalGB = [math]::Round($sysDrive.Size      / 1GB, 1)
+            $usedPct = [math]::Round((1 - $sysDrive.FreeSpace/$sysDrive.Size) * 100)
+            $stStatus = if ($freeGB -lt 5) { "fail" } elseif ($freeGB -lt 15) { "warn" } else { "ok" }
+            $sync.Cards["SiStorage"] = @{ Value = "$freeGB GB free of $totalGB GB ($usedPct% used)"; Status=$stStatus }
         }
     } catch { Si-Log "Storage" "Query failed" "Warn" }
 
@@ -346,7 +371,27 @@ $lblSiStatus.Location  = New-Object System.Drawing.Point(162, 94)
 $lblSiStatus.Size      = New-Object System.Drawing.Size(400, 18)
 $pnlSysInfo.Controls.Add($lblSiStatus)
 
-$siGrid = New-LogGrid -X 30 -Y 130 -W ($ContentW - 60) -H ($ContentH - 140) -LabelColW 240
+# Summary cards (#5) — surface model / OS / uptime / CPU / RAM / storage at a glance.
+# Background script writes values via $sync.Cards["SiModel"] etc.; the timer refreshes
+# the visible labels just like the other modules.
+$siCardDefs = @(
+    @{ Key="SiModel";   Title="Model";    Sub="Manufacturer + product";    Icon=[char]0xE7F8 }
+    @{ Key="SiOs";      Title="OS";       Sub="Edition + build";           Icon=[char]0xE770 }
+    @{ Key="SiUptime";  Title="Uptime";   Sub="Since last boot";           Icon=[char]0xE823 }
+    @{ Key="SiCpu";     Title="CPU";      Sub="Processor";                 Icon=[char]0xE950 }
+    @{ Key="SiRam";     Title="RAM";      Sub="Installed memory";          Icon=[char]0xEDA2 }
+    @{ Key="SiStorage"; Title="Storage";  Sub="System drive free space";   Icon=[char]0xE8B7 }
+)
+$siCards = @{}
+$siCardW = 200; $siCardGap = 10; $siCardX = 30
+foreach ($scd in $siCardDefs) {
+    $sc = New-StatusCard -Title $scd.Title -X $siCardX -Y 130 -Icon $scd.Icon -Sub $scd.Sub -CardW $siCardW -CardH 80
+    $siCards[$scd.Key] = $sc
+    $pnlSysInfo.Controls.Add($sc.Panel)
+    $siCardX += $siCardW + $siCardGap
+}
+
+$siGrid = New-LogGrid -X 30 -Y 224 -W ($ContentW - 60) -H ($ContentH - 234) -LabelColW 240
 $pnlSysInfo.Controls.Add($siGrid)
 
 # ---------- Timer -----------------------------------------------------------
@@ -356,6 +401,13 @@ $sysInfoTimer.Add_Tick({
     $item = $null
     while ($sync.SysInfoQueue.TryDequeue([ref]$item)) {
         Add-LogRow $siGrid $item.Label $item.Result $item.L
+    }
+    # Refresh the summary cards from $sync.Cards (#5)
+    foreach ($key in $siCards.Keys) {
+        $sc = $sync.Cards[$key]
+        if ($sc -and $siCards[$key].ValueLabel.Text -ne $sc.Value) {
+            Update-CardStatus -Card $siCards[$key] -Value $sc.Value -Status $sc.Status
+        }
     }
     if ($sync.SysInfoComplete) {
         $sysInfoTimer.Stop()
@@ -370,6 +422,11 @@ $sysInfoTimer.Add_Tick({
 function Start-SysInfoCollection {
     if ($sync.SysInfoRunning) { return }
     $siGrid.Rows.Clear()
+    # Reset the summary cards on refresh (#5)
+    foreach ($key in $siCards.Keys) {
+        $sync.Cards[$key] = @{ Value="--"; Status="neutral" }
+        Update-CardStatus -Card $siCards[$key] -Value "--" -Status "neutral"
+    }
     $btnSiRefresh.Enabled  = $false
     $lblSiStatus.Text      = "Collecting..."
     $sync.SysInfoComplete  = $false

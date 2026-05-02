@@ -10,6 +10,14 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.37] - 2026-05-01
+
+### Added
+
+- **System Information summary cards** (closes #5) — six top-row cards surface the most-asked details at a glance: Model, OS edition + build, Uptime, CPU, RAM (total + free), and System Drive Storage. The detailed log stays below for full inventory. Cards are color-coded — Storage goes warn under 15 GB free / fail under 5 GB; Uptime warns above 30 days (suggesting the VPU is overdue for a reboot).
+
+---
+
 ## [1.0.36] - 2026-05-01
 
 ### Changed
