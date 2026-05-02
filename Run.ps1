@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.43"
+$ScriptVersion = "1.0.44"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -514,8 +514,10 @@ function New-SummaryPanel {
 function Set-SummaryItems {
     param([hashtable]$Summary, [array]$Items)
     if (-not $Summary -or -not $Summary.ItemsHost) { return }
-    $host = $Summary.ItemsHost
-    $host.Controls.Clear()
+    # PowerShell reserves $host for the session-host object. Using it locally
+    # triggers "Cannot overwrite variable Host because it is read-only".
+    $itemHost = $Summary.ItemsHost
+    $itemHost.Controls.Clear()
     $rowY = 0
     foreach ($it in $Items) {
         $st = if ($it.Status) { $it.Status } else { "ok" }
@@ -528,15 +530,15 @@ function Set-SummaryItems {
         $lblIcn.ForeColor = $color
         $lblIcn.Location  = New-Object System.Drawing.Point(8, ($rowY + 2))
         $lblIcn.Size      = New-Object System.Drawing.Size(18, 18)
-        $host.Controls.Add($lblIcn)
+        $itemHost.Controls.Add($lblIcn)
 
         $lblTxt = New-Object System.Windows.Forms.Label
         $lblTxt.Text      = $it.Text
         $lblTxt.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
         $lblTxt.ForeColor = $ColText
         $lblTxt.Location  = New-Object System.Drawing.Point(28, $rowY)
-        $lblTxt.Size      = New-Object System.Drawing.Size(($host.Width - 32), 22)
-        $host.Controls.Add($lblTxt)
+        $lblTxt.Size      = New-Object System.Drawing.Size(($itemHost.Width - 32), 22)
+        $itemHost.Controls.Add($lblTxt)
 
         $rowY += 22
     }
@@ -935,11 +937,17 @@ $navAbout       = New-SidebarNavButton "About"                  0xE946 ($form.Cl
 $navSettings.Anchor = $AnchorBL
 $navAbout.Anchor    = $AnchorBL
 
-# Aliases kept for click handlers from older code paths
-$navOverview = $navCamera
-$navTests    = $navCamera
-$navHistory  = $navReports
-$navHelp     = $navAbout
+# Hidden compat buttons — older module code (CameraConnectivity, etc.) still calls
+# $navOverview / $navTests / $navHistory / $navHelp by name and adds its own Click
+# handlers. Aliasing these to the visible nav buttons would cause infinite recursion
+# (the handler on the alias calls PerformClick() on the same physical button it's
+# attached to). So they're separate hidden buttons whose Click forwards to the real
+# nav buttons.
+$navOverview = New-Object System.Windows.Forms.Button; $navOverview.Visible = $false; $navOverview.Size = New-Object System.Drawing.Size(0, 0)
+$navTests    = New-Object System.Windows.Forms.Button; $navTests.Visible    = $false; $navTests.Size    = New-Object System.Drawing.Size(0, 0)
+$navHistory  = New-Object System.Windows.Forms.Button; $navHistory.Visible  = $false; $navHistory.Size  = New-Object System.Drawing.Size(0, 0)
+$navHelp     = New-Object System.Windows.Forms.Button; $navHelp.Visible     = $false; $navHelp.Size     = New-Object System.Drawing.Size(0, 0)
+$form.Controls.AddRange(@($navOverview, $navTests, $navHistory, $navHelp))
 
 $pnlSidebar.Controls.AddRange($script:sbNavButtons)
 

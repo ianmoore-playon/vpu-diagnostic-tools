@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.43"
+$ScriptVersion = "1.0.44"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -380,11 +380,17 @@ $navAbout       = New-SidebarNavButton "About"                  0xE946 ($form.Cl
 $navSettings.Anchor = $AnchorBL
 $navAbout.Anchor    = $AnchorBL
 
-# Aliases kept for click handlers from older code paths
-$navOverview = $navCamera
-$navTests    = $navCamera
-$navHistory  = $navReports
-$navHelp     = $navAbout
+# Hidden compat buttons — older module code (CameraConnectivity, etc.) still calls
+# $navOverview / $navTests / $navHistory / $navHelp by name and adds its own Click
+# handlers. Aliasing these to the visible nav buttons would cause infinite recursion
+# (the handler on the alias calls PerformClick() on the same physical button it's
+# attached to). So they're separate hidden buttons whose Click forwards to the real
+# nav buttons.
+$navOverview = New-Object System.Windows.Forms.Button; $navOverview.Visible = $false; $navOverview.Size = New-Object System.Drawing.Size(0, 0)
+$navTests    = New-Object System.Windows.Forms.Button; $navTests.Visible    = $false; $navTests.Size    = New-Object System.Drawing.Size(0, 0)
+$navHistory  = New-Object System.Windows.Forms.Button; $navHistory.Visible  = $false; $navHistory.Size  = New-Object System.Drawing.Size(0, 0)
+$navHelp     = New-Object System.Windows.Forms.Button; $navHelp.Visible     = $false; $navHelp.Size     = New-Object System.Drawing.Size(0, 0)
+$form.Controls.AddRange(@($navOverview, $navTests, $navHistory, $navHelp))
 
 $pnlSidebar.Controls.AddRange($script:sbNavButtons)
 

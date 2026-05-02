@@ -10,6 +10,15 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.44] - 2026-05-01
+
+### Fixed
+
+- **`Set-SummaryItems` crashed with "Cannot overwrite variable Host"** — the helper used `$host` as a local variable, which collides with PowerShell's reserved `$host` (session host object). Renamed to `$itemHost`. Symptom was every section's Summary panel staying blank with `Cannot overwrite variable Host because it is read-only or constant` errors in the transcript.
+- **Stack overflow when clicking buttons** — v1.0.42 introduced `$navOverview = $navCamera` (and similar aliases) so module compat code could find these names. Then `Add_Click` handlers on the alias called `.PerformClick()` on the same physical button — infinite recursion the moment a nav was clicked. Fixed by making `$navOverview / $navTests / $navHistory / $navHelp` separate hidden compat buttons whose Click forwards to the real nav button.
+
+---
+
 ## [1.0.43] - 2026-05-01
 
 ### Changed

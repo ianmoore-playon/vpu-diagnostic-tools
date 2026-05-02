@@ -405,8 +405,10 @@ function New-SummaryPanel {
 function Set-SummaryItems {
     param([hashtable]$Summary, [array]$Items)
     if (-not $Summary -or -not $Summary.ItemsHost) { return }
-    $host = $Summary.ItemsHost
-    $host.Controls.Clear()
+    # PowerShell reserves $host for the session-host object. Using it locally
+    # triggers "Cannot overwrite variable Host because it is read-only".
+    $itemHost = $Summary.ItemsHost
+    $itemHost.Controls.Clear()
     $rowY = 0
     foreach ($it in $Items) {
         $st = if ($it.Status) { $it.Status } else { "ok" }
@@ -419,15 +421,15 @@ function Set-SummaryItems {
         $lblIcn.ForeColor = $color
         $lblIcn.Location  = New-Object System.Drawing.Point(8, ($rowY + 2))
         $lblIcn.Size      = New-Object System.Drawing.Size(18, 18)
-        $host.Controls.Add($lblIcn)
+        $itemHost.Controls.Add($lblIcn)
 
         $lblTxt = New-Object System.Windows.Forms.Label
         $lblTxt.Text      = $it.Text
         $lblTxt.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
         $lblTxt.ForeColor = $ColText
         $lblTxt.Location  = New-Object System.Drawing.Point(28, $rowY)
-        $lblTxt.Size      = New-Object System.Drawing.Size(($host.Width - 32), 22)
-        $host.Controls.Add($lblTxt)
+        $lblTxt.Size      = New-Object System.Drawing.Size(($itemHost.Width - 32), 22)
+        $itemHost.Controls.Add($lblTxt)
 
         $rowY += 22
     }
