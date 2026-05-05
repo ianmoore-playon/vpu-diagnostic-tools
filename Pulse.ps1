@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.48"
+$ScriptVersion = "1.0.49"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -217,7 +217,9 @@ $form = New-Object System.Windows.Forms.Form
 $form.Text = "Pulse - Pixellot Unified Live System Evaluator"
 # v1.0.42 redesign: 1500x800 to accommodate the 220-wide left sidebar without
 # shrinking the content area (was 1280x760 with 0-wide sidebar + top tab bar).
-$form.ClientSize = New-Object System.Drawing.Size(1500, 800)
+# v1.0.49: bumped to 1600 wide so the Camera Connectivity diagram + status row
+# has breathing room next to the right-anchored NIC Info / Legend sidebar.
+$form.ClientSize = New-Object System.Drawing.Size(1600, 800)
 $form.MinimumSize = $form.Size
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.BackColor = $ColBg
@@ -263,7 +265,7 @@ $AnchorTR   = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.F
 [int]$ContentX = $SideW
 [int]$ContentY = 0
 [int]$ContentH = 800 - $SbarH                   # 768
-[int]$ContentW = 1500 - $SideW                  # 1280 — matches old WideW
+[int]$ContentW = 1600 - $SideW                  # 1380 (v1.0.49: form widened from 1500 to 1600)
 [int]$WideW    = $ContentW
 [int]$NarrowW  = $ContentW
 [int]$RightX   = $ContentW
@@ -932,11 +934,19 @@ $btnTabFullDiag.Add_Click({ Start-FullDiagnostic })
 $form.Add_Load({
     $cboNic.Items.Add("All Ports") | Out-Null
     try {
-        foreach ($n in $script:detectedNics) {
-            $short = $n.InterfaceDescription -replace 'Intel\(R\) 82574L Gigabit Network Connection','CHU NIC'
-            $short = $short -replace 'Intel\(R\) I210 Gigabit Network Connection','CHU NIC'
-            $cboNic.Items.Add("$($n.Name)  ($short)") | Out-Null
+        # Sort the detected NICs by MAC so port-1 (lowest MAC) is first — this
+        # matches how Update-HwPortDiagram lays them out on the diagram, so
+        # "Ethernet 24" in slot 1 of the dropdown corresponds to physical Port 1.
+        $sortedDetected = @($script:detectedNics | Sort-Object MacAddress)
+        $portIdx = 1
+        foreach ($n in $sortedDetected) {
+            # Live device probe — same logic Update-HwPortDiagram uses, so
+            # the dropdown entry shows what's actually plugged into the port.
+            $deviceLabel = "No device"
+            try { $deviceLabel = Get-PortDevice -Adapter $n -LinkSpeed $n.LinkSpeed } catch { }
+            $cboNic.Items.Add("Port $portIdx — $($n.Name) — $deviceLabel") | Out-Null
             $cboGuidePortA.Items.Add($n.Name) | Out-Null
+            $portIdx++
         }
         $script:nicCardInfo = Get-AdlinkCardInfo $script:detectedNics
         $lblNicCardVal.Text = $script:nicCardInfo.Label
