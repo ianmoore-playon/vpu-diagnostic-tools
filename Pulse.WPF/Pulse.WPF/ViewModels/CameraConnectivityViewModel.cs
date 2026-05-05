@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Pulse.WPF.Helpers;
+using Pulse.WPF.Models;
 using Pulse.WPF.Services;
 
 namespace Pulse.WPF.ViewModels
@@ -14,8 +15,8 @@ namespace Pulse.WPF.ViewModels
     /// <summary>
     /// Backing viewmodel for CameraConnectivityView. Owns the 4 PortViewModels
     /// the panel binds to, runs the live-monitoring polling timer, and exposes
-    /// the Run Test command (currently a stub — diagnostic engine port is
-    /// deferred past the pilot).
+    /// the Run Test command (currently a stub — full diagnostic engine port is
+    /// deferred). Wording / status-aggregation quick-wins per UX_REVIEW Section 8.
     /// </summary>
     public class CameraConnectivityViewModel : ObservableObject
     {
@@ -23,17 +24,25 @@ namespace Pulse.WPF.ViewModels
         private readonly IPixellotConfigService _cfg;
         private readonly DispatcherTimer _liveTimer;
 
-        public ObservableCollection<PortViewModel> Ports { get; } = new ObservableCollection<PortViewModel>();
+        public ObservableCollection<PortViewModel> Ports     { get; } = new ObservableCollection<PortViewModel>();
         public ObservableCollection<LogEntry>      LogEntries { get; } = new ObservableCollection<LogEntry>();
+        public ObservableCollection<Finding>       Findings   { get; } = new ObservableCollection<Finding>();
 
         public ObservableCollection<string> TestScopes { get; } = new ObservableCollection<string> { "All Ports" };
 
         private string _selectedScope = "All Ports";
         public string SelectedScope { get => _selectedScope; set => Set(ref _selectedScope, value); }
 
-        // Section header status pill ----------------------------------------
+        // ----- Section header status pill -----
         private string _statusLabel = "Ready";
         public string StatusLabel { get => _statusLabel; set => Set(ref _statusLabel, value); }
+
+        /// <summary>
+        /// String severity for shared StatusPill control: "ok", "warn", "fail",
+        /// "running", "neutral".
+        /// </summary>
+        private string _statusSeverity = "neutral";
+        public string StatusSeverity { get => _statusSeverity; set => Set(ref _statusSeverity, value); }
 
         private Brush _statusColor;
         public Brush StatusColor { get => _statusColor; set => Set(ref _statusColor, value); }
@@ -41,11 +50,15 @@ namespace Pulse.WPF.ViewModels
         private Brush _statusBg;
         public Brush StatusBg { get => _statusBg; set => Set(ref _statusBg, value); }
 
-        // NIC info --------------------------------------------------------
+        // ----- NIC info -----
         private string _detectedNic = "Detecting…";
         public string DetectedNic { get => _detectedNic; set => Set(ref _detectedNic, value); }
 
-        // Commands --------------------------------------------------------
+        // ----- Has a test ever run? Hides the 5 placeholder probe cards. -----
+        private bool _hasTestRun;
+        public bool HasTestRun { get => _hasTestRun; set => Set(ref _hasTestRun, value); }
+
+        // ----- Commands -----
         public ICommand RunTestCommand { get; }
         public ICommand OpenFaultIsolatorCommand { get; }
         public ICommand OpenAdapterSettingsCommand { get; }
@@ -55,29 +68,25 @@ namespace Pulse.WPF.ViewModels
             _net = net;
             _cfg = cfg;
 
-            // Initialise resource-backed brushes from the active app instance.
-            // We can't use field initializers because Application.Current.Resources
-            // hasn't necessarily resolved its merged dictionaries before field
-            // init time on some startup paths.
             _statusColor = (Brush)Application.Current.Resources["MutedForegroundBrush"];
             _statusBg    = (Brush)Application.Current.Resources["BorderColBrush"];
 
-            // Pre-populate 4 placeholder ports so the panel doesn't render
-            // empty before the first poll completes.
             for (int i = 1; i <= 4; i++)
                 Ports.Add(new PortViewModel { Name = $"Port {i}" });
 
             RunTestCommand = new AsyncCommand(RunDiagnosticAsync);
-            OpenFaultIsolatorCommand   = new RelayCommand(() => AddLog("Action", "Fault Isolator wizard not implemented in pilot", "Warn"));
+            // The real fault isolator wizard ships in v1.1. Until then the
+            // button is disabled in the view; the command stays a no-op so
+            // existing bindings don't break.
+            OpenFaultIsolatorCommand   = new RelayCommand(() => { }, () => false);
             OpenAdapterSettingsCommand = new RelayCommand(() => System.Diagnostics.Process.Start("ncpa.cpl"));
 
-            // Live monitor every 3 s. Same cadence as the WinForms hwLiveTimer.
+            // Live monitor every 3 s — same cadence as the WinForms hwLiveTimer.
             _liveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
             _liveTimer.Tick += async (_, __) => await RefreshLiveAsync();
             _liveTimer.Start();
 
-            // First refresh as soon as the VM is built — don't make the user
-            // wait 3 s to see anything.
+            // First refresh immediately so the cards aren't empty for 3 s.
             _ = RefreshLiveAsync();
         }
 
@@ -100,20 +109,24 @@ namespace Pulse.WPF.ViewModels
                     DetectedNic = $"{snaps.Count} camera-NIC port{(snaps.Count == 1 ? "" : "s")} detected ({snaps[0].Description})";
                 }
 
-                // Refresh Test Scope dropdown to reflect what's actually
-                // plugged in. Preserve current selection if still valid.
+                // Refresh Test Scope dropdown to reflect what's plugged in.
                 var prevScope = SelectedScope;
                 TestScopes.Clear();
-                TestScopes.Add("All Ports");
+                // Specific count beats generic — UX_REVIEW Section 4.
+                TestScopes.Add(snaps.Count > 0 ? $"All {snaps.Count} ports" : "All Ports");
                 for (int i = 0; i < snaps.Count; i++)
                 {
                     var s = snaps[i];
                     var label = ResolveDeviceLabel(s, roleMap);
                     TestScopes.Add($"Port {i + 1} — {s.Name} — {label.Text}");
                 }
-                SelectedScope = TestScopes.Contains(prevScope) ? prevScope : "All Ports";
+                SelectedScope = TestScopes.Contains(prevScope) ? prevScope : TestScopes[0];
 
                 // Update each port card.
+                int linkedAt1G = 0;
+                int warningPorts = 0;
+                int criticalPorts = 0;
+
                 for (int i = 0; i < Ports.Count; i++)
                 {
                     var port = Ports[i];
@@ -132,45 +145,103 @@ namespace Pulse.WPF.ViewModels
                             ? (Brush)App.Current.Resources["YellowBrush"]
                             : (Brush)App.Current.Resources["ForegroundBrush"];
 
-                        // Tier logic — mirrors the v1.0.53 fix on the WinForms side:
-                        // 1 Gbps anything = ok; 100 Mbps OCR = ok; 100 Mbps main = warn.
+                        // Tier logic — UX_REVIEW Section 4 wording fixes.
                         var isOcr   = dev.IsOcr;
                         var is1G    = s.LinkSpeedBps >= 1_000_000_000UL;
                         var is100M  = s.LinkSpeedBps >= 100_000_000UL && s.LinkSpeedBps < 1_000_000_000UL;
+                        var hasMac  = !string.IsNullOrEmpty(s.RemoteMac);
+
                         if (!s.IsUp)
                         {
-                            port.StatusText  = "No Link";
-                            port.StatusColor = (Brush)App.Current.Resources["MutedForegroundBrush"];
+                            if (!hasMac)
+                            {
+                                // No cable scenario
+                                port.StatusText  = "No cable";
+                                port.StatusColor = (Brush)App.Current.Resources["MutedForegroundBrush"];
+                            }
+                            else
+                            {
+                                port.StatusText  = "No Link";
+                                port.StatusColor = (Brush)App.Current.Resources["MutedForegroundBrush"];
+                                // Cable but no negotiation on a configured port = critical-ish
+                                if (dev.IsConfigured) criticalPorts++;
+                            }
                         }
                         else if (is1G)
                         {
-                            port.StatusText  = "Linked";
+                            // Status text encodes the *speed*, not just "Linked".
+                            port.StatusText  = "1 Gbps";
                             port.StatusColor = (Brush)App.Current.Resources["GreenBrush"];
+                            linkedAt1G++;
                         }
                         else if (is100M && isOcr)
                         {
-                            port.StatusText  = "Linked (OCR)";
+                            // OCR cameras are spec'd for 100 Mbps — that's expected.
+                            port.StatusText  = "100 Mbps — OCR (expected)";
                             port.StatusColor = (Brush)App.Current.Resources["GreenBrush"];
                         }
                         else if (is100M)
                         {
-                            port.StatusText  = "Degraded";
+                            // Main camera at 100 Mbps = degraded link.
+                            port.StatusText  = "100 Mbps (expected 1 Gbps)";
                             port.StatusColor = (Brush)App.Current.Resources["YellowBrush"];
+                            warningPorts++;
+                            AddOrUpdateFinding(
+                                key: $"port{i + 1}-degraded",
+                                sev: FindingSeverity.Warning,
+                                title: $"Port {i + 1} — {dev.Text} negotiated 100 Mbps",
+                                rec:   $"Reseat the cable on Port {i + 1} or replace it. Expected 1 Gbps for a Main camera.",
+                                category: "Network");
                         }
                         else
                         {
-                            port.StatusText  = "Linked";
+                            port.StatusText  = FormatSpeed(s.LinkSpeedBps, s.IsUp);
                             port.StatusColor = (Brush)App.Current.Resources["AccentBrush"];
                         }
                     }
                     else
                     {
                         port.Speed = "—"; port.Ip = "—"; port.Mac = "—"; port.Errors = "—";
-                        port.Device = "No device";
+                        // "No cable" is more user-friendly than "No device" — UX_REVIEW Section 4.
+                        port.Device = "No cable";
                         port.DeviceColor = (Brush)App.Current.Resources["MutedForegroundBrush"];
-                        port.StatusText = "No Link";
+                        port.StatusText = "No cable";
                         port.StatusColor = (Brush)App.Current.Resources["MutedForegroundBrush"];
                     }
+                }
+
+                // Prune findings that are no longer relevant
+                PruneStalePortFindings(snaps.Count);
+
+                // Live status aggregation — UX_REVIEW Section 8.
+                if (criticalPorts > 0)
+                {
+                    StatusLabel = criticalPorts == 1 ? "1 Critical" : $"{criticalPorts} Critical";
+                    StatusSeverity = "critical";
+                    StatusColor = (Brush)App.Current.Resources["RedBrush"];
+                    StatusBg    = (Brush)App.Current.Resources["ErrBgBrush"];
+                }
+                else if (warningPorts > 0)
+                {
+                    StatusLabel = warningPorts == 1 ? "1 Warning" : $"{warningPorts} Warnings";
+                    StatusSeverity = "warn";
+                    StatusColor = (Brush)App.Current.Resources["YellowBrush"];
+                    StatusBg    = (Brush)App.Current.Resources["WarnBgBrush"];
+                }
+                else if (linkedAt1G > 0)
+                {
+                    // Specific count beats vague "All Clear".
+                    StatusLabel = $"All Clear ({linkedAt1G} port{(linkedAt1G == 1 ? "" : "s")} linked at 1 Gbps)";
+                    StatusSeverity = "ok";
+                    StatusColor = (Brush)App.Current.Resources["GreenBrush"];
+                    StatusBg    = (Brush)App.Current.Resources["OkBgBrush"];
+                }
+                else
+                {
+                    StatusLabel = "Ready";
+                    StatusSeverity = "neutral";
+                    StatusColor = (Brush)App.Current.Resources["MutedForegroundBrush"];
+                    StatusBg    = (Brush)App.Current.Resources["BorderColBrush"];
                 }
             }
             catch (Exception ex)
@@ -184,24 +255,27 @@ namespace Pulse.WPF.ViewModels
         private async Task RunDiagnosticAsync()
         {
             StatusLabel = "Running";
+            StatusSeverity = "running";
             StatusColor = (Brush)App.Current.Resources["YellowBrush"];
             StatusBg    = (Brush)App.Current.Resources["WarnBgBrush"];
-            AddLog("", "Pilot diagnostic", "Section");
-            AddLog("Note", "The full diagnostic engine port is deferred past the pilot.", "Warn");
-            AddLog("Note", "Live port-status polling is active (refreshes every 3 s).", "Info");
+            AddLog("", "Full diagnostic", "Section");
+            AddLog("Note", "Live state refreshed. Full diagnostic engine arrives in v1.1.", "Info");
 
-            // Force one immediate refresh so the cards reflect current state right away.
+            // Force one immediate refresh so the cards reflect current state.
             await RefreshLiveAsync();
-
-            StatusLabel = "All Clear";
-            StatusColor = (Brush)App.Current.Resources["GreenBrush"];
-            StatusBg    = (Brush)App.Current.Resources["OkBgBrush"];
-            AddLog("Pilot", "Refresh complete. See the WinForms Pulse for the full diagnostic.", "Pass");
+            HasTestRun = true;
+            AddLog("Refresh", "Live port-status polling continues every 3 s.", "Info");
         }
 
         // ----- helpers -----
 
-        private struct DeviceLabel { public string Text; public Brush Color; public bool IsOcr; }
+        private struct DeviceLabel
+        {
+            public string Text;
+            public Brush  Color;
+            public bool   IsOcr;
+            public bool   IsConfigured; // Found in cameras.cfg / pip.cfg
+        }
 
         private static DeviceLabel ResolveDeviceLabel(CameraNicSnapshot s, System.Collections.Generic.Dictionary<string, string> roleMap)
         {
@@ -209,7 +283,7 @@ namespace Pulse.WPF.ViewModels
 
             if (string.IsNullOrEmpty(s.RemoteMac))
             {
-                label.Text = "No device";
+                label.Text = "No cable"; // was "No device" — UX_REVIEW Section 4
                 return label;
             }
 
@@ -219,6 +293,7 @@ namespace Pulse.WPF.ViewModels
                 label.Text  = role;
                 label.IsOcr = role.IndexOf("OCR", StringComparison.OrdinalIgnoreCase) >= 0
                               || role.IndexOf("Scoreboard", StringComparison.OrdinalIgnoreCase) >= 0;
+                label.IsConfigured = true;
                 label.Color = label.IsOcr
                     ? (Brush)App.Current.Resources["AccentBrush"]
                     : (Brush)App.Current.Resources["GreenBrush"];
@@ -230,10 +305,10 @@ namespace Pulse.WPF.ViewModels
             var is100M   = s.LinkSpeedBps >= 100_000_000UL && s.LinkSpeedBps < 1_000_000_000UL;
             var is1G     = s.LinkSpeedBps >= 1_000_000_000UL;
 
-            if (isPixOui && is100M)      { label.Text = "OCR Camera";              label.IsOcr = true;  label.Color = (Brush)App.Current.Resources["AccentBrush"]; }
-            else if (isPixOui && is1G)   { label.Text = "Main Camera (probable)";  label.IsOcr = false; label.Color = (Brush)App.Current.Resources["GreenBrush"]; }
-            else if (isPixOui)           { label.Text = "Pixellot Camera";         label.IsOcr = false; label.Color = (Brush)App.Current.Resources["YellowBrush"]; }
-            else                         { label.Text = "Unknown device";          label.IsOcr = false; label.Color = (Brush)App.Current.Resources["YellowBrush"]; }
+            if (isPixOui && is100M)      { label.Text = "OCR Camera";     label.IsOcr = true;  label.Color = (Brush)App.Current.Resources["AccentBrush"]; }
+            else if (isPixOui && is1G)   { label.Text = "Main Camera";    label.IsOcr = false; label.Color = (Brush)App.Current.Resources["GreenBrush"]; }
+            else if (isPixOui)           { label.Text = "Pixellot Camera";label.IsOcr = false; label.Color = (Brush)App.Current.Resources["YellowBrush"]; }
+            else                         { label.Text = "Unknown device"; label.IsOcr = false; label.Color = (Brush)App.Current.Resources["YellowBrush"]; }
 
             return label;
         }
@@ -244,6 +319,47 @@ namespace Pulse.WPF.ViewModels
             if (bps >= 1_000_000_000UL) return $"{bps / 1_000_000_000UL} Gbps";
             if (bps >= 1_000_000UL)     return $"{bps / 1_000_000UL} Mbps";
             return $"{bps} bps";
+        }
+
+        // ----- findings helpers -----
+
+        private void AddOrUpdateFinding(string key, FindingSeverity sev, string title, string rec, string category = null)
+        {
+            // Attach a stable key via the Title prefix so we can dedupe
+            // across polling ticks. Crude but enough for the pilot.
+            var existing = Findings.FirstOrDefault(f => f.Title == title);
+            if (existing != null)
+            {
+                existing.Apply(sev, title, rec, category);
+                return;
+            }
+            var f2 = new Finding();
+            f2.Apply(sev, title, rec, category);
+            Findings.Add(f2);
+        }
+
+        private void PruneStalePortFindings(int currentPortCount)
+        {
+            // Re-evaluate which port findings still apply. Anything we
+            // didn't re-add this tick is stale — drop it. We track this
+            // by reconciling against the current Ports' StatusColor.
+            for (int i = Findings.Count - 1; i >= 0; i--)
+            {
+                var f = Findings[i];
+                if (f.Title.StartsWith("Port ", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Find the port number in the title.
+                    var parts = f.Title.Split(' ');
+                    if (parts.Length >= 2 && int.TryParse(parts[1], out int n)
+                        && n - 1 < Ports.Count)
+                    {
+                        var p = Ports[n - 1];
+                        // Only keep degraded-port findings if the port still reports degradation.
+                        if (p.StatusText != "100 Mbps (expected 1 Gbps)")
+                            Findings.RemoveAt(i);
+                    }
+                }
+            }
         }
 
         private void AddLog(string label, string result, string level)
@@ -258,7 +374,6 @@ namespace Pulse.WPF.ViewModels
                 _ => (Brush)App.Current.Resources["ForegroundBrush"],
             };
             LogEntries.Add(new LogEntry { Label = label, Result = result, Level = level, ResultColor = color });
-            // Trim runaway log so memory stays bounded over a long session.
             while (LogEntries.Count > 200) LogEntries.RemoveAt(0);
         }
     }

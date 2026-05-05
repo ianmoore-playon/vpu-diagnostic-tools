@@ -1,0 +1,238 @@
+<UserControl x:Class="Pulse.WPF.Views.HardwareView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:vm="clr-namespace:Pulse.WPF.ViewModels.Stub"
+             xmlns:controls="clr-namespace:Pulse.WPF.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:HardwareViewModel, IsDesignTimeCreatable=True}"
+             mc:Ignorable="d"
+             Background="{StaticResource AppBgBrush}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="32,24,32,24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />   <!-- Header -->
+                <RowDefinition Height="Auto" />   <!-- Findings banner -->
+                <RowDefinition Height="Auto" />   <!-- 3-card top row -->
+                <RowDefinition Height="Auto" />   <!-- PoE + NIC sidebar -->
+                <RowDefinition Height="*" MinHeight="280" />  <!-- Log -->
+                <RowDefinition Height="Auto" />   <!-- Action bar -->
+            </Grid.RowDefinitions>
+
+            <!-- ====== Section header ====== -->
+            <DockPanel Grid.Row="0" Margin="0,0,0,24">
+                <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
+                        Background="{Binding StatusBg}">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
+                                   Foreground="{Binding StatusColor}" Margin="8,0,0,0" />
+                    </StackPanel>
+                </Border>
+                <StackPanel>
+                    <TextBlock Text="Hardware &amp; Peripherals" Style="{StaticResource PageTitle}" />
+                    <TextBlock Text="GPU, displays, input devices and PoE budget — what the box has and what's drawing power"
+                               Style="{StaticResource PageSubtitle}" />
+                </StackPanel>
+            </DockPanel>
+
+            <!-- ====== Findings banner ====== -->
+            <controls:FindingsBanner Grid.Row="1"
+                                     Findings="{Binding Findings}"
+                                     Margin="0,0,0,16" />
+
+            <!-- ====== Top row: GPU / Monitor / Input ====== -->
+            <Grid Grid.Row="2" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- GPU -->
+                <Border Grid.Column="0" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <DockPanel>
+                            <md:PackIcon Kind="Gpu" Width="20" Height="20"
+                                         Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock Text="GPU" Style="{StaticResource SectionTitle}" Margin="10,0,0,0" />
+                        </DockPanel>
+                        <TextBlock Text="{Binding GpuName}" Foreground="{StaticResource ForegroundBrush}"
+                                   FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,12,0,0" />
+                        <TextBlock Text="{Binding GpuStatus}" Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Monitor -->
+                <Border Grid.Column="2" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <DockPanel>
+                            <md:PackIcon Kind="Monitor" Width="20" Height="20"
+                                         Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock Text="Monitor" Style="{StaticResource SectionTitle}" Margin="10,0,0,0" />
+                        </DockPanel>
+                        <TextBlock Text="{Binding MonitorStatus}" Foreground="{StaticResource ForegroundBrush}"
+                                   TextWrapping="Wrap" Margin="0,12,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Input devices -->
+                <Border Grid.Column="4" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <DockPanel>
+                            <md:PackIcon Kind="MouseVariant" Width="20" Height="20"
+                                         Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock Text="Input Devices" Style="{StaticResource SectionTitle}" Margin="10,0,0,0" />
+                        </DockPanel>
+                        <TextBlock Text="{Binding MouseStatus}" Margin="0,12,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding KeyboardStatus}" Margin="0,4,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ====== PoE table + NIC sidebar ====== -->
+            <Grid Grid.Row="3" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" MinWidth="280" />
+                </Grid.ColumnDefinitions>
+
+                <!-- PoE -->
+                <Border Grid.Column="0" Style="{StaticResource Card}">
+                    <DockPanel>
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                            <TextBlock Text="PoE Status" Style="{StaticResource SectionTitle}" />
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding PoeBudgetW}"
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       VerticalAlignment="Center" />
+                        </DockPanel>
+                        <DataGrid ItemsSource="{Binding PoePorts}"
+                                  Background="Transparent"
+                                  BorderThickness="0"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="None"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  CanUserResizeRows="False"
+                                  IsReadOnly="True"
+                                  RowBackground="Transparent"
+                                  AlternatingRowBackground="#10FFFFFF"
+                                  ColumnHeaderStyle="{x:Null}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Port" Binding="{Binding Port}" Width="*" />
+                                <DataGridTextColumn Header="State" Binding="{Binding State}" Width="*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{Binding StateColor}" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                            <Setter Property="Padding" Value="8,0" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Voltage" Binding="{Binding Voltage}" Width="*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource MonoValue}">
+                                            <Setter Property="Padding" Value="8,0" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Current" Binding="{Binding Current}" Width="*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource MonoValue}">
+                                            <Setter Property="Padding" Value="8,0" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Wattage" Binding="{Binding Wattage}" Width="*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource MonoValue}">
+                                            <Setter Property="Padding" Value="8,0" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                </Border>
+
+                <!-- NIC sidebar -->
+                <Border Grid.Column="2" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="NIC Link Uptime" Style="{StaticResource SectionTitle}" Margin="0,0,0,4" />
+                        <TextBlock Text="How long each adapter has been linked at its current speed."
+                                   Style="{StaticResource MutedLabel}" Margin="0,0,0,12" TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{Binding NicUptimes}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Adapter}" Foreground="{StaticResource ForegroundBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Speed}" Style="{StaticResource MutedLabel}" Margin="8,0" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Uptime}" Foreground="{Binding UptimeColor}" FontWeight="SemiBold" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ====== Live Log ====== -->
+            <Border Grid.Row="4" Style="{StaticResource Card}" Margin="0,0,0,16">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Live Log"
+                               Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                    <Border BorderBrush="{StaticResource BorderColBrush}" BorderThickness="0,1,0,0"
+                            Background="{StaticResource LogBgBrush}" CornerRadius="6">
+                        <ListBox ItemsSource="{Binding LogEntries}"
+                                 Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 FontFamily="Cascadia Mono, Consolas" FontSize="11">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="8,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="200" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Label}"
+                                                   Foreground="{StaticResource MutedForegroundBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Result}"
+                                                   Foreground="{Binding ResultColor}" TextWrapping="Wrap" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </DockPanel>
+            </Border>
+
+            <!-- ====== Action bar ====== -->
+            <DockPanel Grid.Row="5">
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Export Report"
+                            Style="{StaticResource MaterialDesignOutlinedButton}" IsEnabled="False" />
+                </StackPanel>
+                <Button DockPanel.Dock="Right"
+                        Command="{Binding RunTestCommand}"
+                        Style="{StaticResource MaterialDesignRaisedButton}"
+                        Padding="22,10" FontWeight="SemiBold">
+                    <StackPanel Orientation="Horizontal">
+                        <md:PackIcon Kind="Play" Width="18" Height="18" VerticalAlignment="Center" />
+                        <TextBlock Text="Run Test" Margin="8,0,0,0" />
+                    </StackPanel>
+                </Button>
+            </DockPanel>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

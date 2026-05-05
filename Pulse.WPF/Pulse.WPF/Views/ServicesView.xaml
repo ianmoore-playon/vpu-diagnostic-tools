@@ -1,0 +1,197 @@
+<UserControl x:Class="Pulse.WPF.Views.ServicesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:vm="clr-namespace:Pulse.WPF.ViewModels.Stub"
+             xmlns:controls="clr-namespace:Pulse.WPF.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:ServicesViewModel, IsDesignTimeCreatable=True}"
+             mc:Ignorable="d"
+             Background="{StaticResource AppBgBrush}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="32,24,32,24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />   <!-- Header -->
+                <RowDefinition Height="Auto" />   <!-- Findings banner -->
+                <RowDefinition Height="Auto" />   <!-- 6 service cards -->
+                <RowDefinition Height="Auto" />   <!-- Dependencies -->
+                <RowDefinition Height="*" MinHeight="240" />  <!-- Log -->
+                <RowDefinition Height="Auto" />   <!-- Action bar -->
+            </Grid.RowDefinitions>
+
+            <!-- ====== Section header ====== -->
+            <DockPanel Grid.Row="0" Margin="0,0,0,24">
+                <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
+                        Background="{Binding StatusBg}">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
+                                   Foreground="{Binding StatusColor}" Margin="8,0,0,0" />
+                    </StackPanel>
+                </Border>
+                <StackPanel>
+                    <TextBlock Text="Pixellot Services" Style="{StaticResource PageTitle}" />
+                    <TextBlock Text="Pixellot agent processes and the Windows services they depend on"
+                               Style="{StaticResource PageSubtitle}" />
+                </StackPanel>
+            </DockPanel>
+
+            <controls:FindingsBanner Grid.Row="1"
+                                     Findings="{Binding Findings}"
+                                     Margin="0,0,0,16" />
+
+            <!-- ====== Core service cards (WrapPanel of 6 tiles) ====== -->
+            <ItemsControl Grid.Row="2" ItemsSource="{Binding CoreServices}" Margin="0,0,0,16">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource Card}"
+                                Width="280" Height="148"
+                                Margin="0,0,12,12">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <!-- Top row: name + status pill -->
+                                <DockPanel Grid.Row="0">
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               FontFamily="Segoe UI Semibold" FontSize="14"
+                                               Foreground="{StaticResource ForegroundBrush}" TextWrapping="Wrap" />
+                                </DockPanel>
+
+                                <!-- Middle: name (mono) + start mode -->
+                                <StackPanel Grid.Row="1" Margin="0,8,0,0">
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource MonoValue}" />
+                                    <TextBlock Margin="0,4,0,0" Style="{StaticResource MutedLabel}">
+                                        <Run Text="Start mode: " />
+                                        <Run Text="{Binding StartMode, Mode=OneWay}" />
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding LastStarted}" Style="{StaticResource MutedLabel}" Margin="0,2,0,0" />
+                                    <TextBlock Text="{Binding Note}" Foreground="{StaticResource YellowBrush}"
+                                               FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <!-- Bottom: status pill -->
+                                <Border Grid.Row="2" Style="{StaticResource StatusChipSm}"
+                                        Background="{Binding StatusBg}" HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse Width="8" Height="8" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Status}" FontWeight="SemiBold" FontSize="11"
+                                                   Foreground="{Binding StatusColor}" Margin="6,0,0,0" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- ====== System Dependencies ====== -->
+            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,16">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="System Dependencies"
+                               Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                    <DataGrid ItemsSource="{Binding SystemDependencies}"
+                              Background="Transparent"
+                              BorderThickness="0"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="None"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              CanUserResizeRows="False"
+                              IsReadOnly="True"
+                              RowBackground="Transparent"
+                              AlternatingRowBackground="#10FFFFFF"
+                              ColumnHeaderStyle="{x:Null}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Service" Binding="{Binding DisplayName}" Width="*" />
+                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource MonoValue}">
+                                        <Setter Property="Padding" Value="8,0" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Start mode" Binding="{Binding StartMode}" Width="Auto">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource MutedForegroundBrush}" />
+                                        <Setter Property="Padding" Value="8,0" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="Auto">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{Binding StatusColor}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                        <Setter Property="Padding" Value="8,0" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </Border>
+
+            <!-- ====== Live Log ====== -->
+            <Border Grid.Row="4" Style="{StaticResource Card}" Margin="0,0,0,16">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Live Log" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                    <Border BorderBrush="{StaticResource BorderColBrush}" BorderThickness="0,1,0,0"
+                            Background="{StaticResource LogBgBrush}" CornerRadius="6">
+                        <ListBox ItemsSource="{Binding LogEntries}"
+                                 Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 FontFamily="Cascadia Mono, Consolas" FontSize="11">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="8,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="200" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Label}"
+                                                   Foreground="{StaticResource MutedForegroundBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Result}"
+                                                   Foreground="{Binding ResultColor}" TextWrapping="Wrap" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </DockPanel>
+            </Border>
+
+            <!-- ====== Action bar ====== -->
+            <DockPanel Grid.Row="5">
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Restart Service"
+                            Command="{Binding RestartServiceCommand}"
+                            Style="{StaticResource MaterialDesignOutlinedButton}" />
+                    <Button Content="Export Report" Margin="8,0,0,0"
+                            Style="{StaticResource MaterialDesignOutlinedButton}" IsEnabled="False" />
+                </StackPanel>
+                <Button DockPanel.Dock="Right"
+                        Command="{Binding RunTestCommand}"
+                        Style="{StaticResource MaterialDesignRaisedButton}"
+                        Padding="22,10" FontWeight="SemiBold">
+                    <StackPanel Orientation="Horizontal">
+                        <md:PackIcon Kind="Play" Width="18" Height="18" VerticalAlignment="Center" />
+                        <TextBlock Text="Run Test" Margin="8,0,0,0" />
+                    </StackPanel>
+                </Button>
+            </DockPanel>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

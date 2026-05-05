@@ -3,27 +3,31 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
              xmlns:vm="clr-namespace:Pulse.WPF.ViewModels"
+             xmlns:controls="clr-namespace:Pulse.WPF.Controls"
              d:DataContext="{d:DesignInstance Type=vm:CameraConnectivityViewModel}"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
-             Background="{StaticResource AppBgBrush}">
+             Background="{DynamicResource AppBgBrush}">
 
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />   <!-- Section header -->
+                <RowDefinition Height="Auto" />   <!-- Findings banner -->
                 <RowDefinition Height="Auto" />   <!-- Toolbar row -->
                 <RowDefinition Height="Auto" />   <!-- Port cards (responsive WrapPanel) -->
-                <RowDefinition Height="Auto" />   <!-- Status cards row -->
+                <RowDefinition Height="Auto" />   <!-- Probe-result cards row -->
                 <RowDefinition Height="*"    MinHeight="280" />  <!-- Log + Guidance -->
                 <RowDefinition Height="Auto" />   <!-- Action bar -->
             </Grid.RowDefinitions>
 
             <!-- ====== Section header ====== -->
-            <DockPanel Grid.Row="0" Margin="0,0,0,24">
+            <DockPanel Grid.Row="0" Margin="0,0,0,16">
                 <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
-                        Background="{Binding StatusBg}">
+                        Background="{Binding StatusBg}"
+                        AutomationProperties.Name="Overall panel status"
+                        AutomationProperties.HelpText="{Binding StatusLabel}">
                     <StackPanel Orientation="Horizontal">
                         <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
@@ -37,8 +41,14 @@
                 </StackPanel>
             </DockPanel>
 
+            <!-- ====== Findings banner — auto-hides when Findings is empty ====== -->
+            <controls:FindingsBanner Grid.Row="1"
+                                     Margin="0,0,0,16"
+                                     Findings="{Binding Findings}"
+                                     AutomationProperties.Name="Findings summary" />
+
             <!-- ====== Toolbar: Test Scope + Detected NIC ====== -->
-            <Grid Grid.Row="1" Margin="0,0,0,24">
+            <Grid Grid.Row="2" Margin="0,0,0,24">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -49,15 +59,16 @@
                           Style="{StaticResource MaterialDesignFloatingHintComboBox}"
                           md:HintAssist.Hint="Test Scope"
                           ItemsSource="{Binding TestScopes}"
-                          SelectedItem="{Binding SelectedScope}" />
+                          SelectedItem="{Binding SelectedScope}"
+                          AutomationProperties.Name="Test scope selector" />
                 <TextBlock Grid.Column="2"
                            Text="{Binding DetectedNic}"
                            Foreground="{StaticResource MutedForegroundBrush}"
                            VerticalAlignment="Center" />
             </Grid>
 
-            <!-- ====== Port detail cards — responsive WrapPanel ====== -->
-            <ItemsControl Grid.Row="2" ItemsSource="{Binding Ports}" Margin="0,0,0,16">
+            <!-- ====== Port detail cards — keyboard-focusable Buttons ====== -->
+            <ItemsControl Grid.Row="3" ItemsSource="{Binding Ports}" Margin="0,0,0,16">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <WrapPanel Orientation="Horizontal" />
@@ -65,9 +76,11 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Style="{StaticResource Card}"
+                        <Button Style="{StaticResource PortCardButton}"
                                 Width="296" Height="178"
-                                Margin="0,0,12,12">
+                                Margin="0,0,12,12"
+                                AutomationProperties.Name="{Binding Name}"
+                                AutomationProperties.HelpText="{Binding StatusText}">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
@@ -76,8 +89,8 @@
 
                                 <!-- Card header: Port N + status pill -->
                                 <DockPanel Grid.Row="0" Margin="0,0,0,12">
-                                    <TextBlock Text="{Binding Name}" FontFamily="Segoe UI Semibold"
-                                               FontSize="15" Foreground="{StaticResource ForegroundBrush}" />
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource BodyStrong}"
+                                               FontSize="15" />
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                         <Ellipse Width="10" Height="10" Fill="{Binding StatusColor}"
                                                  VerticalAlignment="Center" />
@@ -101,39 +114,42 @@
                                     </Grid.ColumnDefinitions>
 
                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Device:"
-                                               Style="{StaticResource MutedLabel}" />
+                                               Style="{StaticResource MetaSm}" />
                                     <TextBlock Grid.Row="0" Grid.Column="1"
                                                Text="{Binding Device}" Foreground="{Binding DeviceColor}"
-                                               FontWeight="SemiBold" />
+                                               FontWeight="SemiBold"
+                                               ToolTip="Inferred from speed; not yet matched to cameras.cfg" />
 
                                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Speed:"
-                                               Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                                               Style="{StaticResource MetaSm}" Margin="0,4,0,0" />
                                     <TextBlock Grid.Row="1" Grid.Column="1"
                                                Text="{Binding Speed}" Margin="0,4,0,0" />
 
                                     <TextBlock Grid.Row="2" Grid.Column="0" Text="IP:"
-                                               Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                                               Style="{StaticResource MetaSm}" Margin="0,4,0,0" />
                                     <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Ip}"
-                                               Style="{StaticResource MonoValue}" Margin="0,4,0,0" />
+                                               Style="{StaticResource Mono11}" Margin="0,4,0,0" />
 
                                     <TextBlock Grid.Row="3" Grid.Column="0" Text="MAC:"
-                                               Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                                               Style="{StaticResource MetaSm}" Margin="0,4,0,0" />
                                     <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Mac}"
-                                               Style="{StaticResource MonoValue}" Margin="0,4,0,0" />
+                                               Style="{StaticResource Mono11}" Margin="0,4,0,0" />
 
-                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Errors:"
-                                               Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="NIC errors:"
+                                               Style="{StaticResource MetaSm}" Margin="0,4,0,0"
+                                               ToolTip="Receive + transmit errors since last reset" />
                                     <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Errors}"
                                                Foreground="{Binding ErrorsColor}" Margin="0,4,0,0" />
                                 </Grid>
                             </Grid>
-                        </Border>
+                        </Button>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <!-- ====== Status cards row (5 placeholder cards) ====== -->
-            <Grid Grid.Row="3" Margin="0,8,0,16">
+            <!-- ====== Probe-result cards — hidden until a test has run ====== -->
+            <Grid Grid.Row="4" Margin="0,8,0,16"
+                  Visibility="{Binding HasTestRun, Converter={StaticResource BoolToVis}}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
@@ -141,45 +157,45 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,6,0">
+                <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,8,0">
                     <StackPanel>
-                        <TextBlock Text="SmartSpeed" Style="{StaticResource MutedLabel}" />
+                        <TextBlock Text="SmartSpeed" Style="{StaticResource MetaSm}" />
                         <TextBlock Text="—" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,0" />
-                        <TextBlock Text="Intel events (48h)" Style="{StaticResource MutedLabel}" Margin="0,2,0,0" />
+                        <TextBlock Text="Adapter event log" Style="{StaticResource MetaSm}" Margin="0,2,0,0" />
                     </StackPanel>
                 </Border>
-                <Border Grid.Column="1" Style="{StaticResource Card}" Margin="6,0,6,0">
+                <Border Grid.Column="1" Style="{StaticResource Card}" Margin="8,0,8,0">
                     <StackPanel>
-                        <TextBlock Text="Ping (CHU)" Style="{StaticResource MutedLabel}" />
+                        <TextBlock Text="Ping (CHU)" Style="{StaticResource MetaSm}" />
                         <TextBlock Text="—" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,0" />
-                        <TextBlock Text="ICMP reachability" Style="{StaticResource MutedLabel}" Margin="0,2,0,0" />
+                        <TextBlock Text="Camera responds to ping" Style="{StaticResource MetaSm}" Margin="0,2,0,0" />
                     </StackPanel>
                 </Border>
-                <Border Grid.Column="2" Style="{StaticResource Card}" Margin="6,0,6,0">
+                <Border Grid.Column="2" Style="{StaticResource Card}" Margin="8,0,8,0">
                     <StackPanel>
-                        <TextBlock Text="ARP Entry" Style="{StaticResource MutedLabel}" />
+                        <TextBlock Text="ARP Entry" Style="{StaticResource MetaSm}" />
                         <TextBlock Text="—" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,0" />
-                        <TextBlock Text="L2 neighbour table" Style="{StaticResource MutedLabel}" Margin="0,2,0,0" />
+                        <TextBlock Text="Switch sees the camera" Style="{StaticResource MetaSm}" Margin="0,2,0,0" />
                     </StackPanel>
                 </Border>
-                <Border Grid.Column="3" Style="{StaticResource Card}" Margin="6,0,6,0">
+                <Border Grid.Column="3" Style="{StaticResource Card}" Margin="8,0,8,0">
                     <StackPanel>
-                        <TextBlock Text="CHU Detection" Style="{StaticResource MutedLabel}" />
+                        <TextBlock Text="CHU Detection" Style="{StaticResource MetaSm}" />
                         <TextBlock Text="—" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,0" />
-                        <TextBlock Text="RTSP port 554" Style="{StaticResource MutedLabel}" Margin="0,2,0,0" />
+                        <TextBlock Text="Camera streams video" Style="{StaticResource MetaSm}" Margin="0,2,0,0" />
                     </StackPanel>
                 </Border>
-                <Border Grid.Column="4" Style="{StaticResource Card}" Margin="6,0,0,0">
+                <Border Grid.Column="4" Style="{StaticResource Card}" Margin="8,0,0,0">
                     <StackPanel>
-                        <TextBlock Text="PoE Budget" Style="{StaticResource MutedLabel}" />
+                        <TextBlock Text="PoE Budget" Style="{StaticResource MetaSm}" />
                         <TextBlock Text="—" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,0" />
-                        <TextBlock Text="ADLINK SmartPoE" Style="{StaticResource MutedLabel}" Margin="0,2,0,0" />
+                        <TextBlock Text="Switch power budget" Style="{StaticResource MetaSm}" Margin="0,2,0,0" />
                     </StackPanel>
                 </Border>
             </Grid>
 
             <!-- ====== Log + Guidance two-column area ====== -->
-            <Grid Grid.Row="4" Margin="0,0,0,16">
+            <Grid Grid.Row="5" Margin="0,0,0,16">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="2*" />
                     <ColumnDefinition Width="12" />
@@ -198,7 +214,9 @@
                                      BorderThickness="0"
                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                                      FontFamily="Cascadia Mono, Consolas"
-                                     FontSize="11">
+                                     FontSize="11"
+                                     AutomationProperties.Name="Live diagnostic log"
+                                     AutomationProperties.LiveSetting="Polite">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <Grid Margin="8,2">
@@ -221,43 +239,52 @@
                 <!-- Guidance -->
                 <Border Grid.Column="2" Style="{StaticResource Card}">
                     <StackPanel>
-                        <TextBlock Text="Next Steps Guidance" Style="{StaticResource SectionTitle}"
+                        <TextBlock Text="Next Steps" Style="{StaticResource SectionTitle}"
                                    Margin="0,0,0,12" />
                         <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedForegroundBrush}"
-                                   Text="Live port-status monitoring is active. Plug or unplug a camera and the port cards above update automatically — no need to re-run the test.&#x0a;&#x0a;Run Test refreshes the cards and clears any cached state. The full diagnostic engine port (port-speed remediation, RTSP, SmartSpeed, PoE) is deferred past the pilot."
+                                   Text="Live port-status monitoring is active. Plug or unplug a camera and the cards above update automatically — no need to re-run the diagnostic."
                                    Margin="0,0,0,16" />
-                        <Button Content="Open Fault Isolator →"
+                        <Button Content="Open Fault Isolator"
                                 Command="{Binding OpenFaultIsolatorCommand}"
+                                IsEnabled="False"
+                                ToolTip="Coming in next release"
                                 Style="{StaticResource MaterialDesignRaisedButton}"
-                                HorizontalAlignment="Stretch" Margin="0,0,0,8" />
+                                HorizontalAlignment="Stretch" Margin="0,0,0,8"
+                                AutomationProperties.Name="Open Fault Isolator (coming soon)" />
                         <Button Content="Open Adapter Settings"
                                 Command="{Binding OpenAdapterSettingsCommand}"
                                 Style="{StaticResource MaterialDesignOutlinedButton}"
-                                HorizontalAlignment="Stretch" />
+                                HorizontalAlignment="Stretch"
+                                AutomationProperties.Name="Open Windows network adapter settings" />
                     </StackPanel>
                 </Border>
             </Grid>
 
             <!-- ====== Bottom action bar ====== -->
-            <DockPanel Grid.Row="5">
+            <DockPanel Grid.Row="6">
                 <StackPanel Orientation="Horizontal">
                     <Button Content="Export Report"
                             Style="{StaticResource MaterialDesignOutlinedButton}"
-                            IsEnabled="False" />
+                            IsEnabled="False"
+                            AutomationProperties.Name="Export diagnostic report" />
                     <Button Content="Copy Summary" Margin="8,0,0,0"
                             Style="{StaticResource MaterialDesignOutlinedButton}"
-                            IsEnabled="False" />
+                            IsEnabled="False"
+                            AutomationProperties.Name="Copy summary to clipboard" />
                     <Button Content="Save Log" Margin="8,0,0,0"
                             Style="{StaticResource MaterialDesignOutlinedButton}"
-                            IsEnabled="False" />
+                            IsEnabled="False"
+                            AutomationProperties.Name="Save log to file" />
                 </StackPanel>
                 <Button DockPanel.Dock="Right"
                         Command="{Binding RunTestCommand}"
                         Style="{StaticResource MaterialDesignRaisedButton}"
-                        Padding="22,10" FontWeight="SemiBold">
+                        Padding="22,10" FontWeight="SemiBold"
+                        ToolTip="Refreshes live state and adds a marker entry to the log. The full diagnostic engine (port-speed remediation, RTSP, SmartSpeed, PoE budget) ships in v1.1."
+                        AutomationProperties.Name="Run full diagnostic">
                     <StackPanel Orientation="Horizontal">
                         <md:PackIcon Kind="Play" Width="18" Height="18" VerticalAlignment="Center" />
-                        <TextBlock Text="Run Test" Margin="8,0,0,0" />
+                        <TextBlock Text="Run Full Diagnostic" Margin="8,0,0,0" />
                     </StackPanel>
                 </Button>
             </DockPanel>

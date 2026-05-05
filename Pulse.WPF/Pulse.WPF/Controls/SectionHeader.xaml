@@ -1,0 +1,33 @@
+<!--
+    SectionHeader — title + subtitle + StatusPill, used at the top of every
+    panel. Bind:
+        <controls:SectionHeader Title="Camera Connectivity"
+                                Subtitle="Validate link speed…"
+                                StatusLabel="{Binding StatusLabel}"
+                                StatusSeverity="{Binding StatusSeverity}" />
+-->
+<UserControl x:Class="Pulse.WPF.Controls.SectionHeader"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Pulse.WPF.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Name="Root">
+
+    <DockPanel>
+        <controls:StatusPill DockPanel.Dock="Right"
+                             VerticalAlignment="Top"
+                             Label="{Binding ElementName=Root, Path=StatusLabel}"
+                             Severity="{Binding ElementName=Root, Path=StatusSeverity}"
+                             Visibility="{Binding ElementName=Root, Path=StatusLabel, Converter={StaticResource StringToVis}}"
+                             AutomationProperties.Name="Overall panel status" />
+        <StackPanel>
+            <TextBlock Text="{Binding ElementName=Root, Path=Title}"
+                       Style="{StaticResource PageTitle}" />
+            <TextBlock Text="{Binding ElementName=Root, Path=Subtitle}"
+                       Style="{StaticResource PageSubtitle}"
+                       Visibility="{Binding ElementName=Root, Path=Subtitle, Converter={StaticResource StringToVis}}" />
+        </StackPanel>
+    </DockPanel>
+</UserControl>

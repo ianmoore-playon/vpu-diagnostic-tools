@@ -5,10 +5,41 @@
     HeadingTitle / HeadingSubtitle / SectionTitle : type scale.
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
-    <!-- ====== Card (used by every panel for its content surfaces) ====== -->
-    <Style x:Key="Card" TargetType="Border">
+    <!-- ============================================================ -->
+    <!-- Spacing tokens — multiples of 4 per UX_REVIEW Section 2.     -->
+    <!-- ============================================================ -->
+    <Thickness x:Key="GapXs">4</Thickness>
+    <Thickness x:Key="GapSm">8</Thickness>
+    <Thickness x:Key="GapMd">12</Thickness>
+    <Thickness x:Key="GapLg">16</Thickness>
+    <Thickness x:Key="GapXl">24</Thickness>
+    <Thickness x:Key="GapXxl">32</Thickness>
+
+    <sys:Double x:Key="GapXsValue">4</sys:Double>
+    <sys:Double x:Key="GapSmValue">8</sys:Double>
+    <sys:Double x:Key="GapMdValue">12</sys:Double>
+    <sys:Double x:Key="GapLgValue">16</sys:Double>
+    <sys:Double x:Key="GapXlValue">24</sys:Double>
+    <sys:Double x:Key="GapXxlValue">32</sys:Double>
+
+    <!-- ============================================================ -->
+    <!-- Card elevations — three levels per UX_REVIEW Section 2.      -->
+    <!--   CardFlat   : grouping inside a card (no shadow)            -->
+    <!--   CardElev1  : default content surfaces (== legacy "Card")   -->
+    <!--   CardElev2  : Findings banner, modals                       -->
+    <!-- ============================================================ -->
+    <Style x:Key="CardFlat" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource CardBgBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderColBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="16" />
+    </Style>
+
+    <Style x:Key="CardElev1" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource CardBgBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource BorderColBrush}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -21,7 +52,31 @@
         </Setter>
     </Style>
 
-    <!-- ====== Type scale ====== -->
+    <Style x:Key="CardElev2" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource CardBgRaisedBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderColBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect Color="Black" BlurRadius="20" Opacity="0.32" ShadowDepth="4" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Backwards-compat: legacy "Card" key. Existing XAML is unchanged. -->
+    <Style x:Key="Card" TargetType="Border" BasedOn="{StaticResource CardElev1}" />
+
+    <!-- ============================================================ -->
+    <!-- Typography — 7-step scale per UX_REVIEW Section 2.           -->
+    <!-- ============================================================ -->
+    <Style x:Key="DisplayLg" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="Segoe UI Semibold" />
+        <Setter Property="FontSize" Value="28" />
+        <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+    </Style>
+
     <Style x:Key="PageTitle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="Segoe UI Semibold" />
         <Setter Property="FontSize" Value="22" />
@@ -41,23 +96,190 @@
         <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
     </Style>
 
-    <Style x:Key="MutedLabel" TargetType="TextBlock">
+    <Style x:Key="BodyDefault" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+    </Style>
+
+    <Style x:Key="BodyStrong" TargetType="TextBlock" BasedOn="{StaticResource BodyDefault}">
+        <Setter Property="FontFamily" Value="Segoe UI Semibold" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style x:Key="MetaSm" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="Segoe UI" />
         <Setter Property="FontSize" Value="11" />
         <Setter Property="Foreground" Value="{StaticResource MutedForegroundBrush}" />
     </Style>
 
-    <Style x:Key="MonoValue" TargetType="TextBlock">
+    <Style x:Key="Mono11" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
         <Setter Property="FontSize" Value="11" />
         <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
     </Style>
+
+    <!-- Backwards-compat aliases for the prior style names -->
+    <Style x:Key="MutedLabel" TargetType="TextBlock" BasedOn="{StaticResource MetaSm}" />
+    <Style x:Key="MonoValue"  TargetType="TextBlock" BasedOn="{StaticResource Mono11}" />
 
     <!-- ====== Status pill ("All Clear" / "Issues Found" / "Running") ====== -->
     <Style x:Key="StatusChip" TargetType="Border">
         <Setter Property="CornerRadius" Value="14" />
         <Setter Property="Padding" Value="14,6" />
         <Setter Property="Background" Value="{StaticResource OkBgBrush}" />
+    </Style>
+
+    <!-- ====== Findings banner (reusable across every panel) ======
+         The banner only renders when HasFindings == true on the panel VM.
+         Each row inside is a Finding model (Severity / Title / Recommendation).
+         Defined as styles here so FindingsBanner.xaml in Controls/ stays small
+         and so individual panels can opt into the look without duplicating it. -->
+    <Style x:Key="FindingsBannerOuter" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource CardBgBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource YellowBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="16,12" />
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect Color="Black" BlurRadius="20" Opacity="0.32" ShadowDepth="3" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- One finding row inside the banner -->
+    <Style x:Key="FindingRow" TargetType="Border">
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderColBrush}" />
+        <Setter Property="Padding" Value="0,10" />
+    </Style>
+
+    <Style x:Key="FindingSeverityChip" TargetType="Border">
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Padding" Value="8,3" />
+        <Setter Property="MinWidth" Value="68" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
+    <Style x:Key="FindingTitle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="Segoe UI Semibold" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style x:Key="FindingRecommendation" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource MutedForegroundBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Margin" Value="0,2,0,0" />
+    </Style>
+
+    <!-- ====== Hub tile (System Overview) ======
+         Big-button card the user clicks to jump to a panel. Uses the same
+         CardBg as a regular card but with a hover lift via BorderBrush. -->
+    <Style x:Key="HubTile" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource CardBgBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderColBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Padding" Value="20" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bg"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="8"
+                            Padding="{TemplateBinding Padding}">
+                        <Border.Effect>
+                            <DropShadowEffect Color="Black" BlurRadius="12" Opacity="0.18" ShadowDepth="2" />
+                        </Border.Effect>
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ====== Service-status pill (Pixellot Services) ======
+         Same shape as StatusChip but smaller, used inline in tables. -->
+    <Style x:Key="StatusChipSm" TargetType="Border">
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="10,3" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
+    <!-- ============================================================ -->
+    <!-- Focus visual — visible on dark backgrounds.                   -->
+    <!-- BorderColStrong 2 px outline per UX_REVIEW Section 6.        -->
+    <!-- ============================================================ -->
+    <Style x:Key="PulseFocusVisual">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Rectangle Margin="-2"
+                               Stroke="{DynamicResource BorderColStrongBrush}"
+                               StrokeThickness="2"
+                               StrokeDashArray="1 0"
+                               SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Apply globally to every Control so keyboard focus is always visible. -->
+    <Style TargetType="{x:Type Control}">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource PulseFocusVisual}" />
+    </Style>
+
+    <!-- ============================================================ -->
+    <!-- Port-card button — keyboard-focusable, looks like a Border.  -->
+    <!-- Lets port cards be reached via Tab in CameraConnectivityView.-->
+    <!-- ============================================================ -->
+    <Style x:Key="PortCardButton" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource CardBgBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderColBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="b"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="8"
+                            Padding="{TemplateBinding Padding}">
+                        <Border.Effect>
+                            <DropShadowEffect Color="Black" BlurRadius="12" Opacity="0.18" ShadowDepth="2" />
+                        </Border.Effect>
+                        <ContentPresenter HorizontalAlignment="Stretch"
+                                          VerticalAlignment="Stretch" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="{StaticResource CardBgRaisedBrush}" />
+                            <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource BorderColStrongBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- ====== Sidebar nav button ====== -->
@@ -85,7 +307,7 @@
                             <Setter TargetName="bg" Property="Background" Value="{StaticResource SidebarHoverBrush}" />
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="bg" Property="Background" Value="#1F2A40" />
+                            <Setter TargetName="bg" Property="Background" Value="{StaticResource CardBgRaisedBrush}" />
                             <Setter TargetName="bg" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
                             <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
                         </Trigger>

@@ -1,0 +1,121 @@
+<UserControl x:Class="Pulse.WPF.Views.SystemOverviewView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:vm="clr-namespace:Pulse.WPF.ViewModels.Stub"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:SystemOverviewViewModel, IsDesignTimeCreatable=True}"
+             mc:Ignorable="d"
+             Background="{StaticResource AppBgBrush}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="32,24,32,24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />   <!-- Section header -->
+                <RowDefinition Height="Auto" />   <!-- Hero -->
+                <RowDefinition Height="Auto" />   <!-- Hub tiles -->
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- ====== Section header ====== -->
+            <DockPanel Grid.Row="0" Margin="0,0,0,24">
+                <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
+                        Background="{Binding StatusBg}">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
+                                   Foreground="{Binding StatusColor}" Margin="8,0,0,0" />
+                    </StackPanel>
+                </Border>
+                <StackPanel>
+                    <TextBlock Text="System Overview" Style="{StaticResource PageTitle}" />
+                    <TextBlock Style="{StaticResource PageSubtitle}">
+                        <Run Text="{Binding HostName, Mode=OneWay}" />
+                        <Run Text=" · " />
+                        <Run Text="{Binding SerialNumber, Mode=OneWay}" />
+                        <Run Text=" · One-click health check across every hub" />
+                    </TextBlock>
+                </StackPanel>
+            </DockPanel>
+
+            <!-- ====== Hero: Run Full Diagnostic + last-run summary ====== -->
+            <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,0,0,24">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="Run a full system check" Style="{StaticResource SectionTitle}" FontSize="18" />
+                        <TextBlock Text="{Binding LastRunSummary}"
+                                   Foreground="{StaticResource MutedForegroundBrush}"
+                                   Margin="0,6,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="Open Last Report"
+                                Command="{Binding OpenLastReportCommand}"
+                                Style="{StaticResource MaterialDesignOutlinedButton}"
+                                Margin="0,0,12,0" />
+                        <Button Command="{Binding RunFullDiagnosticCommand}"
+                                Style="{StaticResource MaterialDesignRaisedButton}"
+                                Padding="22,10" FontWeight="SemiBold">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="Play" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="Run Full Diagnostic" Margin="8,0,0,0" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ====== Hub tiles (8 tiles, 4 per row, reflows) ====== -->
+            <ItemsControl Grid.Row="2" ItemsSource="{Binding Tiles}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Button Style="{StaticResource HubTile}"
+                                Command="{Binding NavigateCommand}"
+                                Width="280" Height="148"
+                                Margin="0,0,12,12">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <!-- Icon + Status pill -->
+                                <DockPanel Grid.Row="0">
+                                    <md:PackIcon Kind="{Binding IconKind}" Width="24" Height="24"
+                                                 Foreground="{StaticResource AccentBrush}"
+                                                 VerticalAlignment="Center" />
+                                    <Border DockPanel.Dock="Right"
+                                            Style="{StaticResource StatusChipSm}"
+                                            Background="{Binding StatusBg}">
+                                        <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold"
+                                                   FontSize="11" Foreground="{Binding StatusColor}" />
+                                    </Border>
+                                </DockPanel>
+
+                                <!-- Title + description -->
+                                <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="0,12,0,0">
+                                    <TextBlock Text="{Binding Title}"
+                                               FontFamily="Segoe UI Semibold" FontSize="15"
+                                               Foreground="{StaticResource ForegroundBrush}" />
+                                    <TextBlock Text="{Binding Description}"
+                                               Foreground="{StaticResource MutedForegroundBrush}"
+                                               FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

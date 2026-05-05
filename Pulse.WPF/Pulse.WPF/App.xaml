@@ -1,6 +1,10 @@
 <Application x:Class="Pulse.WPF.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:helpers="clr-namespace:Pulse.WPF.Helpers"
+             xmlns:vm="clr-namespace:Pulse.WPF.ViewModels"
+             xmlns:vmstub="clr-namespace:Pulse.WPF.ViewModels.Stub"
+             xmlns:views="clr-namespace:Pulse.WPF.Views"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
         <ResourceDictionary>
@@ -11,10 +15,42 @@
                 <ResourceDictionary Source="pack://application:,,,/MaterialDesignColors;component/Themes/Recommended/Primary/MaterialDesignColor.Blue.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/MaterialDesignColors;component/Themes/Recommended/Accent/MaterialDesignColor.LightBlue.xaml" />
 
-                <!-- Pulse-specific palette + reusable styles -->
+                <!-- Pulse-specific palette + reusable styles.
+                     The Colors.xaml entry is index 4 in this list — code that
+                     swaps light/dark themes at runtime should overwrite that
+                     index in Application.Current.Resources.MergedDictionaries.
+                     Light theme lives at Themes/Colors.Light.xaml. -->
                 <ResourceDictionary Source="Themes/Colors.xaml" />
                 <ResourceDictionary Source="Themes/Styles.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- Shared converters — referenced by name from any view. -->
+            <helpers:BoolToVisibilityConverter   x:Key="BoolToVis" />
+            <helpers:CountToVisibilityConverter  x:Key="CountToVis" />
+            <helpers:StringToVisibilityConverter x:Key="StringToVis" />
+
+            <!-- ====== VM-to-View DataTemplates ======
+                 MainWindow's ContentControl binds Content="{Binding CurrentView}"
+                 and the active panel viewmodel resolves to its corresponding view
+                 through these implicit DataTemplates (no x:Key, just DataType). -->
+            <DataTemplate DataType="{x:Type vm:CameraConnectivityViewModel}">
+                <views:CameraConnectivityView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vmstub:SystemOverviewViewModel}">
+                <views:SystemOverviewView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vmstub:NetworkViewModel}">
+                <views:NetworkView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vmstub:HardwareViewModel}">
+                <views:HardwareView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vmstub:ServicesViewModel}">
+                <views:ServicesView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vmstub:DiskHealthViewModel}">
+                <views:DiskHealthView />
+            </DataTemplate>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

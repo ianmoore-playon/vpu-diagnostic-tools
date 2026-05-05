@@ -29,6 +29,40 @@ namespace Pulse.WPF.Helpers
     }
 
     /// <summary>
+    /// Generic ICommand that takes one CommandParameter. Used by sidebar nav
+    /// buttons (CommandParameter="Network", "Camera", etc.).
+    /// </summary>
+    public class RelayCommand<T> : ICommand
+    {
+        private readonly Action<T>     _execute;
+        private readonly Predicate<T>  _canExecute;
+
+        public RelayCommand(Action<T> execute, Predicate<T> canExecute = null)
+        {
+            _execute    = execute ?? throw new ArgumentNullException(nameof(execute));
+            _canExecute = canExecute;
+        }
+
+        public event EventHandler CanExecuteChanged
+        {
+            add    { CommandManager.RequerySuggested += value; }
+            remove { CommandManager.RequerySuggested -= value; }
+        }
+
+        public bool CanExecute(object parameter) => _canExecute == null || _canExecute(Cast(parameter));
+        public void Execute(object parameter)    => _execute(Cast(parameter));
+
+        private static T Cast(object parameter)
+        {
+            if (parameter is T t) return t;
+            if (parameter == null) return default;
+            // Fall back via Convert — handles "Network" (string) → T (string)
+            try { return (T)Convert.ChangeType(parameter, typeof(T)); }
+            catch { return default; }
+        }
+    }
+
+    /// <summary>
     /// ICommand for async actions. Disables itself while running so a tech
     /// can't double-click "Run Test" and start two diagnostics. Mirrors the
     /// $btnRun.Enabled = $false dance in the WinForms version.

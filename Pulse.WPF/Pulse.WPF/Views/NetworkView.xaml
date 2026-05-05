@@ -1,0 +1,261 @@
+<UserControl x:Class="Pulse.WPF.Views.NetworkView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:vm="clr-namespace:Pulse.WPF.ViewModels.Stub"
+             xmlns:controls="clr-namespace:Pulse.WPF.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:NetworkViewModel, IsDesignTimeCreatable=True}"
+             mc:Ignorable="d"
+             Background="{StaticResource AppBgBrush}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="32,24,32,24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />   <!-- Section header -->
+                <RowDefinition Height="Auto" />   <!-- Findings banner -->
+                <RowDefinition Height="Auto" />   <!-- 3 top-row cards -->
+                <RowDefinition Height="*" MinHeight="320" />  <!-- Log + Recommendations -->
+                <RowDefinition Height="Auto" />   <!-- Action bar -->
+            </Grid.RowDefinitions>
+
+            <!-- ====== Section header ====== -->
+            <DockPanel Grid.Row="0" Margin="0,0,0,24">
+                <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
+                        Background="{Binding StatusBg}">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
+                                   Foreground="{Binding StatusColor}" Margin="8,0,0,0" />
+                    </StackPanel>
+                </Border>
+                <StackPanel>
+                    <TextBlock Text="Network Configuration" Style="{StaticResource PageTitle}" />
+                    <TextBlock Text="Adapters, IP, NTP and reachability — what the box can talk to right now"
+                               Style="{StaticResource PageSubtitle}" />
+                </StackPanel>
+            </DockPanel>
+
+            <!-- ====== Findings banner — auto-collapses when empty ====== -->
+            <controls:FindingsBanner Grid.Row="1"
+                                     Findings="{Binding Findings}"
+                                     Margin="0,0,0,16" />
+
+            <!-- ====== Top row: Adapters / IP / Connectivity ====== -->
+            <Grid Grid.Row="2" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" MinWidth="280" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" MinWidth="280" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Adapters -->
+                <Border Grid.Column="0" Style="{StaticResource Card}">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="Network Adapters"
+                                   Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                        <DataGrid ItemsSource="{Binding Adapters}"
+                                  Background="Transparent"
+                                  BorderThickness="0"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="None"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  CanUserResizeRows="False"
+                                  IsReadOnly="True"
+                                  RowBackground="Transparent"
+                                  AlternatingRowBackground="#10FFFFFF"
+                                  ColumnHeaderStyle="{x:Null}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Adapter" Binding="{Binding Name}" Width="*" />
+                                <DataGridTextColumn Header="Purpose" Binding="{Binding Purpose}" Width="Auto">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{Binding PurposeColor}" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                            <Setter Property="Padding" Value="8,0" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="IP" Binding="{Binding Ip}" Width="Auto">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource MonoValue}">
+                                            <Setter Property="Padding" Value="8,0" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Link" Binding="{Binding LinkState}" Width="Auto">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{Binding LinkColor}" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                            <Setter Property="Padding" Value="8,0" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                </Border>
+
+                <!-- IP Configuration -->
+                <Border Grid.Column="2" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="IP Configuration" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                        <TextBlock Text="{Binding IpConfig.AdapterName}"
+                                   FontWeight="SemiBold" Foreground="{StaticResource ForegroundBrush}" />
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="IP address:"  Style="{StaticResource MutedLabel}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding IpConfig.IpAddress}" Style="{StaticResource MonoValue}" />
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Subnet mask:" Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding IpConfig.SubnetMask}" Style="{StaticResource MonoValue}" Margin="0,4,0,0" />
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Gateway:"     Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding IpConfig.Gateway}" Style="{StaticResource MonoValue}" Margin="0,4,0,0" />
+
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="DNS:"         Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding IpConfig.DnsServers}" Style="{StaticResource MonoValue}" Margin="0,4,0,0" TextWrapping="Wrap" />
+
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="NTP server:"  Style="{StaticResource MutedLabel}" Margin="0,8,0,0" />
+                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding IpConfig.NtpServer}" Style="{StaticResource MonoValue}" Margin="0,8,0,0" />
+
+                            <TextBlock Grid.Row="5" Grid.Column="0" Text="NTP source:"  Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                            <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding IpConfig.NtpSource}"
+                                       Foreground="{StaticResource MutedForegroundBrush}" Margin="0,4,0,0" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Connectivity tests -->
+                <Border Grid.Column="4" Style="{StaticResource Card}">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="Connectivity Tests"
+                                   Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                        <ItemsControl ItemsSource="{Binding PortTests}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding Description}" Foreground="{StaticResource ForegroundBrush}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Target}" Style="{StaticResource MutedLabel}" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding Result}"
+                                                   Foreground="{Binding ResultColor}"
+                                                   FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </DockPanel>
+                </Border>
+            </Grid>
+
+            <!-- ====== Log + Recommended Actions ====== -->
+            <Grid Grid.Row="3" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" MinWidth="280" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Live Log -->
+                <Border Grid.Column="0" Style="{StaticResource Card}">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="Live Log"
+                                   Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                        <Border BorderBrush="{StaticResource BorderColBrush}" BorderThickness="0,1,0,0"
+                                Background="{StaticResource LogBgBrush}" CornerRadius="6">
+                            <ListBox ItemsSource="{Binding LogEntries}"
+                                     Background="Transparent" BorderThickness="0"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     FontFamily="Cascadia Mono, Consolas" FontSize="11">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="8,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="200" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Label}"
+                                                       Foreground="{StaticResource MutedForegroundBrush}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Result}"
+                                                       Foreground="{Binding ResultColor}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                    </DockPanel>
+                </Border>
+
+                <!-- Recommended actions -->
+                <Border Grid.Column="2" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Recommended Actions" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedForegroundBrush}"
+                                   Text="If a connectivity test fails, open the venue NIC settings first, then re-run the test. Failed DNS lookups usually mean the DNS server in IP Configuration is wrong or unreachable."
+                                   Margin="0,0,0,16" />
+                        <Button Content="Open Adapter Settings"
+                                Command="{Binding OpenAdapterSettingsCommand}"
+                                Style="{StaticResource MaterialDesignOutlinedButton}"
+                                HorizontalAlignment="Stretch" Margin="0,0,0,8" />
+                        <TextBlock Text="DNS resolution" Style="{StaticResource MutedLabel}" Margin="0,12,0,4" />
+                        <ItemsControl ItemsSource="{Binding DomainTests}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Domain}" Style="{StaticResource MonoValue}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Resolved}" Foreground="{Binding ResultColor}" FontWeight="SemiBold" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ====== Action bar ====== -->
+            <DockPanel Grid.Row="4">
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Export Report"
+                            Style="{StaticResource MaterialDesignOutlinedButton}" IsEnabled="False" />
+                </StackPanel>
+                <Button DockPanel.Dock="Right"
+                        Command="{Binding RunTestCommand}"
+                        Style="{StaticResource MaterialDesignRaisedButton}"
+                        Padding="22,10" FontWeight="SemiBold">
+                    <StackPanel Orientation="Horizontal">
+                        <md:PackIcon Kind="Play" Width="18" Height="18" VerticalAlignment="Center" />
+                        <TextBlock Text="Run Test" Margin="8,0,0,0" />
+                    </StackPanel>
+                </Button>
+            </DockPanel>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

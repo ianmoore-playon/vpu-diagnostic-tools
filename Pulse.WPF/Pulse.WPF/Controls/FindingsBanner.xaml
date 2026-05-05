@@ -1,0 +1,77 @@
+<!--
+    FindingsBanner — reusable banner that lists every Warning/Critical finding
+    on a panel along with a recommended action. Per the UX review this is the
+    single highest-impact UX move: turns the page from data-viewer into
+    decision-engine.
+
+    Usage:
+        <controls:FindingsBanner ItemsSource="{Binding Findings}" />
+    The host panel is responsible for hiding the banner when there are no
+    findings (bind Visibility on the host's ContentControl, or wrap this
+    control in a Border with Visibility="{Binding HasFindings, Converter=…}").
+    For now the banner self-collapses when its ItemsSource is empty via the
+    DataTrigger on Items.Count.
+-->
+<UserControl x:Class="Pulse.WPF.Controls.FindingsBanner"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:models="clr-namespace:Pulse.WPF.Models"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Name="Root">
+
+    <Border Style="{StaticResource FindingsBannerOuter}">
+        <DockPanel>
+            <!-- Header row: count + label -->
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                <md:PackIcon Kind="AlertCircleOutline" Width="20" Height="20"
+                             Foreground="{StaticResource YellowBrush}"
+                             VerticalAlignment="Center" />
+                <TextBlock Margin="10,0,0,0"
+                           Style="{StaticResource SectionTitle}"
+                           VerticalAlignment="Center">
+                    <Run Text="{Binding ElementName=Root, Path=ItemsSource.Count, Mode=OneWay}" />
+                    <Run Text=" findings need attention" />
+                </TextBlock>
+            </DockPanel>
+
+            <ItemsControl ItemsSource="{Binding ElementName=Root, Path=ItemsSource}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type models:Finding}">
+                        <Border Style="{StaticResource FindingRow}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Severity chip -->
+                                <Border Grid.Column="0" VerticalAlignment="Top"
+                                        Style="{StaticResource FindingSeverityChip}"
+                                        Background="{Binding SeverityBg}">
+                                    <TextBlock Text="{Binding SeverityLabel}"
+                                               FontWeight="SemiBold"
+                                               FontSize="11"
+                                               Foreground="{Binding SeverityColor}"
+                                               HorizontalAlignment="Center" />
+                                </Border>
+
+                                <!-- Title + recommendation -->
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="{Binding Title}" Style="{StaticResource FindingTitle}" />
+                                    <TextBlock Style="{StaticResource FindingRecommendation}">
+                                        <Run Text="Recommended: " FontWeight="SemiBold" />
+                                        <Run Text="{Binding Recommendation, Mode=OneWay}" />
+                                    </TextBlock>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </DockPanel>
+    </Border>
+</UserControl>
