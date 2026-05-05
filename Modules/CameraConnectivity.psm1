@@ -427,20 +427,33 @@ $DiagScript = {
                 $_.State      -ne  "Unreachable" -and
                 ([Convert]::ToInt32(($_.LinkLayerAddress -split '-')[0], 16) -band 1) -eq 0
             }
+        # Pull the NIC's link speed once per port so we can speed-fallback
+        # for cameras that aren't in cameras.cfg (different agent install
+        # path, swapped camera, etc.). OCR cameras are 100 Mbps-only on
+        # all known revisions, main cameras are gigabit.
+        $linkSpeed = ""
+        try { $linkSpeed = "$((Get-NetAdapter -Name $nic.Name -ErrorAction SilentlyContinue).LinkSpeed)" } catch { }
         foreach ($nb in $neighbors) {
             if ($discoveredCameras | Where-Object { $_.IP -eq $nb.IPAddress }) { continue }
             # Authoritative role from cameras.cfg / pip.cfg (passed in via
-            # $PixCameraRoles). Falls back to OUI-only labelling when the
-            # IP isn't in the config — neither subtypes anymore, since
-            # both main cameras and OCR share the 00-D0-89 OUI.
+            # $PixCameraRoles). Falls back to a speed-based label when the
+            # IP isn't in the config; we deliberately do *not* try to
+            # subtype Pixellot devices via the 4th MAC octet because
+            # different camera revisions share overlapping prefixes.
             $roleLabel = $null
             if ($PixCameraRoles -and $PixCameraRoles.ContainsKey($nb.IPAddress)) {
                 $roleLabel = [string]$PixCameraRoles[$nb.IPAddress]
             }
-            $isOcr = ($roleLabel -and $roleLabel -match 'OCR|Scoreboard')
-            $label = if ($roleLabel) { $roleLabel } `
-                     elseif ($nb.LinkLayerAddress -like "$OcrMacOui-*") { "Pixellot Camera (no config match)" } `
-                     else { "Unknown device" }
+            $isPixellot = ($nb.LinkLayerAddress -like "$OcrMacOui-*")
+            $is100M = ($linkSpeed -match '^\s*100\s*Mbps')
+            $is1G   = ($linkSpeed -match '\b\d+\s*Gbps\b' -or $linkSpeed -match '^\s*1000\s*Mbps')
+            $label = if ($roleLabel)         { $roleLabel } `
+                     elseif ($isPixellot -and $is100M) { "OCR Camera" } `
+                     elseif ($isPixellot -and $is1G)   { "Main Camera (probable)" } `
+                     elseif ($isPixellot)              { "Pixellot Camera" } `
+                     else                              { "Unknown device" }
+            $isOcr = ($roleLabel -and $roleLabel -match 'OCR|Scoreboard') -or
+                     ($label -eq 'OCR Camera')
             $discoveredCameras += [PSCustomObject]@{
                 IP       = $nb.IPAddress
                 MAC      = $nb.LinkLayerAddress
@@ -1533,14 +1546,19 @@ function Get-PortDevice {
             $result.Label = $script:PixCameraRoles[$result.Ip]
             return $result
         }
-        # 2) Fallback when the device responded on link-local but isn't
-        #    in the Pixellot config. Still flag whether it's a Pixellot
-        #    OUI (`00-D0-89-*`) or something else entirely. Both main
-        #    cameras and OCR units share this OUI so we deliberately do
-        #    *not* try to subtype here — earlier 4th-octet attempts
-        #    produced false positives in the field.
+        # 2) Speed-based fallback for Pixellot OUI devices not in the
+        #    config (different install path, swapped camera the agent
+        #    hasn't re-registered yet, etc.). Mirrors the diagnostic's
+        #    own logic: OCR cameras are 100 Mbps-only, main cameras are
+        #    always gigabit. We don't try to subtype with the 4th MAC
+        #    octet — that produced false positives in v1.0.50 because
+        #    different camera revisions share overlapping prefixes.
         if ($primary.LinkLayerAddress -like "$OcrMacOui-*") {
-            $result.Label = "Pixellot Camera (no config match)"
+            $is100M = ($LinkSpeed -match '^\s*100\s*Mbps')
+            $is1G   = ($LinkSpeed -match '\b\d+\s*Gbps\b' -or $LinkSpeed -match '^\s*1000\s*Mbps')
+            if     ($is100M) { $result.Label = "OCR Camera" }
+            elseif ($is1G)   { $result.Label = "Main Camera (probable)" }
+            else             { $result.Label = "Pixellot Camera" }
         } else {
             $result.Label = "Unknown device"
         }

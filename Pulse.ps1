@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.51"
+$ScriptVersion = "1.0.52"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -98,9 +98,14 @@ function Read-PixellotCfg {
     foreach ($raw in (Get-Content $Path -ErrorAction SilentlyContinue)) {
         $line = $raw.Trim()
         if (-not $line) { continue }
-        # Strip inline `//` comments first so values like `0.99 // comment` parse cleanly.
-        $cIdx = $line.IndexOf('//')
-        if ($cIdx -ge 0) { $line = $line.Substring(0, $cIdx).Trim() }
+        # Strip full-line comments first.
+        if ($line.StartsWith('//')) { continue }
+        # Strip trailing inline comments. We can't bare-match '//' because
+        # values like `rtsp:////169.254.16.50/h264` contain `//` inside the
+        # URL; in Pixellot's .cfg format actual comments are always preceded
+        # by whitespace, so we look for ` //` (or tab + //) and split there.
+        $m = [regex]::Match($line, '\s+//')
+        if ($m.Success) { $line = $line.Substring(0, $m.Index).Trim() }
         if (-not $line) { continue }
         if ($line -match '^\[(.+)\]$') {
             $section = $matches[1].Trim()
@@ -310,8 +315,18 @@ $form.Text = "Pulse - Pixellot Unified Live System Evaluator"
 # shrinking the content area (was 1280x760 with 0-wide sidebar + top tab bar).
 # v1.0.49: bumped to 1600 wide so the Camera Connectivity diagram + status row
 # has breathing room next to the right-anchored NIC Info / Legend sidebar.
-$form.ClientSize = New-Object System.Drawing.Size(1600, 800)
-$form.MinimumSize = $form.Size
+# v1.0.52: clamp to the screen working area at startup so VPUs with
+# 1366x768 / 1440x900 monitors don't open with the right edge off-screen.
+# AutoScrollMinSize keeps the *layout* at the design size; if the form is
+# smaller than that, scrollbars appear so every panel stays reachable.
+$wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+$desiredW = [Math]::Min(1600, [Math]::Max(1280, $wa.Width  - 16))
+$desiredH = [Math]::Min(900,  [Math]::Max(720,  $wa.Height - 32))
+$form.ClientSize  = New-Object System.Drawing.Size($desiredW, $desiredH)
+# MinimumSize is the *outer* size including chrome (~16px borders + ~40px caption).
+$form.MinimumSize = New-Object System.Drawing.Size(1296, 760)
+$form.AutoScroll        = $true
+$form.AutoScrollMinSize = New-Object System.Drawing.Size(1600, 800)
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.BackColor = $ColBg
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
