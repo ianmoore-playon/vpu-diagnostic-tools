@@ -834,12 +834,33 @@ $lblNicHdr.Location  = New-Object System.Drawing.Point(16, 6)
 $lblNicHdr.AutoSize  = $true
 $pnlCamToolbar.Controls.Add($lblNicHdr)
 
+# Helper — extract just the NIC interface name (e.g. "Ethernet 24") from a
+# cboNic item text. v1.0.49 changed the format from "<NicName>  (<short>)"
+# to "Port N — <NicName> — <Device>", so call sites use this helper instead
+# of inlining a fragile regex. Returns empty string for "All Ports".
+function Get-NicNameFromCbo {
+    param([string]$Text)
+    if (-not $Text -or $Text -eq "All Ports") { return "" }
+    # Both em-dash (—) and ASCII hyphen-minus are accepted to be tolerant
+    # of the build-time character normalisation that happens in Run.ps1.
+    $parts = $Text -split '\s+[—–\-]\s+'
+    if ($parts.Count -ge 2) { return $parts[1].Trim() }
+    return $Text.Trim()
+}
+
 $cboNic = New-Object System.Windows.Forms.ComboBox
-$cboNic.Size          = New-Object System.Drawing.Size(220, 22)
+$cboNic.Size          = New-Object System.Drawing.Size(320, 22)   # widened from 220 to fit "Ethernet 24 — Main Camera (1 Gbps)"
 $cboNic.Location      = New-Object System.Drawing.Point(16, 26)
 $cboNic.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-$cboNic.BackColor     = $ColBg
-$cboNic.Font          = New-Object System.Drawing.Font("Segoe UI", 8.5)
+# v1.0.49: explicit dark/light foreground + flat style. The default ComboBox
+# in DropDownList mode renders the selected item using the system theme's
+# button text color, which on the dark theme can come out as near-black on
+# our dark blue card background — practically invisible. Setting ForeColor
+# to $ColText guarantees the same readable color used elsewhere on the panel.
+$cboNic.FlatStyle     = [System.Windows.Forms.FlatStyle]::Flat
+$cboNic.BackColor     = $ColCard
+$cboNic.ForeColor     = $ColText
+$cboNic.Font          = New-Object System.Drawing.Font("Segoe UI", 9)
 $pnlCamToolbar.Controls.Add($cboNic)
 
 $lblRunSteps = New-Object System.Windows.Forms.Label
@@ -886,7 +907,7 @@ $lblEta.Visible = $false
 $center.Controls.Add($lblEta)
 
 # ---- Detected NIC list (used by diagram + diagnostic) ----------------------
-$portRowW = 1224; $portRowX0 = 28
+$portRowW = 1040; $portRowX0 = 28   # v1.0.49: tightened from 1224 so the status cards row ends at X=1068, well clear of the right-edge sidebar at X=1124
 $script:detectedNics = @(Get-NetAdapter | Where-Object {
     $d = $_.InterfaceDescription
     ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
@@ -1074,8 +1095,13 @@ for ($p = 0; $p -lt 4; $p++) {
         $parent.Controls.Add($lblV)
         return $lblV
     }
-    $lblSpeedV  = _AddCamPortRow $tile 36 "Speed:"  $ColMuted $ColText
-    $lblDuplexV = _AddCamPortRow $tile 54 "Duplex:" $ColMuted $ColText
+    # Row order chosen so the most agent-relevant info is at the top:
+    # what's plugged in (Device), then how fast it's negotiated (Speed),
+    # then identity / error counters. Duplex was dropped — it's effectively
+    # always Full on modern cameras and was eating a row that we now use
+    # for the Device readout.
+    $lblDeviceV = _AddCamPortRow $tile 36 "Device:" $ColMuted $ColText
+    $lblSpeedV  = _AddCamPortRow $tile 54 "Speed:"  $ColMuted $ColText
     $lblMacV    = _AddCamPortRow $tile 72 "MAC:"    $ColMuted $ColText
     $lblMacV.Font = New-Object System.Drawing.Font("Consolas", 8)
     $lblErrV    = _AddCamPortRow $tile 90 "Errors:" $ColMuted $ColText
@@ -1085,8 +1111,8 @@ for ($p = 0; $p -lt 4; $p++) {
         Tile      = $tile
         StatusIcn = $lblStatusIcon
         StatusTxt = $lblStatusText
+        DeviceV   = $lblDeviceV
         SpeedV    = $lblSpeedV
-        DuplexV   = $lblDuplexV
         MacV      = $lblMacV
         ErrV      = $lblErrV
         NicName   = $null   # populated by Update-HwPortDiagram so the click handler can jump to Fault Isolator
@@ -1109,10 +1135,13 @@ for ($p = 0; $p -lt 4; $p++) {
     foreach ($ctrl in @($tile.Controls)) { $ctrl.Add_Click($portTileClickHandler); $ctrl.Cursor = [System.Windows.Forms.Cursors]::Hand }
 }
 
-# Right sidebar: NIC Information (Y=176..286) + Status Legend (Y=294..376)
+# Right sidebar: NIC Information (Y=176..286) + Status Legend (Y=294..380)
+# v1.0.49: form widened from 1500 to 1600; the sidebar now sits at X=1124
+# (was 1024) so there's a clear 100px gap between Port 4's detail box and
+# the Status Legend instead of having them butt against each other.
 $pnlHwNicInfo = New-Object System.Windows.Forms.Panel
 $pnlHwNicInfo.Size      = New-Object System.Drawing.Size(228, 110)
-$pnlHwNicInfo.Location  = New-Object System.Drawing.Point(1024, 176)
+$pnlHwNicInfo.Location  = New-Object System.Drawing.Point(1124, 176)
 $pnlHwNicInfo.BackColor = $ColCard
 $pnlHwNicInfo.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 228, 110)), 8))
 $pnlHwNicInfo.Anchor    = $AnchorTR
@@ -1161,7 +1190,7 @@ $script:hwPoeNoteTip.InitialDelay = 400
 
 $pnlHwLegend = New-Object System.Windows.Forms.Panel
 $pnlHwLegend.Size      = New-Object System.Drawing.Size(228, 86)
-$pnlHwLegend.Location  = New-Object System.Drawing.Point(1024, 294)
+$pnlHwLegend.Location  = New-Object System.Drawing.Point(1124, 294)
 $pnlHwLegend.BackColor = $ColCard
 $pnlHwLegend.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 228, 86)), 8))
 $pnlHwLegend.Anchor    = $AnchorTR
@@ -1438,6 +1467,40 @@ $form.Controls.Add($right)
 # Pulls live link state from Get-NetAdapter and populates: the colored LED
 # dots in each jack (canvas), the 4 port detail boxes, and the NIC Information
 # sidebar. Tier color logic mirrors the original Hardware-tab implementation.
+
+# Detect what's plugged into a single port via its ARP neighbor table.
+# Mirrors the discovery logic in the diagnostic runspace ($CamScript) but
+# runs synchronously off the UI thread for live monitoring (~50ms / port).
+# Returns one of: "Main Camera", "OCR (100M)", "OCR (1G)", "No device",
+# or "Unknown" if Get-NetNeighbor failed.
+function Get-PortDevice {
+    param([System.Object]$Adapter, [string]$LinkSpeed)
+    if (-not $Adapter -or $Adapter.Status -ne "Up") { return "No device" }
+    try {
+        $neighbors = @(Get-NetNeighbor -InterfaceIndex $Adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.IPAddress  -like "169.254.*" -and
+                $_.State      -ne  "Unreachable" -and
+                $_.LinkLayerAddress -and
+                ([Convert]::ToInt32(($_.LinkLayerAddress -split '-')[0], 16) -band 1) -eq 0
+            })
+        if ($neighbors.Count -eq 0) { return "No device" }
+        $isOcr = $false
+        foreach ($n in $neighbors) {
+            if ($n.LinkLayerAddress -like "$OcrMacOui-*") { $isOcr = $true; break }
+        }
+        # Speed-based variant. OCR cameras come in 100 Mbps (older) and
+        # 1 Gbps (newer) revisions; main cameras (S2/CHU) are gigabit.
+        $is100M = ($LinkSpeed -match '^\s*100\s*Mbps')
+        if ($isOcr) {
+            return $(if ($is100M) { "OCR (100M)" } else { "OCR (1G)" })
+        }
+        return "Main Camera"
+    } catch {
+        return "Unknown"
+    }
+}
+
 function Update-HwPortDiagram {
     $sortedNics = @()
     try {
@@ -1496,9 +1559,6 @@ function Update-HwPortDiagram {
                 "off"  { "No Link" }
                 default{ "Linked" }
             }
-            $duplexLabel = if ($nic.FullDuplex -eq $true) { "Full" } `
-                           elseif ($nic.FullDuplex -eq $false) { "Half" } `
-                           else { "--" }
             $errCount = "--"
             try {
                 $stats = Get-NetAdapterStatistics -Name $nic.Name -ErrorAction SilentlyContinue
@@ -1508,13 +1568,24 @@ function Update-HwPortDiagram {
                 }
             } catch { }
 
+            # Live device detection — checks ARP for what's plugged into this NIC port
+            $deviceLabel = Get-PortDevice -Adapter $nic -LinkSpeed $speed
+            $deviceColor = switch -Wildcard ($deviceLabel) {
+                "Main Camera"  { $ColGreen }
+                "OCR (1G)"     { $ColAccent }
+                "OCR (100M)"   { $ColAccent }
+                "No device"    { $ColMuted }
+                default        { $ColYellow }
+            }
+
             $tile.StatusIcn.Text      = if ($tier -eq "off") { [char]0x26AB } elseif ($tier -eq "warn") { [char]0x26A0 } else { [char]0x25CF }
             $tile.StatusIcn.ForeColor = $accentColor
             $tile.StatusTxt.Text      = $statusText
             $tile.StatusTxt.ForeColor = $accentColor
+            $tile.DeviceV.Text        = $deviceLabel
+            $tile.DeviceV.ForeColor   = $deviceColor
             $tile.SpeedV.Text         = $speedLabel
             $tile.SpeedV.ForeColor    = if ($isUp) { $accentColor } else { $ColMuted }
-            $tile.DuplexV.Text        = $duplexLabel
             $tile.MacV.Text           = $mac
             $tile.ErrV.Text           = $errCount
             $tile.ErrV.ForeColor      = if ($errCount -ne "--" -and [int]$errCount -gt 0) { $ColYellow } else { $ColText }
@@ -1526,8 +1597,8 @@ function Update-HwPortDiagram {
             $tile.StatusIcn.ForeColor = $ColMuted
             $tile.StatusTxt.Text      = "Not detected"
             $tile.StatusTxt.ForeColor = $ColMuted
+            $tile.DeviceV.Text        = "--"
             $tile.SpeedV.Text         = "--"
-            $tile.DuplexV.Text        = "--"
             $tile.MacV.Text           = "--"
             $tile.ErrV.Text           = "--"
             $tile.NicName             = $null
@@ -1597,12 +1668,41 @@ function Update-CamPortBoxFromDiag {
     $Tile.StatusIcn.Text      = if ($Status -eq "fail") { [char]0x26A0 } elseif ($Status -eq "warn") { [char]0x26A0 } elseif ($Status -eq "ok") { [char]0x25CF } else { [char]0x26AB }
 }
 
+# Rebuild the Test Scope dropdown items so each one shows the live device
+# detected on that port. Preserves the user's current selection by index
+# (index 0 is always "All Ports"). Called on panel visibility change so a
+# tech who plugs in a new camera and switches tabs sees the update.
+function Update-NicDropdown {
+    if (-not $cboNic) { return }
+    try {
+        $prevIdx = $cboNic.SelectedIndex
+        $cboNic.BeginUpdate()
+        $cboNic.Items.Clear()
+        $cboNic.Items.Add("All Ports") | Out-Null
+        $sortedDetected = @($script:detectedNics | Sort-Object MacAddress)
+        $portIdx = 1
+        foreach ($n in $sortedDetected) {
+            $deviceLabel = "No device"
+            try { $deviceLabel = Get-PortDevice -Adapter $n -LinkSpeed $n.LinkSpeed } catch { }
+            $cboNic.Items.Add("Port $portIdx — $($n.Name) — $deviceLabel") | Out-Null
+            $portIdx++
+        }
+        if ($prevIdx -ge 0 -and $prevIdx -lt $cboNic.Items.Count) {
+            $cboNic.SelectedIndex = $prevIdx
+        } elseif ($cboNic.Items.Count -gt 0) {
+            $cboNic.SelectedIndex = 0
+        }
+        $cboNic.EndUpdate()
+    } catch { }
+}
+
 # Refresh the diagram on every panel show (link state may have changed since
 # last visit) and immediately at module load so the diagram isn't blank before
 # the user runs anything.
 $center.Add_VisibleChanged({
     if ($center.Visible) {
         try { Update-HwPortDiagram } catch { }
+        try { Update-NicDropdown }   catch { }
         if ($script:hwLiveTimer) { $script:hwLiveTimer.Start() }
     } else {
         if ($script:hwLiveTimer) { $script:hwLiveTimer.Stop() }
@@ -1703,7 +1803,7 @@ $timer.Add_Tick({
         $btnRun.Text = if ($cboNic.SelectedIndex -le 0) {
             [char]0x25B6 + "  Run Test"
         } else {
-            $n = ($cboNic.SelectedItem -as [string]) -replace '\s+\(.*', ''
+            $n = Get-NicNameFromCbo ($cboNic.SelectedItem -as [string])
             [char]0x25B6 + "  Test $n Only"
         }
         $btnRetest.Enabled = $true
@@ -1781,7 +1881,7 @@ function Start-CameraConnDiagnostic {
     $script:diagPs = [powershell]::Create()
     $script:diagPs.Runspace = $script:runspace
     $script:diagPs.AddScript($DiagScript) | Out-Null
-    $filterNicVal = if ($cboNic.SelectedIndex -gt 0) { ($cboNic.SelectedItem -as [string]) -replace '\s+\(.*', '' } else { "" }
+    $filterNicVal = if ($cboNic.SelectedIndex -gt 0) { Get-NicNameFromCbo ($cboNic.SelectedItem -as [string]) } else { "" }
     $script:diagPs.AddParameters(@{
         sync               = $sync
         NicDriverPatterns  = $NicDriverPatterns
@@ -1846,7 +1946,7 @@ $cboNic.Add_SelectedIndexChanged({
             $btnRun.Text = [char]0x25B6 + "  Run Test"
             $lblRunSteps.Text = "Runs: Port Speed  *  Ping  *  ARP  *  CHU Detection"
         } else {
-            $nicName = ($cboNic.SelectedItem -as [string]) -replace '\s+\(.*', ''
+            $nicName = Get-NicNameFromCbo ($cboNic.SelectedItem -as [string])
             $btnRun.Text = [char]0x25B6 + "  Test $nicName Only"
             $lblRunSteps.Text = "Scope: $nicName only  *  Port Speed  *  Ping  *  ARP  *  CHU Detection"
         }
