@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.49"
+$ScriptVersion = "1.0.50"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -943,7 +943,10 @@ $form.Add_Load({
             # Live device probe — same logic Update-HwPortDiagram uses, so
             # the dropdown entry shows what's actually plugged into the port.
             $deviceLabel = "No device"
-            try { $deviceLabel = Get-PortDevice -Adapter $n -LinkSpeed $n.LinkSpeed } catch { }
+            try {
+                $devInfo = Get-PortDevice -Adapter $n -LinkSpeed $n.LinkSpeed
+                if ($devInfo -and $devInfo.Label) { $deviceLabel = $devInfo.Label }
+            } catch { }
             $cboNic.Items.Add("Port $portIdx — $($n.Name) — $deviceLabel") | Out-Null
             $cboGuidePortA.Items.Add($n.Name) | Out-Null
             $portIdx++

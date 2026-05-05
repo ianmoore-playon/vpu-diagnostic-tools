@@ -1095,14 +1095,18 @@ for ($p = 0; $p -lt 4; $p++) {
         $parent.Controls.Add($lblV)
         return $lblV
     }
-    # Row order chosen so the most agent-relevant info is at the top:
-    # what's plugged in (Device), then how fast it's negotiated (Speed),
-    # then identity / error counters. Duplex was dropped — it's effectively
-    # always Full on modern cameras and was eating a row that we now use
-    # for the Device readout.
-    $lblDeviceV = _AddCamPortRow $tile 36 "Device:" $ColMuted $ColText
-    $lblSpeedV  = _AddCamPortRow $tile 54 "Speed:"  $ColMuted $ColText
-    $lblMacV    = _AddCamPortRow $tile 72 "MAC:"    $ColMuted $ColText
+    # Row order: Device (what's plugged in) → Speed (link rate) → IP +
+    # MAC of the REMOTE end (the camera/OCR, not this NIC port) → Errors.
+    # Duplex was dropped — it's effectively always Full on modern cameras.
+    # Spacing tightened from 18 → 15 px to fit 5 info rows in the 110-tall
+    # tile. The MAC and IP shown here come from ARP (Get-NetNeighbor) — the
+    # local NIC's own MAC stays visible in the right-side NIC Information
+    # sidebar so we don't lose that.
+    $lblDeviceV = _AddCamPortRow $tile 30 "Device:" $ColMuted $ColText
+    $lblSpeedV  = _AddCamPortRow $tile 45 "Speed:"  $ColMuted $ColText
+    $lblIpV     = _AddCamPortRow $tile 60 "IP:"     $ColMuted $ColText
+    $lblIpV.Font  = New-Object System.Drawing.Font("Consolas", 8)
+    $lblMacV    = _AddCamPortRow $tile 75 "MAC:"    $ColMuted $ColText
     $lblMacV.Font = New-Object System.Drawing.Font("Consolas", 8)
     $lblErrV    = _AddCamPortRow $tile 90 "Errors:" $ColMuted $ColText
 
@@ -1113,6 +1117,7 @@ for ($p = 0; $p -lt 4; $p++) {
         StatusTxt = $lblStatusText
         DeviceV   = $lblDeviceV
         SpeedV    = $lblSpeedV
+        IpV       = $lblIpV
         MacV      = $lblMacV
         ErrV      = $lblErrV
         NicName   = $null   # populated by Update-HwPortDiagram so the click handler can jump to Fault Isolator
@@ -1471,33 +1476,57 @@ $form.Controls.Add($right)
 # Detect what's plugged into a single port via its ARP neighbor table.
 # Mirrors the discovery logic in the diagnostic runspace ($CamScript) but
 # runs synchronously off the UI thread for live monitoring (~50ms / port).
-# Returns one of: "Main Camera", "OCR (100M)", "OCR (1G)", "No device",
-# or "Unknown" if Get-NetNeighbor failed.
+#
+# Returns a hashtable:
+#   @{ Label = "Main Camera" | "OCR (100M)" | "OCR (1G)" | "No device" | "Unknown"
+#      Mac   = "AA-BB-CC-..." (remote device's MAC, from ARP)
+#      Ip    = "169.254.x.x"  (remote device's IP, from ARP) }
+#
+# When a port has more than one ARP neighbor (e.g. stale entries from a
+# previous swap), the most-recently-active one wins — Reachable > Stale,
+# tiebreak by lowest IP. The returned MAC is what's actually responding
+# right now, which fixes the false-positive "OCR" labelling we get when
+# only the OUI prefix is checked.
 function Get-PortDevice {
     param([System.Object]$Adapter, [string]$LinkSpeed)
-    if (-not $Adapter -or $Adapter.Status -ne "Up") { return "No device" }
+    $result = @{ Label = "No device"; Mac = ""; Ip = "" }
+    if (-not $Adapter -or $Adapter.Status -ne "Up") { return $result }
     try {
         $neighbors = @(Get-NetNeighbor -InterfaceIndex $Adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
             Where-Object {
                 $_.IPAddress  -like "169.254.*" -and
                 $_.State      -ne  "Unreachable" -and
                 $_.LinkLayerAddress -and
+                # Skip multicast/broadcast (LSB of first octet set)
                 ([Convert]::ToInt32(($_.LinkLayerAddress -split '-')[0], 16) -band 1) -eq 0
             })
-        if ($neighbors.Count -eq 0) { return "No device" }
-        $isOcr = $false
-        foreach ($n in $neighbors) {
-            if ($n.LinkLayerAddress -like "$OcrMacOui-*") { $isOcr = $true; break }
-        }
+        if ($neighbors.Count -eq 0) { return $result }
+
+        # Pick the "most active" neighbor: Reachable wins over Stale wins
+        # over anything else. Within the same state, lowest IP wins so
+        # the choice is deterministic across refreshes.
+        $statePriority = @{ Reachable = 3; Permanent = 2; Stale = 1 }
+        $primary = $neighbors |
+            Sort-Object @{Expression = { if ($statePriority.ContainsKey([string]$_.State)) { $statePriority[[string]$_.State] } else { 0 } }; Descending = $true},
+                       IPAddress |
+            Select-Object -First 1
+
+        $result.Mac = "$($primary.LinkLayerAddress)"
+        $result.Ip  = "$($primary.IPAddress)"
+
+        $isOcr = $primary.LinkLayerAddress -like "$OcrMacOui-*"
         # Speed-based variant. OCR cameras come in 100 Mbps (older) and
         # 1 Gbps (newer) revisions; main cameras (S2/CHU) are gigabit.
         $is100M = ($LinkSpeed -match '^\s*100\s*Mbps')
         if ($isOcr) {
-            return $(if ($is100M) { "OCR (100M)" } else { "OCR (1G)" })
+            $result.Label = if ($is100M) { "OCR (100M)" } else { "OCR (1G)" }
+        } else {
+            $result.Label = "Main Camera"
         }
-        return "Main Camera"
+        return $result
     } catch {
-        return "Unknown"
+        $result.Label = "Unknown"
+        return $result
     }
 }
 
@@ -1568,8 +1597,15 @@ function Update-HwPortDiagram {
                 }
             } catch { }
 
-            # Live device detection — checks ARP for what's plugged into this NIC port
-            $deviceLabel = Get-PortDevice -Adapter $nic -LinkSpeed $speed
+            # Live remote-endpoint detection. Returns @{ Label; Mac; Ip }
+            # — Mac and Ip describe the device on the OTHER end of the
+            # cable (camera or OCR), discovered via ARP. The local NIC's
+            # MAC ($mac, captured above) is no longer shown in the port
+            # box; it lives in the NIC Information sidebar instead.
+            $devInfo     = Get-PortDevice -Adapter $nic -LinkSpeed $speed
+            $deviceLabel = $devInfo.Label
+            $remoteMac   = if ($devInfo.Mac) { $devInfo.Mac } else { "--" }
+            $remoteIp    = if ($devInfo.Ip)  { $devInfo.Ip }  else { "--" }
             $deviceColor = switch -Wildcard ($deviceLabel) {
                 "Main Camera"  { $ColGreen }
                 "OCR (1G)"     { $ColAccent }
@@ -1586,7 +1622,10 @@ function Update-HwPortDiagram {
             $tile.DeviceV.ForeColor   = $deviceColor
             $tile.SpeedV.Text         = $speedLabel
             $tile.SpeedV.ForeColor    = if ($isUp) { $accentColor } else { $ColMuted }
-            $tile.MacV.Text           = $mac
+            $tile.IpV.Text            = $remoteIp
+            $tile.IpV.ForeColor       = if ($remoteIp -ne "--") { $ColText } else { $ColMuted }
+            $tile.MacV.Text           = $remoteMac
+            $tile.MacV.ForeColor      = if ($remoteMac -ne "--") { $ColText } else { $ColMuted }
             $tile.ErrV.Text           = $errCount
             $tile.ErrV.ForeColor      = if ($errCount -ne "--" -and [int]$errCount -gt 0) { $ColYellow } else { $ColText }
             $tile.NicName             = $nic.Name
@@ -1599,6 +1638,7 @@ function Update-HwPortDiagram {
             $tile.StatusTxt.ForeColor = $ColMuted
             $tile.DeviceV.Text        = "--"
             $tile.SpeedV.Text         = "--"
+            $tile.IpV.Text            = "--"
             $tile.MacV.Text           = "--"
             $tile.ErrV.Text           = "--"
             $tile.NicName             = $null
@@ -1683,7 +1723,10 @@ function Update-NicDropdown {
         $portIdx = 1
         foreach ($n in $sortedDetected) {
             $deviceLabel = "No device"
-            try { $deviceLabel = Get-PortDevice -Adapter $n -LinkSpeed $n.LinkSpeed } catch { }
+            try {
+                $devInfo = Get-PortDevice -Adapter $n -LinkSpeed $n.LinkSpeed
+                if ($devInfo -and $devInfo.Label) { $deviceLabel = $devInfo.Label }
+            } catch { }
             $cboNic.Items.Add("Port $portIdx — $($n.Name) — $deviceLabel") | Out-Null
             $portIdx++
         }
