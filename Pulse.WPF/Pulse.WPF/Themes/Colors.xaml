@@ -1,0 +1,55 @@
+<!--
+    Pulse.WPF — color palette
+    Mirrors the dark palette from the WinForms version (UIHelpers.psm1)
+    so the WPF pilot reads as a refresh of the existing tool, not a
+    fresh design language. Light theme is deferred until a settings
+    panel is in scope.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Surfaces -->
+    <Color x:Key="SidebarBg">#0F1624</Color>
+    <Color x:Key="SidebarHover">#26344620</Color>
+    <Color x:Key="AppBg">#0A101E</Color>
+    <Color x:Key="CardBg">#162032</Color>
+    <Color x:Key="BorderCol">#2C3B50</Color>
+    <Color x:Key="LogBg">#060A14</Color>
+
+    <!-- Text -->
+    <Color x:Key="Foreground">#DCE4F0</Color>
+    <Color x:Key="MutedForeground">#6E809B</Color>
+
+    <!-- Accents -->
+    <Color x:Key="Accent">#3B82F6</Color>
+    <Color x:Key="AccentDark">#2563EB</Color>
+
+    <!-- Status colors -->
+    <Color x:Key="Green">#22C55E</Color>
+    <Color x:Key="Yellow">#EAB308</Color>
+    <Color x:Key="Red">#EF4444</Color>
+
+    <!-- Status pill backgrounds -->
+    <Color x:Key="OkBg">#0F3A1C</Color>
+    <Color x:Key="WarnBg">#3A3210</Color>
+    <Color x:Key="ErrBg">#5A1212</Color>
+
+    <!-- Brushes — XAML binds against these by key -->
+    <SolidColorBrush x:Key="SidebarBgBrush"        Color="{StaticResource SidebarBg}" />
+    <SolidColorBrush x:Key="SidebarHoverBrush"     Color="{StaticResource SidebarHover}" />
+    <SolidColorBrush x:Key="AppBgBrush"            Color="{StaticResource AppBg}" />
+    <SolidColorBrush x:Key="CardBgBrush"           Color="{StaticResource CardBg}" />
+    <SolidColorBrush x:Key="BorderColBrush"        Color="{StaticResource BorderCol}" />
+    <SolidColorBrush x:Key="LogBgBrush"            Color="{StaticResource LogBg}" />
+    <SolidColorBrush x:Key="ForegroundBrush"       Color="{StaticResource Foreground}" />
+    <SolidColorBrush x:Key="MutedForegroundBrush"  Color="{StaticResource MutedForeground}" />
+    <SolidColorBrush x:Key="AccentBrush"           Color="{StaticResource Accent}" />
+    <SolidColorBrush x:Key="AccentDarkBrush"       Color="{StaticResource AccentDark}" />
+    <SolidColorBrush x:Key="GreenBrush"            Color="{StaticResource Green}" />
+    <SolidColorBrush x:Key="YellowBrush"           Color="{StaticResource Yellow}" />
+    <SolidColorBrush x:Key="RedBrush"              Color="{StaticResource Red}" />
+    <SolidColorBrush x:Key="OkBgBrush"             Color="{StaticResource OkBg}" />
+    <SolidColorBrush x:Key="WarnBgBrush"           Color="{StaticResource WarnBg}" />
+    <SolidColorBrush x:Key="ErrBgBrush"            Color="{StaticResource ErrBg}" />
+
+</ResourceDictionary>
