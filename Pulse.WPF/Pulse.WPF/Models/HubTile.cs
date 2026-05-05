@@ -16,6 +16,12 @@ namespace Pulse.WPF.Models
         public string IconKind     { get; set; } = "Help";   // MaterialDesignThemes PackIcon kind
         public string NavKey       { get; set; } = "";       // "Home", "Network", "Camera", etc.
 
+        // Aliases used by SystemOverviewService — IconKey ↔ IconKind, TargetNav ↔ NavKey.
+        // Both the Agent A models and Agent B services were built against my spec
+        // but with different field names; adding aliases keeps everyone honest.
+        public string IconKey   { get => IconKind; set => IconKind = value; }
+        public string TargetNav { get => NavKey;   set => NavKey   = value; }
+
         private string _statusText = "Not run";
         public string StatusText { get => _statusText; set => Set(ref _statusText, value); }
 

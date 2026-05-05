@@ -19,5 +19,13 @@ namespace Pulse.WPF.Models
 
         public Brush  StatusColor { get; set; }
         public Brush  StatusBg    { get; set; }
+
+        // Aliases used by ServicesService / ServicesViewModel which were built
+        // against a slightly different field-name spec. Detail ↔ Note, plus a
+        // free-form Severity string ("Pass" / "Warn" / "Fail" / "Gray") for
+        // VM-side aggregation. Severity is a string here so the existing
+        // service code that does `Severity = "Pass"` keeps compiling.
+        public string Detail   { get => Note; set => Note = value; }
+        public string Severity { get; set; } = "";
     }
 }

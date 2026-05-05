@@ -196,8 +196,8 @@ namespace Pulse.WPF.ViewModels
         {
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
             {
-                int crit = Findings.Count(f => f.Severity == "Critical");
-                int warn = Findings.Count(f => f.Severity == "Warning");
+                int crit = Findings.Count(f => f.Severity == FindingSeverity.Critical);
+                int warn = Findings.Count(f => f.Severity == FindingSeverity.Warning);
                 var worst = StatusHelpers.WorstSeverity(Findings);
                 var pill = StatusHelpers.PillFor(worst, warn, crit);
                 StatusLabel = pill.Label;

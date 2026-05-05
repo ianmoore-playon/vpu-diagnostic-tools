@@ -22,15 +22,42 @@ namespace Pulse.WPF.Helpers
             return 0;
         }
 
+        // Same ranking but for the FindingSeverity enum used by the merged
+        // Finding model.
+        public static int SeverityRank(FindingSeverity s)
+        {
+            switch (s)
+            {
+                case FindingSeverity.Critical: return 3;
+                case FindingSeverity.Warning:  return 2;
+                case FindingSeverity.Info:     return 1;
+                default:                        return 0;
+            }
+        }
+
+        // Convert a FindingSeverity enum to the string form used by PillFor / etc.
+        public static string SeverityToString(FindingSeverity s)
+        {
+            switch (s)
+            {
+                case FindingSeverity.Critical: return "Critical";
+                case FindingSeverity.Warning:  return "Warning";
+                case FindingSeverity.Info:     return "Info";
+                default:                        return "";
+            }
+        }
+
         // Find the worst severity across a list of Findings, "" when empty.
+        // Returns the string form so existing PillFor() calls keep working.
         public static string WorstSeverity(IEnumerable<Finding> findings)
         {
             string worst = "";
             int rank = 0;
             foreach (var f in findings)
             {
+                var s = SeverityToString(f.Severity);
                 int r = SeverityRank(f.Severity);
-                if (r > rank) { rank = r; worst = f.Severity; }
+                if (r > rank) { rank = r; worst = s; }
             }
             return worst;
         }
