@@ -338,8 +338,39 @@ $diskTimer.Add_Tick({
     }
     if ($sync.DiskComplete -and -not $sync.DiskRunning) {
         $diskTimer.Stop(); $btnDiskCancel.Visible=$false
-        $btnDiskRun.Enabled=$true; $btnDiskRun.Text=[char]0x25B6+"  Check System Health"
-        $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="  $($sync.DiskStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
+        $btnDiskRun.Enabled=$true; $btnDiskRun.Text=[char]0x25B6+"  Run Full Diagnostic"
+        $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
+
+        # Update Overall Status pill
+        $diskWorst = "ok"
+        $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
+        foreach ($k in $diskCards.Keys) {
+            if ($sync.Cards.ContainsKey($k)) {
+                $s = $sync.Cards[$k].Status
+                if ($s -and $pri[$s] -gt $pri[$diskWorst]) { $diskWorst = $s }
+            }
+        }
+        Set-SectionPill $diskHeader $diskWorst
+
+        # Build Summary
+        $sumItems = @()
+        $smartC = $sync.Cards["DiskSmart"]
+        if ($smartC) { $sumItems += @{ Status=$smartC.Status; Text="SMART: $($smartC.Value)" } }
+        $errC   = $sync.Cards["DiskErrors"]
+        if ($errC -and $errC.Value -ne "--") {
+            if ($errC.Status -eq "ok") { $sumItems += @{ Status="ok"; Text="No disk-related event log errors in the last 48 h" } }
+            else { $sumItems += @{ Status=$errC.Status; Text="Disk event log: $($errC.Value)" } }
+        }
+        foreach ($k in $diskCards.Keys) {
+            if ($k -notlike "DiskVol_*") { continue }
+            $vc = $sync.Cards[$k]
+            if ($vc -and $vc.Value -ne "--") {
+                $drv = $k -replace 'DiskVol_',''
+                $sumItems += @{ Status=$vc.Status; Text="$($drv): $($vc.Value)" }
+            }
+        }
+        if ($sumItems.Count -eq 0) { $sumItems = @(@{ Status="neutral"; Text="No disk data collected" }) }
+        Set-SummaryItems $diskSummary $sumItems
     }
 })
 
@@ -350,68 +381,86 @@ $pnlDisk.Size = New-Object System.Drawing.Size($WideW,$ContentH)
 $pnlDisk.Location = New-Object System.Drawing.Point($SideW,$ContentY)
 $pnlDisk.BackColor = $ColBg; $pnlDisk.Visible = $false; $pnlDisk.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlDisk)
-$lblDiskTitle = New-Object System.Windows.Forms.Label; $lblDiskTitle.Text = "System & Disk Health"
-$lblDiskTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lblDiskTitle.ForeColor = $ColText
-$lblDiskTitle.UseMnemonic = $false
-$lblDiskTitle.Location = New-Object System.Drawing.Point(10,16); $lblDiskTitle.AutoSize = $true
-$pnlDisk.Controls.Add($lblDiskTitle)
-$lblDiskSub = New-Object System.Windows.Forms.Label
-$lblDiskSub.Text = "Physical drive health, volume free space, Pixellot storage paths, top space consumers, and disk event log errors."
-$lblDiskSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblDiskSub.ForeColor = $ColMuted
-$lblDiskSub.Location = New-Object System.Drawing.Point(10,42); $lblDiskSub.Size = New-Object System.Drawing.Size(1240,18)
-$pnlDisk.Controls.Add($lblDiskSub)
+# v1.0.43 redesign — section header + cards row + log/summary split + action bar
+$diskHeader = New-SectionHeader -Parent $pnlDisk `
+    -Title    "System & Disk Health" `
+    -Subtitle "Physical drive health, free space, Pixellot storage paths, and disk-related event log errors."
+
 $diskVolumes = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Sort-Object DeviceID)
-$diskCardDefs = @(); $diskXPos = 10
-# Lead with the SMART health card (#8) and disk-error card (#9), then per-volume cards.
-# The two new cards are populated by the background script via $sync.Cards["DiskSmart"]
-# and $sync.Cards["DiskErrors"] keys.
-$diskCardDefs += @{ Key="DiskSmart";  Title="SMART Health";  Sub="Per-drive predictive failure";   X=$diskXPos; Icon=[char]0xE9D9; W=240 }
-$diskXPos += 250
-$diskCardDefs += @{ Key="DiskErrors"; Title="Disk Errors";   Sub="System log, last 48 h";          X=$diskXPos; Icon=[char]0xE7BA; W=240 }
-$diskXPos += 250
+$diskCardDefs = @(
+    @{ Key="DiskSmart";  Title="SMART Health";  Sub="Per-drive predictive failure" ;Icon=[char]0xE9D9 }
+    @{ Key="DiskErrors"; Title="Disk Errors";   Sub="System log, last 48 h"        ;Icon=[char]0xE7BA }
+)
 foreach ($diskVol in $diskVolumes) {
     $drvKey = "DiskVol_$($diskVol.DeviceID -replace ':','')"
-    $diskCardDefs += @{ Key=$drvKey; Title="$($diskVol.DeviceID) Space"; Sub="$($diskVol.DeviceID) free space"; X=$diskXPos; Icon=[char]0xEDA2; W=240 }
-    $diskXPos += 250
+    $diskCardDefs += @{ Key=$drvKey; Title="$($diskVol.DeviceID) Space"; Sub="$($diskVol.DeviceID) free space"; Icon=[char]0xEDA2 }
 }
 if ($diskVolumes.Count -eq 0) {
-    $diskCardDefs += @{ Key="DiskVol_C"; Title="C: Space"; Sub="C: free space"; X=$diskXPos; Icon=[char]0xEDA2; W=240 }
+    $diskCardDefs += @{ Key="DiskVol_C"; Title="C: Space"; Sub="C: free space"; Icon=[char]0xEDA2 }
 }
-$diskCards = @{}
-foreach ($cd in $diskCardDefs) {
-    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y 68 -Icon $cd.Icon -Sub $cd.Sub -CardW $cd.W -CardH 90
-    $diskCards[$cd.Key] = $c; $pnlDisk.Controls.Add($c.Panel)
-}
-$btnDiskRun = New-Object System.Windows.Forms.Button; $btnDiskRun.Text = [char]0x25B6 + "  Check System Health"
-$btnDiskRun.Size = New-Object System.Drawing.Size(240,40); $btnDiskRun.Location = New-Object System.Drawing.Point(10,170)
-$btnDiskRun.BackColor = $ColAccent; $btnDiskRun.ForeColor = [System.Drawing.Color]::White
-$btnDiskRun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnDiskRun.FlatAppearance.BorderSize = 0
-$btnDiskRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10)
-$btnDiskRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft; $btnDiskRun.Cursor = [System.Windows.Forms.Cursors]::Hand
-$pnlDisk.Controls.Add($btnDiskRun)
-$btnDiskRun.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,240,40)),6))
-$btnDiskCancel = New-Object System.Windows.Forms.Button; $btnDiskCancel.Text = "Cancel"
-$btnDiskCancel.Size = New-Object System.Drawing.Size(100,40); $btnDiskCancel.Location = New-Object System.Drawing.Point(258,170)
-$btnDiskCancel.BackColor = $ColRed; $btnDiskCancel.ForeColor = [System.Drawing.Color]::White
-$btnDiskCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnDiskCancel.FlatAppearance.BorderSize = 0
-$btnDiskCancel.Font = New-Object System.Drawing.Font("Segoe UI",10); $btnDiskCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnDiskCancel.Visible = $false
-$pnlDisk.Controls.Add($btnDiskCancel)
-$btnDiskCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,100,40)),6))
 
-$lblDiskEta = New-Object System.Windows.Forms.Label; $lblDiskEta.Text = "est. ~15 sec"
-$lblDiskEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblDiskEta.ForeColor = $ColMuted
-$lblDiskEta.Location = New-Object System.Drawing.Point(368,180); $lblDiskEta.AutoSize = $true
-$pnlDisk.Controls.Add($lblDiskEta)
-$lblDiskStatus = New-Object System.Windows.Forms.Label; $lblDiskStatus.Text = ""
-$lblDiskStatus.Font = New-Object System.Drawing.Font("Consolas",8); $lblDiskStatus.ForeColor = $ColMuted
-$lblDiskStatus.Location = New-Object System.Drawing.Point(10,218); $lblDiskStatus.Size = New-Object System.Drawing.Size(1240,18)
+$diskCards = @{}
+$diskCardW = 240; $diskCardGap = 12; $diskCardX = 28
+foreach ($cd in $diskCardDefs) {
+    $c = New-StatusCard -Title $cd.Title -X $diskCardX -Y 110 -Icon $cd.Icon -Sub $cd.Sub -CardW $diskCardW -CardH 90
+    $diskCards[$cd.Key] = $c
+    $pnlDisk.Controls.Add($c.Panel)
+    $diskCardX += $diskCardW + $diskCardGap
+}
+
+# Log card (left) + Summary panel (right)
+$diskLogCard = New-Object System.Windows.Forms.Panel
+$diskLogCard.Size      = New-Object System.Drawing.Size(800, 460)
+$diskLogCard.Location  = New-Object System.Drawing.Point(28, 220)
+$diskLogCard.BackColor = $ColCard
+$diskLogCard.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 800, 460)), 8))
+$pnlDisk.Controls.Add($diskLogCard)
+
+$lblDiskLogHdr = New-Object System.Windows.Forms.Label
+$lblDiskLogHdr.Text      = "Health Report"
+$lblDiskLogHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$lblDiskLogHdr.ForeColor = $ColText
+$lblDiskLogHdr.Location  = New-Object System.Drawing.Point(16, 12)
+$lblDiskLogHdr.AutoSize  = $true
+$diskLogCard.Controls.Add($lblDiskLogHdr)
+
+$dgvDiskLog = New-LogGrid -X 8 -Y 38 -W 784 -H 414
+$diskLogCard.Controls.Add($dgvDiskLog)
+
+$diskSummary = New-SummaryPanel -Parent $pnlDisk -X 844 -Y 220 -W 420 -H 460 -Title "Summary"
+Set-SummaryItems $diskSummary @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" })
+
+# Bottom action bar
+$diskActions = New-ActionBar -Parent $pnlDisk -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$btnDiskRun    = $diskActions.PrimaryBtn
+$btnDiskExport = $diskActions.ExportBtn
+
+$btnDiskCancel = New-Object System.Windows.Forms.Button
+$btnDiskCancel.Text      = "Cancel"
+$btnDiskCancel.Size      = New-Object System.Drawing.Size(110, 36)
+$btnDiskCancel.Location  = New-Object System.Drawing.Point(168, 10)
+$btnDiskCancel.BackColor = $ColRed
+$btnDiskCancel.ForeColor = [System.Drawing.Color]::White
+$btnDiskCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnDiskCancel.FlatAppearance.BorderSize = 0
+$btnDiskCancel.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
+$btnDiskCancel.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnDiskCancel.Visible   = $false
+$btnDiskCancel.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 36)), 6))
+$diskActions.Bar.Controls.Add($btnDiskCancel)
+
+$lblDiskStatus = New-Object System.Windows.Forms.Label
+$lblDiskStatus.Text      = ""
+$lblDiskStatus.Font      = New-Object System.Drawing.Font("Consolas", 8)
+$lblDiskStatus.ForeColor = $ColMuted
+$lblDiskStatus.Location  = New-Object System.Drawing.Point(28, 686)
+$lblDiskStatus.Size      = New-Object System.Drawing.Size(($pnlDisk.Width - 56), 16)
+$lblDiskStatus.Anchor    = $AnchorBLR
 $pnlDisk.Controls.Add($lblDiskStatus)
-$lblDiskLogHdr = New-Object System.Windows.Forms.Label; $lblDiskLogHdr.Text = "Health Report"
-$lblDiskLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblDiskLogHdr.ForeColor = $ColText
-$lblDiskLogHdr.Location = New-Object System.Drawing.Point(10,242); $lblDiskLogHdr.AutoSize = $true
-$pnlDisk.Controls.Add($lblDiskLogHdr)
-$dgvDiskLog = New-LogGrid -X 10 -Y 266 -W 1240 -H 336
-$pnlDisk.Controls.Add($dgvDiskLog)
+
+$lblDiskEta = New-Object System.Windows.Forms.Label
+$lblDiskEta.Visible = $false
+$pnlDisk.Controls.Add($lblDiskEta)
 $script:diskRunspace = $null; $script:diskPs = $null; $script:diskSpinIdx = 0
 
 

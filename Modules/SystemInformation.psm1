@@ -205,7 +205,7 @@ $SysInfoScript = {
             $totalGB = [math]::Round($sysDrive.Size      / 1GB, 1)
             $usedPct = [math]::Round((1 - $sysDrive.FreeSpace/$sysDrive.Size) * 100)
             $stStatus = if ($freeGB -lt 5) { "fail" } elseif ($freeGB -lt 15) { "warn" } else { "ok" }
-            $sync.Cards["SiStorage"] = @{ Value = "$freeGB GB free of $totalGB GB ($usedPct% used)"; Status=$stStatus }
+            $sync.Cards["SiStorage"] = @{ Value = "$freeGB GB free  ($usedPct% used)"; Status=$stStatus }
         }
     } catch { Si-Log "Storage" "Query failed" "Warn" }
 
@@ -324,56 +324,21 @@ $SysInfoScript = {
     $sync.SysInfoComplete = $true
 }
 
-# ---------- Panel -----------------------------------------------------------
+# ---------- Panel (v1.0.43 redesign) ---------------------------------------
 $pnlSysInfo = New-Object System.Windows.Forms.Panel
-$pnlSysInfo.Size      = New-Object System.Drawing.Size($ContentW, $ContentH)
-$pnlSysInfo.Location  = New-Object System.Drawing.Point(0, $ContentY)
+$pnlSysInfo.Size      = New-Object System.Drawing.Size($WideW, $ContentH)
+$pnlSysInfo.Location  = New-Object System.Drawing.Point($SideW, $ContentY)
 $pnlSysInfo.BackColor = $ColBg
 $pnlSysInfo.Anchor    = $AnchorTLRB
 $pnlSysInfo.Visible   = $false
 $form.Controls.Add($pnlSysInfo)
 $script:allNavPanels += $pnlSysInfo
 
-$lblSiTitle = New-Object System.Windows.Forms.Label
-$lblSiTitle.Text      = "System Information"
-$lblSiTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 13)
-$lblSiTitle.ForeColor = $ColText
-$lblSiTitle.Location  = New-Object System.Drawing.Point(30, 24)
-$lblSiTitle.Size      = New-Object System.Drawing.Size(700, 28)
-$pnlSysInfo.Controls.Add($lblSiTitle)
+$siHeader = New-SectionHeader -Parent $pnlSysInfo `
+    -Title    "System Information" `
+    -Subtitle "Hardware specs, OS version, uptime, time/locale, and Pixellot software inventory."
 
-$lblSiSub = New-Object System.Windows.Forms.Label
-$lblSiSub.Text      = "Hardware and operating system details for this VPU."
-$lblSiSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
-$lblSiSub.ForeColor = $ColMuted
-$lblSiSub.Location  = New-Object System.Drawing.Point(30, 56)
-$lblSiSub.Size      = New-Object System.Drawing.Size(800, 18)
-$pnlSysInfo.Controls.Add($lblSiSub)
-
-$btnSiRefresh = New-Object System.Windows.Forms.Button
-$btnSiRefresh.Text      = [char]0xE72C + "  Refresh"
-$btnSiRefresh.Size      = New-Object System.Drawing.Size(120, 32)
-$btnSiRefresh.Location  = New-Object System.Drawing.Point(30, 86)
-$btnSiRefresh.BackColor = $ColCard
-$btnSiRefresh.ForeColor = $ColText
-$btnSiRefresh.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnSiRefresh.FlatAppearance.BorderSize = 0
-$btnSiRefresh.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
-$btnSiRefresh.Cursor    = [System.Windows.Forms.Cursors]::Hand
-$btnSiRefresh.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 120, 32)), 6))
-$pnlSysInfo.Controls.Add($btnSiRefresh)
-
-$lblSiStatus = New-Object System.Windows.Forms.Label
-$lblSiStatus.Text      = "Ready"
-$lblSiStatus.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
-$lblSiStatus.ForeColor = $ColMuted
-$lblSiStatus.Location  = New-Object System.Drawing.Point(162, 94)
-$lblSiStatus.Size      = New-Object System.Drawing.Size(400, 18)
-$pnlSysInfo.Controls.Add($lblSiStatus)
-
-# Summary cards (#5) — surface model / OS / uptime / CPU / RAM / storage at a glance.
-# Background script writes values via $sync.Cards["SiModel"] etc.; the timer refreshes
-# the visible labels just like the other modules.
+# Summary cards — Model / OS / Uptime / CPU / RAM / Storage
 $siCardDefs = @(
     @{ Key="SiModel";   Title="Model";    Sub="Manufacturer + product";    Icon=[char]0xE7F8 }
     @{ Key="SiOs";      Title="OS";       Sub="Edition + build";           Icon=[char]0xE770 }
@@ -383,16 +348,49 @@ $siCardDefs = @(
     @{ Key="SiStorage"; Title="Storage";  Sub="System drive free space";   Icon=[char]0xE8B7 }
 )
 $siCards = @{}
-$siCardW = 200; $siCardGap = 10; $siCardX = 30
+$siCardW = 200; $siCardGap = 10; $siCardX = 28
 foreach ($scd in $siCardDefs) {
-    $sc = New-StatusCard -Title $scd.Title -X $siCardX -Y 130 -Icon $scd.Icon -Sub $scd.Sub -CardW $siCardW -CardH 80
+    $sc = New-StatusCard -Title $scd.Title -X $siCardX -Y 110 -Icon $scd.Icon -Sub $scd.Sub -CardW $siCardW -CardH 80
     $siCards[$scd.Key] = $sc
     $pnlSysInfo.Controls.Add($sc.Panel)
     $siCardX += $siCardW + $siCardGap
 }
 
-$siGrid = New-LogGrid -X 30 -Y 224 -W ($ContentW - 60) -H ($ContentH - 234) -LabelColW 240
-$pnlSysInfo.Controls.Add($siGrid)
+# Detail log card (left) + Summary panel (right)
+$siLogCard = New-Object System.Windows.Forms.Panel
+$siLogCard.Size      = New-Object System.Drawing.Size(800, 460)
+$siLogCard.Location  = New-Object System.Drawing.Point(28, 210)
+$siLogCard.BackColor = $ColCard
+$siLogCard.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 800, 460)), 8))
+$pnlSysInfo.Controls.Add($siLogCard)
+
+$lblSiLogHdr = New-Object System.Windows.Forms.Label
+$lblSiLogHdr.Text      = "System Inventory"
+$lblSiLogHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$lblSiLogHdr.ForeColor = $ColText
+$lblSiLogHdr.Location  = New-Object System.Drawing.Point(16, 12)
+$lblSiLogHdr.AutoSize  = $true
+$siLogCard.Controls.Add($lblSiLogHdr)
+
+$siGrid = New-LogGrid -X 8 -Y 38 -W 784 -H 414 -LabelColW 200
+$siLogCard.Controls.Add($siGrid)
+
+$siSummary = New-SummaryPanel -Parent $pnlSysInfo -X 844 -Y 210 -W 420 -H 460 -Title "Summary"
+Set-SummaryItems $siSummary @(@{ Status="neutral"; Text="Refresh to populate the summary" })
+
+# Action bar — System Info uses Refresh (per-tab) since the engine is fast
+$siActions = New-ActionBar -Parent $pnlSysInfo -Y 698 -ExportText "Export Report" -PrimaryText ([char]0xE72C + "  Refresh")
+$btnSiRefresh = $siActions.PrimaryBtn
+$btnSiExport  = $siActions.ExportBtn
+
+$lblSiStatus = New-Object System.Windows.Forms.Label
+$lblSiStatus.Text      = "Ready"
+$lblSiStatus.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblSiStatus.ForeColor = $ColMuted
+$lblSiStatus.Location  = New-Object System.Drawing.Point(28, 686)
+$lblSiStatus.Size      = New-Object System.Drawing.Size(($pnlSysInfo.Width - 56), 16)
+$lblSiStatus.Anchor    = $AnchorBLR
+$pnlSysInfo.Controls.Add($lblSiStatus)
 
 # ---------- Timer -----------------------------------------------------------
 $sysInfoTimer = New-Object System.Windows.Forms.Timer
@@ -412,7 +410,20 @@ $sysInfoTimer.Add_Tick({
     if ($sync.SysInfoComplete) {
         $sysInfoTimer.Stop()
         $btnSiRefresh.Enabled = $true
-        $lblSiStatus.Text = "Collected at $(Get-Date -Format 'h:mm:ss tt')"
+        $btnSiRefresh.Text    = [char]0xE72C + "  Refresh"
+        $lblSiStatus.Text     = "Collected at $(Get-Date -Format 'h:mm:ss tt')"
+        Set-SectionPill $siHeader "ok"
+        $sumItems = @()
+        foreach ($k in @("SiModel","SiOs","SiUptime","SiCpu","SiRam","SiStorage")) {
+            $c = $sync.Cards[$k]
+            if ($c -and $c.Value -ne "--") {
+                $label = switch ($k) { "SiModel"{"Model"} "SiOs"{"OS"} "SiUptime"{"Uptime"} "SiCpu"{"CPU"} "SiRam"{"RAM"} "SiStorage"{"Storage"} }
+                $st = if ($c.Status -in @("ok","warn","fail")) { $c.Status } else { "ok" }
+                $sumItems += @{ Status=$st; Text="$($label): $($c.Value)" }
+            }
+        }
+        if ($sumItems.Count -eq 0) { $sumItems = @(@{ Status="neutral"; Text="No data collected" }) }
+        Set-SummaryItems $siSummary $sumItems
     } else {
         $lblSiStatus.Text = $sync.SysInfoStep
     }

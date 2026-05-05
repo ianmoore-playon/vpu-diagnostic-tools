@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.41"
+$ScriptVersion = "1.0.47"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -215,10 +215,9 @@ $sync = [hashtable]::Synchronized(@{
 # ---------- Form ------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Pulse - Pixellot Unified Live System Evaluator"
-$form.ClientSize = New-Object System.Drawing.Size(1280, 760)
-# Enforce minimum AT the default client size so panels never have to render
-# in a smaller area than they were laid out for. Combined with AutoScroll on
-# FullDiagnostic (#59), this keeps the bottom action buttons reachable.
+# v1.0.42 redesign: 1500x800 to accommodate the 220-wide left sidebar without
+# shrinking the content area (was 1280x760 with 0-wide sidebar + top tab bar).
+$form.ClientSize = New-Object System.Drawing.Size(1500, 800)
 $form.MinimumSize = $form.Size
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.BackColor = $ColBg
@@ -254,216 +253,234 @@ $AnchorBLR  = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.F
 $AnchorBL   = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
 $AnchorTR   = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.Forms.AnchorStyles]::Right
 
-# Layout constants - typed [int] so arithmetic never fails on malformed environments
-[int]$HdrH     = 68
-[int]$TabH     = 64
-[int]$SbarH    = 28
-[int]$SideW    = 0                              # no sidebar
-[int]$ContentX = 0
-[int]$ContentY = $HdrH + $TabH                 # 120
-[int]$ContentH = 760 - $HdrH - $TabH - $SbarH  # 612
-[int]$ContentW = 1280                           # full-width content area
-# Legacy aliases - Phase 2 will rewrite panel modules to use ContentW/ContentH directly
+# Layout constants - v1.0.42 redesign uses left sidebar instead of top tab bar.
+# $HdrH and $TabH are kept at 0 for backwards compat with existing modules that
+# computed $ContentY = $HdrH + $TabH; new value is just 0.
+[int]$HdrH     = 0
+[int]$TabH     = 0
+[int]$SbarH    = 32
+[int]$SideW    = 220                            # left sidebar width
+[int]$ContentX = $SideW
+[int]$ContentY = 0
+[int]$ContentH = 800 - $SbarH                   # 768
+[int]$ContentW = 1500 - $SideW                  # 1280 — matches old WideW
 [int]$WideW    = $ContentW
 [int]$NarrowW  = $ContentW
 [int]$RightX   = $ContentW
 [int]$RightW   = 0
 
-# ---- Header ----------------------------------------------------------------
-$pnlHeader = New-Object System.Windows.Forms.Panel
-$pnlHeader.Size     = New-Object System.Drawing.Size(1280, $HdrH)
-$pnlHeader.Location = New-Object System.Drawing.Point(0, 0)
-$pnlHeader.BackColor = $ColSidebar
-$pnlHeader.Anchor    = $AnchorTLR
-$form.Controls.Add($pnlHeader)
+# ---- Left Sidebar (v1.0.42 redesign) ---------------------------------------
+# Replaces the old top header + tab bar combo. All nav lives here, plus the
+# product brand at the top and Settings/About pinned to the bottom.
+$pnlSidebar = New-Object System.Windows.Forms.Panel
+$pnlSidebar.Size      = New-Object System.Drawing.Size($SideW, ($form.ClientSize.Height - $SbarH))
+$pnlSidebar.Location  = New-Object System.Drawing.Point(0, 0)
+$pnlSidebar.BackColor = $ColSidebar
+$pnlSidebar.Anchor    = $AnchorTLB
+$form.Controls.Add($pnlSidebar)
 
-$lblHdrIcon = New-Object System.Windows.Forms.Label
-$lblHdrIcon.Text      = [char]0xF785
-$lblHdrIcon.Font      = New-Object System.Drawing.Font("Segoe MDL2 Assets", 22)
-$lblHdrIcon.ForeColor = $ColAccent
-$lblHdrIcon.Location  = New-Object System.Drawing.Point(14, 10)
-$lblHdrIcon.Size      = New-Object System.Drawing.Size(46, 46)
-$pnlHeader.Controls.Add($lblHdrIcon)
-$lblHdrTitle = New-Object System.Windows.Forms.Label
-$lblHdrTitle.Text      = "Pulse"
-$lblHdrTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
-$lblHdrTitle.ForeColor = [System.Drawing.Color]::White
-$lblHdrTitle.Location  = New-Object System.Drawing.Point(64, 10)
-$lblHdrTitle.Size      = New-Object System.Drawing.Size(700, 26)
-$pnlHeader.Controls.Add($lblHdrTitle)
-$lblHdrSub = New-Object System.Windows.Forms.Label
-$lblHdrSub.Text      = "Pixellot Unified Live System Evaluator"
-$lblHdrSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
-$lblHdrSub.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
-$lblHdrSub.Location  = New-Object System.Drawing.Point(66, 38)
-$lblHdrSub.Size      = New-Object System.Drawing.Size(560, 16)
-$pnlHeader.Controls.Add($lblHdrSub)
+# Right-edge separator between sidebar and content
+$sepSidebar = New-Object System.Windows.Forms.Panel
+$sepSidebar.Size      = New-Object System.Drawing.Size(1, ($form.ClientSize.Height - $SbarH))
+$sepSidebar.Location  = New-Object System.Drawing.Point(($SideW - 1), 0)
+$sepSidebar.BackColor = $ColBorder
+$sepSidebar.Anchor    = $AnchorTLB
+$form.Controls.Add($sepSidebar)
 
-$lblHdrVer = New-Object System.Windows.Forms.Label
-$lblHdrVer.Text      = "Version $ScriptVersion"
-$lblHdrVer.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
-$lblHdrVer.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
-$lblHdrVer.Size      = New-Object System.Drawing.Size(160, $SbarH)
-$lblHdrVer.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
-$lblHdrVer.Anchor    = $AnchorTR
+# Brand block at top of sidebar — icon + "Pulse" + product tagline
+$lblSbIcon = New-Object System.Windows.Forms.Label
+$lblSbIcon.Text      = [char]0xF785
+$lblSbIcon.Font      = New-Object System.Drawing.Font("Segoe MDL2 Assets", 18)
+$lblSbIcon.ForeColor = $ColAccent
+$lblSbIcon.Location  = New-Object System.Drawing.Point(16, 18)
+$lblSbIcon.Size      = New-Object System.Drawing.Size(32, 32)
+$pnlSidebar.Controls.Add($lblSbIcon)
 
-$pnlBadge = New-Object System.Windows.Forms.Panel
-$pnlBadge.Size      = New-Object System.Drawing.Size(120, 28)
-$pnlBadge.Location  = New-Object System.Drawing.Point(1146, 20)
-$pnlBadge.BackColor = $ColBadgeOkBg
-$pnlBadge.Anchor    = $AnchorTR
-$pnlHeader.Controls.Add($pnlBadge)
-$pnlBadge.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 120, 28)), 14))
+$lblSbBrand = New-Object System.Windows.Forms.Label
+$lblSbBrand.Text      = "Pulse"
+$lblSbBrand.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 13)
+$lblSbBrand.ForeColor = [System.Drawing.Color]::White
+$lblSbBrand.Location  = New-Object System.Drawing.Point(54, 19)
+$lblSbBrand.Size      = New-Object System.Drawing.Size(140, 22)
+$pnlSidebar.Controls.Add($lblSbBrand)
 
-$pnlBadgeDot = New-Object System.Windows.Forms.Panel
-$pnlBadgeDot.Size      = New-Object System.Drawing.Size(8, 8)
-$pnlBadgeDot.Location  = New-Object System.Drawing.Point(12, 10)
-$pnlBadgeDot.BackColor = $ColGreen
-$pnlBadgeDot.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 8, 8)), 4))
-$pnlBadge.Controls.Add($pnlBadgeDot)
+$lblSbBrandSub = New-Object System.Windows.Forms.Label
+$lblSbBrandSub.Text      = "VPU Diagnostics"
+$lblSbBrandSub.Font      = New-Object System.Drawing.Font("Segoe UI", 7.5)
+$lblSbBrandSub.ForeColor = [System.Drawing.Color]::FromArgb(110, 128, 155)
+$lblSbBrandSub.Location  = New-Object System.Drawing.Point(54, 41)
+$lblSbBrandSub.Size      = New-Object System.Drawing.Size(140, 14)
+$pnlSidebar.Controls.Add($lblSbBrandSub)
 
-$lblBadge = New-Object System.Windows.Forms.Label
-$lblBadge.Text      = "Ready"
-$lblBadge.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
-$lblBadge.ForeColor = $ColGreen
-$lblBadge.Location  = New-Object System.Drawing.Point(26, 0)
-$lblBadge.Size      = New-Object System.Drawing.Size(88, 28)
-$lblBadge.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-$pnlBadge.Controls.Add($lblBadge)
+# Divider under the brand block
+$sepBrand = New-Object System.Windows.Forms.Panel
+$sepBrand.Size      = New-Object System.Drawing.Size(($SideW - 24), 1)
+$sepBrand.Location  = New-Object System.Drawing.Point(12, 70)
+$sepBrand.BackColor = $ColBorder
+$pnlSidebar.Controls.Add($sepBrand)
 
-$sepHdr = New-Object System.Windows.Forms.Panel
-$sepHdr.Size      = New-Object System.Drawing.Size(1280, 1)
-$sepHdr.Location  = New-Object System.Drawing.Point(0, ([int]$HdrH - 1))
-$sepHdr.BackColor = [System.Drawing.Color]::FromArgb(51, 65, 85)
-$sepHdr.Anchor    = $AnchorTLR
-$pnlHeader.Controls.Add($sepHdr)
+# Build nav buttons. Each row: icon + label, full sidebar width, with active state
+# (left blue accent + slightly lighter background) drawn in a custom Paint.
+$script:sbNavButtons = @()
+function New-SidebarNavButton {
+    param([string]$Label, [int]$IconCode, [int]$Y)
+    $btn = New-Object System.Windows.Forms.Button
+    $btn.Size      = New-Object System.Drawing.Size($SideW, 40)
+    $btn.Location  = New-Object System.Drawing.Point(0, $Y)
+    $btn.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btn.FlatAppearance.BorderSize = 0
+    $btn.FlatAppearance.MouseOverBackColor = $ColNavHover
+    $btn.BackColor = $ColSidebar
+    $btn.Cursor    = [System.Windows.Forms.Cursors]::Hand
+    $btn.Text      = ""
+    $btn.Tag       = [PSCustomObject]@{ Icon = [char]$IconCode; Label = $Label; Active = $false }
+    $btn.Add_Paint({
+        $s = $args[0]; $e = $args[1]
+        $g = $e.Graphics
+        $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+        $tag = $s.Tag
+        # Active accent strip on the left
+        if ($tag.Active) {
+            $accentBrush = New-Object System.Drawing.SolidBrush($ColAccent)
+            $g.FillRectangle($accentBrush, 0, 0, 3, $s.Height)
+            $accentBrush.Dispose()
+        }
+        # Icon
+        $iconColor = if ($tag.Active) { [System.Drawing.Color]::White } else { [System.Drawing.Color]::FromArgb(148,163,184) }
+        $iconFont  = New-Object System.Drawing.Font("Segoe MDL2 Assets", 11.5)
+        $iconBrush = New-Object System.Drawing.SolidBrush($iconColor)
+        $g.DrawString($tag.Icon, $iconFont, $iconBrush, 18, 11)
+        $iconFont.Dispose(); $iconBrush.Dispose()
+        # Label
+        $textColor = if ($tag.Active) { [System.Drawing.Color]::White } else { [System.Drawing.Color]::FromArgb(180,195,215) }
+        $labelFont = if ($tag.Active) { New-Object System.Drawing.Font("Segoe UI Semibold", 9.5) } else { New-Object System.Drawing.Font("Segoe UI", 9.5) }
+        $labelBrush = New-Object System.Drawing.SolidBrush($textColor)
+        $g.DrawString($tag.Label, $labelFont, $labelBrush, 46, 12)
+        $labelFont.Dispose(); $labelBrush.Dispose()
+    })
+    $script:sbNavButtons += $btn
+    return $btn
+}
+
+$sbNavY = 86
+$navSysOverview = New-SidebarNavButton "System Overview"        0xE80F $sbNavY; $sbNavY += 42
+$navNetConfig   = New-SidebarNavButton "Network Configuration"  0xE701 $sbNavY; $sbNavY += 42
+$navCamera      = New-SidebarNavButton "Camera Connectivity"    0xE722 $sbNavY; $sbNavY += 42
+$navPoE         = New-SidebarNavButton "Hardware & Peripherals" 0xE7E8 $sbNavY; $sbNavY += 42
+$navServices    = New-SidebarNavButton "Pixellot Services"      0xE9F5 $sbNavY; $sbNavY += 42
+$navDisk        = New-SidebarNavButton "Disk & System Health"   0xEDA2 $sbNavY; $sbNavY += 42
+$navSysInfo     = New-SidebarNavButton "System Information"     0xE9A0 $sbNavY; $sbNavY += 42
+$navEvents      = New-SidebarNavButton "Event Viewer"           0xE7BA $sbNavY; $sbNavY += 42
+$navReports     = New-SidebarNavButton "Reports"                0xE7C3 $sbNavY; $sbNavY += 42
+
+# Settings + About pinned near the bottom of the sidebar
+$navSettings    = New-SidebarNavButton "Settings"               0xE713 ($form.ClientSize.Height - $SbarH - 96)
+$navAbout       = New-SidebarNavButton "About"                  0xE946 ($form.ClientSize.Height - $SbarH - 54)
+$navSettings.Anchor = $AnchorBL
+$navAbout.Anchor    = $AnchorBL
+
+# Hidden compat buttons — older module code (CameraConnectivity, etc.) still calls
+# $navOverview / $navTests / $navHistory / $navHelp by name and adds its own Click
+# handlers. Aliasing these to the visible nav buttons would cause infinite recursion
+# (the handler on the alias calls PerformClick() on the same physical button it's
+# attached to). So they're separate hidden buttons whose Click forwards to the real
+# nav buttons.
+$navOverview = New-Object System.Windows.Forms.Button; $navOverview.Visible = $false; $navOverview.Size = New-Object System.Drawing.Size(0, 0)
+$navTests    = New-Object System.Windows.Forms.Button; $navTests.Visible    = $false; $navTests.Size    = New-Object System.Drawing.Size(0, 0)
+$navHistory  = New-Object System.Windows.Forms.Button; $navHistory.Visible  = $false; $navHistory.Size  = New-Object System.Drawing.Size(0, 0)
+$navHelp     = New-Object System.Windows.Forms.Button; $navHelp.Visible     = $false; $navHelp.Size     = New-Object System.Drawing.Size(0, 0)
+$form.Controls.AddRange(@($navOverview, $navTests, $navHistory, $navHelp))
+
+$pnlSidebar.Controls.AddRange($script:sbNavButtons)
+
+# ---- Tab hover tooltips ----------------------------------------------------
+$tabTip = New-Object System.Windows.Forms.ToolTip
+$tabTip.AutoPopDelay = 8000
+$tabTip.InitialDelay = 550
+$tabTip.ReshowDelay  = 300
+$tabTip.ShowAlways   = $true
+$tabTip.SetToolTip($navSysOverview, "Home dashboard with all module tiles and Run Full Diagnostic")
+$tabTip.SetToolTip($navSysInfo,     "CPU, RAM, GPU, storage, and network adapter inventory")
+$tabTip.SetToolTip($navNetConfig,   "Internet access, required port connectivity, and DNS resolution for Pixellot services")
+$tabTip.SetToolTip($navCamera,      "Camera NIC link speeds, cable-fault detection, ping/RTSP checks, and PoE power budget")
+$tabTip.SetToolTip($navServices,    "Running status of Pixellot agent, encoder, and support services")
+$tabTip.SetToolTip($navPoE,         "GPU, monitor, input devices, PoE budget, and NIC link uptime (NIC port layout lives on Camera Connectivity)")
+$tabTip.SetToolTip($navDisk,        "Drive free space, disk health, and system memory availability")
+$tabTip.SetToolTip($navEvents,      "Recent OS system errors filtered for hardware and service-related issues")
+$tabTip.SetToolTip($navReports,     "View, copy, or export previously saved diagnostic reports")
+$tabTip.SetToolTip($navSettings,    "Theme and application settings")
+$tabTip.SetToolTip($navAbout,       "Help, version, and feedback form")
+
+# Tab-bar Run Diagnostic button removed — primary action is now per-panel.
+# Define a hidden compat button so $btnTabFullDiag.Add_Click in module wiring still works.
+$btnTabFullDiag = New-Object System.Windows.Forms.Button
+$btnTabFullDiag.Visible = $false
+$btnTabFullDiag.Size    = New-Object System.Drawing.Size(0, 0)
+$form.Controls.Add($btnTabFullDiag)
 
 # ---- Bottom Status Bar -----------------------------------------------------
 $pnlStatusBar = New-Object System.Windows.Forms.Panel
-$pnlStatusBar.Size      = New-Object System.Drawing.Size(1280, $SbarH)
-$pnlStatusBar.Location  = New-Object System.Drawing.Point(0, (760 - [int]$SbarH))
-$pnlStatusBar.BackColor = [System.Drawing.Color]::FromArgb(30, 41, 59)
+$pnlStatusBar.Size      = New-Object System.Drawing.Size(1500, $SbarH)
+$pnlStatusBar.Location  = New-Object System.Drawing.Point(0, ($form.ClientSize.Height - $SbarH))
+$pnlStatusBar.BackColor = [System.Drawing.Color]::FromArgb(15, 22, 36)
 $pnlStatusBar.Anchor    = $AnchorBLR
 $form.Controls.Add($pnlStatusBar)
 
+# Top border on the status bar for separation
+$sepSbar = New-Object System.Windows.Forms.Panel
+$sepSbar.Size      = New-Object System.Drawing.Size(1500, 1)
+$sepSbar.Location  = New-Object System.Drawing.Point(0, 0)
+$sepSbar.BackColor = $ColBorder
+$sepSbar.Anchor    = $AnchorTLR
+$pnlStatusBar.Controls.Add($sepSbar)
+
 $pnlSbarDot = New-Object System.Windows.Forms.Panel
 $pnlSbarDot.Size      = New-Object System.Drawing.Size(8, 8)
-$pnlSbarDot.Location  = New-Object System.Drawing.Point(14, 10)
+$pnlSbarDot.Location  = New-Object System.Drawing.Point(14, ($SbarH / 2 - 4))
 $pnlSbarDot.BackColor = $ColGreen
 $pnlSbarDot.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 8, 8)), 4))
 $pnlStatusBar.Controls.Add($pnlSbarDot)
 
 $lblSbarStatus = New-Object System.Windows.Forms.Label
 $lblSbarStatus.Text      = "Status: Ready"
-$lblSbarStatus.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
-$lblSbarStatus.ForeColor = [System.Drawing.Color]::FromArgb(148, 163, 184)
+$lblSbarStatus.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblSbarStatus.ForeColor = [System.Drawing.Color]::FromArgb(180, 195, 215)
 $lblSbarStatus.Location  = New-Object System.Drawing.Point(28, 0)
-$lblSbarStatus.Size      = New-Object System.Drawing.Size(200, $SbarH)
+$lblSbarStatus.Size      = New-Object System.Drawing.Size(220, $SbarH)
 $lblSbarStatus.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 $pnlStatusBar.Controls.Add($lblSbarStatus)
 
 $lblSbarLastRun = New-Object System.Windows.Forms.Label
 $lblSbarLastRun.Text      = "Last Run: Never"
-$lblSbarLastRun.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
-$lblSbarLastRun.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
-$lblSbarLastRun.Location  = New-Object System.Drawing.Point(300, 0)
-$lblSbarLastRun.Size      = New-Object System.Drawing.Size(400, $SbarH)
+$lblSbarLastRun.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblSbarLastRun.ForeColor = [System.Drawing.Color]::FromArgb(120, 138, 165)
+$lblSbarLastRun.Location  = New-Object System.Drawing.Point(260, 0)
+$lblSbarLastRun.Size      = New-Object System.Drawing.Size(420, $SbarH)
 $lblSbarLastRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 $pnlStatusBar.Controls.Add($lblSbarLastRun)
 
-$lblHdrVer.Location = New-Object System.Drawing.Point(1110, 0)
+$lblHdrVer = New-Object System.Windows.Forms.Label
+$lblHdrVer.Text      = "Tool Version: $ScriptVersion"
+$lblHdrVer.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblHdrVer.ForeColor = [System.Drawing.Color]::FromArgb(120, 138, 165)
+$lblHdrVer.Size      = New-Object System.Drawing.Size(180, $SbarH)
+$lblHdrVer.Location  = New-Object System.Drawing.Point(1304, 0)
+$lblHdrVer.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+$lblHdrVer.Anchor    = $AnchorTR
 $pnlStatusBar.Controls.Add($lblHdrVer)
 
-$btnSbarSettings = New-Object System.Windows.Forms.Button
-$btnSbarSettings.Text      = "Settings"
-$btnSbarSettings.Font      = New-Object System.Drawing.Font("Segoe UI", 8)
-$btnSbarSettings.Size      = New-Object System.Drawing.Size(90, 20)
-$btnSbarSettings.Location  = New-Object System.Drawing.Point(980, 4)
-$btnSbarSettings.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnSbarSettings.FlatAppearance.BorderColor = $ColBorder
-$btnSbarSettings.FlatAppearance.BorderSize  = 1
-$btnSbarSettings.BackColor = $ColCard
-$btnSbarSettings.ForeColor = $ColMuted
-$btnSbarSettings.Cursor    = [System.Windows.Forms.Cursors]::Hand
-$btnSbarSettings.Anchor    = $AnchorTR
-$pnlStatusBar.Controls.Add($btnSbarSettings)
-$btnSbarSettings.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,90,20)),4))
-$btnSbarSettings.Add_Click({ $navSettings.PerformClick() })
-
-# ---- Tab navigation bar ----------------------------------------------------
-$pnlTabBar = New-Object System.Windows.Forms.Panel
-$pnlTabBar.Size      = New-Object System.Drawing.Size(1280, $TabH)
-$pnlTabBar.Location  = New-Object System.Drawing.Point(0, $HdrH)
-$pnlTabBar.BackColor = $ColSidebar
-$pnlTabBar.Anchor    = $AnchorTLR
-$form.Controls.Add($pnlTabBar)
-
-$sepTab = New-Object System.Windows.Forms.Panel
-$sepTab.Size      = New-Object System.Drawing.Size(1280, 1)
-$sepTab.Location  = New-Object System.Drawing.Point(0, ([int]$TabH - 1))
-$sepTab.BackColor = [System.Drawing.Color]::FromArgb(51, 65, 85)
-$sepTab.Anchor    = $AnchorTLR
-$pnlTabBar.Controls.Add($sepTab)
-
-$tabW = 142  # 9 tabs × 142px ≈ 1280px
-$navSysOverview = New-TabButton "Home"                 0xE80F  (0 * $tabW)  $tabW
-$navSysInfo     = New-TabButton "System Information"   0xE9A0  (1 * $tabW)  $tabW
-$navNetConfig   = New-TabButton "Network"              0xE701  (2 * $tabW)  $tabW
-$navCamera      = New-TabButton "Camera"               0xE722  (3 * $tabW)  $tabW
-$navServices    = New-TabButton "Services"             0xE9F5  (4 * $tabW)  $tabW
-$navPoE         = New-TabButton "Hardware"             0xE7E8  (5 * $tabW)  $tabW
-$navDisk        = New-TabButton "Disks"                0xEDA2  (6 * $tabW)  $tabW
-$navEvents      = New-TabButton "OS Event Logs"        0xE7BA  (7 * $tabW)  $tabW
-$navReports     = New-TabButton "Reports"              0xE7C3  (8 * $tabW)  $tabW
-
-$btnTabFullDiag = New-Object System.Windows.Forms.Button
-$btnTabFullDiag.Text      = [char]0x25B6 + "  Run Diagnostic"
-$btnTabFullDiag.Size      = New-Object System.Drawing.Size(170, 46)
-$btnTabFullDiag.Location  = New-Object System.Drawing.Point(966, 11)
-$btnTabFullDiag.BackColor = $ColAccent
-$btnTabFullDiag.ForeColor = [System.Drawing.Color]::White
-$btnTabFullDiag.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnTabFullDiag.FlatAppearance.BorderSize = 0
-$btnTabFullDiag.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
-$btnTabFullDiag.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-$btnTabFullDiag.Cursor    = [System.Windows.Forms.Cursors]::Hand
-$btnTabFullDiag.Anchor    = $AnchorTR
-$btnTabFullDiag.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,170,46)),6))
-
-$pnlTabBar.Controls.AddRange(@(
-    $navSysOverview,$navSysInfo,$navNetConfig,$navCamera,$navServices,
-    $navPoE,$navDisk,$navEvents,$navReports
-))
-
-# ---- Tab hover tooltips -----------------------------------------------------
-$tabTip = New-Object System.Windows.Forms.ToolTip
-$tabTip.AutoPopDelay = 8000   # stay visible 8 s
-$tabTip.InitialDelay = 550    # appear after 550 ms hover
-$tabTip.ReshowDelay  = 300
-$tabTip.ShowAlways   = $true  # show even when form lacks focus
-$tabTip.SetToolTip($navSysOverview, "Run Full Diagnostic across all modules and view a health summary")
-$tabTip.SetToolTip($navSysInfo,     "CPU, RAM, GPU, storage, and network adapter inventory")
-$tabTip.SetToolTip($navNetConfig,   "Internet access, required port connectivity, and DNS resolution for Pixellot services")
-$tabTip.SetToolTip($navCamera,      "Camera NIC link speeds, cable-fault detection, ping/RTSP checks, and PoE power budget")
-$tabTip.SetToolTip($navServices,    "Running status of Pixellot agent, encoder, and support services")
-$tabTip.SetToolTip($navPoE,         "PoE card power budget, per-port voltage and current, and connected peripheral devices")
-$tabTip.SetToolTip($navDisk,        "Drive free space, disk health, and system memory availability")
-$tabTip.SetToolTip($navEvents,      "Recent OS system errors filtered for hardware and service-related issues")
-$tabTip.SetToolTip($navReports,     "View, copy, or export previously saved diagnostic reports")
-
-# Helper for hidden compat buttons (no tab appearance needed)
-function New-NavButton {
-    param([string]$Text, [int]$Y, [bool]$Active = $false)
-    $btn = New-Object System.Windows.Forms.Button
-    $btn.Size = New-Object System.Drawing.Size(0, 0); $btn.Visible = $false
-    return $btn
-}
-
-# Hidden buttons kept for internal PerformClick() compatibility
-$navSettings = New-NavButton ""; $navAbout    = New-NavButton ""
-$navOverview = New-NavButton ""; $navTests    = New-NavButton ""
-$navHistory  = New-NavButton ""; $navHelp     = New-NavButton ""
-$form.Controls.AddRange(@($navSettings,$navAbout,$navOverview,$navTests,$navHistory,$navHelp))
+# Stub for legacy $pnlHeader / $pnlBadge references so module code that pokes them
+# (e.g. update-banner buttons) doesn't crash. Both are off-screen and zero-sized.
+$pnlHeader = New-Object System.Windows.Forms.Panel
+$pnlHeader.Size = New-Object System.Drawing.Size(0, 0); $pnlHeader.Visible = $false
+$form.Controls.Add($pnlHeader)
+$pnlBadge      = New-Object System.Windows.Forms.Panel; $pnlBadge.Visible = $false; $pnlBadge.Size = New-Object System.Drawing.Size(0,0)
+$pnlBadgeDot   = New-Object System.Windows.Forms.Panel; $pnlBadgeDot.Visible = $false; $pnlBadgeDot.Size = New-Object System.Drawing.Size(0,0)
+$lblBadge      = New-Object System.Windows.Forms.Label; $lblBadge.Visible = $false
+$lblHdrTitle   = New-Object System.Windows.Forms.Label; $lblHdrTitle.Visible = $false
+$lblHdrSub     = New-Object System.Windows.Forms.Label; $lblHdrSub.Visible = $false
+$lblHdrIcon    = New-Object System.Windows.Forms.Label; $lblHdrIcon.Visible = $false
 
 # Update notification - placed in header
 $lblUpdate = New-Object System.Windows.Forms.Label
@@ -517,51 +534,156 @@ $pnlSettings.Location = New-Object System.Drawing.Point($SideW, $ContentY)
 $pnlSettings.BackColor = $ColBg; $pnlSettings.Visible = $false; $pnlSettings.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlSettings)
 
-$lblSetTitle = New-Object System.Windows.Forms.Label; $lblSetTitle.Text = "Settings"
-$lblSetTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold",12); $lblSetTitle.ForeColor = $ColText
-$lblSetTitle.Location = New-Object System.Drawing.Point(10,16); $lblSetTitle.AutoSize = $true
-$pnlSettings.Controls.Add($lblSetTitle)
+# v1.0.43 redesign — section header + grouped settings cards + action bar
+$setHeader = New-SectionHeader -Parent $pnlSettings `
+    -Title    "Settings" `
+    -Subtitle "Configure tool behavior and preferences."
 
-$lblSetSub = New-Object System.Windows.Forms.Label
-$lblSetSub.Text = "Configure tool options."
-$lblSetSub.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lblSetSub.ForeColor = $ColMuted
-$lblSetSub.Location = New-Object System.Drawing.Point(10,42); $lblSetSub.AutoSize = $true
-$pnlSettings.Controls.Add($lblSetSub)
+# Card factory — a titled, bordered container that holds a labelled control row.
+function _NewSetCard {
+    param([int]$Y, [int]$H, [string]$Title)
+    $card = New-Object System.Windows.Forms.Panel
+    $card.Size      = New-Object System.Drawing.Size(620, $H)
+    $card.Location  = New-Object System.Drawing.Point(28, $Y)
+    $card.BackColor = $ColCard
+    $card.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 620, $H)), 8))
+    $pnlSettings.Controls.Add($card)
+    $hdr = New-Object System.Windows.Forms.Label
+    $hdr.Text      = $Title
+    $hdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+    $hdr.ForeColor = $ColText
+    $hdr.Location  = New-Object System.Drawing.Point(16, 12)
+    $hdr.Size      = New-Object System.Drawing.Size(580, 20)
+    $card.Controls.Add($hdr)
+    return $card
+}
 
-$sepSetTop = New-Object System.Windows.Forms.Panel
-$sepSetTop.Size = New-Object System.Drawing.Size(1240,1); $sepSetTop.Location = New-Object System.Drawing.Point(10,68)
-$sepSetTop.BackColor = $ColBorder; $pnlSettings.Controls.Add($sepSetTop)
+# General — Theme toggle (existing functionality)
+$cardGeneral = _NewSetCard -Y 110 -H 130 -Title "General"
 
-$lblSetAppearance = New-Object System.Windows.Forms.Label; $lblSetAppearance.Text = "Appearance"
-$lblSetAppearance.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $lblSetAppearance.ForeColor = $ColText
-$lblSetAppearance.Location = New-Object System.Drawing.Point(10,82); $lblSetAppearance.AutoSize = $true
-$pnlSettings.Controls.Add($lblSetAppearance)
-
-$lblSetThemeName = New-Object System.Windows.Forms.Label; $lblSetThemeName.Text = "Theme"
-$lblSetThemeName.Font = New-Object System.Drawing.Font("Segoe UI",9); $lblSetThemeName.ForeColor = $ColText
-$lblSetThemeName.Location = New-Object System.Drawing.Point(10,112); $lblSetThemeName.AutoSize = $true
-$pnlSettings.Controls.Add($lblSetThemeName)
+$lblSetThemeName = New-Object System.Windows.Forms.Label
+$lblSetThemeName.Text      = "Theme"
+$lblSetThemeName.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
+$lblSetThemeName.ForeColor = $ColText
+$lblSetThemeName.Location  = New-Object System.Drawing.Point(16, 44)
+$lblSetThemeName.AutoSize  = $true
+$cardGeneral.Controls.Add($lblSetThemeName)
 
 $lblSetThemeDesc = New-Object System.Windows.Forms.Label
-$lblSetThemeDesc.Text = "Current: $(if($VpuTheme -eq 'light'){'Light'}else{'Dark'}) Mode.  Switching restarts the application."
-$lblSetThemeDesc.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblSetThemeDesc.ForeColor = $ColMuted
-$lblSetThemeDesc.Location = New-Object System.Drawing.Point(10,132); $lblSetThemeDesc.AutoSize = $true
-$pnlSettings.Controls.Add($lblSetThemeDesc)
+$lblSetThemeDesc.Text      = "Current: $(if($VpuTheme -eq 'light'){'Light'}else{'Dark'}) Mode. Switching restarts the application."
+$lblSetThemeDesc.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblSetThemeDesc.ForeColor = $ColMuted
+$lblSetThemeDesc.Location  = New-Object System.Drawing.Point(16, 64)
+$lblSetThemeDesc.Size      = New-Object System.Drawing.Size(440, 18)
+$cardGeneral.Controls.Add($lblSetThemeDesc)
 
 $btnSetTheme = New-Object System.Windows.Forms.Button
-$btnSetTheme.Text = if ($VpuTheme -eq "light") { "  Switch to Dark Mode" } else { "  Switch to Light Mode" }
-$btnSetTheme.Size = New-Object System.Drawing.Size(200,40); $btnSetTheme.Location = New-Object System.Drawing.Point(10,162)
-$btnSetTheme.BackColor = $ColAccent; $btnSetTheme.ForeColor = [System.Drawing.Color]::White
-$btnSetTheme.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnSetTheme.FlatAppearance.BorderSize = 0
-$btnSetTheme.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $btnSetTheme.Cursor = [System.Windows.Forms.Cursors]::Hand
-$btnSetTheme.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0,0,200,40)),6))
-$pnlSettings.Controls.Add($btnSetTheme)
+$btnSetTheme.Text      = if ($VpuTheme -eq "light") { "Switch to Dark Mode" } else { "Switch to Light Mode" }
+$btnSetTheme.Size      = New-Object System.Drawing.Size(180, 32)
+$btnSetTheme.Location  = New-Object System.Drawing.Point(424, 50)
+$btnSetTheme.BackColor = $ColAccent
+$btnSetTheme.ForeColor = [System.Drawing.Color]::White
+$btnSetTheme.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnSetTheme.FlatAppearance.BorderSize = 0
+$btnSetTheme.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
+$btnSetTheme.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnSetTheme.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 32)), 6))
+$cardGeneral.Controls.Add($btnSetTheme)
 $btnSetTheme.Add_Click({
     $newTheme = if ($VpuTheme -eq "dark") { "light" } else { "dark" }
     try { [System.IO.File]::WriteAllText($SettingsPath, "{`"Theme`":`"$newTheme`"}") } catch { }
     $runScript = if ($PSCommandPath -and (Test-Path $PSCommandPath)) { $PSCommandPath } else { Join-Path $PSScriptRoot "Run.ps1" }
     Start-Process "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$runScript`""
     $form.Close()
+})
+
+# Reports — output directory shortcut
+$cardReports = _NewSetCard -Y 252 -H 110 -Title "Reports"
+$lblSetDirName = New-Object System.Windows.Forms.Label
+$lblSetDirName.Text      = "Output Directory"
+$lblSetDirName.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
+$lblSetDirName.ForeColor = $ColText
+$lblSetDirName.Location  = New-Object System.Drawing.Point(16, 44)
+$lblSetDirName.AutoSize  = $true
+$cardReports.Controls.Add($lblSetDirName)
+
+$lblSetDirPath = New-Object System.Windows.Forms.Label
+$lblSetDirPath.Text      = $OutputDir
+$lblSetDirPath.Font      = New-Object System.Drawing.Font("Consolas", 8.5)
+$lblSetDirPath.ForeColor = $ColMuted
+$lblSetDirPath.Location  = New-Object System.Drawing.Point(16, 64)
+$lblSetDirPath.Size      = New-Object System.Drawing.Size(440, 18)
+$cardReports.Controls.Add($lblSetDirPath)
+
+$btnSetOpenDir = New-Object System.Windows.Forms.Button
+$btnSetOpenDir.Text      = "Open Folder"
+$btnSetOpenDir.Size      = New-Object System.Drawing.Size(180, 32)
+$btnSetOpenDir.Location  = New-Object System.Drawing.Point(424, 50)
+$btnSetOpenDir.BackColor = $ColCard
+$btnSetOpenDir.ForeColor = $ColText
+$btnSetOpenDir.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnSetOpenDir.FlatAppearance.BorderColor = $ColBorder
+$btnSetOpenDir.FlatAppearance.BorderSize  = 1
+$btnSetOpenDir.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$btnSetOpenDir.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnSetOpenDir.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 32)), 6))
+$cardReports.Controls.Add($btnSetOpenDir)
+$btnSetOpenDir.Add_Click({ if (Test-Path $OutputDir) { Start-Process explorer.exe $OutputDir } })
+
+# Feedback — token configuration shortcut
+$cardFeedback = _NewSetCard -Y 374 -H 110 -Title "Feedback"
+$lblSetFbName = New-Object System.Windows.Forms.Label
+$lblSetFbName.Text      = "GitHub Token"
+$lblSetFbName.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
+$lblSetFbName.ForeColor = $ColText
+$lblSetFbName.Location  = New-Object System.Drawing.Point(16, 44)
+$lblSetFbName.AutoSize  = $true
+$cardFeedback.Controls.Add($lblSetFbName)
+
+$lblSetFbState = New-Object System.Windows.Forms.Label
+$lblSetFbState.Text      = if ($script:FeedbackToken) { "Configured. Feedback will post directly to the tools team." } else { "Not configured. Feedback will be copied to clipboard as a fallback." }
+$lblSetFbState.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$lblSetFbState.ForeColor = if ($script:FeedbackToken) { $ColGreen } else { $ColYellow }
+$lblSetFbState.Location  = New-Object System.Drawing.Point(16, 64)
+$lblSetFbState.Size      = New-Object System.Drawing.Size(440, 18)
+$cardFeedback.Controls.Add($lblSetFbState)
+
+# About card on the right column — version + license + repo link
+$cardAbout = New-Object System.Windows.Forms.Panel
+$cardAbout.Size      = New-Object System.Drawing.Size(580, 374)
+$cardAbout.Location  = New-Object System.Drawing.Point(672, 110)
+$cardAbout.BackColor = $ColCard
+$cardAbout.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 580, 374)), 8))
+$pnlSettings.Controls.Add($cardAbout)
+
+$lblAbHdr = New-Object System.Windows.Forms.Label
+$lblAbHdr.Text      = "About Pulse"
+$lblAbHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
+$lblAbHdr.ForeColor = $ColText
+$lblAbHdr.Location  = New-Object System.Drawing.Point(20, 18)
+$lblAbHdr.AutoSize  = $true
+$cardAbout.Controls.Add($lblAbHdr)
+
+$lblAbBody = New-Object System.Windows.Forms.Label
+$lblAbBody.Text      = ("Pulse — Pixellot Unified Live System Evaluator`n" +
+                       "Version: $ScriptVersion`n" +
+                       "Repository: github.com/ianmoore-playon/vpu-diagnostic-tools`n" +
+                       "License: Internal use within PlayOn Sports / NFHS Network.`n`n" +
+                       "Pulse is an in-house diagnostic tool for Pixellot VPU systems. " +
+                       "It checks network connectivity, services, hardware, disks, event logs, " +
+                       "and camera link state — exporting a single shareable report for IT triage.")
+$lblAbBody.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$lblAbBody.ForeColor = $ColText
+$lblAbBody.Location  = New-Object System.Drawing.Point(20, 48)
+$lblAbBody.Size      = New-Object System.Drawing.Size(540, 280)
+$cardAbout.Controls.Add($lblAbBody)
+
+# Action bar — Restore Defaults + Save (placeholder for now; theme-toggle saves on its own)
+$setActions = New-ActionBar -Parent $pnlSettings -Y 700 -ExportText "Restore Defaults" -PrimaryText "Save Settings"
+$setActions.PrimaryBtn.Add_Click({ [System.Windows.Forms.MessageBox]::Show("Settings saved.", "Pulse Settings", "OK", "Information") | Out-Null })
+$setActions.ExportBtn.Add_Click({
+    $r = [System.Windows.Forms.MessageBox]::Show("Restore default settings? This will reset the theme to Dark and clear customisations.", "Restore Defaults", "YesNo", "Warning")
+    if ($r -eq "Yes") { try { Remove-Item $SettingsPath -ErrorAction SilentlyContinue } catch { } }
 })
 
 # ---- Completion Toast -------------------------------------------------------
@@ -793,7 +915,7 @@ $script:allNavPanels = @(
 $navSysOverview.Add_Click({ Show-Panel $pnlSysOverview; Set-ActiveNav $navSysOverview })
 $navSysInfo.Add_Click({     Show-Panel $pnlSysInfo;     Set-ActiveNav $navSysInfo })
 $navNetConfig.Add_Click({   Show-Panel $pnlNetwork;     Set-ActiveNav $navNetConfig })
-$navCamera.Add_Click({      Show-Panel $center $true;   Set-ActiveNav $navCamera; Show-OverviewSteps })
+$navCamera.Add_Click({      Show-Panel $center;         Set-ActiveNav $navCamera; Show-OverviewSteps })
 $navPoE.Add_Click({         Show-Panel $pnlPoE;         Set-ActiveNav $navPoE })
 $navServices.Add_Click({    Show-Panel $pnlServices;    Set-ActiveNav $navServices })
 $navDisk.Add_Click({        Show-Panel $pnlDisk;        Set-ActiveNav $navDisk })

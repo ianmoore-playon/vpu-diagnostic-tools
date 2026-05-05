@@ -58,28 +58,31 @@ $pnlHistory.BackColor = $ColBg; $pnlHistory.Visible = $false
 $pnlHistory.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlHistory)
 
-$lblHistTitle = New-Object System.Windows.Forms.Label
-$lblHistTitle.Text = "Run History"
-$lblHistTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
-$lblHistTitle.ForeColor = $ColText
-$lblHistTitle.Location = New-Object System.Drawing.Point(10, 16); $lblHistTitle.AutoSize = $true
-$pnlHistory.Controls.Add($lblHistTitle)
+# v1.0.43 redesign — section header + report list + action bar
+$histHeader = New-SectionHeader -Parent $pnlHistory `
+    -Title    "Reports" `
+    -Subtitle "Generate and manage diagnostic reports. Double-click any row to open the full report."
 
-$lblHistSub = New-Object System.Windows.Forms.Label
-$lblHistSub.Text = "Past diagnostic runs - double-click a row to open the full report."
-$lblHistSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblHistSub.ForeColor = $ColMuted
-$lblHistSub.Location = New-Object System.Drawing.Point(10, 42); $lblHistSub.Size = New-Object System.Drawing.Size(1000, 18)
-$pnlHistory.Controls.Add($lblHistSub)
+# Report list inside a card panel
+$histListCard = New-Object System.Windows.Forms.Panel
+$histListCard.Size      = New-Object System.Drawing.Size(($pnlHistory.Width - 56), 580)
+$histListCard.Location  = New-Object System.Drawing.Point(28, 110)
+$histListCard.BackColor = $ColCard
+$histListCard.Anchor    = $AnchorTLRB
+$histListCard.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, ($pnlHistory.Width - 56), 580)), 8))
+$pnlHistory.Controls.Add($histListCard)
 
-$lnkHistRefresh = New-Object System.Windows.Forms.LinkLabel; $lnkHistRefresh.Text = "Refresh"
-$lnkHistRefresh.Font = New-Object System.Drawing.Font("Segoe UI",8.5); $lnkHistRefresh.LinkColor = $ColMuted
-$lnkHistRefresh.Location = New-Object System.Drawing.Point(1180, 44); $lnkHistRefresh.AutoSize = $true
-$pnlHistory.Controls.Add($lnkHistRefresh)
-$lnkHistRefresh.Add_LinkClicked({ Update-HistoryList })
+$lblHistListHdr = New-Object System.Windows.Forms.Label
+$lblHistListHdr.Text      = "Past Diagnostic Runs"
+$lblHistListHdr.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$lblHistListHdr.ForeColor = $ColText
+$lblHistListHdr.Location  = New-Object System.Drawing.Point(16, 12)
+$lblHistListHdr.AutoSize  = $true
+$histListCard.Controls.Add($lblHistListHdr)
 
 $lvHistory = New-Object System.Windows.Forms.ListView
-$lvHistory.Size = New-Object System.Drawing.Size(1240, 534)
-$lvHistory.Location = New-Object System.Drawing.Point(10, 68); $lvHistory.Anchor = $AnchorTLRB
+$lvHistory.Size = New-Object System.Drawing.Size(($histListCard.Width - 16), ($histListCard.Height - 50))
+$lvHistory.Location = New-Object System.Drawing.Point(8, 38); $lvHistory.Anchor = $AnchorTLRB
 $lvHistory.View = [System.Windows.Forms.View]::Details
 $lvHistory.FullRowSelect = $true
 $lvHistory.GridLines = $false
@@ -89,11 +92,24 @@ $lvHistory.ForeColor = $ColText
 $lvHistory.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 $lvHistory.HeaderStyle = [System.Windows.Forms.ColumnHeaderStyle]::Nonclickable
 $lvHistory.UseCompatibleStateImageBehavior = $false
-$pnlHistory.Controls.Add($lvHistory)
+$histListCard.Controls.Add($lvHistory)
 $lvHistory.Columns.Add("Date / Time",   142) | Out-Null
 $lvHistory.Columns.Add("Result",         92) | Out-Null
 $lvHistory.Columns.Add("Summary",       948) | Out-Null
 $lvHistory.Columns.Add("Size",           58) | Out-Null
+
+# Action bar — Refresh + Open Reports Folder
+$histActions = New-ActionBar -Parent $pnlHistory -Y 700 -ExportText "Open Reports Folder" -PrimaryText ([char]0xE72C + "  Refresh")
+$btnHistRefresh = $histActions.PrimaryBtn
+$btnHistOpenFolder = $histActions.ExportBtn
+$btnHistRefresh.Add_Click({ Update-HistoryList })
+$btnHistOpenFolder.Add_Click({
+    if (Test-Path $OutputDir) { Start-Process explorer.exe $OutputDir }
+})
+
+# Stub for legacy reference
+$lnkHistRefresh = New-Object System.Windows.Forms.LinkLabel; $lnkHistRefresh.Visible = $false
+$pnlHistory.Controls.Add($lnkHistRefresh)
 
 $lvHistory.Add_DoubleClick({
     if ($lvHistory.SelectedItems.Count -gt 0) {

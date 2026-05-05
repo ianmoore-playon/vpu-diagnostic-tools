@@ -10,6 +10,108 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.47] - 2026-05-02
+
+### Changed
+
+- **NIC Port Layout moved from Hardware tab → Camera Connectivity tab.** The diagram (stylized NIC bracket with 4 RJ45 jacks + status light + per-port LEDs), the 4 port detail boxes (Port N / Status / Speed / Duplex / MAC / Errors), the NIC Information sidebar, and the Status Legend all now live on Camera Connectivity, where they belong alongside the camera-port diagnostic results. The Hardware tab focuses on peripherals: GPU, monitor, input devices, PoE budget, and NIC link uptime.
+- **Hardware tab renamed** "PoE / NIC Hardware" → "Hardware & Peripherals" everywhere (sidebar nav, home tile, section header, tooltip).
+- **Camera Connectivity layout reflowed** to fit the diagram: removed the per-NIC P1..P4 status cards row (the diagram + port detail boxes carry that information now); status cards row (SmartSpeed/Ping/ARP/CHU/PoE) shifts down to Y=384; two-column main (Live Log + Guidance) shifts to Y=482 with reduced height (198px). Per-NIC `$cards[$NicName]` entries become hidden stub cards so the diagnostic timer keeps working without NPE.
+- **Diagnostic results mirror onto port detail boxes.** When the camera diagnostic writes per-NIC results into `$sync.Cards[<NicName>]`, the matching port detail box's Status text is updated to show the result (PASS, DEGRADED, etc.) with the appropriate color. Live link state still drives the diagram on every panel show and again after diagnostic completion.
+- **Hardware tab Hardware Details log + Summary panel resized** to fill the 460px gap freed by relocating the diagram.
+
+---
+
+## [1.0.46] - 2026-05-02
+
+### Changed
+
+- **Camera Connectivity panel redesign** — adopts the same section-header pattern as Network/Disk/Services/etc. Single full-width panel (no separate right column) with: section title + Overall Status pill at top; toolbar strip with Test Scope dropdown and detected NIC card; port cards row; status cards row (SmartSpeed / Ping / ARP / CHU / PoE); two-column main with Live Log on the left and "Next Steps & Guidance" card on the right; bottom action bar (Export / Run / Cancel + Copy Summary, Copy Log, Save Log). The Open Fault Isolator button is the primary action inside the guidance card. The old standalone "Last Run Summary" strip is folded into the guidance card.
+- **Camera section header pill** — driven by the timer: shows "Running" (neutral) during a run, "All Clear" (green) on success, "Issues Found" (red) on failure. Mirrors the Pulse-wide overall status pattern.
+
+### Fixed
+
+- **Home page tile positioning** — tiles 4, 7, and 8 (Pixellot Services, Event Viewer, Reports) intermittently rendered one row lower than intended, leaving holes in row 0 col 3 and row 1 cols 2–3 and overlapping the bottom action bar. Root cause was the foreach loop reading `$pnlSysOverview.Width` before the form's window handle was created, which produced an inconsistent first-pass layout. Tiles are now built at (0,0) and positioned by a single deterministic `Update-HubTileLayout` call that runs again on `HandleCreated` and `VisibleChanged`. Layout is purely index-based; the `R`/`C` fields in `$hubCardDefs` are documentation only.
+- **`Show-Panel $center $true`** — second arg dropped now that Camera Connectivity owns its guidance card. `$right` and `$rightBorder` remain as zero-sized hidden stubs to keep the rest of `Show-Panel` happy.
+
+---
+
+## [1.0.45] - 2026-05-02
+
+### Fixed
+
+- **`DotPanel` errors during diagnostic runs** — Network stub cards (added in v1.0.42 to keep `Update-CardStatus` happy after the visible cards moved into the section header) lacked a `DotPanel` field. `Update-CardStatus` set `$Card.DotPanel.BackColor` and crashed five times per run. Added a hidden Panel as `DotPanel` so all three stubs cover every field the function touches.
+- **Home tile titles dropped the `&` character** — "System & Disk Health" rendered as "System  Disk Health" because WinForms Label treats `&` as an Alt-key accelerator hint by default. Set `UseMnemonic = $false` on the tile title label.
+- **Storage card text overflowed** — "669 GB free of 930.5 GB (28% used)" wrapped to two lines and truncated. Shortened to `"669 GB free  (28% used)"` which fits in the 200-wide card.
+- **PoE port LED color wrong for 10 Gbps** — the regex `^1\s*Gbps` doesn't match "10 Gbps" (`\s*Gbps` can't follow the "0" character), so a 10 Gbps adapter rendered as info-tier (blue) instead of healthy (green). Replaced with a numeric extraction that treats anything ≥ 1 Gbps as healthy.
+
+### Changed
+
+- **Service card icons** — all 6 cards used the same gear glyph; gave each a more specific Segoe MDL2 icon: Agent (server), KeepAgentUp (lightning/watchdog), Coordinator (gear-stack), LogMeIn (remote desktop), VPU (camera), Scoreconnect (clipboard).
+
+### Note
+
+- **Camera Connectivity panel** still uses its custom legacy layout (Fault Isolator wizard, port grid, NIC card label). Adding the section header pattern requires shifting ~30 controls down by 80px and is deferred to a focused Camera-only redesign pass.
+- **Reports "Unknown" result** column reflects how the existing parser reads STATUS markers from older report files — not a redesign bug.
+
+---
+
+## [1.0.44] - 2026-05-01
+
+### Fixed
+
+- **`Set-SummaryItems` crashed with "Cannot overwrite variable Host"** — the helper used `$host` as a local variable, which collides with PowerShell's reserved `$host` (session host object). Renamed to `$itemHost`. Symptom was every section's Summary panel staying blank with `Cannot overwrite variable Host because it is read-only or constant` errors in the transcript.
+- **Stack overflow when clicking buttons** — v1.0.42 introduced `$navOverview = $navCamera` (and similar aliases) so module compat code could find these names. Then `Add_Click` handlers on the alias called `.PerformClick()` on the same physical button — infinite recursion the moment a nav was clicked. Fixed by making `$navOverview / $navTests / $navHistory / $navHelp` separate hidden compat buttons whose Click forwards to the real nav button.
+
+---
+
+## [1.0.43] - 2026-05-01
+
+### Changed
+
+- **Redesign Wave B/C — full panel rollout** (closes #4 and #46) — every panel now uses the v1.0.42 design language: section header (title + subtitle + Overall Status pill), grouped content cards, Summary panel, and bottom action bar.
+  - **Pixellot Services:** 6 service cards in a row, Service Details log card (left), Summary panel (right), action bar.
+  - **Disk & System Health:** SMART / Disk Errors / per-volume cards row, Health Report log card (left), Summary panel (right), action bar.
+  - **Event Viewer:** Event Status card, Event Log card (left), Summary panel (right), action bar.
+  - **PoE / NIC Hardware:** GPU / Monitor / Input cards top row, NIC Port Layout (canvas + 4 port detail boxes) below, NIC Information + Status Legend sidebar, smaller Hardware Details log + Summary panel, action bar.
+  - **System Information:** 6 summary cards top row, System Inventory log card (left), Summary panel (right), action bar with Refresh as the primary action.
+  - **Reports:** Past Diagnostic Runs list inside a card, action bar with Refresh + Open Reports Folder.
+  - **Settings:** grouped cards — General (theme toggle), Reports (output dir + open folder), Feedback (token state) on the left; About Pulse card on the right; action bar with Restore Defaults + Save Settings.
+  - **About & Help:** section header with version pill, existing Help content + feedback form retained.
+- **Camera Connectivity** kept its existing internal layout (interactive Fault Isolator wizard, port grid, history) — the new chrome wraps it but the body wasn't restructured.
+- Each panel's completion handler now updates the Overall Status pill (auto-derived from worst card status) and the Summary panel (color-coded check-bullet list of outcomes).
+
+---
+
+## [1.0.42] - 2026-05-01
+
+### Changed
+
+- **Major chrome redesign — Wave A pilot** (closes part of #4, partial #46, #16) — replaces the dual top-header + tab-bar with a single left sidebar matching the user-provided mockup.
+  - **Form:** bumped from 1280x760 → 1500x800 to accommodate the 220-wide sidebar without shrinking the content area.
+  - **Sidebar:** vertical nav with icon + label rows: System Overview, Network Configuration, Camera Connectivity, PoE / NIC Hardware, Pixellot Services, Disk & System Health, System Information, Event Viewer, Reports. Settings and About pinned at the bottom of the sidebar.
+  - **Active state:** left blue accent strip + subtle dark tint on the row, drawn in a custom Paint event.
+  - **Removed:** the old top header bar, tab bar, and in-tab Run Diagnostic button. Each redesigned panel now provides its own bottom action bar (Export + Run).
+  - **Bottom status bar:** unified across the form — green dot + "Status: Ready" on the left, "Last Run" mid-bar, "Tool Version: x.y.z" right-aligned.
+- **Home page redesigned** — title "VPU Diagnostic Tool Suite" with descriptive subtitle, 8 mockup-style tiles in a 4×2 grid (each tile has a colored circular icon badge, semibold title, 2-line description). Tiles hover-highlight with the accent color. Bottom action row: prominent **Run Full Diagnostic** (primary) + **Open Last Report** (secondary) + last-run summary text aligned right.
+- **Network Configuration panel redesigned** — full mockup-style layout:
+  - Section header (title + subtitle + Overall Status pill that auto-derives from the worst test result)
+  - Left column: Network Adapters / IP Configuration / Firewall Status cards populated from `Get-NetAdapter`, `Get-NetIPConfiguration`, `Get-NetFirewallProfile` (refresh on panel show, no runspace needed).
+  - Right column: Connectivity Tests log + Summary panel (green-check / yellow-warn / red-fail bullet list of test outcomes).
+  - Bottom action bar: Export Report + Open Network Settings + Run Full Diagnostic + Cancel.
+
+### Added
+
+- **`New-SectionHeader`** helper in `UIHelpers.psm1` — title / subtitle / status pill pattern, applied uniformly to redesigned panels via `Set-SectionPill`.
+- **`New-SummaryPanel`** + **`Set-SummaryItems`** helpers — bordered card with a checklist of color-coded bullet rows, used at the bottom of redesigned panels.
+- **`New-ActionBar`** helper — bottom row with Export (left, secondary) + primary action (right) for every redesigned panel.
+
+### Note
+
+Other panels (Camera, Services, Hardware, Disks, Event Logs, Reports, System Info) still use the previous internal layout — they're wrapped by the new chrome but haven't been redesigned yet. Wave B + C will roll them out one at a time.
+
+---
+
 ## [1.0.41] - 2026-05-01
 
 ### Added

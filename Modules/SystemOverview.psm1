@@ -1,8 +1,8 @@
-﻿# =============================================================================
-#  SystemOverview.psm1  -  System Overview hub panel
+# =============================================================================
+#  SystemOverview.psm1  -  Home / System Overview hub panel (v1.0.42 redesign)
 # =============================================================================
 
-# ---- System Overview Hub ---------------------------------------------------
+# ---- Home Panel ------------------------------------------------------------
 $pnlSysOverview = New-Object System.Windows.Forms.Panel
 $pnlSysOverview.Size      = New-Object System.Drawing.Size($WideW, $ContentH)
 $pnlSysOverview.Location  = New-Object System.Drawing.Point($SideW, $ContentY)
@@ -10,75 +10,122 @@ $pnlSysOverview.BackColor = $ColBg
 $pnlSysOverview.Anchor    = $AnchorTLRB
 $form.Controls.Add($pnlSysOverview)
 
+# Title row — "VPU Diagnostic Tool Suite" matching the mockup
 $lblHubTitle = New-Object System.Windows.Forms.Label
-$lblHubTitle.Text      = "Home"
-$lblHubTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 15)
+$lblHubTitle.Text      = "VPU Diagnostic Tool Suite"
+$lblHubTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 17)
 $lblHubTitle.ForeColor = $ColText
-$lblHubTitle.Location  = New-Object System.Drawing.Point(24, 22)
-$lblHubTitle.Size      = New-Object System.Drawing.Size(700, 34)
+$lblHubTitle.Location  = New-Object System.Drawing.Point(28, 24)
+$lblHubTitle.Size      = New-Object System.Drawing.Size(900, 32)
 $pnlSysOverview.Controls.Add($lblHubTitle)
 
 $lblHubSub = New-Object System.Windows.Forms.Label
-$lblHubSub.Text      = "Select a module below, or run a Full Diagnostic for a complete system check."
+$lblHubSub.Text      = "All-in-one diagnostic and troubleshooting tool for Pixellot VPU systems."
 $lblHubSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
 $lblHubSub.ForeColor = $ColMuted
-$lblHubSub.Location  = New-Object System.Drawing.Point(24, 58)
-$lblHubSub.Size      = New-Object System.Drawing.Size(800, 20)
+$lblHubSub.Location  = New-Object System.Drawing.Point(28, 60)
+$lblHubSub.Size      = New-Object System.Drawing.Size(900, 22)
 $pnlSysOverview.Controls.Add($lblHubSub)
 
-function New-SectionCard {
-    param([string]$Title,[string]$Desc,[int]$IconCode,[int]$X,[int]$Y,[int]$W=296,[int]$H=200)
+# ---- Tile factory ----------------------------------------------------------
+# Each tile mirrors the mockup: large icon in a colored circular badge, title,
+# and a 2-line description. Hovering raises a subtle border highlight.
+function New-HubTile {
+    param(
+        [string]$Title, [string]$Desc, [int]$IconCode,
+        [int]$X, [int]$Y, [int]$W, [int]$H,
+        [System.Drawing.Color]$IconColor
+    )
     $pnl = New-Object System.Windows.Forms.Panel
     $pnl.Size      = New-Object System.Drawing.Size($W, $H)
     $pnl.Location  = New-Object System.Drawing.Point($X, $Y)
     $pnl.BackColor = $ColCard
     $pnl.Cursor    = [System.Windows.Forms.Cursors]::Hand
     $pnl.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $W, $H)), 10))
+
+    # Hover state — track via Tag so re-paint can react
+    $pnl.Tag = [PSCustomObject]@{ Hovered = $false; IconColor = $IconColor }
+    $pnl.Add_MouseEnter({ $this.Tag.Hovered = $true; $this.Invalidate() })
+    $pnl.Add_MouseLeave({ $this.Tag.Hovered = $false; $this.Invalidate() })
+
+    # Custom paint draws: rounded card border, icon badge (filled circle behind icon)
     $pnl.Add_Paint({
         $g = $args[1].Graphics
         $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+
+        # Border (slightly brighter on hover)
+        $borderColor = if ($this.Tag.Hovered) { $ColAccent } else { $ColBorder }
         $bp  = [GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, ([int]$this.Width - 1), ([int]$this.Height - 1))), 10)
-        $pen = New-Object System.Drawing.Pen($ColBorder, 1)
+        $pen = New-Object System.Drawing.Pen($borderColor, 1)
         $g.DrawPath($pen, $bp); $pen.Dispose(); $bp.Dispose()
+
+        # Icon badge — filled circle in the icon's accent color (subtle alpha)
+        $badgeBg = [System.Drawing.Color]::FromArgb(28, $this.Tag.IconColor.R, $this.Tag.IconColor.G, $this.Tag.IconColor.B)
+        $badgeBrush = New-Object System.Drawing.SolidBrush($badgeBg)
+        $g.FillEllipse($badgeBrush, 22, 24, 56, 56)
+        $badgeBrush.Dispose()
     })
+
     $iLbl = New-Object System.Windows.Forms.Label
     $iLbl.Text      = [char]$IconCode
     $iLbl.Font      = New-Object System.Drawing.Font("Segoe MDL2 Assets", 22)
-    $iLbl.ForeColor = $ColAccent
-    $iLbl.Location  = New-Object System.Drawing.Point(20, 20)
-    $iLbl.Size      = New-Object System.Drawing.Size(48, 42)
+    $iLbl.ForeColor = $IconColor
+    $iLbl.Location  = New-Object System.Drawing.Point(36, 36)
+    $iLbl.Size      = New-Object System.Drawing.Size(32, 32)
     $iLbl.BackColor = [System.Drawing.Color]::Transparent
     $pnl.Controls.Add($iLbl)
+
     $tLbl = New-Object System.Windows.Forms.Label
-    $tLbl.Text      = $Title
-    $tLbl.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
-    $tLbl.ForeColor = $ColText
-    $tLbl.Location  = New-Object System.Drawing.Point(20, 76)
-    $tLbl.Size      = New-Object System.Drawing.Size(([int]$W - 28), 24)
-    $tLbl.BackColor = [System.Drawing.Color]::Transparent
+    $tLbl.Text         = $Title
+    $tLbl.UseMnemonic  = $false  # otherwise `&` is eaten as Alt-key accelerator
+    $tLbl.Font         = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
+    $tLbl.ForeColor    = $ColText
+    $tLbl.Location     = New-Object System.Drawing.Point(20, 96)
+    $tLbl.Size         = New-Object System.Drawing.Size(([int]$W - 28), 24)
+    $tLbl.BackColor    = [System.Drawing.Color]::Transparent
     $pnl.Controls.Add($tLbl)
+
     $dLbl = New-Object System.Windows.Forms.Label
     $dLbl.Text      = $Desc
     $dLbl.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
     $dLbl.ForeColor = $ColMuted
-    $dLbl.Location  = New-Object System.Drawing.Point(20, 104)
-    $dLbl.Size      = New-Object System.Drawing.Size(([int]$W - 28), 76)
+    $dLbl.Location  = New-Object System.Drawing.Point(20, 122)
+    $dLbl.Size      = New-Object System.Drawing.Size(([int]$W - 28), 56)
     $dLbl.BackColor = [System.Drawing.Color]::Transparent
     $pnl.Controls.Add($dLbl)
+
     return $pnl
 }
 
+# ---- 8 tiles (4×2 grid) — order and copy mirrors the mockup ---------------
+$tealBlue   = [System.Drawing.Color]::FromArgb(59, 130, 246)
+$accentBlue = [System.Drawing.Color]::FromArgb(96, 165, 250)
+$violet     = [System.Drawing.Color]::FromArgb(167, 139, 250)
+$cyan       = [System.Drawing.Color]::FromArgb(34, 211, 238)
+$emerald    = [System.Drawing.Color]::FromArgb(52, 211, 153)
+$amber      = [System.Drawing.Color]::FromArgb(251, 191, 36)
+$rose       = [System.Drawing.Color]::FromArgb(248, 113, 113)
+$indigo     = [System.Drawing.Color]::FromArgb(129, 140, 248)
+
 $hubCardDefs = @(
-    @{Nav="navSysInfo";  Title="System Information"; Desc="Hardware specs, OS version, uptime, and Pixellot software versions"; Icon=0xE80F; R=0;C=0}
-    @{Nav="navNetConfig";Title="Network";            Desc="Test required ports and domain DNS; identify firewall blocks";       Icon=0xE701; R=0;C=1}
-    @{Nav="navCamera";   Title="Camera";             Desc="Detect cameras and test connectivity; identify cable or PoE faults"; Icon=0xE722; R=0;C=2}
-    @{Nav="navServices"; Title="Services";           Desc="Verify Pixellot agent, encoder, watchdog, and remote services";      Icon=0xE9F5; R=0;C=3}
-    @{Nav="navPoE";      Title="Hardware";           Desc="PoE budget, GPU, monitor, peripherals, and NIC link uptime";         Icon=0xE7E8; R=1;C=0}
-    @{Nav="navDisk";     Title="Disks";              Desc="Free space, SMART health, and disk-related event log errors";        Icon=0xEDA2; R=1;C=1}
-    @{Nav="navEvents";   Title="OS Event Logs";      Desc="Recent OS errors filtered to VPU-relevant providers";                Icon=0xE7BA; R=1;C=2}
-    @{Nav="navReports";  Title="Reports";            Desc="View, copy, and export saved diagnostic reports";                    Icon=0xE7C3; R=1;C=3}
+    @{ Nav="navSysInfo";    Title="System Overview";        Desc="Hardware specs, OS version, uptime, and Pixellot software versions"; Icon=0xE80F; Color=$tealBlue;   R=0; C=0 }
+    @{ Nav="navNetConfig";  Title="Network Configuration";  Desc="IP, DNS, firewall, and connectivity tests for required ports";       Icon=0xE701; Color=$accentBlue; R=0; C=1 }
+    @{ Nav="navCamera";     Title="Camera Connectivity";    Desc="Cameras, NICs, link status, and the Fault Isolator wizard";          Icon=0xE722; Color=$cyan;       R=0; C=2 }
+    @{ Nav="navServices";   Title="Pixellot Services";      Desc="Pixellot agent, encoder, watchdog, and remote service status";       Icon=0xE9F5; Color=$violet;     R=0; C=3 }
+    @{ Nav="navPoE";        Title="Hardware & Peripherals"; Desc="GPU, monitor, input devices, PoE budget, and NIC link uptime";       Icon=0xE7E8; Color=$emerald;    R=1; C=0 }
+    @{ Nav="navDisk";       Title="System & Disk Health";   Desc="Free space, SMART health, and disk-related event log errors";        Icon=0xEDA2; Color=$amber;      R=1; C=1 }
+    @{ Nav="navEvents";     Title="Event Viewer";           Desc="Recent OS errors filtered to VPU-relevant providers";                Icon=0xE7BA; Color=$rose;       R=1; C=2 }
+    @{ Nav="navReports";    Title="Reports";                Desc="View, copy, and export saved diagnostic reports";                    Icon=0xE7C3; Color=$indigo;     R=1; C=3 }
 )
-$hCH = 200; $hGap = 16; $hMargin = 24; $hCols = 4; $hRows = 2
+
+# Tile geometry — derived from panel width (resizes responsively).
+# ContentArea: $WideW = 1280, margin 28 each side, gap 16, 4 cols ⇒ tile ≈ 290 wide.
+# IMPORTANT: layout is index-based ($i % cols, $i / cols) — the R/C fields in
+# $hubCardDefs are documentation only; do NOT rely on them at runtime, otherwise
+# any drift in the foreach order silently dislocates tiles.
+$hCH = 200; $hGap = 16; $hMargin = 28; $hCols = 4; $hRows = 2
+
 $hubNavLookup = @{
     navSysInfo     = $navSysInfo
     navNetConfig   = $navNetConfig
@@ -89,27 +136,36 @@ $hubNavLookup = @{
     navEvents      = $navEvents
     navReports     = $navReports
 }
+
+# Build tiles at (0,0); a single deterministic Update-HubTileLayout pass below
+# places them. Reading $pnlSysOverview.Width at this point can return the
+# pre-handle-create design-time value, which is why earlier versions
+# occasionally rendered tiles 3/6/7 in the wrong row.
 $script:hubTiles = @()
+$tileIdx = 0
 foreach ($hc in $hubCardDefs) {
-    $hCW  = [int](($pnlSysOverview.Width - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
-    $hx   = $hMargin + $hc.C * ($hCW + $hGap)
-    $hy   = 90 + $hc.R * ($hCH + $hGap)
-    $cp   = New-SectionCard -Title $hc.Title -Desc $hc.Desc -IconCode $hc.Icon -X $hx -Y $hy -W $hCW -H $hCH
+    $cp = New-HubTile -Title $hc.Title -Desc $hc.Desc -IconCode $hc.Icon `
+                      -X 0 -Y 0 -W 100 -H $hCH -IconColor $hc.Color
+    $cp.Tag | Add-Member -NotePropertyName HubIndex -NotePropertyValue $tileIdx -Force
     $pnlSysOverview.Controls.Add($cp)
     $script:hubTiles += $cp
+
     $navBtn = $hubNavLookup[$hc.Nav]
     $clickBlock = { $navBtn.PerformClick() }.GetNewClosure()
     $cp.Add_Click($clickBlock)
-    foreach ($ctrl in @($cp.Controls)) { $ctrl.Add_Click($clickBlock) }
+    foreach ($ctrl in @($cp.Controls)) { $ctrl.Add_Click($clickBlock); $ctrl.Cursor = [System.Windows.Forms.Cursors]::Hand }
+    $tileIdx++
 }
 
-# Recalculate tile positions deterministically. This is called both on initial
-# layout and on every SizeChanged event. Using a function avoids any event-handler
-# closure capture issues that v1.0.38's inline handler may have hit (#61).
+# ---- Resize handling -------------------------------------------------------
+# Single source of truth for tile positions. Always uses index-based math
+# (no R/C fields), with a fixed-width fallback for the initial pass before
+# the form has a window handle.
 function Update-HubTileLayout {
     if (-not $script:hubTiles -or $script:hubTiles.Count -eq 0) { return }
     $pw = $pnlSysOverview.ClientSize.Width
-    if ($pw -le 0) { return }
+    if ($pw -le 0) { $pw = $pnlSysOverview.Width }
+    if ($pw -le 0) { $pw = $ContentW }   # final fallback (1280)
     $hCW = [int](($pw - 2*$hMargin - ($hCols-1)*$hGap) / $hCols)
     if ($hCW -lt 50) { $hCW = 50 }
     for ($i = 0; $i -lt $script:hubTiles.Count; $i++) {
@@ -118,28 +174,21 @@ function Update-HubTileLayout {
         $tile = $script:hubTiles[$i]
         if (-not $tile) { continue }
         $newX = $hMargin + $col * ($hCW + $hGap)
-        $newY = 90 + $row * ($hCH + $hGap)
-        # Disable WinForms anchor-based auto-resize on each tile — manual placement
-        # is the sole source of truth here.
-        $tile.Anchor   = [System.Windows.Forms.AnchorStyles]::None
-        $tile.Bounds   = New-Object System.Drawing.Rectangle($newX, $newY, $hCW, $hCH)
-        $tile.Region   = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $hCW, $hCH)), 10))
+        $newY = 110 + $row * ($hCH + $hGap)
+        $tile.Anchor = [System.Windows.Forms.AnchorStyles]::None
+        $tile.Bounds = New-Object System.Drawing.Rectangle($newX, $newY, $hCW, $hCH)
+        $tile.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $hCW, $hCH)), 10))
     }
-    if ($btnHubLastReport) {
-        $btnHubLastReport.Location = New-Object System.Drawing.Point($hMargin, (90 + $hRows*($hCH+$hGap) + 10))
+    if ($pnlHubActions) {
+        $pnlHubActions.Location = New-Object System.Drawing.Point($hMargin, (110 + $hRows*($hCH+$hGap) + 12))
+        $newActW = $pw - 2*$hMargin
+        if ($newActW -gt 100) { $pnlHubActions.Width = $newActW }
     }
-    if ($lblHubLastRun) {
-        $lblHubLastRun.Location = New-Object System.Drawing.Point(($hMargin + 196), (90 + $hRows*($hCH+$hGap) + 21))
-    }
-    $pnlSysOverview.Invalidate($true)  # force the parent to repaint with new tile positions
+    $pnlSysOverview.Invalidate($true)
 }
 
-# Run once after creation so initial layout matches whatever the actual panel width is.
 Update-HubTileLayout
 
-# Debounce SizeChanged — drag events fire dozens of times per second; running the
-# layout on every one causes intermediate paints to leak through. Coalesce to a
-# single recalc 80ms after the last event.
 $script:hubResizeTimer = New-Object System.Windows.Forms.Timer
 $script:hubResizeTimer.Interval = 80
 $script:hubResizeTimer.Add_Tick({
@@ -151,18 +200,49 @@ $pnlSysOverview.Add_SizeChanged({
     $script:hubResizeTimer.Start()
 })
 
+# Re-layout once the handle exists (real ClientSize available) and again any
+# time the user navigates back to Home — guards against the rare race where
+# the initial pass ran before the form was sized.
+$pnlSysOverview.Add_HandleCreated({ Update-HubTileLayout })
+$pnlSysOverview.Add_VisibleChanged({ if ($pnlSysOverview.Visible) { Update-HubTileLayout } })
+
+# ---- Bottom action row -----------------------------------------------------
+# Run Full Diagnostic (primary) + Open Last Report (secondary), with last-run
+# summary text inline. Anchored bottom-stretch so the row reflows on resize.
+$pnlHubActions = New-Object System.Windows.Forms.Panel
+$pnlHubActions.Size      = New-Object System.Drawing.Size(($pnlSysOverview.Width - 2*$hMargin), 70)
+$pnlHubActions.Location  = New-Object System.Drawing.Point($hMargin, (110 + $hRows*($hCH+$hGap) + 12))
+$pnlHubActions.BackColor = $ColBg
+$pnlSysOverview.Controls.Add($pnlHubActions)
+
+$btnHubRunFull = New-Object System.Windows.Forms.Button
+$btnHubRunFull.Text      = [char]0x25B6 + "  Run Full Diagnostic"
+$btnHubRunFull.Size      = New-Object System.Drawing.Size(220, 44)
+$btnHubRunFull.Location  = New-Object System.Drawing.Point(0, 8)
+$btnHubRunFull.BackColor = $ColAccent
+$btnHubRunFull.ForeColor = [System.Drawing.Color]::White
+$btnHubRunFull.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnHubRunFull.FlatAppearance.BorderSize = 0
+$btnHubRunFull.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10.5)
+$btnHubRunFull.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$btnHubRunFull.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnHubRunFull.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 220, 44)), 7))
+$pnlHubActions.Controls.Add($btnHubRunFull)
+$btnHubRunFull.Add_Click({ Start-FullDiagnostic })
+
 $btnHubLastReport = New-Object System.Windows.Forms.Button
 $btnHubLastReport.Text      = "Open Last Report"
 $btnHubLastReport.Size      = New-Object System.Drawing.Size(180, 44)
-$btnHubLastReport.Location  = New-Object System.Drawing.Point(24, 524)
-$btnHubLastReport.BackColor = $ColNavHover
+$btnHubLastReport.Location  = New-Object System.Drawing.Point(232, 8)
+$btnHubLastReport.BackColor = $ColCard
 $btnHubLastReport.ForeColor = $ColText
 $btnHubLastReport.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnHubLastReport.FlatAppearance.BorderSize = 0
+$btnHubLastReport.FlatAppearance.BorderColor = $ColBorder
+$btnHubLastReport.FlatAppearance.BorderSize  = 1
 $btnHubLastReport.Font      = New-Object System.Drawing.Font("Segoe UI", 10)
 $btnHubLastReport.Cursor    = [System.Windows.Forms.Cursors]::Hand
 $btnHubLastReport.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 44)), 7))
-$pnlSysOverview.Controls.Add($btnHubLastReport)
+$pnlHubActions.Controls.Add($btnHubLastReport)
 
 $btnHubLastReport.Add_Click({
     $latest = Get-ChildItem -Path $OutputDir -Filter "Pulse_Results_*.txt" -ErrorAction SilentlyContinue |
@@ -171,46 +251,44 @@ $btnHubLastReport.Add_Click({
     else { [System.Windows.Forms.MessageBox]::Show("No reports found yet.", "Open Last Report", "OK", "Information") | Out-Null }
 })
 
-# ---- Last-run summary row -------------------------------------------------------
-# Surfaces date, overall result, and VPU model from the most recent report so users
-# can see at a glance whether anything has been run on this machine and how it went.
+# Last-run summary line — to the right of the action buttons
 $lblHubLastRun = New-Object System.Windows.Forms.Label
-$lblHubLastRun.Text      = ""
-$lblHubLastRun.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
-$lblHubLastRun.ForeColor = $ColMuted
-$lblHubLastRun.Location  = New-Object System.Drawing.Point(220, 535)
-$lblHubLastRun.Size      = New-Object System.Drawing.Size(900, 22)
+$lblHubLastRun.Text         = "Last Run: Never"
+$lblHubLastRun.Font         = New-Object System.Drawing.Font("Segoe UI", 9)
+$lblHubLastRun.ForeColor    = $ColMuted
+$lblHubLastRun.Location     = New-Object System.Drawing.Point(($pnlHubActions.Width - 360), 20)
+$lblHubLastRun.Size         = New-Object System.Drawing.Size(360, 22)
+$lblHubLastRun.TextAlign    = [System.Drawing.ContentAlignment]::MiddleRight
 $lblHubLastRun.AutoEllipsis = $true
-$pnlSysOverview.Controls.Add($lblHubLastRun)
+$lblHubLastRun.Anchor       = $AnchorTR
+$pnlHubActions.Controls.Add($lblHubLastRun)
 
-# Refresh the summary every time the panel becomes visible (cheap — one file stat + ~10 lines read)
+# Refresh the last-run line whenever the panel becomes visible
 $pnlSysOverview.Add_VisibleChanged({
     if (-not $pnlSysOverview.Visible) { return }
     try {
         $latest = Get-ChildItem -Path $OutputDir -Filter "Pulse_Results_*.txt" -ErrorAction SilentlyContinue |
                   Sort-Object LastWriteTime -Descending | Select-Object -First 1
         if (-not $latest) {
-            $lblHubLastRun.Text      = "No diagnostic has been run yet."
+            $lblHubLastRun.Text      = "Last Run: Never"
             $lblHubLastRun.ForeColor = $ColMuted
             return
         }
-        $head = Get-Content $latest.FullName -TotalCount 25 -ErrorAction SilentlyContinue
-        # Try to extract VPU model and overall result from the first 25 lines
-        $model = ($head | Where-Object { $_ -match '^VPU Model\s*:\s*(.+)$' } | Select-Object -First 1) -replace '^VPU Model\s*:\s*',''
+        $head    = Get-Content $latest.FullName -TotalCount 25 -ErrorAction SilentlyContinue
+        $model   = ($head | Where-Object { $_ -match '^VPU Model\s*:\s*(.+)$' } | Select-Object -First 1) -replace '^VPU Model\s*:\s*',''
         $overall = ($head | Where-Object { $_ -match '^(Overall|Result|Status)\s*:\s*(.+)$' } | Select-Object -First 1)
         $whenStr = $latest.LastWriteTime.ToString("MMM d, h:mm tt")
-        $modelStr = if ($model) { " — $model" } else { "" }
-        $resStr = if ($overall) { ($overall -replace '^[^:]+:\s*','') } else { "" }
+        $modelStr = if ($model)   { " — $model" }                       else { "" }
+        $resStr   = if ($overall) { ($overall -replace '^[^:]+:\s*','') } else { "" }
         $color = if ($resStr -match 'fail|error|critical') { $ColRed } `
                  elseif ($resStr -match 'warn|issue|degrad') { $ColYellow } `
                  elseif ($resStr) { $ColGreen } `
                  else { $ColMuted }
         $resBlock = if ($resStr) { "   |   $resStr" } else { "" }
-        $lblHubLastRun.Text      = "Last run: $whenStr$modelStr$resBlock"
+        $lblHubLastRun.Text      = "Last Run: $whenStr$modelStr$resBlock"
         $lblHubLastRun.ForeColor = $color
     } catch {
-        $lblHubLastRun.Text = "Last run: report unreadable"
+        $lblHubLastRun.Text      = "Last Run: report unreadable"
         $lblHubLastRun.ForeColor = $ColMuted
     }
 })
-

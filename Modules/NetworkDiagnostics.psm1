@@ -292,38 +292,58 @@ $netTimer.Add_Tick({
     }
 
     if ($sync.NetComplete -and -not $sync.NetRunning) {
-        # Final sync reads directly from the synchronized hashtable — guaranteed visibility.
-        # We ALSO backfill $sync.Cards from the _nc_/_ncs_ keys so FullDiagnostic's
-        # Get-WorstCardStatus (which reads $sync.Cards[$key].Status) sees the correct
-        # state. Writes inside the background runspace's Set-NetCard function don't
-        # reliably propagate to the inner unsynchronized Cards hashtable — same
-        # function-scope quirk we hit in v1.0.26 (#60).
-        foreach ($netKey in $netCards.Keys) {
+        # Backfill $sync.Cards from _nc_/_ncs_ keys for FullDiagnostic compatibility (#60)
+        foreach ($netKey in @("NetInternet","NetPorts","NetDomains")) {
             $val = $sync["_nc_$netKey"]
             $sts = $sync["_ncs_$netKey"]
-            if ($val) {
-                Update-CardStatus -Card $netCards[$netKey] -Value $val -Status $sts
-                $sync.Cards[$netKey] = @{ Value = $val; Status = $sts }
-            }
+            if ($val) { $sync.Cards[$netKey] = @{ Value = $val; Status = $sts } }
         }
         $netTimer.Stop()
         $btnNetCancel.Visible = $false
-        $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Network Test"
-        $lblNetEta.Visible = $false
+        $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Full Diagnostic"
         $lblNetStatus.ForeColor = $ColMuted
-        $lblNetStatus.Text = "  $($sync.NetStep)   |   Last run: $(Get-Date -Format 'h:mm tt')"
+        $lblNetStatus.Text = "Last run: $(Get-Date -Format 'h:mm tt')"
+
+        # Update section header pill based on worst card status (v1.0.42 redesign)
+        $worst = "ok"
+        $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
+        foreach ($k in @("NetInternet","NetPorts","NetDomains")) {
+            $s = $sync["_ncs_$k"]
+            if ($s -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
+        }
+        Set-SectionPill $netHeader $worst
+
+        # Refresh the Summary panel — green/yellow/red bullets summarising results
+        $sumItems = @()
+        $intStatus = $sync["_ncs_NetInternet"]
+        if ($intStatus -eq "ok")   { $sumItems += @{ Status="ok";   Text="Internet connectivity is available" } }
+        elseif ($intStatus)        { $sumItems += @{ Status="fail"; Text="Internet is unreachable — check uplink adapter" } }
+        $portFailN = [int]$sync.NetPortFail
+        $portPassN = [int]$sync.NetPortPass
+        if ($portFailN -gt 0)      { $sumItems += @{ Status="fail"; Text="$portFailN of $($portFailN + $portPassN) required ports failed — check firewall / router" } }
+        elseif ($portPassN -gt 0)  { $sumItems += @{ Status="ok";   Text="$portPassN of $portPassN required ports reachable" } }
+        $domFailN = [int]$sync.NetDomainFail
+        $domPassN = [int]$sync.NetDomainPass
+        if ($domFailN -gt 0)       { $sumItems += @{ Status="fail"; Text="$domFailN of $($domFailN + $domPassN) domains failed DNS — check DNS server settings" } }
+        elseif ($domPassN -gt 0)   { $sumItems += @{ Status="ok";   Text="DNS resolution working for $domPassN of $domPassN domains" } }
+        if ($sumItems.Count -eq 0) { $sumItems = @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" }) }
+        Set-SummaryItems $netSummary $sumItems
+
+        # Action banner — kept for the most actionable failures, hidden when all green
         $lines = @()
-        if ($sync.NetPortFail   -gt 0) { $lines += "Port failures — check the firewall and router. Confirm the uplink adapter is not blocked by a content filter or VLAN policy." }
-        if ($sync.NetDomainFail -gt 0) { $lines += "DNS failures — check DNS server settings on this adapter. Confirm the VPU can reach its configured DNS server." }
+        if ($portFailN -gt 0) { $lines += "Port failures — check the firewall, router, and content-filter / VLAN policy." }
+        if ($domFailN  -gt 0) { $lines += "DNS failures — check DNS server settings on this adapter." }
         if ($lines.Count -gt 0) {
             $lblNetActionText.Text = $lines -join "   |   "
             $pnlNetAction.Visible  = $true
+        } else {
+            $pnlNetAction.Visible  = $false
         }
     }
 })
 
 
-# ---- Network Panel ---------------------------------------------------------
+# ---- Network Panel (v1.0.42 redesign — mockup-style two-column layout) ----
 $pnlNetwork = New-Object System.Windows.Forms.Panel
 $pnlNetwork.Size     = New-Object System.Drawing.Size($WideW, $ContentH)
 $pnlNetwork.Location = New-Object System.Drawing.Point($SideW, $ContentY)
@@ -331,51 +351,188 @@ $pnlNetwork.BackColor = $ColBg; $pnlNetwork.Visible = $false
 $pnlNetwork.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlNetwork)
 
-$lblNetTitle = New-Object System.Windows.Forms.Label
-$lblNetTitle.Text = "Network Connectivity"
-$lblNetTitle.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
-$lblNetTitle.ForeColor = $ColText
-$lblNetTitle.Location = New-Object System.Drawing.Point(10, 16); $lblNetTitle.AutoSize = $true
-$pnlNetwork.Controls.Add($lblNetTitle)
+# Section header — title / subtitle / Overall Status pill (top-right)
+$netHeader = New-SectionHeader -Parent $pnlNetwork `
+    -Title    "Network Configuration" `
+    -Subtitle "View and test network settings and connectivity"
 
-$lblNetSub = New-Object System.Windows.Forms.Label
-$lblNetSub.Text = "Tests ports and domains required by Pixellot - run on the VPU's internet-connected adapter."
-$lblNetSub.Font = New-Object System.Drawing.Font("Segoe UI", 8.5); $lblNetSub.ForeColor = $ColMuted
-$lblNetSub.Location = New-Object System.Drawing.Point(10, 42); $lblNetSub.Size = New-Object System.Drawing.Size(1240, 18)
-$pnlNetwork.Controls.Add($lblNetSub)
+# ---- Left column: Network Adapters / IP Configuration / Firewall Status ----
+function New-NetCard {
+    param([System.Windows.Forms.Panel]$Parent, [string]$Title, [int]$X, [int]$Y, [int]$W, [int]$H)
+    $card = New-Object System.Windows.Forms.Panel
+    $card.Size      = New-Object System.Drawing.Size($W, $H)
+    $card.Location  = New-Object System.Drawing.Point($X, $Y)
+    $card.BackColor = $ColCard
+    $card.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $W, $H)), 8))
+    $Parent.Controls.Add($card)
 
-# Status cards: Internet / Ports / Domains
-$netCardDefs = @(
-    @{ Key="NetInternet"; Title="Internet";      Sub="Basic reachability";   X=10;  Icon=[char]0xE701; W=250 }
-    @{ Key="NetPorts";    Title="Port Tests";    Sub="Required TCP/UDP ports"; X=270; Icon=[char]0xE9D5; W=250 }
-    @{ Key="NetDomains";  Title="Domain Tests";  Sub="DNS resolution";       X=530; Icon=[char]0xE7BE; W=250 }
-)
-$netCards = @{}
-foreach ($cd in $netCardDefs) {
-    $c = New-StatusCard -Title $cd.Title -X $cd.X -Y 68 -Icon $cd.Icon -Sub $cd.Sub -CardW $cd.W -CardH 90
-    $netCards[$cd.Key] = $c
-    $pnlNetwork.Controls.Add($c.Panel)
+    $lblTitle = New-Object System.Windows.Forms.Label
+    $lblTitle.Text      = $Title
+    $lblTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+    $lblTitle.ForeColor = $ColText
+    $lblTitle.Location  = New-Object System.Drawing.Point(16, 12)
+    $lblTitle.Size      = New-Object System.Drawing.Size(($W - 32), 20)
+    $card.Controls.Add($lblTitle)
+
+    $body = New-Object System.Windows.Forms.Panel
+    $body.Location  = New-Object System.Drawing.Point(8, 38)
+    $body.Size      = New-Object System.Drawing.Size(($W - 16), ($H - 46))
+    $body.BackColor = $ColCard
+    $card.Controls.Add($body)
+    return @{ Card = $card; Body = $body; Title = $lblTitle }
 }
 
-# Failure action banner (shown after run when any test fails)
+$netLeftX = 28; $netLeftW = 600
+$netRightX = 644; $netRightW = 600
+
+$netCardAdapters = New-NetCard $pnlNetwork "Network Adapters"            $netLeftX 110 $netLeftW 180
+$netCardIP       = New-NetCard $pnlNetwork "IP Configuration"            $netLeftX 302 $netLeftW 200
+$netCardFW       = New-NetCard $pnlNetwork "Firewall Status"             $netLeftX 514 $netLeftW 130
+
+# ---- Right column: Connectivity Tests + Summary --------------------------
+$netCardTests   = New-NetCard $pnlNetwork "Connectivity Tests"           $netRightX 110 $netRightW 408
+$netSummary     = New-SummaryPanel -Parent $pnlNetwork -X $netRightX -Y 530 -W $netRightW -H 114 -Title "Summary"
+
+# Test results live inside the Connectivity Tests card body via a RichTextBox
+# (kept from the previous design for simplicity; styled to match the cards).
+$rtbNetLog = New-Object System.Windows.Forms.RichTextBox
+$rtbNetLog.Location    = New-Object System.Drawing.Point(0, 0)
+$rtbNetLog.Size        = New-Object System.Drawing.Size($netCardTests.Body.Width, $netCardTests.Body.Height)
+$rtbNetLog.BackColor   = $ColCard
+$rtbNetLog.ForeColor   = $ColText
+$rtbNetLog.Font        = New-Object System.Drawing.Font("Consolas", 8.5)
+$rtbNetLog.ReadOnly    = $true
+$rtbNetLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$rtbNetLog.ScrollBars  = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
+$rtbNetLog.Dock        = [System.Windows.Forms.DockStyle]::Fill
+$rtbNetLog.Text        = "Click Run Full Diagnostic to test ports and domains."
+$netCardTests.Body.Controls.Add($rtbNetLog)
+
+# Card-content helper: simple key/value row writer.
+function Add-NetKV {
+    param([System.Windows.Forms.Panel]$Body, [int]$Y, [string]$Key, [string]$Value, [System.Drawing.Color]$ValueColor = $ColText, [int]$KeyColW = 160)
+    $lblK = New-Object System.Windows.Forms.Label
+    $lblK.Text      = $Key
+    $lblK.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+    $lblK.ForeColor = $ColMuted
+    $lblK.Location  = New-Object System.Drawing.Point(8, $Y)
+    $lblK.Size      = New-Object System.Drawing.Size($KeyColW, 18)
+    $Body.Controls.Add($lblK)
+
+    $lblV = New-Object System.Windows.Forms.Label
+    $lblV.Text      = $Value
+    $lblV.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
+    $lblV.ForeColor = $ValueColor
+    $lblV.Location  = New-Object System.Drawing.Point((8 + $KeyColW), $Y)
+    $lblV.Size      = New-Object System.Drawing.Size(($Body.Width - $KeyColW - 16), 18)
+    $Body.Controls.Add($lblV)
+    return $lblV
+}
+
+# Populate the side cards from Win32_NetworkAdapterConfiguration / Get-NetIPConfiguration /
+# Get-NetFirewallProfile when the panel becomes visible. This is fast (sub-100ms) and
+# avoids stale data when a tech changes adapter settings between visits to the panel.
+function Update-NetSideCards {
+    # Network Adapters
+    $abody = $netCardAdapters.Body
+    $abody.Controls.Clear()
+    try {
+        $ups = @(Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Status -eq "Up" } | Sort-Object Name | Select-Object -First 4)
+        $rowY = 0
+        if ($ups.Count -eq 0) {
+            Add-NetKV $abody $rowY "Status:" "No active adapters detected" $ColYellow | Out-Null
+        } else {
+            $hdrK = New-Object System.Windows.Forms.Label
+            $hdrK.Text="Adapter"; $hdrK.Font=New-Object System.Drawing.Font("Segoe UI Semibold",8); $hdrK.ForeColor=$ColMuted
+            $hdrK.Location=New-Object System.Drawing.Point(8,$rowY); $hdrK.Size=New-Object System.Drawing.Size(220,18)
+            $abody.Controls.Add($hdrK)
+            $hdrV = New-Object System.Windows.Forms.Label
+            $hdrV.Text="IP / Speed"; $hdrV.Font=New-Object System.Drawing.Font("Segoe UI Semibold",8); $hdrV.ForeColor=$ColMuted
+            $hdrV.Location=New-Object System.Drawing.Point(232,$rowY); $hdrV.Size=New-Object System.Drawing.Size(($abody.Width-240),18)
+            $abody.Controls.Add($hdrV)
+            $rowY += 22
+            foreach ($a in $ups) {
+                $ip = (Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1).IPAddress
+                $ipStr = if ($ip) { $ip } else { "—" }
+                Add-NetKV $abody $rowY "$($a.Name)" "$ipStr   $($a.LinkSpeed)" $ColText 220 | Out-Null
+                $rowY += 22
+            }
+        }
+    } catch { Add-NetKV $abody 0 "Status:" "Adapter query failed" $ColYellow | Out-Null }
+
+    # IP Configuration (best-effort: first Up adapter with a default gateway)
+    $ibody = $netCardIP.Body
+    $ibody.Controls.Clear()
+    try {
+        $primary = Get-NetIPConfiguration -ErrorAction SilentlyContinue |
+                   Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" } |
+                   Select-Object -First 1
+        if ($primary) {
+            $rowY = 0
+            $ipv4 = ($primary.IPv4Address | Select-Object -First 1).IPAddress
+            $mask = ($primary.IPv4Address | Select-Object -First 1).PrefixLength
+            $maskStr = switch ($mask) { 24{"255.255.255.0"} 16{"255.255.0.0"} 8{"255.0.0.0"} default{"/$mask"} }
+            $gw   = ($primary.IPv4DefaultGateway | Select-Object -First 1).NextHop
+            $dns  = ($primary.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | Select-Object -First 1).ServerAddresses
+            $dnsStr = if ($dns) { ($dns -join ", ") } else { "—" }
+            Add-NetKV $ibody $rowY "IP Address:"      "$ipv4"        $ColText | Out-Null; $rowY += 22
+            Add-NetKV $ibody $rowY "Subnet Mask:"     "$maskStr"     $ColText | Out-Null; $rowY += 22
+            Add-NetKV $ibody $rowY "Default Gateway:" "$gw"          $ColText | Out-Null; $rowY += 22
+            Add-NetKV $ibody $rowY "DNS Servers:"     "$dnsStr"      $ColText | Out-Null; $rowY += 22
+            $cfg = Get-NetIPInterface -InterfaceIndex $primary.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+            $dhcp = if ($cfg.Dhcp -eq "Enabled") { "Enabled" } else { "Disabled" }
+            $dhcpColor = if ($dhcp -eq "Enabled") { $ColGreen } else { $ColMuted }
+            Add-NetKV $ibody $rowY "DHCP:" $dhcp $dhcpColor | Out-Null
+        } else {
+            Add-NetKV $ibody 0 "Status:" "No active interface with default gateway" $ColYellow | Out-Null
+        }
+    } catch { Add-NetKV $ibody 0 "Status:" "IP configuration query failed" $ColYellow | Out-Null }
+
+    # Firewall Status (per profile)
+    $fbody = $netCardFW.Body
+    $fbody.Controls.Clear()
+    try {
+        $profiles = @(Get-NetFirewallProfile -ErrorAction Stop)
+        $rowY = 0
+        foreach ($p in @("Domain","Private","Public")) {
+            $prof = $profiles | Where-Object { $_.Name -eq $p } | Select-Object -First 1
+            if ($prof) {
+                $state = if ($prof.Enabled) { "On" } else { "Off" }
+                $color = if ($prof.Enabled) { $ColGreen } else { $ColYellow }
+                Add-NetKV $fbody $rowY "$($p) Profile:" $state $color 140 | Out-Null
+                $rowY += 22
+            }
+        }
+    } catch { Add-NetKV $fbody 0 "Status:" "Firewall query failed" $ColYellow | Out-Null }
+}
+
+# Refresh side cards on visibility change (fast — no runspace needed)
+$pnlNetwork.Add_VisibleChanged({
+    if ($pnlNetwork.Visible) { try { Update-NetSideCards } catch { } }
+})
+try { Update-NetSideCards } catch { }
+
+# ---- Action banner (failure guidance) — sits above the action bar -----
 $pnlNetAction = New-Object System.Windows.Forms.Panel
-$pnlNetAction.Size      = New-Object System.Drawing.Size(1240, 56)
-$pnlNetAction.Location  = New-Object System.Drawing.Point(10, 162)
+$pnlNetAction.Size      = New-Object System.Drawing.Size(($pnlNetwork.Width - 56), 48)
+$pnlNetAction.Location  = New-Object System.Drawing.Point(28, 660)
 $pnlNetAction.BackColor = [System.Drawing.Color]::FromArgb(75, 20, 20)
+$pnlNetAction.Anchor    = $AnchorBLR
 $pnlNetAction.Visible   = $false
+$pnlNetAction.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, ($pnlNetwork.Width - 56), 48)), 6))
 $pnlNetwork.Controls.Add($pnlNetAction)
 
 $pnlNetActionBar = New-Object System.Windows.Forms.Panel
-$pnlNetActionBar.Size      = New-Object System.Drawing.Size(4, 56)
+$pnlNetActionBar.Size      = New-Object System.Drawing.Size(4, 48)
 $pnlNetActionBar.Location  = New-Object System.Drawing.Point(0, 0)
 $pnlNetActionBar.BackColor = [System.Drawing.Color]::FromArgb(210, 55, 55)
 $pnlNetAction.Controls.Add($pnlNetActionBar)
 
 $lblNetActionIcon = New-Object System.Windows.Forms.Label
 $lblNetActionIcon.Text      = [char]0x26A0
-$lblNetActionIcon.Font      = New-Object System.Drawing.Font("Segoe UI Symbol", 14)
+$lblNetActionIcon.Font      = New-Object System.Drawing.Font("Segoe UI Symbol", 13)
 $lblNetActionIcon.ForeColor = [System.Drawing.Color]::FromArgb(210, 100, 100)
-$lblNetActionIcon.Location  = New-Object System.Drawing.Point(14, 14)
+$lblNetActionIcon.Location  = New-Object System.Drawing.Point(14, 12)
 $lblNetActionIcon.AutoSize  = $true
 $pnlNetAction.Controls.Add($lblNetActionIcon)
 
@@ -383,71 +540,77 @@ $lblNetActionText = New-Object System.Windows.Forms.Label
 $lblNetActionText.Text      = ""
 $lblNetActionText.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $lblNetActionText.ForeColor = [System.Drawing.Color]::FromArgb(240, 190, 190)
-$lblNetActionText.Location  = New-Object System.Drawing.Point(44, 8)
-$lblNetActionText.Size      = New-Object System.Drawing.Size(1186, 40)
+$lblNetActionText.Location  = New-Object System.Drawing.Point(40, 8)
+$lblNetActionText.Size      = New-Object System.Drawing.Size(($pnlNetAction.Width - 50), 32)
 $pnlNetAction.Controls.Add($lblNetActionText)
 
-# Run / Cancel buttons
-$btnNetRun = New-Object System.Windows.Forms.Button
-$btnNetRun.Text = [char]0x25B6 + "  Run Network Test"
-$btnNetRun.Size = New-Object System.Drawing.Size(240, 40); $btnNetRun.Location = New-Object System.Drawing.Point(10, 226)
-$btnNetRun.BackColor = $ColAccent; $btnNetRun.ForeColor = [System.Drawing.Color]::White
-$btnNetRun.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnNetRun.FlatAppearance.BorderSize = 0
-$btnNetRun.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
-$btnNetRun.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-$btnNetRun.Cursor = [System.Windows.Forms.Cursors]::Hand
-$pnlNetwork.Controls.Add($btnNetRun)
-$btnNetRun.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 240, 40)), 6))
+# ---- Bottom action bar — Export + Run -------------------------------------
+$netActions = New-ActionBar -Parent $pnlNetwork -Y 720 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
 
-$btnNetCancel = New-Object System.Windows.Forms.Button; $btnNetCancel.Text = "Cancel"
-$btnNetCancel.Size = New-Object System.Drawing.Size(110, 40); $btnNetCancel.Location = New-Object System.Drawing.Point(258, 226)
-$btnNetCancel.BackColor = $ColRed; $btnNetCancel.ForeColor = [System.Drawing.Color]::White
-$btnNetCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; $btnNetCancel.FlatAppearance.BorderSize = 0
-$btnNetCancel.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-$btnNetCancel.Cursor = [System.Windows.Forms.Cursors]::Hand; $btnNetCancel.Visible = $false
-$pnlNetwork.Controls.Add($btnNetCancel)
-$btnNetCancel.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 40)), 6))
+$btnNetRun     = $netActions.PrimaryBtn
+$btnNetExport  = $netActions.ExportBtn
 
-$lblNetEta = New-Object System.Windows.Forms.Label; $lblNetEta.Text = "est. ~15 sec"
-$lblNetEta.Font = New-Object System.Drawing.Font("Segoe UI",8); $lblNetEta.ForeColor = $ColMuted
-$lblNetEta.Location = New-Object System.Drawing.Point(378,236); $lblNetEta.AutoSize = $true
-$pnlNetwork.Controls.Add($lblNetEta)
+# Cancel button — hidden by default, shown during a run (replaces Run button label-swap)
+$btnNetCancel = New-Object System.Windows.Forms.Button
+$btnNetCancel.Text      = "Cancel"
+$btnNetCancel.Size      = New-Object System.Drawing.Size(110, 36)
+$btnNetCancel.Location  = New-Object System.Drawing.Point(($netActions.Bar.Width - 320), 10)
+$btnNetCancel.BackColor = $ColRed
+$btnNetCancel.ForeColor = [System.Drawing.Color]::White
+$btnNetCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$btnNetCancel.FlatAppearance.BorderSize = 0
+$btnNetCancel.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
+$btnNetCancel.Cursor    = [System.Windows.Forms.Cursors]::Hand
+$btnNetCancel.Visible   = $false
+$btnNetCancel.Anchor    = $AnchorTR
+$btnNetCancel.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 110, 36)), 6))
+$netActions.Bar.Controls.Add($btnNetCancel)
 
-# "Open Network Settings" — shortcut to ncpa.cpl for adapter changes
+# Open Network Settings — pulled into the action bar as a tertiary action
 $btnNetSettings = New-Object System.Windows.Forms.Button
 $btnNetSettings.Text      = "Open Network Settings"
-$btnNetSettings.Size      = New-Object System.Drawing.Size(180, 40)
-$btnNetSettings.Location  = New-Object System.Drawing.Point(1070, 226)
-$btnNetSettings.Anchor    = $AnchorTR
-$btnNetSettings.BackColor = $ColNavHover
+$btnNetSettings.Size      = New-Object System.Drawing.Size(180, 36)
+$btnNetSettings.Location  = New-Object System.Drawing.Point(168, 10)
+$btnNetSettings.BackColor = $ColCard
 $btnNetSettings.ForeColor = $ColText
 $btnNetSettings.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnNetSettings.FlatAppearance.BorderSize = 0
-$btnNetSettings.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$btnNetSettings.FlatAppearance.BorderColor = $ColBorder
+$btnNetSettings.FlatAppearance.BorderSize  = 1
+$btnNetSettings.Font      = New-Object System.Drawing.Font("Segoe UI", 9.5)
 $btnNetSettings.Cursor    = [System.Windows.Forms.Cursors]::Hand
-$btnNetSettings.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 40)), 6))
+$btnNetSettings.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 36)), 6))
 $btnNetSettings.Add_Click({ try { Start-Process ncpa.cpl } catch { } })
-$pnlNetwork.Controls.Add($btnNetSettings)
+$netActions.Bar.Controls.Add($btnNetSettings)
 
-$lblNetStatus = New-Object System.Windows.Forms.Label; $lblNetStatus.Text = ""
-$lblNetStatus.Font = New-Object System.Drawing.Font("Consolas", 8); $lblNetStatus.ForeColor = $ColMuted
-$lblNetStatus.Location = New-Object System.Drawing.Point(10, 274); $lblNetStatus.Size = New-Object System.Drawing.Size(1240, 18)
+# Status / ETA — small inline strip just above the action bar
+$lblNetStatus = New-Object System.Windows.Forms.Label
+$lblNetStatus.Text      = ""
+$lblNetStatus.Font      = New-Object System.Drawing.Font("Consolas", 8)
+$lblNetStatus.ForeColor = $ColMuted
+$lblNetStatus.Location  = New-Object System.Drawing.Point(28, 696)
+$lblNetStatus.Size      = New-Object System.Drawing.Size(($pnlNetwork.Width - 56), 18)
+$lblNetStatus.Anchor    = $AnchorBLR
 $pnlNetwork.Controls.Add($lblNetStatus)
 
-$lblNetLogHdr = New-Object System.Windows.Forms.Label; $lblNetLogHdr.Text = "Test Results"
-$lblNetLogHdr.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10); $lblNetLogHdr.ForeColor = $ColText
-$lblNetLogHdr.Location = New-Object System.Drawing.Point(10, 298); $lblNetLogHdr.AutoSize = $true
-$pnlNetwork.Controls.Add($lblNetLogHdr)
+$lblNetEta = New-Object System.Windows.Forms.Label
+$lblNetEta.Text      = ""   # Hidden by default; the action bar's primary button is the visual cue.
+$lblNetEta.Visible   = $false
+$pnlNetwork.Controls.Add($lblNetEta)
 
-$rtbNetLog = New-Object System.Windows.Forms.RichTextBox
-$rtbNetLog.Size = New-Object System.Drawing.Size(1240, 280); $rtbNetLog.Location = New-Object System.Drawing.Point(10, 322)
-$rtbNetLog.BackColor = $ColLogBg; $rtbNetLog.ForeColor = $ColLogText
-$rtbNetLog.Font = New-Object System.Drawing.Font("Consolas", 8); $rtbNetLog.ReadOnly = $true
-$rtbNetLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-$rtbNetLog.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
-$rtbNetLog.Anchor = $AnchorTLRB
-$rtbNetLog.Text = "Click 'Run Network Test' to begin."
-$pnlNetwork.Controls.Add($rtbNetLog)
+# Cards used by the timer-tick code below — kept under the original keys so the
+# existing engine continues to populate $sync.Cards["NetInternet" / "NetPorts" / "NetDomains"].
+# The new layout doesn't show them as standalone cards (status now lives in the
+# section header pill + Summary), but Set-NetCard still needs targets in $netCards
+# to avoid null derefs in the timer.
+$netCards = @{}
+$netCardKeys = @("NetInternet", "NetPorts", "NetDomains")
+foreach ($k in $netCardKeys) {
+    # Stubs need every field Update-CardStatus touches — ValueLabel, DotPanel, Panel.
+    # DotPanel has its BackColor set, so it has to be a real Panel.
+    $stubLbl = New-Object System.Windows.Forms.Label; $stubLbl.Visible = $false
+    $stubDot = New-Object System.Windows.Forms.Panel; $stubDot.Visible = $false
+    $netCards[$k] = @{ Panel = $stubLbl; ValueLabel = $stubLbl; DotPanel = $stubDot }
+}
 
 $script:netRunspace = $null
 $script:netPs       = $null
@@ -462,9 +625,11 @@ function Start-NetDiagnostic {
         $sync["_nc_$k"]  = "--"
         $sync["_ncs_$k"] = "neutral"
     }
-    foreach ($k in $netCards.Keys) { Update-CardStatus -Card $netCards[$k] -Value "--" -Status "neutral" }
+    # v1.0.42 redesign: cards are stubs; no UI update needed here. Reset section
+    # header pill to neutral so the user sees the run-in-progress state.
+    Set-SectionPill $netHeader "neutral" "Running..."
+    Set-SummaryItems $netSummary @(@{ Status="neutral"; Text="Running connectivity tests..." })
     $pnlNetAction.Visible = $false
-    $lblNetEta.Visible = $true
     $rtbNetLog.Clear()
     $btnNetRun.Enabled = $false; $btnNetRun.Text = "  Running..."
     $btnNetCancel.Visible = $true
