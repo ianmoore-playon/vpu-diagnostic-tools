@@ -500,12 +500,32 @@ $DiagScript = {
         foreach ($r in $camResults) { $sync.CamResults.Add($r) | Out-Null }
         $sync.StepsDone["CamPing"] = if ($mainPingCount -gt 0) { "pass" } else { "fail" }
 
+        # Ping (CHU) reflects ICMP reachability of every discovered camera —
+        # it answers "is the camera at the network layer?" using whatever IP
+        # ARP discovery returned (no hardcoded IPs).
         if ($mainPingCount -eq $mainTotal -and $mainTotal -gt 0) {
-            Set-Card "PingCHU"   "Success" "ok";   Set-Card "ChuDetect" "Online"  "ok"
+            Set-Card "PingCHU" "Success" "ok"
         } elseif ($mainPingCount -gt 0) {
-            Set-Card "PingCHU"   "Partial" "warn"; Set-Card "ChuDetect" "Partial" "warn"
+            Set-Card "PingCHU" "Partial" "warn"
         } else {
-            Set-Card "PingCHU"   "No Response" "fail"; Set-Card "ChuDetect" "Offline" "fail"
+            Set-Card "PingCHU" "No Response" "fail"
+        }
+
+        # CHU Detection now reflects RTSP port 554 — "is the camera actually
+        # serving its video stream?". An OCR camera doesn't expose RTSP, so we
+        # only count non-optional (S2/CHU) cameras. This makes the two cards
+        # complementary rather than duplicated.
+        $rtspMain = @($camResults | Where-Object { -not $_.Optional })
+        $rtspOkN  = @($rtspMain | Where-Object { $_.Rtsp }).Count
+        $rtspTot  = $rtspMain.Count
+        if ($rtspTot -eq 0) {
+            Set-Card "ChuDetect" "No CHU" "neutral"
+        } elseif ($rtspOkN -eq $rtspTot) {
+            Set-Card "ChuDetect" "Online" "ok"
+        } elseif ($rtspOkN -gt 0) {
+            Set-Card "ChuDetect" "Partial" "warn"
+        } else {
+            Set-Card "ChuDetect" "Offline" "fail"
         }
     }
 
@@ -681,6 +701,7 @@ $DiagScript = {
     } else {
         Add-Log "  [INFO] SmartPoE.dll not found - PoE monitoring not available on this system." "Gray"
         Add-Summary "PoE Budget" "N/A" "Gray"
+        Set-Card "PoEBudget" "N/A" "neutral"
     }
     $sync.StepsDone["PoePower"] = "pass"
     Add-Log ""
@@ -920,6 +941,7 @@ $script:nicLightX     = $script:nicJackStartX - $script:nicStatusOffX
 $pnlHwNicCanvas.Add_Paint({
     $g = $args[1].Graphics
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
     $cw = $pnlHwNicCanvas.Width
     # PCB body — soft green-tinted rectangle to evoke the PCB without using a photo
     $pcbColor = [System.Drawing.Color]::FromArgb(28, 56, 38)
@@ -932,42 +954,68 @@ $pnlHwNicCanvas.Add_Paint({
     $brkBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(140, 145, 152))
     $brkRect  = New-Object System.Drawing.Rectangle(20, ($script:nicCardY + $script:nicCardH), ($cw - 40), 14)
     $g.FillRectangle($brkBrush, $brkRect); $brkBrush.Dispose()
-    # Status light — small green LED next to Port 1
+    # Status light — small green LED next to Port 1 (always green; indicates card power, not link)
     $litX = $script:nicLightX
-    $litY = $script:nicJackY + ($script:nicJackH / 2) - 4
+    $litY = $script:nicJackY + ($script:nicJackH / 2) - 5
     $litBrush = New-Object System.Drawing.SolidBrush($ColGreen)
-    $g.FillEllipse($litBrush, $litX, $litY, 8, 8); $litBrush.Dispose()
-    $hintFont = New-Object System.Drawing.Font("Segoe UI", 6.5)
-    $hintBrush = New-Object System.Drawing.SolidBrush($ColMuted)
-    $g.DrawString("PWR", $hintFont, $hintBrush, ($litX - 5), ($litY + 11))
+    $g.FillEllipse($litBrush, $litX, $litY, 10, 10); $litBrush.Dispose()
+    $hintFont = New-Object System.Drawing.Font("Segoe UI Semibold", 7)
+    $hintBrush = New-Object System.Drawing.SolidBrush($ColText)
+    $g.DrawString("PWR", $hintFont, $hintBrush, ($litX - 6), ($litY + 13))
     $hintFont.Dispose(); $hintBrush.Dispose()
-    # 4 RJ45 jack openings (Port 1 leftmost)
+    # 4 RJ45 jack openings (Port 1 leftmost). Per-port LED is now ABOVE the jack
+    # for visibility; the jack itself stays clean to read as a physical port.
     $jackBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(15, 25, 35))
     $jackPen   = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(80, 90, 100), 1)
+    $portLblFont = New-Object System.Drawing.Font("Segoe UI Semibold", 8)
+    $portLblBrush = New-Object System.Drawing.SolidBrush($ColText)
+    $speedFont = New-Object System.Drawing.Font("Segoe UI", 7)
     for ($p = 0; $p -lt 4; $p++) {
         $jx = $script:nicJackStartX + $p * ($script:nicJackW + $script:nicJackGap)
         $jackRect = New-Object System.Drawing.Rectangle($jx, $script:nicJackY, $script:nicJackW, $script:nicJackH)
         $g.FillRectangle($jackBrush, $jackRect)
         $g.DrawRectangle($jackPen, $jackRect)
-        $lblFont  = New-Object System.Drawing.Font("Segoe UI", 7)
-        $lblBrush = New-Object System.Drawing.SolidBrush($ColMuted)
-        $g.DrawString("Port $($p + 1)", $lblFont, $lblBrush, ($jx + 8), ($script:nicJackY + $script:nicJackH + 16))
-        $lblFont.Dispose(); $lblBrush.Dispose()
+        # Port label centered under the jack — bright + semibold
+        $portLabel = "Port $($p + 1)"
+        $portLblSize = $g.MeasureString($portLabel, $portLblFont)
+        $portLblX = $jx + (($script:nicJackW - $portLblSize.Width) / 2)
+        $g.DrawString($portLabel, $portLblFont, $portLblBrush, $portLblX, ($script:nicJackY + $script:nicJackH + 16))
     }
-    $jackBrush.Dispose(); $jackPen.Dispose()
-    # Per-port colored LED dots inside each jack
+    $jackBrush.Dispose(); $jackPen.Dispose(); $portLblFont.Dispose(); $portLblBrush.Dispose()
+    # Per-port colored LED dots — moved ABOVE each jack and made larger.
+    # The companion text underneath each LED gives a quick speed/state read
+    # without requiring the user to read the port detail boxes.
     if ($script:hwPortLedColors -and $script:hwPortLedColors.Count -ge 4) {
         for ($p = 0; $p -lt 4; $p++) {
             $jx = $script:nicJackStartX + $p * ($script:nicJackW + $script:nicJackGap)
-            $ledX = $jx + ($script:nicJackW / 2) - 3
-            $ledY = $script:nicJackY + $script:nicJackH - 10
+            $ledX = $jx + ($script:nicJackW / 2) - 6
+            $ledY = $script:nicJackY - 13
+            # Soft outer halo for the LED so it reads as illuminated
+            $haloColor = [System.Drawing.Color]::FromArgb(60, $script:hwPortLedColors[$p].R, $script:hwPortLedColors[$p].G, $script:hwPortLedColors[$p].B)
+            $haloBrush = New-Object System.Drawing.SolidBrush($haloColor)
+            $g.FillEllipse($haloBrush, ($ledX - 3), ($ledY - 3), 18, 18); $haloBrush.Dispose()
             $ledBrush = New-Object System.Drawing.SolidBrush($script:hwPortLedColors[$p])
-            $g.FillEllipse($ledBrush, $ledX, $ledY, 6, 6)
-            $ledBrush.Dispose()
+            $g.FillEllipse($ledBrush, $ledX, $ledY, 12, 12); $ledBrush.Dispose()
         }
     }
+    # Per-port speed hint — drawn between the jack and the "Port N" label
+    if ($script:hwPortSpeedLabels -and $script:hwPortSpeedLabels.Count -ge 4) {
+        for ($p = 0; $p -lt 4; $p++) {
+            $jx = $script:nicJackStartX + $p * ($script:nicJackW + $script:nicJackGap)
+            $sLabel = $script:hwPortSpeedLabels[$p]
+            if (-not $sLabel) { continue }
+            $sColor = if ($script:hwPortLedColors -and $script:hwPortLedColors.Count -gt $p) { $script:hwPortLedColors[$p] } else { $ColMuted }
+            $sBrush = New-Object System.Drawing.SolidBrush($sColor)
+            $sSize  = $g.MeasureString($sLabel, $speedFont)
+            $sX = $jx + (($script:nicJackW - $sSize.Width) / 2)
+            $g.DrawString($sLabel, $speedFont, $sBrush, $sX, ($script:nicJackY + $script:nicJackH + 1))
+            $sBrush.Dispose()
+        }
+    }
+    $speedFont.Dispose()
 })
-$script:hwPortLedColors = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
+$script:hwPortLedColors    = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
+$script:hwPortSpeedLabels  = @("", "", "", "")
 
 # 4 port detail boxes — Y=266, 240×110 each. Click jumps to Fault Isolator
 # with the matching port pre-selected (preserved from prior P1..P4 cards).
@@ -1080,8 +1128,8 @@ $lblNicInfoHdr.AutoSize  = $true
 $pnlHwNicInfo.Controls.Add($lblNicInfoHdr)
 
 $script:hwNicInfoLines = @{}
-$infoRows = @("Model","MAC Base","Driver","Total ports")
-$ny = 28
+$infoRows = @("Model","MAC Base","Driver","Total ports","PoE Mgmt")
+$ny = 26
 foreach ($row in $infoRows) {
     $lblL = New-Object System.Windows.Forms.Label
     $lblL.Text      = "$($row):"
@@ -1101,14 +1149,21 @@ foreach ($row in $infoRows) {
     $lblV.AutoEllipsis = $true
     $pnlHwNicInfo.Controls.Add($lblV)
     $script:hwNicInfoLines[$row] = $lblV
-    $ny += 19
+    $ny += 16
 }
 
+# Tooltip on the PoE Mgmt value — explains the "0 W is normal" case for the
+# unsupported card models (GIE64 / I350 / I354) so agents don't chase a
+# non-issue.
+$script:hwPoeNoteTip = New-Object System.Windows.Forms.ToolTip
+$script:hwPoeNoteTip.AutoPopDelay = 12000
+$script:hwPoeNoteTip.InitialDelay = 400
+
 $pnlHwLegend = New-Object System.Windows.Forms.Panel
-$pnlHwLegend.Size      = New-Object System.Drawing.Size(228, 100)
+$pnlHwLegend.Size      = New-Object System.Drawing.Size(228, 86)
 $pnlHwLegend.Location  = New-Object System.Drawing.Point(1024, 294)
 $pnlHwLegend.BackColor = $ColCard
-$pnlHwLegend.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 228, 100)), 8))
+$pnlHwLegend.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 228, 86)), 8))
 $pnlHwLegend.Anchor    = $AnchorTR
 $center.Controls.Add($pnlHwLegend)
 
@@ -1127,7 +1182,7 @@ $legendItems = @(
     @{ Color=$ColMuted;  Text="No cable / disabled" },
     @{ Color=$ColRed;    Text="Error / fault" }
 )
-$ly = 28
+$ly = 26
 foreach ($it in $legendItems) {
     $dot = New-Object System.Windows.Forms.Panel
     $dot.Size      = New-Object System.Drawing.Size(8, 8)
@@ -1141,9 +1196,9 @@ foreach ($it in $legendItems) {
     $lblL.ForeColor = $ColText
     $lblL.BackColor = [System.Drawing.Color]::Transparent
     $lblL.Location  = New-Object System.Drawing.Point(28, $ly)
-    $lblL.Size      = New-Object System.Drawing.Size(196, 16)
+    $lblL.Size      = New-Object System.Drawing.Size(196, 14)
     $pnlHwLegend.Controls.Add($lblL)
-    $ly += 17
+    $ly += 14
 }
 
 # ---- Status cards row (Y=384..474): SmartSpeed, Ping, ARP, CHU, PoE --------
@@ -1151,9 +1206,9 @@ $statusRowY = 384
 $statusCardW = [int](($portRowW - 4*10) / 5)   # ≈ 236
 $statusDefs = @(
     @{Key="SmartSpeed"; Title="SmartSpeed";    Sub="Intel events (48h)"; Icon=[char]0xE7BA}
-    @{Key="PingCHU";    Title="Ping (CHU)";    Sub="Camera head unit";   Icon=[char]0xE701}
+    @{Key="PingCHU";    Title="Ping (CHU)";    Sub="ICMP reachability";  Icon=[char]0xE701}
     @{Key="ArpEntry";   Title="ARP Entry";     Sub="L2 neighbor table";  Icon=[char]0xE9D5}
-    @{Key="ChuDetect";  Title="CHU Detection"; Sub="Camera response";    Icon=[char]0xE722}
+    @{Key="ChuDetect";  Title="CHU Detection"; Sub="RTSP port 554";      Icon=[char]0xE722}
     @{Key="PoEBudget";  Title="PoE Budget";    Sub="ADLINK SmartPoE";    Icon=[char]0xE7E8}
 )
 $statusX = $portRowX0
@@ -1304,7 +1359,7 @@ $lnkClear.Size    = New-Object System.Drawing.Size(0, 0)
 $center.Controls.Add($lnkClear)
 
 # ---- Bottom action bar (Y=698) — Export | Run / Cancel --------------------
-$camActions = New-ActionBar -Parent $center -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$camActions = New-ActionBar -Parent $center -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Test")
 $btnRun     = $camActions.PrimaryBtn
 $btnExport  = $camActions.ExportBtn
 
@@ -1408,7 +1463,8 @@ function Update-HwPortDiagram {
         } catch { }
     }
 
-    $ledColors = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
+    $ledColors    = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
+    $speedLabels  = @("", "", "", "")
     for ($tileIdx = 0; $tileIdx -lt 4; $tileIdx++) {
         $tile = $script:hwPortTiles[$tileIdx]
         $portNum  = $tile.PortNum
@@ -1464,6 +1520,7 @@ function Update-HwPortDiagram {
             $tile.ErrV.ForeColor      = if ($errCount -ne "--" -and [int]$errCount -gt 0) { $ColYellow } else { $ColText }
             $tile.NicName             = $nic.Name
             $ledColors[$portNum - 1]  = $accentColor
+            $speedLabels[$portNum - 1] = $speedLabel
         } else {
             $tile.StatusIcn.Text      = [char]0x26AB
             $tile.StatusIcn.ForeColor = $ColMuted
@@ -1474,10 +1531,12 @@ function Update-HwPortDiagram {
             $tile.MacV.Text           = "--"
             $tile.ErrV.Text           = "--"
             $tile.NicName             = $null
+            $speedLabels[$portNum - 1] = ""
         }
     }
 
-    $script:hwPortLedColors = $ledColors
+    $script:hwPortLedColors    = $ledColors
+    $script:hwPortSpeedLabels  = $speedLabels
     if ($pnlHwNicCanvas) { $pnlHwNicCanvas.Invalidate() }
 
     if ($script:hwNicInfoLines) {
@@ -1489,11 +1548,34 @@ function Update-HwPortDiagram {
         $macBase = if ($sortedNics.Count -gt 0) { $sortedNics[0].MacAddress } else { "--" }
         $driverState = if ($sortedNics.Count -gt 0 -and $sortedNics[0].Status) { "Loaded" } else { "Not loaded" }
         $totalPorts  = "$($sortedNics.Count) detected"
+
+        # PoE management capability — derived from the card model. When this
+        # card doesn't expose SmartPoE telemetry we surface that explicitly so
+        # a "0 W" budget reading isn't mistaken for a hardware fault.
+        $poeMgmtSupported = $false
+        if ($modelInfo -and $modelInfo.ContainsKey('PoeMgmtSupported')) { $poeMgmtSupported = [bool]$modelInfo.PoeMgmtSupported }
+        $poeMgmtText  = if ($sortedNics.Count -eq 0) { "--" } `
+                        elseif ($poeMgmtSupported)   { "Supported" } `
+                        else                          { "Not supported" }
+        $poeMgmtColor = if ($sortedNics.Count -eq 0) { $ColMuted } `
+                        elseif ($poeMgmtSupported)   { $ColGreen } `
+                        else                          { $ColYellow }
+        $poeMgmtTip   = if (-not $poeMgmtSupported -and $sortedNics.Count -gt 0) {
+            "This NIC model doesn't expose ADLINK SmartPoE telemetry, so the PoE Budget card will read 0 W or N/A. That's normal for this card and is not a fault — power is still delivered to the cameras, it just can't be monitored from software."
+        } else { "" }
+
         if ($script:hwNicInfoLines["Model"])       { $script:hwNicInfoLines["Model"].Text       = $modelStr }
         if ($script:hwNicInfoLines["MAC Base"])    { $script:hwNicInfoLines["MAC Base"].Text    = $macBase }
         if ($script:hwNicInfoLines["Driver"])      { $script:hwNicInfoLines["Driver"].Text      = $driverState }
         if ($script:hwNicInfoLines["Driver"])      { $script:hwNicInfoLines["Driver"].ForeColor = if ($driverState -eq "Loaded") { $ColGreen } else { $ColRed } }
         if ($script:hwNicInfoLines["Total ports"]) { $script:hwNicInfoLines["Total ports"].Text = $totalPorts }
+        if ($script:hwNicInfoLines["PoE Mgmt"]) {
+            $script:hwNicInfoLines["PoE Mgmt"].Text      = $poeMgmtText
+            $script:hwNicInfoLines["PoE Mgmt"].ForeColor = $poeMgmtColor
+            if ($script:hwPoeNoteTip) {
+                try { $script:hwPoeNoteTip.SetToolTip($script:hwNicInfoLines["PoE Mgmt"], $poeMgmtTip) } catch { }
+            }
+        }
     }
 }
 
@@ -1519,9 +1601,32 @@ function Update-CamPortBoxFromDiag {
 # last visit) and immediately at module load so the diagram isn't blank before
 # the user runs anything.
 $center.Add_VisibleChanged({
-    if ($center.Visible) { try { Update-HwPortDiagram } catch { } }
+    if ($center.Visible) {
+        try { Update-HwPortDiagram } catch { }
+        if ($script:hwLiveTimer) { $script:hwLiveTimer.Start() }
+    } else {
+        if ($script:hwLiveTimer) { $script:hwLiveTimer.Stop() }
+    }
 })
 try { Update-HwPortDiagram } catch { }
+
+# ---------- Live port-status polling -----------------------------------------
+# Get-NetAdapter is fast (~30-60ms) so we can refresh the NIC diagram and the
+# port detail boxes every few seconds while the Camera Connectivity panel is
+# visible. The user no longer has to re-run the diagnostic just to see whether
+# a cable was plugged in or a port came back up. Skipped while a diagnostic
+# run is active so we don't fight with the runspace's own card writes.
+$script:hwLiveTimer = New-Object System.Windows.Forms.Timer
+$script:hwLiveTimer.Interval = 3000
+$script:hwLiveTimer.Add_Tick({
+    if ($sync.Running) { return }
+    try { Update-HwPortDiagram } catch { }
+})
+# Start immediately if the Camera panel is the initial view (rare but
+# possible when launched with -StartTab Camera). Otherwise the visibility
+# handler above will start/stop it.
+if ($center -and $center.Visible) { $script:hwLiveTimer.Start() }
+$form.Add_FormClosing({ if ($script:hwLiveTimer) { $script:hwLiveTimer.Stop() } })
 
 # ---------- Timer (polls $sync every 300ms, updates UI) ---------------------
 $script:runspace    = $null
@@ -1596,7 +1701,7 @@ $timer.Add_Tick({
         $btnCancel.Visible = $false
         $btnRun.Enabled = $true
         $btnRun.Text = if ($cboNic.SelectedIndex -le 0) {
-            [char]0x25B6 + "  Run Full Diagnostic"
+            [char]0x25B6 + "  Run Test"
         } else {
             $n = ($cboNic.SelectedItem -as [string]) -replace '\s+\(.*', ''
             [char]0x25B6 + "  Test $n Only"
@@ -1738,7 +1843,7 @@ $btnLogDetailed.Add_Click({
 $cboNic.Add_SelectedIndexChanged({
     if (-not $sync.Running) {
         if ($cboNic.SelectedIndex -le 0) {
-            $btnRun.Text = [char]0x25B6 + "  Run Full Diagnostic"
+            $btnRun.Text = [char]0x25B6 + "  Run Test"
             $lblRunSteps.Text = "Runs: Port Speed  *  Ping  *  ARP  *  CHU Detection"
         } else {
             $nicName = ($cboNic.SelectedItem -as [string]) -replace '\s+\(.*', ''

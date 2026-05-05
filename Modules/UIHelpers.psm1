@@ -442,7 +442,7 @@ function New-ActionBar {
         [System.Windows.Forms.Panel]$Parent,
         [int]$Y,
         [string]$ExportText  = "Export Report",
-        [string]$PrimaryText = "Run Full Diagnostic"
+        [string]$PrimaryText = "Run Test"
     )
     $bar = New-Object System.Windows.Forms.Panel
     $bar.Size      = New-Object System.Drawing.Size(($Parent.Width - 56), 56)

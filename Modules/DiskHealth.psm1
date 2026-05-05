@@ -338,7 +338,7 @@ $diskTimer.Add_Tick({
     }
     if ($sync.DiskComplete -and -not $sync.DiskRunning) {
         $diskTimer.Stop(); $btnDiskCancel.Visible=$false
-        $btnDiskRun.Enabled=$true; $btnDiskRun.Text=[char]0x25B6+"  Run Full Diagnostic"
+        $btnDiskRun.Enabled=$true; $btnDiskRun.Text=[char]0x25B6+"  Run Test"
         $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
 
         # Update Overall Status pill
@@ -428,10 +428,10 @@ $dgvDiskLog = New-LogGrid -X 8 -Y 38 -W 784 -H 414
 $diskLogCard.Controls.Add($dgvDiskLog)
 
 $diskSummary = New-SummaryPanel -Parent $pnlDisk -X 844 -Y 220 -W 420 -H 460 -Title "Summary"
-Set-SummaryItems $diskSummary @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" })
+Set-SummaryItems $diskSummary @(@{ Status="neutral"; Text="Run Test to populate the summary" })
 
 # Bottom action bar
-$diskActions = New-ActionBar -Parent $pnlDisk -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$diskActions = New-ActionBar -Parent $pnlDisk -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Test")
 $btnDiskRun    = $diskActions.PrimaryBtn
 $btnDiskExport = $diskActions.ExportBtn
 

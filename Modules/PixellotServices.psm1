@@ -121,7 +121,7 @@ $svcTimer.Add_Tick({
     }
     if ($sync.SvcComplete -and -not $sync.SvcRunning) {
         $svcTimer.Stop(); $btnSvcCancel.Visible=$false
-        $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Run Full Diagnostic"
+        $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Run Test"
         $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
 
         # Update Overall Status pill from worst card status (v1.0.43)
@@ -209,10 +209,10 @@ $dgvSvcLog = New-LogGrid -X 8 -Y 38 -W 784 -H 414
 $svcLogCard.Controls.Add($dgvSvcLog)
 
 $svcSummary = New-SummaryPanel -Parent $pnlServices -X 844 -Y 220 -W 420 -H 460 -Title "Summary"
-Set-SummaryItems $svcSummary @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" })
+Set-SummaryItems $svcSummary @(@{ Status="neutral"; Text="Run Test to populate the summary" })
 
 # Bottom action bar
-$svcActions = New-ActionBar -Parent $pnlServices -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$svcActions = New-ActionBar -Parent $pnlServices -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Test")
 $btnSvcRun    = $svcActions.PrimaryBtn
 $btnSvcExport = $svcActions.ExportBtn
 

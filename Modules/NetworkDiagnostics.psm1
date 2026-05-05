@@ -300,7 +300,7 @@ $netTimer.Add_Tick({
         }
         $netTimer.Stop()
         $btnNetCancel.Visible = $false
-        $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Full Diagnostic"
+        $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Test"
         $lblNetStatus.ForeColor = $ColMuted
         $lblNetStatus.Text = "Last run: $(Get-Date -Format 'h:mm tt')"
 
@@ -326,7 +326,7 @@ $netTimer.Add_Tick({
         $domPassN = [int]$sync.NetDomainPass
         if ($domFailN -gt 0)       { $sumItems += @{ Status="fail"; Text="$domFailN of $($domFailN + $domPassN) domains failed DNS — check DNS server settings" } }
         elseif ($domPassN -gt 0)   { $sumItems += @{ Status="ok";   Text="DNS resolution working for $domPassN of $domPassN domains" } }
-        if ($sumItems.Count -eq 0) { $sumItems = @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" }) }
+        if ($sumItems.Count -eq 0) { $sumItems = @(@{ Status="neutral"; Text="Run Test to populate the summary" }) }
         Set-SummaryItems $netSummary $sumItems
 
         # Action banner — kept for the most actionable failures, hidden when all green
@@ -385,9 +385,8 @@ function New-NetCard {
 $netLeftX = 28; $netLeftW = 600
 $netRightX = 644; $netRightW = 600
 
-$netCardAdapters = New-NetCard $pnlNetwork "Network Adapters"            $netLeftX 110 $netLeftW 180
-$netCardIP       = New-NetCard $pnlNetwork "IP Configuration"            $netLeftX 302 $netLeftW 200
-$netCardFW       = New-NetCard $pnlNetwork "Firewall Status"             $netLeftX 514 $netLeftW 130
+$netCardAdapters = New-NetCard $pnlNetwork "Network Adapters"            $netLeftX 110 $netLeftW 200
+$netCardIP       = New-NetCard $pnlNetwork "IP Configuration"            $netLeftX 322 $netLeftW 280
 
 # ---- Right column: Connectivity Tests + Summary --------------------------
 $netCardTests   = New-NetCard $pnlNetwork "Connectivity Tests"           $netRightX 110 $netRightW 408
@@ -405,7 +404,7 @@ $rtbNetLog.ReadOnly    = $true
 $rtbNetLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
 $rtbNetLog.ScrollBars  = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
 $rtbNetLog.Dock        = [System.Windows.Forms.DockStyle]::Fill
-$rtbNetLog.Text        = "Click Run Full Diagnostic to test ports and domains."
+$rtbNetLog.Text        = "Click Run Test to test ports and domains."
 $netCardTests.Body.Controls.Add($rtbNetLog)
 
 # Card-content helper: simple key/value row writer.
@@ -429,38 +428,112 @@ function Add-NetKV {
     return $lblV
 }
 
-# Populate the side cards from Win32_NetworkAdapterConfiguration / Get-NetIPConfiguration /
-# Get-NetFirewallProfile when the panel becomes visible. This is fast (sub-100ms) and
-# avoids stale data when a tech changes adapter settings between visits to the panel.
+# Convert a CIDR prefix length (e.g. 24) into a dotted subnet mask (255.255.255.0).
+# Avoids the limited switch-by-prefix that only covered /8, /16, /24.
+function ConvertTo-DottedMask {
+    param([int]$Prefix)
+    if ($Prefix -lt 0 -or $Prefix -gt 32) { return "/$Prefix" }
+    if ($Prefix -eq 0)  { return "0.0.0.0" }
+    if ($Prefix -eq 32) { return "255.255.255.255" }
+    $mask = ([uint32]::MaxValue) -shl (32 - $Prefix) -band [uint32]::MaxValue
+    return ("{0}.{1}.{2}.{3}" -f `
+        (($mask -shr 24) -band 0xFF),
+        (($mask -shr 16) -band 0xFF),
+        (($mask -shr  8) -band 0xFF),
+        ( $mask          -band 0xFF))
+}
+
+# Identify what an adapter is used for. Combines IP-based detection
+# (169.254.x.x → camera link-local) with description matching for the
+# common Pixellot 4-port NIC chipsets, and falls back to "Internet" when
+# the adapter holds the default gateway.
+function Get-AdapterPurpose {
+    param($Adapter, [string]$Ip, $InternetAdapterIndex)
+    $desc = "$($Adapter.InterfaceDescription)"
+    $isCameraNic = $desc -match "I210|I350|82574L|I211|GIE7"
+    if ($Ip -like "169.254.*") {
+        if ($isCameraNic) { return "Camera (link-local)" }
+        return "Link-local (no DHCP)"
+    }
+    if ($InternetAdapterIndex -and $Adapter.ifIndex -eq $InternetAdapterIndex) {
+        return "Internet"
+    }
+    if ($isCameraNic) { return "Camera NIC port" }
+    return "Auxiliary"
+}
+
+# Render a 4-column row inside the adapters card. Re-used for both the
+# header row and the per-adapter rows so column geometry stays in sync.
+function Add-AdapterRow {
+    param(
+        [System.Windows.Forms.Panel]$Body, [int]$Y,
+        [string]$Name, [string]$Ip, [string]$Speed, [string]$Purpose,
+        [System.Drawing.Color]$Color = $ColText, [bool]$Header = $false
+    )
+    $bodyW = $Body.Width
+    # Column widths inside a 584-px body: 150 / 130 / 80 / remainder
+    $cols = @(
+        @{ X=8;   W=150; Text=$Name },
+        @{ X=160; W=130; Text=$Ip },
+        @{ X=292; W=80;  Text=$Speed },
+        @{ X=378; W=($bodyW - 386); Text=$Purpose }
+    )
+    foreach ($c in $cols) {
+        $lbl = New-Object System.Windows.Forms.Label
+        $lbl.Text      = $c.Text
+        $lbl.Font      = if ($Header) { New-Object System.Drawing.Font("Segoe UI Semibold", 8) } `
+                         else         { New-Object System.Drawing.Font("Segoe UI", 8.5) }
+        $lbl.ForeColor = if ($Header) { $ColMuted } else { $Color }
+        $lbl.Location  = New-Object System.Drawing.Point($c.X, $Y)
+        $lbl.Size      = New-Object System.Drawing.Size($c.W, 18)
+        $lbl.AutoEllipsis = $true
+        $Body.Controls.Add($lbl)
+    }
+}
+
+# Populate the side cards from Win32_NetworkAdapterConfiguration / Get-NetIPConfiguration
+# when the panel becomes visible. This is fast (sub-100ms) and avoids stale
+# data when a tech changes adapter settings between visits to the panel.
 function Update-NetSideCards {
-    # Network Adapters
+    # ---- Network Adapters ---------------------------------------------------
     $abody = $netCardAdapters.Body
     $abody.Controls.Clear()
     try {
-        $ups = @(Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Status -eq "Up" } | Sort-Object Name | Select-Object -First 4)
+        $ups = @(Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Status -eq "Up" } | Sort-Object Name | Select-Object -First 6)
+        # Identify the Internet-bound adapter (the one with a default gateway).
+        $internetIfIndex = $null
+        try {
+            $primaryNet = Get-NetIPConfiguration -ErrorAction SilentlyContinue |
+                          Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" } |
+                          Select-Object -First 1
+            if ($primaryNet) { $internetIfIndex = $primaryNet.InterfaceIndex }
+        } catch { }
+
         $rowY = 0
         if ($ups.Count -eq 0) {
             Add-NetKV $abody $rowY "Status:" "No active adapters detected" $ColYellow | Out-Null
         } else {
-            $hdrK = New-Object System.Windows.Forms.Label
-            $hdrK.Text="Adapter"; $hdrK.Font=New-Object System.Drawing.Font("Segoe UI Semibold",8); $hdrK.ForeColor=$ColMuted
-            $hdrK.Location=New-Object System.Drawing.Point(8,$rowY); $hdrK.Size=New-Object System.Drawing.Size(220,18)
-            $abody.Controls.Add($hdrK)
-            $hdrV = New-Object System.Windows.Forms.Label
-            $hdrV.Text="IP / Speed"; $hdrV.Font=New-Object System.Drawing.Font("Segoe UI Semibold",8); $hdrV.ForeColor=$ColMuted
-            $hdrV.Location=New-Object System.Drawing.Point(232,$rowY); $hdrV.Size=New-Object System.Drawing.Size(($abody.Width-240),18)
-            $abody.Controls.Add($hdrV)
+            Add-AdapterRow $abody $rowY "Adapter" "IP" "Speed" "Purpose" $ColMuted $true
             $rowY += 22
             foreach ($a in $ups) {
                 $ip = (Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1).IPAddress
-                $ipStr = if ($ip) { $ip } else { "—" }
-                Add-NetKV $abody $rowY "$($a.Name)" "$ipStr   $($a.LinkSpeed)" $ColText 220 | Out-Null
+                $ipStr     = if ($ip) { $ip } else { "—" }
+                $speedStr  = "$($a.LinkSpeed)"
+                $purpose   = Get-AdapterPurpose -Adapter $a -Ip $ipStr -InternetAdapterIndex $internetIfIndex
+                $color     = switch -Wildcard ($purpose) {
+                                "Internet"             { $ColGreen }
+                                "Camera*"              { $ColAccent }
+                                "Link-local*"          { $ColYellow }
+                                default                { $ColMuted }
+                             }
+                Add-AdapterRow $abody $rowY "$($a.Name)" $ipStr $speedStr $purpose $color $false
                 $rowY += 22
             }
         }
     } catch { Add-NetKV $abody 0 "Status:" "Adapter query failed" $ColYellow | Out-Null }
 
-    # IP Configuration (best-effort: first Up adapter with a default gateway)
+    # ---- IP Configuration ---------------------------------------------------
+    # Show the primary (Internet-bound) interface plus Time / NTP detail.
     $ibody = $netCardIP.Body
     $ibody.Controls.Clear()
     try {
@@ -471,7 +544,7 @@ function Update-NetSideCards {
             $rowY = 0
             $ipv4 = ($primary.IPv4Address | Select-Object -First 1).IPAddress
             $mask = ($primary.IPv4Address | Select-Object -First 1).PrefixLength
-            $maskStr = switch ($mask) { 24{"255.255.255.0"} 16{"255.255.0.0"} 8{"255.0.0.0"} default{"/$mask"} }
+            $maskStr = ConvertTo-DottedMask $mask
             $gw   = ($primary.IPv4DefaultGateway | Select-Object -First 1).NextHop
             $dns  = ($primary.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | Select-Object -First 1).ServerAddresses
             $dnsStr = if ($dns) { ($dns -join ", ") } else { "—" }
@@ -482,28 +555,30 @@ function Update-NetSideCards {
             $cfg = Get-NetIPInterface -InterfaceIndex $primary.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
             $dhcp = if ($cfg.Dhcp -eq "Enabled") { "Enabled" } else { "Disabled" }
             $dhcpColor = if ($dhcp -eq "Enabled") { $ColGreen } else { $ColMuted }
-            Add-NetKV $ibody $rowY "DHCP:" $dhcp $dhcpColor | Out-Null
+            Add-NetKV $ibody $rowY "DHCP:" $dhcp $dhcpColor | Out-Null; $rowY += 22
+
+            # NTP server — both the configured peer list and the currently-synced source.
+            # `w32tm /query /source` returns the live source (e.g. "time.windows.com" or
+            # "Local CMOS Clock" when not synced); the registry holds the configured peers.
+            $ntpConfigured = ""
+            try {
+                $reg = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters" -ErrorAction SilentlyContinue
+                if ($reg -and $reg.NtpServer) { $ntpConfigured = (($reg.NtpServer -split ',')[0]).Trim() }
+            } catch { }
+            $ntpLive = ""
+            try {
+                $src = (& w32tm /query /source 2>$null) -join " "
+                if ($src) { $ntpLive = $src.Trim() }
+            } catch { }
+            $ntpServerStr = if ($ntpConfigured) { $ntpConfigured } else { "—" }
+            $ntpLiveStr   = if ($ntpLive)       { $ntpLive }       else { "Not queried" }
+            $liveColor    = if ($ntpLive -match "Local CMOS|^$") { $ColYellow } else { $ColGreen }
+            Add-NetKV $ibody $rowY "NTP Server:" $ntpServerStr $ColText | Out-Null; $rowY += 22
+            Add-NetKV $ibody $rowY "NTP Source:" $ntpLiveStr   $liveColor | Out-Null
         } else {
             Add-NetKV $ibody 0 "Status:" "No active interface with default gateway" $ColYellow | Out-Null
         }
     } catch { Add-NetKV $ibody 0 "Status:" "IP configuration query failed" $ColYellow | Out-Null }
-
-    # Firewall Status (per profile)
-    $fbody = $netCardFW.Body
-    $fbody.Controls.Clear()
-    try {
-        $profiles = @(Get-NetFirewallProfile -ErrorAction Stop)
-        $rowY = 0
-        foreach ($p in @("Domain","Private","Public")) {
-            $prof = $profiles | Where-Object { $_.Name -eq $p } | Select-Object -First 1
-            if ($prof) {
-                $state = if ($prof.Enabled) { "On" } else { "Off" }
-                $color = if ($prof.Enabled) { $ColGreen } else { $ColYellow }
-                Add-NetKV $fbody $rowY "$($p) Profile:" $state $color 140 | Out-Null
-                $rowY += 22
-            }
-        }
-    } catch { Add-NetKV $fbody 0 "Status:" "Firewall query failed" $ColYellow | Out-Null }
 }
 
 # Refresh side cards on visibility change (fast — no runspace needed)
@@ -545,7 +620,7 @@ $lblNetActionText.Size      = New-Object System.Drawing.Size(($pnlNetAction.Widt
 $pnlNetAction.Controls.Add($lblNetActionText)
 
 # ---- Bottom action bar — Export + Run -------------------------------------
-$netActions = New-ActionBar -Parent $pnlNetwork -Y 720 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$netActions = New-ActionBar -Parent $pnlNetwork -Y 720 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Test")
 
 $btnNetRun     = $netActions.PrimaryBtn
 $btnNetExport  = $netActions.ExportBtn

@@ -130,7 +130,7 @@ $hwTimer.Add_Tick({
     }
     if ($sync.HwComplete -and -not $sync.HwRunning) {
         $hwTimer.Stop(); $btnHwCancel.Visible=$false
-        $btnHwRun.Enabled=$true; $btnHwRun.Text=[char]0x25B6+"  Run Full Diagnostic"
+        $btnHwRun.Enabled=$true; $btnHwRun.Text=[char]0x25B6+"  Run Test"
         $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
         # NIC port diagram now lives on Camera Connectivity (v1.0.47); ask it to refresh.
         try { Update-HwPortDiagram } catch { }
@@ -238,10 +238,10 @@ $dgvHwLog = New-LogGrid -X 8 -Y 32 -W 724 -H 420
 $hwLogCard.Controls.Add($dgvHwLog)
 
 $hwSummary = New-SummaryPanel -Parent $pnlPoE -X 784 -Y 220 -W 480 -H 460 -Title "Summary"
-Set-SummaryItems $hwSummary @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" })
+Set-SummaryItems $hwSummary @(@{ Status="neutral"; Text="Run Test to populate the summary" })
 
 # Bottom action bar
-$hwActions = New-ActionBar -Parent $pnlPoE -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$hwActions = New-ActionBar -Parent $pnlPoE -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Test")
 $btnHwRun    = $hwActions.PrimaryBtn
 $btnHwExport = $hwActions.ExportBtn
 
