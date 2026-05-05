@@ -70,7 +70,7 @@ namespace Pulse.WPF.Services
                                 Role = "Inaccessible",
                                 FreeGb = 0,
                                 TotalGb = 0,
-                                PercentUsed = 0,
+                                PercentUsed = "0%", PercentUsedValue = 0,
                                 Severity = "Warn",
                             });
                             continue;
@@ -101,7 +101,7 @@ namespace Pulse.WPF.Services
                             Role = role,
                             FreeGb = freeGb,
                             TotalGb = totalGb,
-                            PercentUsed = pctUsed,
+                            PercentUsed = pctUsed + "%", PercentUsedValue = pctUsed,
                             Severity = sev,
                         });
                     }
