@@ -84,6 +84,7 @@ function New-HubTile {
     $tLbl.Location     = New-Object System.Drawing.Point(20, 96)
     $tLbl.Size         = New-Object System.Drawing.Size(([int]$W - 28), 24)
     $tLbl.BackColor    = [System.Drawing.Color]::Transparent
+    $tLbl.AutoEllipsis = $true
     $pnl.Controls.Add($tLbl)
 
     $dLbl = New-Object System.Windows.Forms.Label
@@ -94,6 +95,13 @@ function New-HubTile {
     $dLbl.Size      = New-Object System.Drawing.Size(([int]$W - 28), 56)
     $dLbl.BackColor = [System.Drawing.Color]::Transparent
     $pnl.Controls.Add($dLbl)
+
+    # Stash inner-label refs on the panel Tag so Update-HubTileLayout can
+    # resize them when the tile width changes. Without this, the labels
+    # stay at their initial (W-28) = 72px width and titles like
+    # "Hardware & Peripherals" get truncated to "Hardwar".
+    $pnl.Tag | Add-Member -NotePropertyName TitleLbl -NotePropertyValue $tLbl -Force
+    $pnl.Tag | Add-Member -NotePropertyName DescLbl  -NotePropertyValue $dLbl -Force
 
     return $pnl
 }
@@ -178,6 +186,14 @@ function Update-HubTileLayout {
         $tile.Anchor = [System.Windows.Forms.AnchorStyles]::None
         $tile.Bounds = New-Object System.Drawing.Rectangle($newX, $newY, $hCW, $hCH)
         $tile.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $hCW, $hCH)), 10))
+        # Resize inner labels so titles/descriptions don't get truncated to
+        # the placeholder W=100 they were created with.
+        if ($tile.Tag -and $tile.Tag.TitleLbl) {
+            $tile.Tag.TitleLbl.Size = New-Object System.Drawing.Size(([int]$hCW - 28), 24)
+        }
+        if ($tile.Tag -and $tile.Tag.DescLbl) {
+            $tile.Tag.DescLbl.Size  = New-Object System.Drawing.Size(([int]$hCW - 28), 56)
+        }
     }
     if ($pnlHubActions) {
         $pnlHubActions.Location = New-Object System.Drawing.Point($hMargin, (110 + $hRows*($hCH+$hGap) + 12))

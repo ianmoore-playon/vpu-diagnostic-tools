@@ -111,7 +111,7 @@ $evtTimer.Add_Tick({
     }
     if ($sync.EvtComplete -and -not $sync.EvtRunning) {
         $evtTimer.Stop(); $btnEvtCancel.Visible=$false
-        $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Run Full Diagnostic"
+        $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Run Test"
         $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
 
         $evtC = $sync.Cards["EvtStatus"]
@@ -170,9 +170,9 @@ $dgvEvtLog = New-LogGrid -X 8 -Y 38 -W 784 -H 414
 $evtLogCard.Controls.Add($dgvEvtLog)
 
 $evtSummary = New-SummaryPanel -Parent $pnlEvents -X 844 -Y 220 -W 420 -H 460 -Title "Summary"
-Set-SummaryItems $evtSummary @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" })
+Set-SummaryItems $evtSummary @(@{ Status="neutral"; Text="Run Test to populate the summary" })
 
-$evtActions = New-ActionBar -Parent $pnlEvents -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$evtActions = New-ActionBar -Parent $pnlEvents -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Test")
 $btnEvtRun    = $evtActions.PrimaryBtn
 $btnEvtExport = $evtActions.ExportBtn
 
