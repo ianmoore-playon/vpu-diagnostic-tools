@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Pulse.WPF</RootNamespace>
+    <AssemblyName>Pulse.WPF</AssemblyName>
+    <Nullable>disable</Nullable>
+    <LangVersion>9.0</LangVersion>
+    <ApplicationIcon />
+    <Version>0.1.0</Version>
+    <Authors>PlayOn / Pixellot Field Tools</Authors>
+    <Product>Pulse — Pixellot Unified Live System Evaluator (WPF Pilot)</Product>
+    <Description>WPF pilot for the Camera Connectivity panel of the Pulse VPU diagnostic tool. Side-by-side with the existing WinForms Pulse.ps1 implementation.</Description>
+    <NeutralLanguage>en-US</NeutralLanguage>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MaterialDesignThemes" Version="4.9.0" />
+    <PackageReference Include="MaterialDesignColors" Version="2.1.4" />
+  </ItemGroup>
+
+</Project>

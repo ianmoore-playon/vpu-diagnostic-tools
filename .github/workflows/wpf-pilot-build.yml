@@ -1,0 +1,102 @@
+# Build Pulse.WPF on a Windows runner whenever the wpf-pilot branch
+# changes (or on manual trigger), and publish a downloadable zip + a
+# convenience launcher .bat as the artifacts of every run. Tagged
+# pushes (e.g. wpf-pilot-v0.1.0) also produce a real GitHub release
+# so a tech can download from a stable URL.
+
+name: Build Pulse.WPF pilot
+
+on:
+  push:
+    branches: [ "wpf-pilot" ]
+    tags:     [ "wpf-pilot-v*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to upload release assets on tag pushes
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8 SDK (builds net48 targets)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore Pulse.WPF/Pulse.WPF/Pulse.WPF.csproj
+
+      - name: Build (Release, net48)
+        run: dotnet build Pulse.WPF/Pulse.WPF/Pulse.WPF.csproj -c Release --no-restore
+
+      - name: Publish (framework-dependent, win-x64)
+        run: >
+          dotnet publish Pulse.WPF/Pulse.WPF/Pulse.WPF.csproj
+          -c Release
+          -r win-x64
+          --self-contained false
+          -o publish
+
+      - name: Stage the runnable folder
+        shell: pwsh
+        run: |
+          # Pull short SHA for the artifact filename
+          $sha = "${{ github.sha }}".Substring(0,7)
+          $stamp = (Get-Date).ToString("yyyyMMdd-HHmm")
+          $name = "Pulse.WPF-pilot-$stamp-$sha"
+          Write-Host "Bundle name: $name"
+          New-Item -ItemType Directory -Force "release" | Out-Null
+          Copy-Item -Recurse publish "release/$name"
+          Compress-Archive -Path "release/$name" -DestinationPath "release/$name.zip"
+          # Convenience launcher .bat that the tech can drop on a VPU desktop.
+          # It downloads the latest pilot zip from the release page and runs the EXE.
+          @"
+          @echo off
+          REM Pulse.WPF pilot launcher
+          REM Downloads the latest pilot release zip and runs Pulse.WPF.exe.
+          REM Requires .NET Framework 4.8 (already on every VPU).
+          PowerShell -NoProfile -ExecutionPolicy Bypass -Command ^
+            "if (Test-Path '%TEMP%\Pulse.WPF-pilot') { Remove-Item '%TEMP%\Pulse.WPF-pilot' -Recurse -Force }; ^
+             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls; ^
+             Invoke-WebRequest 'https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$name.zip' -OutFile '%TEMP%\pwpf.zip'; ^
+             Expand-Archive '%TEMP%\pwpf.zip' '%TEMP%\Pulse.WPF-pilot' -Force; ^
+             Get-ChildItem '%TEMP%\Pulse.WPF-pilot' -Recurse | Unblock-File; ^
+             Start-Process (Get-ChildItem '%TEMP%\Pulse.WPF-pilot' -Recurse -Filter 'Pulse.WPF.exe' | Select-Object -First 1).FullName"
+          "@ | Set-Content -Encoding ascii "release/Pulse.WPF-pilot-Launcher.bat"
+          echo "ARTIFACT_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "ARTIFACT_ZIP=release/$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload as workflow artifact (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: |
+            ${{ env.ARTIFACT_ZIP }}
+            release/Pulse.WPF-pilot-Launcher.bat
+
+      - name: Publish release on tag push
+        if: startsWith(github.ref, 'refs/tags/wpf-pilot-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.ARTIFACT_ZIP }}
+            release/Pulse.WPF-pilot-Launcher.bat
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            Pulse.WPF pilot build (Camera Connectivity panel only).
+
+            **VPU install**
+            1. Download `Pulse.WPF-pilot-Launcher.bat` from this release.
+            2. Drop it on the VPU's desktop (LogMeIn → File Manager works).
+            3. Double-click. It pulls the zip and launches `Pulse.WPF.exe`.
+
+            **Manual install**
+            Download the zip, extract anywhere, run `Pulse.WPF.exe`.
+
+            Requires .NET Framework 4.8 (pre-installed on Win10+).
