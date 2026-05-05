@@ -21,4 +21,14 @@
     <PackageReference Include="MaterialDesignColors" Version="2.1.4" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- WMI: Win32_DiskDrive, Win32_LogicalDisk, Win32_VideoController,
+         Win32_OperatingSystem, MSStorageDriver_FailurePredictStatus, etc. -->
+    <Reference Include="System.Management" />
+    <!-- ServiceController for the Pixellot Services panel -->
+    <Reference Include="System.ServiceProcess" />
+    <!-- EventLogReader for disk-error scans -->
+    <Reference Include="System.Core" />
+  </ItemGroup>
+
 </Project>

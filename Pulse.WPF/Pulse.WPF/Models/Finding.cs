@@ -79,5 +79,25 @@ namespace Pulse.WPF.Models
                     break;
             }
         }
+
+        /// <summary>
+        /// Convenience factory that accepts the severity as a string ("Critical",
+        /// "Warning", "Info"). Used by the diagnostic ViewModels (Network,
+        /// Hardware, Services, DiskHealth, SystemOverview) which build Findings
+        /// from service results where severity is a string.
+        /// </summary>
+        public static Finding Create(string severity, string title, string recommendation, string category = null)
+        {
+            FindingSeverity sev;
+            switch ((severity ?? "").Trim().ToLowerInvariant())
+            {
+                case "critical": case "fail":  sev = FindingSeverity.Critical; break;
+                case "warning":  case "warn":  sev = FindingSeverity.Warning;  break;
+                default:                       sev = FindingSeverity.Info;     break;
+            }
+            var f = new Finding();
+            f.Apply(sev, title, recommendation, category);
+            return f;
+        }
     }
 }

@@ -3,7 +3,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:helpers="clr-namespace:Pulse.WPF.Helpers"
              xmlns:vm="clr-namespace:Pulse.WPF.ViewModels"
-             xmlns:vmstub="clr-namespace:Pulse.WPF.ViewModels.Stub"
              xmlns:views="clr-namespace:Pulse.WPF.Views"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
@@ -36,19 +35,19 @@
             <DataTemplate DataType="{x:Type vm:CameraConnectivityViewModel}">
                 <views:CameraConnectivityView />
             </DataTemplate>
-            <DataTemplate DataType="{x:Type vmstub:SystemOverviewViewModel}">
+            <DataTemplate DataType="{x:Type vm:SystemOverviewViewModel}">
                 <views:SystemOverviewView />
             </DataTemplate>
-            <DataTemplate DataType="{x:Type vmstub:NetworkViewModel}">
+            <DataTemplate DataType="{x:Type vm:NetworkViewModel}">
                 <views:NetworkView />
             </DataTemplate>
-            <DataTemplate DataType="{x:Type vmstub:HardwareViewModel}">
+            <DataTemplate DataType="{x:Type vm:HardwareViewModel}">
                 <views:HardwareView />
             </DataTemplate>
-            <DataTemplate DataType="{x:Type vmstub:ServicesViewModel}">
+            <DataTemplate DataType="{x:Type vm:ServicesViewModel}">
                 <views:ServicesView />
             </DataTemplate>
-            <DataTemplate DataType="{x:Type vmstub:DiskHealthViewModel}">
+            <DataTemplate DataType="{x:Type vm:DiskHealthViewModel}">
                 <views:DiskHealthView />
             </DataTemplate>
         </ResourceDictionary>

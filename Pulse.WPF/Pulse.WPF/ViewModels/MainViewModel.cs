@@ -1,108 +1,154 @@
+using System.Threading.Tasks;
 using System.Windows.Input;
 using Pulse.WPF.Helpers;
 using Pulse.WPF.Services;
-using Pulse.WPF.ViewModels.Stub;
 
 namespace Pulse.WPF.ViewModels
 {
     /// <summary>
-    /// Top-level viewmodel. Owns one VM per panel and exposes a SelectedNav
-    /// string + CurrentView property so MainWindow.xaml can switch the
-    /// content area via a single ContentControl + DataTemplates in App.xaml.
-    /// Camera Connectivity uses the real wired-up VM. The other five panels
-    /// use stub VMs with mock data until Agent B's diagnostic service work
-    /// merges in.
+    /// Top-level viewmodel. Constructs every panel VM at startup so navigation
+    /// is instant — each panel's ViewModel owns its data and keeps it across
+    /// nav switches. Each panel's RefreshAsync() is invoked when it becomes
+    /// the CurrentView so techs see live data on first visit.
     /// </summary>
     public class MainViewModel : ObservableObject
     {
-        public CameraConnectivityViewModel Camera   { get; }
-        public SystemOverviewViewModel     Home     { get; }
-        public NetworkViewModel            Network  { get; }
-        public HardwareViewModel           Hardware { get; }
-        public ServicesViewModel           Services { get; }
-        public DiskHealthViewModel         Disk     { get; }
+        // Panel ViewModels — exposed so XAML can bind regardless of CurrentView.
+        public SystemOverviewViewModel SystemOverview { get; }
+        public NetworkViewModel Network { get; }
+        public CameraConnectivityViewModel Camera { get; }
+        public ServicesViewModel Services { get; }
+        public HardwareViewModel Hardware { get; }
+        public DiskHealthViewModel DiskHealth { get; }
 
-        private string _selectedNav = "Camera";
+        // Sidebar state. SelectedNav drives CurrentView.
+        // Also accepts the alternate names "Home" -> "SystemOverview" and
+        // "Disk" -> "DiskHealth" so XAML written by either of the original
+        // panel-set agents stays compatible.
+        private string _selectedNav = "SystemOverview";
         public string SelectedNav
         {
             get => _selectedNav;
             set
             {
-                if (Set(ref _selectedNav, value))
+                var canonical = NormaliseNavKey(value);
+                if (Set(ref _selectedNav, canonical))
                 {
-                    OnPropertyChanged(nameof(CurrentView));
-                    OnPropertyChanged(nameof(IsHome));
-                    OnPropertyChanged(nameof(IsNetwork));
-                    OnPropertyChanged(nameof(IsCamera));
-                    OnPropertyChanged(nameof(IsHardware));
-                    OnPropertyChanged(nameof(IsServices));
-                    OnPropertyChanged(nameof(IsDisk));
+                    UpdateCurrentView();
+                    RaisePillFlags();
                 }
             }
         }
 
-        /// <summary>
-        /// The currently visible panel viewmodel. App.xaml has a DataTemplate
-        /// for each panel VM type so a single ContentControl can render any
-        /// of them.
-        /// </summary>
+        private static string NormaliseNavKey(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return "SystemOverview";
+            switch (value.Trim())
+            {
+                case "Home":           return "SystemOverview";
+                case "Disk":           return "DiskHealth";
+                default:               return value.Trim();
+            }
+        }
+
+        // ---- IsXxx flags (used by sidebar ToggleButton.IsChecked bindings) ----
+        public bool IsHome      => _selectedNav == "SystemOverview";
+        public bool IsNetwork   => _selectedNav == "Network";
+        public bool IsCamera    => _selectedNav == "Camera";
+        public bool IsHardware  => _selectedNav == "Hardware";
+        public bool IsServices  => _selectedNav == "Services";
+        public bool IsDisk      => _selectedNav == "DiskHealth";
+
+        private void RaisePillFlags()
+        {
+            OnPropertyChanged(nameof(IsHome));
+            OnPropertyChanged(nameof(IsNetwork));
+            OnPropertyChanged(nameof(IsCamera));
+            OnPropertyChanged(nameof(IsHardware));
+            OnPropertyChanged(nameof(IsServices));
+            OnPropertyChanged(nameof(IsDisk));
+        }
+
+        private object _currentView;
         public object CurrentView
         {
-            get
-            {
-                switch (_selectedNav)
-                {
-                    case "Home":     return Home;
-                    case "Network":  return Network;
-                    case "Camera":   return Camera;
-                    case "Hardware": return Hardware;
-                    case "Services": return Services;
-                    case "Disk":     return Disk;
-                    default:         return Camera;
-                }
-            }
+            get => _currentView;
+            private set => Set(ref _currentView, value);
         }
 
-        // IsX bindings drive the sidebar ToggleButton.IsChecked state. We use
-        // bool flags + a one-way binding instead of a converter so the XAML
-        // stays declarative.
-        public bool IsHome     => _selectedNav == "Home";
-        public bool IsNetwork  => _selectedNav == "Network";
-        public bool IsCamera   => _selectedNav == "Camera";
-        public bool IsHardware => _selectedNav == "Hardware";
-        public bool IsServices => _selectedNav == "Services";
-        public bool IsDisk     => _selectedNav == "Disk";
-
-        /// <summary>
-        /// Sidebar nav buttons bind this command with their nav-key as the
-        /// CommandParameter (e.g. "Network").
-        /// </summary>
+        // Convenience command for sidebar buttons — bound with CommandParameter
+        // = "Network", "Camera", etc.
         public ICommand NavigateCommand { get; }
 
         public MainViewModel()
         {
-            // Tiny composition root for the pilot — DI container is overkill.
-            INetworkAdapterService net = new NetworkAdapterService();
+            // Tiny composition root — full DI container is overkill here.
+            INetworkAdapterService netAdapters = new NetworkAdapterService();
             IPixellotConfigService cfg = new PixellotConfigService();
+            INetworkService net = new NetworkService();
+            IHardwareService hw = new HardwareService();
+            IServicesService svcs = new ServicesService();
+            IDiskHealthService disk = new DiskHealthService();
+            ISystemOverviewService overview = new SystemOverviewService();
 
-            Camera   = new CameraConnectivityViewModel(net, cfg);
-            Home     = new SystemOverviewViewModel();
-            Network  = new NetworkViewModel();
-            Hardware = new HardwareViewModel();
-            Services = new ServicesViewModel();
-            Disk     = new DiskHealthViewModel();
+            SystemOverview = new SystemOverviewViewModel(overview);
+            Network = new NetworkViewModel(net);
+            Camera = new CameraConnectivityViewModel(netAdapters, cfg);
+            Services = new ServicesViewModel(svcs);
+            Hardware = new HardwareViewModel(hw);
+            DiskHealth = new DiskHealthViewModel(disk);
 
-            NavigateCommand = new RelayCommand<string>(key =>
+            // Hub tile clicks request a nav change — wire that back through us.
+            SystemOverview.RequestNavigate = target =>
             {
-                if (!string.IsNullOrEmpty(key)) SelectedNav = key;
+                if (!string.IsNullOrEmpty(target)) SelectedNav = target;
+            };
+
+            NavigateCommand = new NavigateImpl(target =>
+            {
+                var s = target as string;
+                if (!string.IsNullOrEmpty(s)) SelectedNav = s;
             });
 
-            // Wire the hub-tile "click" commands on the Home page to navigate.
-            // Done here (not in the stub VM) so the stub VM stays free of
-            // MainViewModel knowledge.
-            foreach (var tile in Home.Tiles)
+            UpdateCurrentView();
+        }
+
+        // Dispatch the panel switch + fire the panel's refresh in the background.
+        // Errors during refresh are swallowed — diagnostic services must not
+        // crash the UI when a probe fails.
+        private void UpdateCurrentView()
+        {
+            switch (_selectedNav)
             {
-                tile.NavigateCommand = NavigateCommand;
+                case "Network":        CurrentView = Network;        _ = SafeRefresh(Network.RefreshAsync); break;
+                case "Camera":         CurrentView = Camera;         break; // Camera VM self-refreshes via its DispatcherTimer.
+                case "Services":       CurrentView = Services;       _ = SafeRefresh(Services.RefreshAsync); break;
+                case "Hardware":       CurrentView = Hardware;       _ = SafeRefresh(Hardware.RefreshAsync); break;
+                case "DiskHealth":     CurrentView = DiskHealth;     _ = SafeRefresh(DiskHealth.RefreshAsync); break;
+                case "SystemOverview":
+                default:
+                    CurrentView = SystemOverview;
+                    _ = SafeRefresh(SystemOverview.RefreshAsync);
+                    break;
+            }
+        }
+
+        private static async Task SafeRefresh(System.Func<Task> refresh)
+        {
+            try { await refresh().ConfigureAwait(false); } catch { /* logged in panel VM */ }
+        }
+
+        // Local ICommand that takes a parameter — for sidebar buttons.
+        private class NavigateImpl : ICommand
+        {
+            private readonly System.Action<object> _execute;
+            public NavigateImpl(System.Action<object> execute) { _execute = execute; }
+            public bool CanExecute(object parameter) => true;
+            public void Execute(object parameter) => _execute(parameter);
+            public event System.EventHandler CanExecuteChanged
+            {
+                add { System.Windows.Input.CommandManager.RequerySuggested += value; }
+                remove { System.Windows.Input.CommandManager.RequerySuggested -= value; }
             }
         }
     }
