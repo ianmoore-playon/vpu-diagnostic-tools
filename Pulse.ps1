@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.50"
+$ScriptVersion = "1.0.51"
 
 # Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
 $script:FeedbackToken = ""
@@ -73,6 +73,97 @@ $PixellotLogPaths   = @(
 )
 $RtspPort  = 554
 $OcrMacOui = "00-D0-89"
+
+# ---------- Pixellot camera role lookup --------------------------------------
+# The authoritative source for "which IP / MAC is which role" is Pixellot's
+# own configuration files in C:\Pixellot\Data\configuration. The agent reads
+# these on startup and pushes the resolved cameraInfo to its backend, so the
+# data here always matches what Pixellot's own HW Info screen shows.
+#
+# File format is NOT standard INI — it's:
+#     [SECTION]
+#     KEY_NAME, type, value      // optional inline comment
+#
+# We care about these sections:
+#     cameras.cfg  [CAMERA_0..N]            UID = rtsp:////<IP>/h264
+#     cameras.cfg  [ADDITIONAL_ANGLE_0..N]  UID = rtsp:////<IP>/h264
+#     pip.cfg      [PIP]                    CAMERA_URL = rtsp:////<IP>/h264
+$PixellotConfigDir = "C:\Pixellot\Data\configuration"
+
+function Read-PixellotCfg {
+    param([string]$Path)
+    $result = @{}
+    if (-not (Test-Path $Path -ErrorAction SilentlyContinue)) { return $result }
+    $section = $null
+    foreach ($raw in (Get-Content $Path -ErrorAction SilentlyContinue)) {
+        $line = $raw.Trim()
+        if (-not $line) { continue }
+        # Strip inline `//` comments first so values like `0.99 // comment` parse cleanly.
+        $cIdx = $line.IndexOf('//')
+        if ($cIdx -ge 0) { $line = $line.Substring(0, $cIdx).Trim() }
+        if (-not $line) { continue }
+        if ($line -match '^\[(.+)\]$') {
+            $section = $matches[1].Trim()
+            if (-not $result.ContainsKey($section)) { $result[$section] = @{} }
+            continue
+        }
+        if (-not $section) { continue }
+        # KEY, type, value  — split into max 3 parts so values can contain commas.
+        $parts = $line -split ',', 3
+        if ($parts.Count -ge 3) {
+            $key = $parts[0].Trim()
+            $val = $parts[2].Trim().Trim('"')
+            if ($key) { $result[$section][$key] = $val }
+        }
+    }
+    return $result
+}
+
+function Get-PixellotIpFromRtsp {
+    param([string]$Url)
+    if (-not $Url) { return $null }
+    # rtsp://host/path  or  rtsp:////host/path  (Pixellot uses 4 slashes)
+    if ($Url -match 'rtsp:/+([^/:]+)') {
+        $h = $matches[1]
+        if ($h -match '^\d+\.\d+\.\d+\.\d+$') { return $h }
+    }
+    return $null
+}
+
+# Build a hashtable mapping IP → role string by parsing cameras.cfg + pip.cfg.
+# Returns @{} when the config dir doesn't exist (non-Pixellot machine, or
+# install path differs) — callers fall back to OUI-based heuristics.
+function Get-PixellotCameraRoles {
+    $roles = @{}
+    $camsCfg = Read-PixellotCfg (Join-Path $PixellotConfigDir "cameras.cfg")
+    foreach ($section in $camsCfg.Keys) {
+        if ($section -match '^CAMERA_(\d+)$') {
+            $idx = [int]$matches[1]
+            $ip  = Get-PixellotIpFromRtsp $camsCfg[$section]['UID']
+            if ($ip) { $roles[$ip] = "Main Camera $($idx + 1)" }
+        } elseif ($section -match '^ADDITIONAL_ANGLE_(\d+)$') {
+            $idx = [int]$matches[1]
+            $ip  = Get-PixellotIpFromRtsp $camsCfg[$section]['UID']
+            if ($ip) { $roles[$ip] = "Additional Angle $($idx + 1)" }
+        } elseif ($section -eq 'PIP') {
+            # Some Pixellot installs put the PIP section in cameras.cfg
+            $ip = Get-PixellotIpFromRtsp $camsCfg[$section]['CAMERA_URL']
+            if ($ip) { $roles[$ip] = "OCR / Scoreboard" }
+        }
+    }
+    # Standard location for the PIP section
+    $pipCfg = Read-PixellotCfg (Join-Path $PixellotConfigDir "pip.cfg")
+    if ($pipCfg.ContainsKey('PIP')) {
+        $ip = Get-PixellotIpFromRtsp $pipCfg['PIP']['CAMERA_URL']
+        if ($ip) { $roles[$ip] = "OCR / Scoreboard" }
+    }
+    return $roles
+}
+
+# Initialised once at startup; refreshed when the Camera Connectivity panel
+# becomes visible so role changes (e.g. tech swaps a camera and the agent
+# rewrites cameras.cfg) are picked up without restarting Pulse.
+$script:PixCameraRoles = Get-PixellotCameraRoles
 
 # ---------- ADLINK SmartPoE DLL search ---------------------------------------
 $PoeDllPath = $null

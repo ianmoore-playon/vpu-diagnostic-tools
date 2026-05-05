@@ -7,6 +7,7 @@ $DiagScript = {
     param($sync, $NicDriverPatterns, $RenegotiateWaitSec, $EventLogHours,
           $PixellotLogPaths, $RtspPort, $OutputFile, $RunId, $ScriptVersion,
           [string]$OcrMacOui = "00-D0-89",
+          $PixCameraRoles = @{},
           [string]$FilterNic = "",
           [string]$PoeDllPath = "",
           [bool]$PoeMgmtSupported = $true)
@@ -428,15 +429,26 @@ $DiagScript = {
             }
         foreach ($nb in $neighbors) {
             if ($discoveredCameras | Where-Object { $_.IP -eq $nb.IPAddress }) { continue }
-            $isOcr = $nb.LinkLayerAddress -like "$OcrMacOui-*"
+            # Authoritative role from cameras.cfg / pip.cfg (passed in via
+            # $PixCameraRoles). Falls back to OUI-only labelling when the
+            # IP isn't in the config — neither subtypes anymore, since
+            # both main cameras and OCR share the 00-D0-89 OUI.
+            $roleLabel = $null
+            if ($PixCameraRoles -and $PixCameraRoles.ContainsKey($nb.IPAddress)) {
+                $roleLabel = [string]$PixCameraRoles[$nb.IPAddress]
+            }
+            $isOcr = ($roleLabel -and $roleLabel -match 'OCR|Scoreboard')
+            $label = if ($roleLabel) { $roleLabel } `
+                     elseif ($nb.LinkLayerAddress -like "$OcrMacOui-*") { "Pixellot Camera (no config match)" } `
+                     else { "Unknown device" }
             $discoveredCameras += [PSCustomObject]@{
                 IP       = $nb.IPAddress
                 MAC      = $nb.LinkLayerAddress
-                Label    = if ($isOcr) { "OCR Camera" } else { "S2 Camera" }
+                Label    = $label
                 Optional = $isOcr
                 NicName  = $nic.Name
             }
-            Add-Log ("  Found  : {0,-18} MAC: {1}  Type: {2}" -f $nb.IPAddress, $nb.LinkLayerAddress, (if ($isOcr) { "OCR Camera" } else { "S2 Camera" })) "Info"
+            Add-Log ("  Found  : {0,-18} MAC: {1}  Role: {2}" -f $nb.IPAddress, $nb.LinkLayerAddress, $label) "Info"
         }
     }
     Add-Log ""
@@ -1514,14 +1526,23 @@ function Get-PortDevice {
         $result.Mac = "$($primary.LinkLayerAddress)"
         $result.Ip  = "$($primary.IPAddress)"
 
-        $isOcr = $primary.LinkLayerAddress -like "$OcrMacOui-*"
-        # Speed-based variant. OCR cameras come in 100 Mbps (older) and
-        # 1 Gbps (newer) revisions; main cameras (S2/CHU) are gigabit.
-        $is100M = ($LinkSpeed -match '^\s*100\s*Mbps')
-        if ($isOcr) {
-            $result.Label = if ($is100M) { "OCR (100M)" } else { "OCR (1G)" }
+        # 1) Authoritative role from Pixellot's own config (cameras.cfg /
+        #    pip.cfg). When present this is the same data the Pixellot HW
+        #    Info screen shows — no guessing required.
+        if ($script:PixCameraRoles -and $script:PixCameraRoles.ContainsKey($result.Ip)) {
+            $result.Label = $script:PixCameraRoles[$result.Ip]
+            return $result
+        }
+        # 2) Fallback when the device responded on link-local but isn't
+        #    in the Pixellot config. Still flag whether it's a Pixellot
+        #    OUI (`00-D0-89-*`) or something else entirely. Both main
+        #    cameras and OCR units share this OUI so we deliberately do
+        #    *not* try to subtype here — earlier 4th-octet attempts
+        #    produced false positives in the field.
+        if ($primary.LinkLayerAddress -like "$OcrMacOui-*") {
+            $result.Label = "Pixellot Camera (no config match)"
         } else {
-            $result.Label = "Main Camera"
+            $result.Label = "Unknown device"
         }
         return $result
     } catch {
@@ -1744,6 +1765,11 @@ function Update-NicDropdown {
 # the user runs anything.
 $center.Add_VisibleChanged({
     if ($center.Visible) {
+        # Refresh the IP→role table from cameras.cfg/pip.cfg before the
+        # diagram and dropdown re-paint. Picks up role changes (e.g. tech
+        # swapped a camera and the agent rewrote the config) without a
+        # tool restart.
+        try { $script:PixCameraRoles = Get-PixellotCameraRoles } catch { }
         try { Update-HwPortDiagram } catch { }
         try { Update-NicDropdown }   catch { }
         if ($script:hwLiveTimer) { $script:hwLiveTimer.Start() }
@@ -1936,6 +1962,7 @@ function Start-CameraConnDiagnostic {
         RunId              = $newRunId
         ScriptVersion      = $ScriptVersion
         OcrMacOui          = $OcrMacOui
+        PixCameraRoles     = $script:PixCameraRoles
         FilterNic          = $filterNicVal
         PoeDllPath         = if ($PoeDllPath) { $PoeDllPath } else { "" }
         PoeMgmtSupported   = if ($script:nicCardInfo) { [bool]$script:nicCardInfo.PoeMgmtSupported } else { $true }
