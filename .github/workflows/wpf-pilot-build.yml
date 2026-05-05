@@ -79,7 +79,7 @@ jobs:
             ${{ env.ARTIFACT_ZIP }}
             release/Pulse.WPF-pilot-Launcher.bat
 
-      - name: Publish release on tag push
+      - name: Publish release on tag push (private source repo)
         if: startsWith(github.ref, 'refs/tags/wpf-pilot-v')
         uses: softprops/action-gh-release@v2
         with:
@@ -91,12 +91,29 @@ jobs:
           body: |
             Pulse.WPF pilot build (Camera Connectivity panel only).
 
-            **VPU install**
-            1. Download `Pulse.WPF-pilot-Launcher.bat` from this release.
-            2. Drop it on the VPU's desktop (LogMeIn → File Manager works).
-            3. Double-click. It pulls the zip and launches `Pulse.WPF.exe`.
+            **Internal source-repo release.** The public-facing copy is mirrored
+            to ianmoore-playon/pulse-releases automatically — that's where
+            techs and contractors download from.
 
-            **Manual install**
-            Download the zip, extract anywhere, run `Pulse.WPF.exe`.
-
-            Requires .NET Framework 4.8 (pre-installed on Win10+).
+      # Mirror the same artifacts to the PUBLIC ianmoore-playon/pulse-releases
+      # repo so non-GitHub-users (contractors, externals) can download Pulse.WPF
+      # without needing access to this private source repo. The launcher .bat
+      # that lives in pulse-releases pulls from there, not from here.
+      - name: Mirror release to public pulse-releases repo
+        if: startsWith(github.ref, 'refs/tags/wpf-pilot-v')
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $publicRepo = "ianmoore-playon/pulse-releases"
+          # Delete any existing release with the same tag (idempotent re-runs).
+          gh release delete $tag --repo $publicRepo --yes --cleanup-tag 2>$null
+          gh release create $tag `
+            --repo $publicRepo `
+            --target main `
+            --title "Pulse.WPF $tag" `
+            --notes "Pulse.WPF pilot build (Camera Connectivity panel only).`n`n**Install on a VPU**`n``````powershell`nirm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1 | iex`n```````n`nOr drop ``Pulse.WPF.bat`` on the VPU desktop and double-click.`n`nRequires .NET Framework 4.8 (pre-installed on every VPU)." `
+            ${{ env.ARTIFACT_ZIP }} `
+            release/Pulse.WPF-pilot-Launcher.bat
+          Write-Host "Mirrored release $tag to $publicRepo"
