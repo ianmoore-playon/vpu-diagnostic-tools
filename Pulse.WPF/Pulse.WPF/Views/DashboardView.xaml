@@ -136,25 +136,39 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />   <!-- Header strip -->
+                <RowDefinition Height="Auto" />   <!-- Header strip (title + Refresh + pill) -->
+                <RowDefinition Height="Auto" />   <!-- Active Findings (top of page so issues land first) -->
                 <RowDefinition Height="Auto" />   <!-- Identity / Pixellot SW / Last Run cards -->
                 <RowDefinition Height="Auto" />   <!-- System Status gauges -->
                 <RowDefinition Height="Auto" />   <!-- NIC ports + Network config -->
                 <RowDefinition Height="Auto" />   <!-- Storage + Services -->
-                <RowDefinition Height="Auto" />   <!-- Active Findings -->
                 <RowDefinition Height="Auto" />   <!-- Quick Nav (hub tiles) -->
             </Grid.RowDefinitions>
 
-            <!-- ====== Header ====== -->
+            <!-- ====== Header ======
+                 Title left, status pill far-right, Refresh button between
+                 them. Refresh re-runs the full snapshot (NIC, services,
+                 internet, volumes) — the live tick only re-reads the cheap
+                 gauges, so this is the button techs use to pick up changes
+                 outside the gauges. -->
             <DockPanel Grid.Row="0" Margin="0,0,0,20">
                 <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
-                        Background="{Binding StatusBg}">
+                        Background="{Binding StatusBg}" Margin="12,0,0,0">
                     <StackPanel Orientation="Horizontal">
                         <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
                                    Foreground="{Binding StatusColor}" Margin="8,0,0,0" />
                     </StackPanel>
                 </Border>
+                <Button DockPanel.Dock="Right"
+                        Command="{Binding RefreshCommand}"
+                        Style="{StaticResource MaterialDesignOutlinedButton}"
+                        Padding="16,6" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <md:PackIcon Kind="Refresh" Width="16" Height="16" VerticalAlignment="Center" />
+                        <TextBlock Text="Refresh" Margin="8,0,0,0" />
+                    </StackPanel>
+                </Button>
                 <StackPanel>
                     <TextBlock Text="Dashboard" Style="{StaticResource PageTitle}" />
                     <TextBlock Text="{Binding VpuLabel, StringFormat='{}{0} · live snapshot'}"
@@ -162,8 +176,36 @@
                 </StackPanel>
             </DockPanel>
 
+            <!-- ====== Active Findings (top of page so issues land first) ======
+                 Hidden when there are zero findings — a clean dashboard
+                 should not advertise an empty issues card. CardElev2 gives
+                 it a slight lift so the eye registers it before the
+                 identity / status rows below. -->
+            <Border Grid.Row="1" Style="{StaticResource CardElev2}" Margin="0,0,0,20"
+                    Visibility="{Binding Findings.Count, Converter={StaticResource CountToVis}}">
+                <StackPanel>
+                    <DockPanel>
+                        <md:PackIcon DockPanel.Dock="Left" Kind="AlertOutline"
+                                     Width="20" Height="20"
+                                     Foreground="{StaticResource YellowBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="ACTIVE FINDINGS"
+                                   FontFamily="Segoe UI Semibold" FontSize="11"
+                                   Foreground="{StaticResource MutedForegroundBrush}"
+                                   Margin="10,0,0,0" VerticalAlignment="Center" />
+                        <TextBlock DockPanel.Dock="Right"
+                                   Text="{Binding Findings.Count, StringFormat='{}{0} item(s)'}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource SubtleForegroundBrush}"
+                                   VerticalAlignment="Center" />
+                    </DockPanel>
+                    <ItemsControl ItemsSource="{Binding Findings}"
+                                  ItemTemplate="{StaticResource FindingRowTemplate}"
+                                  Margin="0,8,0,0" />
+                </StackPanel>
+            </Border>
+
             <!-- ====== Identity / Pixellot SW / Last Run (3-up) ====== -->
-            <UniformGrid Grid.Row="1" Rows="1" Columns="3" Margin="0,0,0,20">
+            <UniformGrid Grid.Row="2" Rows="1" Columns="3" Margin="0,0,0,20">
                 <!-- VPU Identity -->
                 <Border Style="{StaticResource Card}" Margin="0,0,8,0">
                     <StackPanel>
@@ -240,7 +282,7 @@
             </UniformGrid>
 
             <!-- ====== System Status (gauges) ====== -->
-            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,20">
+            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,20">
                 <StackPanel>
                     <TextBlock Text="SYSTEM STATUS" Style="{StaticResource CardCaption}" />
                     <Grid>
@@ -335,7 +377,7 @@
             </Border>
 
             <!-- ====== NIC ports + Network config (2-up) ====== -->
-            <Grid Grid.Row="3" Margin="0,0,0,20">
+            <Grid Grid.Row="4" Margin="0,0,0,20">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="16" />
@@ -404,7 +446,7 @@
             </Grid>
 
             <!-- ====== Storage + Pixellot Services (2-up) ====== -->
-            <Grid Grid.Row="4" Margin="0,0,0,20">
+            <Grid Grid.Row="5" Margin="0,0,0,20">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="16" />
@@ -448,43 +490,15 @@
                 </Border>
             </Grid>
 
-            <!-- ====== Active Findings ====== -->
-            <Border Grid.Row="5" Style="{StaticResource Card}" Margin="0,0,0,20"
-                    Visibility="{Binding Findings.Count, Converter={StaticResource CountToVis}}">
-                <StackPanel>
-                    <DockPanel>
-                        <md:PackIcon DockPanel.Dock="Left" Kind="AlertOutline"
-                                     Width="18" Height="18"
-                                     Foreground="{StaticResource YellowBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text="ACTIVE FINDINGS"
-                                   FontFamily="Segoe UI Semibold" FontSize="11"
-                                   Foreground="{StaticResource MutedForegroundBrush}"
-                                   Margin="10,0,0,0" VerticalAlignment="Center" />
-                    </DockPanel>
-                    <ItemsControl ItemsSource="{Binding Findings}"
-                                  ItemTemplate="{StaticResource FindingRowTemplate}"
-                                  Margin="0,8,0,0" />
-                </StackPanel>
-            </Border>
-
-            <!-- ====== Quick Nav (hub tiles) — bottom row ====== -->
+            <!-- ====== Quick Nav (hub tiles) — bottom row ======
+                 Refresh button moved to the page header. Caption kept above
+                 the tiles so the section is still labelled. -->
             <Border Grid.Row="6" Style="{StaticResource Card}" Padding="16,12,16,12">
                 <StackPanel>
-                    <DockPanel Margin="0,0,0,12">
-                        <Button DockPanel.Dock="Right"
-                                Command="{Binding RefreshCommand}"
-                                Style="{StaticResource MaterialDesignOutlinedButton}"
-                                Padding="14,4">
-                            <StackPanel Orientation="Horizontal">
-                                <md:PackIcon Kind="Refresh" Width="14" Height="14" VerticalAlignment="Center" />
-                                <TextBlock Text="Refresh" Margin="6,0,0,0" />
-                            </StackPanel>
-                        </Button>
-                        <TextBlock Text="QUICK NAV"
-                                   FontFamily="Segoe UI Semibold" FontSize="11"
-                                   Foreground="{StaticResource MutedForegroundBrush}"
-                                   VerticalAlignment="Center" />
-                    </DockPanel>
+                    <TextBlock Text="QUICK NAV"
+                               FontFamily="Segoe UI Semibold" FontSize="11"
+                               Foreground="{StaticResource MutedForegroundBrush}"
+                               Margin="0,0,0,12" />
                     <!-- Compact single-row Quick Nav. Description text is gone —
                          the title alone is enough since the user already knows
                          the panel set. WrapPanel still flows to a second row at
