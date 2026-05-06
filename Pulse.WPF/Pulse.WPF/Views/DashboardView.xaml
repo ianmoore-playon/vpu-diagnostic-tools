@@ -3,23 +3,150 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
              xmlns:vm="clr-namespace:Pulse.WPF.ViewModels"
+             xmlns:controls="clr-namespace:Pulse.WPF.Controls"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              d:DataContext="{d:DesignInstance Type=vm:DashboardViewModel, IsDesignTimeCreatable=True}"
              mc:Ignorable="d"
              Background="{StaticResource AppBgBrush}">
 
+    <UserControl.Resources>
+        <!-- Compact KV row for the network/identity cards. -->
+        <Style x:Key="KvLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{StaticResource MutedForegroundBrush}" />
+            <Setter Property="Margin" Value="0,2,8,2" />
+        </Style>
+        <Style x:Key="KvValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+            <Setter Property="Margin" Value="0,2,0,2" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style x:Key="CardCaption" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI Semibold" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="{StaticResource MutedForegroundBrush}" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <!-- Findings row -->
+        <DataTemplate x:Key="FindingRowTemplate">
+            <DockPanel Margin="0,4,0,4">
+                <Ellipse Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,12,0">
+                    <Ellipse.Style>
+                        <Style TargetType="Ellipse">
+                            <Setter Property="Fill" Value="{StaticResource MutedForegroundBrush}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Severity}" Value="ok">
+                                    <Setter Property="Fill" Value="{StaticResource GreenBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Severity}" Value="warn">
+                                    <Setter Property="Fill" Value="{StaticResource YellowBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Severity}" Value="fail">
+                                    <Setter Property="Fill" Value="{StaticResource RedBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Ellipse.Style>
+                </Ellipse>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding Source}"
+                           FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}"
+                           VerticalAlignment="Center" Margin="12,0,0,0" />
+                <TextBlock Text="{Binding Title}"
+                           Foreground="{StaticResource ForegroundBrush}"
+                           FontSize="12" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </DataTemplate>
+
+        <!-- NIC port row -->
+        <DataTemplate x:Key="NicPortRowTemplate">
+            <Grid Margin="0,3,0,3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="60" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="100" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding PortNumber, StringFormat='Port {0}'}"
+                           FontFamily="Segoe UI Semibold" FontSize="11"
+                           Foreground="{StaticResource ForegroundBrush}" />
+                <TextBlock Grid.Column="1" Text="{Binding Name}"
+                           FontFamily="Consolas" FontSize="11"
+                           Foreground="{StaticResource SubtleForegroundBrush}"
+                           TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
+                <TextBlock Grid.Column="2" Text="{Binding SpeedLabel}"
+                           FontFamily="Consolas" FontSize="11"
+                           Foreground="{StaticResource SubtleForegroundBrush}"
+                           TextAlignment="Right" Margin="0,0,12,0" />
+                <Border Grid.Column="3" CornerRadius="3" Padding="6,1,6,1"
+                        BorderThickness="1" BorderBrush="{Binding StatusColor}"
+                        HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusText}" FontSize="11"
+                               Foreground="{Binding StatusColor}" FontWeight="SemiBold" />
+                </Border>
+            </Grid>
+        </DataTemplate>
+
+        <!-- Service-status row -->
+        <DataTemplate x:Key="ServiceRowTemplate">
+            <Grid Margin="0,3,0,3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding DisplayName}"
+                           Foreground="{StaticResource ForegroundBrush}"
+                           FontSize="12" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
+                <Border Grid.Column="1" CornerRadius="3" Padding="6,1,6,1"
+                        BorderThickness="1" BorderBrush="{Binding StatusColor}">
+                    <TextBlock Text="{Binding Status}" FontSize="11"
+                               Foreground="{Binding StatusColor}" FontWeight="SemiBold" />
+                </Border>
+            </Grid>
+        </DataTemplate>
+
+        <!-- Volume row — drive letter + free/total + bar -->
+        <DataTemplate x:Key="VolumeRowTemplate">
+            <Grid Margin="0,4,0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="50" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="120" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding Drive}"
+                           FontFamily="Segoe UI Semibold" FontSize="12"
+                           Foreground="{StaticResource ForegroundBrush}"
+                           VerticalAlignment="Center" />
+                <ProgressBar Grid.Column="1" Minimum="0" Maximum="100"
+                             Value="{Binding PercentUsedValue}" Height="8"
+                             Foreground="{Binding BarColor}" Margin="8,0,8,0"
+                             VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Foreground="{StaticResource SubtleForegroundBrush}"
+                           FontSize="11" TextAlignment="Right" VerticalAlignment="Center">
+                    <Run Text="{Binding Free, Mode=OneWay}" />
+                    <Run Text=" of " />
+                    <Run Text="{Binding Total, Mode=OneWay}" />
+                </TextBlock>
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
+
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />   <!-- Section header -->
-                <RowDefinition Height="Auto" />   <!-- Hero -->
-                <RowDefinition Height="Auto" />   <!-- Hub tiles -->
-                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />   <!-- Header strip -->
+                <RowDefinition Height="Auto" />   <!-- Identity / Pixellot SW / Last Run cards -->
+                <RowDefinition Height="Auto" />   <!-- System Status gauges -->
+                <RowDefinition Height="Auto" />   <!-- NIC ports + Network config -->
+                <RowDefinition Height="Auto" />   <!-- Storage + Services -->
+                <RowDefinition Height="Auto" />   <!-- Active Findings -->
+                <RowDefinition Height="Auto" />   <!-- Quick Nav (hub tiles) -->
             </Grid.RowDefinitions>
 
-            <!-- ====== Section header ====== -->
-            <DockPanel Grid.Row="0" Margin="0,0,0,24">
+            <!-- ====== Header ====== -->
+            <DockPanel Grid.Row="0" Margin="0,0,0,20">
                 <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
                         Background="{Binding StatusBg}">
                     <StackPanel Orientation="Horizontal">
@@ -30,88 +157,359 @@
                 </Border>
                 <StackPanel>
                     <TextBlock Text="Dashboard" Style="{StaticResource PageTitle}" />
-                    <TextBlock Text="High-level health across every panel — click any tile to drill in"
+                    <TextBlock Text="{Binding VpuLabel, StringFormat='{}{0} · live snapshot'}"
                                Style="{StaticResource PageSubtitle}" />
                 </StackPanel>
             </DockPanel>
 
-            <!-- ====== Hero: Run Full Diagnostic + last-run summary ====== -->
-            <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,0,0,24">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="Run a full system check" Style="{StaticResource SectionTitle}" FontSize="18" />
-                        <TextBlock Text="{Binding LastRunSummary}"
-                                   Foreground="{StaticResource MutedForegroundBrush}"
-                                   Margin="0,6,0,0" />
+            <!-- ====== Identity / Pixellot SW / Last Run (3-up) ====== -->
+            <UniformGrid Grid.Row="1" Rows="1" Columns="3" Margin="0,0,0,20">
+                <!-- VPU Identity -->
+                <Border Style="{StaticResource Card}" Margin="0,0,8,0">
+                    <StackPanel>
+                        <TextBlock Text="VPU IDENTITY" Style="{StaticResource CardCaption}" />
+                        <TextBlock Text="{Binding VpuLabel}" Style="{StaticResource SectionTitle}"
+                                   FontSize="15" TextWrapping="Wrap" />
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="120" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource KvLabel}" Text="Model" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource KvValue}" Text="{Binding VpuModel}" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource KvLabel}" Text="Hostname" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource KvValue}" Text="{Binding Hostname}" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource KvLabel}" Text="Manufacturer" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource KvValue}" Text="{Binding Manufacturer}" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource KvLabel}" Text="Serial" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource KvValue}" Text="{Binding SerialNumber}" />
+                        </Grid>
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Content="Open Last Report"
+                </Border>
+
+                <!-- Pixellot Software -->
+                <Border Style="{StaticResource Card}" Margin="4,0,4,0">
+                    <StackPanel>
+                        <TextBlock Text="PIXELLOT SOFTWARE" Style="{StaticResource CardCaption}" />
+                        <TextBlock Text="{Binding PixellotApp}" Style="{StaticResource SectionTitle}"
+                                   FontSize="15" />
+                        <TextBlock Text="App Version" Style="{StaticResource KvLabel}" Margin="0,2,0,8" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="120" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource KvLabel}" Text="Image Version" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource KvValue}" Text="{Binding PixellotImage}" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource KvLabel}" Text="Dependencies" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource KvValue}" Text="{Binding PixellotDeps}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Last Diagnostic Run -->
+                <Border Style="{StaticResource Card}" Margin="8,0,0,0">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="LAST DIAGNOSTIC RUN" Style="{StaticResource CardCaption}" />
+                        <Button DockPanel.Dock="Bottom"
+                                Content="Open Last Report"
                                 Command="{Binding OpenLastReportCommand}"
                                 Style="{StaticResource MaterialDesignOutlinedButton}"
-                                Margin="0,0,12,0" />
-                        <Button Command="{Binding RunFullDiagnosticCommand}"
-                                Style="{StaticResource MaterialDesignRaisedButton}"
-                                Padding="22,10" FontWeight="SemiBold">
-                            <StackPanel Orientation="Horizontal">
-                                <md:PackIcon Kind="Play" Width="18" Height="18" VerticalAlignment="Center" />
-                                <TextBlock Text="Run Full Diagnostic" Margin="8,0,0,0" />
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-                </Grid>
+                                HorizontalAlignment="Stretch" Margin="0,12,0,0" />
+                        <StackPanel>
+                            <TextBlock Text="{Binding LastRunWhen}" Style="{StaticResource SectionTitle}" FontSize="15" />
+                            <TextBlock Text="{Binding LastRunResult}"
+                                       Foreground="{Binding LastRunResultColor}"
+                                       FontWeight="SemiBold" FontSize="13" Margin="0,4,0,0" />
+                            <TextBlock Text="{Binding LastRunSummary}"
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+            </UniformGrid>
+
+            <!-- ====== System Status (gauges) ====== -->
+            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock Text="SYSTEM STATUS" Style="{StaticResource CardCaption}" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- CPU -->
+                        <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                            <controls:CircularGauge
+                                Percent="{Binding CpuPct}"
+                                ValueText="{Binding CpuPctText}"
+                                Caption="CPU"
+                                ValueBrush="{Binding CpuColor}" />
+                            <TextBlock Text="{Binding CpuName}" HorizontalAlignment="Center" FontSize="10"
+                                       Foreground="{StaticResource SubtleForegroundBrush}"
+                                       Margin="0,8,0,0" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding CpuCoresText}" HorizontalAlignment="Center" FontSize="10"
+                                       Foreground="{StaticResource SubtleForegroundBrush}" />
+                        </StackPanel>
+
+                        <!-- Memory -->
+                        <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                            <controls:CircularGauge
+                                Percent="{Binding MemPct}"
+                                ValueText="{Binding MemPctText}"
+                                Caption="Memory"
+                                ValueBrush="{Binding MemColor}" />
+                            <TextBlock Text="{Binding MemCaption}" HorizontalAlignment="Center" FontSize="10"
+                                       Foreground="{StaticResource SubtleForegroundBrush}"
+                                       Margin="0,8,0,0" />
+                        </StackPanel>
+
+                        <!-- Disk -->
+                        <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                            <controls:CircularGauge
+                                Percent="{Binding DiskPct}"
+                                ValueText="{Binding DiskPctText}"
+                                Caption="System Disk"
+                                ValueBrush="{Binding DiskColor}" />
+                            <TextBlock Text="{Binding DiskCaption}" HorizontalAlignment="Center" FontSize="10"
+                                       Foreground="{StaticResource SubtleForegroundBrush}"
+                                       Margin="0,8,0,0" />
+                        </StackPanel>
+
+                        <!-- Uptime -->
+                        <StackPanel Grid.Column="3" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <md:PackIcon Kind="ClockOutline" Width="22" Height="22"
+                                         Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding UptimeText}"
+                                       FontFamily="Segoe UI Semibold" FontSize="16"
+                                       Foreground="{StaticResource ForegroundBrush}"
+                                       HorizontalAlignment="Center" Margin="0,8,0,0" />
+                            <TextBlock Text="Uptime" FontSize="10"
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+
+                        <!-- Internet reachability -->
+                        <StackPanel Grid.Column="4" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <md:PackIcon Kind="Earth" Width="22" Height="22"
+                                         Foreground="{Binding InternetColor}" HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding InternetText}"
+                                       FontFamily="Segoe UI Semibold" FontSize="14"
+                                       Foreground="{Binding InternetColor}"
+                                       HorizontalAlignment="Center" Margin="0,8,0,0" />
+                            <TextBlock Text="Internet" FontSize="10"
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
             </Border>
 
-            <!-- ====== Hub tiles (8 tiles, 4 per row, reflows) ====== -->
-            <ItemsControl Grid.Row="2" ItemsSource="{Binding Tiles}">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Button Style="{StaticResource HubTile}"
-                                Command="{Binding NavigateCommand}"
-                                Width="280" Height="148"
-                                Margin="0,0,12,12">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
+            <!-- ====== NIC ports + Network config (2-up) ====== -->
+            <Grid Grid.Row="3" Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
 
-                                <!-- Icon + Status pill -->
-                                <DockPanel Grid.Row="0">
-                                    <md:PackIcon Kind="{Binding IconKind}" Width="24" Height="24"
-                                                 Foreground="{StaticResource AccentBrush}"
-                                                 VerticalAlignment="Center" />
-                                    <Border DockPanel.Dock="Right"
-                                            Style="{StaticResource StatusChipSm}"
-                                            Background="{Binding StatusBg}">
-                                        <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold"
-                                                   FontSize="11" Foreground="{Binding StatusColor}" />
-                                    </Border>
-                                </DockPanel>
+                <!-- NIC Ports -->
+                <Border Grid.Column="0" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <DockPanel>
+                            <md:PackIcon DockPanel.Dock="Left" Kind="EthernetCable"
+                                         Width="18" Height="18"
+                                         Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock Text="NIC PORTS"
+                                       FontFamily="Segoe UI Semibold" FontSize="11"
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       Margin="10,0,0,0" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <ItemsControl ItemsSource="{Binding NicPorts}"
+                                      ItemTemplate="{StaticResource NicPortRowTemplate}"
+                                      Margin="0,12,0,0" />
+                    </StackPanel>
+                </Border>
 
-                                <!-- Title + description -->
-                                <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="0,12,0,0">
-                                    <TextBlock Text="{Binding Title}"
-                                               FontFamily="Segoe UI Semibold" FontSize="15"
-                                               Foreground="{StaticResource ForegroundBrush}" />
-                                    <TextBlock Text="{Binding Description}"
-                                               Foreground="{StaticResource MutedForegroundBrush}"
-                                               FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Grid>
+                <!-- Network Config -->
+                <Border Grid.Column="2" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <DockPanel>
+                            <md:PackIcon DockPanel.Dock="Left" Kind="Lan"
+                                         Width="18" Height="18"
+                                         Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock Text="NETWORK CONFIGURATION"
+                                       FontFamily="Segoe UI Semibold" FontSize="11"
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       Margin="10,0,0,0" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="120" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource KvLabel}" Text="Uplink Adapter" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource KvValue}" Text="{Binding UplinkAdapter}" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource KvLabel}" Text="IP Address" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource KvValue}"
+                                       FontFamily="Consolas" Text="{Binding IpAddress}" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource KvLabel}" Text="Gateway" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource KvValue}"
+                                       FontFamily="Consolas" Text="{Binding Gateway}" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource KvLabel}" Text="DNS Servers" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource KvValue}"
+                                       FontFamily="Consolas" Text="{Binding DnsServers}" />
+                            <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource KvLabel}" Text="NTP Server" />
+                            <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource KvValue}"
+                                       FontFamily="Consolas" Text="{Binding NtpServer}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ====== Storage + Pixellot Services (2-up) ====== -->
+            <Grid Grid.Row="4" Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Storage -->
+                <Border Grid.Column="0" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <DockPanel>
+                            <md:PackIcon DockPanel.Dock="Left" Kind="Harddisk"
+                                         Width="18" Height="18"
+                                         Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock Text="STORAGE"
+                                       FontFamily="Segoe UI Semibold" FontSize="11"
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       Margin="10,0,0,0" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <ItemsControl ItemsSource="{Binding Volumes}"
+                                      ItemTemplate="{StaticResource VolumeRowTemplate}"
+                                      Margin="0,12,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Pixellot Services -->
+                <Border Grid.Column="2" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <DockPanel>
+                            <md:PackIcon DockPanel.Dock="Left" Kind="ServerNetwork"
+                                         Width="18" Height="18"
+                                         Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock Text="PIXELLOT SERVICES"
+                                       FontFamily="Segoe UI Semibold" FontSize="11"
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       Margin="10,0,0,0" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <ItemsControl ItemsSource="{Binding Services}"
+                                      ItemTemplate="{StaticResource ServiceRowTemplate}"
+                                      Margin="0,12,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ====== Active Findings ====== -->
+            <Border Grid.Row="5" Style="{StaticResource Card}" Margin="0,0,0,20"
+                    Visibility="{Binding Findings.Count, Converter={StaticResource CountToVis}}">
+                <StackPanel>
+                    <DockPanel>
+                        <md:PackIcon DockPanel.Dock="Left" Kind="AlertOutline"
+                                     Width="18" Height="18"
+                                     Foreground="{StaticResource YellowBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="ACTIVE FINDINGS"
+                                   FontFamily="Segoe UI Semibold" FontSize="11"
+                                   Foreground="{StaticResource MutedForegroundBrush}"
+                                   Margin="10,0,0,0" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <ItemsControl ItemsSource="{Binding Findings}"
+                                  ItemTemplate="{StaticResource FindingRowTemplate}"
+                                  Margin="0,8,0,0" />
+                </StackPanel>
+            </Border>
+
+            <!-- ====== Quick Nav (hub tiles) — bottom row ====== -->
+            <Border Grid.Row="6" Style="{StaticResource Card}" Padding="16,12,16,12">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,12">
+                        <Button DockPanel.Dock="Right"
+                                Command="{Binding RefreshCommand}"
+                                Style="{StaticResource MaterialDesignOutlinedButton}"
+                                Padding="14,4">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="Refresh" Width="14" Height="14" VerticalAlignment="Center" />
+                                <TextBlock Text="Refresh" Margin="6,0,0,0" />
+                            </StackPanel>
                         </Button>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                        <TextBlock Text="QUICK NAV"
+                                   FontFamily="Segoe UI Semibold" FontSize="11"
+                                   Foreground="{StaticResource MutedForegroundBrush}"
+                                   VerticalAlignment="Center" />
+                    </DockPanel>
+                    <ItemsControl ItemsSource="{Binding Tiles}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <!-- Tiles bind back to the parent VM's NavigateCommand via
+                                     RelativeSource — the per-tile NavigateCommand property
+                                     is never populated by DashboardService, so binding it
+                                     directly silently disables every tile (latent bug from
+                                     v0.2.0). RelativeSource hops out of the DataTemplate's
+                                     tile DataContext to the UserControl's DataContext
+                                     (the DashboardViewModel). -->
+                                <Button Style="{StaticResource HubTile}"
+                                        Command="{Binding DataContext.NavigateCommand,
+                                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding TargetNav}"
+                                        Width="180" Height="78"
+                                        Margin="0,0,8,8">
+                                    <StackPanel HorizontalAlignment="Left">
+                                        <DockPanel>
+                                            <md:PackIcon Kind="{Binding IconKind}" Width="16" Height="16"
+                                                         Foreground="{StaticResource AccentBrush}"
+                                                         VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding Title}"
+                                                       FontFamily="Segoe UI Semibold" FontSize="12"
+                                                       Margin="8,0,0,0" />
+                                        </DockPanel>
+                                        <TextBlock Text="{Binding Description}"
+                                                   FontSize="10" Foreground="{StaticResource MutedForegroundBrush}"
+                                                   TextWrapping="Wrap" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
         </Grid>
     </ScrollViewer>
 </UserControl>

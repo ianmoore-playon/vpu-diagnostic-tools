@@ -92,7 +92,9 @@ namespace Pulse.WPF.ViewModels
             IHardwareService hw = new HardwareService();
             IServicesService svcs = new ServicesService();
             IDiskHealthService disk = new DiskHealthService();
-            IDashboardService dashboard = new DashboardService();
+            // DashboardService composes the other panel services so the
+            // Dashboard can render a single-page snapshot.
+            IDashboardService dashboard = new DashboardService(netAdapters, net, svcs, disk);
             ISystemOverviewService specs = new SystemOverviewService();
 
             Dashboard = new DashboardViewModel(dashboard);

@@ -4,16 +4,28 @@ using Pulse.WPF.Models;
 
 namespace Pulse.WPF.Services
 {
-    /// <summary>Dashboard (home) panel data source. Returns the static
-    /// hub-tile definitions and the last-run summary read from the report
-    /// directory if available. (Renamed from ISystemOverviewService — the
-    /// hub tab is now called "Dashboard" and a new "System Overview" tab
-    /// hosts full hardware specs.)</summary>
+    /// <summary>
+    /// Dashboard (home) panel data source. Aggregates from the other panel
+    /// services (Network / Network adapters / Services / Disk) so the
+    /// Dashboard can render a one-page snapshot without each panel having
+    /// to be visited first. Hub tiles + last-run summary kept for backward
+    /// compatibility with the v0.2.0 layout — the new dashboard primarily
+    /// renders DashboardSnapshot.
+    /// </summary>
     public interface IDashboardService
     {
+        // Hub tiles for the bottom Quick Nav row.
         List<HubTileViewModel> GetHubTiles();
+
         // Last-run summary; null when no report has been generated yet.
         LastRunSummary GetLastRunSummary();
+
+        // One-shot snapshot covering identity, gauges, NIC ports, network
+        // config, services, volumes, and rolled-up findings. Async because
+        // the NIC-port poll uses GetCameraPortsAsync(); other reads happen
+        // synchronously inside this call. Caller should keep this off the
+        // UI thread.
+        System.Threading.Tasks.Task<DashboardSnapshot> CollectSnapshotAsync();
     }
 
     /// <summary>Tiny DTO for the "Last Run: Apr 30, 2:14 PM — Healthy" line.</summary>

@@ -1,0 +1,50 @@
+<!--
+    Pulse.WPF — CircularGauge.
+    A circular percentage indicator using two superimposed Path arcs:
+      * background ring (full 360°, muted)
+      * foreground ring (sweeps to Percent)
+    The percent number renders in the centre. Diameter, ring thickness,
+    and colours are dependency-properties so panels can theme without
+    touching the control.
+-->
+<UserControl x:Class="Pulse.WPF.Controls.CircularGauge"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Name="Root"
+             SnapsToDevicePixels="True">
+
+    <Grid Width="{Binding Diameter, ElementName=Root}"
+          Height="{Binding Diameter, ElementName=Root}">
+
+        <!-- Background ring — full 360° muted track -->
+        <Ellipse Stroke="{Binding TrackBrush, ElementName=Root}"
+                 StrokeThickness="{Binding Thickness, ElementName=Root}"
+                 Width="{Binding Diameter, ElementName=Root}"
+                 Height="{Binding Diameter, ElementName=Root}"
+                 Margin="0" />
+
+        <!-- Foreground arc — actual value -->
+        <Path x:Name="ValueArc"
+              Stroke="{Binding ValueBrush, ElementName=Root}"
+              StrokeThickness="{Binding Thickness, ElementName=Root}"
+              StrokeStartLineCap="Round"
+              StrokeEndLineCap="Round" />
+
+        <!-- Centred label -->
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock Text="{Binding ValueText, ElementName=Root}"
+                       Foreground="{Binding ValueBrush, ElementName=Root}"
+                       FontFamily="Segoe UI Semibold"
+                       FontSize="{Binding ValueFontSize, ElementName=Root}"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding Caption, ElementName=Root}"
+                       Foreground="{Binding CaptionBrush, ElementName=Root}"
+                       FontSize="10"
+                       HorizontalAlignment="Center"
+                       Margin="0,2,0,0" />
+        </StackPanel>
+    </Grid>
+</UserControl>
