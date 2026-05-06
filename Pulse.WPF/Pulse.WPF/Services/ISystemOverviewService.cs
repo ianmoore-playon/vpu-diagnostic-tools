@@ -1,26 +1,28 @@
-using System;
 using System.Collections.Generic;
 using Pulse.WPF.Models;
 
 namespace Pulse.WPF.Services
 {
-    /// <summary>System Overview / Home panel data source. Returns the static
-    /// hub-tile definitions and the last-run summary read from the report
-    /// directory if available.</summary>
+    /// <summary>
+    /// System Overview (specs) panel data source. Adapted from the legacy
+    /// PowerShell SystemInformation.psm1 — full hardware / OS / time-locale /
+    /// Pixellot-software inventory plus the 6 summary cards (Model, OS,
+    /// Uptime, CPU, RAM, Storage).
+    /// </summary>
     public interface ISystemOverviewService
     {
-        List<HubTileViewModel> GetHubTiles();
-        // Last-run summary; null when no report has been generated yet.
-        LastRunSummary GetLastRunSummary();
+        SystemOverviewSnapshot Collect();
     }
 
-    /// <summary>Tiny DTO for the "Last Run: Apr 30, 2:14 PM — Healthy" line.</summary>
-    public class LastRunSummary
+    /// <summary>
+    /// Single snapshot of every value the System Overview panel renders.
+    /// One service call returns the cards, the inventory rows, and the
+    /// summary bullets so the UI doesn't fan out a dozen WMI queries.
+    /// </summary>
+    public class SystemOverviewSnapshot
     {
-        public DateTime When { get; set; }
-        public string VpuModel { get; set; }
-        public string Result { get; set; }   // "Healthy" / "Issues found" / etc.
-        public string Severity { get; set; } // "Pass" / "Warn" / "Fail" / "Gray"
-        public string ReportPath { get; set; }
+        public SystemOverviewCards Cards { get; set; } = new SystemOverviewCards();
+        public List<SystemOverviewRow> Inventory { get; set; } = new List<SystemOverviewRow>();
+        public List<SystemOverviewSummaryItem> Summary { get; set; } = new List<SystemOverviewSummaryItem>();
     }
 }

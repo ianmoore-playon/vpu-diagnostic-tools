@@ -14,7 +14,8 @@ namespace Pulse.WPF.ViewModels
     public class MainViewModel : ObservableObject
     {
         // Panel ViewModels — exposed so XAML can bind regardless of CurrentView.
-        public SystemOverviewViewModel SystemOverview { get; }
+        public DashboardViewModel Dashboard { get; }
+        public SystemOverviewViewModel SystemOverview { get; }   // hardware/OS specs page (was "System Information" in legacy)
         public NetworkViewModel Network { get; }
         public CameraConnectivityViewModel Camera { get; }
         public ServicesViewModel Services { get; }
@@ -22,10 +23,10 @@ namespace Pulse.WPF.ViewModels
         public DiskHealthViewModel DiskHealth { get; }
 
         // Sidebar state. SelectedNav drives CurrentView.
-        // Also accepts the alternate names "Home" -> "SystemOverview" and
-        // "Disk" -> "DiskHealth" so XAML written by either of the original
-        // panel-set agents stays compatible.
-        private string _selectedNav = "SystemOverview";
+        // Accepts a few alias keys ("Home" → "Dashboard", "Disk" → "DiskHealth",
+        // and the legacy "SystemOverview" → "Dashboard" mapping is gone now —
+        // "SystemOverview" canonically points to the specs page).
+        private string _selectedNav = "Dashboard";
         public string SelectedNav
         {
             get => _selectedNav;
@@ -42,26 +43,28 @@ namespace Pulse.WPF.ViewModels
 
         private static string NormaliseNavKey(string value)
         {
-            if (string.IsNullOrWhiteSpace(value)) return "SystemOverview";
+            if (string.IsNullOrWhiteSpace(value)) return "Dashboard";
             switch (value.Trim())
             {
-                case "Home":           return "SystemOverview";
+                case "Home":           return "Dashboard";
                 case "Disk":           return "DiskHealth";
                 default:               return value.Trim();
             }
         }
 
         // ---- IsXxx flags (used by sidebar ToggleButton.IsChecked bindings) ----
-        public bool IsHome      => _selectedNav == "SystemOverview";
-        public bool IsNetwork   => _selectedNav == "Network";
-        public bool IsCamera    => _selectedNav == "Camera";
-        public bool IsHardware  => _selectedNav == "Hardware";
-        public bool IsServices  => _selectedNav == "Services";
-        public bool IsDisk      => _selectedNav == "DiskHealth";
+        public bool IsHome           => _selectedNav == "Dashboard";
+        public bool IsSystemOverview => _selectedNav == "SystemOverview";
+        public bool IsNetwork        => _selectedNav == "Network";
+        public bool IsCamera         => _selectedNav == "Camera";
+        public bool IsHardware       => _selectedNav == "Hardware";
+        public bool IsServices       => _selectedNav == "Services";
+        public bool IsDisk           => _selectedNav == "DiskHealth";
 
         private void RaisePillFlags()
         {
             OnPropertyChanged(nameof(IsHome));
+            OnPropertyChanged(nameof(IsSystemOverview));
             OnPropertyChanged(nameof(IsNetwork));
             OnPropertyChanged(nameof(IsCamera));
             OnPropertyChanged(nameof(IsHardware));
@@ -89,9 +92,11 @@ namespace Pulse.WPF.ViewModels
             IHardwareService hw = new HardwareService();
             IServicesService svcs = new ServicesService();
             IDiskHealthService disk = new DiskHealthService();
-            ISystemOverviewService overview = new SystemOverviewService();
+            IDashboardService dashboard = new DashboardService();
+            ISystemOverviewService specs = new SystemOverviewService();
 
-            SystemOverview = new SystemOverviewViewModel(overview);
+            Dashboard = new DashboardViewModel(dashboard);
+            SystemOverview = new SystemOverviewViewModel(specs);
             Network = new NetworkViewModel(net);
             Camera = new CameraConnectivityViewModel(netAdapters, cfg);
             Services = new ServicesViewModel(svcs);
@@ -99,7 +104,7 @@ namespace Pulse.WPF.ViewModels
             DiskHealth = new DiskHealthViewModel(disk);
 
             // Hub tile clicks request a nav change — wire that back through us.
-            SystemOverview.RequestNavigate = target =>
+            Dashboard.RequestNavigate = target =>
             {
                 if (!string.IsNullOrEmpty(target)) SelectedNav = target;
             };
@@ -120,15 +125,16 @@ namespace Pulse.WPF.ViewModels
         {
             switch (_selectedNav)
             {
-                case "Network":        CurrentView = Network;        _ = SafeRefresh(Network.RefreshAsync); break;
-                case "Camera":         CurrentView = Camera;         break; // Camera VM self-refreshes via its DispatcherTimer.
-                case "Services":       CurrentView = Services;       _ = SafeRefresh(Services.RefreshAsync); break;
-                case "Hardware":       CurrentView = Hardware;       _ = SafeRefresh(Hardware.RefreshAsync); break;
-                case "DiskHealth":     CurrentView = DiskHealth;     _ = SafeRefresh(DiskHealth.RefreshAsync); break;
-                case "SystemOverview":
+                case "Network":         CurrentView = Network;        _ = SafeRefresh(Network.RefreshAsync); break;
+                case "Camera":          CurrentView = Camera;         break; // Camera VM self-refreshes via its DispatcherTimer.
+                case "Services":        CurrentView = Services;       _ = SafeRefresh(Services.RefreshAsync); break;
+                case "Hardware":        CurrentView = Hardware;       _ = SafeRefresh(Hardware.RefreshAsync); break;
+                case "DiskHealth":      CurrentView = DiskHealth;     _ = SafeRefresh(DiskHealth.RefreshAsync); break;
+                case "SystemOverview":  CurrentView = SystemOverview; _ = SafeRefresh(SystemOverview.RefreshAsync); break;
+                case "Dashboard":
                 default:
-                    CurrentView = SystemOverview;
-                    _ = SafeRefresh(SystemOverview.RefreshAsync);
+                    CurrentView = Dashboard;
+                    _ = SafeRefresh(Dashboard.RefreshAsync);
                     break;
             }
         }

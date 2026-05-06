@@ -5,3 +5,8 @@ Pulse_Results_*.txt
 *.pcap
 Pulse_Results/
 settings.json
+
+# .NET / Pulse.WPF build outputs
+**/bin/
+**/obj/
+*.user

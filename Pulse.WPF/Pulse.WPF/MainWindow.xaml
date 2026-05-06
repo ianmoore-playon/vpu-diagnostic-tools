@@ -73,10 +73,20 @@
                 <StackPanel>
                     <ToggleButton Style="{StaticResource SidebarNavButton}"
                                   IsChecked="{Binding IsHome, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="Home"
+                                  Command="{Binding NavigateCommand}" CommandParameter="Dashboard"
+                                  AutomationProperties.Name="Dashboard">
+                        <StackPanel Orientation="Horizontal">
+                            <md:PackIcon Kind="ViewDashboardOutline" Width="18" Height="18" VerticalAlignment="Center" />
+                            <TextBlock Text="Dashboard" Margin="14,0,0,0" />
+                        </StackPanel>
+                    </ToggleButton>
+
+                    <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                  IsChecked="{Binding IsSystemOverview, Mode=OneWay}"
+                                  Command="{Binding NavigateCommand}" CommandParameter="SystemOverview"
                                   AutomationProperties.Name="System Overview">
                         <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="HomeOutline" Width="18" Height="18" VerticalAlignment="Center" />
+                            <md:PackIcon Kind="InformationOutline" Width="18" Height="18" VerticalAlignment="Center" />
                             <TextBlock Text="System Overview" Margin="14,0,0,0" />
                         </StackPanel>
                     </ToggleButton>
@@ -131,13 +141,6 @@
                         </StackPanel>
                     </ToggleButton>
 
-                    <ToggleButton Style="{StaticResource SidebarNavButton}" IsEnabled="False"
-                                  AutomationProperties.Name="System Information">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="Information" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="System Information" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
                     <ToggleButton Style="{StaticResource SidebarNavButton}" IsEnabled="False"
                                   AutomationProperties.Name="Event Viewer">
                         <StackPanel Orientation="Horizontal">

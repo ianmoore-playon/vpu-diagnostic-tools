@@ -9,113 +9,261 @@
              mc:Ignorable="d"
              Background="{StaticResource AppBgBrush}">
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <Grid Margin="32,24,32,24">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />   <!-- Section header -->
-                <RowDefinition Height="Auto" />   <!-- Hero -->
-                <RowDefinition Height="Auto" />   <!-- Hub tiles -->
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
+    <UserControl.Resources>
+        <!-- Compact summary card used by the 6-tile top row.
+             Reuses the standard Card style; the inner template is repeated
+             per card via inline definitions below to keep binding clear. -->
+        <Style x:Key="SiSummaryCard" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Setter Property="Padding" Value="14,12,14,12" />
+            <Setter Property="MinHeight" Value="86" />
+        </Style>
 
-            <!-- ====== Section header ====== -->
-            <DockPanel Grid.Row="0" Margin="0,0,0,24">
-                <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
-                        Background="{Binding StatusBg}">
-                    <StackPanel Orientation="Horizontal">
-                        <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
-                                   Foreground="{Binding StatusColor}" Margin="8,0,0,0" />
-                    </StackPanel>
-                </Border>
-                <StackPanel>
-                    <TextBlock Text="System Overview" Style="{StaticResource PageTitle}" />
-                    <TextBlock Style="{StaticResource PageSubtitle}">
-                        <Run Text="{Binding HostName, Mode=OneWay}" />
-                        <Run Text=" · " />
-                        <Run Text="{Binding SerialNumber, Mode=OneWay}" />
-                        <Run Text=" · One-click health check across every hub" />
-                    </TextBlock>
-                </StackPanel>
-            </DockPanel>
+        <!-- Inventory row template — same layout for section headings and
+             data rows; the Section text is non-empty only on heading rows
+             and Label/Value are non-empty only on data rows. WPF collapses
+             zero-length text naturally so a single template handles both. -->
+        <DataTemplate x:Key="SiInventoryRowTemplate">
+            <StackPanel>
+                <!-- Section heading (rendered when Section is non-empty) -->
+                <TextBlock Text="{Binding Section}"
+                           FontFamily="Segoe UI Semibold" FontSize="10"
+                           Foreground="{StaticResource MutedForegroundBrush}"
+                           Margin="0,14,0,6"
+                           Visibility="{Binding Section, Converter={StaticResource StringToVis}}" />
 
-            <!-- ====== Hero: Run Full Diagnostic + last-run summary ====== -->
-            <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,0,0,24">
-                <Grid>
+                <!-- Data row: Label (Consolas, muted) + Value (Consolas, level-coloured) -->
+                <Grid Visibility="{Binding Label, Converter={StaticResource StringToVis}}">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="200" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="Run a full system check" Style="{StaticResource SectionTitle}" FontSize="18" />
-                        <TextBlock Text="{Binding LastRunSummary}"
-                                   Foreground="{StaticResource MutedForegroundBrush}"
-                                   Margin="0,6,0,0" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Content="Open Last Report"
-                                Command="{Binding OpenLastReportCommand}"
-                                Style="{StaticResource MaterialDesignOutlinedButton}"
-                                Margin="0,0,12,0" />
-                        <Button Command="{Binding RunFullDiagnosticCommand}"
-                                Style="{StaticResource MaterialDesignRaisedButton}"
-                                Padding="22,10" FontWeight="SemiBold">
-                            <StackPanel Orientation="Horizontal">
-                                <md:PackIcon Kind="Play" Width="18" Height="18" VerticalAlignment="Center" />
-                                <TextBlock Text="Run Full Diagnostic" Margin="8,0,0,0" />
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
+                    <TextBlock Grid.Column="0" Text="{Binding Label}"
+                               FontFamily="Consolas" FontSize="11"
+                               Foreground="{StaticResource SubtleForegroundBrush}"
+                               Margin="0,2,8,2" />
+                    <TextBlock Grid.Column="1" Text="{Binding Value}"
+                               FontFamily="Consolas" FontSize="11"
+                               Foreground="{Binding ValueColor}"
+                               TextWrapping="Wrap" Margin="0,2,0,2" />
                 </Grid>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- Summary bullet template — colored dot + text. -->
+        <DataTemplate x:Key="SiSummaryRowTemplate">
+            <DockPanel Margin="0,3,0,3">
+                <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,10,0">
+                    <Ellipse.Style>
+                        <Style TargetType="Ellipse">
+                            <Setter Property="Fill" Value="{StaticResource MutedForegroundBrush}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Status}" Value="ok">
+                                    <Setter Property="Fill" Value="{StaticResource GreenBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Status}" Value="warn">
+                                    <Setter Property="Fill" Value="{StaticResource YellowBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Status}" Value="fail">
+                                    <Setter Property="Fill" Value="{StaticResource RedBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Ellipse.Style>
+                </Ellipse>
+                <TextBlock Text="{Binding Text}"
+                           Foreground="{StaticResource ForegroundBrush}"
+                           TextWrapping="Wrap" />
+            </DockPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid Margin="32,24,32,24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />   <!-- Section header -->
+            <RowDefinition Height="Auto" />   <!-- 6 summary cards -->
+            <RowDefinition Height="*" />      <!-- Two-column: Inventory + Summary -->
+            <RowDefinition Height="Auto" />   <!-- Action bar -->
+        </Grid.RowDefinitions>
+
+        <!-- ====== Section header ====== -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,20">
+            <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
+                    Background="{Binding StatusBg}">
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
+                               Foreground="{Binding StatusColor}" Margin="8,0,0,0" />
+                </StackPanel>
+            </Border>
+            <StackPanel>
+                <TextBlock Text="System Overview" Style="{StaticResource PageTitle}" />
+                <TextBlock Text="Hardware specs, OS version, uptime, time/locale, and Pixellot software inventory."
+                           Style="{StaticResource PageSubtitle}" />
+            </StackPanel>
+        </DockPanel>
+
+        <!-- ====== Six summary cards ====== -->
+        <UniformGrid Grid.Row="1" Rows="1" Columns="6" Margin="0,0,0,20">
+            <UniformGrid.Resources>
+                <!-- Per-card text styles -->
+            </UniformGrid.Resources>
+
+            <Border Style="{StaticResource SiSummaryCard}" Margin="0,0,8,0">
+                <StackPanel>
+                    <DockPanel>
+                        <Ellipse DockPanel.Dock="Right" Width="10" Height="10"
+                                 Fill="{Binding ModelStatusColor}" VerticalAlignment="Center" />
+                        <TextBlock Text="Model"
+                                   FontFamily="Segoe UI Semibold" FontSize="10"
+                                   Foreground="{StaticResource MutedForegroundBrush}" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding ModelTitle}"
+                               FontFamily="Segoe UI Semibold" FontSize="13"
+                               Foreground="{StaticResource ForegroundBrush}"
+                               TextWrapping="Wrap" Margin="0,8,0,4" />
+                    <TextBlock Text="Manufacturer + product"
+                               FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}" />
+                </StackPanel>
             </Border>
 
-            <!-- ====== Hub tiles (8 tiles, 4 per row, reflows) ====== -->
-            <ItemsControl Grid.Row="2" ItemsSource="{Binding Tiles}">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Button Style="{StaticResource HubTile}"
-                                Command="{Binding NavigateCommand}"
-                                Width="280" Height="148"
-                                Margin="0,0,12,12">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
+            <Border Style="{StaticResource SiSummaryCard}" Margin="4,0,4,0">
+                <StackPanel>
+                    <DockPanel>
+                        <Ellipse DockPanel.Dock="Right" Width="10" Height="10"
+                                 Fill="{Binding OsStatusColor}" VerticalAlignment="Center" />
+                        <TextBlock Text="OS"
+                                   FontFamily="Segoe UI Semibold" FontSize="10"
+                                   Foreground="{StaticResource MutedForegroundBrush}" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding OsTitle}"
+                               FontFamily="Segoe UI Semibold" FontSize="13"
+                               Foreground="{StaticResource ForegroundBrush}"
+                               TextWrapping="Wrap" Margin="0,8,0,4" />
+                    <TextBlock Text="Edition + build"
+                               FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}" />
+                </StackPanel>
+            </Border>
 
-                                <!-- Icon + Status pill -->
-                                <DockPanel Grid.Row="0">
-                                    <md:PackIcon Kind="{Binding IconKind}" Width="24" Height="24"
-                                                 Foreground="{StaticResource AccentBrush}"
-                                                 VerticalAlignment="Center" />
-                                    <Border DockPanel.Dock="Right"
-                                            Style="{StaticResource StatusChipSm}"
-                                            Background="{Binding StatusBg}">
-                                        <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold"
-                                                   FontSize="11" Foreground="{Binding StatusColor}" />
-                                    </Border>
-                                </DockPanel>
+            <Border Style="{StaticResource SiSummaryCard}" Margin="4,0,4,0">
+                <StackPanel>
+                    <DockPanel>
+                        <md:PackIcon DockPanel.Dock="Right" Kind="ClockOutline"
+                                     Width="14" Height="14"
+                                     Foreground="{Binding UptimeStatusColor}" VerticalAlignment="Center" />
+                        <TextBlock Text="Uptime"
+                                   FontFamily="Segoe UI Semibold" FontSize="10"
+                                   Foreground="{StaticResource MutedForegroundBrush}" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding UptimeTitle}"
+                               FontFamily="Segoe UI Semibold" FontSize="13"
+                               Foreground="{StaticResource ForegroundBrush}"
+                               TextWrapping="Wrap" Margin="0,8,0,4" />
+                    <TextBlock Text="Since last boot"
+                               FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}" />
+                </StackPanel>
+            </Border>
 
-                                <!-- Title + description -->
-                                <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="0,12,0,0">
-                                    <TextBlock Text="{Binding Title}"
-                                               FontFamily="Segoe UI Semibold" FontSize="15"
-                                               Foreground="{StaticResource ForegroundBrush}" />
-                                    <TextBlock Text="{Binding Description}"
-                                               Foreground="{StaticResource MutedForegroundBrush}"
-                                               FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Grid>
-                        </Button>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <Border Style="{StaticResource SiSummaryCard}" Margin="4,0,4,0">
+                <StackPanel>
+                    <DockPanel>
+                        <Ellipse DockPanel.Dock="Right" Width="10" Height="10"
+                                 Fill="{Binding CpuStatusColor}" VerticalAlignment="Center" />
+                        <TextBlock Text="CPU"
+                                   FontFamily="Segoe UI Semibold" FontSize="10"
+                                   Foreground="{StaticResource MutedForegroundBrush}" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding CpuTitle}"
+                               FontFamily="Segoe UI Semibold" FontSize="13"
+                               Foreground="{StaticResource ForegroundBrush}"
+                               TextWrapping="Wrap" Margin="0,8,0,4" />
+                    <TextBlock Text="Processor"
+                               FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource SiSummaryCard}" Margin="4,0,4,0">
+                <StackPanel>
+                    <DockPanel>
+                        <md:PackIcon DockPanel.Dock="Right" Kind="Memory"
+                                     Width="14" Height="14"
+                                     Foreground="{Binding RamStatusColor}" VerticalAlignment="Center" />
+                        <TextBlock Text="RAM"
+                                   FontFamily="Segoe UI Semibold" FontSize="10"
+                                   Foreground="{StaticResource MutedForegroundBrush}" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding RamTitle}"
+                               FontFamily="Segoe UI Semibold" FontSize="13"
+                               Foreground="{StaticResource ForegroundBrush}"
+                               TextWrapping="Wrap" Margin="0,8,0,4" />
+                    <TextBlock Text="Installed memory"
+                               FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource SiSummaryCard}" Margin="8,0,0,0">
+                <StackPanel>
+                    <DockPanel>
+                        <md:PackIcon DockPanel.Dock="Right" Kind="Harddisk"
+                                     Width="14" Height="14"
+                                     Foreground="{Binding StorageStatusColor}" VerticalAlignment="Center" />
+                        <TextBlock Text="Storage"
+                                   FontFamily="Segoe UI Semibold" FontSize="10"
+                                   Foreground="{StaticResource MutedForegroundBrush}" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding StorageTitle}"
+                               FontFamily="Segoe UI Semibold" FontSize="13"
+                               Foreground="{StaticResource ForegroundBrush}"
+                               TextWrapping="Wrap" Margin="0,8,0,4" />
+                    <TextBlock Text="System drive free space"
+                               FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}" />
+                </StackPanel>
+            </Border>
+        </UniformGrid>
+
+        <!-- ====== Two-column main: Inventory (left) + Summary (right) ====== -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" MinWidth="280" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Inventory card (scrolling list of section headings + label/value rows) -->
+            <Border Grid.Column="0" Style="{StaticResource Card}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="System Inventory"
+                               Style="{StaticResource SectionTitle}" Margin="4,0,0,12" />
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Inventory}"
+                                      ItemTemplate="{StaticResource SiInventoryRowTemplate}" />
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <!-- Summary card (right column) -->
+            <Border Grid.Column="2" Style="{StaticResource Card}" VerticalAlignment="Top">
+                <StackPanel>
+                    <TextBlock Text="Summary" Style="{StaticResource SectionTitle}" Margin="4,0,0,12" />
+                    <ItemsControl ItemsSource="{Binding Summary}"
+                                  ItemTemplate="{StaticResource SiSummaryRowTemplate}" />
+                </StackPanel>
+            </Border>
         </Grid>
-    </ScrollViewer>
+
+        <!-- ====== Bottom action bar ====== -->
+        <DockPanel Grid.Row="3" Margin="0,16,0,0">
+            <Button DockPanel.Dock="Right"
+                    Command="{Binding RefreshCommand}"
+                    Style="{StaticResource MaterialDesignRaisedButton}"
+                    Padding="22,10" FontWeight="SemiBold">
+                <StackPanel Orientation="Horizontal">
+                    <md:PackIcon Kind="Refresh" Width="18" Height="18" VerticalAlignment="Center" />
+                    <TextBlock Text="Refresh" Margin="8,0,0,0" />
+                </StackPanel>
+            </Button>
+            <TextBlock Text="System Inventory is read live from WMI, registry, and the filesystem. Click Refresh after a config change."
+                       Foreground="{StaticResource MutedForegroundBrush}"
+                       VerticalAlignment="Center" />
+        </DockPanel>
+    </Grid>
 </UserControl>
