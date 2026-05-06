@@ -6,9 +6,16 @@
 
 name: Build Pulse.WPF pilot
 
+# After wpf-pilot was fast-forward-merged into dev (2026-05-06), the WPF
+# build is the active development line. Trigger on dev / main pushes when
+# Pulse.WPF/ files change, plus the existing wpf-pilot-v* tags so the
+# public release flow keeps working unchanged.
 on:
   push:
-    branches: [ "wpf-pilot" ]
+    branches: [ "dev", "main" ]
+    paths:
+      - "Pulse.WPF/**"
+      - ".github/workflows/wpf-pilot-build.yml"
     tags:     [ "wpf-pilot-v*" ]
   workflow_dispatch:
 

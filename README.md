@@ -1,6 +1,27 @@
 # Pulse — Pixellot Diagnostic Toolset
 
-PowerShell diagnostic tools for Pixellot VPU field support.
+Diagnostic tools for Pixellot VPU field support.
+
+---
+
+## Active development direction
+
+As of **2026-05-06**, the active development line is **`Pulse.WPF/`** — a C# /
+WPF rewrite of the original PowerShell tool. The `wpf-pilot` branch was
+fast-forward-merged into `dev` and all new feature work happens against the
+WPF codebase. New panels, services, view models, and styling go in
+`Pulse.WPF/`. Build via the .NET 8 SDK (`dotnet build Pulse.WPF/Pulse.WPF/Pulse.WPF.csproj`)
+or rely on the GitHub Actions workflow that publishes a runnable zip + a
+launcher .bat on every push.
+
+The original `Pulse.ps1` + `Modules/*.psm1` PowerShell tool is **frozen at
+v1.0.52** but kept in the repo so techs in the field who already have it
+can keep running it during the transition. Bug fixes there should be
+considered case-by-case; new features go to `Pulse.WPF/` only.
+
+See `Pulse.WPF/README.md`, `Pulse.WPF/STYLE_GUIDE.md`, and
+`Pulse.WPF/UX_REVIEW.md` for the WPF architecture, design tokens, and
+panel-by-panel UX notes.
 
 ---
 
