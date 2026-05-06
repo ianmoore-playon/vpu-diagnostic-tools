@@ -120,29 +120,62 @@
             </Grid>
         </DataTemplate>
 
-        <!-- Volume row — drive letter + free/total + bar -->
+        <!-- Volume row — two-line layout per drive:
+               · Top: drive letter + volume label + role badge   |   used %
+               · Bottom: progress bar  |  free / total -->
         <DataTemplate x:Key="VolumeRowTemplate">
-            <Grid Margin="0,4,0,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="50" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="120" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="{Binding Drive}"
-                           FontFamily="Segoe UI Semibold" FontSize="12"
-                           Foreground="{StaticResource ForegroundBrush}"
-                           VerticalAlignment="Center" />
-                <ProgressBar Grid.Column="1" Minimum="0" Maximum="100"
-                             Value="{Binding PercentUsedValue}" Height="8"
-                             Foreground="{Binding BarColor}" Margin="8,0,8,0"
-                             VerticalAlignment="Center" />
-                <TextBlock Grid.Column="2" Foreground="{StaticResource SubtleForegroundBrush}"
-                           FontSize="11" TextAlignment="Right" VerticalAlignment="Center">
-                    <Run Text="{Binding Free, Mode=OneWay}" />
-                    <Run Text=" of " />
-                    <Run Text="{Binding Total, Mode=OneWay}" />
-                </TextBlock>
-            </Grid>
+            <Border Margin="0,6,0,6" Padding="0">
+                <StackPanel>
+                    <!-- Top line: identity left, percent right -->
+                    <DockPanel Margin="0,0,0,4">
+                        <TextBlock DockPanel.Dock="Right"
+                                   Text="{Binding PercentUsed}"
+                                   FontFamily="Segoe UI Semibold" FontSize="12"
+                                   Foreground="{Binding StatusColor}"
+                                   VerticalAlignment="Center" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Drive}"
+                                       FontFamily="Segoe UI Semibold" FontSize="13"
+                                       Foreground="{StaticResource ForegroundBrush}"
+                                       VerticalAlignment="Center" />
+                            <!-- Volume label only renders when populated. -->
+                            <TextBlock Text="{Binding Label}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource SubtleForegroundBrush}"
+                                       Margin="8,0,0,0" VerticalAlignment="Center"
+                                       Visibility="{Binding Label, Converter={StaticResource StringToVis}}" />
+                            <!-- Role badge: "OS Drive", "Recording / Storage", etc. -->
+                            <Border Background="{StaticResource BorderColBrush}"
+                                    CornerRadius="3" Padding="6,1,6,1" Margin="10,0,0,0"
+                                    VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Role}"
+                                           FontSize="10"
+                                           Foreground="{StaticResource MutedForegroundBrush}" />
+                            </Border>
+                        </StackPanel>
+                    </DockPanel>
+
+                    <!-- Bottom line: bar + free/total -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="160" />
+                        </Grid.ColumnDefinitions>
+                        <ProgressBar Grid.Column="0" Minimum="0" Maximum="100"
+                                     Value="{Binding PercentUsedValue}" Height="6"
+                                     Foreground="{Binding BarColor}"
+                                     VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <TextBlock Grid.Column="1"
+                                   Foreground="{StaticResource SubtleForegroundBrush}"
+                                   FontSize="11" TextAlignment="Right"
+                                   VerticalAlignment="Center">
+                            <Run Text="{Binding Free, Mode=OneWay}" />
+                            <Run Text=" free of " />
+                            <Run Text="{Binding Total, Mode=OneWay}" />
+                        </TextBlock>
+                    </Grid>
+                </StackPanel>
+            </Border>
         </DataTemplate>
     </UserControl.Resources>
 
@@ -165,15 +198,21 @@
                  internet, volumes) — the live tick only re-reads the cheap
                  gauges, so this is the button techs use to pick up changes
                  outside the gauges. -->
-            <DockPanel Grid.Row="0" Margin="0,0,0,20">
+            <DockPanel Grid.Row="0" Margin="0,0,0,20" LastChildFill="True">
+                <!-- Border + Button get explicit VerticalAlignment="Center" so
+                     they don't stretch to fill the docked area, which pushed
+                     the chip's content to the top of the row and made the
+                     dot read mis-aligned against the text. -->
                 <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
                         Background="{Binding StatusBg}" Margin="12,0,0,0"
+                        VerticalAlignment="Center"
                         AutomationProperties.Name="Overall status"
                         AutomationProperties.HelpText="{Binding StatusLabel}">
-                    <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
-                                   Foreground="{Binding StatusColor}" Margin="8,0,0,0" />
+                                   Foreground="{Binding StatusColor}" Margin="8,0,0,0"
+                                   VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
                 <Button DockPanel.Dock="Right"
@@ -185,9 +224,9 @@
                         <TextBlock Text="Refresh" Margin="8,0,0,0" />
                     </StackPanel>
                 </Button>
-                <StackPanel>
+                <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="Dashboard" Style="{StaticResource PageTitle}" />
-                    <TextBlock Text="{Binding VpuLabel, StringFormat='{}{0} · live snapshot'}"
+                    <TextBlock Text="{Binding VpuLabel}"
                                Style="{StaticResource PageSubtitle}" />
                 </StackPanel>
             </DockPanel>
@@ -227,21 +266,30 @@
                 <StackPanel>
                     <DockPanel>
                         <md:PackIcon DockPanel.Dock="Left" Kind="AlertOutline"
-                                     Width="20" Height="20"
+                                     Width="22" Height="22"
                                      Foreground="{StaticResource YellowBrush}" VerticalAlignment="Center" />
+                        <!-- Count badge sits at the right edge of the header
+                             with a yellow soft background + bold number so
+                             techs can see "3 issues" without reading the row
+                             list. (Round-2 feedback.) -->
+                        <Border DockPanel.Dock="Right"
+                                Background="{StaticResource WarnBgBrush}"
+                                CornerRadius="10" Padding="10,3,10,3"
+                                VerticalAlignment="Center">
+                            <TextBlock Foreground="{StaticResource YellowBrush}"
+                                       FontFamily="Segoe UI Semibold" FontSize="13">
+                                <Run Text="{Binding Findings.Count, Mode=OneWay}" />
+                                <Run Text=" issue(s) found" />
+                            </TextBlock>
+                        </Border>
                         <TextBlock Text="ACTIVE FINDINGS"
-                                   FontFamily="Segoe UI Semibold" FontSize="11"
-                                   Foreground="{StaticResource MutedForegroundBrush}"
-                                   Margin="10,0,0,0" VerticalAlignment="Center" />
-                        <TextBlock DockPanel.Dock="Right"
-                                   Text="{Binding Findings.Count, StringFormat='{}{0} item(s)'}"
-                                   FontSize="11"
-                                   Foreground="{StaticResource SubtleForegroundBrush}"
-                                   VerticalAlignment="Center" />
+                                   FontFamily="Segoe UI Semibold" FontSize="12"
+                                   Foreground="{StaticResource ForegroundBrush}"
+                                   Margin="12,0,0,0" VerticalAlignment="Center" />
                     </DockPanel>
                     <ItemsControl ItemsSource="{Binding Findings}"
                                   ItemTemplate="{StaticResource FindingRowTemplate}"
-                                  Margin="0,8,0,0" />
+                                  Margin="0,12,0,0" />
                 </StackPanel>
             </Border>
 
@@ -380,55 +428,42 @@
                                        Margin="0,8,0,0" />
                         </StackPanel>
 
-                        <!-- Uptime / Internet / Temperature share the same static
-                             ring frame as the live gauges (78 px outer, 6 px stroke,
-                             muted track) so all six items in this row read as
-                             one component family. (UX review rec #7.) Inside the
-                             ring is an icon + value text pair sized to match the
-                             gauge centre label. -->
-                        <StackPanel Grid.Column="3" HorizontalAlignment="Center"
+                        <!-- Uptime + Internet are read as plain stat tiles
+                             (icon + value); only the load gauges + Temperature
+                             use the ring frame. Per round-2 feedback the ring
+                             on Uptime/Internet read as decorative. -->
+                        <StackPanel Grid.Column="3" HorizontalAlignment="Center" VerticalAlignment="Center"
                                     AutomationProperties.Name="Uptime"
                                     AutomationProperties.HelpText="{Binding UptimeText}">
-                            <Grid Width="78" Height="78">
-                                <Ellipse Width="78" Height="78"
-                                         Stroke="{StaticResource BorderColBrush}"
-                                         StrokeThickness="6" />
-                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                    <md:PackIcon Kind="ClockOutline" Width="18" Height="18"
-                                                 Foreground="{StaticResource AccentBrush}"
-                                                 HorizontalAlignment="Center" />
-                                    <TextBlock Text="{Binding UptimeText}"
-                                               FontFamily="Segoe UI Semibold" FontSize="11"
-                                               Foreground="{StaticResource ForegroundBrush}"
-                                               HorizontalAlignment="Center" Margin="0,2,0,0" />
-                                </StackPanel>
-                            </Grid>
+                            <md:PackIcon Kind="ClockOutline" Width="28" Height="28"
+                                         Foreground="{StaticResource AccentBrush}"
+                                         HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding UptimeText}"
+                                       FontFamily="Segoe UI Semibold" FontSize="16"
+                                       Foreground="{StaticResource ForegroundBrush}"
+                                       HorizontalAlignment="Center" Margin="0,8,0,0" />
                             <TextBlock Text="Uptime" HorizontalAlignment="Center" FontSize="10"
-                                       Foreground="{StaticResource MutedForegroundBrush}" Margin="0,8,0,0" />
+                                       Foreground="{StaticResource MutedForegroundBrush}" />
                         </StackPanel>
 
-                        <StackPanel Grid.Column="4" HorizontalAlignment="Center"
+                        <StackPanel Grid.Column="4" HorizontalAlignment="Center" VerticalAlignment="Center"
                                     AutomationProperties.Name="Internet"
                                     AutomationProperties.HelpText="{Binding InternetText}">
-                            <Grid Width="78" Height="78">
-                                <Ellipse Width="78" Height="78"
-                                         Stroke="{StaticResource BorderColBrush}"
-                                         StrokeThickness="6" />
-                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                    <md:PackIcon Kind="Earth" Width="18" Height="18"
-                                                 Foreground="{Binding InternetColor}"
-                                                 HorizontalAlignment="Center" />
-                                    <TextBlock Text="{Binding InternetText}"
-                                               FontFamily="Segoe UI Semibold" FontSize="11"
-                                               Foreground="{Binding InternetColor}"
-                                               HorizontalAlignment="Center" Margin="0,2,0,0" />
-                                </StackPanel>
-                            </Grid>
+                            <md:PackIcon Kind="Earth" Width="28" Height="28"
+                                         Foreground="{Binding InternetColor}"
+                                         HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding InternetText}"
+                                       FontFamily="Segoe UI Semibold" FontSize="16"
+                                       Foreground="{Binding InternetColor}"
+                                       HorizontalAlignment="Center" Margin="0,8,0,0" />
                             <TextBlock Text="Internet" HorizontalAlignment="Center" FontSize="10"
-                                       Foreground="{StaticResource MutedForegroundBrush}" Margin="0,8,0,0" />
+                                       Foreground="{StaticResource MutedForegroundBrush}" />
                         </StackPanel>
 
-                        <StackPanel Grid.Column="5" HorizontalAlignment="Center"
+                        <!-- Temperature still uses a ring so it reads as a
+                             measurement next to the gauges. Hidden on
+                             machines without ACPI thermal data. -->
+                        <StackPanel Grid.Column="5" HorizontalAlignment="Center" VerticalAlignment="Center"
                                     AutomationProperties.Name="Temperature"
                                     AutomationProperties.HelpText="{Binding TemperatureText}"
                                     Visibility="{Binding TemperatureVisible, Converter={StaticResource BoolToVis}}">
@@ -616,12 +651,17 @@
                                      NavigateCommand binds to the parent VM via
                                      RelativeSource, TargetNav passes through as the
                                      command parameter. -->
+                                <!-- Width bumped from 160 → 220 so the longer
+                                     titles ("Hardware & Peripherals",
+                                     "Network Configuration", "System & Disk
+                                     Health") render in full. WrapPanel still
+                                     flows to a second row below 1200 px. -->
                                 <Button Style="{StaticResource HubTile}"
                                         Command="{Binding DataContext.NavigateCommand,
                                                           RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding TargetNav}"
-                                        Width="160" Height="44"
-                                        Padding="12,0,12,0"
+                                        Width="220" Height="44"
+                                        Padding="14,0,14,0"
                                         Margin="0,0,8,8"
                                         HorizontalContentAlignment="Left">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">

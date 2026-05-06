@@ -94,15 +94,26 @@ namespace Pulse.WPF.Services
                         else if (freeGb < 15 || pctUsed > 90) sev = "Warn";
                         else sev = "Pass";
 
+                        // Pre-format the human-readable Free / Total strings
+                        // so consumers (e.g. the Dashboard volume row) don't
+                        // need a converter or a second formatter. StatusColor
+                        // and BarColor pre-resolved against the active theme
+                        // for the same reason.
+                        var (statusColor, barColor) = ResolveSeverityBrushes(sev);
                         rows.Add(new VolumeRow
                         {
-                            DeviceId = deviceId,
-                            Label = label,
-                            Role = role,
-                            FreeGb = freeGb,
-                            TotalGb = totalGb,
-                            PercentUsed = pctUsed + "%", PercentUsedValue = pctUsed,
-                            Severity = sev,
+                            DeviceId    = deviceId,
+                            Label       = label,
+                            Role        = role,
+                            FreeGb      = freeGb,
+                            TotalGb     = totalGb,
+                            Free        = $"{freeGb:F1} GB",
+                            Total       = $"{totalGb:F1} GB",
+                            PercentUsed = pctUsed + "%",
+                            PercentUsedValue = pctUsed,
+                            Severity    = sev,
+                            StatusColor = statusColor,
+                            BarColor    = barColor,
                         });
                     }
                 }
@@ -115,6 +126,30 @@ namespace Pulse.WPF.Services
         private static bool SafeDirExists(string p)
         {
             try { return Directory.Exists(p); } catch { return false; }
+        }
+
+        // Resolve "Pass"/"Warn"/"Fail" → (text colour, bar colour) using the
+        // shared theme brushes. Lives in the service so every consumer of
+        // VolumeRow (Dashboard storage card, Disk Health panel) gets the
+        // same colour-coding without re-implementing the rule.
+        private static (System.Windows.Media.Brush textBrush, System.Windows.Media.Brush barBrush) ResolveSeverityBrushes(string severity)
+        {
+            string colourKey;
+            switch (severity)
+            {
+                case "Fail": colourKey = "RedBrush";    break;
+                case "Warn": colourKey = "YellowBrush"; break;
+                default:      colourKey = "GreenBrush";  break;
+            }
+            try
+            {
+                var b = Pulse.WPF.Helpers.StatusHelpers.Brush(colourKey);
+                return (b, b);
+            }
+            catch
+            {
+                return (System.Windows.Media.Brushes.Gray, System.Windows.Media.Brushes.Gray);
+            }
         }
 
         private static ulong ToUlong(object o)
