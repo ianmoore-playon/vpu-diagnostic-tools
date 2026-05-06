@@ -93,6 +93,15 @@ namespace Pulse.WPF.ViewModels
         private string _cpuCoresText = "—";
         public string CpuCoresText { get => _cpuCoresText; set => Set(ref _cpuCoresText, value); }
 
+        // Temperature tile — hidden when WMI returns no thermal-zone data
+        // (typical on consumer / desktop CPUs that don't expose ACPI temp).
+        private string _temperatureText = "—";
+        public string TemperatureText { get => _temperatureText; set => Set(ref _temperatureText, value); }
+        private bool _temperatureVisible;
+        public bool TemperatureVisible { get => _temperatureVisible; set => Set(ref _temperatureVisible, value); }
+        private Brush _temperatureColor = StatusHelpers.Brush("AccentBrush");
+        public Brush TemperatureColor { get => _temperatureColor; set => Set(ref _temperatureColor, value); }
+
         // ---- NIC ports / volumes / services / findings collections ---------
         public ObservableCollection<NicPortRow> NicPorts { get; } = new ObservableCollection<NicPortRow>();
         public ObservableCollection<VolumeRow> Volumes  { get; } = new ObservableCollection<VolumeRow>();
@@ -129,12 +138,80 @@ namespace Pulse.WPF.ViewModels
         public ICommand RefreshCommand { get; }
         public Action<string> RequestNavigate { get; set; }   // wired up by MainViewModel
 
+        // Live-update timer — re-reads only the cheap gauges (CPU / memory /
+        // disk / temperature) every 2 seconds. The heavy snapshot (NIC ports,
+        // services, internet probe, volumes) refreshes on tab visit + manual
+        // Refresh button only.
+        private readonly System.Windows.Threading.DispatcherTimer _liveTimer;
         public DashboardViewModel(IDashboardService svc)
         {
             _svc = svc;
             NavigateCommand        = new NavigateCommandImpl(t => RequestNavigate?.Invoke(t as string));
             OpenLastReportCommand  = new RelayCommand(OpenLastReport);
             RefreshCommand         = new AsyncCommand(RefreshAsync);
+
+            _liveTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(2),
+            };
+            _liveTimer.Tick += OnLiveTick;
+        }
+
+        // Started by MainViewModel when the Dashboard becomes the current view;
+        // stopped when navigating away. Matches what the legacy WinForms tool
+        // did with its System.Windows.Forms.Timer.
+        public void StartLiveUpdates()
+        {
+            if (_liveTimer != null && !_liveTimer.IsEnabled) _liveTimer.Start();
+        }
+        public void StopLiveUpdates()
+        {
+            if (_liveTimer != null && _liveTimer.IsEnabled) _liveTimer.Stop();
+        }
+
+        // ReadGauges does ~250 ms of CPU sampling; run it on a background task
+        // so the tick doesn't block the UI thread, then marshal the result back
+        // for the property assigns.
+        private async void OnLiveTick(object sender, EventArgs e)
+        {
+            GaugeReadings g = null;
+            try { g = await Task.Run(() => _svc.ReadGauges()); }
+            catch { return; }
+            if (g == null) return;
+            ApplyGaugeReadings(g);
+        }
+
+        private void ApplyGaugeReadings(GaugeReadings g)
+        {
+            CpuPct      = g.CpuUsagePct;
+            CpuPctText  = $"{(int)g.CpuUsagePct}%";
+            CpuColor    = LoadColour(g.CpuUsagePct);
+
+            MemPct      = g.MemoryUsedPct;
+            MemPctText  = $"{(int)g.MemoryUsedPct}%";
+            MemCaption  = g.MemoryUsedLabel;
+            MemColor    = LoadColour(g.MemoryUsedPct);
+
+            DiskPct     = g.DiskUsedPct;
+            DiskPctText = $"{(int)g.DiskUsedPct}%";
+            DiskCaption = g.DiskUsedLabel;
+            DiskColor   = LoadColour(g.DiskUsedPct);
+
+            if (g.TemperatureAvailable)
+            {
+                TemperatureVisible = true;
+                TemperatureText    = $"{g.TemperatureC:F0}°C";
+                // Tier the tile colour the same way as the load gauges, but
+                // by absolute °C — 70 / 85 °C are the typical CPU-throttle
+                // bands. Adjust if specific PXLS hardware has tighter limits.
+                TemperatureColor = g.TemperatureC >= 85 ? StatusHelpers.Brush("RedBrush")
+                                : g.TemperatureC >= 70 ? StatusHelpers.Brush("YellowBrush")
+                                :                          StatusHelpers.Brush("AccentBrush");
+            }
+            else
+            {
+                TemperatureVisible = false;
+            }
         }
 
         public async Task RefreshAsync()
@@ -198,20 +275,17 @@ namespace Pulse.WPF.ViewModels
             LastRunResult      = s.LastRunResult;
             LastRunResultColor = SeverityBrush(s.LastRunSeverity);
 
-            // Gauges — colour by load tier
-            CpuPct       = s.CpuUsagePct;
-            CpuPctText   = $"{(int)s.CpuUsagePct}%";
-            CpuColor     = LoadColour(s.CpuUsagePct);
-
-            MemPct       = s.MemoryUsedPct;
-            MemPctText   = $"{(int)s.MemoryUsedPct}%";
-            MemCaption   = s.MemoryUsedLabel;
-            MemColor     = LoadColour(s.MemoryUsedPct);
-
-            DiskPct      = s.DiskUsedPct;
-            DiskPctText  = $"{(int)s.DiskUsedPct}%";
-            DiskCaption  = s.DiskUsedLabel;
-            DiskColor    = LoadColour(s.DiskUsedPct);
+            // Gauges — funnel through the same code path as the live tick so
+            // tier colour rules stay in one place.
+            ApplyGaugeReadings(new GaugeReadings
+            {
+                CpuUsagePct     = s.CpuUsagePct,
+                MemoryUsedPct   = s.MemoryUsedPct,
+                MemoryUsedLabel = s.MemoryUsedLabel,
+                DiskUsedPct     = s.DiskUsedPct,
+                DiskUsedLabel   = s.DiskUsedLabel,
+                TemperatureC    = s.TemperatureC,
+            });
 
             UptimeText   = s.Uptime;
             CpuName      = s.CpuName;

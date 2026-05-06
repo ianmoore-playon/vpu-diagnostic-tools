@@ -26,6 +26,24 @@ namespace Pulse.WPF.Services
         // synchronously inside this call. Caller should keep this off the
         // UI thread.
         System.Threading.Tasks.Task<DashboardSnapshot> CollectSnapshotAsync();
+
+        // Cheap "just refresh the gauges" call for the live update timer —
+        // only re-reads CPU / memory / disk / temperature. Skips the heavy
+        // NIC poll, internet ping, services, and volumes so we can tick at
+        // 2-second cadence without burning CPU.
+        GaugeReadings ReadGauges();
+    }
+
+    /// <summary>Light-weight payload for the Dashboard's live-update tick.</summary>
+    public class GaugeReadings
+    {
+        public double CpuUsagePct      { get; set; }
+        public double MemoryUsedPct    { get; set; }
+        public string MemoryUsedLabel  { get; set; } = "—";
+        public double DiskUsedPct      { get; set; }
+        public string DiskUsedLabel    { get; set; } = "—";
+        public double TemperatureC     { get; set; } = double.NaN;
+        public bool   TemperatureAvailable => !double.IsNaN(TemperatureC);
     }
 
     /// <summary>Tiny DTO for the "Last Run: Apr 30, 2:14 PM — Healthy" line.</summary>

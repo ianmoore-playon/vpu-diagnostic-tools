@@ -37,6 +37,8 @@ namespace Pulse.WPF.Models
         public string Uptime          { get; set; } = "—";       // "1d 7h 13m"
         public string CpuName         { get; set; } = "—";       // "Core i9-12900K"
         public int    CpuCores        { get; set; }              // logical core count
+        public double TemperatureC    { get; set; } = double.NaN; // NaN = unavailable
+        public bool   TemperatureAvailable => !double.IsNaN(TemperatureC);
 
         // ---- NIC ports / camera links ---------------------------------------
         // Reuse CameraNicSnapshot from INetworkAdapterService — same shape.

@@ -250,6 +250,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
                         <!-- CPU -->
@@ -312,6 +313,20 @@
                                        Foreground="{Binding InternetColor}"
                                        HorizontalAlignment="Center" Margin="0,8,0,0" />
                             <TextBlock Text="Internet" FontSize="10"
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+
+                        <!-- Temperature (hidden when WMI doesn't expose ACPI thermal data) -->
+                        <StackPanel Grid.Column="5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Visibility="{Binding TemperatureVisible, Converter={StaticResource BoolToVis}}">
+                            <md:PackIcon Kind="Thermometer" Width="22" Height="22"
+                                         Foreground="{Binding TemperatureColor}" HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding TemperatureText}"
+                                       FontFamily="Segoe UI Semibold" FontSize="16"
+                                       Foreground="{Binding TemperatureColor}"
+                                       HorizontalAlignment="Center" Margin="0,8,0,0" />
+                            <TextBlock Text="Temperature" FontSize="10"
                                        Foreground="{StaticResource MutedForegroundBrush}"
                                        HorizontalAlignment="Center" />
                         </StackPanel>
@@ -470,6 +485,10 @@
                                    Foreground="{StaticResource MutedForegroundBrush}"
                                    VerticalAlignment="Center" />
                     </DockPanel>
+                    <!-- Compact single-row Quick Nav. Description text is gone —
+                         the title alone is enough since the user already knows
+                         the panel set. WrapPanel still flows to a second row at
+                         narrower window widths. -->
                     <ItemsControl ItemsSource="{Binding Tiles}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -478,31 +497,28 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <!-- Tiles bind back to the parent VM's NavigateCommand via
-                                     RelativeSource — the per-tile NavigateCommand property
-                                     is never populated by DashboardService, so binding it
-                                     directly silently disables every tile (latent bug from
-                                     v0.2.0). RelativeSource hops out of the DataTemplate's
-                                     tile DataContext to the UserControl's DataContext
-                                     (the DashboardViewModel). -->
+                                <!-- Tile bindings: see comment in v0.2.0 fix above —
+                                     NavigateCommand binds to the parent VM via
+                                     RelativeSource, TargetNav passes through as the
+                                     command parameter. -->
                                 <Button Style="{StaticResource HubTile}"
                                         Command="{Binding DataContext.NavigateCommand,
                                                           RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding TargetNav}"
-                                        Width="180" Height="78"
-                                        Margin="0,0,8,8">
-                                    <StackPanel HorizontalAlignment="Left">
-                                        <DockPanel>
-                                            <md:PackIcon Kind="{Binding IconKind}" Width="16" Height="16"
-                                                         Foreground="{StaticResource AccentBrush}"
-                                                         VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding Title}"
-                                                       FontFamily="Segoe UI Semibold" FontSize="12"
-                                                       Margin="8,0,0,0" />
-                                        </DockPanel>
-                                        <TextBlock Text="{Binding Description}"
-                                                   FontSize="10" Foreground="{StaticResource MutedForegroundBrush}"
-                                                   TextWrapping="Wrap" Margin="0,4,0,0" />
+                                        Width="160" Height="44"
+                                        Padding="12,0,12,0"
+                                        Margin="0,0,8,8"
+                                        HorizontalContentAlignment="Left">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <md:PackIcon Kind="{Binding IconKind}" Width="16" Height="16"
+                                                     Foreground="{StaticResource AccentBrush}"
+                                                     VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Title}"
+                                                   FontFamily="Segoe UI Semibold" FontSize="12"
+                                                   Foreground="{StaticResource ForegroundBrush}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Margin="10,0,0,0" />
                                     </StackPanel>
                                 </Button>
                             </DataTemplate>

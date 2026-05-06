@@ -122,9 +122,15 @@ namespace Pulse.WPF.ViewModels
 
         // Dispatch the panel switch + fire the panel's refresh in the background.
         // Errors during refresh are swallowed — diagnostic services must not
-        // crash the UI when a probe fails.
+        // crash the UI when a probe fails. The Dashboard's live-update
+        // DispatcherTimer is started when navigating to it and stopped when
+        // navigating away so we don't waste a PerformanceCounter sample +
+        // WMI query every 2 s while the user is on a different panel.
         private void UpdateCurrentView()
         {
+            // Stop the dashboard live timer before switching away.
+            if (CurrentView == Dashboard) Dashboard?.StopLiveUpdates();
+
             switch (_selectedNav)
             {
                 case "Network":         CurrentView = Network;        _ = SafeRefresh(Network.RefreshAsync); break;
@@ -136,6 +142,7 @@ namespace Pulse.WPF.ViewModels
                 case "Dashboard":
                 default:
                     CurrentView = Dashboard;
+                    Dashboard.StartLiveUpdates();
                     _ = SafeRefresh(Dashboard.RefreshAsync);
                     break;
             }

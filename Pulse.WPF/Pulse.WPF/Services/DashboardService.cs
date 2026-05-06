@@ -281,41 +281,16 @@ namespace Pulse.WPF.Services
         // -- Gauges (CPU / Memory / Storage / Uptime / CPU name) ----------------
         private static void CollectGauges(DashboardSnapshot snap)
         {
-            // CPU usage. PerformanceCounter's first read is always 0; sleep
-            // briefly between reads so the second sample is meaningful. Total
-            // delay ~250ms, runs once per dashboard refresh.
-            try
-            {
-                using (var pc = new PerformanceCounter("Processor", "% Processor Time", "_Total", true))
-                {
-                    pc.NextValue();
-                    System.Threading.Thread.Sleep(250);
-                    snap.CpuUsagePct = Math.Round(pc.NextValue(), 0);
-                }
-            }
-            catch { snap.CpuUsagePct = 0; }
+            var g = ReadGaugesCore();
+            snap.CpuUsagePct     = g.CpuUsagePct;
+            snap.MemoryUsedPct   = g.MemoryUsedPct;
+            snap.MemoryUsedLabel = g.MemoryUsedLabel;
+            snap.DiskUsedPct     = g.DiskUsedPct;
+            snap.DiskUsedLabel   = g.DiskUsedLabel;
+            snap.TemperatureC    = g.TemperatureC;
 
-            // Memory totals + free.
-            try
-            {
-                using (var s = new ManagementObjectSearcher(
-                    "SELECT TotalVisibleMemorySize,FreePhysicalMemory FROM Win32_OperatingSystem"))
-                foreach (ManagementObject o in s.Get())
-                {
-                    var totalKb = Convert.ToDouble(o["TotalVisibleMemorySize"] ?? 0);
-                    var freeKb  = Convert.ToDouble(o["FreePhysicalMemory"]    ?? 0);
-                    if (totalKb <= 0) break;
-                    var totalGb = totalKb / 1048576.0;
-                    var freeGb  = freeKb  / 1048576.0;
-                    var usedGb  = totalGb - freeGb;
-                    snap.MemoryUsedPct   = Math.Round((usedGb / totalGb) * 100, 0);
-                    snap.MemoryUsedLabel = $"{usedGb:F1} / {totalGb:F0} GB";
-                    break;
-                }
-            }
-            catch { }
-
-            // Uptime + CPU name + cores.
+            // Uptime + CPU name + cores — these don't move at 2-second cadence,
+            // so they live in the snapshot collection rather than ReadGauges().
             try
             {
                 using (var s = new ManagementObjectSearcher("SELECT LastBootUpTime FROM Win32_OperatingSystem"))
@@ -348,8 +323,52 @@ namespace Pulse.WPF.Services
                 }
             }
             catch { }
+        }
 
-            // Storage — system drive only for the headline gauge.
+        // ---- Public ReadGauges (for the 2-second live-update timer) ----------
+        public GaugeReadings ReadGauges() => ReadGaugesCore();
+
+        // Shared between full snapshot collection and the live tick. Each block
+        // is wrapped so a single failing query (e.g. perf-counter access denied)
+        // doesn't blank the others.
+        private static GaugeReadings ReadGaugesCore()
+        {
+            var g = new GaugeReadings();
+
+            // CPU. PerformanceCounter's first read is always 0; sleep briefly
+            // between reads so the second sample is meaningful. ~250 ms total.
+            try
+            {
+                using (var pc = new PerformanceCounter("Processor", "% Processor Time", "_Total", true))
+                {
+                    pc.NextValue();
+                    System.Threading.Thread.Sleep(250);
+                    g.CpuUsagePct = Math.Round(pc.NextValue(), 0);
+                }
+            }
+            catch { g.CpuUsagePct = 0; }
+
+            // Memory totals + free.
+            try
+            {
+                using (var s = new ManagementObjectSearcher(
+                    "SELECT TotalVisibleMemorySize,FreePhysicalMemory FROM Win32_OperatingSystem"))
+                foreach (ManagementObject o in s.Get())
+                {
+                    var totalKb = Convert.ToDouble(o["TotalVisibleMemorySize"] ?? 0);
+                    var freeKb  = Convert.ToDouble(o["FreePhysicalMemory"]    ?? 0);
+                    if (totalKb <= 0) break;
+                    var totalGb = totalKb / 1048576.0;
+                    var freeGb  = freeKb  / 1048576.0;
+                    var usedGb  = totalGb - freeGb;
+                    g.MemoryUsedPct   = Math.Round((usedGb / totalGb) * 100, 0);
+                    g.MemoryUsedLabel = $"{usedGb:F1} / {totalGb:F0} GB";
+                    break;
+                }
+            }
+            catch { }
+
+            // System drive free space.
             try
             {
                 var sysDrive = Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.System))
@@ -363,12 +382,37 @@ namespace Pulse.WPF.Services
                     if (size <= 0) break;
                     var freeGb = free / 1073741824.0;
                     var sizeGb = size / 1073741824.0;
-                    snap.DiskUsedPct   = Math.Round((1 - free / size) * 100, 0);
-                    snap.DiskUsedLabel = $"{freeGb:F0} / {sizeGb:F0} GB free";
+                    g.DiskUsedPct   = Math.Round((1 - free / size) * 100, 0);
+                    g.DiskUsedLabel = $"{freeGb:F0} / {sizeGb:F0} GB free";
                     break;
                 }
             }
             catch { }
+
+            // Temperature — MSAcpi_ThermalZoneTemperature in root\WMI returns
+            // tenths of a Kelvin. Most consumer hardware returns nothing or
+            // throws "Not Supported" — leave NaN in that case so the UI hides
+            // the temperature tile cleanly.
+            try
+            {
+                using (var s = new ManagementObjectSearcher(
+                    @"root\WMI", "SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature"))
+                {
+                    foreach (ManagementObject o in s.Get())
+                    {
+                        var raw = Convert.ToDouble(o["CurrentTemperature"] ?? 0);
+                        if (raw > 0)
+                        {
+                            // Tenths of Kelvin → Celsius
+                            g.TemperatureC = Math.Round(raw / 10.0 - 273.15, 0);
+                            break;
+                        }
+                    }
+                }
+            }
+            catch { /* unsupported on this hardware — leave TemperatureC = NaN */ }
+
+            return g;
         }
 
         // -- NIC ports (camera link snapshot) -----------------------------------
@@ -403,11 +447,70 @@ namespace Pulse.WPF.Services
         }
 
         // -- Pixellot services snapshot -----------------------------------------
+        // Dashboard shows the four operational services a tech actually cares
+        // about: Agent, Coordinator, VPU, Scoreconnect. KeepAgentUp / LogMeIn
+        // live on the dedicated Services panel. Display labels normalised so
+        // the dashboard rows don't show ".exe" suffixes.
+        private static readonly string[] DashboardServiceOrder =
+            { "Agent", "Coordinator", "VPU", "Scoreconnect" };
+
         private void CollectServices(DashboardSnapshot snap)
         {
             if (_services == null) return;
-            try { snap.Services = _services.GetServiceStatuses() ?? new List<ServiceStatusRow>(); }
-            catch { }
+            List<ServiceStatusRow> all = null;
+            try { all = _services.GetServiceStatuses(); } catch { }
+            if (all == null) { snap.Services = new List<ServiceStatusRow>(); return; }
+
+            // Find each desired service in the canonical order, regardless of
+            // what order the service list returns. Match on the .Name field
+            // (which ServicesService sets to "Agent.exe" / "VPU.exe" /
+            // "Coordinator.exe" / "Scoreconnect"); we strip the .exe for the
+            // display label.
+            var picked = new List<ServiceStatusRow>();
+            foreach (var key in DashboardServiceOrder)
+            {
+                var match = all.Find(r =>
+                    r != null &&
+                    !string.IsNullOrEmpty(r.Name) &&
+                    r.Name.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0);
+                if (match == null) continue;
+                if (string.IsNullOrEmpty(match.DisplayName))
+                    match.DisplayName = key;          // "Agent" / "Coordinator" / "VPU" / "Scoreconnect"
+                ApplyServiceColors(match);
+                picked.Add(match);
+            }
+            snap.Services = picked;
+        }
+
+        // ServicesService leaves StatusColor/Bg null — fill them so the
+        // dashboard row template can bind directly without converters.
+        private static void ApplyServiceColors(ServiceStatusRow row)
+        {
+            switch (row.Severity)
+            {
+                case "Pass":
+                    row.StatusColor = StatusHelpersBrush("GreenBrush");
+                    row.StatusBg    = StatusHelpersBrush("OkBgBrush");
+                    break;
+                case "Warn":
+                    row.StatusColor = StatusHelpersBrush("YellowBrush");
+                    row.StatusBg    = StatusHelpersBrush("WarnBgBrush");
+                    break;
+                case "Fail":
+                    row.StatusColor = StatusHelpersBrush("RedBrush");
+                    row.StatusBg    = StatusHelpersBrush("ErrBgBrush");
+                    break;
+                default:
+                    row.StatusColor = StatusHelpersBrush("MutedForegroundBrush");
+                    row.StatusBg    = StatusHelpersBrush("BorderColBrush");
+                    break;
+            }
+        }
+
+        private static System.Windows.Media.Brush StatusHelpersBrush(string key)
+        {
+            try { return Pulse.WPF.Helpers.StatusHelpers.Brush(key); }
+            catch { return System.Windows.Media.Brushes.Gray; }
         }
 
         // -- Volumes -------------------------------------------------------------
@@ -464,16 +567,24 @@ namespace Pulse.WPF.Services
                 });
             }
 
-            // Services — anything not Running on Automatic.
+            // Services — anything not Running. Skip rows that come back Gray
+            // ("Not detected" / informational) or whose Severity is explicitly
+            // Pass; only emit a finding for genuine Fail or Warn. Use whichever
+            // of DisplayName / Name is non-empty so the message reads cleanly.
             if (snap.Services != null)
             {
                 foreach (var s in snap.Services)
                 {
                     if (string.Equals(s.Status, "Running", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (string.Equals(s.Severity, "Pass", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (string.Equals(s.Severity, "Gray", StringComparison.OrdinalIgnoreCase)) continue;
+                    var label = !string.IsNullOrEmpty(s.DisplayName) ? s.DisplayName
+                              : !string.IsNullOrEmpty(s.Name)        ? s.Name
+                              :                                         "(unknown service)";
                     findings.Add(new DashboardFinding
                     {
-                        Severity = "fail",
-                        Title    = $"Service stopped: {s.DisplayName ?? s.Name}",
+                        Severity = string.Equals(s.Severity, "Warn", StringComparison.OrdinalIgnoreCase) ? "warn" : "fail",
+                        Title    = $"Service stopped: {label}",
                         Source   = "Services",
                     });
                 }
