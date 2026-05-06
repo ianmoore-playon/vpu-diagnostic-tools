@@ -41,7 +41,7 @@ namespace Pulse.WPF.Controls
 
         public static readonly DependencyProperty DiameterProperty = DependencyProperty.Register(
             nameof(Diameter), typeof(double), typeof(CircularGauge),
-            new PropertyMetadata(78.0, (d, _) => ((CircularGauge)d).Redraw()));
+            new PropertyMetadata(78.0, (d, _) => ((CircularGauge)d).ForceRedraw()));
         public double Diameter
         {
             get => (double)GetValue(DiameterProperty);
@@ -50,11 +50,19 @@ namespace Pulse.WPF.Controls
 
         public static readonly DependencyProperty ThicknessProperty = DependencyProperty.Register(
             nameof(Thickness), typeof(double), typeof(CircularGauge),
-            new PropertyMetadata(6.0, (d, _) => ((CircularGauge)d).Redraw()));
+            new PropertyMetadata(6.0, (d, _) => ((CircularGauge)d).ForceRedraw()));
         public double Thickness
         {
             get => (double)GetValue(ThicknessProperty);
             set => SetValue(ThicknessProperty, value);
+        }
+
+        // Geometry-affecting property changes (Diameter, Thickness) bypass
+        // the percent-delta guard by clearing the cache.
+        private void ForceRedraw()
+        {
+            _lastRenderedPercent = double.NaN;
+            Redraw();
         }
 
         public static readonly DependencyProperty CaptionProperty = DependencyProperty.Register(
@@ -112,13 +120,26 @@ namespace Pulse.WPF.Controls
         }
 
         // ---- Geometry ----
+        // Cache the last percent we rendered so the live-update timer can
+        // tick without forcing a PathGeometry rebuild on every <0.5% wobble.
+        // Caller already rounds to int in ApplyGaugeReadings, so this is
+        // mostly defence-in-depth against future fractional readings.
+        private double _lastRenderedPercent = double.NaN;
+
         private static void OnPercentChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
             => ((CircularGauge)d).Redraw();
 
         private void Redraw()
         {
             if (ValueArc == null) return;
-            var pct  = Math.Max(0, Math.Min(100, Percent));
+            var pct = Math.Max(0, Math.Min(100, Percent));
+            // Skip the rebuild when the change is below half a percent — the
+            // arc wouldn't move a visible pixel anyway, and skipping keeps
+            // the live-update tick from churning new PathGeometry objects.
+            if (!double.IsNaN(_lastRenderedPercent) && Math.Abs(pct - _lastRenderedPercent) < 0.5)
+                return;
+            _lastRenderedPercent = pct;
+
             var diam = Math.Max(4, Diameter);
             var th   = Math.Max(1, Thickness);
             var r    = (diam - th) / 2;

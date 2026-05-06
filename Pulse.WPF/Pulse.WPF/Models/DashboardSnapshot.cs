@@ -61,17 +61,30 @@ namespace Pulse.WPF.Models
         // ports / disk / network. UI shows the top 5; click "Run Full
         // Diagnostic" to see the rest.
         public List<DashboardFinding> Findings { get; set; } = new List<DashboardFinding>();
+
+        // ---- Empty-state flag ------------------------------------------------
+        // True when the host has no Pixellot software at all (registry blank
+        // and no agent log discovered). Drives the "Pixellot software not
+        // detected" empty-state card on the Dashboard so a clean dev box
+        // doesn't read as a healthy VPU.
+        public bool IsNonVpuHost { get; set; }
     }
 
     /// <summary>
     /// A short headline issue for the Dashboard's "Active Findings" strip.
-    /// Severity drives the dot colour; Source drives the click-to-navigate
-    /// target ("Network", "Hardware", "Services", "DiskHealth").
+    /// Title is the plain-English summary the operator sees first; Detail
+    /// is the engineer-facing technical line shown on hover (binds to
+    /// ToolTip on the row). Severity drives the dot colour; TargetNav is
+    /// the SidebarNav key clicking the row should navigate to ("Network",
+    /// "Hardware", "Services", "DiskHealth", "Camera"). Source is kept for
+    /// telemetry / debugging — not rendered on the row anymore.
     /// </summary>
     public class DashboardFinding
     {
-        public string Severity { get; set; } = "neutral";   // "ok"/"warn"/"fail"/"neutral"
-        public string Title    { get; set; } = "";
-        public string Source   { get; set; } = "";
+        public string Severity  { get; set; } = "neutral";   // "ok"/"warn"/"fail"/"neutral"
+        public string Title     { get; set; } = "";
+        public string Detail    { get; set; } = "";
+        public string Source    { get; set; } = "";
+        public string TargetNav { get; set; } = "";
     }
 }

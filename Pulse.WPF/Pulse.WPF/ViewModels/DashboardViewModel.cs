@@ -125,12 +125,35 @@ namespace Pulse.WPF.ViewModels
         public Brush InternetColor { get => _internetColor; set => Set(ref _internetColor, value); }
 
         // ---- Status pill (overall health) ----------------------------------
-        private string _statusLabel = "Loading…";
+        // _hasSnapshot guards the pill against showing "Healthy" before the
+        // first snapshot has been applied — that's a false-green that erodes
+        // trust in a diagnostic tool. Until then, the pill reads "Checking…"
+        // muted.
+        private bool _hasSnapshot;
+        private string _statusLabel = "Checking…";
         public string StatusLabel { get => _statusLabel; set => Set(ref _statusLabel, value); }
         private Brush _statusColor = StatusHelpers.Brush("MutedForegroundBrush");
         public Brush StatusColor { get => _statusColor; set => Set(ref _statusColor, value); }
         private Brush _statusBg = StatusHelpers.Brush("BorderColBrush");
         public Brush StatusBg { get => _statusBg; set => Set(ref _statusBg, value); }
+
+        // ---- Empty-state flag (non-VPU host) -------------------------------
+        // True when DashboardService can't find Pixellot at all — drives the
+        // top-of-page "Pixellot software not detected" empty state so a clean
+        // dev box doesn't look like a healthy VPU.
+        private bool _isNonVpuHost;
+        public bool IsNonVpuHost { get => _isNonVpuHost; set => Set(ref _isNonVpuHost, value); }
+
+        // Status dots beside the Network Configuration values — green when
+        // the value is meaningfully populated, muted when it's blank/em-dash.
+        private Brush _ipDotColor = StatusHelpers.Brush("MutedForegroundBrush");
+        public Brush IpDotColor { get => _ipDotColor; set => Set(ref _ipDotColor, value); }
+        private Brush _gatewayDotColor = StatusHelpers.Brush("MutedForegroundBrush");
+        public Brush GatewayDotColor { get => _gatewayDotColor; set => Set(ref _gatewayDotColor, value); }
+        private Brush _dnsDotColor = StatusHelpers.Brush("MutedForegroundBrush");
+        public Brush DnsDotColor { get => _dnsDotColor; set => Set(ref _dnsDotColor, value); }
+        private Brush _ntpDotColor = StatusHelpers.Brush("MutedForegroundBrush");
+        public Brush NtpDotColor { get => _ntpDotColor; set => Set(ref _ntpDotColor, value); }
 
         // ---- Commands -------------------------------------------------------
         public ICommand NavigateCommand { get; }
@@ -147,7 +170,9 @@ namespace Pulse.WPF.ViewModels
         {
             _svc = svc;
             NavigateCommand        = new NavigateCommandImpl(t => RequestNavigate?.Invoke(t as string));
-            OpenLastReportCommand  = new RelayCommand(OpenLastReport);
+            // CanExecute disables Open Last Report when no report exists —
+            // the button used to silently no-op (rec #11 from the UX review).
+            OpenLastReportCommand  = new RelayCommand(OpenLastReport, () => !string.IsNullOrEmpty(_lastReportPath));
             RefreshCommand         = new AsyncCommand(RefreshAsync);
 
             _liveTimer = new System.Windows.Threading.DispatcherTimer
@@ -201,11 +226,13 @@ namespace Pulse.WPF.ViewModels
             {
                 TemperatureVisible = true;
                 TemperatureText    = $"{g.TemperatureC:F0}°C";
-                // Tier the tile colour the same way as the load gauges, but
-                // by absolute °C — 70 / 85 °C are the typical CPU-throttle
-                // bands. Adjust if specific PXLS hardware has tighter limits.
-                TemperatureColor = g.TemperatureC >= 85 ? StatusHelpers.Brush("RedBrush")
-                                : g.TemperatureC >= 70 ? StatusHelpers.Brush("YellowBrush")
+                // Tier the tile colour by absolute °C. 65 / 78 °C bands tuned
+                // for the small-form-factor / fanless boards the Pixellot S2
+                // typically ships on, which throttle around 80 °C package.
+                // (UX review rec #14 — confirm with platform team if tighter
+                // limits become known.)
+                TemperatureColor = g.TemperatureC >= 78 ? StatusHelpers.Brush("RedBrush")
+                                : g.TemperatureC >= 65 ? StatusHelpers.Brush("YellowBrush")
                                 :                          StatusHelpers.Brush("AccentBrush");
             }
             else
@@ -306,14 +333,30 @@ namespace Pulse.WPF.ViewModels
                 }
             }
 
-            // Network config
-            IpAddress     = string.IsNullOrEmpty(s.NetworkConfig?.IpAddress) ? "—" : s.NetworkConfig.IpAddress;
-            Gateway       = string.IsNullOrEmpty(s.NetworkConfig?.Gateway)   ? "—" : s.NetworkConfig.Gateway;
-            DnsServers    = string.IsNullOrEmpty(s.NetworkConfig?.DnsServers)? "—" : s.NetworkConfig.DnsServers;
-            NtpServer     = string.IsNullOrEmpty(s.NetworkConfig?.NtpServer) ? "—" : s.NetworkConfig.NtpServer;
-            UplinkAdapter = string.IsNullOrEmpty(s.UplinkAdapterName)        ? "—" : s.UplinkAdapterName;
-            InternetText  = s.InternetReachable ? "Reachable" : "Unreachable";
+            // Network config + per-row status dots. A green dot reads at a
+            // glance for non-tech users without them having to know what
+            // "DNS" or "NTP" means; muted dot says "this hasn't been
+            // populated" without sounding alarms.
+            var ipPresent  = !string.IsNullOrEmpty(s.NetworkConfig?.IpAddress);
+            var gwPresent  = !string.IsNullOrEmpty(s.NetworkConfig?.Gateway);
+            var dnsPresent = !string.IsNullOrEmpty(s.NetworkConfig?.DnsServers);
+            var ntpPresent = !string.IsNullOrEmpty(s.NetworkConfig?.NtpServer);
+            IpAddress       = ipPresent  ? s.NetworkConfig.IpAddress    : "—";
+            Gateway         = gwPresent  ? s.NetworkConfig.Gateway      : "—";
+            DnsServers      = dnsPresent ? s.NetworkConfig.DnsServers   : "—";
+            NtpServer       = ntpPresent ? s.NetworkConfig.NtpServer    : "—";
+            UplinkAdapter   = string.IsNullOrEmpty(s.UplinkAdapterName) ? "—" : s.UplinkAdapterName;
+            IpDotColor      = ipPresent  ? StatusHelpers.Brush("GreenBrush") : StatusHelpers.Brush("MutedForegroundBrush");
+            GatewayDotColor = gwPresent  ? StatusHelpers.Brush("GreenBrush") : StatusHelpers.Brush("MutedForegroundBrush");
+            DnsDotColor     = dnsPresent ? StatusHelpers.Brush("GreenBrush") : StatusHelpers.Brush("MutedForegroundBrush");
+            NtpDotColor     = ntpPresent ? StatusHelpers.Brush("GreenBrush") : StatusHelpers.Brush("MutedForegroundBrush");
+
+            // Plain-English internet status — the icon already encodes the
+            // meaning, so the text reads the same way a non-tech user thinks.
+            InternetText  = s.InternetReachable ? "Connected" : "No connection";
             InternetColor = s.InternetReachable ? StatusHelpers.Brush("GreenBrush") : StatusHelpers.Brush("RedBrush");
+
+            IsNonVpuHost = s.IsNonVpuHost;
 
             // Services + volumes
             Services.Clear();
@@ -325,23 +368,43 @@ namespace Pulse.WPF.ViewModels
             Findings.Clear();
             if (s.Findings != null) foreach (var f in s.Findings) Findings.Add(f);
 
-            // Roll up the worst severity into the page pill.
+            // Mark the first snapshot as applied so the pill stops reading
+            // "Checking…" — UpdatePill respects this flag.
+            _hasSnapshot = true;
             UpdatePill();
         }
 
+        // Pill reflects the worst Finding severity. Four states, in order of
+        // priority:
+        //   - Checking…  (no snapshot yet — first paint, before data lands)
+        //   - Critical   (any Findings entry has severity "fail")
+        //   - Warning    (any Findings entry has severity "warn")
+        //   - Healthy    (no findings, snapshot applied)
+        // Note: this rolls up Findings only — not raw card statuses — so the
+        // pill cannot disagree with the Active Findings card visible above
+        // it. (UX review rec #1, #2.)
         private void UpdatePill()
         {
-            int rank = 0; string worst = "ok";
+            if (!_hasSnapshot)
+            {
+                StatusLabel = "Checking…";
+                StatusColor = StatusHelpers.Brush("MutedForegroundBrush");
+                StatusBg    = StatusHelpers.Brush("BorderColBrush");
+                return;
+            }
+
+            bool anyFail = false, anyWarn = false;
             foreach (var f in Findings)
             {
-                int r = f.Severity == "fail" ? 3 : f.Severity == "warn" ? 2 : f.Severity == "ok" ? 1 : 0;
-                if (r > rank) { rank = r; worst = f.Severity; }
+                if (f.Severity == "fail") { anyFail = true; break; }
+                if (f.Severity == "warn") anyWarn = true;
             }
-            if (worst == "fail")
+
+            if (anyFail)
             {
                 StatusLabel = "Critical"; StatusColor = StatusHelpers.Brush("RedBrush");    StatusBg = StatusHelpers.Brush("ErrBgBrush");
             }
-            else if (worst == "warn")
+            else if (anyWarn)
             {
                 StatusLabel = "Warning";  StatusColor = StatusHelpers.Brush("YellowBrush"); StatusBg = StatusHelpers.Brush("WarnBgBrush");
             }
@@ -371,11 +434,24 @@ namespace Pulse.WPF.ViewModels
             }
         }
 
+        // Open via the OS default association for .txt — usually Notepad++ /
+        // VS Code / whatever the tech installed, falling back to Notepad.
+        // The CanExecute on the command keeps the button disabled until a
+        // report exists.
         private void OpenLastReport()
         {
             if (string.IsNullOrEmpty(_lastReportPath)) return;
-            try { Process.Start("notepad.exe", _lastReportPath); }
-            catch { }
+            try
+            {
+                var psi = new ProcessStartInfo(_lastReportPath) { UseShellExecute = true };
+                Process.Start(psi);
+            }
+            catch
+            {
+                // ShellExecute can fail when no association exists — fall
+                // back to Notepad explicitly so the click is never lost.
+                try { Process.Start("notepad.exe", _lastReportPath); } catch { }
+            }
         }
 
         // ICommand wrapper that takes the tile's TargetNav string.

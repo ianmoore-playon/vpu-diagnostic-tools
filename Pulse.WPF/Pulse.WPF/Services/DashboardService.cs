@@ -133,6 +133,16 @@ namespace Pulse.WPF.Services
             CollectNetworkConfig(snap);
             CollectServices(snap);
             CollectVolumes(snap);
+            // IsNonVpuHost gate: registry is the canonical Pixellot fingerprint.
+            // Use the dashboard's filtered service list (Agent/Coordinator/VPU/
+            // Scoreconnect) — if none of those are even installed, this is not
+            // a VPU. Drives the empty-state card on the Dashboard view and
+            // tones down some findings (e.g. internet-down → warn instead of
+            // fail on dev hosts).
+            snap.IsNonVpuHost =
+                (string.IsNullOrEmpty(snap.PixellotApp)   || snap.PixellotApp   == "—") &&
+                (string.IsNullOrEmpty(snap.PixellotImage) || snap.PixellotImage == "—") &&
+                (snap.Services == null || snap.Services.Count == 0);
             BuildFindings(snap);
             return snap;
         }
@@ -522,11 +532,18 @@ namespace Pulse.WPF.Services
         }
 
         // -- Roll up the worst items into a short Active Findings list ---------
-        // Keeps the Dashboard honest — if anything is broken it shows up here
-        // without the user having to drill into each panel.
+        // Honest plain-English headlines for the operator (Title), with a
+        // technical tail in Detail that surfaces on hover for the engineer.
+        // TargetNav makes each row clickable — the click navigates to the
+        // panel that hosts the full diagnostics for that issue.
         private static void BuildFindings(DashboardSnapshot snap)
         {
             var findings = snap.Findings;
+            // Whether the box is actually a Pixellot VPU governs how loud some
+            // findings should be. On a non-VPU host (dev machine, support
+            // laptop) we don't want to scream "internet down — game uploads
+            // will fail" because there's no game.
+            var isVpu = !snap.IsNonVpuHost;
 
             // NIC ports — any down link on a known-camera-NIC is worth surfacing.
             if (snap.NicPorts != null)
@@ -538,39 +555,47 @@ namespace Pulse.WPF.Services
                     {
                         findings.Add(new DashboardFinding
                         {
-                            Severity = "fail",
-                            Title    = $"Port {n} ({nic.Name}) — link down",
-                            Source   = "Camera",
+                            Severity  = "fail",
+                            Title     = $"Camera {n} not connected — check the cable",
+                            Detail    = $"Port {n} ({nic.Name}) — link down",
+                            Source    = "Camera",
+                            TargetNav = "Camera",
                         });
                     }
                     else if (nic.LinkSpeedBps > 0 && nic.LinkSpeedBps < 1_000_000_000UL)
                     {
                         findings.Add(new DashboardFinding
                         {
-                            Severity = "warn",
-                            Title    = $"Port {n} ({nic.Name}) — sub-gigabit ({nic.LinkSpeedBps / 1_000_000UL} Mbps)",
-                            Source   = "Camera",
+                            Severity  = "warn",
+                            Title     = $"Camera {n} is connected at slow speed — check the cable",
+                            Detail    = $"Port {n} ({nic.Name}) — {nic.LinkSpeedBps / 1_000_000UL} Mbps (gigabit expected)",
+                            Source    = "Camera",
+                            TargetNav = "Camera",
                         });
                     }
                     n++;
                 }
             }
 
-            // Internet
+            // Internet — fail-tier on a real VPU (no internet → game uploads
+            // fail), warn on dev hosts where there's no production cost.
             if (!snap.InternetReachable)
             {
                 findings.Add(new DashboardFinding
                 {
-                    Severity = "warn",
-                    Title    = "Internet not reachable (ping 8.8.8.8 failed)",
-                    Source   = "Network",
+                    Severity  = isVpu ? "fail" : "warn",
+                    Title     = isVpu
+                        ? "No internet connection — game uploads and remote support will fail"
+                        : "No internet connection",
+                    Detail    = "Ping to 8.8.8.8 timed out",
+                    Source    = "Network",
+                    TargetNav = "Network",
                 });
             }
 
             // Services — anything not Running. Skip rows that come back Gray
             // ("Not detected" / informational) or whose Severity is explicitly
-            // Pass; only emit a finding for genuine Fail or Warn. Use whichever
-            // of DisplayName / Name is non-empty so the message reads cleanly.
+            // Pass; only emit a finding for genuine Fail or Warn.
             if (snap.Services != null)
             {
                 foreach (var s in snap.Services)
@@ -580,17 +605,22 @@ namespace Pulse.WPF.Services
                     if (string.Equals(s.Severity, "Gray", StringComparison.OrdinalIgnoreCase)) continue;
                     var label = !string.IsNullOrEmpty(s.DisplayName) ? s.DisplayName
                               : !string.IsNullOrEmpty(s.Name)        ? s.Name
-                              :                                         "(unknown service)";
+                              :                                         "Pixellot service";
+                    var detail = !string.IsNullOrEmpty(s.Detail)
+                        ? $"{label}: {s.Detail}"
+                        : $"{label} is not running";
                     findings.Add(new DashboardFinding
                     {
-                        Severity = string.Equals(s.Severity, "Warn", StringComparison.OrdinalIgnoreCase) ? "warn" : "fail",
-                        Title    = $"Service stopped: {label}",
-                        Source   = "Services",
+                        Severity  = string.Equals(s.Severity, "Warn", StringComparison.OrdinalIgnoreCase) ? "warn" : "fail",
+                        Title     = $"{label} is not running — restart the VPU or call support",
+                        Detail    = detail,
+                        Source    = "Services",
+                        TargetNav = "Services",
                     });
                 }
             }
 
-            // Volumes — any volume below 15% free counts as warn, below 5% fail.
+            // Volumes — < 15% free is warn, < 5% is fail.
             if (snap.Volumes != null)
             {
                 foreach (var v in snap.Volumes)
@@ -601,18 +631,22 @@ namespace Pulse.WPF.Services
                     {
                         findings.Add(new DashboardFinding
                         {
-                            Severity = "fail",
-                            Title    = $"Volume {v.Drive} critically low ({freePct:F0}% free)",
-                            Source   = "DiskHealth",
+                            Severity  = "fail",
+                            Title     = $"Disk {v.Drive} is almost full — recordings will fail",
+                            Detail    = $"Volume {v.Drive} — {freePct:F0}% free ({v.FreeGb:F1} of {v.TotalGb:F1} GB)",
+                            Source    = "DiskHealth",
+                            TargetNav = "DiskHealth",
                         });
                     }
                     else if (freePct < 15)
                     {
                         findings.Add(new DashboardFinding
                         {
-                            Severity = "warn",
-                            Title    = $"Volume {v.Drive} low on space ({freePct:F0}% free)",
-                            Source   = "DiskHealth",
+                            Severity  = "warn",
+                            Title     = $"Disk {v.Drive} is running low on space",
+                            Detail    = $"Volume {v.Drive} — {freePct:F0}% free ({v.FreeGb:F1} of {v.TotalGb:F1} GB)",
+                            Source    = "DiskHealth",
+                            TargetNav = "DiskHealth",
                         });
                     }
                 }

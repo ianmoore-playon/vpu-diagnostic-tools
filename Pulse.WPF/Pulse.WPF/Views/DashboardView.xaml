@@ -30,34 +30,47 @@
             <Setter Property="Margin" Value="0,0,0,8" />
         </Style>
 
-        <!-- Findings row -->
+        <!-- Findings row — entire row is a button that navigates to the
+             matching panel via the parent VM's NavigateCommand. Hover shows
+             the technical Detail in the tooltip so engineers still see the
+             raw value (Source / actual error string) without the operator-
+             facing Title carrying jargon. (UX review recs #4, #9, #10.) -->
         <DataTemplate x:Key="FindingRowTemplate">
-            <DockPanel Margin="0,4,0,4">
-                <Ellipse Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,12,0">
-                    <Ellipse.Style>
-                        <Style TargetType="Ellipse">
-                            <Setter Property="Fill" Value="{StaticResource MutedForegroundBrush}" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding Severity}" Value="ok">
-                                    <Setter Property="Fill" Value="{StaticResource GreenBrush}" />
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding Severity}" Value="warn">
-                                    <Setter Property="Fill" Value="{StaticResource YellowBrush}" />
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding Severity}" Value="fail">
-                                    <Setter Property="Fill" Value="{StaticResource RedBrush}" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Ellipse.Style>
-                </Ellipse>
-                <TextBlock DockPanel.Dock="Right" Text="{Binding Source}"
-                           FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}"
-                           VerticalAlignment="Center" Margin="12,0,0,0" />
-                <TextBlock Text="{Binding Title}"
-                           Foreground="{StaticResource ForegroundBrush}"
-                           FontSize="12" TextTrimming="CharacterEllipsis" />
-            </DockPanel>
+            <Button Background="Transparent" BorderThickness="0" Padding="0" Margin="0,4,0,4"
+                    HorizontalContentAlignment="Stretch" Cursor="Hand"
+                    Command="{Binding DataContext.NavigateCommand,
+                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    CommandParameter="{Binding TargetNav}"
+                    ToolTip="{Binding Detail}"
+                    AutomationProperties.Name="{Binding Title}"
+                    AutomationProperties.HelpText="{Binding Detail}">
+                <DockPanel>
+                    <Ellipse Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,12,0">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="{StaticResource MutedForegroundBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Severity}" Value="ok">
+                                        <Setter Property="Fill" Value="{StaticResource GreenBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Severity}" Value="warn">
+                                        <Setter Property="Fill" Value="{StaticResource YellowBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Severity}" Value="fail">
+                                        <Setter Property="Fill" Value="{StaticResource RedBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <md:PackIcon DockPanel.Dock="Right" Kind="ChevronRight"
+                                 Width="14" Height="14" VerticalAlignment="Center"
+                                 Foreground="{StaticResource SubtleForegroundBrush}" Margin="12,0,0,0" />
+                    <TextBlock Text="{Binding Title}"
+                               Foreground="{StaticResource ForegroundBrush}"
+                               FontSize="12" TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+            </Button>
         </DataTemplate>
 
         <!-- NIC port row -->
@@ -137,6 +150,7 @@
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />   <!-- Header strip (title + Refresh + pill) -->
+                <RowDefinition Height="Auto" />   <!-- Empty-state card (non-VPU host) -->
                 <RowDefinition Height="Auto" />   <!-- Active Findings (top of page so issues land first) -->
                 <RowDefinition Height="Auto" />   <!-- Identity / Pixellot SW / Last Run cards -->
                 <RowDefinition Height="Auto" />   <!-- System Status gauges -->
@@ -153,7 +167,9 @@
                  outside the gauges. -->
             <DockPanel Grid.Row="0" Margin="0,0,0,20">
                 <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
-                        Background="{Binding StatusBg}" Margin="12,0,0,0">
+                        Background="{Binding StatusBg}" Margin="12,0,0,0"
+                        AutomationProperties.Name="Overall status"
+                        AutomationProperties.HelpText="{Binding StatusLabel}">
                     <StackPanel Orientation="Horizontal">
                         <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
@@ -176,12 +192,37 @@
                 </StackPanel>
             </DockPanel>
 
+            <!-- ====== Empty-state card (non-VPU host) ======
+                 Top-of-page banner that fires when DashboardService can't
+                 find Pixellot at all (registry blank, no agent log, no
+                 services). Stops a clean dev box from masquerading as a
+                 healthy VPU. (UX review rec #12.) -->
+            <Border Grid.Row="1" Style="{StaticResource CardElev2}" Margin="0,0,0,20"
+                    Visibility="{Binding IsNonVpuHost, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <md:PackIcon DockPanel.Dock="Left" Kind="InformationOutline"
+                                 Width="22" Height="22"
+                                 Foreground="{StaticResource AccentBrush}"
+                                 VerticalAlignment="Center" Margin="0,0,16,0" />
+                    <StackPanel>
+                        <TextBlock Text="Pixellot software not detected"
+                                   FontFamily="Segoe UI Semibold" FontSize="14"
+                                   Foreground="{StaticResource ForegroundBrush}" />
+                        <TextBlock Foreground="{StaticResource MutedForegroundBrush}"
+                                   FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap">
+                            <Run Text="This host doesn't appear to be a Pixellot VPU — system metrics below are still live, but expect blank values for VPU identity, services, and the diagnostic report. " />
+                            <Run Text="Run the tool on a real VPU to see the full dashboard." />
+                        </TextBlock>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
             <!-- ====== Active Findings (top of page so issues land first) ======
                  Hidden when there are zero findings — a clean dashboard
                  should not advertise an empty issues card. CardElev2 gives
                  it a slight lift so the eye registers it before the
                  identity / status rows below. -->
-            <Border Grid.Row="1" Style="{StaticResource CardElev2}" Margin="0,0,0,20"
+            <Border Grid.Row="2" Style="{StaticResource CardElev2}" Margin="0,0,0,20"
                     Visibility="{Binding Findings.Count, Converter={StaticResource CountToVis}}">
                 <StackPanel>
                     <DockPanel>
@@ -205,7 +246,7 @@
             </Border>
 
             <!-- ====== Identity / Pixellot SW / Last Run (3-up) ====== -->
-            <UniformGrid Grid.Row="2" Rows="1" Columns="3" Margin="0,0,0,20">
+            <UniformGrid Grid.Row="3" Rows="1" Columns="3" Margin="0,0,0,20">
                 <!-- VPU Identity -->
                 <Border Style="{StaticResource Card}" Margin="0,0,8,0">
                     <StackPanel>
@@ -282,7 +323,7 @@
             </UniformGrid>
 
             <!-- ====== System Status (gauges) ====== -->
-            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,20">
+            <Border Grid.Row="4" Style="{StaticResource Card}" Margin="0,0,0,20">
                 <StackPanel>
                     <TextBlock Text="SYSTEM STATUS" Style="{StaticResource CardCaption}" />
                     <Grid>
@@ -296,7 +337,9 @@
                         </Grid.ColumnDefinitions>
 
                         <!-- CPU -->
-                        <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                        <StackPanel Grid.Column="0" HorizontalAlignment="Center"
+                                    AutomationProperties.Name="CPU usage"
+                                    AutomationProperties.HelpText="{Binding CpuPctText}">
                             <controls:CircularGauge
                                 Percent="{Binding CpuPct}"
                                 ValueText="{Binding CpuPctText}"
@@ -310,7 +353,9 @@
                         </StackPanel>
 
                         <!-- Memory -->
-                        <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                        <StackPanel Grid.Column="1" HorizontalAlignment="Center"
+                                    AutomationProperties.Name="Memory usage"
+                                    AutomationProperties.HelpText="{Binding MemCaption}">
                             <controls:CircularGauge
                                 Percent="{Binding MemPct}"
                                 ValueText="{Binding MemPctText}"
@@ -322,7 +367,9 @@
                         </StackPanel>
 
                         <!-- Disk -->
-                        <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                        <StackPanel Grid.Column="2" HorizontalAlignment="Center"
+                                    AutomationProperties.Name="System disk usage"
+                                    AutomationProperties.HelpText="{Binding DiskCaption}">
                             <controls:CircularGauge
                                 Percent="{Binding DiskPct}"
                                 ValueText="{Binding DiskPctText}"
@@ -333,51 +380,81 @@
                                        Margin="0,8,0,0" />
                         </StackPanel>
 
-                        <!-- Uptime -->
-                        <StackPanel Grid.Column="3" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <md:PackIcon Kind="ClockOutline" Width="22" Height="22"
-                                         Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" />
-                            <TextBlock Text="{Binding UptimeText}"
-                                       FontFamily="Segoe UI Semibold" FontSize="16"
-                                       Foreground="{StaticResource ForegroundBrush}"
-                                       HorizontalAlignment="Center" Margin="0,8,0,0" />
-                            <TextBlock Text="Uptime" FontSize="10"
-                                       Foreground="{StaticResource MutedForegroundBrush}"
-                                       HorizontalAlignment="Center" />
+                        <!-- Uptime / Internet / Temperature share the same static
+                             ring frame as the live gauges (78 px outer, 6 px stroke,
+                             muted track) so all six items in this row read as
+                             one component family. (UX review rec #7.) Inside the
+                             ring is an icon + value text pair sized to match the
+                             gauge centre label. -->
+                        <StackPanel Grid.Column="3" HorizontalAlignment="Center"
+                                    AutomationProperties.Name="Uptime"
+                                    AutomationProperties.HelpText="{Binding UptimeText}">
+                            <Grid Width="78" Height="78">
+                                <Ellipse Width="78" Height="78"
+                                         Stroke="{StaticResource BorderColBrush}"
+                                         StrokeThickness="6" />
+                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <md:PackIcon Kind="ClockOutline" Width="18" Height="18"
+                                                 Foreground="{StaticResource AccentBrush}"
+                                                 HorizontalAlignment="Center" />
+                                    <TextBlock Text="{Binding UptimeText}"
+                                               FontFamily="Segoe UI Semibold" FontSize="11"
+                                               Foreground="{StaticResource ForegroundBrush}"
+                                               HorizontalAlignment="Center" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Text="Uptime" HorizontalAlignment="Center" FontSize="10"
+                                       Foreground="{StaticResource MutedForegroundBrush}" Margin="0,8,0,0" />
                         </StackPanel>
 
-                        <!-- Internet reachability -->
-                        <StackPanel Grid.Column="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <md:PackIcon Kind="Earth" Width="22" Height="22"
-                                         Foreground="{Binding InternetColor}" HorizontalAlignment="Center" />
-                            <TextBlock Text="{Binding InternetText}"
-                                       FontFamily="Segoe UI Semibold" FontSize="14"
-                                       Foreground="{Binding InternetColor}"
-                                       HorizontalAlignment="Center" Margin="0,8,0,0" />
-                            <TextBlock Text="Internet" FontSize="10"
-                                       Foreground="{StaticResource MutedForegroundBrush}"
-                                       HorizontalAlignment="Center" />
+                        <StackPanel Grid.Column="4" HorizontalAlignment="Center"
+                                    AutomationProperties.Name="Internet"
+                                    AutomationProperties.HelpText="{Binding InternetText}">
+                            <Grid Width="78" Height="78">
+                                <Ellipse Width="78" Height="78"
+                                         Stroke="{StaticResource BorderColBrush}"
+                                         StrokeThickness="6" />
+                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <md:PackIcon Kind="Earth" Width="18" Height="18"
+                                                 Foreground="{Binding InternetColor}"
+                                                 HorizontalAlignment="Center" />
+                                    <TextBlock Text="{Binding InternetText}"
+                                               FontFamily="Segoe UI Semibold" FontSize="11"
+                                               Foreground="{Binding InternetColor}"
+                                               HorizontalAlignment="Center" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Text="Internet" HorizontalAlignment="Center" FontSize="10"
+                                       Foreground="{StaticResource MutedForegroundBrush}" Margin="0,8,0,0" />
                         </StackPanel>
 
-                        <!-- Temperature (hidden when WMI doesn't expose ACPI thermal data) -->
-                        <StackPanel Grid.Column="5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        <StackPanel Grid.Column="5" HorizontalAlignment="Center"
+                                    AutomationProperties.Name="Temperature"
+                                    AutomationProperties.HelpText="{Binding TemperatureText}"
                                     Visibility="{Binding TemperatureVisible, Converter={StaticResource BoolToVis}}">
-                            <md:PackIcon Kind="Thermometer" Width="22" Height="22"
-                                         Foreground="{Binding TemperatureColor}" HorizontalAlignment="Center" />
-                            <TextBlock Text="{Binding TemperatureText}"
-                                       FontFamily="Segoe UI Semibold" FontSize="16"
-                                       Foreground="{Binding TemperatureColor}"
-                                       HorizontalAlignment="Center" Margin="0,8,0,0" />
-                            <TextBlock Text="Temperature" FontSize="10"
-                                       Foreground="{StaticResource MutedForegroundBrush}"
-                                       HorizontalAlignment="Center" />
+                            <Grid Width="78" Height="78">
+                                <Ellipse Width="78" Height="78"
+                                         Stroke="{StaticResource BorderColBrush}"
+                                         StrokeThickness="6" />
+                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <md:PackIcon Kind="Thermometer" Width="18" Height="18"
+                                                 Foreground="{Binding TemperatureColor}"
+                                                 HorizontalAlignment="Center" />
+                                    <TextBlock Text="{Binding TemperatureText}"
+                                               FontFamily="Segoe UI Semibold" FontSize="13"
+                                               Foreground="{Binding TemperatureColor}"
+                                               HorizontalAlignment="Center" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Text="Temperature" HorizontalAlignment="Center" FontSize="10"
+                                       Foreground="{StaticResource MutedForegroundBrush}" Margin="0,8,0,0" />
                         </StackPanel>
                     </Grid>
                 </StackPanel>
             </Border>
 
             <!-- ====== NIC ports + Network config (2-up) ====== -->
-            <Grid Grid.Row="4" Margin="0,0,0,20">
+            <Grid Grid.Row="5" Margin="0,0,0,20">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="16" />
@@ -414,8 +491,14 @@
                                        Foreground="{StaticResource MutedForegroundBrush}"
                                        Margin="10,0,0,0" VerticalAlignment="Center" />
                         </DockPanel>
+                        <!-- Network Configuration grid: each value row gets a small
+                             status dot in column 0 — green when populated, muted
+                             when blank/em-dash. Lets a non-tech read the row at a
+                             glance without needing to know what NTP / DNS mean.
+                             (UX review rec #5.) -->
                         <Grid Margin="0,12,0,0">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="20" />
                                 <ColumnDefinition Width="120" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
@@ -426,19 +509,37 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource KvLabel}" Text="Uplink Adapter" />
-                            <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource KvValue}" Text="{Binding UplinkAdapter}" />
-                            <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource KvLabel}" Text="IP Address" />
-                            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource KvValue}"
+
+                            <!-- Uplink: no dot — informational -->
+                            <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource KvLabel}" Text="Uplink Adapter" />
+                            <TextBlock Grid.Row="0" Grid.Column="2" Style="{StaticResource KvValue}" Text="{Binding UplinkAdapter}" />
+
+                            <Ellipse Grid.Row="1" Grid.Column="0" Width="8" Height="8" Margin="0,2,0,2"
+                                     VerticalAlignment="Center" HorizontalAlignment="Left"
+                                     Fill="{Binding IpDotColor}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource KvLabel}" Text="IP Address" />
+                            <TextBlock Grid.Row="1" Grid.Column="2" Style="{StaticResource KvValue}"
                                        FontFamily="Consolas" Text="{Binding IpAddress}" />
-                            <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource KvLabel}" Text="Gateway" />
-                            <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource KvValue}"
+
+                            <Ellipse Grid.Row="2" Grid.Column="0" Width="8" Height="8" Margin="0,2,0,2"
+                                     VerticalAlignment="Center" HorizontalAlignment="Left"
+                                     Fill="{Binding GatewayDotColor}" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource KvLabel}" Text="Gateway" />
+                            <TextBlock Grid.Row="2" Grid.Column="2" Style="{StaticResource KvValue}"
                                        FontFamily="Consolas" Text="{Binding Gateway}" />
-                            <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource KvLabel}" Text="DNS Servers" />
-                            <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource KvValue}"
+
+                            <Ellipse Grid.Row="3" Grid.Column="0" Width="8" Height="8" Margin="0,2,0,2"
+                                     VerticalAlignment="Center" HorizontalAlignment="Left"
+                                     Fill="{Binding DnsDotColor}" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource KvLabel}" Text="DNS Servers" />
+                            <TextBlock Grid.Row="3" Grid.Column="2" Style="{StaticResource KvValue}"
                                        FontFamily="Consolas" Text="{Binding DnsServers}" />
-                            <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource KvLabel}" Text="NTP Server" />
-                            <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource KvValue}"
+
+                            <Ellipse Grid.Row="4" Grid.Column="0" Width="8" Height="8" Margin="0,2,0,2"
+                                     VerticalAlignment="Center" HorizontalAlignment="Left"
+                                     Fill="{Binding NtpDotColor}" />
+                            <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource KvLabel}" Text="NTP Server" />
+                            <TextBlock Grid.Row="4" Grid.Column="2" Style="{StaticResource KvValue}"
                                        FontFamily="Consolas" Text="{Binding NtpServer}" />
                         </Grid>
                     </StackPanel>
@@ -446,7 +547,7 @@
             </Grid>
 
             <!-- ====== Storage + Pixellot Services (2-up) ====== -->
-            <Grid Grid.Row="5" Margin="0,0,0,20">
+            <Grid Grid.Row="6" Margin="0,0,0,20">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="16" />
@@ -493,7 +594,7 @@
             <!-- ====== Quick Nav (hub tiles) — bottom row ======
                  Refresh button moved to the page header. Caption kept above
                  the tiles so the section is still labelled. -->
-            <Border Grid.Row="6" Style="{StaticResource Card}" Padding="16,12,16,12">
+            <Border Grid.Row="7" Style="{StaticResource Card}" Padding="16,12,16,12">
                 <StackPanel>
                     <TextBlock Text="QUICK NAV"
                                FontFamily="Segoe UI Semibold" FontSize="11"
