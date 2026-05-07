@@ -4,6 +4,7 @@
         xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
         xmlns:vm="clr-namespace:Pulse.WPF.ViewModels"
         xmlns:views="clr-namespace:Pulse.WPF.Views"
+        xmlns:helpers="clr-namespace:Pulse.WPF.Helpers"
         Title="Pulse — Pixellot Unified Live System Evaluator (WPF Pilot)"
         Width="1500" Height="850" MinWidth="1180" MinHeight="720"
         WindowStartupLocation="CenterScreen"
@@ -49,6 +50,16 @@
 
                 <!-- Bottom-pinned utility buttons -->
                 <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,16">
+                    <!-- Version chrome — read once from the assembly via
+                         Pulse.WPF.Helpers.AppVersion. Tooltip shows the full
+                         version + commit SHA when InformationalVersion was
+                         set at build time. -->
+                    <TextBlock Text="{x:Static helpers:AppVersion.Display}"
+                               ToolTip="{x:Static helpers:AppVersion.Tooltip}"
+                               Foreground="{StaticResource MutedForegroundBrush}"
+                               FontSize="10"
+                               Margin="22,0,0,10"
+                               AutomationProperties.Name="Pulse version" />
                     <ToggleButton Style="{StaticResource SidebarNavButton}" IsEnabled="False"
                                   AutomationProperties.Name="Settings">
                         <StackPanel Orientation="Horizontal">

@@ -18,6 +18,19 @@ namespace Pulse.WPF.Services
         // is the canonical location across all VPUs we've checked.
         private const string ConfigDir = @"C:\Pixellot\Data\configuration";
 
+        /// <inheritdoc />
+        public string CamerasCfgPath => Path.Combine(ConfigDir, "cameras.cfg");
+
+        /// <inheritdoc />
+        public bool CamerasCfgExists
+        {
+            get
+            {
+                try { return File.Exists(CamerasCfgPath); }
+                catch { return false; }
+            }
+        }
+
         private static readonly Regex SectionRx = new Regex(@"^\[(.+)\]$", RegexOptions.Compiled);
         private static readonly Regex CommentRx = new Regex(@"\s+//", RegexOptions.Compiled);
         private static readonly Regex CameraSection         = new Regex(@"^CAMERA_(\d+)$",          RegexOptions.Compiled);

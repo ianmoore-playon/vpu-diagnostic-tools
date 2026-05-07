@@ -10,16 +10,42 @@
              mc:Ignorable="d"
              Background="{DynamicResource AppBgBrush}">
 
+    <UserControl.Resources>
+        <!-- Local sub-card style used for each port tile in the diagram strip.
+             Mirrors NetSubCard from NetworkView so the two pages feel like
+             siblings; the only difference is a slightly stronger corner
+             radius to read as a "device" rather than a sub-section. -->
+        <Style x:Key="CcSubCard" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource SurfaceBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderColBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="14,12,14,12" />
+        </Style>
+
+        <Style x:Key="CcSubHeading" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI Semibold" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{StaticResource MutedForegroundBrush}" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+
+        <!-- Right-click "Copy" context menu reused on IP and MAC mono cells. -->
+        <ContextMenu x:Key="CopyOnlyMenu">
+            <MenuItem Header="Copy"
+                      Command="ApplicationCommands.Copy" />
+        </ContextMenu>
+    </UserControl.Resources>
+
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />   <!-- Section header -->
-                <RowDefinition Height="Auto" />   <!-- Findings banner -->
-                <RowDefinition Height="Auto" />   <!-- Toolbar row -->
-                <RowDefinition Height="Auto" />   <!-- Port cards (responsive WrapPanel) -->
-                <RowDefinition Height="Auto" />   <!-- Probe-result cards row -->
-                <RowDefinition Height="*"    MinHeight="280" />  <!-- Log + Guidance -->
-                <RowDefinition Height="Auto" />   <!-- Action bar -->
+                <RowDefinition Height="Auto" />   <!-- 0: Section header -->
+                <RowDefinition Height="Auto" />   <!-- 1: Findings banner -->
+                <RowDefinition Height="Auto" />   <!-- 2: Recommended Actions -->
+                <RowDefinition Height="Auto" />   <!-- 3: NIC diagram strip (4 tiles) -->
+                <RowDefinition Height="Auto" />   <!-- 4: Live Log expander -->
+                <RowDefinition Height="Auto" />   <!-- 5: Action bar -->
             </Grid.RowDefinitions>
 
             <!-- ====== Section header ====== -->
@@ -38,258 +64,286 @@
                 </Border>
                 <StackPanel>
                     <TextBlock Text="Camera Connectivity" Style="{StaticResource PageTitle}" />
-                    <TextBlock Text="Validate link speed, ping cameras, and isolate physical-layer faults"
+                    <TextBlock Text="Live diagram of the 4 camera-NIC ports — link state, role, errors, history"
                                Style="{StaticResource PageSubtitle}" />
                 </StackPanel>
             </DockPanel>
 
-            <!-- ====== Findings banner — auto-hides when Findings is empty ====== -->
+            <!-- ====== Findings banner — auto-collapses when empty ====== -->
             <controls:FindingsBanner Grid.Row="1"
                                      Margin="0,0,0,16"
                                      Findings="{Binding Findings}"
                                      AutomationProperties.Name="Findings summary" />
 
-            <!-- ====== Toolbar: Test Scope + Detected NIC ====== -->
-            <Grid Grid.Row="2" Margin="0,0,0,24">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <ComboBox Grid.Column="0"
-                          Width="380"
-                          Style="{StaticResource MaterialDesignFloatingHintComboBox}"
-                          md:HintAssist.Hint="Test Scope"
-                          ItemsSource="{Binding TestScopes}"
-                          SelectedItem="{Binding SelectedScope}"
-                          AutomationProperties.Name="Test scope selector" />
-                <TextBlock Grid.Column="2"
-                           Text="{Binding DetectedNic}"
-                           Foreground="{StaticResource MutedForegroundBrush}"
-                           VerticalAlignment="Center" />
-            </Grid>
-
-            <!-- ====== Port detail cards — keyboard-focusable Buttons ====== -->
-            <ItemsControl Grid.Row="3" ItemsSource="{Binding Ports}" Margin="0,0,0,16">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Button Style="{StaticResource PortCardButton}"
-                                Width="296" Height="178"
-                                Margin="0,0,12,12"
-                                AutomationProperties.Name="{Binding Name}"
-                                AutomationProperties.HelpText="{Binding StatusText}">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-
-                                <!-- Card header: Port N + status pill -->
-                                <DockPanel Grid.Row="0" Margin="0,0,0,12">
-                                    <TextBlock Text="{Binding Name}" Style="{StaticResource BodyStrong}"
-                                               FontSize="15" />
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                        <Ellipse Width="10" Height="10" Fill="{Binding StatusColor}"
-                                                 VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusColor}"
-                                                   FontWeight="SemiBold" Margin="8,0,0,0" />
+            <!-- ====== Recommended Actions (auto-collapse) ====== -->
+            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,16"
+                    Visibility="{Binding Recommendations.Count, Converter={StaticResource CountToVis}}">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,12">
+                        <md:PackIcon DockPanel.Dock="Left" Kind="AlertCircleOutline"
+                                     Width="20" Height="20"
+                                     Foreground="{StaticResource YellowBrush}"
+                                     VerticalAlignment="Center" />
+                        <TextBlock Text="Recommended Actions" Style="{StaticResource SectionTitle}"
+                                   Margin="10,0,0,0" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <ItemsControl ItemsSource="{Binding Recommendations}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding SeverityBg}"
+                                        CornerRadius="6"
+                                        Padding="12,10"
+                                        Margin="0,0,0,8">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Background="{Binding SeverityColor}"
+                                                    CornerRadius="3" Padding="6,1"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Severity}"
+                                                           Foreground="White"
+                                                           FontWeight="SemiBold" FontSize="10" />
+                                            </Border>
+                                            <TextBlock Text="{Binding Title}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource ForegroundBrush}"
+                                                       Margin="8,0,0,0"
+                                                       VerticalAlignment="Center"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Body}"
+                                                   Foreground="{StaticResource ForegroundBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,6,0,0" />
+                                        <!-- Inline action button — only visible when ActionCommand is set. -->
+                                        <Button Content="{Binding ActionLabel}"
+                                                Command="{Binding ActionCommand}"
+                                                Style="{StaticResource MaterialDesignOutlinedButton}"
+                                                HorizontalAlignment="Left"
+                                                Margin="0,8,0,0"
+                                                MinWidth="160" MinHeight="32"
+                                                Visibility="{Binding ActionLabel, Converter={StaticResource StringToVis}}" />
                                     </StackPanel>
-                                </DockPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
 
-                                <!-- Body grid: 5 key/value rows -->
-                                <Grid Grid.Row="1">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="60" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
+            <!-- ====== NIC diagram strip — always shows all 4 tiles ====== -->
+            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,16">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,12">
+                        <md:PackIcon DockPanel.Dock="Left" Kind="LanConnect"
+                                     Width="20" Height="20"
+                                     Foreground="{StaticResource AccentBrush}"
+                                     VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding NicCaption}"
+                                   Style="{StaticResource SectionTitle}"
+                                   Margin="10,0,0,0" VerticalAlignment="Center" />
+                    </DockPanel>
 
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Device:"
-                                               Style="{StaticResource MetaSm}" />
-                                    <TextBlock Grid.Row="0" Grid.Column="1"
-                                               Text="{Binding Device}" Foreground="{Binding DeviceColor}"
-                                               FontWeight="SemiBold"
-                                               ToolTip="Inferred from speed; not yet matched to cameras.cfg" />
+                    <!-- Fixed 4 * grid: every tile is always visible. ItemsControl
+                         is replaced by a hand-rolled 4-column Grid because the
+                         binding count is locked to 4 and we never want to wrap. -->
+                    <ItemsControl ItemsSource="{Binding Ports}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Rows="1" Columns="4" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource CcSubCard}" Margin="0,0,12,0"
+                                        AutomationProperties.Name="{Binding Name}"
+                                        AutomationProperties.HelpText="{Binding StatusLine}">
+                                    <StackPanel>
+                                        <!-- Header: jack glyph + Port N + status dot -->
+                                        <DockPanel Margin="0,0,0,10">
+                                            <md:PackIcon DockPanel.Dock="Left"
+                                                         Kind="Ethernet"
+                                                         Width="18" Height="18"
+                                                         Foreground="{Binding StatusColor}"
+                                                         VerticalAlignment="Center" />
+                                            <Ellipse DockPanel.Dock="Right"
+                                                     Width="10" Height="10"
+                                                     Fill="{Binding StatusColor}"
+                                                     VerticalAlignment="Center"
+                                                     ToolTip="{Binding StatusLine}" />
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontFamily="Segoe UI Semibold"
+                                                       FontSize="13"
+                                                       Margin="8,0,0,0"
+                                                       VerticalAlignment="Center" />
+                                        </DockPanel>
 
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Speed:"
-                                               Style="{StaticResource MetaSm}" Margin="0,4,0,0" />
-                                    <TextBlock Grid.Row="1" Grid.Column="1"
-                                               Text="{Binding Speed}" Margin="0,4,0,0" />
+                                        <!-- Primary device label -->
+                                        <TextBlock Text="{Binding PrimaryLabel}"
+                                                   FontFamily="Segoe UI Semibold"
+                                                   FontSize="14"
+                                                   Foreground="{Binding PrimaryColor, FallbackValue={StaticResource ForegroundBrush}}"
+                                                   TextTrimming="CharacterEllipsis" />
 
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="IP:"
-                                               Style="{StaticResource MetaSm}" Margin="0,4,0,0" />
-                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Ip}"
-                                               Style="{StaticResource Mono11}" Margin="0,4,0,0" />
+                                        <!-- Secondary muted label -->
+                                        <TextBlock Text="{Binding SecondaryLabel}"
+                                                   Foreground="{StaticResource MutedForegroundBrush}"
+                                                   FontSize="11"
+                                                   Margin="0,2,0,0"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Visibility="{Binding SecondaryLabel, Converter={StaticResource StringToVis}}" />
 
-                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="MAC:"
-                                               Style="{StaticResource MetaSm}" Margin="0,4,0,0" />
-                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Mac}"
-                                               Style="{StaticResource Mono11}" Margin="0,4,0,0" />
+                                        <!-- Status / speed line -->
+                                        <TextBlock Text="{Binding StatusLine}"
+                                                   Foreground="{Binding StatusColor}"
+                                                   FontWeight="SemiBold"
+                                                   Margin="0,8,0,0"
+                                                   TextWrapping="Wrap" />
 
-                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="NIC errors:"
-                                               Style="{StaticResource MetaSm}" Margin="0,4,0,0"
-                                               ToolTip="Receive + transmit errors since last reset" />
-                                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Errors}"
-                                               Foreground="{Binding ErrorsColor}" Margin="0,4,0,0" />
-                                </Grid>
-                            </Grid>
-                        </Button>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <!-- ====== Probe-result cards — hidden until a test has run ====== -->
-            <Grid Grid.Row="4" Margin="0,8,0,16"
-                  Visibility="{Binding HasTestRun, Converter={StaticResource BoolToVis}}">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,8,0">
-                    <StackPanel>
-                        <TextBlock Text="SmartSpeed" Style="{StaticResource MetaSm}" />
-                        <TextBlock Text="—" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,0" />
-                        <TextBlock Text="Adapter event log" Style="{StaticResource MetaSm}" Margin="0,2,0,0" />
-                    </StackPanel>
-                </Border>
-                <Border Grid.Column="1" Style="{StaticResource Card}" Margin="8,0,8,0">
-                    <StackPanel>
-                        <TextBlock Text="Ping (CHU)" Style="{StaticResource MetaSm}" />
-                        <TextBlock Text="—" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,0" />
-                        <TextBlock Text="Camera responds to ping" Style="{StaticResource MetaSm}" Margin="0,2,0,0" />
-                    </StackPanel>
-                </Border>
-                <Border Grid.Column="2" Style="{StaticResource Card}" Margin="8,0,8,0">
-                    <StackPanel>
-                        <TextBlock Text="ARP Entry" Style="{StaticResource MetaSm}" />
-                        <TextBlock Text="—" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,0" />
-                        <TextBlock Text="Switch sees the camera" Style="{StaticResource MetaSm}" Margin="0,2,0,0" />
-                    </StackPanel>
-                </Border>
-                <Border Grid.Column="3" Style="{StaticResource Card}" Margin="8,0,8,0">
-                    <StackPanel>
-                        <TextBlock Text="CHU Detection" Style="{StaticResource MetaSm}" />
-                        <TextBlock Text="—" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,0" />
-                        <TextBlock Text="Camera streams video" Style="{StaticResource MetaSm}" Margin="0,2,0,0" />
-                    </StackPanel>
-                </Border>
-                <Border Grid.Column="4" Style="{StaticResource Card}" Margin="8,0,0,0">
-                    <StackPanel>
-                        <TextBlock Text="PoE Budget" Style="{StaticResource MetaSm}" />
-                        <TextBlock Text="—" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,0" />
-                        <TextBlock Text="Switch power budget" Style="{StaticResource MetaSm}" Margin="0,2,0,0" />
-                    </StackPanel>
-                </Border>
-            </Grid>
-
-            <!-- ====== Log + Guidance two-column area ====== -->
-            <Grid Grid.Row="5" Margin="0,0,0,16">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="2*" />
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="*" MinWidth="280" />
-                </Grid.ColumnDefinitions>
-
-                <!-- Live Log -->
-                <Border Grid.Column="0" Style="{StaticResource Card}">
-                    <DockPanel>
-                        <TextBlock DockPanel.Dock="Top" Text="Live Log" Style="{StaticResource SectionTitle}"
-                                   Margin="0,0,0,12" />
-                        <Border BorderBrush="{StaticResource BorderColBrush}" BorderThickness="0,1,0,0"
-                                Background="{StaticResource LogBgBrush}" CornerRadius="6">
-                            <ListBox ItemsSource="{Binding LogEntries}"
-                                     Background="Transparent"
-                                     BorderThickness="0"
-                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                     FontFamily="Cascadia Mono, Consolas"
-                                     FontSize="11"
-                                     AutomationProperties.Name="Live diagnostic log"
-                                     AutomationProperties.LiveSetting="Polite">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Margin="8,2">
+                                        <!-- IP / MAC mono pair -->
+                                        <Grid Margin="0,8,0,0">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="200" />
+                                                <ColumnDefinition Width="40" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding Label}"
-                                                       Foreground="{StaticResource MutedForegroundBrush}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Result}"
-                                                       Foreground="{Binding ResultColor}" TextWrapping="Wrap" />
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="IP"
+                                                       Style="{StaticResource MutedLabel}" />
+                                            <TextBox  Grid.Row="0" Grid.Column="1"
+                                                      Text="{Binding Ip, Mode=OneWay}"
+                                                      IsReadOnly="True"
+                                                      BorderThickness="0"
+                                                      Background="Transparent"
+                                                      Foreground="{StaticResource ForegroundBrush}"
+                                                      FontFamily="Cascadia Mono, Consolas"
+                                                      FontSize="11"
+                                                      Padding="0"
+                                                      ContextMenu="{StaticResource CopyOnlyMenu}" />
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="MAC"
+                                                       Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                                            <TextBox  Grid.Row="1" Grid.Column="1"
+                                                      Text="{Binding Mac, Mode=OneWay}"
+                                                      IsReadOnly="True"
+                                                      BorderThickness="0"
+                                                      Background="Transparent"
+                                                      Foreground="{StaticResource ForegroundBrush}"
+                                                      FontFamily="Cascadia Mono, Consolas"
+                                                      FontSize="11"
+                                                      Padding="0"
+                                                      Margin="0,4,0,0"
+                                                      ContextMenu="{StaticResource CopyOnlyMenu}" />
                                         </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </Border>
-                    </DockPanel>
-                </Border>
 
-                <!-- Guidance -->
-                <Border Grid.Column="2" Style="{StaticResource Card}">
-                    <StackPanel>
-                        <TextBlock Text="Next Steps" Style="{StaticResource SectionTitle}"
-                                   Margin="0,0,0,12" />
-                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedForegroundBrush}"
-                                   Text="Live port-status monitoring is active. Plug or unplug a camera and the cards above update automatically — no need to re-run the diagnostic."
-                                   Margin="0,0,0,16" />
-                        <Button Content="Open Fault Isolator"
-                                Command="{Binding OpenFaultIsolatorCommand}"
-                                IsEnabled="False"
-                                ToolTip="Coming in next release"
-                                Style="{StaticResource MaterialDesignRaisedButton}"
-                                HorizontalAlignment="Stretch" Margin="0,0,0,8"
-                                AutomationProperties.Name="Open Fault Isolator (coming soon)" />
-                        <Button Content="Open Adapter Settings"
-                                Command="{Binding OpenAdapterSettingsCommand}"
-                                Style="{StaticResource MaterialDesignOutlinedButton}"
-                                HorizontalAlignment="Stretch"
-                                AutomationProperties.Name="Open Windows network adapter settings" />
-                    </StackPanel>
+                                        <!-- Error line -->
+                                        <TextBlock Text="{Binding ErrorLine}"
+                                                   Foreground="{Binding ErrorColor}"
+                                                   Margin="0,8,0,0"
+                                                   FontSize="11"
+                                                   Visibility="{Binding ErrorLine, Converter={StaticResource StringToVis}}" />
+
+                                        <!-- Duration / Last-seen -->
+                                        <TextBlock Text="{Binding DurationText}"
+                                                   Foreground="{StaticResource MutedForegroundBrush}"
+                                                   Margin="0,4,0,0"
+                                                   FontSize="11"
+                                                   Visibility="{Binding DurationText, Converter={StaticResource StringToVis}}" />
+
+                                        <!-- Recent activity expander (collapsed by default) -->
+                                        <Expander Header="Recent activity"
+                                                  Margin="0,10,0,0"
+                                                  Foreground="{StaticResource MutedForegroundBrush}"
+                                                  FontSize="11"
+                                                  Visibility="{Binding History.Count, Converter={StaticResource CountToVis}}">
+                                            <ItemsControl ItemsSource="{Binding History}"
+                                                          MaxHeight="160">
+                                                <ItemsControl.Template>
+                                                    <ControlTemplate TargetType="ItemsControl">
+                                                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                                      HorizontalScrollBarVisibility="Disabled">
+                                                            <ItemsPresenter />
+                                                        </ScrollViewer>
+                                                    </ControlTemplate>
+                                                </ItemsControl.Template>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid Margin="0,2,0,2">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="60" />
+                                                                <ColumnDefinition Width="64" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0"
+                                                                       Text="{Binding TimestampLabel}"
+                                                                       FontFamily="Cascadia Mono, Consolas"
+                                                                       FontSize="10"
+                                                                       Foreground="{StaticResource MutedForegroundBrush}" />
+                                                            <TextBlock Grid.Column="1"
+                                                                       Text="{Binding State}"
+                                                                       Foreground="{Binding StateColor}"
+                                                                       FontWeight="SemiBold"
+                                                                       FontSize="10" />
+                                                            <TextBlock Grid.Column="2"
+                                                                       Text="{Binding Note}"
+                                                                       Foreground="{StaticResource ForegroundBrush}"
+                                                                       FontSize="10"
+                                                                       TextWrapping="Wrap" />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Expander>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- ====== Live Log (collapsed expander) ====== -->
+            <Expander Grid.Row="4" Header="Live Log" Margin="0,0,0,16"
+                      Foreground="{StaticResource MutedForegroundBrush}">
+                <Border Style="{StaticResource Card}" Margin="0,8,0,0">
+                    <Border BorderBrush="{StaticResource BorderColBrush}" BorderThickness="0,1,0,0"
+                            Background="{StaticResource LogBgBrush}" CornerRadius="6"
+                            MaxHeight="280">
+                        <ListBox ItemsSource="{Binding LogEntries}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 FontFamily="Cascadia Mono, Consolas"
+                                 FontSize="11"
+                                 AutomationProperties.Name="Live diagnostic log"
+                                 AutomationProperties.LiveSetting="Polite">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="8,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="120" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Label}"
+                                                   Foreground="{StaticResource MutedForegroundBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Result}"
+                                                   Foreground="{Binding ResultColor}" TextWrapping="Wrap" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
                 </Border>
-            </Grid>
+            </Expander>
 
             <!-- ====== Bottom action bar ====== -->
-            <DockPanel Grid.Row="6">
-                <StackPanel Orientation="Horizontal">
-                    <Button Content="Export Report"
-                            Style="{StaticResource MaterialDesignOutlinedButton}"
-                            IsEnabled="False"
-                            AutomationProperties.Name="Export diagnostic report" />
-                    <Button Content="Copy Summary" Margin="8,0,0,0"
-                            Style="{StaticResource MaterialDesignOutlinedButton}"
-                            IsEnabled="False"
-                            AutomationProperties.Name="Copy summary to clipboard" />
-                    <Button Content="Save Log" Margin="8,0,0,0"
-                            Style="{StaticResource MaterialDesignOutlinedButton}"
-                            IsEnabled="False"
-                            AutomationProperties.Name="Save log to file" />
-                </StackPanel>
-                <Button DockPanel.Dock="Right"
-                        Command="{Binding RunTestCommand}"
-                        Style="{StaticResource MaterialDesignRaisedButton}"
-                        Padding="22,10" FontWeight="SemiBold"
-                        MinWidth="200" MinHeight="44"
-                        ToolTip="Refreshes live state and adds a marker entry to the log. The full diagnostic engine (port-speed remediation, RTSP, SmartSpeed, PoE budget) ships in v1.1."
-                        AutomationProperties.Name="Run full diagnostic">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <md:PackIcon Kind="Play" Width="18" Height="18" VerticalAlignment="Center" />
-                        <TextBlock Text="Run Full Diagnostic" Margin="8,0,0,0" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
+            <DockPanel Grid.Row="5">
+                <Button DockPanel.Dock="Left"
+                        Content="Open Adapter Settings"
+                        Command="{Binding OpenAdapterSettingsCommand}"
+                        Style="{StaticResource MaterialDesignOutlinedButton}"
+                        MinWidth="200" MinHeight="40"
+                        AutomationProperties.Name="Open Windows network adapter settings" />
             </DockPanel>
         </Grid>
     </ScrollViewer>

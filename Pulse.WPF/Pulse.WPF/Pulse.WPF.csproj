@@ -9,7 +9,10 @@
     <Nullable>disable</Nullable>
     <LangVersion>9.0</LangVersion>
     <ApplicationIcon />
-    <Version>0.1.0</Version>
+    <Version>0.4.5</Version>
+    <AssemblyVersion>0.4.5.0</AssemblyVersion>
+    <FileVersion>0.4.5.0</FileVersion>
+    <InformationalVersion>0.4.5</InformationalVersion>
     <Authors>PlayOn / Pixellot Field Tools</Authors>
     <Product>Pulse — Pixellot Unified Live System Evaluator (WPF Pilot)</Product>
     <Description>WPF pilot for the Camera Connectivity panel of the Pulse VPU diagnostic tool. Side-by-side with the existing WinForms Pulse.ps1 implementation.</Description>

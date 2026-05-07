@@ -355,3 +355,26 @@ Items to **remove** from the inventory:
 - "Export support bundle" (text + json with full inventory + Dashboard findings).
 
 The first three quick wins (delete Summary, kill sub-captions, full-width inventory) are the user's actual bug — that ships in an afternoon and the redundancy complaint is gone. The rest is the "flesh out the tab properly" half of the request.
+
+
+---
+
+## Camera Connectivity — Round 1 (live diagram + role-aware speed checks)
+
+The placeholder test-runner skeleton is gone. The Camera Connectivity tab now ships as a **live, always-on diagnostic surface** that mirrors the actual hardware state of the camera-NIC card.
+
+**What shipped:**
+
+- **Test-runner artefacts dropped.** The "Test Scope" combo, "Run Full Diagnostic" button, "Open Fault Isolator" stub, and the 5 placeholder probe-result cards (SmartSpeed / Ping / ARP / CHU / PoE) are all removed. Nothing in the page says "click here to start" — the diagnostic is running the moment the panel mounts.
+- **4-tile NIC diagram strip.** A fixed `UniformGrid Rows=1 Columns=4` so all four ports are visible at every viewport width. Each tile shows: jack glyph, Port N, status dot, primary device label, muted secondary label (vendor / OUI / Pixellot), status line (link state + speed + flap warning), copyable IP and MAC, error line, "Linked HH:MM:SS" or "Last: device, N min ago", and a collapsed "Recent activity" expander.
+- **Bundled OUI table** (`Helpers/MacOuiTable.cs`) covers Pixellot, Axis, Hikvision, Dahua, Sony, Bosch, Panasonic, Avigilon, Intel NIC chipsets, and a few common consumer vendors so a tech testing with a laptop sees something better than "Unknown device". The table is intentionally small — entries get added when techs surface unknown OUIs from the field.
+- **Role-aware speed checks.** Resolved via `cameras.cfg` → OUI vendor → OUI hex → "No cable" chain (`Helpers/RemoteDeviceResolver.cs`). OCR / Scoreboard cameras at 100 Mbps render green ("expected"); Main cameras at 100 Mbps render yellow with a "Cable or jack fault" recommendation.
+- **Per-port history (60-minute rolling buffer).** Every link transition (up, down, flap detected, errors rose) appends an entry to `PortViewModel.History`. The tile's "Recent activity" expander lists the last ~10 entries; the same entries also stamp into the page-level Live Log so support can grep both surfaces.
+- **Dynamic recommendations** (`CameraConnectivityViewModel.BuildRecommendations`). One row per failure mode per the locked state design table: linked-degraded (Critical), mid-session 1G→100M regression (Critical), no-cable on a configured port (Warning), cabled-no-link (Warning), flapping ≥3 transitions in 60 s (Warning), CRC/alignment errors rising over 30 s (Warning), unknown remote on a linked port (Info), ≥3 of 4 ports dark (Critical), cameras.cfg lists a camera not visible on any port (Warning).
+- **Cross-tab buttons wired.** Recommendation rows render an inline outlined button via the new `NetworkRecommendation.ActionLabel` + `ActionCommand` properties. "Go to Network" calls `App.NavigateToTab("Network")` (a tiny static helper that walks `App.Current.MainWindow.DataContext` to `MainViewModel.SelectedNav`); "Open cameras.cfg" launches the path that `IPixellotConfigService.CamerasCfgPath` exposes.
+- **Version chrome.** `Helpers/AppVersion.cs` reads `AssemblyInformationalVersion` (preferred) or falls back to `AssemblyName.Version`, formatted as `v0.4.5`. Rendered as small muted text in the lower-left of the sidebar with a tooltip showing the full assembly version. The csproj now sets `<Version>`, `<AssemblyVersion>`, `<FileVersion>`, and `<InformationalVersion>` so the value is real, not "1.0.0.0".
+
+**What's deferred (intentionally):**
+
+- **Per-port "Probe this port" button** — locked decision, ships in a later round.
+- **Fault-isolator wizard** — the old stub button is gone; the wizard returns when the underlying probe engine ports over from the WinForms version.

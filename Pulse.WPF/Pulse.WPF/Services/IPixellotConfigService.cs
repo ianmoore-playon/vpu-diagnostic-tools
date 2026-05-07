@@ -14,5 +14,11 @@ namespace Pulse.WPF.Services
         /// doesn't exist (caller should fall back to OUI / speed heuristics).
         /// </summary>
         Dictionary<string, string> GetRoles();
+
+        /// <summary>Absolute path to cameras.cfg (may not exist on disk).</summary>
+        string CamerasCfgPath { get; }
+
+        /// <summary>True if the cameras.cfg file is readable from disk right now.</summary>
+        bool CamerasCfgExists { get; }
     }
 }

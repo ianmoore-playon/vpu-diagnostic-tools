@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using System.Windows.Media;
 using Pulse.WPF.Helpers;
 
@@ -23,6 +24,12 @@ namespace Pulse.WPF.Models
         // Resolved colors so the XAML can bind without converters.
         public Brush SeverityColor { get; set; }
         public Brush SeverityBg { get; set; }
+
+        // Optional inline button — when set, the Recommendations template renders
+        // an outlined button with this label and command. Camera Connectivity uses
+        // these for "Go to Network" / "Open cameras.cfg" cross-tab jumps.
+        public string ActionLabel { get; set; }
+        public ICommand ActionCommand { get; set; }
 
         public static NetworkRecommendation Create(string severity, string title, string body)
         {
