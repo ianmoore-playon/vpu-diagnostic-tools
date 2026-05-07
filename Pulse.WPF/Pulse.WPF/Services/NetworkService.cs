@@ -22,30 +22,46 @@ namespace Pulse.WPF.Services
     {
         private const int TimeoutMs = 2000;
 
-        // ---- Canonical probe set — copied verbatim from $PortTests in
-        // Modules/NetworkDiagnostics.psm1 so the WPF version stays in sync. ----
+        // ---- Canonical probe set ----
+        // Reviewed 2026-05-07 against two pcapng captures of a known-working
+        // Windows VPU during a live stream:
+        //   * TCP/443 to lmi-app26-05.logmein.com dominated outbound TCP
+        //     (~1,200 packets across both captures).
+        //   * UDP/2088 to a Pixellot Zixi endpoint dominated outbound UDP
+        //     (~17,600 packets — this is the live stream itself).
+        //   * No traffic to TCP/5672 or UDP/5672 — Pixellot moved away from
+        //     Singular AMQP for graphics, so those probes were dropped.
+        //   * No traffic to TCP/1402, TCP/1935 (SportzCast) or UDP/443 (Zixi
+        //     fallback) — kept but flagged Optional so a failure surfaces as
+        //     "venue may not use this" rather than a blocking firewall issue.
         private class PortTestSpec
         {
             public string Protocol;
             public int Port;
             public string Host;
             public bool Reliable;
+            // Optional ports are not required for a working stream on every
+            // venue. SportzCast (1402/1935) is only used at venues with
+            // SportzCast hardware; Zixi UDP/443 is a fallback path for the
+            // primary UDP/2088 stream. The recommendations engine softens the
+            // language for failures on these so users don't get pointed at a
+            // firewall change they don't actually need.
+            public bool Optional;
             public string Purpose;
             public string Note;
         }
 
         private static readonly PortTestSpec[] PortTests =
         {
-            new PortTestSpec { Protocol="UDP", Port=53,   Host="8.8.8.8",                Reliable=true,  Purpose="DNS",                                     Note="Real DNS query for pixellot.tv. PASS confirms UDP DNS is working." },
-            new PortTestSpec { Protocol="TCP", Port=53,   Host="8.8.8.8",                Reliable=true,  Purpose="DNS",                                     Note="" },
-            new PortTestSpec { Protocol="UDP", Port=123,  Host="0.us.pool.ntp.org",       Reliable=true,  Purpose="Clock synchronization (NTP)",             Note="Real NTP request. PASS confirms clock sync is working." },
-            new PortTestSpec { Protocol="TCP", Port=443,  Host="pixellot.tv",             Reliable=true,  Purpose="System ops, remote mgmt, video stream",   Note="" },
-            new PortTestSpec { Protocol="UDP", Port=443,  Host="prod-echo.pixellot.tv",   Reliable=true,  Purpose="Video streaming - Zixi fallback on 443",  Note="Firewall must allow outbound UDP 443 to Pixellot servers." },
-            new PortTestSpec { Protocol="TCP", Port=1402, Host="scorebot.sportzcast.net", Reliable=true,  Purpose="SportzCast data transmission (1400-1405)", Note="Firewall must allow outbound TCP 1400-1405 to SportzCast servers." },
-            new PortTestSpec { Protocol="TCP", Port=1935, Host="scorebot.sportzcast.net", Reliable=true,  Purpose="SportzCast remote management",            Note="Firewall must allow outbound TCP 1935 to SportzCast servers." },
-            new PortTestSpec { Protocol="UDP", Port=2088, Host="prod-echo.pixellot.tv",   Reliable=true,  Purpose="Video streaming - Zixi primary",          Note="Firewall must allow outbound UDP 2088 to Pixellot servers." },
-            new PortTestSpec { Protocol="TCP", Port=5672, Host="app.singular.live",       Reliable=true,  Purpose="Graphics and watermark generation",       Note="Firewall must allow outbound TCP 5672 to Singular." },
-            new PortTestSpec { Protocol="UDP", Port=5672, Host="app.singular.live",       Reliable=false, Purpose="Graphics and watermark generation",       Note="UDP returns no response on working VPUs. See domain test." },
+            new PortTestSpec { Protocol="UDP", Port=53,   Host="8.8.8.8",                Reliable=true,  Purpose="DNS",                                                Note="Real DNS query for pixellot.tv. PASS confirms UDP DNS is working." },
+            new PortTestSpec { Protocol="TCP", Port=53,   Host="8.8.8.8",                Reliable=true,  Purpose="DNS",                                                Note="" },
+            new PortTestSpec { Protocol="UDP", Port=123,  Host="0.us.pool.ntp.org",       Reliable=true,  Purpose="Clock sync (NTP) — configured peer",                Note="Real NTP request. PASS confirms clock sync is working." },
+            new PortTestSpec { Protocol="TCP", Port=443,  Host="pixellot.tv",             Reliable=true,  Purpose="Pixellot management, software updates, video stream", Note="" },
+            new PortTestSpec { Protocol="TCP", Port=443,  Host="logmein.com",             Reliable=true,  Purpose="LogMeIn — Windows remote support",                  Note="Heaviest TCP peer in pcapng captures of a working VPU." },
+            new PortTestSpec { Protocol="UDP", Port=2088, Host="prod-echo.pixellot.tv",   Reliable=true,  Purpose="Video streaming (Zixi primary)",                    Note="Firewall must allow outbound UDP 2088 to Pixellot servers. Dominant UDP path on a streaming VPU." },
+            new PortTestSpec { Protocol="UDP", Port=443,  Host="prod-echo.pixellot.tv",   Reliable=true,  Optional=true,  Purpose="Video streaming (Zixi fallback)",   Note="Optional — fallback path for UDP 2088. Not seen in working-VPU captures." },
+            new PortTestSpec { Protocol="TCP", Port=1402, Host="scorebot.sportzcast.net", Reliable=true,  Optional=true,  Purpose="SportzCast scoreboard data (1400-1405)", Note="Optional — venue-specific. Only required at venues with SportzCast hardware." },
+            new PortTestSpec { Protocol="TCP", Port=1935, Host="scorebot.sportzcast.net", Reliable=true,  Optional=true,  Purpose="SportzCast remote management",      Note="Optional — venue-specific. Only required at venues with SportzCast hardware." },
         };
 
         private class DomainTestSpec
@@ -422,6 +438,7 @@ namespace Pulse.WPF.Services
                 Port = spec.Port,
                 Host = spec.Host,
                 Purpose = spec.Purpose,
+                Optional = spec.Optional,
                 Status = "Info",
             };
             if (!spec.Reliable) return row;

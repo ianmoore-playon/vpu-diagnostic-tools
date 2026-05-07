@@ -38,6 +38,10 @@ namespace Pulse.WPF.Models
         public string Host     { get; set; } = "";
         public string Purpose  { get; set; } = "";
         public string Status   { get => Result; set => Result = value; }
+        // True for ports that aren't required at every venue (SportzCast,
+        // Zixi UDP/443 fallback). The recommendations engine softens its
+        // wording for these — a failure isn't necessarily a firewall issue.
+        public bool   Optional { get; set; }
     }
 
     /// <summary>

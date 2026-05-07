@@ -129,14 +129,25 @@ namespace Pulse.WPF.ViewModels
             // Port tests
             AddLog("", "Port Tests", "Section");
             var ports = await _net.RunPortTestsAsync().ConfigureAwait(false);
-            int portFail = 0, portPass = 0;
+            // Track required vs optional fails separately. Optional ports
+            // (SportzCast 1402/1935, Zixi UDP/443 fallback) failing isn't a
+            // Critical event — only required-port failures bubble up to the
+            // page-header pill / Findings banner.
+            int reqFail = 0, reqPass = 0, optFail = 0;
             foreach (var p in ports)
             {
                 var lvl = p.Status == "Pass" ? "Pass" : (p.Status == "Fail" ? "Fail" : "Gray");
                 AddLog($"{p.Protocol} {p.Port}", $"{p.Status} {p.Purpose}", lvl);
                 p.ResultColor = StatusHelpers.BrushForLogLevel(lvl);
-                if (p.Status == "Pass") portPass++;
-                else if (p.Status == "Fail") portFail++;
+                if (p.Optional)
+                {
+                    if (p.Status == "Fail") optFail++;
+                }
+                else
+                {
+                    if (p.Status == "Pass") reqPass++;
+                    else if (p.Status == "Fail") reqFail++;
+                }
             }
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
             {
@@ -152,11 +163,17 @@ namespace Pulse.WPF.ViewModels
                         UdpPortTests.Add(p);
                 }
             });
-            if (portFail > 0)
+            if (reqFail > 0)
             {
                 AddFinding("Critical",
-                    $"{portFail} of {portFail + portPass} required ports failed",
+                    $"{reqFail} of {reqFail + reqPass} required ports failed",
                     "Check the firewall, router, or content-filter / VLAN policy.");
+            }
+            if (optFail > 0)
+            {
+                AddFinding("Info",
+                    $"{optFail} optional port(s) failed",
+                    "Optional ports (SportzCast / Zixi UDP/443 fallback) aren't required at every venue. See Recommended Actions for context.");
             }
 
             // Domain tests
@@ -212,10 +229,24 @@ namespace Pulse.WPF.ViewModels
                 {
                     if (p == null || p.Status != "Fail") continue;
                     var purpose = string.IsNullOrEmpty(p.Purpose) ? "purpose unknown" : p.Purpose;
-                    built.Add(NetworkRecommendation.Create(
-                        "Critical",
-                        $"{p.Protocol} {p.Port} blocked",
-                        $"{p.Protocol}/{p.Port} ({purpose}) is blocked. Ensure outbound {p.Protocol} {p.Port} to {p.Host} is allowed by the venue firewall, content-filter, and VLAN policy."));
+                    if (p.Optional)
+                    {
+                        // Optional ports (SportzCast 1402/1935, Zixi UDP/443
+                        // fallback) aren't required at every venue. Soften the
+                        // language so support doesn't get pointed at a firewall
+                        // change they don't actually need.
+                        built.Add(NetworkRecommendation.Create(
+                            "Info",
+                            $"{p.Protocol} {p.Port} blocked (optional)",
+                            $"{p.Protocol}/{p.Port} ({purpose}) is blocked. This port may not be required at this venue — only act on this if streaming is failing in a way that points at this service. If it's actually required, ensure outbound {p.Protocol} {p.Port} to {p.Host} is allowed by the venue firewall."));
+                    }
+                    else
+                    {
+                        built.Add(NetworkRecommendation.Create(
+                            "Critical",
+                            $"{p.Protocol} {p.Port} blocked",
+                            $"{p.Protocol}/{p.Port} ({purpose}) is blocked. Ensure outbound {p.Protocol} {p.Port} to {p.Host} is allowed by the venue firewall, content-filter, and VLAN policy."));
+                    }
                 }
             }
 
