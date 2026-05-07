@@ -21,17 +21,14 @@
             <Setter Property="Padding" Value="20,16,20,16" />
         </Style>
 
-        <!-- Half-width card variant for the 2-up WrapPanel rows. Width is
-             bound to half the card-grid width so two cards fit side-by-side
-             at desktop sizes and collapse to one-up at narrow widths via
-             HalfWidthConverter. -->
+        <!-- Half-width card variant for the 2-up Grid rows. The card grid
+             below uses a Grid with two "*" columns and a 16-pixel gutter
+             column, so each card stretches to fill exactly half the
+             available width with no leftover blank space. -->
         <Style x:Key="SiHalfCard" TargetType="Border" BasedOn="{StaticResource SiSectionCard}">
-            <Setter Property="Margin" Value="0,0,16,16" />
-            <Setter Property="Width">
-                <Setter.Value>
-                    <Binding ElementName="CardsScroll" Path="ActualWidth" Converter="{StaticResource HalfWidthConverter}" />
-                </Setter.Value>
-            </Setter>
+            <Setter Property="Margin" Value="0,0,0,16" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
         </Style>
 
         <!-- Inline KV row (label / value), used inside every section card.
@@ -227,18 +224,26 @@
         </UniformGrid>
 
         <!-- ====== Card grid (scrollable) ======
-             Uses SizeChanged-driven WrapPanel sizing via ItemWidth so 2-up
-             rows degrade to 1-column at narrow widths. Each card is a Border
-             with a SectionTitle and per-VM bindings. -->
+             Each 2-up row is a Grid with two "*" columns and a fixed-width
+             gutter, so cards always stretch to fill both columns regardless
+             of window width. Cards in the same row share row-height (the
+             Grid stretches the shorter card to match its sibling), which
+             eliminates the empty right-column gaps that the prior WrapPanel
+             layout produced. -->
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       x:Name="CardsScroll">
             <StackPanel>
 
                 <!-- Row 1: Identity + Pixellot Software -->
-                <WrapPanel Orientation="Horizontal">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
                     <!-- Identity card -->
-                    <Border Style="{StaticResource SiHalfCard}">
+                    <Border Grid.Column="0" Style="{StaticResource SiHalfCard}">
                         <StackPanel>
                             <TextBlock Text="Identity" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                             <Grid>
@@ -280,7 +285,7 @@
                     </Border>
 
                     <!-- Pixellot Software card -->
-                    <Border Style="{StaticResource SiHalfCard}">
+                    <Border Grid.Column="2" Style="{StaticResource SiHalfCard}">
                         <StackPanel>
                             <TextBlock Text="Pixellot Software" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                             <Grid>
@@ -305,12 +310,17 @@
                             </Grid>
                         </StackPanel>
                     </Border>
-                </WrapPanel>
+                </Grid>
 
                 <!-- Row 2: Processor + Memory -->
-                <WrapPanel Orientation="Horizontal">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
                     <!-- Processor card -->
-                    <Border Style="{StaticResource SiHalfCard}">
+                    <Border Grid.Column="0" Style="{StaticResource SiHalfCard}">
                         <StackPanel>
                             <TextBlock Text="Processor" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                             <Grid>
@@ -358,7 +368,7 @@
                     </Border>
 
                     <!-- Memory card with DIMM slots subhead + table -->
-                    <Border Style="{StaticResource SiHalfCard}">
+                    <Border Grid.Column="2" Style="{StaticResource SiHalfCard}">
                         <StackPanel>
                             <TextBlock Text="Memory" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                             <Grid>
@@ -398,12 +408,17 @@
                             </DataGrid>
                         </StackPanel>
                     </Border>
-                </WrapPanel>
+                </Grid>
 
                 <!-- Row 3: Graphics + Storage -->
-                <WrapPanel Orientation="Horizontal">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
                     <!-- Graphics card -->
-                    <Border Style="{StaticResource SiHalfCard}">
+                    <Border Grid.Column="0" Style="{StaticResource SiHalfCard}">
                         <StackPanel>
                             <TextBlock Text="Graphics" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                             <Grid>
@@ -447,7 +462,7 @@
                     </Border>
 
                     <!-- Storage card -->
-                    <Border Style="{StaticResource SiHalfCard}">
+                    <Border Grid.Column="2" Style="{StaticResource SiHalfCard}">
                         <StackPanel>
                             <TextBlock Text="Storage" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                             <TextBlock Text="Physical disks" Style="{StaticResource SiSubHeading}" Margin="0,0,0,8" />
@@ -480,7 +495,7 @@
                             </DataGrid>
                         </StackPanel>
                     </Border>
-                </WrapPanel>
+                </Grid>
 
                 <!-- Row 4: Operating System & Locale (full width) -->
                 <Border Style="{StaticResource SiSectionCard}" Margin="0,0,0,16">
