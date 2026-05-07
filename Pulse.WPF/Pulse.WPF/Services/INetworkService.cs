@@ -16,6 +16,12 @@ namespace Pulse.WPF.Services
         List<NetworkAdapterRow> GetAdapters();
         IpConfigurationViewModel GetIpConfiguration();
 
+        /// <summary>
+        /// Single primary internet-bound adapter (the one with a non-zero
+        /// default gateway). Returns null if none can be located.
+        /// </summary>
+        NetworkAdapterRow GetPrimaryInternetAdapter();
+
         // Active probes — TCP/UDP connect tests against the canonical
         // PortTests / DomainTests sets from NetworkDiagnostics.psm1.
         Task<List<PortTestResult>> RunPortTestsAsync();

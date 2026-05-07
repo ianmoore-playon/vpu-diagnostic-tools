@@ -666,10 +666,11 @@
                 <Button Command="{Binding RefreshCommand}"
                         Style="{StaticResource MaterialDesignRaisedButton}"
                         Padding="22,10" FontWeight="SemiBold"
+                        MinWidth="160" MinHeight="44"
                         ToolTip="Re-read live data from Windows. Use after a hardware change, driver update, or BIOS update.">
-                    <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <md:PackIcon Kind="Refresh" Width="18" Height="18" VerticalAlignment="Center" />
-                        <TextBlock Text="Refresh" Margin="8,0,0,0" />
+                        <TextBlock Text="Refresh" Margin="8,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
             </StackPanel>

@@ -282,11 +282,12 @@
                         Command="{Binding RunTestCommand}"
                         Style="{StaticResource MaterialDesignRaisedButton}"
                         Padding="22,10" FontWeight="SemiBold"
+                        MinWidth="200" MinHeight="44"
                         ToolTip="Refreshes live state and adds a marker entry to the log. The full diagnostic engine (port-speed remediation, RTSP, SmartSpeed, PoE budget) ships in v1.1."
                         AutomationProperties.Name="Run full diagnostic">
-                    <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <md:PackIcon Kind="Play" Width="18" Height="18" VerticalAlignment="Center" />
-                        <TextBlock Text="Run Full Diagnostic" Margin="8,0,0,0" />
+                        <TextBlock Text="Run Full Diagnostic" Margin="8,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
             </DockPanel>

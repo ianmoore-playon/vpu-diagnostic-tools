@@ -228,10 +228,11 @@
                 <Button DockPanel.Dock="Right"
                         Command="{Binding RunTestCommand}"
                         Style="{StaticResource MaterialDesignRaisedButton}"
-                        Padding="22,10" FontWeight="SemiBold">
-                    <StackPanel Orientation="Horizontal">
+                        Padding="22,10" FontWeight="SemiBold"
+                        MinWidth="160" MinHeight="44">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <md:PackIcon Kind="Play" Width="18" Height="18" VerticalAlignment="Center" />
-                        <TextBlock Text="Run Test" Margin="8,0,0,0" />
+                        <TextBlock Text="Run Test" Margin="8,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
             </DockPanel>

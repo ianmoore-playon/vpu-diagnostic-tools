@@ -21,12 +21,41 @@ namespace Pulse.WPF.ViewModels
         private readonly INetworkService _net;
 
         public ObservableCollection<NetworkAdapterRow> Adapters { get; } = new ObservableCollection<NetworkAdapterRow>();
+
+        // Single primary internet-bound adapter — what the new compact card binds to.
+        // Adapters collection is kept for legacy / future use but no longer rendered.
+        private NetworkAdapterRow _primaryAdapter;
+        public NetworkAdapterRow PrimaryAdapter
+        {
+            get => _primaryAdapter;
+            private set
+            {
+                if (Set(ref _primaryAdapter, value))
+                    OnPropertyChanged(nameof(HasPrimaryAdapter));
+            }
+        }
+        public bool HasPrimaryAdapter => _primaryAdapter != null;
+
         public IpConfigurationViewModel IpConfig { get => _ipConfig; private set => Set(ref _ipConfig, value); }
         private IpConfigurationViewModel _ipConfig = new IpConfigurationViewModel();
+
+        // Derived from IpConfig.Dhcp ("Enabled" -> "DHCP", "Disabled" -> "Static").
+        public string IpAssignment
+        {
+            get
+            {
+                var d = (IpConfig?.Dhcp ?? "").Trim().ToLowerInvariant();
+                if (d == "enabled")  return "DHCP";
+                if (d == "disabled") return "Static";
+                return "Unknown";
+            }
+        }
+
         public ObservableCollection<PortTestResult> PortTests { get; } = new ObservableCollection<PortTestResult>();
         public ObservableCollection<DomainTestResult> DomainTests { get; } = new ObservableCollection<DomainTestResult>();
         public ObservableCollection<LogEntry> LogEntries { get; } = new ObservableCollection<LogEntry>();
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
+        public ObservableCollection<NetworkRecommendation> Recommendations { get; } = new ObservableCollection<NetworkRecommendation>();
         public bool HasFindings => Findings.Count > 0;
 
         private string _statusLabel = "Ready";
@@ -56,14 +85,17 @@ namespace Pulse.WPF.ViewModels
             return Task.Run(() =>
             {
                 var adapters = _net.GetAdapters();
+                var primary = _net.GetPrimaryInternetAdapter();
                 var ipCfg = _net.GetIpConfiguration();
                 System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                 {
                     Adapters.Clear();
                     foreach (var a in adapters) Adapters.Add(a);
+                    PrimaryAdapter = primary;
                     IpConfig = ipCfg;
-                    var first = adapters.FirstOrDefault();
-                    DetectedNic = first != null ? $"{first.Name} — {first.Ip}" : "No adapters detected";
+                    OnPropertyChanged(nameof(IpAssignment));
+                    var detected = primary ?? adapters.FirstOrDefault();
+                    DetectedNic = detected != null ? $"{detected.Name} — {detected.Ip}" : "No adapters detected";
                 });
             });
         }
@@ -76,6 +108,7 @@ namespace Pulse.WPF.ViewModels
             await RefreshAsync().ConfigureAwait(false);
 
             ClearLogsAndFindings();
+            ClearRecommendations();
             AddLog("", "Connectivity", "Section");
             SetPillRunning();
 
@@ -97,6 +130,7 @@ namespace Pulse.WPF.ViewModels
             {
                 var lvl = p.Status == "Pass" ? "Pass" : (p.Status == "Fail" ? "Fail" : "Gray");
                 AddLog($"{p.Protocol} {p.Port}", $"{p.Status} {p.Purpose}", lvl);
+                p.ResultColor = StatusHelpers.BrushForLogLevel(lvl);
                 if (p.Status == "Pass") portPass++;
                 else if (p.Status == "Fail") portFail++;
             }
@@ -121,6 +155,7 @@ namespace Pulse.WPF.ViewModels
                 var lvl = d.Status == "Pass" ? "Pass" : (d.Status == "Fail" ? "Fail" : "Gray");
                 var detail = d.Status == "Pass" ? $"PASS  ({d.ResolvedTo})" : d.Status.ToUpperInvariant();
                 AddLog(d.Domain, detail, lvl);
+                d.ResultColor = StatusHelpers.BrushForLogLevel(lvl);
                 if (d.Status == "Pass") domPass++;
                 else if (d.Status == "Fail") domFail++;
             }
@@ -136,7 +171,66 @@ namespace Pulse.WPF.ViewModels
                     "Check DNS server settings on this adapter.");
             }
 
+            // Build per-failure recommendations off the captured results.
+            BuildRecommendations(internet, ports, doms);
+
             UpdateStatusPill();
+        }
+
+        // Build the actionable per-failure recommendation list. Called at the
+        // tail of RunTestAsync. One row per failed port, one per failed domain,
+        // plus a top-level row when the box has no internet at all. Falls back
+        // to a single "all clear" row when nothing failed.
+        private void BuildRecommendations(bool internet, List<PortTestResult> ports, List<DomainTestResult> doms)
+        {
+            var built = new List<NetworkRecommendation>();
+
+            if (!internet)
+            {
+                built.Add(NetworkRecommendation.Create(
+                    "Critical",
+                    "No internet ping",
+                    "VPU has no internet connectivity. Verify the uplink cable and the gateway's WAN status before further triage."));
+            }
+
+            if (ports != null)
+            {
+                foreach (var p in ports)
+                {
+                    if (p == null || p.Status != "Fail") continue;
+                    var purpose = string.IsNullOrEmpty(p.Purpose) ? "purpose unknown" : p.Purpose;
+                    built.Add(NetworkRecommendation.Create(
+                        "Critical",
+                        $"{p.Protocol} {p.Port} blocked",
+                        $"{p.Protocol}/{p.Port} ({purpose}) is blocked. Ensure outbound {p.Protocol} {p.Port} to {p.Host} is allowed by the venue firewall, content-filter, and VLAN policy."));
+                }
+            }
+
+            if (doms != null)
+            {
+                foreach (var d in doms)
+                {
+                    if (d == null || d.Status != "Fail") continue;
+                    built.Add(NetworkRecommendation.Create(
+                        "Warning",
+                        $"{d.Domain} unreachable",
+                        $"Domain `{d.Domain}` is unreachable. Ensure `{d.Domain}` is whitelisted on the venue network (firewall, DNS allow-list, SSL inspection bypass)."));
+                }
+            }
+
+            if (built.Count == 0)
+            {
+                built.Add(NetworkRecommendation.Create(
+                    "OK",
+                    "All checks passed",
+                    "All checks passed — VPU has full network connectivity to required services."));
+            }
+
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            {
+                Recommendations.Clear();
+                foreach (var r in built) Recommendations.Add(r);
+            });
         }
 
         // ----- helpers -----
@@ -154,6 +248,11 @@ namespace Pulse.WPF.ViewModels
                 Findings.Clear();
                 OnPropertyChanged(nameof(HasFindings));
             });
+        }
+
+        private void ClearRecommendations()
+        {
+            System.Windows.Application.Current?.Dispatcher.Invoke(() => Recommendations.Clear());
         }
 
         private void AddLog(string label, string result, string level)

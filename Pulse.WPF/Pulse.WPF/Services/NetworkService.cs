@@ -74,6 +74,55 @@ namespace Pulse.WPF.Services
 
         // ----- Adapters -----
 
+        /// <summary>
+        /// Returns the single primary internet-bound NIC (the one with a
+        /// non-zero default gateway). Mirrors the logic in
+        /// <see cref="TryFindInternetInterfaceIndex"/> but produces a fully
+        /// populated <see cref="NetworkAdapterRow"/>. Returns null on failure.
+        /// </summary>
+        public NetworkAdapterRow GetPrimaryInternetAdapter()
+        {
+            try
+            {
+                int internetIfIndex = TryFindInternetInterfaceIndex();
+                if (internetIfIndex == 0) return null;
+
+                foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (nic.OperationalStatus != OperationalStatus.Up) continue;
+                    if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback ||
+                        nic.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
+
+                    IPInterfaceProperties props;
+                    try { props = nic.GetIPProperties(); }
+                    catch { continue; }
+
+                    int ifIdx;
+                    try { ifIdx = props.GetIPv4Properties()?.Index ?? 0; }
+                    catch { ifIdx = 0; }
+                    if (ifIdx != internetIfIndex) continue;
+
+                    string ip = "—";
+                    var v4 = props.UnicastAddresses
+                        .FirstOrDefault(a => a.Address.AddressFamily == AddressFamily.InterNetwork);
+                    if (v4 != null) ip = v4.Address.ToString();
+
+                    bool up = nic.OperationalStatus == OperationalStatus.Up;
+                    return new NetworkAdapterRow
+                    {
+                        Name = nic.Name,
+                        Description = nic.Description ?? "",
+                        Ip = ip,
+                        Speed = FormatSpeed(nic.Speed),
+                        LinkState = up ? "Up" : "Down",
+                        Purpose = "Internet",
+                    };
+                }
+            }
+            catch { }
+            return null;
+        }
+
         public List<NetworkAdapterRow> GetAdapters()
         {
             var rows = new List<NetworkAdapterRow>();
