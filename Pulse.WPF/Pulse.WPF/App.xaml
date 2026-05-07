@@ -24,10 +24,11 @@
             </ResourceDictionary.MergedDictionaries>
 
             <!-- Shared converters — referenced by name from any view. -->
-            <helpers:BoolToVisibilityConverter   x:Key="BoolToVis" />
-            <helpers:CountToVisibilityConverter  x:Key="CountToVis" />
-            <helpers:StringToVisibilityConverter x:Key="StringToVis" />
-            <helpers:HalfWidthConverter          x:Key="HalfWidthConverter" />
+            <helpers:BoolToVisibilityConverter         x:Key="BoolToVis" />
+            <helpers:CountToVisibilityConverter        x:Key="CountToVis" />
+            <helpers:StringToVisibilityConverter       x:Key="StringToVis" />
+            <helpers:HalfWidthConverter                x:Key="HalfWidthConverter" />
+            <helpers:AlternationIndexToOrdinalConverter x:Key="AlternationIndexToOrdinal" />
 
             <!-- ====== VM-to-View DataTemplates ======
                  MainWindow's ContentControl binds Content="{Binding CurrentView}"

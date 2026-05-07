@@ -17,19 +17,67 @@ namespace Pulse.WPF.Models
     /// </summary>
     public class NetworkRecommendation : ObservableObject
     {
-        public string Title { get; set; } = "";
-        public string Body { get; set; } = "";
-        public string Severity { get; set; } = "Info";   // "Critical" / "Warning" / "Info" / "OK"
+        // Properties are observable so the in-place delta-update path in
+        // CameraConnectivityViewModel.BuildRecommendations() can mutate
+        // existing rows on a tick instead of clearing-and-rebuilding the
+        // whole ObservableCollection (the source of the v0.4.5 flicker).
+        private string _title = "";
+        public string Title { get => _title; set => Set(ref _title, value); }
+
+        private string _body = "";
+        public string Body { get => _body; set => Set(ref _body, value); }
+
+        private string _severity = "Info";   // "Critical" / "Warning" / "Info" / "OK"
+        public string Severity { get => _severity; set => Set(ref _severity, value); }
 
         // Resolved colors so the XAML can bind without converters.
-        public Brush SeverityColor { get; set; }
-        public Brush SeverityBg { get; set; }
+        private Brush _severityColor;
+        public Brush SeverityColor { get => _severityColor; set => Set(ref _severityColor, value); }
+
+        private Brush _severityBg;
+        public Brush SeverityBg { get => _severityBg; set => Set(ref _severityBg, value); }
 
         // Optional inline button — when set, the Recommendations template renders
         // an outlined button with this label and command. Camera Connectivity uses
         // these for "Go to Network" / "Open cameras.cfg" cross-tab jumps.
-        public string ActionLabel { get; set; }
-        public ICommand ActionCommand { get; set; }
+        private string _actionLabel;
+        public string ActionLabel { get => _actionLabel; set => Set(ref _actionLabel, value); }
+
+        private ICommand _actionCommand;
+        public ICommand ActionCommand { get => _actionCommand; set => Set(ref _actionCommand, value); }
+
+        /// <summary>
+        /// Stable identity hash used by the VM's equality short-circuit when
+        /// deciding whether to skip the whole rebuild.
+        /// </summary>
+        public int RowHash()
+        {
+            unchecked
+            {
+                int h = 17;
+                h = h * 31 + (Severity?.GetHashCode() ?? 0);
+                h = h * 31 + (Title?.GetHashCode() ?? 0);
+                h = h * 31 + (Body?.GetHashCode() ?? 0);
+                return h;
+            }
+        }
+
+        /// <summary>
+        /// In-place mutate from a freshly-built sibling. Severity, brushes,
+        /// title, body, action — but the action callback is preserved across
+        /// re-applies because RelayCommand instances are stable on the VM.
+        /// </summary>
+        public void ApplyFrom(NetworkRecommendation other)
+        {
+            if (other == null) return;
+            Title         = other.Title;
+            Body          = other.Body;
+            Severity      = other.Severity;
+            SeverityColor = other.SeverityColor;
+            SeverityBg    = other.SeverityBg;
+            ActionLabel   = other.ActionLabel;
+            ActionCommand = other.ActionCommand;
+        }
 
         public static NetworkRecommendation Create(string severity, string title, string body)
         {

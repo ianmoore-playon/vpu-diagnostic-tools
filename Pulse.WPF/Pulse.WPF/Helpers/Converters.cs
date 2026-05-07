@@ -70,6 +70,24 @@ namespace Pulse.WPF.Helpers
     }
 
     /// <summary>
+    /// Convert <see cref="System.Windows.Controls.ItemsControl.AlternationIndex"/>
+    /// (0-based) into a 1-based ordinal string for the NIC card diagram's
+    /// per-jack port-number badge.
+    /// </summary>
+    public class AlternationIndexToOrdinalConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            int idx = 0;
+            try { idx = System.Convert.ToInt32(value); } catch { }
+            return (idx + 1).ToString(CultureInfo.InvariantCulture);
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => Binding.DoNothing;
+    }
+
+    /// <summary>
     /// Null/empty string -> Collapsed, otherwise Visible. Used by the
     /// SectionHeader subtitle and StatusPill so an empty value hides
     /// the element instead of leaving a gap.

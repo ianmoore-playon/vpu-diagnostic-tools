@@ -1,0 +1,93 @@
+<!--
+    NicCardDiagram — schematic of the camera-NIC card sitting above the
+    4-tile UniformGrid in the Camera Connectivity panel. Renders the four
+    RJ45 jacks plus a connector line down to the top of the tile row.
+    Bind Ports="{Binding Ports}" with an ObservableCollection<PortViewModel>
+    from CameraConnectivityViewModel.
+
+    Layout (all 4 columns share UniformGrid Columns=4 with the tile row
+    underneath, so vertical alignment between jack and tile is automatic):
+
+         ░░       ░░       ░░       ░░       ← jacks (JackVisual)
+         [1]      [2]      [3]      [4]
+          │        │        │        │       ← connector lines (Path)
+       ────────────────────────────────      ← bottom edge of card body
+
+    The control is intentionally pure layout with no behaviour — port state
+    bubbles in via PortViewModel.LinkLedBrush etc.
+-->
+<UserControl x:Class="Pulse.WPF.Controls.NicCardDiagram"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Pulse.WPF.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Name="Root">
+
+    <Border CornerRadius="6"
+            Background="{DynamicResource SurfaceBgBrush}"
+            BorderBrush="{DynamicResource BorderColBrush}"
+            BorderThickness="1"
+            Padding="12,10,12,8"
+            Margin="0,0,0,12">
+        <StackPanel>
+
+            <!-- Row 1: the four jacks -->
+            <ItemsControl ItemsSource="{Binding Ports, ElementName=Root}"
+                          AlternationCount="4">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Rows="1" Columns="4" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <controls:JackVisual
+                            PortNumberLabel="{Binding (ItemsControl.AlternationIndex),
+                                                      RelativeSource={RelativeSource AncestorType={x:Type ContentPresenter}},
+                                                      Converter={StaticResource AlternationIndexToOrdinal},
+                                                      FallbackValue=1}" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Row 2: connector lines drawn one per column.
+                 We use four narrow Border columns each with a 1-px-wide
+                 vertical Line so they line up with the four UniformGrid
+                 cells in the tile row beneath. The line itself is short
+                 (~12 px) — the visual continuity comes from the tiles
+                 sitting directly under this card. -->
+            <UniformGrid Rows="1" Columns="4" Margin="0,4,0,0">
+                <Path Stroke="{DynamicResource BorderColStrongBrush}"
+                      StrokeThickness="1"
+                      HorizontalAlignment="Center">
+                    <Path.Data>
+                        <LineGeometry StartPoint="0,0" EndPoint="0,12" />
+                    </Path.Data>
+                </Path>
+                <Path Stroke="{DynamicResource BorderColStrongBrush}"
+                      StrokeThickness="1"
+                      HorizontalAlignment="Center">
+                    <Path.Data>
+                        <LineGeometry StartPoint="0,0" EndPoint="0,12" />
+                    </Path.Data>
+                </Path>
+                <Path Stroke="{DynamicResource BorderColStrongBrush}"
+                      StrokeThickness="1"
+                      HorizontalAlignment="Center">
+                    <Path.Data>
+                        <LineGeometry StartPoint="0,0" EndPoint="0,12" />
+                    </Path.Data>
+                </Path>
+                <Path Stroke="{DynamicResource BorderColStrongBrush}"
+                      StrokeThickness="1"
+                      HorizontalAlignment="Center">
+                    <Path.Data>
+                        <LineGeometry StartPoint="0,0" EndPoint="0,12" />
+                    </Path.Data>
+                </Path>
+            </UniformGrid>
+        </StackPanel>
+    </Border>
+</UserControl>

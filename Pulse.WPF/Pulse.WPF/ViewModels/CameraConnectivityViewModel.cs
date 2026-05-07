@@ -54,6 +54,16 @@ namespace Pulse.WPF.ViewModels
         private const int MaxHistoryEntriesPerPort = 240;
         private static readonly TimeSpan HistoryRetention = TimeSpan.FromMinutes(60);
 
+        // v0.4.6 §7: keep a tile's last-known remote rendered (muted) for this
+        // long after the most recent successful resolve, then flip to the
+        // "Detecting neighbour…" empty state.
+        private static readonly TimeSpan StaleWindow = TimeSpan.FromSeconds(30);
+
+        // v0.4.6 §5 flicker fix — track the last-rendered multiset hash for
+        // Recommendations and Findings so a no-change tick is a no-op.
+        private int _lastRecommendationsHash;
+        private int _lastFindingsHash;
+
         // ----- Public bindings -----
         public ObservableCollection<PortViewModel>          Ports           { get; } = new ObservableCollection<PortViewModel>();
         public ObservableCollection<LogEntry>               LogEntries      { get; } = new ObservableCollection<LogEntry>();
@@ -101,6 +111,7 @@ namespace Pulse.WPF.ViewModels
                     SecondaryLabel = "",
                     StatusLine = "No cable",
                     StatusColor = StatusHelpers.Brush("MutedForegroundBrush"),
+                    LinkLedBrush = StatusHelpers.Brush("SubtleForegroundBrush"),
                     ErrorLine = "",
                     ErrorColor = StatusHelpers.Brush("MutedForegroundBrush"),
                 });
@@ -166,18 +177,33 @@ namespace Pulse.WPF.ViewModels
                     var snap = st.Snapshot;
                     if (snap == null) { ResetTileToEmpty(port, i); unpluggedCount++; continue; }
 
+                    // RemoteMac is null/empty whenever the candidate ARP entry
+                    // failed the IsInvalidMac filter or matched the local
+                    // self-IP. Resolver returns Source=None in that case so
+                    // we render the empty-state row.
                     var info = RemoteDeviceResolver.Resolve(snap.RemoteMac, snap.RemoteIp, roles);
+                    bool hasRealRemote = info.Source != DeviceIdentitySource.None
+                                         && !string.IsNullOrEmpty(snap.RemoteMac)
+                                         && !string.IsNullOrEmpty(snap.RemoteIp);
 
-                    // ---- IP / MAC / errors / labels ----
-                    port.Ip = string.IsNullOrEmpty(snap.RemoteIp) ? "—" : snap.RemoteIp;
-                    port.Mac = string.IsNullOrEmpty(snap.RemoteMac) ? "—" : snap.RemoteMac;
-                    port.PrimaryLabel = info.PrimaryLabel;
-                    port.SecondaryLabel = info.SecondaryLabel;
-                    port.PrimaryColor = info.IsConfigured
-                        ? StatusHelpers.Brush(info.IsOcr ? "AccentBrush" : "GreenBrush")
-                        : StatusHelpers.Brush("ForegroundBrush");
+                    // ---- Stale-window (v0.4.6 §7) ----
+                    // When we have no current remote but did within the last
+                    // 30 s, render the tile in muted colours and append
+                    // "· stale Ns" to the status line.
+                    DateTime utcNow = DateTime.UtcNow;
+                    bool inStaleWindow = false;
+                    int staleSeconds = 0;
+                    if (!hasRealRemote && st.LastResolveAt.HasValue)
+                    {
+                        var ago = utcNow - st.LastResolveAt.Value;
+                        if (ago <= StaleWindow && snap.IsUp)
+                        {
+                            inStaleWindow = true;
+                            staleSeconds  = (int)Math.Min(StaleWindow.TotalSeconds, Math.Max(1, ago.TotalSeconds));
+                        }
+                    }
 
-                    bool errorsRising = st.ErrorsRising(_monitor.ErrorWindow, DateTime.UtcNow);
+                    bool errorsRising = st.ErrorsRising(_monitor.ErrorWindow, utcNow);
                     port.ErrorLine = snap.ErrorCount > 0
                         ? $"{snap.ErrorCount} errors{(errorsRising ? " ↑" : "")}"
                         : "0 errors";
@@ -189,57 +215,129 @@ namespace Pulse.WPF.ViewModels
                     port.ErrorsText  = port.ErrorLine;
                     port.ErrorsColor = port.ErrorColor;
 
-                    // ---- Status line + colour ----
-                    int flaps = st.FlapCountInWindow(_monitor.FlapWindow, DateTime.UtcNow);
+                    // ---- Status line + colour + LED brush ----
+                    int flaps = st.FlapCountInWindow(_monitor.FlapWindow, utcNow);
                     bool isFlapping = flaps >= _monitor.FlapTransitionsThreshold;
 
-                    string statusLine; Brush statusBrush;
+                    string statusLine; Brush statusBrush; Brush ledBrush;
                     bool is1G   = snap.LinkSpeedBps >= 1_000_000_000UL;
                     bool is100M = snap.LinkSpeedBps >= 100_000_000UL && snap.LinkSpeedBps < 1_000_000_000UL;
 
-                    if (!snap.IsUp)
+                    string primary; string secondary;
+                    string ipShown = "—"; string macShown = "—";
+
+                    if (!snap.IsUp && string.IsNullOrEmpty(snap.RemoteMac))
                     {
-                        if (string.IsNullOrEmpty(snap.RemoteMac))
-                        {
-                            statusLine = "No cable";
-                            statusBrush = StatusHelpers.Brush("MutedForegroundBrush");
-                        }
-                        else
-                        {
-                            statusLine = "Cable, no link";
-                            statusBrush = StatusHelpers.Brush("YellowBrush");
-                        }
+                        // Row 1: No cable — also handles the post-stale-window
+                        // case (LastResolveAt > 30 s ago, link down).
+                        primary = "No cable";
+                        secondary = "";
+                        statusLine = "No cable";
+                        statusBrush = StatusHelpers.Brush("MutedForegroundBrush");
+                        ledBrush    = StatusHelpers.Brush("SubtleForegroundBrush");
+                    }
+                    else if (!snap.IsUp)
+                    {
+                        // Row 2: cabled, no link.
+                        primary = "Waiting for link";
+                        secondary = "";
+                        statusLine = "Cable, no link";
+                        statusBrush = StatusHelpers.Brush("YellowBrush");
+                        ledBrush    = StatusHelpers.Brush("YellowBrush");
+                    }
+                    else if (!hasRealRemote && !inStaleWindow)
+                    {
+                        // Row 3: linked, ARP not yet populated — empty state.
+                        primary = "Detecting neighbour…";
+                        secondary = "Link up, ARP not yet populated";
+                        statusLine = is1G   ? "Linked · 1 Gbps"
+                                   : is100M ? "Linked · 100 Mbps"
+                                            : "Linked · " + FormatSpeed(snap.LinkSpeedBps);
+                        statusBrush = StatusHelpers.Brush("GreenBrush");
+                        ledBrush    = is1G ? StatusHelpers.Brush("GreenBrush")
+                                           : StatusHelpers.Brush("YellowBrush");
+                    }
+                    else if (!hasRealRemote && inStaleWindow)
+                    {
+                        // Stale window — keep the last-known label/IP/MAC.
+                        primary   = !string.IsNullOrEmpty(st.LastRemoteLabel) ? st.LastRemoteLabel
+                                  : !string.IsNullOrEmpty(st.LastRemoteIp)    ? st.LastRemoteIp
+                                  : "Detecting neighbour…";
+                        secondary = !string.IsNullOrEmpty(st.LastRemoteIp) ? st.LastRemoteIp : "";
+                        ipShown   = !string.IsNullOrEmpty(st.LastRemoteIp)  ? st.LastRemoteIp  : "—";
+                        macShown  = !string.IsNullOrEmpty(st.LastRemoteMac) ? st.LastRemoteMac : "—";
+                        statusLine = (is1G   ? "Linked · 1 Gbps"
+                                    : is100M ? "Linked · 100 Mbps"
+                                             : "Linked · " + FormatSpeed(snap.LinkSpeedBps))
+                                   + $" · stale {staleSeconds}s";
+                        statusBrush = StatusHelpers.Brush("YellowBrush");
+                        ledBrush    = StatusHelpers.Brush("YellowBrush");
                     }
                     else if (is1G)
                     {
+                        primary = info.PrimaryLabel; secondary = info.SecondaryLabel;
+                        ipShown = snap.RemoteIp; macShown = snap.RemoteMac;
                         statusLine = "Linked · 1 Gbps";
                         statusBrush = StatusHelpers.Brush("GreenBrush");
+                        ledBrush    = StatusHelpers.Brush("GreenBrush");
                     }
                     else if (is100M && info.IsOcr)
                     {
+                        primary = info.PrimaryLabel; secondary = info.SecondaryLabel;
+                        ipShown = snap.RemoteIp; macShown = snap.RemoteMac;
                         statusLine = "Linked · 100 Mbps · OCR (expected)";
                         statusBrush = StatusHelpers.Brush("GreenBrush");
+                        ledBrush    = StatusHelpers.Brush("GreenBrush");
                     }
                     else if (is100M)
                     {
+                        primary = info.PrimaryLabel; secondary = info.SecondaryLabel;
+                        ipShown = snap.RemoteIp; macShown = snap.RemoteMac;
                         statusLine = "Linked · 100 Mbps (expected 1 Gbps)";
                         statusBrush = StatusHelpers.Brush("YellowBrush");
+                        ledBrush    = StatusHelpers.Brush("YellowBrush");
                     }
                     else
                     {
+                        primary = info.PrimaryLabel; secondary = info.SecondaryLabel;
+                        ipShown = snap.RemoteIp; macShown = snap.RemoteMac;
                         statusLine = "Linked · " + FormatSpeed(snap.LinkSpeedBps);
                         statusBrush = StatusHelpers.Brush("AccentBrush");
+                        ledBrush    = StatusHelpers.Brush("YellowBrush");
                     }
 
                     if (isFlapping)
                     {
-                        statusLine += $"  ·  Flapping x{flaps}/60s";
+                        // Flap visualisation: solid amber + ↯ glyph in the
+                        // status line. We do NOT pulse the LED (UX call).
+                        statusLine += $"  ·  ↯ Flapping ×{flaps}/60s";
                         statusBrush = StatusHelpers.Brush("YellowBrush");
+                        ledBrush    = StatusHelpers.Brush("YellowBrush");
+                        port.IsPulsing = true;
+                    }
+                    else
+                    {
+                        port.IsPulsing = false;
                     }
 
-                    port.StatusLine  = statusLine;
-                    port.StatusText  = statusLine; // legacy
-                    port.StatusColor = statusBrush;
+                    // ---- Apply identity / labels / colors. ----
+                    // Critical guard from the v0.4.6 spec: never render the
+                    // literal "00-00-00-00-00-00" as a remote MAC, and never
+                    // render the local self-IP (already filtered upstream).
+                    port.Ip  = string.IsNullOrEmpty(ipShown)  ? "—" : ipShown;
+                    port.Mac = string.IsNullOrEmpty(macShown) ? "—" : macShown;
+                    port.PrimaryLabel = primary;
+                    port.SecondaryLabel = secondary;
+                    port.PrimaryColor = info.IsConfigured
+                        ? StatusHelpers.Brush(info.IsOcr ? "AccentBrush" : "GreenBrush")
+                        : StatusHelpers.Brush("ForegroundBrush");
+
+                    port.StatusLine   = statusLine;
+                    port.StatusText   = statusLine; // legacy
+                    port.StatusColor  = statusBrush;
+                    port.LinkLedBrush = ledBrush;
+                    port.IsStale      = inStaleWindow;
+                    port.TileOpacity  = inStaleWindow ? 0.65 : 1.0;
 
                     // ---- Duration / Last-seen line ----
                     port.DurationText = ComputeDurationLine(st, snap);
@@ -376,12 +474,14 @@ namespace Pulse.WPF.ViewModels
             port.StatusLine    = "No cable";
             port.StatusText    = "No cable";
             port.StatusColor   = StatusHelpers.Brush("MutedForegroundBrush");
+            port.LinkLedBrush  = StatusHelpers.Brush("SubtleForegroundBrush");
             port.Ip = "—"; port.Mac = "—";
             port.ErrorLine = "";
             port.ErrorColor = StatusHelpers.Brush("MutedForegroundBrush");
             port.Errors = "—"; port.ErrorsText = ""; port.ErrorsColor = port.ErrorColor;
             port.Speed = "—"; port.Device = "No cable"; port.DeviceColor = port.StatusColor;
             port.DurationText = ""; port.LastSeenText = "";
+            port.IsStale = false; port.TileOpacity = 1.0; port.IsPulsing = false;
         }
 
         private void EnsurePortCount(int desired)
@@ -537,16 +637,119 @@ namespace Pulse.WPF.ViewModels
                 }
             }
 
-            // Replace the contents (no clear-and-rebuild flicker visible at 1 s).
-            Recommendations.Clear();
-            foreach (var r in rows) Recommendations.Add(r);
+            // v0.4.6 §5 flicker fix — three layers:
+            //   1. Equality short-circuit: hash the row multiset and bail out
+            //      on a no-change tick (no CollectionChanged event fires).
+            //   2. In-place delta: walk old/new in order; mutate existing
+            //      rows via NetworkRecommendation.ApplyFrom (Set(ref ...));
+            //      Add/RemoveAt only the trailing diff. At most a couple of
+            //      CollectionChanged events per real change.
+            //   3. Findings stays in lockstep with the same logic.
+            int newRecHash = MultisetHash(rows.ConvertAll(r => r.RowHash()));
+            if (newRecHash != _lastRecommendationsHash)
+            {
+                ApplyDelta(Recommendations, rows);
+                _lastRecommendationsHash = newRecHash;
+            }
 
-            // Mirror the most severe rows into Findings so the page-header
-            // pill + banner stay aligned with what the recs say. Finding.Create
-            // accepts the same severity strings, so we re-use them verbatim.
-            Findings.Clear();
+            // Build the Findings projection separately so the multiset hash
+            // is computed against the actual Finding rows we'd mirror.
+            var findings = new List<Finding>(rows.Count);
             foreach (var r in rows)
-                Findings.Add(Finding.Create(r.Severity, r.Title, r.Body, "Cameras"));
+                findings.Add(Finding.Create(r.Severity, r.Title, r.Body, "Cameras"));
+
+            int newFindingsHash = MultisetHash(findings.ConvertAll(FindingRowHash));
+            if (newFindingsHash != _lastFindingsHash)
+            {
+                ApplyFindingsDelta(Findings, findings);
+                _lastFindingsHash = newFindingsHash;
+            }
+        }
+
+        // ---- Multiset hash: order-insensitive, cheap, collision-tolerant. ----
+        // We sum the per-row hashes; two lists with the same row hashes (in
+        // any order) collide to the same multiset hash. Title+Severity+Body
+        // are unique enough in practice that this is fine for "did the rec
+        // set change" detection.
+        private static int MultisetHash(IList<int> rowHashes)
+        {
+            unchecked
+            {
+                int sum = 0;
+                int xor = 0;
+                int count = rowHashes?.Count ?? 0;
+                if (rowHashes != null)
+                {
+                    for (int i = 0; i < rowHashes.Count; i++)
+                    {
+                        sum += rowHashes[i];
+                        xor ^= rowHashes[i];
+                    }
+                }
+                int h = 17;
+                h = h * 31 + count;
+                h = h * 31 + sum;
+                h = h * 31 + xor;
+                return h;
+            }
+        }
+
+        private static int FindingRowHash(Finding f)
+        {
+            unchecked
+            {
+                int h = 17;
+                h = h * 31 + (int)f.Severity;
+                h = h * 31 + (f.Title?.GetHashCode() ?? 0);
+                h = h * 31 + (f.Recommendation?.GetHashCode() ?? 0);
+                return h;
+            }
+        }
+
+        private static void ApplyDelta(ObservableCollection<NetworkRecommendation> live,
+                                        List<NetworkRecommendation> next)
+        {
+            // Walk old/new in order. For each index that exists in both,
+            // mutate the existing row's properties; this fires
+            // PropertyChanged on the affected fields but keeps the
+            // collection slot itself stable, which is what kills the
+            // visible flicker.
+            int common = Math.Min(live.Count, next.Count);
+            for (int i = 0; i < common; i++)
+            {
+                live[i].ApplyFrom(next[i]);
+            }
+            // Append any new trailing rows.
+            for (int i = common; i < next.Count; i++)
+            {
+                live.Add(next[i]);
+            }
+            // Trim removed trailing rows.
+            for (int i = live.Count - 1; i >= next.Count; i--)
+            {
+                live.RemoveAt(i);
+            }
+        }
+
+        private static void ApplyFindingsDelta(ObservableCollection<Finding> live,
+                                                List<Finding> next)
+        {
+            int common = Math.Min(live.Count, next.Count);
+            for (int i = 0; i < common; i++)
+            {
+                // Re-apply via the existing helper so brushes track too.
+                var dst = live[i];
+                var src = next[i];
+                dst.Apply(src.Severity, src.Title, src.Recommendation, src.Category);
+            }
+            for (int i = common; i < next.Count; i++)
+            {
+                live.Add(next[i]);
+            }
+            for (int i = live.Count - 1; i >= next.Count; i--)
+            {
+                live.RemoveAt(i);
+            }
         }
 
         private bool DidSpeedRegress(CameraNicSnapshot snap)

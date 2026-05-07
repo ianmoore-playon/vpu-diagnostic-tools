@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Pulse.WPF.Services;
 
 namespace Pulse.WPF.Helpers
 {
@@ -55,11 +56,16 @@ namespace Pulse.WPF.Helpers
             Dictionary<string, string> cfgRolesByIp)
         {
             // ---- 4) No remote at all ----
-            if (string.IsNullOrWhiteSpace(remoteMac))
+            // Bug #2 / #3 guard: an empty, all-zero, broadcast, or multicast
+            // MAC is *not* a real neighbour. Treat it identically to a missing
+            // remote so the tile renders the empty-state copy ("Detecting
+            // neighbour…" / "No cable") instead of e.g. "Main Camera 1" with
+            // OUI 00-00-00.
+            if (string.IsNullOrWhiteSpace(remoteMac) || NetworkAdapterService.IsInvalidMac(remoteMac))
             {
                 return new RemoteDeviceInfo
                 {
-                    PrimaryLabel = "No cable",
+                    PrimaryLabel = "",
                     SecondaryLabel = "",
                     Source = DeviceIdentitySource.None,
                 };
@@ -72,7 +78,13 @@ namespace Pulse.WPF.Helpers
             // The cfg map is keyed by IP today; if a future cfg parser starts
             // recording MACs we can extend the lookup here without touching
             // the rest of the chain.
+            //
+            // Bug #3: the cfg lookup is *gated* behind a real-MAC + non-empty-IP
+            // check. Without this gate, a port whose ARP table only contained
+            // the local self-IP (now filtered out at the service layer) was
+            // being stamped with the configured camera role.
             if (!string.IsNullOrEmpty(remoteIp)
+                && !NetworkAdapterService.IsInvalidMac(remoteMac)
                 && cfgRolesByIp != null
                 && cfgRolesByIp.TryGetValue(remoteIp, out var role))
             {

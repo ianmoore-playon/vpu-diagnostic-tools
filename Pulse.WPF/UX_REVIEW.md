@@ -378,3 +378,56 @@ The placeholder test-runner skeleton is gone. The Camera Connectivity tab now sh
 
 - **Per-port "Probe this port" button** — locked decision, ships in a later round.
 - **Fault-isolator wizard** — the old stub button is gone; the wizard returns when the underlying probe engine ports over from the WinForms version.
+
+
+---
+
+## Camera Connectivity — v0.4.6 bug fixes + NIC card diagram
+
+The v0.4.5 round shipped the live diagram, but field testing surfaced three
+correctness bugs in the bad-data path plus a visible flicker in the
+Recommendations / Findings rebuild. v0.4.6 fixes both and lands the explicit
+NIC-card schematic the user asked for.
+
+**Bug fixes:**
+
+- **Local self-IP no longer leaks as a remote.** `NetworkAdapterService.GetCameraPorts` now builds a per-NIC set of every IP in `IPInterfaceProperties.UnicastAddresses` and excludes those IPs from the ARP candidate pick. The previous behaviour was that a port whose ARP table only contained the VPU's own self-IP (e.g. 169.254.16.50) would surface that as the "remote" on multiple ports simultaneously.
+- **Zero / broadcast / multicast MACs are rejected.** `IsMulticast` was renamed to `IsInvalidMac` and now rejects null/empty, all-zero (Win32 `GetIpNetTable` `INCOMPLETE` rows), all-FF (broadcast), and multicast first-octet. Applied at both the ARP loader and the candidate-picker so downstream consumers never see an invalid MAC.
+- **`cameras.cfg` lookup is gated on a real MAC AND a real IP.** `RemoteDeviceResolver.Resolve` now short-circuits to the empty-state branch (Source = None) whenever the MAC fails `IsInvalidMac` or the IP is null/empty, so a cfg lookup can no longer attribute "Main Camera 1" to a port whose remote is actually the local self-IP / a zero MAC.
+- **Empty-state copy table applied verbatim.** Per-tile rendering now follows the round-2 spec: "No cable" / "Waiting for link" / "Detecting neighbour…" / configured / unknown / OUI-only / OCR / flapping. The literal string `"00-00-00-00-00-00"` is never rendered, and a remote IP equal to a local NIC unicast is treated as empty.
+
+**Flicker fix (`BuildRecommendations` / Findings):**
+
+`NetworkRecommendation` properties were promoted to `Set(ref ...)` observables so existing rows can be mutated in place. The new tick path is:
+
+1. **Equality short-circuit.** Each row exposes a stable `RowHash()` over `(Severity, Title, Body)`. The VM keeps the last multiset hash for both Recommendations and Findings; on a no-change tick the collections are not touched at all (zero `CollectionChanged` events).
+2. **In-place delta.** When the row set does change, the VM walks old/new in order and calls `NetworkRecommendation.ApplyFrom(...)` on overlapping indices, then `Add` for new trailing rows and `RemoveAt` for trailing rows that disappeared. At most one or two `CollectionChanged` events per real change, vs. `Clear()` + N×`Add()` per tick before.
+3. The `FindingsBanner` keeps its existing binding to the `Findings` collection — the equality short-circuit alone removes the visible flicker because identical Findings ticks now emit no events at all. Decoupling the banner from the collection (a derived `int FindingsCount` + `string FindingsSummary`) was scoped out for this round.
+
+**NIC card diagram:**
+
+- New `Pulse.WPF/Pulse.WPF/Controls/NicCardDiagram.xaml` UserControl + sub-control `JackVisual.xaml`. Sits inside the existing card body, directly above the four-tile `UniformGrid`, so the four columns of jacks line up exactly with the four columns of tiles underneath.
+- Each `JackVisual` is a 28×22 rounded `Border` for the RJ45 outline, two thin spring-tab hint rectangles, an 8×8 LED `Ellipse` whose `Fill` binds to `PortViewModel.LinkLedBrush`, and a port-number badge ("1"/"2"/"3"/"4") below the jack. The tile header lost its `md:PackIcon Kind="Ethernet"` (the jacks now live in the diagram) and gained a small port-number badge so tile↔jack mapping stays unambiguous when scrolled.
+- New properties on `PortViewModel`:
+  - `LinkLedBrush` — green at 1 Gbps linked, green at 100 Mbps for OCR/Scoreboard, amber at degraded / cabled-no-link / flapping, subtle grey unplugged. Computed in the same code path that sets `StatusLine` so the diagram dot and the tile chip cannot disagree.
+  - `IsPulsing` — set during a flap window. **The LED does NOT pulse** (UX call: distracting); flap state surfaces via a `↯` glyph in `StatusLine`. The flag is kept on the VM so a future revision can opt in.
+  - `IsStale` / `TileOpacity` — drive the 30-second stale-window styling (§7).
+
+**Stale-window handling (§7):**
+
+`PortState.LastResolveAt` was added to `CameraNicMonitor` (distinct from `LastRemoteAt`, which retains for 30 minutes). When a port goes from linked-with-ARP to linked-without-ARP, the VM keeps the last-known label/IP/MAC for 30 seconds at 0.65 opacity with a `· stale Ns` subscript on the StatusLine. After 30 s, the tile flips to "Detecting neighbour…".
+
+**Defaults applied (no user input — they stepped away):**
+
+1. Tile-to-jack mapping under MAC reorder: MAC-ascending. A `// TODO` is placed in `NetworkAdapterService.GetCameraPorts` noting this could be promoted to a stable PCI-slot identifier.
+2. Stale window: 30 s.
+3. Diagram size: ~80 px (jack + label + connector stub).
+4. OCR LED colour: green at 100 Mbps for OCR (existing role-aware logic).
+5. Flap visualisation: solid amber + `↯` glyph in StatusLine; LED stays solid amber, no pulse.
+
+**What's deferred (intentionally):**
+
+- **Event-driven NIC change subscription** replacing the 1 s `DispatcherTimer` poll (`NetworkChange.NetworkAddressChanged` + WMI `__InstanceModificationEvent` for `Win32_NetworkAdapter`). Locked for a later round; the 1 s poll is acceptable.
+- **`cameras.cfg` matching by MAC.** Today the role map is keyed by IP. A future cfg parser revision should add a MAC-keyed lookup so role attribution is robust against link-local IP shuffles.
+- **Stable port-number identifier across MAC reorders** (PCI slot / device path). MAC-ascending ordering is fine for the field but a hot-swapped NIC will renumber tiles.
+- Decoupling `FindingsBanner` from the `Findings` collection (replace with derived `FindingsCount` / `FindingsSummary`). The equality short-circuit already eliminates visible flicker, so this is "nice to have" rather than required.

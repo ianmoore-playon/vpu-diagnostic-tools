@@ -48,6 +48,15 @@ namespace Pulse.WPF.Helpers
         public string LastRemoteLabel { get; set; }
         public DateTime? LastRemoteAt { get; set; }
 
+        // ---- Last successful *resolve* timestamp ----
+        // Distinct from LastRemoteAt: this is updated every tick where the
+        // current snapshot still carries a real remote, so the 30-second
+        // stale window is measured from "we still saw it that recently"
+        // rather than "the tile first lit up". When a port goes from
+        // linked-with-ARP to linked-without-ARP, this stops advancing and
+        // the VM uses (now - LastResolveAt) for the "stale Ns" subscript.
+        public DateTime? LastResolveAt { get; set; }
+
         public int FlapCountInWindow(TimeSpan window, DateTime now)
         {
             // Count transitions in [now - window, now]. Caller is responsible
@@ -208,11 +217,17 @@ namespace Pulse.WPF.Helpers
                 st.ErrorSamples.Add((now, s.ErrorCount));
 
                 // -- Last-seen remote snapshot --
+                // After bug-fix #1/#2/#3, RemoteMac is null when the only ARP
+                // candidate was the local self-IP or an INCOMPLETE row. We
+                // therefore only stamp LastRemoteAt / LastResolveAt when the
+                // remote is *real*. The VM uses LastResolveAt to drive the
+                // 30-second stale window (§7).
                 if (!string.IsNullOrEmpty(s.RemoteMac))
                 {
                     st.LastRemoteIp = s.RemoteIp;
                     st.LastRemoteMac = s.RemoteMac;
                     st.LastRemoteAt = now;
+                    st.LastResolveAt = now;
                     // The label is set by the VM after resolution; we keep
                     // identity here, the VM enriches.
                 }

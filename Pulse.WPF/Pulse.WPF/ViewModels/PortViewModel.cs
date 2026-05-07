@@ -106,7 +106,32 @@ namespace Pulse.WPF.ViewModels
         public string Errors { get => _errors; set => Set(ref _errors, value); }
 
         // Pulsing flag — kept so any future "running" animation can re-bind to it.
+        // Per the round-2 UX call we explicitly do NOT pulse the LED on flap
+        // (it was distracting); flap state surfaces via the ↯ glyph in
+        // StatusLine instead. The property stays here so a future revision
+        // can wire pulsing without a model change.
         private bool _isPulsing;
         public bool IsPulsing { get => _isPulsing; set => Set(ref _isPulsing, value); }
+
+        // ---- LED brush for the NIC card diagram jacks ----
+        // Computed by CameraConnectivityViewModel in the same pass that
+        // composes StatusLine, so the diagram dot and the tile chip are
+        // always in sync (a green LED never co-exists with a yellow status
+        // line, etc.).
+        //   • Linked at 1 Gbps                         -> GreenBrush
+        //   • Linked at 100 Mbps for OCR/Scoreboard    -> GreenBrush
+        //   • Linked-degraded / cabled-no-link / flap  -> YellowBrush
+        //   • Unplugged                                -> SubtleForegroundBrush
+        private Brush _linkLedBrush;
+        public Brush LinkLedBrush { get => _linkLedBrush; set => Set(ref _linkLedBrush, value); }
+
+        // Dimmed flag for stale-window rendering. When set, the tile
+        // primary/secondary/IP/MAC render at lower opacity and the
+        // StatusLine has the "· stale Ns" suffix.
+        private bool _isStale;
+        public bool IsStale { get => _isStale; set => Set(ref _isStale, value); }
+
+        private double _tileOpacity = 1.0;
+        public double TileOpacity { get => _tileOpacity; set => Set(ref _tileOpacity, value); }
     }
 }
