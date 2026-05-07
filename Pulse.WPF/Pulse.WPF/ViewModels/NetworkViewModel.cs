@@ -52,6 +52,10 @@ namespace Pulse.WPF.ViewModels
         }
 
         public ObservableCollection<PortTestResult> PortTests { get; } = new ObservableCollection<PortTestResult>();
+        // Protocol-split views of PortTests so the view can render TCP and UDP
+        // tiles in two side-by-side columns. Populated in RunTestAsync.
+        public ObservableCollection<PortTestResult> TcpPortTests { get; } = new ObservableCollection<PortTestResult>();
+        public ObservableCollection<PortTestResult> UdpPortTests { get; } = new ObservableCollection<PortTestResult>();
         public ObservableCollection<DomainTestResult> DomainTests { get; } = new ObservableCollection<DomainTestResult>();
         public ObservableCollection<LogEntry> LogEntries { get; } = new ObservableCollection<LogEntry>();
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
@@ -137,7 +141,16 @@ namespace Pulse.WPF.ViewModels
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
             {
                 PortTests.Clear();
-                foreach (var p in ports) PortTests.Add(p);
+                TcpPortTests.Clear();
+                UdpPortTests.Clear();
+                foreach (var p in ports)
+                {
+                    PortTests.Add(p);
+                    if (string.Equals(p.Protocol, "TCP", System.StringComparison.OrdinalIgnoreCase))
+                        TcpPortTests.Add(p);
+                    else if (string.Equals(p.Protocol, "UDP", System.StringComparison.OrdinalIgnoreCase))
+                        UdpPortTests.Add(p);
+                }
             });
             if (portFail > 0)
             {
@@ -218,13 +231,11 @@ namespace Pulse.WPF.ViewModels
                 }
             }
 
-            if (built.Count == 0)
-            {
-                built.Add(NetworkRecommendation.Create(
-                    "OK",
-                    "All checks passed",
-                    "All checks passed — VPU has full network connectivity to required services."));
-            }
+            // Note: no "all clear" fallback row — when there are no failures
+            // the Recommendations panel auto-collapses entirely (Visibility is
+            // bound to Recommendations.Count via CountToVis), so the user only
+            // sees this card when there's something actionable to do. The
+            // page-level status pill already communicates the all-good state.
 
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
             {
