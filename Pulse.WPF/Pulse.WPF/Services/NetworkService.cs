@@ -61,7 +61,6 @@ namespace Pulse.WPF.Services
             new PortTestSpec { Protocol="UDP", Port=2088, Host="prod-echo.pixellot.tv",   Reliable=true,  Purpose="Video streaming (Zixi primary)",                    Note="Firewall must allow outbound UDP 2088 to Pixellot servers. Dominant UDP path on a streaming VPU." },
             new PortTestSpec { Protocol="UDP", Port=443,  Host="prod-echo.pixellot.tv",   Reliable=true,  Optional=true,  Purpose="Video streaming (Zixi fallback)",   Note="Optional — fallback path for UDP 2088. Not seen in working-VPU captures." },
             new PortTestSpec { Protocol="TCP", Port=1402, Host="scorebot.sportzcast.net", Reliable=true,  Optional=true,  Purpose="SportzCast scoreboard data (1400-1405)", Note="Optional — venue-specific. Only required at venues with SportzCast hardware." },
-            new PortTestSpec { Protocol="TCP", Port=1935, Host="scorebot.sportzcast.net", Reliable=true,  Optional=true,  Purpose="SportzCast remote management",      Note="Optional — venue-specific. Only required at venues with SportzCast hardware." },
         };
 
         private class DomainTestSpec
@@ -85,7 +84,6 @@ namespace Pulse.WPF.Services
             new DomainTestSpec { Domain="s3.amazonaws.com",               Purpose="Canopy remote monitoring (leaf-swu)" },
             new DomainTestSpec { Domain="leaf-uploads.s3.amazonaws.com",  Purpose="Canopy uploads" },
             new DomainTestSpec { Domain="leaf-downloads.s3.amazonaws.com",Purpose="Canopy downloads" },
-            new DomainTestSpec { Domain="gocanopy.io",                    Purpose="Canopy remote system management and monitoring" },
         };
 
         // ----- Adapters -----
