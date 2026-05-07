@@ -126,8 +126,9 @@
             <Border Style="{StaticResource SiSummaryCard}" Margin="0,0,8,0">
                 <StackPanel>
                     <DockPanel>
-                        <Ellipse DockPanel.Dock="Right" Width="10" Height="10"
-                                 Fill="{Binding ModelStatusColor}" VerticalAlignment="Center" />
+                        <md:PackIcon DockPanel.Dock="Right" Kind="DesktopTower"
+                                     Width="14" Height="14"
+                                     Foreground="{Binding ModelStatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="Model"
                                    FontFamily="Segoe UI Semibold" FontSize="10"
                                    Foreground="{StaticResource MutedForegroundBrush}" />
@@ -142,8 +143,9 @@
             <Border Style="{StaticResource SiSummaryCard}" Margin="4,0,4,0">
                 <StackPanel>
                     <DockPanel>
-                        <Ellipse DockPanel.Dock="Right" Width="10" Height="10"
-                                 Fill="{Binding OsStatusColor}" VerticalAlignment="Center" />
+                        <md:PackIcon DockPanel.Dock="Right" Kind="MicrosoftWindows"
+                                     Width="14" Height="14"
+                                     Foreground="{Binding OsStatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="OS"
                                    FontFamily="Segoe UI Semibold" FontSize="10"
                                    Foreground="{StaticResource MutedForegroundBrush}" />
@@ -175,8 +177,9 @@
             <Border Style="{StaticResource SiSummaryCard}" Margin="4,0,4,0">
                 <StackPanel>
                     <DockPanel>
-                        <Ellipse DockPanel.Dock="Right" Width="10" Height="10"
-                                 Fill="{Binding CpuStatusColor}" VerticalAlignment="Center" />
+                        <md:PackIcon DockPanel.Dock="Right" Kind="Cpu64Bit"
+                                     Width="14" Height="14"
+                                     Foreground="{Binding CpuStatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="CPU"
                                    FontFamily="Segoe UI Semibold" FontSize="10"
                                    Foreground="{StaticResource MutedForegroundBrush}" />
