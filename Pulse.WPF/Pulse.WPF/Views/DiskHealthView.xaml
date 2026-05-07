@@ -25,11 +25,13 @@
             <!-- ====== Header ====== -->
             <DockPanel Grid.Row="0" Margin="0,0,0,24">
                 <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
-                        Background="{Binding StatusBg}">
-                    <StackPanel Orientation="Horizontal">
+                        Background="{Binding StatusBg}"
+                        VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
-                                   Foreground="{Binding StatusColor}" Margin="8,0,0,0" />
+                                   Foreground="{Binding StatusColor}" Margin="8,0,0,0"
+                                   VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
                 <StackPanel>
