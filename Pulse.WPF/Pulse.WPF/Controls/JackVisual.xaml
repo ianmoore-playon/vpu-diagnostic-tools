@@ -46,9 +46,14 @@
                            VerticalAlignment="Top"
                            Margin="0,2,5,0" />
 
-                <!-- LED -->
+                <!-- LED. Fill binds to PortViewModel.LinkLedBrush; while the
+                     VM hasn't computed it yet the Ellipse renders transparent
+                     (no FallbackValue used, because nesting a DynamicResource
+                     inside a Binding's FallbackValue is invalid in inline
+                     markup-extension syntax — that exact pattern was the
+                     XamlParseException that froze the whole tab in v0.4.6). -->
                 <Ellipse Width="8" Height="8"
-                         Fill="{Binding LinkLedBrush, FallbackValue={DynamicResource SubtleForegroundBrush}}"
+                         Fill="{Binding LinkLedBrush}"
                          HorizontalAlignment="Center"
                          VerticalAlignment="Bottom"
                          Margin="0,0,0,3" />

@@ -198,11 +198,15 @@
                                                        Visibility="Collapsed" />
                                         </DockPanel>
 
-                                        <!-- Primary device label -->
+                                        <!-- Primary device label.
+                                             Foreground binds straight to PrimaryColor (no inline
+                                             {StaticResource} FallbackValue — that's an invalid
+                                             nested markup-extension that crashed the tab on load
+                                             in v0.4.6). VM defaults PrimaryColor to ForegroundBrush. -->
                                         <TextBlock Text="{Binding PrimaryLabel}"
                                                    FontFamily="Segoe UI Semibold"
                                                    FontSize="14"
-                                                   Foreground="{Binding PrimaryColor, FallbackValue={StaticResource ForegroundBrush}}"
+                                                   Foreground="{Binding PrimaryColor}"
                                                    TextTrimming="CharacterEllipsis" />
 
                                         <!-- Secondary muted label -->

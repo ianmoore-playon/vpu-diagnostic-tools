@@ -29,6 +29,20 @@ namespace Pulse.WPF.ViewModels
     /// </summary>
     public class PortViewModel : ObservableObject
     {
+        public PortViewModel()
+        {
+            // Pre-seed the brushes so bindings (Foreground / Fill on the
+            // tile, the LED, etc.) have a real Brush even before the first
+            // monitor tick. Without this, null Brush bindings render
+            // invisible text on the just-loaded tab. The CameraConnectivity
+            // VM overwrites these with the proper severity brush on every
+            // tick.
+            _primaryColor = StatusHelpers.Brush("ForegroundBrush");
+            _statusColor  = StatusHelpers.Brush("MutedForegroundBrush");
+            _errorColor   = StatusHelpers.Brush("MutedForegroundBrush");
+            _linkLedBrush = StatusHelpers.Brush("SubtleForegroundBrush");
+        }
+
         // ---- Identity ----
         private string _name = "Port 1";
         public string Name { get => _name; set => Set(ref _name, value); }
