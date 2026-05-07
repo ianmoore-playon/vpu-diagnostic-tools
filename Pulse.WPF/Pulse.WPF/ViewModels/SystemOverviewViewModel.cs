@@ -1,8 +1,11 @@
 using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using Pulse.WPF.Helpers;
@@ -14,21 +17,21 @@ namespace Pulse.WPF.ViewModels
     /// <summary>
     /// System Overview specs panel — adapted from the legacy WinForms
     /// "System Information" tab. Six summary cards across the top
-    /// (Model / OS / Uptime / CPU / RAM / Storage), a System Inventory
-    /// list on the left, and a Summary bullet list on the right.
-    /// All data sourced from ISystemOverviewService.Collect().
+    /// (Model / OS / Uptime / CPU / RAM / Storage), then a structured
+    /// per-card layout (Identity / Pixellot Software / Processor / Memory /
+    /// Graphics / Storage / OS &amp; Locale / Network adapters / Software
+    /// Inventory) per UX_REVIEW round 2 §3. All data sourced from
+    /// ISystemOverviewService.Collect().
     /// </summary>
     public class SystemOverviewViewModel : ObservableObject
     {
         private readonly ISystemOverviewService _svc;
 
+        // Flat inventory — kept for back-compat; the Copy-as-text path no
+        // longer reads from it (it walks the typed models instead) but other
+        // future surfaces (export-to-JSON, support-bundle) might.
         public ObservableCollection<SystemOverviewRow> Inventory { get; } =
             new ObservableCollection<SystemOverviewRow>();
-
-        // Summary collection (right-column bullets) was removed in v0.4 along
-        // with the right-column Summary card — the bullets were a byte-for-byte
-        // restatement of the 6 top tiles. SystemOverviewSummaryItem is kept in
-        // the Models layer for now in case anything else binds to it.
 
         // ---- Top-row summary cards ------------------------------------------
         private string _modelTitle = "—";
@@ -61,7 +64,59 @@ namespace Pulse.WPF.ViewModels
         private Brush _storageStatusColor = StatusHelpers.Brush("MutedForegroundBrush");
         public Brush StorageStatusColor { get => _storageStatusColor; set => Set(ref _storageStatusColor, value); }
 
-        // ---- Status pill (top-right, matches Network/Hardware pattern) ------
+        // ---- Per-card typed models (UX_REVIEW round 2 §3) -------------------
+        private IdentityCardModel _identity = new IdentityCardModel();
+        public IdentityCardModel Identity { get => _identity; set => Set(ref _identity, value); }
+
+        private PixellotSoftwareCardModel _pixellotSoftware = new PixellotSoftwareCardModel();
+        public PixellotSoftwareCardModel PixellotSoftware { get => _pixellotSoftware; set => Set(ref _pixellotSoftware, value); }
+
+        private ProcessorCardModel _processor = new ProcessorCardModel();
+        public ProcessorCardModel Processor { get => _processor; set => Set(ref _processor, value); }
+
+        private MemoryCardModel _memory = new MemoryCardModel();
+        public MemoryCardModel Memory { get => _memory; set => Set(ref _memory, value); }
+
+        private GraphicsCardModel _graphics = new GraphicsCardModel();
+        public GraphicsCardModel Graphics { get => _graphics; set => Set(ref _graphics, value); }
+
+        private StorageCardModel _storage = new StorageCardModel();
+        public StorageCardModel Storage { get => _storage; set => Set(ref _storage, value); }
+
+        private OsLocaleCardModel _osLocale = new OsLocaleCardModel();
+        public OsLocaleCardModel OsLocale { get => _osLocale; set => Set(ref _osLocale, value); }
+
+        public ObservableCollection<NicInventoryRow> NetworkAdapters { get; } =
+            new ObservableCollection<NicInventoryRow>();
+
+        // ---- Software Inventory (collapsible) -------------------------------
+        // Default: collapsed; shows total + flagged. Expanded: searchable
+        // DataGrid bound to AllAppsView (filtered by SearchTerm).
+        private int _softwareTotal;
+        public int SoftwareTotal { get => _softwareTotal; set => Set(ref _softwareTotal, value); }
+        private int _softwareFlagged;
+        public int SoftwareFlagged { get => _softwareFlagged; set => Set(ref _softwareFlagged, value); }
+
+        public ObservableCollection<InstalledApp> AllApps { get; } =
+            new ObservableCollection<InstalledApp>();
+        public ObservableCollection<InstalledApp> FlaggedApps { get; } =
+            new ObservableCollection<InstalledApp>();
+
+        // CollectionView wrapper around AllApps so SearchTerm can filter the
+        // visible rows in the expander DataGrid without rebuilding the source.
+        public ICollectionView AllAppsView { get; }
+
+        private string _searchTerm = "";
+        public string SearchTerm
+        {
+            get => _searchTerm;
+            set
+            {
+                if (Set(ref _searchTerm, value)) AllAppsView.Refresh();
+            }
+        }
+
+        // ---- Status pill (top-right) ----------------------------------------
         private string _statusLabel = "Loading…";
         public string StatusLabel { get => _statusLabel; set => Set(ref _statusLabel, value); }
         private Brush _statusColor = StatusHelpers.Brush("MutedForegroundBrush");
@@ -69,13 +124,9 @@ namespace Pulse.WPF.ViewModels
         private Brush _statusBg = StatusHelpers.Brush("BorderColBrush");
         public Brush StatusBg { get => _statusBg; set => Set(ref _statusBg, value); }
 
-        // Status text shown next to the action buttons — drives the
-        // "Copied to clipboard" / error feedback after a Copy-as-text click.
-        // Cleared automatically a few seconds later via the dispatcher.
         private string _copyStatus = "";
         public string CopyStatus { get => _copyStatus; set => Set(ref _copyStatus, value); }
 
-        // Action-bar commands.
         public ICommand RefreshCommand { get; }
         public ICommand CopyAsTextCommand { get; }
 
@@ -84,6 +135,16 @@ namespace Pulse.WPF.ViewModels
             _svc = svc;
             RefreshCommand = new AsyncCommand(RefreshAsync);
             CopyAsTextCommand = new RelayCommand(CopyInventoryToClipboard);
+
+            AllAppsView = CollectionViewSource.GetDefaultView(AllApps);
+            AllAppsView.Filter = obj =>
+            {
+                if (string.IsNullOrWhiteSpace(_searchTerm)) return true;
+                if (!(obj is InstalledApp a)) return false;
+                var t = _searchTerm.Trim();
+                return (a.DisplayName != null && a.DisplayName.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0)
+                    || (a.Publisher   != null && a.Publisher.IndexOf(t,   StringComparison.OrdinalIgnoreCase) >= 0);
+            };
         }
 
         public Task RefreshAsync()
@@ -107,6 +168,27 @@ namespace Pulse.WPF.ViewModels
                     StorageTitle       = c.StorageTitle;
                     StorageStatusColor = StatusForTier(c.StorageStatus);
 
+                    // Replace typed model graphs wholesale — easier than
+                    // diffing per field and triggers OneTime/OneWay rebinds.
+                    Identity         = snap.Identity;
+                    PixellotSoftware = snap.PixellotSoftware;
+                    Processor        = snap.Processor;
+                    Memory           = snap.Memory;
+                    Graphics         = snap.Graphics;
+                    Storage          = snap.Storage;
+                    OsLocale         = snap.OsLocale;
+
+                    NetworkAdapters.Clear();
+                    foreach (var n in snap.NetworkAdapters) NetworkAdapters.Add(n);
+
+                    AllApps.Clear();
+                    foreach (var a in snap.SoftwareInventory.AllApps) AllApps.Add(a);
+                    FlaggedApps.Clear();
+                    foreach (var a in snap.SoftwareInventory.FlaggedApps) FlaggedApps.Add(a);
+                    SoftwareTotal   = snap.SoftwareInventory.TotalCount;
+                    SoftwareFlagged = snap.SoftwareInventory.FlaggedCount;
+                    AllAppsView.Refresh();
+
                     Inventory.Clear();
                     foreach (var r in snap.Inventory) Inventory.Add(r);
 
@@ -126,9 +208,6 @@ namespace Pulse.WPF.ViewModels
             }
         }
 
-        // Roll up the worst card status into the page's Overall Status pill.
-        // Matches the Hardware/Network pill semantics so techs see consistent
-        // colour cues across panels.
         private void UpdatePillFromCards(SystemOverviewCards c)
         {
             string worst = "ok";
@@ -159,10 +238,9 @@ namespace Pulse.WPF.ViewModels
             }
         }
 
-        // ---- Copy as text (for support tickets) -------------------------------
-        // Renders the entire inventory as a plain-text block ready to paste
-        // into a ticket / Slack / email. Sections become headings, label/value
-        // pairs become aligned columns, status-pill state shows at the top.
+        // ---- Copy as text (for support tickets) -----------------------------
+        // Walks the typed per-card models so the pasted transcript mirrors the
+        // on-screen card layout (Identity → "== Identity ==" → label/value).
         // Per UX_REVIEW round 2: this is the single most useful Tier-1 action
         // on this page.
         private void CopyInventoryToClipboard()
@@ -181,18 +259,133 @@ namespace Pulse.WPF.ViewModels
             sb.AppendLine();
             sb.AppendLine(new string('-', 60));
 
-            foreach (var row in Inventory)
+            // Identity
+            sb.AppendLine();
+            sb.AppendLine("== Identity ==");
+            Kv(sb, "Computer Name", Identity.ComputerName);
+            Kv(sb, "Manufacturer",  Identity.Manufacturer);
+            Kv(sb, "Model",         Identity.Model);
+            Kv(sb, "Serial Number", Identity.SerialNumber);
+            Kv(sb, "Asset Tag",     Identity.AssetTag);
+            Kv(sb, "Chassis Type",  Identity.ChassisType);
+            Kv(sb, "System Type",   Identity.SystemType);
+            Kv(sb, "Network",       Identity.Network);
+            Kv(sb, "BIOS",          Identity.BiosVersion);
+
+            // Pixellot Software
+            sb.AppendLine();
+            sb.AppendLine("== Pixellot Software ==");
+            Kv(sb, "App Version",          PixellotSoftware.AppVersion);
+            Kv(sb, "System Image Version", PixellotSoftware.SystemImageVersion);
+            Kv(sb, "Package Dependencies", PixellotSoftware.PackageDependencies);
+            Kv(sb, "Install Date",         PixellotSoftware.InstallDate);
+
+            // Processor
+            sb.AppendLine();
+            sb.AppendLine("== Processor ==");
+            Kv(sb, "Name",            Processor.Name);
+            Kv(sb, "Manufacturer",    Processor.Manufacturer);
+            Kv(sb, "Cores",           Processor.Cores);
+            Kv(sb, "Max Speed",       Processor.MaxSpeed);
+            Kv(sb, "Socket",          Processor.Socket);
+            Kv(sb, "Family",          Processor.Family);
+            Kv(sb, "Stepping",        Processor.Stepping);
+            Kv(sb, "Processor ID",    Processor.ProcessorId);
+            Kv(sb, "Virtualization",  Processor.Virtualization);
+            Kv(sb, "L2 Cache",        Processor.L2Cache);
+            Kv(sb, "L3 Cache",        Processor.L3Cache);
+
+            // Memory
+            sb.AppendLine();
+            sb.AppendLine("== Memory ==");
+            Kv(sb, "Total RAM",  Memory.TotalRam);
+            Kv(sb, "Available",  Memory.Available);
+            Kv(sb, "Slots",      $"{Memory.SlotsUsed} used / {Memory.SlotsTotal} total");
+            int slotN = 1;
+            foreach (var s in Memory.Slots)
             {
-                if (!string.IsNullOrEmpty(row.Section))
-                {
-                    sb.AppendLine();
-                    sb.AppendLine($"== {row.Section} ==");
-                    continue;
-                }
-                if (string.IsNullOrEmpty(row.Label)) continue;
-                // Pad the label column to 26 chars so values align reading down.
-                var label = (row.Label.Length > 26 ? row.Label.Substring(0, 26) : row.Label.PadRight(26));
-                sb.AppendLine($"  {label}{row.Value}");
+                var line = $"{s.Capacity} {s.Type} {s.Speed}".Trim();
+                if (!string.IsNullOrEmpty(s.Manufacturer)) line += $"  ({s.Manufacturer})";
+                Kv(sb, $"  Slot {slotN} ({s.Locator})", line);
+                if (!string.IsNullOrEmpty(s.PartNumber)) Kv(sb, "    Part Number", s.PartNumber);
+                slotN++;
+            }
+
+            // Graphics
+            sb.AppendLine();
+            sb.AppendLine("== Graphics ==");
+            Kv(sb, "Display Outputs", Graphics.DisplayCount);
+            int gpuN = 1;
+            foreach (var g in Graphics.Adapters)
+            {
+                Kv(sb, $"GPU {gpuN}",            g.Name);
+                if (!string.IsNullOrEmpty(g.Vram))          Kv(sb, "  VRAM",        g.Vram);
+                if (!string.IsNullOrEmpty(g.DriverVersion)) Kv(sb, "  Driver",      g.DriverVersion);
+                if (!string.IsNullOrEmpty(g.DriverDate))    Kv(sb, "  Driver Date", g.DriverDate);
+                gpuN++;
+            }
+
+            // Storage
+            sb.AppendLine();
+            sb.AppendLine("== Storage Devices ==");
+            int diskN = 0;
+            foreach (var d in Storage.Disks)
+            {
+                Kv(sb, $"Disk {d.Index}",            d.Model);
+                Kv(sb, "  Size",                    d.Size);
+                if (!string.IsNullOrEmpty(d.BusType))   Kv(sb, "  Bus",      d.BusType);
+                if (!string.IsNullOrEmpty(d.MediaType)) Kv(sb, "  Media",    d.MediaType);
+                if (!string.IsNullOrEmpty(d.Firmware))  Kv(sb, "  Firmware", d.Firmware);
+                if (!string.IsNullOrEmpty(d.Serial))    Kv(sb, "  Serial",   d.Serial);
+                diskN++;
+            }
+            if (diskN == 0) Kv(sb, "(no disks reported)", "");
+
+            sb.AppendLine();
+            sb.AppendLine("== Logical Volumes ==");
+            foreach (var v in Storage.Volumes)
+            {
+                Kv(sb, v.DriveLetter, $"{v.Label}  {v.FileSystem}  {v.Size}  ({v.FreeSpace} free, {v.PercentUsed} used)");
+            }
+
+            // Operating System & Locale
+            sb.AppendLine();
+            sb.AppendLine("== Operating System & Locale ==");
+            Kv(sb, "Edition",         OsLocale.Edition);
+            Kv(sb, "Version",         OsLocale.Version);
+            Kv(sb, "Build",           OsLocale.Build);
+            Kv(sb, "Architecture",    OsLocale.Architecture);
+            Kv(sb, "Install Date",    OsLocale.InstallDate);
+            Kv(sb, "Uptime",          OsLocale.Uptime);
+            Kv(sb, "Timezone",        OsLocale.Timezone);
+            Kv(sb, "System Time",     OsLocale.SystemTime);
+            Kv(sb, "NTP Server",      OsLocale.NtpServer);
+            Kv(sb, ".NET Runtimes",   OsLocale.DotNetRuntimes);
+            Kv(sb, "Last Update",     OsLocale.LastUpdate);
+
+            // Network adapters
+            sb.AppendLine();
+            sb.AppendLine("== Network Adapters ==");
+            foreach (var n in NetworkAdapters)
+            {
+                Kv(sb, n.Name, n.Mac);
+                if (!string.IsNullOrEmpty(n.Speed))         Kv(sb, "  Speed",       n.Speed);
+                if (!string.IsNullOrEmpty(n.Status))        Kv(sb, "  Status",      n.Status);
+                if (!string.IsNullOrEmpty(n.DriverVersion)) Kv(sb, "  Driver",      n.DriverVersion);
+                if (!string.IsNullOrEmpty(n.DriverDate))    Kv(sb, "  Driver Date", n.DriverDate);
+            }
+
+            // Software Inventory — count + flagged only (full list would
+            // bloat the clipboard; tier-3 can expand on screen).
+            sb.AppendLine();
+            sb.AppendLine("== Software Inventory ==");
+            Kv(sb, "Total Installed", $"{SoftwareTotal} applications");
+            Kv(sb, "Flagged",         SoftwareFlagged == 0
+                ? "None — no known-conflicting software detected"
+                : $"{SoftwareFlagged} potentially-conflicting applications");
+            foreach (var a in FlaggedApps)
+            {
+                Kv(sb, $"  {a.DisplayName}", $"{a.Publisher} — confirm this is intentional");
             }
 
             try
@@ -208,9 +401,13 @@ namespace Pulse.WPF.ViewModels
             }
         }
 
-        // Wipe the CopyStatus string after a few seconds so the toast
-        // doesn't linger. Best-effort — no-op on the design-time / test
-        // path where Application.Current is null.
+        private static void Kv(StringBuilder sb, string label, string value)
+        {
+            if (label == null) label = "";
+            var l = label.Length > 26 ? label.Substring(0, 26) : label.PadRight(26);
+            sb.AppendLine($"  {l}{value}");
+        }
+
         private void ScheduleClearStatus()
         {
             var app = Application.Current;

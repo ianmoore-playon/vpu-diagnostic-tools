@@ -10,51 +10,98 @@
              Background="{StaticResource AppBgBrush}">
 
     <UserControl.Resources>
-        <!-- Compact summary card used by the 6-tile top row.
-             Reuses the standard Card style; the inner template is repeated
-             per card via inline definitions below to keep binding clear. -->
+        <!-- 6-tile compact card. Reuses Card style (CardElev1). -->
         <Style x:Key="SiSummaryCard" TargetType="Border" BasedOn="{StaticResource Card}">
             <Setter Property="Padding" Value="14,12,14,12" />
             <Setter Property="MinHeight" Value="86" />
         </Style>
 
-        <!-- Inventory row template — same layout for section headings and
-             data rows; the Section text is non-empty only on heading rows
-             and Label/Value are non-empty only on data rows. WPF collapses
-             zero-length text naturally so a single template handles both. -->
-        <DataTemplate x:Key="SiInventoryRowTemplate">
-            <StackPanel>
-                <!-- Section heading (rendered when Section is non-empty) -->
-                <TextBlock Text="{Binding Section}"
-                           FontFamily="Segoe UI Semibold" FontSize="10"
-                           Foreground="{StaticResource MutedForegroundBrush}"
-                           Margin="0,14,0,6"
-                           Visibility="{Binding Section, Converter={StaticResource StringToVis}}" />
+        <!-- Per-card section card — full Card style with consistent padding. -->
+        <Style x:Key="SiSectionCard" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Setter Property="Padding" Value="20,16,20,16" />
+        </Style>
 
-                <!-- Data row: Label (Consolas, muted) + Value (Consolas, level-coloured) -->
-                <Grid Visibility="{Binding Label, Converter={StaticResource StringToVis}}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="240" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="{Binding Label}"
-                               FontFamily="Consolas" FontSize="11"
-                               Foreground="{StaticResource SubtleForegroundBrush}"
-                               Margin="0,2,8,2" />
-                    <TextBlock Grid.Column="1" Text="{Binding Value}"
-                               FontFamily="Consolas" FontSize="11"
-                               Foreground="{Binding ValueColor}"
-                               TextWrapping="Wrap" Margin="0,2,0,2" />
-                </Grid>
-            </StackPanel>
-        </DataTemplate>
+        <!-- Half-width card variant for the 2-up WrapPanel rows. Width is
+             bound to half the card-grid width so two cards fit side-by-side
+             at desktop sizes and collapse to one-up at narrow widths via
+             HalfWidthConverter. -->
+        <Style x:Key="SiHalfCard" TargetType="Border" BasedOn="{StaticResource SiSectionCard}">
+            <Setter Property="Margin" Value="0,0,16,16" />
+            <Setter Property="Width">
+                <Setter.Value>
+                    <Binding ElementName="CardsScroll" Path="ActualWidth" Converter="{StaticResource HalfWidthConverter}" />
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Inline KV row (label / value), used inside every section card.
+             Label is fixed-width so values left-align reading down. -->
+        <Style x:Key="SiKvLabel" TargetType="TextBlock" BasedOn="{StaticResource MetaSm}">
+            <Setter Property="Margin" Value="0,3,12,3" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style x:Key="SiKvValue" TargetType="TextBlock" BasedOn="{StaticResource Mono11}">
+            <Setter Property="Margin" Value="0,3,0,3" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <!-- Sub-heading inside a card (e.g. "DIMM Slots", "Logical Volumes"). -->
+        <Style x:Key="SiSubHeading" TargetType="TextBlock" BasedOn="{StaticResource MetaSm}">
+            <Setter Property="FontFamily" Value="Segoe UI Semibold" />
+            <Setter Property="Margin" Value="0,16,0,8" />
+        </Style>
+
+        <!-- DataGrid styling — compact, transparent background to match Card. -->
+        <Style x:Key="SiDataGrid" TargetType="DataGrid">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderColBrush}" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="RowBackground" Value="Transparent" />
+            <Setter Property="AlternatingRowBackground" Value="Transparent" />
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="RowHeight" Value="26" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
+        </Style>
+        <Style x:Key="SiDataGridCell" TargetType="DataGridCell">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridCell">
+                        <Border Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SiDataGridHeader" TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource MutedForegroundBrush}" />
+            <Setter Property="FontFamily" Value="Segoe UI Semibold" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Padding" Value="8,4,8,8" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderColBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
     </UserControl.Resources>
 
     <Grid Margin="32,24,32,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />   <!-- Section header -->
             <RowDefinition Height="Auto" />   <!-- 6 summary tiles -->
-            <RowDefinition Height="*" />      <!-- Inventory (full width) -->
+            <RowDefinition Height="*" />      <!-- Card grid (scroll) -->
             <RowDefinition Height="Auto" />   <!-- Action bar -->
         </Grid.RowDefinitions>
 
@@ -77,11 +124,8 @@
             </StackPanel>
         </DockPanel>
 
-        <!-- ====== Six summary tiles ======
-             Sub-captions removed — the tile titles (Model / OS / Uptime / CPU /
-             RAM / Storage) speak for themselves. -->
+        <!-- ====== Six summary tiles ====== -->
         <UniformGrid Grid.Row="1" Rows="1" Columns="6" Margin="0,0,0,20">
-
             <Border Style="{StaticResource SiSummaryCard}" Margin="0,0,8,0">
                 <StackPanel>
                     <DockPanel>
@@ -182,24 +226,414 @@
             </Border>
         </UniformGrid>
 
-        <!-- ====== Inventory (full-width) ======
-             The right-column "Summary" card was a byte-for-byte restatement
-             of the 6 tiles above; removed in v0.4 per the UX review. The
-             inventory now gets the full content width. -->
-        <Border Grid.Row="2" Style="{StaticResource Card}">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="System Inventory"
-                           Style="{StaticResource SectionTitle}" Margin="4,0,0,12" />
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl ItemsSource="{Binding Inventory}"
-                                  ItemTemplate="{StaticResource SiInventoryRowTemplate}" />
-                </ScrollViewer>
-            </DockPanel>
-        </Border>
+        <!-- ====== Card grid (scrollable) ======
+             Uses SizeChanged-driven WrapPanel sizing via ItemWidth so 2-up
+             rows degrade to 1-column at narrow widths. Each card is a Border
+             with a SectionTitle and per-VM bindings. -->
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      x:Name="CardsScroll">
+            <StackPanel>
 
-        <!-- ====== Bottom action bar ======
-             Refresh + Copy-as-text. Copy puts the entire inventory on the
-             clipboard, formatted for pasting into a support ticket. -->
+                <!-- Row 1: Identity + Pixellot Software -->
+                <WrapPanel Orientation="Horizontal">
+                    <!-- Identity card -->
+                    <Border Style="{StaticResource SiHalfCard}">
+                        <StackPanel>
+                            <TextBlock Text="Identity" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="130" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Computer name" Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Identity.ComputerName}" Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Manufacturer"  Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Identity.Manufacturer}" Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Model"         Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Identity.Model}"        Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Serial number" Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Identity.SerialNumber}" Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Asset tag"     Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Identity.AssetTag}"     Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="5" Grid.Column="0" Text="Chassis type"  Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Identity.ChassisType}"  Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="6" Grid.Column="0" Text="System type"   Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Identity.SystemType}"   Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="7" Grid.Column="0" Text="Network"       Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding Identity.Network}"      Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="8" Grid.Column="0" Text="BIOS"          Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding Identity.BiosVersion}"  Style="{StaticResource SiKvValue}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Pixellot Software card -->
+                    <Border Style="{StaticResource SiHalfCard}">
+                        <StackPanel>
+                            <TextBlock Text="Pixellot Software" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="App version"          Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding PixellotSoftware.AppVersion}"          Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="System image version" Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PixellotSoftware.SystemImageVersion}"  Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Package dependencies" Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding PixellotSoftware.PackageDependencies}" Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Install date"         Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding PixellotSoftware.InstallDate}"         Style="{StaticResource SiKvValue}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </WrapPanel>
+
+                <!-- Row 2: Processor + Memory -->
+                <WrapPanel Orientation="Horizontal">
+                    <!-- Processor card -->
+                    <Border Style="{StaticResource SiHalfCard}">
+                        <StackPanel>
+                            <TextBlock Text="Processor" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="130" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0"  Grid.Column="0" Text="Name"           Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="0"  Grid.Column="1" Text="{Binding Processor.Name}"           Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="1"  Grid.Column="0" Text="Manufacturer"   Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="1"  Grid.Column="1" Text="{Binding Processor.Manufacturer}"   Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="2"  Grid.Column="0" Text="Cores"          Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="2"  Grid.Column="1" Text="{Binding Processor.Cores}"          Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="3"  Grid.Column="0" Text="Max speed"      Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="3"  Grid.Column="1" Text="{Binding Processor.MaxSpeed}"       Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="4"  Grid.Column="0" Text="Socket"         Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="4"  Grid.Column="1" Text="{Binding Processor.Socket}"         Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="5"  Grid.Column="0" Text="Family"         Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="5"  Grid.Column="1" Text="{Binding Processor.Family}"         Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="6"  Grid.Column="0" Text="Stepping"       Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="6"  Grid.Column="1" Text="{Binding Processor.Stepping}"       Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="7"  Grid.Column="0" Text="Processor ID"   Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="7"  Grid.Column="1" Text="{Binding Processor.ProcessorId}"    Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="8"  Grid.Column="0" Text="Virtualization" Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="8"  Grid.Column="1" Text="{Binding Processor.Virtualization}" Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="9"  Grid.Column="0" Text="L2 cache"       Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="9"  Grid.Column="1" Text="{Binding Processor.L2Cache}"        Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="10" Grid.Column="0" Text="L3 cache"       Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding Processor.L3Cache}"        Style="{StaticResource SiKvValue}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Memory card with DIMM slots subhead + table -->
+                    <Border Style="{StaticResource SiHalfCard}">
+                        <StackPanel>
+                            <TextBlock Text="Memory" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="130" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Total RAM"   Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Memory.TotalRam}"   Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Available"   Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Memory.Available}"  Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Slots"       Style="{StaticResource SiKvLabel}" />
+                                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Memory.SlotsUsed}" Style="{StaticResource SiKvValue}" />
+                                    <TextBlock Text=" used / "                   Style="{StaticResource SiKvValue}" Foreground="{StaticResource MutedForegroundBrush}" />
+                                    <TextBlock Text="{Binding Memory.SlotsTotal}" Style="{StaticResource SiKvValue}" />
+                                    <TextBlock Text=" total"                     Style="{StaticResource SiKvValue}" Foreground="{StaticResource MutedForegroundBrush}" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Text="DIMM slots" Style="{StaticResource SiSubHeading}" />
+                            <DataGrid ItemsSource="{Binding Memory.Slots}"
+                                      Style="{StaticResource SiDataGrid}"
+                                      CellStyle="{StaticResource SiDataGridCell}"
+                                      ColumnHeaderStyle="{StaticResource SiDataGridHeader}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Slot"      Binding="{Binding Locator}"     Width="*" />
+                                    <DataGridTextColumn Header="Capacity"  Binding="{Binding Capacity}"    Width="80" />
+                                    <DataGridTextColumn Header="Type"      Binding="{Binding Type}"        Width="60" />
+                                    <DataGridTextColumn Header="Speed"     Binding="{Binding Speed}"       Width="90" />
+                                    <DataGridTextColumn Header="Part #"    Binding="{Binding PartNumber}"  Width="2*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
+                </WrapPanel>
+
+                <!-- Row 3: Graphics + Storage -->
+                <WrapPanel Orientation="Horizontal">
+                    <!-- Graphics card -->
+                    <Border Style="{StaticResource SiHalfCard}">
+                        <StackPanel>
+                            <TextBlock Text="Graphics" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="130" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Display outputs" Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Graphics.DisplayCount}" Style="{StaticResource SiKvValue}" />
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding Graphics.Adapters}" Margin="0,8,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,8,0,0">
+                                            <TextBlock Text="{Binding Name}" Style="{StaticResource Mono11}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <Grid Margin="0,4,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="130" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="VRAM"        Style="{StaticResource SiKvLabel}" />
+                                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Vram}"          Style="{StaticResource SiKvValue}" />
+                                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Driver"      Style="{StaticResource SiKvLabel}" />
+                                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DriverVersion}" Style="{StaticResource SiKvValue}" />
+                                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Driver date" Style="{StaticResource SiKvLabel}" />
+                                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DriverDate}"    Style="{StaticResource SiKvValue}" />
+                                            </Grid>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Storage card -->
+                    <Border Style="{StaticResource SiHalfCard}">
+                        <StackPanel>
+                            <TextBlock Text="Storage" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                            <TextBlock Text="Physical disks" Style="{StaticResource SiSubHeading}" Margin="0,0,0,8" />
+                            <DataGrid ItemsSource="{Binding Storage.Disks}"
+                                      Style="{StaticResource SiDataGrid}"
+                                      CellStyle="{StaticResource SiDataGridCell}"
+                                      ColumnHeaderStyle="{StaticResource SiDataGridHeader}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="#"        Binding="{Binding Index}"    Width="30" />
+                                    <DataGridTextColumn Header="Model"    Binding="{Binding Model}"    Width="2*" />
+                                    <DataGridTextColumn Header="Size"     Binding="{Binding Size}"     Width="80" />
+                                    <DataGridTextColumn Header="Bus"      Binding="{Binding BusType}"  Width="60" />
+                                    <DataGridTextColumn Header="Media"    Binding="{Binding MediaType}" Width="60" />
+                                    <DataGridTextColumn Header="Firmware" Binding="{Binding Firmware}" Width="80" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                            <TextBlock Text="Logical volumes" Style="{StaticResource SiSubHeading}" />
+                            <DataGrid ItemsSource="{Binding Storage.Volumes}"
+                                      Style="{StaticResource SiDataGrid}"
+                                      CellStyle="{StaticResource SiDataGridCell}"
+                                      ColumnHeaderStyle="{StaticResource SiDataGridHeader}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Drive" Binding="{Binding DriveLetter}" Width="60" />
+                                    <DataGridTextColumn Header="Label" Binding="{Binding Label}"       Width="*" />
+                                    <DataGridTextColumn Header="FS"    Binding="{Binding FileSystem}"  Width="60" />
+                                    <DataGridTextColumn Header="Size"  Binding="{Binding Size}"        Width="80" />
+                                    <DataGridTextColumn Header="Free"  Binding="{Binding FreeSpace}"   Width="80" />
+                                    <DataGridTextColumn Header="Used"  Binding="{Binding PercentUsed}" Width="60" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
+                </WrapPanel>
+
+                <!-- Row 4: Operating System & Locale (full width) -->
+                <Border Style="{StaticResource SiSectionCard}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Operating System &amp; Locale" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Grid.Column="0" Margin="0,0,16,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="130" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Edition"        Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding OsLocale.Edition}"        Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Version"        Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding OsLocale.Version}"        Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Build"          Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding OsLocale.Build}"          Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Architecture"   Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding OsLocale.Architecture}"   Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Install date"   Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding OsLocale.InstallDate}"    Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="5" Grid.Column="0" Text="Uptime"         Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding OsLocale.Uptime}"         Style="{StaticResource SiKvValue}" />
+                            </Grid>
+                            <Grid Grid.Column="1" Margin="16,0,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="130" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Timezone"       Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding OsLocale.Timezone}"       Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="System time"    Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding OsLocale.SystemTime}"     Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="NTP server"     Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding OsLocale.NtpServer}"      Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text=".NET runtimes"  Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding OsLocale.DotNetRuntimes}" Style="{StaticResource SiKvValue}" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Last update"    Style="{StaticResource SiKvLabel}" />
+                                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding OsLocale.LastUpdate}"     Style="{StaticResource SiKvValue}" />
+                            </Grid>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Row 5: Network adapters table (full width) -->
+                <Border Style="{StaticResource SiSectionCard}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Network adapters" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                        <DataGrid ItemsSource="{Binding NetworkAdapters}"
+                                  Style="{StaticResource SiDataGrid}"
+                                  CellStyle="{StaticResource SiDataGridCell}"
+                                  ColumnHeaderStyle="{StaticResource SiDataGridHeader}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Adapter"      Binding="{Binding Name}"          Width="2*" />
+                                <DataGridTextColumn Header="MAC address"  Binding="{Binding Mac}"           Width="160" />
+                                <DataGridTextColumn Header="Speed"        Binding="{Binding Speed}"         Width="80" />
+                                <DataGridTextColumn Header="Status"       Binding="{Binding Status}"        Width="120" />
+                                <DataGridTextColumn Header="Driver"       Binding="{Binding DriverVersion}" Width="120" />
+                                <DataGridTextColumn Header="Driver date"  Binding="{Binding DriverDate}"    Width="100" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Row 6: Software inventory (collapsible expander) -->
+                <Border Style="{StaticResource SiSectionCard}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Software inventory" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                        <DockPanel Margin="0,4,0,0">
+                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                                <TextBlock Text="{Binding SoftwareTotal}" Style="{StaticResource BodyStrong}" />
+                                <TextBlock Text=" applications installed · " Style="{StaticResource BodyDefault}"
+                                           Foreground="{StaticResource MutedForegroundBrush}" />
+                                <TextBlock Text="{Binding SoftwareFlagged}" Style="{StaticResource BodyStrong}" />
+                                <TextBlock Text=" flagged" Style="{StaticResource BodyDefault}"
+                                           Foreground="{StaticResource MutedForegroundBrush}" />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <!-- Flagged-only compact list (always visible) -->
+                        <ItemsControl ItemsSource="{Binding FlaggedApps}" Margin="0,12,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,3,0,3">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="14" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="220" />
+                                        </Grid.ColumnDefinitions>
+                                        <Ellipse Grid.Column="0" Width="8" Height="8"
+                                                 Fill="{StaticResource YellowBrush}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding DisplayName}"
+                                                   Style="{StaticResource Mono11}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Publisher}"
+                                                   Style="{StaticResource Mono11}"
+                                                   Foreground="{StaticResource MutedForegroundBrush}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Expander Header="Show all installed applications"
+                                  Foreground="{StaticResource ForegroundBrush}"
+                                  Background="Transparent"
+                                  BorderThickness="0"
+                                  Margin="0,12,0,0"
+                                  IsExpanded="False">
+                            <StackPanel Margin="0,8,0,0">
+                                <TextBox Text="{Binding SearchTerm, UpdateSourceTrigger=PropertyChanged}"
+                                         md:HintAssist.Hint="Search by name or publisher…"
+                                         Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                         Margin="0,0,0,12" />
+                                <DataGrid ItemsSource="{Binding AllAppsView}"
+                                          Style="{StaticResource SiDataGrid}"
+                                          CellStyle="{StaticResource SiDataGridCell}"
+                                          ColumnHeaderStyle="{StaticResource SiDataGridHeader}"
+                                          MaxHeight="400">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Name"      Binding="{Binding DisplayName}"    Width="3*" />
+                                        <DataGridTextColumn Header="Version"   Binding="{Binding DisplayVersion}" Width="120" />
+                                        <DataGridTextColumn Header="Publisher" Binding="{Binding Publisher}"      Width="2*" />
+                                        <DataGridTextColumn Header="Installed" Binding="{Binding InstallDate}"    Width="100" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </StackPanel>
+                        </Expander>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- ====== Bottom action bar ====== -->
         <DockPanel Grid.Row="3" Margin="0,16,0,0">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Button Command="{Binding CopyAsTextCommand}"

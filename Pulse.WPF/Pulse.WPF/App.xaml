@@ -27,6 +27,7 @@
             <helpers:BoolToVisibilityConverter   x:Key="BoolToVis" />
             <helpers:CountToVisibilityConverter  x:Key="CountToVis" />
             <helpers:StringToVisibilityConverter x:Key="StringToVis" />
+            <helpers:HalfWidthConverter          x:Key="HalfWidthConverter" />
 
             <!-- ====== VM-to-View DataTemplates ======
                  MainWindow's ContentControl binds Content="{Binding CurrentView}"

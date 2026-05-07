@@ -48,6 +48,28 @@ namespace Pulse.WPF.Helpers
     }
 
     /// <summary>
+    /// Halve a numeric value (with a 16 px gap subtracted) so a WrapPanel
+    /// row of two cards lays out as 2-up at wide widths and 1-up at narrow
+    /// widths. Returns at least 320 to avoid a card collapsing to nothing.
+    /// </summary>
+    public class HalfWidthConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            double w = 0;
+            try { w = System.Convert.ToDouble(value); } catch { }
+            // Subtract one inter-card gap (16) and a small safety margin (4) so
+            // two cards plus the gap exactly fit the available width.
+            double half = (w - 20) / 2.0;
+            if (half < 320) return w > 320 ? w - 4 : 320; // collapse to one column
+            return half;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => Binding.DoNothing;
+    }
+
+    /// <summary>
     /// Null/empty string -> Collapsed, otherwise Visible. Used by the
     /// SectionHeader subtitle and StatusPill so an empty value hides
     /// the element instead of leaving a gap.
