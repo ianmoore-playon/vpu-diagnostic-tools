@@ -1,5 +1,8 @@
+using System;
 using System.Collections.ObjectModel;
+using System.Text;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using Pulse.WPF.Helpers;
@@ -21,8 +24,11 @@ namespace Pulse.WPF.ViewModels
 
         public ObservableCollection<SystemOverviewRow> Inventory { get; } =
             new ObservableCollection<SystemOverviewRow>();
-        public ObservableCollection<SystemOverviewSummaryItem> Summary { get; } =
-            new ObservableCollection<SystemOverviewSummaryItem>();
+
+        // Summary collection (right-column bullets) was removed in v0.4 along
+        // with the right-column Summary card — the bullets were a byte-for-byte
+        // restatement of the 6 top tiles. SystemOverviewSummaryItem is kept in
+        // the Models layer for now in case anything else binds to it.
 
         // ---- Top-row summary cards ------------------------------------------
         private string _modelTitle = "—";
@@ -63,13 +69,21 @@ namespace Pulse.WPF.ViewModels
         private Brush _statusBg = StatusHelpers.Brush("BorderColBrush");
         public Brush StatusBg { get => _statusBg; set => Set(ref _statusBg, value); }
 
-        // Refresh button on the action bar.
+        // Status text shown next to the action buttons — drives the
+        // "Copied to clipboard" / error feedback after a Copy-as-text click.
+        // Cleared automatically a few seconds later via the dispatcher.
+        private string _copyStatus = "";
+        public string CopyStatus { get => _copyStatus; set => Set(ref _copyStatus, value); }
+
+        // Action-bar commands.
         public ICommand RefreshCommand { get; }
+        public ICommand CopyAsTextCommand { get; }
 
         public SystemOverviewViewModel(ISystemOverviewService svc)
         {
             _svc = svc;
             RefreshCommand = new AsyncCommand(RefreshAsync);
+            CopyAsTextCommand = new RelayCommand(CopyInventoryToClipboard);
         }
 
         public Task RefreshAsync()
@@ -95,9 +109,6 @@ namespace Pulse.WPF.ViewModels
 
                     Inventory.Clear();
                     foreach (var r in snap.Inventory) Inventory.Add(r);
-
-                    Summary.Clear();
-                    foreach (var s in snap.Summary) Summary.Add(s);
 
                     UpdatePillFromCards(c);
                 });
@@ -146,6 +157,71 @@ namespace Pulse.WPF.ViewModels
                 StatusColor = StatusHelpers.Brush("GreenBrush");
                 StatusBg    = StatusHelpers.Brush("OkBgBrush");
             }
+        }
+
+        // ---- Copy as text (for support tickets) -------------------------------
+        // Renders the entire inventory as a plain-text block ready to paste
+        // into a ticket / Slack / email. Sections become headings, label/value
+        // pairs become aligned columns, status-pill state shows at the top.
+        // Per UX_REVIEW round 2: this is the single most useful Tier-1 action
+        // on this page.
+        private void CopyInventoryToClipboard()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("PULSE — System Overview");
+            sb.AppendLine($"Generated:  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"Status:     {StatusLabel}");
+            sb.AppendLine();
+            sb.AppendLine($"Model:    {ModelTitle}");
+            sb.AppendLine($"OS:       {OsTitle}");
+            sb.AppendLine($"Uptime:   {UptimeTitle}");
+            sb.AppendLine($"CPU:      {CpuTitle}");
+            sb.AppendLine($"RAM:      {RamTitle}");
+            sb.AppendLine($"Storage:  {StorageTitle}");
+            sb.AppendLine();
+            sb.AppendLine(new string('-', 60));
+
+            foreach (var row in Inventory)
+            {
+                if (!string.IsNullOrEmpty(row.Section))
+                {
+                    sb.AppendLine();
+                    sb.AppendLine($"== {row.Section} ==");
+                    continue;
+                }
+                if (string.IsNullOrEmpty(row.Label)) continue;
+                // Pad the label column to 26 chars so values align reading down.
+                var label = (row.Label.Length > 26 ? row.Label.Substring(0, 26) : row.Label.PadRight(26));
+                sb.AppendLine($"  {label}{row.Value}");
+            }
+
+            try
+            {
+                Clipboard.SetText(sb.ToString());
+                CopyStatus = "Copied to clipboard.";
+                ScheduleClearStatus();
+            }
+            catch (Exception ex)
+            {
+                CopyStatus = $"Copy failed: {ex.Message}";
+                ScheduleClearStatus();
+            }
+        }
+
+        // Wipe the CopyStatus string after a few seconds so the toast
+        // doesn't linger. Best-effort — no-op on the design-time / test
+        // path where Application.Current is null.
+        private void ScheduleClearStatus()
+        {
+            var app = Application.Current;
+            if (app == null) return;
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+            timer.Tick += (s, e) =>
+            {
+                CopyStatus = "";
+                timer.Stop();
+            };
+            timer.Start();
         }
     }
 }

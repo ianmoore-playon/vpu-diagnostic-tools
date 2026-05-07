@@ -34,7 +34,7 @@
                 <!-- Data row: Label (Consolas, muted) + Value (Consolas, level-coloured) -->
                 <Grid Visibility="{Binding Label, Converter={StaticResource StringToVis}}">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="200" />
+                        <ColumnDefinition Width="240" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="{Binding Label}"
@@ -48,40 +48,13 @@
                 </Grid>
             </StackPanel>
         </DataTemplate>
-
-        <!-- Summary bullet template — colored dot + text. -->
-        <DataTemplate x:Key="SiSummaryRowTemplate">
-            <DockPanel Margin="0,3,0,3">
-                <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,10,0">
-                    <Ellipse.Style>
-                        <Style TargetType="Ellipse">
-                            <Setter Property="Fill" Value="{StaticResource MutedForegroundBrush}" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding Status}" Value="ok">
-                                    <Setter Property="Fill" Value="{StaticResource GreenBrush}" />
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding Status}" Value="warn">
-                                    <Setter Property="Fill" Value="{StaticResource YellowBrush}" />
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding Status}" Value="fail">
-                                    <Setter Property="Fill" Value="{StaticResource RedBrush}" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Ellipse.Style>
-                </Ellipse>
-                <TextBlock Text="{Binding Text}"
-                           Foreground="{StaticResource ForegroundBrush}"
-                           TextWrapping="Wrap" />
-            </DockPanel>
-        </DataTemplate>
     </UserControl.Resources>
 
     <Grid Margin="32,24,32,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />   <!-- Section header -->
-            <RowDefinition Height="Auto" />   <!-- 6 summary cards -->
-            <RowDefinition Height="*" />      <!-- Two-column: Inventory + Summary -->
+            <RowDefinition Height="Auto" />   <!-- 6 summary tiles -->
+            <RowDefinition Height="*" />      <!-- Inventory (full width) -->
             <RowDefinition Height="Auto" />   <!-- Action bar -->
         </Grid.RowDefinitions>
 
@@ -99,16 +72,15 @@
             </Border>
             <StackPanel>
                 <TextBlock Text="System Overview" Style="{StaticResource PageTitle}" />
-                <TextBlock Text="Hardware specs, OS version, uptime, time/locale, and Pixellot software inventory."
+                <TextBlock Text="Hardware, software, and operating-system specs for this VPU. Use Refresh after a hardware change."
                            Style="{StaticResource PageSubtitle}" />
             </StackPanel>
         </DockPanel>
 
-        <!-- ====== Six summary cards ====== -->
+        <!-- ====== Six summary tiles ======
+             Sub-captions removed — the tile titles (Model / OS / Uptime / CPU /
+             RAM / Storage) speak for themselves. -->
         <UniformGrid Grid.Row="1" Rows="1" Columns="6" Margin="0,0,0,20">
-            <UniformGrid.Resources>
-                <!-- Per-card text styles -->
-            </UniformGrid.Resources>
 
             <Border Style="{StaticResource SiSummaryCard}" Margin="0,0,8,0">
                 <StackPanel>
@@ -122,9 +94,7 @@
                     <TextBlock Text="{Binding ModelTitle}"
                                FontFamily="Segoe UI Semibold" FontSize="13"
                                Foreground="{StaticResource ForegroundBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,4" />
-                    <TextBlock Text="Manufacturer + product"
-                               FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}" />
+                               TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
             </Border>
 
@@ -140,9 +110,7 @@
                     <TextBlock Text="{Binding OsTitle}"
                                FontFamily="Segoe UI Semibold" FontSize="13"
                                Foreground="{StaticResource ForegroundBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,4" />
-                    <TextBlock Text="Edition + build"
-                               FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}" />
+                               TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
             </Border>
 
@@ -159,9 +127,7 @@
                     <TextBlock Text="{Binding UptimeTitle}"
                                FontFamily="Segoe UI Semibold" FontSize="13"
                                Foreground="{StaticResource ForegroundBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,4" />
-                    <TextBlock Text="Since last boot"
-                               FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}" />
+                               TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
             </Border>
 
@@ -177,9 +143,7 @@
                     <TextBlock Text="{Binding CpuTitle}"
                                FontFamily="Segoe UI Semibold" FontSize="13"
                                Foreground="{StaticResource ForegroundBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,4" />
-                    <TextBlock Text="Processor"
-                               FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}" />
+                               TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
             </Border>
 
@@ -196,9 +160,7 @@
                     <TextBlock Text="{Binding RamTitle}"
                                FontFamily="Segoe UI Semibold" FontSize="13"
                                Foreground="{StaticResource ForegroundBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,4" />
-                    <TextBlock Text="Installed memory"
-                               FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}" />
+                               TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
             </Border>
 
@@ -215,55 +177,51 @@
                     <TextBlock Text="{Binding StorageTitle}"
                                FontFamily="Segoe UI Semibold" FontSize="13"
                                Foreground="{StaticResource ForegroundBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,4" />
-                    <TextBlock Text="System drive free space"
-                               FontSize="10" Foreground="{StaticResource SubtleForegroundBrush}" />
+                               TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
             </Border>
         </UniformGrid>
 
-        <!-- ====== Two-column main: Inventory (left) + Summary (right) ====== -->
-        <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" MinWidth="280" />
-            </Grid.ColumnDefinitions>
+        <!-- ====== Inventory (full-width) ======
+             The right-column "Summary" card was a byte-for-byte restatement
+             of the 6 tiles above; removed in v0.4 per the UX review. The
+             inventory now gets the full content width. -->
+        <Border Grid.Row="2" Style="{StaticResource Card}">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="System Inventory"
+                           Style="{StaticResource SectionTitle}" Margin="4,0,0,12" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Inventory}"
+                                  ItemTemplate="{StaticResource SiInventoryRowTemplate}" />
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
 
-            <!-- Inventory card (scrolling list of section headings + label/value rows) -->
-            <Border Grid.Column="0" Style="{StaticResource Card}">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="System Inventory"
-                               Style="{StaticResource SectionTitle}" Margin="4,0,0,12" />
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <ItemsControl ItemsSource="{Binding Inventory}"
-                                      ItemTemplate="{StaticResource SiInventoryRowTemplate}" />
-                    </ScrollViewer>
-                </DockPanel>
-            </Border>
-
-            <!-- Summary card (right column) -->
-            <Border Grid.Column="2" Style="{StaticResource Card}" VerticalAlignment="Top">
-                <StackPanel>
-                    <TextBlock Text="Summary" Style="{StaticResource SectionTitle}" Margin="4,0,0,12" />
-                    <ItemsControl ItemsSource="{Binding Summary}"
-                                  ItemTemplate="{StaticResource SiSummaryRowTemplate}" />
-                </StackPanel>
-            </Border>
-        </Grid>
-
-        <!-- ====== Bottom action bar ====== -->
+        <!-- ====== Bottom action bar ======
+             Refresh + Copy-as-text. Copy puts the entire inventory on the
+             clipboard, formatted for pasting into a support ticket. -->
         <DockPanel Grid.Row="3" Margin="0,16,0,0">
-            <Button DockPanel.Dock="Right"
-                    Command="{Binding RefreshCommand}"
-                    Style="{StaticResource MaterialDesignRaisedButton}"
-                    Padding="22,10" FontWeight="SemiBold">
-                <StackPanel Orientation="Horizontal">
-                    <md:PackIcon Kind="Refresh" Width="18" Height="18" VerticalAlignment="Center" />
-                    <TextBlock Text="Refresh" Margin="8,0,0,0" />
-                </StackPanel>
-            </Button>
-            <TextBlock Text="System Inventory is read live from WMI, registry, and the filesystem. Click Refresh after a config change."
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Command="{Binding CopyAsTextCommand}"
+                        Style="{StaticResource MaterialDesignOutlinedButton}"
+                        Padding="16,8" Margin="0,0,8,0"
+                        ToolTip="Copy the entire inventory to the clipboard, formatted for pasting into a support ticket.">
+                    <StackPanel Orientation="Horizontal">
+                        <md:PackIcon Kind="ContentCopy" Width="16" Height="16" VerticalAlignment="Center" />
+                        <TextBlock Text="Copy as text" Margin="8,0,0,0" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding RefreshCommand}"
+                        Style="{StaticResource MaterialDesignRaisedButton}"
+                        Padding="22,10" FontWeight="SemiBold"
+                        ToolTip="Re-read live data from Windows. Use after a hardware change, driver update, or BIOS update.">
+                    <StackPanel Orientation="Horizontal">
+                        <md:PackIcon Kind="Refresh" Width="18" Height="18" VerticalAlignment="Center" />
+                        <TextBlock Text="Refresh" Margin="8,0,0,0" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+            <TextBlock Text="{Binding CopyStatus}"
                        Foreground="{StaticResource MutedForegroundBrush}"
                        VerticalAlignment="Center" />
         </DockPanel>

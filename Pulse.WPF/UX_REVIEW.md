@@ -213,3 +213,145 @@ Total bespoke-polish budget: ~3 days × 4 panels (1–4) = ~12 dev-days for the 
 - **Telemetry of agent flow** (which findings get acted on, which buttons get clicked, which panels open most): instruments whether the decision-engine is actually working in the field. Without this, the next round of UX decisions is guesswork.
 
 The sequencing I'd recommend: ship the Quick Wins next sprint, do the Findings banner + status aggregation as the first medium move (it changes the panel from data-viewer to decision-engine in one stroke), then commit to the engine port before any further polish — polish on top of a stub Run Test button is wasted spend.
+
+---
+
+# Pulse WPF — Round 2 review: System Overview redundancy & redirection
+
+*Authored by the `pulse-ux-reviewer` persona after dev's Dashboard
+rebuild (post wpf-pilot-v0.3.0). Scope: the System Overview panel.*
+
+## 1. The redundancy verdict
+
+**The user is right.** The current `SystemOverviewView.xaml` shows the same six facts in three places.
+
+- **Top tile row** (`UniformGrid`, lines 106–221): six cards — Model, OS, Uptime, CPU, RAM, Storage — each a label, a one-line value, and a status dot.
+- **Right-column "Summary" card** (lines 244–250): a bulleted list bound to `Summary` — which is built in `SystemOverviewService.BuildSummary()` (lines 571–583) and is literally a `string.Format` of the same six card values.
+- **Inventory list** (`Inventory` `ItemsControl` on lines 237–238): repeats Computer Name, Model, OS Edition, Uptime, CPU Name, Total RAM with more detail.
+
+So: **tile row = bullet list, byte-for-byte.** The page shows the same headline facts at three fidelity levels.
+
+**Verdict: drop the right-column Summary entirely. Keep the tiles. Reframe the inventory.**
+
+Why:
+- Tiles are scannable on 1366×768, status-dot rich, earn their pixels.
+- The bullet Summary is a colored-dot text restatement of the tile row.
+- The Inventory list is the page's actual content — it belongs in prime real estate.
+- The "what's wrong" job has moved to **Dashboard** (Findings banner). System Overview shouldn't re-litigate findings.
+
+## 2. What System Overview should be
+
+**Direction: A — Specs / Inventory page**, with a tightly-scoped slice of identity.
+
+System Overview becomes the **legacy "System Information" tab, modernized**: a calm, dense, read-only inventory a tier-3 engineer copy-pastes from when filing a hardware ticket. It answers **"what is in this box?"** — full stop.
+
+Reason it works for the audience:
+- Tier-1 over LogMeIn: optimize for *copy-paste* and *find-by-eye*.
+- Field tech: optimize for *completeness* (RAM slot count, NIC MACs, etc.).
+- Tier-3 engineer: optimize for *every fact, no clicking* (BIOS, drivers, install date).
+
+**Principle: Dashboard is for state; System Overview is for identity.**
+If a fact never changes from one boot to the next (CPU model, MAC, BIOS version, RAM stick part number) → System Overview's home.
+If it can change minute to minute (CPU %, free disk, link status) → Dashboard's home.
+The live tiles at the top are a deliberate transition zone.
+
+## 3. Layout sketch
+
+Single-column, full-width, scrolling page (no two-column split — the right column is what created the redundancy).
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Header: "System Overview"  · subtitle · [Refresh] [Copy as text] │  ← 64 px
+├──────────────────────────────────────────────────────────────────┤
+│ 6 tile row: Model · OS · Uptime · CPU · RAM · Storage            │  ← 92 px (keep)
+├──────────────────────────────────────────────────────────────────┤
+│ ┌─ Identity ────────────┐ ┌─ Pixellot Software ────────────────┐ │
+│ └───────────────────────┘ └────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────────────────┤
+│ ┌─ Processor ───────────┐ ┌─ Memory ───────────────────────────┐ │
+│ └───────────────────────┘ └────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────────────────┤
+│ ┌─ Graphics ────────────┐ ┌─ Storage devices ──────────────────┐ │
+│ └───────────────────────┘ └────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────────────────┤
+│ ┌─ Operating System & Locale ──────────────────────────────────┐ │
+├──────────────────────────────────────────────────────────────────┤
+│ ┌─ Network adapters ───────────────────────────────────────────┐ │
+├──────────────────────────────────────────────────────────────────┤
+│ ┌─ Installed software (collapsible — count + flagged + Show all)┐│
+└──────────────────────────────────────────────────────────────────┘
+```
+
+Use `WrapPanel` (not `UniformGrid`) for the 2-up rows so they degrade
+gracefully to single-column at narrow widths.
+
+## 4. Wording
+
+- **Page subtitle:** "Hardware, software, and operating-system specs for this VPU. Use Refresh after a hardware change."
+- Drop tile sub-captions ("Manufacturer + product", "Edition + build", etc. — redundant with tile labels).
+- Standardize empty values on **"Not reported"** in MutedForeground (not "Not found" / "—").
+- Section titles: Identity / Pixellot Software / Processor / Memory / Graphics / Storage Devices + Logical Volumes / Operating System & Locale / Network Adapters / Software Inventory.
+- **Move Pixellot Calibrations OUT of System Overview** — it's data, not specs. Belongs in a Camera/Calibration panel.
+- Add a **"Copy as text"** button next to Refresh — single most useful tier-1 feature.
+
+## 5. Data sources — what to add
+
+Already collected (have): tile values, basic Win32_ComputerSystem / OperatingSystem / Processor / VideoController / DiskDrive / NetworkAdapter / PhysicalMemory / Pixellot registry / W32Time NTP server.
+
+Need to add:
+- **Identity**: asset tag (`Win32_SystemEnclosure.SMBIOSAssetTag`), chassis type (`ChassisTypes`)
+- **Pixellot Software**: install date from uninstall registry key
+- **Processor**: family/stepping (`ProcessorId`), virtualization enabled, L2/L3 cache
+- **Memory**: per-slot `DeviceLocator` + `PartNumber`, total slots from `Win32_PhysicalMemoryArray`
+- **Graphics**: driver date, display output count
+- **Storage**: bus type (SATA/NVMe), MediaType (SSD/HDD), firmware revision, all logical volumes (not just system drive)
+- **OS**: .NET runtimes installed, Windows update level (last KB)
+- **Network adapters**: driver version + driver date
+
+Items to **remove** from the inventory:
+- Pixellot Calibrations directory listing (move to its own panel)
+- "UTC timezone" warning row (Dashboard's findings own it)
+- "W32Time NOT running" warning row (Dashboard's services card own it)
+
+## 6. What lives on Dashboard vs System Overview
+
+| Concern | Dashboard | System Overview |
+|---|---|---|
+| Live % (CPU, mem, disk, ping) | Yes (gauges) | No |
+| Findings ("what's wrong now") | Yes | No |
+| Hardware specs (one-line) | Identity card | — |
+| Hardware specs (full detail) | — | Yes, every field |
+| Service status (running/stopped) | Yes | No |
+| Volume free space (live bars) | Yes | Static table of all volumes |
+| NIC link state per port | Yes | No |
+| NIC inventory (MAC, driver) | No | Yes |
+| Pixellot app version (one-line) | Yes | — |
+| Pixellot app full detail (image, deps, install date) | — | Yes |
+| Calibration files | — | — (own panel) |
+| Installed software (full inventory) | — | Yes |
+| Configuration audit | — | — (future panel) |
+
+## 7. Quick wins vs medium vs larger
+
+**Quick wins (≤ 2 hours each):**
+- Delete the right-column Summary card and `BuildSummary()` in the service (lines 244–250 in view, 571–583 in service).
+- Make the inventory full-width (single column).
+- Drop the 6 tile sub-captions (lines 124, 142, 161, 179, 198, 217).
+- Replace empty values with **"Not reported"**.
+- Move W32Time + UTC-timezone warnings out of the inventory rows.
+- Move the Pixellot Calibrations section out of the inventory entirely.
+- Replace bottom-bar implementation gossip with a Refresh tooltip.
+- Add a **"Copy as text"** button.
+
+**Medium (1–3 days):**
+- Restructure inventory into the explicit card layout in §3.
+- Add the missing fields in §5.
+- Build the Software Inventory expander (collapsed: count + flagged; expanded: searchable DataGrid).
+- Promote system-drive volumes to a multi-row table.
+
+**Larger (1+ week):**
+- Carve out **Configuration Audit** as its own panel.
+- Dedicated **Calibration** panel.
+- "Export support bundle" (text + json with full inventory + Dashboard findings).
+
+The first three quick wins (delete Summary, kill sub-captions, full-width inventory) are the user's actual bug — that ships in an afternoon and the redundancy complaint is gone. The rest is the "flesh out the tab properly" half of the request.

@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Management;
 using System.Net.NetworkInformation;
-using System.ServiceProcess;
 using Microsoft.Win32;
 using Pulse.WPF.Helpers;
 using Pulse.WPF.Models;
@@ -37,10 +35,12 @@ namespace Pulse.WPF.Services
             CollectGraphics(rows);
             CollectStorage(rows, snap.Cards);
             CollectNetworkAdapters(rows);
-            CollectCalibrations(rows);
             CollectInstalledSoftware(rows);
-
-            BuildSummary(snap);
+            // CollectCalibrations(rows) was here pre-v0.4 — moved out of this
+            // panel per UX_REVIEW round 2; calibration data is camera config,
+            // not VPU specs, and gets its own panel later.
+            // BuildSummary(snap) was here pre-v0.4 — the bullet list it
+            // produced was a byte-for-byte restatement of the 6 top tiles.
             return snap;
         }
 
@@ -58,9 +58,9 @@ namespace Pulse.WPF.Services
                         rows.Add(Warn("Pixellot", @"Registry key not found (HKLM:\SOFTWARE\Pixellot)"));
                         return;
                     }
-                    rows.Add(Info("App Version",          (k.GetValue("Version")        as string) ?? "Not found"));
-                    rows.Add(Info("System Image Version", (k.GetValue("ImageVersion")   as string) ?? "Not found"));
-                    rows.Add(Info("Package Dependencies", (k.GetValue("Dependencies")   as string) ?? "Not found"));
+                    rows.Add(Info("App Version",          (k.GetValue("Version")        as string) ?? "Not reported"));
+                    rows.Add(Info("System Image Version", (k.GetValue("ImageVersion")   as string) ?? "Not reported"));
+                    rows.Add(Info("Package Dependencies", (k.GetValue("Dependencies")   as string) ?? "Not reported"));
                 }
             }
             catch (Exception)
@@ -118,6 +118,10 @@ namespace Pulse.WPF.Services
         }
 
         // ---- Time & Locale ----------------------------------------------------
+        // Per UX_REVIEW round 2: this page reports identity-of-the-box facts;
+        // configuration warnings (UTC mismatch, W32Time stopped) are findings
+        // and live on the Dashboard. We still record the underlying facts (the
+        // tz string, the NTP peer) here as inventory.
         private static void CollectTimeLocale(List<SystemOverviewRow> rows)
         {
             rows.Add(Section("Time & Locale"));
@@ -127,16 +131,8 @@ namespace Pulse.WPF.Services
                 foreach (ManagementObject o in s.Get())
                 {
                     var caption = (o["Caption"] as string) ?? "";
-                    var standard = (o["StandardName"] as string) ?? "";
                     rows.Add(Info("Timezone", caption));
                     rows.Add(Info("System Time", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")));
-
-                    // UTC default usually means the deployment never set the venue's local zone.
-                    if (standard.Equals("UTC", StringComparison.OrdinalIgnoreCase) ||
-                        caption.StartsWith("(UTC) Coordinated", StringComparison.OrdinalIgnoreCase))
-                    {
-                        rows.Add(Warn("Timezone Check", "System is set to UTC — confirm this matches the venue's local timezone"));
-                    }
                     break;
                 }
             }
@@ -149,23 +145,10 @@ namespace Pulse.WPF.Services
                                     .OpenSubKey(@"SYSTEM\CurrentControlSet\Services\W32Time\Parameters"))
                 {
                     var server = k?.GetValue("NtpServer") as string;
-                    if (!string.IsNullOrEmpty(server)) rows.Add(Info("NTP Server", server));
+                    rows.Add(Info("NTP Server", string.IsNullOrEmpty(server) ? "Not reported" : server));
                 }
             }
-            catch { }
-
-            // W32Time service running?
-            try
-            {
-                using (var sc = new ServiceController("W32Time"))
-                {
-                    if (sc.Status == ServiceControllerStatus.Running)
-                        rows.Add(Info("Time Sync", "W32Time service running"));
-                    else
-                        rows.Add(Warn("Time Sync", "W32Time service NOT running — automatic time sync disabled"));
-                }
-            }
-            catch { /* service not found / access denied — skip */ }
+            catch { rows.Add(Info("NTP Server", "Not reported")); }
         }
 
         // ---- System (Win32_ComputerSystem + Win32_BIOS) -----------------------
@@ -458,49 +441,9 @@ namespace Pulse.WPF.Services
             catch { rows.Add(Warn("NICs", "Query failed")); }
         }
 
-        // ---- Pixellot Calibrations (filesystem) -------------------------------
-        private static void CollectCalibrations(List<SystemOverviewRow> rows)
-        {
-            rows.Add(Section("Pixellot Calibrations"));
-            var paths = new[]
-            {
-                @"C:\Pixellot\calibration",
-                @"C:\Pixellot\Calibration",
-                @"C:\Pixellot\Data\Calibration",
-                @"C:\Program Files\Pixellot\calibration",
-                @"C:\ProgramData\Pixellot\calibration",
-            };
-            bool found = false;
-            foreach (var p in paths)
-            {
-                try
-                {
-                    if (!Directory.Exists(p)) continue;
-                    found = true;
-                    rows.Add(Info("Calibration Path", p));
-                    var di = new DirectoryInfo(p);
-                    var files = di.GetFiles().OrderByDescending(f => f.LastWriteTime).Take(12).ToList();
-                    if (files.Count == 0)
-                    {
-                        rows.Add(Warn("  Files", "Directory exists but is empty"));
-                    }
-                    else
-                    {
-                        var now = DateTime.Now;
-                        foreach (var f in files)
-                        {
-                            var age = now - f.LastWriteTime;
-                            string ageStr = age.TotalDays  >= 1 ? $"{(int)age.TotalDays}d ago"
-                                          : age.TotalHours >= 1 ? $"{(int)age.TotalHours}h ago"
-                                          :                        $"{(int)age.TotalMinutes}m ago";
-                            rows.Add(Gray($"  {f.Name}", $"{ageStr}   ({f.Length / 1024.0:F0} KB)"));
-                        }
-                    }
-                }
-                catch { /* skip unreadable paths */ }
-            }
-            if (!found) rows.Add(Gray("Calibrations", "No calibration directory found in standard locations"));
-        }
+        // CollectCalibrations was here pre-v0.4 — moved out per UX_REVIEW
+        // round 2. Calibration data is camera config, not VPU specs, and
+        // belongs in a dedicated Camera/Calibration panel.
 
         // ---- Installed Software (registry uninstall keys) ---------------------
         private static readonly string[] UnwantedPatterns = new[]
@@ -567,20 +510,9 @@ namespace Pulse.WPF.Services
             catch { rows.Add(Warn("Installed Software", "Scan failed")); }
         }
 
-        // ---- Build the right-side Summary bullets -----------------------------
-        private static void BuildSummary(SystemOverviewSnapshot snap)
-        {
-            var c = snap.Cards;
-            void Add(string text, string status) =>
-                snap.Summary.Add(new SystemOverviewSummaryItem { Status = status, Text = text });
-
-            Add($"Model: {c.ModelTitle}",                 c.ModelStatus   == "neutral" ? "ok" : c.ModelStatus);
-            Add($"OS: {c.OsTitle}",                       c.OsStatus      == "neutral" ? "ok" : c.OsStatus);
-            Add($"Uptime: {c.UptimeTitle}",               c.UptimeStatus);
-            Add($"CPU: {c.CpuTitle}",                     c.CpuStatus     == "neutral" ? "ok" : c.CpuStatus);
-            Add($"RAM: {c.RamTitle}",                     c.RamStatus);
-            Add($"Storage: {c.StorageTitle}",             c.StorageStatus);
-        }
+        // BuildSummary was here — removed in v0.4 alongside the right-column
+        // Summary card in SystemOverviewView.xaml. The bullets it produced
+        // were a byte-for-byte restatement of the 6 top tiles.
 
         // ---- Row helpers ------------------------------------------------------
         private static SystemOverviewRow Section(string title) =>
