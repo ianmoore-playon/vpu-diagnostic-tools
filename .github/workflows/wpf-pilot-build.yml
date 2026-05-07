@@ -60,21 +60,14 @@ jobs:
           New-Item -ItemType Directory -Force "release" | Out-Null
           Copy-Item -Recurse publish "release/$name"
           Compress-Archive -Path "release/$name" -DestinationPath "release/$name.zip"
-          # Convenience launcher .bat that the tech can drop on a VPU desktop.
-          # It downloads the latest pilot zip from the release page and runs the EXE.
-          @"
-          @echo off
-          REM Pulse.WPF pilot launcher
-          REM Downloads the latest pilot release zip and runs Pulse.WPF.exe.
-          REM Requires .NET Framework 4.8 (already on every VPU).
-          PowerShell -NoProfile -ExecutionPolicy Bypass -Command ^
-            "if (Test-Path '%TEMP%\Pulse.WPF-pilot') { Remove-Item '%TEMP%\Pulse.WPF-pilot' -Recurse -Force }; ^
-             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls; ^
-             Invoke-WebRequest 'https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$name.zip' -OutFile '%TEMP%\pwpf.zip'; ^
-             Expand-Archive '%TEMP%\pwpf.zip' '%TEMP%\Pulse.WPF-pilot' -Force; ^
-             Get-ChildItem '%TEMP%\Pulse.WPF-pilot' -Recurse | Unblock-File; ^
-             Start-Process (Get-ChildItem '%TEMP%\Pulse.WPF-pilot' -Recurse -Filter 'Pulse.WPF.exe' | Select-Object -First 1).FullName"
-          "@ | Set-Content -Encoding ascii "release/Pulse.WPF-pilot-Launcher.bat"
+          # NOTE: the per-release launcher .bat is intentionally NOT generated
+          # here anymore. Earlier builds shipped a Pulse.WPF-pilot-Launcher.bat
+          # inside each release zip with the tag + zip filename hard-coded at
+          # build time, so anyone who saved that .bat to a desktop kept pulling
+          # the same pinned build forever (a footgun that looked like an auto-
+          # updater). The single supported entrypoint is now the static
+          # Pulse.WPF.bat that lives at the root of ianmoore-playon/pulse-releases,
+          # which calls install.ps1 -> /releases/latest every run.
           echo "ARTIFACT_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "ARTIFACT_ZIP=release/$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
@@ -82,30 +75,31 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
-          path: |
-            ${{ env.ARTIFACT_ZIP }}
-            release/Pulse.WPF-pilot-Launcher.bat
+          path: ${{ env.ARTIFACT_ZIP }}
 
       - name: Publish release on tag push (private source repo)
         if: startsWith(github.ref, 'refs/tags/wpf-pilot-v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            ${{ env.ARTIFACT_ZIP }}
-            release/Pulse.WPF-pilot-Launcher.bat
+          files: ${{ env.ARTIFACT_ZIP }}
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body: |
-            Pulse.WPF pilot build (Camera Connectivity panel only).
+            Pulse.WPF pilot build.
 
             **Internal source-repo release.** The public-facing copy is mirrored
             to ianmoore-playon/pulse-releases automatically — that's where
             techs and contractors download from.
 
-      # Mirror the same artifacts to the PUBLIC ianmoore-playon/pulse-releases
-      # repo so non-GitHub-users (contractors, externals) can download Pulse.WPF
-      # without needing access to this private source repo. The launcher .bat
-      # that lives in pulse-releases pulls from there, not from here.
+            Install path on a VPU:
+            - `Pulse.WPF.bat` (static, lives at the root of pulse-releases) — auto-updates every launch
+            - or the one-liner: `irm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1 | iex`
+
+      # Mirror the same artifact (zip only) to the PUBLIC ianmoore-playon/pulse-releases
+      # repo so non-GitHub-users can download Pulse.WPF without needing access to
+      # this private source repo. The static Pulse.WPF.bat that lives at the root of
+      # pulse-releases is the only supported launcher — it calls install.ps1 ->
+      # /releases/latest on every double-click, so VPUs auto-update.
       - name: Mirror release to public pulse-releases repo
         if: startsWith(github.ref, 'refs/tags/wpf-pilot-v')
         env:
@@ -120,7 +114,6 @@ jobs:
             --repo $publicRepo `
             --target main `
             --title "Pulse.WPF $tag" `
-            --notes "Pulse.WPF pilot build (Camera Connectivity panel only).`n`n**Install on a VPU**`n``````powershell`nirm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1 | iex`n```````n`nOr drop ``Pulse.WPF.bat`` on the VPU desktop and double-click.`n`nRequires .NET Framework 4.8 (pre-installed on every VPU)." `
-            ${{ env.ARTIFACT_ZIP }} `
-            release/Pulse.WPF-pilot-Launcher.bat
+            --notes "Pulse.WPF pilot build.`n`n**Install on a VPU**`n`nDrop ``Pulse.WPF.bat`` on the VPU desktop and double-click — it auto-updates every launch.`n`nOr the one-liner:`n``````powershell`nirm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1 | iex`n```````n`nRequires .NET Framework 4.8 (pre-installed on every VPU)." `
+            ${{ env.ARTIFACT_ZIP }}
           Write-Host "Mirrored release $tag to $publicRepo"
