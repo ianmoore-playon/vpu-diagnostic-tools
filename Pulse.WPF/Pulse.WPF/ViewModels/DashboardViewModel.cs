@@ -185,6 +185,23 @@ namespace Pulse.WPF.ViewModels
         public ICommand RefreshCommand { get; }
         public Action<string> RequestNavigate { get; set; }   // wired up by MainViewModel
 
+        // Set by MainViewModel — called when "Open Last Report" fires with the
+        // filename of the most recent report so the Reports panel can pre-
+        // select it after navigation. Keeps the cross-VM coordination simple.
+        public Action<string> RequestOpenReport { get; set; }
+
+        // True when there are no diagnostic reports on disk — drives the
+        // "No diagnostic runs yet" muted empty state in the Dashboard's
+        // "Last Diagnostic Run" card. Populated from IReportsService when
+        // available; otherwise falls back to _lastReportPath being empty.
+        private bool _isLastRunEmpty = true;
+        public bool IsLastRunEmpty
+        {
+            get => _isLastRunEmpty;
+            set => Set(ref _isLastRunEmpty, value);
+        }
+        public bool HasLastRun => !_isLastRunEmpty;
+
         // Live-update timer — re-reads only the cheap gauges (CPU / memory /
         // disk / temperature) every 2 seconds. The heavy snapshot (NIC ports,
         // services, internet probe, volumes) refreshes on tab visit + manual
@@ -196,7 +213,7 @@ namespace Pulse.WPF.ViewModels
             NavigateCommand        = new NavigateCommandImpl(t => RequestNavigate?.Invoke(t as string));
             // CanExecute disables Open Last Report when no report exists —
             // the button used to silently no-op (rec #11 from the UX review).
-            OpenLastReportCommand  = new RelayCommand(OpenLastReport, () => !string.IsNullOrEmpty(_lastReportPath));
+            OpenLastReportCommand  = new RelayCommand(OpenLastReport, () => HasLastRun);
             RefreshCommand         = new AsyncCommand(RefreshAsync);
 
             _liveTimer = new System.Windows.Threading.DispatcherTimer
@@ -473,12 +490,20 @@ namespace Pulse.WPF.ViewModels
             }
         }
 
-        // Open via the OS default association for .txt — usually Notepad++ /
-        // VS Code / whatever the tech installed, falling back to Notepad.
-        // The CanExecute on the command keeps the button disabled until a
-        // report exists.
+        // Prefer the in-app Reports panel — pre-select the top entry there so
+        // the tech sees the bundle inline instead of being thrown into
+        // Notepad. Falls back to shelling out for the legacy
+        // Pulse_Results_*.txt path when the Reports service has no top
+        // entry but the legacy report path does.
         private void OpenLastReport()
         {
+            // Preferred path: hand control to Reports.
+            if (RequestOpenReport != null)
+            {
+                RequestOpenReport.Invoke(_lastReportFileName);
+                return;
+            }
+
             if (string.IsNullOrEmpty(_lastReportPath)) return;
             try
             {
@@ -492,6 +517,31 @@ namespace Pulse.WPF.ViewModels
                 try { Process.Start("notepad.exe", _lastReportPath); } catch { }
             }
         }
+
+        // Set by MainViewModel after refreshing the Reports list — populates
+        // the "Last Diagnostic Run" card with the most recent on-disk report,
+        // and lets the Open Last Report button know which one to pre-select.
+        public void ApplyLastReport(string fileName, DateTime? timestamp, string sizeLabel)
+        {
+            _lastReportFileName = fileName;
+            if (string.IsNullOrEmpty(fileName))
+            {
+                IsLastRunEmpty = true;
+                OnPropertyChanged(nameof(HasLastRun));
+                return;
+            }
+            IsLastRunEmpty = false;
+            OnPropertyChanged(nameof(HasLastRun));
+            if (timestamp.HasValue) LastRunWhen = timestamp.Value.ToString("MMM d, h:mm tt");
+            if (string.IsNullOrEmpty(LastRunResult) || LastRunResult == "—") LastRunResult = "Saved report";
+            if (!string.IsNullOrEmpty(sizeLabel)) LastRunSummary = $"Bundle: {fileName} ({sizeLabel})";
+        }
+
+        // Filename of the on-disk report that the breadcrumb should
+        // pre-select in the Reports panel. Lives next to _lastReportPath so
+        // both the legacy file-open and the new in-app-navigate paths stay
+        // available to the OpenLastReport command.
+        private string _lastReportFileName;
 
         // ICommand wrapper that takes the tile's TargetNav string.
         private class NavigateCommandImpl : ICommand

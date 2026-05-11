@@ -50,6 +50,10 @@ namespace Pulse.WPF.ViewModels
             {
                 case "Home":           return "Dashboard";
                 case "Disk":           return "DiskHealth";
+                // The Dashboard Quick Nav tile for Event Viewer uses the
+                // legacy "Events" key from when the panel hadn't shipped —
+                // map it through here so a single rename is enough.
+                case "Events":         return "EventViewer";
                 default:               return value.Trim();
             }
         }
@@ -121,6 +125,26 @@ namespace Pulse.WPF.ViewModels
                 if (!string.IsNullOrEmpty(target)) SelectedNav = target;
             };
 
+            // "Open Last Report" — switch to Reports and pre-select the
+            // supplied filename. If no filename is supplied (no on-disk
+            // report yet) the navigation alone is still useful: the Reports
+            // panel will show its own muted empty state.
+            Dashboard.RequestOpenReport = fileName =>
+            {
+                if (!string.IsNullOrEmpty(fileName)) Reports.PreselectFileName = fileName;
+                SelectedNav = "Reports";
+            };
+
+            // Push the top-of-list report into the Dashboard "Last Diagnostic
+            // Run" card as soon as Reports loads. Reports populates on its
+            // own Task.Run in its ctor; we poll its CollectionChanged so the
+            // Dashboard updates without us needing a second background
+            // fetch here.
+            Reports.Reports.CollectionChanged += (_, __) => PushTopReportToDashboard();
+            // First-paint push — in case the collection populates before
+            // we hook the event, we still want the card to update once.
+            PushTopReportToDashboard();
+
             NavigateCommand = new NavigateImpl(target =>
             {
                 var s = target as string;
@@ -158,6 +182,17 @@ namespace Pulse.WPF.ViewModels
                     _ = SafeRefresh(Dashboard.RefreshAsync);
                     break;
             }
+        }
+
+        // Hand the most-recent report from the Reports panel to the
+        // Dashboard so the "Last Diagnostic Run" card shows a real value
+        // (or its muted empty state when there are no reports yet).
+        private void PushTopReportToDashboard()
+        {
+            if (Reports == null || Dashboard == null) return;
+            var top = Reports.Reports.Count > 0 ? Reports.Reports[0] : null;
+            if (top == null) Dashboard.ApplyLastReport(null, null, null);
+            else              Dashboard.ApplyLastReport(top.FileName, top.Timestamp, top.SizeLabel);
         }
 
         private static async Task SafeRefresh(System.Func<Task> refresh)

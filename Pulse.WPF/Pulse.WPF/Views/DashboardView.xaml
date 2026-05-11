@@ -348,7 +348,10 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Last Diagnostic Run -->
+                <!-- Last Diagnostic Run — populated from IReportsService's
+                     top entry (set via MainViewModel.PushTopReportToDashboard).
+                     Card body swaps to a muted "No diagnostic runs yet"
+                     empty state when the reports folder is empty. -->
                 <Border Style="{StaticResource Card}" Margin="8,0,0,0">
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Top" Text="LAST DIAGNOSTIC RUN" Style="{StaticResource CardCaption}" />
@@ -357,7 +360,20 @@
                                 Command="{Binding OpenLastReportCommand}"
                                 Style="{StaticResource MaterialDesignOutlinedButton}"
                                 HorizontalAlignment="Stretch" Margin="0,12,0,0" />
-                        <StackPanel>
+                        <!-- Empty state -->
+                        <StackPanel Visibility="{Binding IsLastRunEmpty, Converter={StaticResource BoolToVis}}">
+                            <md:PackIcon Kind="FileDocumentOutline" Width="24" Height="24"
+                                         Foreground="{StaticResource MutedForegroundBrush}" />
+                            <TextBlock Text="No diagnostic runs yet"
+                                       FontFamily="Segoe UI Semibold" FontSize="13"
+                                       Foreground="{StaticResource ForegroundBrush}"
+                                       Margin="0,8,0,0" />
+                            <TextBlock Text="Reports will appear here after the first saved diagnostic. Open Reports to browse the folder."
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0" />
+                        </StackPanel>
+                        <!-- Populated state -->
+                        <StackPanel Visibility="{Binding HasLastRun, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="{Binding LastRunWhen}" Style="{StaticResource SectionTitle}" FontSize="15" />
                             <TextBlock Text="{Binding LastRunResult}"
                                        Foreground="{Binding LastRunResultColor}"
