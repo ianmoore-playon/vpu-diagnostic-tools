@@ -103,6 +103,8 @@
                     <TextBlock DockPanel.Dock="Top" Text="System Dependencies"
                                Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                     <DataGrid ItemsSource="{Binding SystemDependencies}"
+                              SelectedItem="{Binding SelectedService, Mode=TwoWay}"
+                              SelectionMode="Single"
                               Background="Transparent"
                               BorderThickness="0"
                               HeadersVisibility="Column"

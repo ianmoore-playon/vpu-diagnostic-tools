@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -271,25 +272,41 @@ namespace Pulse.WPF.ViewModels
 
         public async Task RefreshAsync()
         {
-            // Tiles + last-run line are cheap registry/file reads — pull them
-            // once and let the heavier snapshot fill in the rest.
-            var tiles = _svc.GetHubTiles();
-            var last  = _svc.GetLastRunSummary();
+            // The cheap-reads (GetHubTiles, GetLastRunSummary) and the pre-await
+            // body of CollectSnapshotAsync (which still includes the 250 ms
+            // Thread.Sleep in ReadGaugesCore) all used to run inline on the UI
+            // thread. Push everything that touches the service onto a worker
+            // task so the dispatcher stays free until we marshal results back.
+            List<HubTileViewModel> tiles = null;
+            LastRunSummary last = null;
             DashboardSnapshot snap = null;
-            try { snap = await _svc.CollectSnapshotAsync().ConfigureAwait(false); } catch { }
+            Exception snapErr = null;
+            try
+            {
+                tiles = await Task.Run(() => _svc.GetHubTiles()).ConfigureAwait(false);
+            }
+            catch (Exception ex) { snapErr = ex; }
+            try
+            {
+                last = await Task.Run(() => _svc.GetLastRunSummary()).ConfigureAwait(false);
+            }
+            catch (Exception ex) { if (snapErr == null) snapErr = ex; }
+            try { snap = await _svc.CollectSnapshotAsync().ConfigureAwait(false); }
+            catch (Exception ex) { snapErr = ex; }
 
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
             {
-                ApplyTilesAndLastRun(tiles, last);
+                ApplyTilesAndLastRun(tiles ?? new List<HubTileViewModel>(), last);
                 if (snap != null) ApplySnapshot(snap);
+                if (snapErr != null) AddLog($"Snapshot collection failed: {snapErr.Message}", "Warn");
             });
         }
 
-        private void ApplyTilesAndLastRun(System.Collections.Generic.List<HubTileViewModel> tiles,
+        private void ApplyTilesAndLastRun(List<HubTileViewModel> tiles,
                                           LastRunSummary last)
         {
             Tiles.Clear();
-            foreach (var t in tiles) Tiles.Add(t);
+            if (tiles != null) foreach (var t in tiles) Tiles.Add(t);
 
             if (last == null)
             {
@@ -421,25 +438,19 @@ namespace Pulse.WPF.ViewModels
                 return;
             }
 
-            bool anyFail = false, anyWarn = false;
+            // Route through StatusHelpers.PillFor so the Dashboard pill reads
+            // the same way as the other four panels' pills (v0.5.0).
+            int crit = 0, warn = 0;
             foreach (var f in Findings)
             {
-                if (f.Severity == "fail") { anyFail = true; break; }
-                if (f.Severity == "warn") anyWarn = true;
+                if (f.Severity == "fail") crit++;
+                else if (f.Severity == "warn") warn++;
             }
-
-            if (anyFail)
-            {
-                StatusLabel = "Critical"; StatusColor = StatusHelpers.Brush("RedBrush");    StatusBg = StatusHelpers.Brush("ErrBgBrush");
-            }
-            else if (anyWarn)
-            {
-                StatusLabel = "Warning";  StatusColor = StatusHelpers.Brush("YellowBrush"); StatusBg = StatusHelpers.Brush("WarnBgBrush");
-            }
-            else
-            {
-                StatusLabel = "Healthy";  StatusColor = StatusHelpers.Brush("GreenBrush");  StatusBg = StatusHelpers.Brush("OkBgBrush");
-            }
+            string worst = crit > 0 ? "Critical" : (warn > 0 ? "Warning" : "");
+            var pill = StatusHelpers.PillFor(worst, warn, crit);
+            StatusLabel = pill.Label;
+            StatusColor = pill.Fg;
+            StatusBg    = pill.Bg;
         }
 
         // 0–60% green, 60–85% yellow, ≥85% red — same threshold the legacy
