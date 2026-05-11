@@ -10,10 +10,19 @@ namespace Pulse.WPF.Services
     public interface IPixellotConfigService
     {
         /// <summary>
-        /// Returns a fresh role map. Empty dictionary if the config dir
-        /// doesn't exist (caller should fall back to OUI / speed heuristics).
+        /// Returns a fresh role map keyed by camera IP. Empty dictionary if the
+        /// config dir doesn't exist (caller should fall back to OUI / speed
+        /// heuristics).
         /// </summary>
         Dictionary<string, string> GetRoles();
+
+        /// <summary>
+        /// Returns a fresh role map keyed by camera MAC, uppercased and
+        /// dash-separated (e.g. "00-30-6C-AB-CD-EF"). Empty dictionary when no
+        /// cfg sections contain a MAC field. Used by RemoteDeviceResolver so
+        /// role attribution survives an IP being recycled by DHCP.
+        /// </summary>
+        Dictionary<string, string> GetRolesByMac();
 
         /// <summary>Absolute path to cameras.cfg (may not exist on disk).</summary>
         string CamerasCfgPath { get; }

@@ -50,10 +50,34 @@ namespace Pulse.WPF.Helpers
     /// </summary>
     public static class RemoteDeviceResolver
     {
+        /// <summary>
+        /// Overload that consults a MAC-keyed role map in addition to the
+        /// IP-keyed one. Added v0.5.0 so role attribution survives an IP
+        /// being recycled by DHCP — the cfg has both fields, the resolver
+        /// just hadn't been keying on MAC.
+        /// </summary>
+        public static RemoteDeviceInfo Resolve(
+            string remoteMac,
+            string remoteIp,
+            Dictionary<string, string> cfgRolesByIp,
+            Dictionary<string, string> cfgRolesByMac)
+        {
+            return ResolveCore(remoteMac, remoteIp, cfgRolesByIp, cfgRolesByMac);
+        }
+
         public static RemoteDeviceInfo Resolve(
             string remoteMac,
             string remoteIp,
             Dictionary<string, string> cfgRolesByIp)
+        {
+            return ResolveCore(remoteMac, remoteIp, cfgRolesByIp, null);
+        }
+
+        private static RemoteDeviceInfo ResolveCore(
+            string remoteMac,
+            string remoteIp,
+            Dictionary<string, string> cfgRolesByIp,
+            Dictionary<string, string> cfgRolesByMac)
         {
             // ---- 4) No remote at all ----
             // Bug #2 / #3 guard: an empty, all-zero, broadcast, or multicast
@@ -74,10 +98,29 @@ namespace Pulse.WPF.Helpers
             var oui = MacOuiTable.NormaliseOui(remoteMac) ?? "??-??-??";
             var vendor = MacOuiTable.LookupVendor(remoteMac);
 
-            // ---- 1) cameras.cfg role match (by IP) ----
-            // The cfg map is keyed by IP today; if a future cfg parser starts
-            // recording MACs we can extend the lookup here without touching
-            // the rest of the chain.
+            // ---- 1a) cameras.cfg role match (by MAC) ----
+            // Preferred — survives DHCP recycling the IP. Same gate as the
+            // IP-keyed match below.
+            if (!NetworkAdapterService.IsInvalidMac(remoteMac)
+                && cfgRolesByMac != null && cfgRolesByMac.Count > 0)
+            {
+                var canonMac = CanonicalMac(remoteMac);
+                if (canonMac != null
+                    && cfgRolesByMac.TryGetValue(canonMac, out var macRole))
+                {
+                    var sec = vendor != null ? $"{vendor} - OUI {oui}" : $"OUI {oui}";
+                    return new RemoteDeviceInfo
+                    {
+                        PrimaryLabel = macRole,
+                        SecondaryLabel = sec,
+                        Source = DeviceIdentitySource.PixellotConfig,
+                        IsOcr = macRole.IndexOf("OCR", StringComparison.OrdinalIgnoreCase) >= 0
+                             || macRole.IndexOf("Scoreboard", StringComparison.OrdinalIgnoreCase) >= 0,
+                    };
+                }
+            }
+
+            // ---- 1b) cameras.cfg role match (by IP) ----
             //
             // Bug #3: the cfg lookup is *gated* behind a real-MAC + non-empty-IP
             // check. Without this gate, a port whose ARP table only contained
@@ -119,6 +162,23 @@ namespace Pulse.WPF.Helpers
                 SecondaryLabel = $"OUI {oui}",
                 Source = DeviceIdentitySource.OuiHexOnly,
             };
+        }
+
+        // Normalise a remote MAC into the same canonical
+        // "XX-XX-XX-XX-XX-XX" upper-case form PixellotConfigService.GetRolesByMac
+        // uses for its keys. Returns null when the input isn't parseable.
+        private static string CanonicalMac(string mac)
+        {
+            if (string.IsNullOrEmpty(mac)) return null;
+            var hex = new System.Text.StringBuilder(12);
+            foreach (var c in mac)
+            {
+                if (c == ':' || c == '-' || c == '.' || c == ' ') continue;
+                if (!System.Uri.IsHexDigit(c)) return null;
+                hex.Append(System.Char.ToUpperInvariant(c));
+            }
+            if (hex.Length != 12) return null;
+            return $"{hex[0]}{hex[1]}-{hex[2]}{hex[3]}-{hex[4]}{hex[5]}-{hex[6]}{hex[7]}-{hex[8]}{hex[9]}-{hex[10]}{hex[11]}";
         }
     }
 }

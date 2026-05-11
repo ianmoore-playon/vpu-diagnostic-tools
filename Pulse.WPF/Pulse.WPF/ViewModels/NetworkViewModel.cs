@@ -219,24 +219,43 @@ namespace Pulse.WPF.ViewModels
                 {
                     if (p == null || p.Status != "Fail") continue;
                     var purpose = string.IsNullOrEmpty(p.Purpose) ? "purpose unknown" : p.Purpose;
+                    // NTP probe (UDP/123) failing is a special case — it's
+                    // usually surfaced by the System Overview panel as a
+                    // clock-skew finding too, so wire a direct cross-tab
+                    // navigation action onto the recommendation row.
+                    var isNtp = p.Port == 123 &&
+                                string.Equals(p.Protocol, "UDP", System.StringComparison.OrdinalIgnoreCase);
+                    NetworkRecommendation rec;
                     if (p.Optional)
                     {
                         // Optional ports (SportzCast 1402/1935, Zixi UDP/443
                         // fallback) aren't required at every venue. Soften the
                         // language so support doesn't get pointed at a firewall
                         // change they don't actually need.
-                        built.Add(NetworkRecommendation.Create(
+                        rec = NetworkRecommendation.Create(
                             "Info",
                             $"{p.Protocol} {p.Port} blocked (optional)",
-                            $"{p.Protocol}/{p.Port} ({purpose}) is blocked. This port may not be required at this venue — only act on this if streaming is failing in a way that points at this service. If it's actually required, ensure outbound {p.Protocol} {p.Port} to {p.Host} is allowed by the venue firewall."));
+                            $"{p.Protocol}/{p.Port} ({purpose}) is blocked. This port may not be required at this venue — only act on this if streaming is failing in a way that points at this service. If it's actually required, ensure outbound {p.Protocol} {p.Port} to {p.Host} is allowed by the venue firewall.");
                     }
                     else
                     {
-                        built.Add(NetworkRecommendation.Create(
+                        rec = NetworkRecommendation.Create(
                             "Critical",
-                            $"{p.Protocol} {p.Port} blocked",
-                            $"{p.Protocol}/{p.Port} ({purpose}) is blocked. Ensure outbound {p.Protocol} {p.Port} to {p.Host} is allowed by the venue firewall, content-filter, and VLAN policy."));
+                            isNtp ? "NTP time sync failed"
+                                  : $"{p.Protocol} {p.Port} blocked",
+                            isNtp
+                                ? $"NTP time sync to {p.Host} failed (UDP/123). Without a clock peer the VPU's system time will drift, breaking signed-URL streaming and log-correlation. Check the System Overview panel for the live clock-skew value, and ensure outbound UDP/123 to {p.Host} is allowed."
+                                : $"{p.Protocol}/{p.Port} ({purpose}) is blocked. Ensure outbound {p.Protocol} {p.Port} to {p.Host} is allowed by the venue firewall, content-filter, and VLAN policy.");
                     }
+                    if (isNtp)
+                    {
+                        rec.ActionLabel = "Open System Overview";
+                        rec.ActionCommand = new RelayCommand(() =>
+                        {
+                            try { Pulse.WPF.App.NavigateToTab("SystemOverview"); } catch { }
+                        });
+                    }
+                    built.Add(rec);
                 }
             }
 

@@ -36,6 +36,13 @@ namespace Pulse.WPF.Services
         private static readonly Regex CameraSection         = new Regex(@"^CAMERA_(\d+)$",          RegexOptions.Compiled);
         private static readonly Regex AdditionalAngleSection = new Regex(@"^ADDITIONAL_ANGLE_(\d+)$", RegexOptions.Compiled);
         private static readonly Regex RtspIpRx              = new Regex(@"rtsp:/+(\d+\.\d+\.\d+\.\d+)", RegexOptions.Compiled);
+        // Match a 12-hex-digit MAC with optional colon / dash separators —
+        // covers the three formats cameras.cfg has shipped over the years.
+        private static readonly Regex MacRx                  = new Regex(@"\b([0-9A-Fa-f]{2}[:\-]?){5}[0-9A-Fa-f]{2}\b", RegexOptions.Compiled);
+
+        // Field names a cfg section might use to record the camera's MAC.
+        // Order matters — first match wins.
+        private static readonly string[] MacFieldKeys = { "MAC", "MAC_ADDRESS", "MACADDR", "HW_ADDR" };
 
         public Dictionary<string, string> GetRoles()
         {
@@ -83,6 +90,55 @@ namespace Pulse.WPF.Services
             return roles;
         }
 
+        /// <inheritdoc />
+        public Dictionary<string, string> GetRolesByMac()
+        {
+            var rolesByMac = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+            if (!Directory.Exists(ConfigDir)) return rolesByMac;
+
+            void TryAdd(Dictionary<string, string> section, string role)
+            {
+                foreach (var key in MacFieldKeys)
+                {
+                    var raw = GetValue(section, key);
+                    var mac = NormaliseMac(raw);
+                    if (!string.IsNullOrEmpty(mac))
+                    {
+                        // Last writer wins — duplicate MAC across sections is
+                        // a misconfiguration; we'd rather render the latest
+                        // role than throw.
+                        rolesByMac[mac] = role;
+                        return;
+                    }
+                }
+            }
+
+            var camsCfg = ReadCfg(Path.Combine(ConfigDir, "cameras.cfg"));
+            foreach (var section in camsCfg.Keys)
+            {
+                var camMatch = CameraSection.Match(section);
+                if (camMatch.Success)
+                {
+                    var idx = int.Parse(camMatch.Groups[1].Value);
+                    TryAdd(camsCfg[section], $"Main Camera {idx + 1}");
+                    continue;
+                }
+                var angleMatch = AdditionalAngleSection.Match(section);
+                if (angleMatch.Success)
+                {
+                    var idx = int.Parse(angleMatch.Groups[1].Value);
+                    TryAdd(camsCfg[section], $"Additional Angle {idx + 1}");
+                    continue;
+                }
+                if (section == "PIP") TryAdd(camsCfg[section], "OCR / Scoreboard");
+            }
+
+            var pipCfg = ReadCfg(Path.Combine(ConfigDir, "pip.cfg"));
+            if (pipCfg.TryGetValue("PIP", out var pip)) TryAdd(pip, "OCR / Scoreboard");
+
+            return rolesByMac;
+        }
+
         // ----- helpers -----
 
         private static string GetValue(Dictionary<string, string> section, string key)
@@ -93,6 +149,24 @@ namespace Pulse.WPF.Services
             if (string.IsNullOrEmpty(rtspUrl)) return null;
             var m = RtspIpRx.Match(rtspUrl);
             return m.Success ? m.Groups[1].Value : null;
+        }
+
+        // Normalise a MAC string to canonical "XX-XX-XX-XX-XX-XX" upper-case.
+        // Tolerant of colon, dash, dot, or undelimited input. Returns null
+        // when nothing parseable is in the string.
+        private static string NormaliseMac(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return null;
+            var m = MacRx.Match(raw);
+            if (!m.Success) return null;
+            var hex = new System.Text.StringBuilder(12);
+            foreach (var c in m.Value)
+            {
+                if (c == ':' || c == '-' || c == '.') continue;
+                hex.Append(char.ToUpperInvariant(c));
+            }
+            if (hex.Length != 12) return null;
+            return $"{hex[0]}{hex[1]}-{hex[2]}{hex[3]}-{hex[4]}{hex[5]}-{hex[6]}{hex[7]}-{hex[8]}{hex[9]}-{hex[10]}{hex[11]}";
         }
 
         /// <summary>

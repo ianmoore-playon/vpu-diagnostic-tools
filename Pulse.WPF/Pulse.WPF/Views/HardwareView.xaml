@@ -17,7 +17,7 @@
                 <RowDefinition Height="Auto" />   <!-- Findings banner -->
                 <RowDefinition Height="Auto" />   <!-- 3-card top row -->
                 <RowDefinition Height="Auto" />   <!-- PoE + NIC sidebar -->
-                <RowDefinition Height="*" MinHeight="280" />  <!-- Log -->
+                <RowDefinition Height="Auto" />   <!-- Log (collapsed expander) -->
                 <RowDefinition Height="Auto" />   <!-- Action bar -->
             </Grid.RowDefinitions>
 
@@ -189,13 +189,13 @@
                 </Border>
             </Grid>
 
-            <!-- ====== Live Log ====== -->
-            <Border Grid.Row="4" Style="{StaticResource Card}" Margin="0,0,0,16">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="Live Log"
-                               Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+            <!-- ====== Live Log (collapsed expander — matches Camera Connectivity) ====== -->
+            <Expander Grid.Row="4" Header="Live Log" Margin="0,0,0,16"
+                      Foreground="{StaticResource MutedForegroundBrush}">
+                <Border Style="{StaticResource Card}" Margin="0,8,0,0">
                     <Border BorderBrush="{StaticResource BorderColBrush}" BorderThickness="0,1,0,0"
-                            Background="{StaticResource LogBgBrush}" CornerRadius="6">
+                            Background="{StaticResource LogBgBrush}" CornerRadius="6"
+                            MaxHeight="280">
                         <ListBox ItemsSource="{Binding LogEntries}"
                                  Background="Transparent" BorderThickness="0"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
@@ -216,8 +216,8 @@
                             </ListBox.ItemTemplate>
                         </ListBox>
                     </Border>
-                </DockPanel>
-            </Border>
+                </Border>
+            </Expander>
 
             <!-- ====== Action bar ====== -->
             <DockPanel Grid.Row="5">

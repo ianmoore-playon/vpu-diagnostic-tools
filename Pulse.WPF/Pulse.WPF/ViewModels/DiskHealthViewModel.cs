@@ -29,6 +29,51 @@ namespace Pulse.WPF.ViewModels
         private int _diskErrorCount;
         public int DiskErrorCount { get => _diskErrorCount; set => Set(ref _diskErrorCount, value); }
 
+        // Top-row card severities + summary strings — drive the SeverityChip
+        // controls above the Findings banner so the cards read the same
+        // vocabulary as the banner below (v0.5.0).
+        private string _smartSeverity = "neutral";
+        public string SmartSeverity
+        {
+            get => _smartSeverity;
+            set { if (Set(ref _smartSeverity, value)) OnPropertyChanged(nameof(SmartChipText)); }
+        }
+        public string SmartChipText => ChipLabel(_smartSeverity);
+        private string _smartHealthSummary = "—";
+        public string SmartHealthSummary { get => _smartHealthSummary; set => Set(ref _smartHealthSummary, value); }
+
+        private string _diskErrorsSeverity = "neutral";
+        public string DiskErrorsSeverity
+        {
+            get => _diskErrorsSeverity;
+            set { if (Set(ref _diskErrorsSeverity, value)) OnPropertyChanged(nameof(DiskErrorsChipText)); }
+        }
+        public string DiskErrorsChipText => ChipLabel(_diskErrorsSeverity);
+        private string _diskErrorsSummary = "—";
+        public string DiskErrorsSummary { get => _diskErrorsSummary; set => Set(ref _diskErrorsSummary, value); }
+
+        private string _osDriveSeverity = "neutral";
+        public string OsDriveSeverity
+        {
+            get => _osDriveSeverity;
+            set { if (Set(ref _osDriveSeverity, value)) OnPropertyChanged(nameof(OsDriveChipText)); }
+        }
+        public string OsDriveChipText => ChipLabel(_osDriveSeverity);
+        private string _osDriveFreeSummary = "—";
+        public string OsDriveFreeSummary { get => _osDriveFreeSummary; set => Set(ref _osDriveFreeSummary, value); }
+
+        private static string ChipLabel(string severity)
+        {
+            switch ((severity ?? "").ToLowerInvariant())
+            {
+                case "pass": case "ok":   return "PASS";
+                case "warn": case "warning": return "WARN";
+                case "fail": case "error": return "FAIL";
+                case "critical": return "CRIT";
+                default: return "—";
+            }
+        }
+
         private string _statusLabel = "Ready";
         public string StatusLabel { get => _statusLabel; set => Set(ref _statusLabel, value); }
         private Brush _statusColor = StatusHelpers.Brush("MutedForegroundBrush");
@@ -80,13 +125,51 @@ namespace Pulse.WPF.ViewModels
                     }
 
                     AddLog("", "SMART & Errors", "Section");
-                    if (smart == null) { SmartStatus = "Unavailable"; AddLog("SMART", "Cannot query (admin required)", "Gray"); }
-                    else if (smart.Value) { SmartStatus = "Predict Failure"; AddLog("SMART", "Predict Failure", "Fail"); }
-                    else { SmartStatus = "Healthy"; AddLog("SMART", "Healthy", "Pass"); }
+                    if (smart == null)
+                    {
+                        SmartStatus = "Unavailable";
+                        SmartHealthSummary = "Unavailable";
+                        SmartSeverity = "neutral";
+                        AddLog("SMART", "Cannot query (admin required)", "Gray");
+                    }
+                    else if (smart.Value)
+                    {
+                        SmartStatus = "Predict Failure";
+                        SmartHealthSummary = "Predict Failure";
+                        SmartSeverity = "fail";
+                        AddLog("SMART", "Predict Failure", "Fail");
+                    }
+                    else
+                    {
+                        SmartStatus = "Healthy";
+                        SmartHealthSummary = "Healthy";
+                        SmartSeverity = "pass";
+                        AddLog("SMART", "Healthy", "Pass");
+                    }
 
                     DiskErrorCount = errs;
+                    DiskErrorsSummary = errs == 0 ? "No disk-related errors" : $"{errs} error event(s)";
+                    DiskErrorsSeverity = errs == 0 ? "pass" : "fail";
                     AddLog("Disk events (48h)", errs == 0 ? "No disk-related errors" : $"{errs} error event(s)",
                         errs == 0 ? "Pass" : "Fail");
+
+                    // OS drive — locate it in the volumes list (Role contains
+                    // "OS") and surface the free-space band as the chip tier.
+                    var os = vols.FirstOrDefault(v => (v.Role ?? "").IndexOf("OS", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                             ?? vols.FirstOrDefault(v => (v.DeviceId ?? "").StartsWith("C", System.StringComparison.OrdinalIgnoreCase));
+                    if (os == null)
+                    {
+                        OsDriveFreeSummary = "Not detected";
+                        OsDriveSeverity = "neutral";
+                    }
+                    else
+                    {
+                        OsDriveFreeSummary = $"{os.FreeGb:0.#} GB free ({os.PercentUsed}% used)";
+                        OsDriveSeverity = os.Severity == "Pass" ? "pass"
+                                        : os.Severity == "Warn" ? "warn"
+                                        : os.Severity == "Fail" ? "fail"
+                                        : "neutral";
+                    }
 
                     // ---- Findings ------------------------------------------------
                     foreach (var v in vols.Where(v => v.Severity == "Fail"))

@@ -61,6 +61,10 @@
                             <md:PackIcon Kind="Heart" Width="20" Height="20"
                                          Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
                             <TextBlock Text="SMART Health" Style="{StaticResource SectionTitle}" Margin="10,0,0,0" />
+                            <controls:SeverityChip DockPanel.Dock="Right"
+                                                   Severity="{Binding SmartSeverity}"
+                                                   Text="{Binding SmartChipText}"
+                                                   VerticalAlignment="Center" Margin="10,0,0,0" />
                         </DockPanel>
                         <TextBlock Text="{Binding SmartHealthSummary}"
                                    FontFamily="Segoe UI Semibold" FontSize="18"
@@ -76,6 +80,10 @@
                             <md:PackIcon Kind="AlertCircleOutline" Width="20" Height="20"
                                          Foreground="{StaticResource YellowBrush}" VerticalAlignment="Center" />
                             <TextBlock Text="Disk &amp; Driver Errors" Style="{StaticResource SectionTitle}" Margin="10,0,0,0" />
+                            <controls:SeverityChip DockPanel.Dock="Right"
+                                                   Severity="{Binding DiskErrorsSeverity}"
+                                                   Text="{Binding DiskErrorsChipText}"
+                                                   VerticalAlignment="Center" Margin="10,0,0,0" />
                         </DockPanel>
                         <TextBlock Text="{Binding DiskErrorsSummary}"
                                    FontFamily="Segoe UI Semibold" FontSize="14"
@@ -92,6 +100,10 @@
                             <md:PackIcon Kind="Harddisk" Width="20" Height="20"
                                          Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
                             <TextBlock Text="OS Drive" Style="{StaticResource SectionTitle}" Margin="10,0,0,0" />
+                            <controls:SeverityChip DockPanel.Dock="Right"
+                                                   Severity="{Binding OsDriveSeverity}"
+                                                   Text="{Binding OsDriveChipText}"
+                                                   VerticalAlignment="Center" Margin="10,0,0,0" />
                         </DockPanel>
                         <TextBlock Text="{Binding OsDriveFreeSummary}"
                                    FontFamily="Segoe UI Semibold" FontSize="14"

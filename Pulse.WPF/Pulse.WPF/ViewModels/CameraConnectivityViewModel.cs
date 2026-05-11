@@ -146,6 +146,7 @@ namespace Pulse.WPF.ViewModels
             try
             {
                 var roles = SafeGetRoles();
+                var rolesByMac = SafeGetRolesByMac();
 
                 EnsurePortCount(Math.Max(4, states.Count));
 
@@ -181,7 +182,7 @@ namespace Pulse.WPF.ViewModels
                     // failed the IsInvalidMac filter or matched the local
                     // self-IP. Resolver returns Source=None in that case so
                     // we render the empty-state row.
-                    var info = RemoteDeviceResolver.Resolve(snap.RemoteMac, snap.RemoteIp, roles);
+                    var info = RemoteDeviceResolver.Resolve(snap.RemoteMac, snap.RemoteIp, roles, rolesByMac);
                     bool hasRealRemote = info.Source != DeviceIdentitySource.None
                                          && !string.IsNullOrEmpty(snap.RemoteMac)
                                          && !string.IsNullOrEmpty(snap.RemoteIp);
@@ -376,7 +377,7 @@ namespace Pulse.WPF.ViewModels
                 // ≥3 of 4 dark = critical.
                 if (Ports.Count > 0 && unpluggedCount >= 3) criticals++;
 
-                BuildRecommendations(states, roles, unpluggedCount, missingFromPorts);
+                BuildRecommendations(states, roles, rolesByMac, unpluggedCount, missingFromPorts);
                 ApplyStatusPill(linkedCount, warnings, criticals);
                 PruneAllHistory();
 
@@ -503,6 +504,7 @@ namespace Pulse.WPF.ViewModels
         // -------------------------------------------------------------------
         private void BuildRecommendations(List<PortState> states,
                                           Dictionary<string, string> roles,
+                                          Dictionary<string, string> rolesByMac,
                                           int unpluggedCount,
                                           int missingFromPorts)
         {
@@ -525,7 +527,7 @@ namespace Pulse.WPF.ViewModels
                 if (snap == null) continue;
 
                 var portNum = i + 1;
-                var info = RemoteDeviceResolver.Resolve(snap.RemoteMac, snap.RemoteIp, roles);
+                var info = RemoteDeviceResolver.Resolve(snap.RemoteMac, snap.RemoteIp, roles, rolesByMac);
                 bool is1G   = snap.LinkSpeedBps >= 1_000_000_000UL;
                 bool is100M = snap.LinkSpeedBps >= 100_000_000UL && snap.LinkSpeedBps < 1_000_000_000UL;
 
@@ -831,6 +833,12 @@ namespace Pulse.WPF.ViewModels
         private Dictionary<string, string> SafeGetRoles()
         {
             try { return _cfg?.GetRoles() ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); }
+            catch { return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); }
+        }
+
+        private Dictionary<string, string> SafeGetRolesByMac()
+        {
+            try { return _cfg?.GetRolesByMac() ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); }
             catch { return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); }
         }
 
