@@ -44,6 +44,16 @@ namespace Pulse.WPF.Services
         // Parameterless ctor kept so unit tests / design-time XAML still build.
         public DashboardService() : this(null, null, null, null) { }
 
+        /// <summary>
+        /// Optional error reporter — when set, every silent catch in this
+        /// service is rerouted here via Helpers.Try so the Dashboard log
+        /// sink can surface collection failures. DashboardViewModel hooks
+        /// this in its constructor (v0.5.0).
+        /// </summary>
+        public Action<string, Exception> OnSilentError { get; set; }
+
+        private void Report(string section, Exception ex) => OnSilentError?.Invoke(section, ex);
+
         // ---- Hub tiles + last-run (preserved from v0.2.0) -----------------------
         private static readonly HubTileViewModel[] Tiles =
         {
@@ -81,7 +91,7 @@ namespace Pulse.WPF.Services
                         if (latest == null || f.LastWriteTime > latest.LastWriteTime) latest = f;
                     }
                 }
-                catch { }
+                catch (Exception _ex) { Report("Dashboard collection", _ex); }
             }
             if (latest == null) return null;
 
@@ -103,7 +113,7 @@ namespace Pulse.WPF.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception _ex) { Report("Dashboard collection", _ex); }
 
             string sev;
             if (!string.IsNullOrEmpty(overall) && Regex.IsMatch(overall, "fail|error|critical", RegexOptions.IgnoreCase)) sev = "Fail";
@@ -179,7 +189,7 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch { }
+            catch (Exception _ex) { Report("Dashboard collection", _ex); }
 
             // VPU label: walk the agent_*.log under C:\Pixellot\Data\Log for a
             // line that names the unit. Best-effort — most fields work without it.
@@ -213,7 +223,7 @@ namespace Pulse.WPF.Services
                             if (newest == null || f.LastWriteTime > newest.LastWriteTime) newest = f;
                     }
                 }
-                catch { }
+                catch (Exception _ex) { Report("Dashboard collection", _ex); }
             }
             if (newest == null) return null;
 
@@ -237,7 +247,7 @@ namespace Pulse.WPF.Services
                     if (model != null && type != null) break;
                 }
             }
-            catch { }
+            catch (Exception _ex) { Report("Dashboard collection", _ex); }
 
             if (string.IsNullOrEmpty(model)) return null;
             return string.IsNullOrEmpty(type) ? model : $"{model}  ({type})";
@@ -312,7 +322,7 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch { }
+            catch (Exception _ex) { Report("Dashboard collection", _ex); }
 
             try
             {
@@ -332,7 +342,7 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch { }
+            catch (Exception _ex) { Report("Dashboard collection", _ex); }
         }
 
         // ---- Public ReadGauges (for the 2-second live-update timer) ----------
@@ -376,7 +386,7 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch { }
+            catch (Exception _ex) { Report("Dashboard collection", _ex); }
 
             // System drive free space.
             try
@@ -397,7 +407,7 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch { }
+            catch (Exception _ex) { Report("Dashboard collection", _ex); }
 
             // Temperature — MSAcpi_ThermalZoneTemperature in root\WMI returns
             // tenths of a Kelvin. Most consumer hardware returns nothing or
@@ -431,7 +441,7 @@ namespace Pulse.WPF.Services
             if (_adapters == null) return;
             try { snap.NicPorts = await _adapters.GetCameraPortsAsync().ConfigureAwait(false)
                                   ?? new List<CameraNicSnapshot>(); }
-            catch { }
+            catch (Exception _ex) { Report("Dashboard collection", _ex); }
         }
 
         // -- Network configuration + internet reachability ----------------------
@@ -439,7 +449,7 @@ namespace Pulse.WPF.Services
         {
             if (_network == null) return;
             try { snap.NetworkConfig = _network.GetIpConfiguration() ?? new IpConfigurationViewModel(); }
-            catch { }
+            catch (Exception _ex) { Report("Dashboard collection", _ex); }
             snap.UplinkAdapterName = snap.NetworkConfig?.AdapterName ?? "—";
 
             // Internet reachability — a quick ping to a stable host. The full
@@ -468,7 +478,7 @@ namespace Pulse.WPF.Services
         {
             if (_services == null) return;
             List<ServiceStatusRow> all = null;
-            try { all = _services.GetServiceStatuses(); } catch { }
+            try { all = _services.GetServiceStatuses(); } catch (Exception _ex) { Report("Dashboard collection", _ex); }
             if (all == null) { snap.Services = new List<ServiceStatusRow>(); return; }
 
             // Find each desired service in the canonical order, regardless of
@@ -528,7 +538,7 @@ namespace Pulse.WPF.Services
         {
             if (_disk == null) return;
             try { snap.Volumes = _disk.GetVolumes() ?? new List<VolumeRow>(); }
-            catch { }
+            catch (Exception _ex) { Report("Dashboard collection", _ex); }
         }
 
         // -- Roll up the worst items into a short Active Findings list ---------

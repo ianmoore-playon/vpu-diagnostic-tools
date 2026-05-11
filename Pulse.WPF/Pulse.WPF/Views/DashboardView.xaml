@@ -68,7 +68,7 @@
                                  Foreground="{StaticResource SubtleForegroundBrush}" Margin="12,0,0,0" />
                     <TextBlock Text="{Binding Title}"
                                Foreground="{StaticResource ForegroundBrush}"
-                               FontSize="12" TextTrimming="CharacterEllipsis" />
+                               FontSize="{StaticResource FontSize.Body}" TextTrimming="CharacterEllipsis" />
                 </DockPanel>
             </Button>
         </DataTemplate>
@@ -83,20 +83,20 @@
                     <ColumnDefinition Width="100" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{Binding PortNumber, StringFormat='Port {0}'}"
-                           FontFamily="Segoe UI Semibold" FontSize="11"
+                           FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Small}"
                            Foreground="{StaticResource ForegroundBrush}" />
                 <TextBlock Grid.Column="1" Text="{Binding Name}"
-                           FontFamily="Consolas" FontSize="11"
+                           FontFamily="Consolas" FontSize="{StaticResource FontSize.Small}"
                            Foreground="{StaticResource SubtleForegroundBrush}"
                            TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
                 <TextBlock Grid.Column="2" Text="{Binding SpeedLabel}"
-                           FontFamily="Consolas" FontSize="11"
+                           FontFamily="Consolas" FontSize="{StaticResource FontSize.Small}"
                            Foreground="{StaticResource SubtleForegroundBrush}"
                            TextAlignment="Right" Margin="0,0,12,0" />
                 <Border Grid.Column="3" CornerRadius="3" Padding="6,1,6,1"
                         BorderThickness="1" BorderBrush="{Binding StatusColor}"
                         HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding StatusText}" FontSize="11"
+                    <TextBlock Text="{Binding StatusText}" FontSize="{StaticResource FontSize.Small}"
                                Foreground="{Binding StatusColor}" FontWeight="SemiBold" />
                 </Border>
             </Grid>
@@ -111,10 +111,10 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{Binding DisplayName}"
                            Foreground="{StaticResource ForegroundBrush}"
-                           FontSize="12" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
+                           FontSize="{StaticResource FontSize.Body}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
                 <Border Grid.Column="1" CornerRadius="3" Padding="6,1,6,1"
                         BorderThickness="1" BorderBrush="{Binding StatusColor}">
-                    <TextBlock Text="{Binding Status}" FontSize="11"
+                    <TextBlock Text="{Binding Status}" FontSize="{StaticResource FontSize.Small}"
                                Foreground="{Binding StatusColor}" FontWeight="SemiBold" />
                 </Border>
             </Grid>
@@ -130,26 +130,26 @@
                     <DockPanel Margin="0,0,0,4">
                         <TextBlock DockPanel.Dock="Right"
                                    Text="{Binding PercentUsed}"
-                                   FontFamily="Segoe UI Semibold" FontSize="12"
+                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Body}"
                                    Foreground="{Binding StatusColor}"
                                    VerticalAlignment="Center" />
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding Drive}"
-                                       FontFamily="Segoe UI Semibold" FontSize="13"
+                                       FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
                                        Foreground="{StaticResource ForegroundBrush}"
                                        VerticalAlignment="Center" />
                             <!-- Volume label only renders when populated. -->
                             <TextBlock Text="{Binding Label}"
-                                       FontSize="12"
+                                       FontSize="{StaticResource FontSize.Body}"
                                        Foreground="{StaticResource SubtleForegroundBrush}"
-                                       Margin="8,0,0,0" VerticalAlignment="Center"
+                                       Margin="{StaticResource Spacing.InlineLeft}" VerticalAlignment="Center"
                                        Visibility="{Binding Label, Converter={StaticResource StringToVis}}" />
                             <!-- Role badge: "OS Drive", "Recording / Storage", etc. -->
                             <Border Background="{StaticResource BorderColBrush}"
-                                    CornerRadius="3" Padding="6,1,6,1" Margin="10,0,0,0"
+                                    CornerRadius="3" Padding="6,1,6,1" Margin="{StaticResource Spacing.InlineLeftLg}"
                                     VerticalAlignment="Center">
                                 <TextBlock Text="{Binding Role}"
-                                           FontSize="10"
+                                           FontSize="{StaticResource FontSize.Caption}"
                                            Foreground="{StaticResource MutedForegroundBrush}" />
                             </Border>
                         </StackPanel>
@@ -167,7 +167,7 @@
                                      VerticalAlignment="Center" Margin="0,0,12,0" />
                         <TextBlock Grid.Column="1"
                                    Foreground="{StaticResource SubtleForegroundBrush}"
-                                   FontSize="11" TextAlignment="Right"
+                                   FontSize="{StaticResource FontSize.Small}" TextAlignment="Right"
                                    VerticalAlignment="Center">
                             <Run Text="{Binding Free, Mode=OneWay}" />
                             <Run Text=" free of " />
@@ -198,7 +198,7 @@
                  internet, volumes) — the live tick only re-reads the cheap
                  gauges, so this is the button techs use to pick up changes
                  outside the gauges. -->
-            <DockPanel Grid.Row="0" Margin="0,0,0,20" LastChildFill="True">
+            <DockPanel Grid.Row="0" Margin="{StaticResource Spacing.PageLg}" LastChildFill="True">
                 <!-- Border + Button get explicit VerticalAlignment="Center" so
                      they don't stretch to fill the docked area, which pushed
                      the chip's content to the top of the row and made the
@@ -211,7 +211,7 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
-                                   Foreground="{Binding StatusColor}" Margin="8,0,0,0"
+                                   Foreground="{Binding StatusColor}" Margin="{StaticResource Spacing.InlineLeft}"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
@@ -221,7 +221,7 @@
                         Padding="16,6" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
                         <md:PackIcon Kind="Refresh" Width="16" Height="16" VerticalAlignment="Center" />
-                        <TextBlock Text="Refresh" Margin="8,0,0,0" />
+                        <TextBlock Text="Refresh" Margin="{StaticResource Spacing.InlineLeft}" />
                     </StackPanel>
                 </Button>
                 <StackPanel VerticalAlignment="Center">
@@ -236,7 +236,7 @@
                  find Pixellot at all (registry blank, no agent log, no
                  services). Stops a clean dev box from masquerading as a
                  healthy VPU. (UX review rec #12.) -->
-            <Border Grid.Row="1" Style="{StaticResource CardElev2}" Margin="0,0,0,20"
+            <Border Grid.Row="1" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
                     Visibility="{Binding IsNonVpuHost, Converter={StaticResource BoolToVis}}">
                 <DockPanel>
                     <md:PackIcon DockPanel.Dock="Left" Kind="InformationOutline"
@@ -248,7 +248,7 @@
                                    FontFamily="Segoe UI Semibold" FontSize="14"
                                    Foreground="{StaticResource ForegroundBrush}" />
                         <TextBlock Foreground="{StaticResource MutedForegroundBrush}"
-                                   FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap">
+                                   FontSize="{StaticResource FontSize.Body}" Margin="{StaticResource Spacing.RowGap}" TextWrapping="Wrap">
                             <Run Text="This host doesn't appear to be a Pixellot VPU — system metrics below are still live, but expect blank values for VPU identity, services, and the diagnostic report. " />
                             <Run Text="Run the tool on a real VPU to see the full dashboard." />
                         </TextBlock>
@@ -261,7 +261,7 @@
                  should not advertise an empty issues card. CardElev2 gives
                  it a slight lift so the eye registers it before the
                  identity / status rows below. -->
-            <Border Grid.Row="2" Style="{StaticResource CardElev2}" Margin="0,0,0,20"
+            <Border Grid.Row="2" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
                     Visibility="{Binding Findings.Count, Converter={StaticResource CountToVis}}">
                 <StackPanel>
                     <DockPanel>
@@ -277,30 +277,30 @@
                                 CornerRadius="10" Padding="10,3,10,3"
                                 VerticalAlignment="Center">
                             <TextBlock Foreground="{StaticResource YellowBrush}"
-                                       FontFamily="Segoe UI Semibold" FontSize="13">
+                                       FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}">
                                 <Run Text="{Binding Findings.Count, Mode=OneWay}" />
                                 <Run Text=" issue(s) found" />
                             </TextBlock>
                         </Border>
                         <TextBlock Text="ACTIVE FINDINGS"
-                                   FontFamily="Segoe UI Semibold" FontSize="12"
+                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Body}"
                                    Foreground="{StaticResource ForegroundBrush}"
                                    Margin="12,0,0,0" VerticalAlignment="Center" />
                     </DockPanel>
                     <ItemsControl ItemsSource="{Binding Findings}"
                                   ItemTemplate="{StaticResource FindingRowTemplate}"
-                                  Margin="0,12,0,0" />
+                                  Margin="{StaticResource Spacing.Card}" />
                 </StackPanel>
             </Border>
 
             <!-- ====== Identity / Pixellot SW / Last Run (3-up) ====== -->
-            <UniformGrid Grid.Row="3" Rows="1" Columns="3" Margin="0,0,0,20">
+            <UniformGrid Grid.Row="3" Rows="1" Columns="3" Margin="{StaticResource Spacing.PageLg}">
                 <!-- VPU Identity -->
                 <Border Style="{StaticResource Card}" Margin="0,0,8,0">
                     <StackPanel>
                         <TextBlock Text="VPU IDENTITY" Style="{StaticResource CardCaption}" />
                         <TextBlock Text="{Binding VpuLabel}" Style="{StaticResource SectionTitle}"
-                                   FontSize="15" TextWrapping="Wrap" />
+                                   FontSize="{StaticResource FontSize.Heading}" TextWrapping="Wrap" />
                         <Grid Margin="0,10,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="120" />
@@ -329,7 +329,7 @@
                     <StackPanel>
                         <TextBlock Text="PIXELLOT SOFTWARE" Style="{StaticResource CardCaption}" />
                         <TextBlock Text="{Binding PixellotApp}" Style="{StaticResource SectionTitle}"
-                                   FontSize="15" />
+                                   FontSize="{StaticResource FontSize.Heading}" />
                         <TextBlock Text="App Version" Style="{StaticResource KvLabel}" Margin="0,2,0,8" />
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -352,42 +352,42 @@
                      top entry (set via MainViewModel.PushTopReportToDashboard).
                      Card body swaps to a muted "No diagnostic runs yet"
                      empty state when the reports folder is empty. -->
-                <Border Style="{StaticResource Card}" Margin="8,0,0,0">
+                <Border Style="{StaticResource Card}" Margin="{StaticResource Spacing.InlineLeft}">
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Top" Text="LAST DIAGNOSTIC RUN" Style="{StaticResource CardCaption}" />
                         <Button DockPanel.Dock="Bottom"
                                 Content="Open Last Report"
                                 Command="{Binding OpenLastReportCommand}"
                                 Style="{StaticResource MaterialDesignOutlinedButton}"
-                                HorizontalAlignment="Stretch" Margin="0,12,0,0" />
+                                HorizontalAlignment="Stretch" Margin="{StaticResource Spacing.Card}" />
                         <!-- Empty state -->
                         <StackPanel Visibility="{Binding IsLastRunEmpty, Converter={StaticResource BoolToVis}}">
                             <md:PackIcon Kind="FileDocumentOutline" Width="24" Height="24"
                                          Foreground="{StaticResource MutedForegroundBrush}" />
                             <TextBlock Text="No diagnostic runs yet"
-                                       FontFamily="Segoe UI Semibold" FontSize="13"
+                                       FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
                                        Foreground="{StaticResource ForegroundBrush}"
                                        Margin="0,8,0,0" />
                             <TextBlock Text="Reports will appear here after the first saved diagnostic. Open Reports to browse the folder."
                                        Foreground="{StaticResource MutedForegroundBrush}"
-                                       FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                       FontSize="{StaticResource FontSize.Small}" TextWrapping="Wrap" Margin="0,6,0,0" />
                         </StackPanel>
                         <!-- Populated state -->
                         <StackPanel Visibility="{Binding HasLastRun, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="{Binding LastRunWhen}" Style="{StaticResource SectionTitle}" FontSize="15" />
+                            <TextBlock Text="{Binding LastRunWhen}" Style="{StaticResource SectionTitle}" FontSize="{StaticResource FontSize.Heading}" />
                             <TextBlock Text="{Binding LastRunResult}"
                                        Foreground="{Binding LastRunResultColor}"
-                                       FontWeight="SemiBold" FontSize="13" Margin="0,4,0,0" />
+                                       FontWeight="SemiBold" FontSize="{StaticResource FontSize.Mono}" Margin="{StaticResource Spacing.RowGap}" />
                             <TextBlock Text="{Binding LastRunSummary}"
                                        Foreground="{StaticResource MutedForegroundBrush}"
-                                       FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                       FontSize="{StaticResource FontSize.Small}" TextWrapping="Wrap" Margin="0,8,0,0" />
                         </StackPanel>
                     </DockPanel>
                 </Border>
             </UniformGrid>
 
             <!-- ====== System Status (gauges) ====== -->
-            <Border Grid.Row="4" Style="{StaticResource Card}" Margin="0,0,0,20">
+            <Border Grid.Row="4" Style="{StaticResource Card}" Margin="{StaticResource Spacing.PageLg}">
                 <StackPanel>
                     <TextBlock Text="SYSTEM STATUS" Style="{StaticResource CardCaption}" />
                     <Grid>
@@ -409,10 +409,10 @@
                                 ValueText="{Binding CpuPctText}"
                                 Caption="CPU"
                                 ValueBrush="{Binding CpuColor}" />
-                            <TextBlock Text="{Binding CpuName}" HorizontalAlignment="Center" FontSize="10"
+                            <TextBlock Text="{Binding CpuName}" HorizontalAlignment="Center" FontSize="{StaticResource FontSize.Caption}"
                                        Foreground="{StaticResource SubtleForegroundBrush}"
                                        Margin="0,8,0,0" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Text="{Binding CpuCoresText}" HorizontalAlignment="Center" FontSize="10"
+                            <TextBlock Text="{Binding CpuCoresText}" HorizontalAlignment="Center" FontSize="{StaticResource FontSize.Caption}"
                                        Foreground="{StaticResource SubtleForegroundBrush}" />
                         </StackPanel>
 
@@ -425,7 +425,7 @@
                                 ValueText="{Binding MemPctText}"
                                 Caption="Memory"
                                 ValueBrush="{Binding MemColor}" />
-                            <TextBlock Text="{Binding MemCaption}" HorizontalAlignment="Center" FontSize="10"
+                            <TextBlock Text="{Binding MemCaption}" HorizontalAlignment="Center" FontSize="{StaticResource FontSize.Caption}"
                                        Foreground="{StaticResource SubtleForegroundBrush}"
                                        Margin="0,8,0,0" />
                         </StackPanel>
@@ -439,7 +439,7 @@
                                 ValueText="{Binding DiskPctText}"
                                 Caption="System Disk"
                                 ValueBrush="{Binding DiskColor}" />
-                            <TextBlock Text="{Binding DiskCaption}" HorizontalAlignment="Center" FontSize="10"
+                            <TextBlock Text="{Binding DiskCaption}" HorizontalAlignment="Center" FontSize="{StaticResource FontSize.Caption}"
                                        Foreground="{StaticResource SubtleForegroundBrush}"
                                        Margin="0,8,0,0" />
                         </StackPanel>
@@ -458,7 +458,7 @@
                                        FontFamily="Segoe UI Semibold" FontSize="16"
                                        Foreground="{StaticResource ForegroundBrush}"
                                        HorizontalAlignment="Center" Margin="0,8,0,0" />
-                            <TextBlock Text="Uptime" HorizontalAlignment="Center" FontSize="10"
+                            <TextBlock Text="Uptime" HorizontalAlignment="Center" FontSize="{StaticResource FontSize.Caption}"
                                        Foreground="{StaticResource MutedForegroundBrush}" />
                         </StackPanel>
 
@@ -472,7 +472,7 @@
                                        FontFamily="Segoe UI Semibold" FontSize="16"
                                        Foreground="{Binding InternetColor}"
                                        HorizontalAlignment="Center" Margin="0,8,0,0" />
-                            <TextBlock Text="Internet" HorizontalAlignment="Center" FontSize="10"
+                            <TextBlock Text="Internet" HorizontalAlignment="Center" FontSize="{StaticResource FontSize.Caption}"
                                        Foreground="{StaticResource MutedForegroundBrush}" />
                         </StackPanel>
 
@@ -492,12 +492,12 @@
                                                  Foreground="{Binding TemperatureColor}"
                                                  HorizontalAlignment="Center" />
                                     <TextBlock Text="{Binding TemperatureText}"
-                                               FontFamily="Segoe UI Semibold" FontSize="13"
+                                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
                                                Foreground="{Binding TemperatureColor}"
                                                HorizontalAlignment="Center" Margin="0,2,0,0" />
                                 </StackPanel>
                             </Grid>
-                            <TextBlock Text="Temperature" HorizontalAlignment="Center" FontSize="10"
+                            <TextBlock Text="Temperature" HorizontalAlignment="Center" FontSize="{StaticResource FontSize.Caption}"
                                        Foreground="{StaticResource MutedForegroundBrush}" Margin="0,8,0,0" />
                         </StackPanel>
                     </Grid>
@@ -505,7 +505,7 @@
             </Border>
 
             <!-- ====== NIC ports + Network config (2-up) ====== -->
-            <Grid Grid.Row="5" Margin="0,0,0,20">
+            <Grid Grid.Row="5" Margin="{StaticResource Spacing.PageLg}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="16" />
@@ -520,13 +520,13 @@
                                          Width="18" Height="18"
                                          Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
                             <TextBlock Text="NIC PORTS"
-                                       FontFamily="Segoe UI Semibold" FontSize="11"
+                                       FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Small}"
                                        Foreground="{StaticResource MutedForegroundBrush}"
-                                       Margin="10,0,0,0" VerticalAlignment="Center" />
+                                       Margin="{StaticResource Spacing.InlineLeftLg}" VerticalAlignment="Center" />
                         </DockPanel>
                         <ItemsControl ItemsSource="{Binding NicPorts}"
                                       ItemTemplate="{StaticResource NicPortRowTemplate}"
-                                      Margin="0,12,0,0" />
+                                      Margin="{StaticResource Spacing.Card}" />
                     </StackPanel>
                 </Border>
 
@@ -538,16 +538,16 @@
                                          Width="18" Height="18"
                                          Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
                             <TextBlock Text="NETWORK CONFIGURATION"
-                                       FontFamily="Segoe UI Semibold" FontSize="11"
+                                       FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Small}"
                                        Foreground="{StaticResource MutedForegroundBrush}"
-                                       Margin="10,0,0,0" VerticalAlignment="Center" />
+                                       Margin="{StaticResource Spacing.InlineLeftLg}" VerticalAlignment="Center" />
                         </DockPanel>
                         <!-- Network Configuration grid: each value row gets a small
                              status dot in column 0 — green when populated, muted
                              when blank/em-dash. Lets a non-tech read the row at a
                              glance without needing to know what NTP / DNS mean.
                              (UX review rec #5.) -->
-                        <Grid Margin="0,12,0,0">
+                        <Grid Margin="{StaticResource Spacing.Card}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="20" />
                                 <ColumnDefinition Width="120" />
@@ -598,7 +598,7 @@
             </Grid>
 
             <!-- ====== Storage + Pixellot Services (2-up) ====== -->
-            <Grid Grid.Row="6" Margin="0,0,0,20">
+            <Grid Grid.Row="6" Margin="{StaticResource Spacing.PageLg}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="16" />
@@ -613,13 +613,13 @@
                                          Width="18" Height="18"
                                          Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
                             <TextBlock Text="STORAGE"
-                                       FontFamily="Segoe UI Semibold" FontSize="11"
+                                       FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Small}"
                                        Foreground="{StaticResource MutedForegroundBrush}"
-                                       Margin="10,0,0,0" VerticalAlignment="Center" />
+                                       Margin="{StaticResource Spacing.InlineLeftLg}" VerticalAlignment="Center" />
                         </DockPanel>
                         <ItemsControl ItemsSource="{Binding Volumes}"
                                       ItemTemplate="{StaticResource VolumeRowTemplate}"
-                                      Margin="0,12,0,0" />
+                                      Margin="{StaticResource Spacing.Card}" />
                     </StackPanel>
                 </Border>
 
@@ -631,13 +631,13 @@
                                          Width="18" Height="18"
                                          Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
                             <TextBlock Text="PIXELLOT SERVICES"
-                                       FontFamily="Segoe UI Semibold" FontSize="11"
+                                       FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Small}"
                                        Foreground="{StaticResource MutedForegroundBrush}"
-                                       Margin="10,0,0,0" VerticalAlignment="Center" />
+                                       Margin="{StaticResource Spacing.InlineLeftLg}" VerticalAlignment="Center" />
                         </DockPanel>
                         <ItemsControl ItemsSource="{Binding Services}"
                                       ItemTemplate="{StaticResource ServiceRowTemplate}"
-                                      Margin="0,12,0,0" />
+                                      Margin="{StaticResource Spacing.Card}" />
                     </StackPanel>
                 </Border>
             </Grid>
@@ -648,7 +648,7 @@
             <Border Grid.Row="7" Style="{StaticResource Card}" Padding="16,12,16,12">
                 <StackPanel>
                     <TextBlock Text="QUICK NAV"
-                               FontFamily="Segoe UI Semibold" FontSize="11"
+                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Small}"
                                Foreground="{StaticResource MutedForegroundBrush}"
                                Margin="0,0,0,12" />
                     <!-- Compact single-row Quick Nav. Description text is gone —
@@ -685,11 +685,11 @@
                                                      Foreground="{StaticResource AccentBrush}"
                                                      VerticalAlignment="Center" />
                                         <TextBlock Text="{Binding Title}"
-                                                   FontFamily="Segoe UI Semibold" FontSize="12"
+                                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Body}"
                                                    Foreground="{StaticResource ForegroundBrush}"
                                                    VerticalAlignment="Center"
                                                    TextTrimming="CharacterEllipsis"
-                                                   Margin="10,0,0,0" />
+                                                   Margin="{StaticResource Spacing.InlineLeftLg}" />
                                     </StackPanel>
                                 </Button>
                             </DataTemplate>

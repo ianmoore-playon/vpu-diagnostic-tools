@@ -20,7 +20,9 @@ namespace Pulse.WPF.ViewModels
         private readonly IServicesService _svc;
 
         public ObservableCollection<ServiceStatusRow> Services { get; } = new ObservableCollection<ServiceStatusRow>();
-        public ObservableCollection<LogEntry> LogEntries { get; } = new ObservableCollection<LogEntry>();
+        // Composed via PanelLogger (v0.5.0) — shared with the four other panels.
+        public PanelLogger Logger { get; } = new PanelLogger();
+        public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
         public bool HasFindings => Findings.Count > 0;
 
@@ -208,25 +210,8 @@ namespace Pulse.WPF.ViewModels
             }
         }
 
-        // Marshalling wrapper used by the restart path so non-UI threads can
-        // append safely. AddLog (above) assumes UI-thread dispatch.
-        private void AppendLog(string message, string level)
-        {
-            void apply()
-            {
-                LogEntries.Add(new LogEntry
-                {
-                    Label = "",
-                    Result = message,
-                    Level = level,
-                    ResultColor = StatusHelpers.BrushForLogLevel(level),
-                });
-                while (LogEntries.Count > 200) LogEntries.RemoveAt(0);
-            }
-            var app = System.Windows.Application.Current;
-            if (app != null && app.Dispatcher.CheckAccess()) apply();
-            else app?.Dispatcher.Invoke(apply);
-        }
+        // Restart path runs from a worker thread — Logger.Add marshals to UI.
+        private void AppendLog(string message, string level) => Logger.Add("", message, level);
 
         public async Task RefreshAsync()
         {
@@ -268,16 +253,7 @@ namespace Pulse.WPF.ViewModels
             }).ConfigureAwait(false);
         }
 
-        private void AddLog(string label, string result, string level)
-        {
-            LogEntries.Add(new LogEntry
-            {
-                Label = label,
-                Result = result,
-                Level = level,
-                ResultColor = StatusHelpers.BrushForLogLevel(level),
-            });
-        }
+        private void AddLog(string label, string result, string level) => Logger.Add(label, result, level);
 
         private void AddFinding(string severity, string title, string recommendation)
         {

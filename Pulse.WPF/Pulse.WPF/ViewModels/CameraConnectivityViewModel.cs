@@ -66,7 +66,9 @@ namespace Pulse.WPF.ViewModels
 
         // ----- Public bindings -----
         public ObservableCollection<PortViewModel>          Ports           { get; } = new ObservableCollection<PortViewModel>();
-        public ObservableCollection<LogEntry>               LogEntries      { get; } = new ObservableCollection<LogEntry>();
+        // Composed via PanelLogger (v0.5.0) — shared with the four other panels.
+        public PanelLogger Logger { get; } = new PanelLogger();
+        public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding>                Findings        { get; } = new ObservableCollection<Finding>();
         public ObservableCollection<NetworkRecommendation>  Recommendations { get; } = new ObservableCollection<NetworkRecommendation>();
 
@@ -904,16 +906,6 @@ namespace Pulse.WPF.ViewModels
             }
         }
 
-        private void AddLog(string label, string result, string level)
-        {
-            LogEntries.Add(new LogEntry
-            {
-                Label = label,
-                Result = result,
-                Level = level,
-                ResultColor = StatusHelpers.BrushForLogLevel(level),
-            });
-            while (LogEntries.Count > 200) LogEntries.RemoveAt(0);
-        }
+        private void AddLog(string label, string result, string level) => Logger.Add(label, result, level);
     }
 }

@@ -26,6 +26,31 @@
     <sys:Double x:Key="GapXxlValue">32</sys:Double>
 
     <!-- ============================================================ -->
+    <!-- Font-size tokens (v0.5.0). Lifted from the six most-repeated  -->
+    <!-- inline FontSize literals across Dashboard / System Overview / -->
+    <!-- Network views — stops the drift, single place to retune.      -->
+    <!-- ============================================================ -->
+    <sys:Double x:Key="FontSize.Caption">10</sys:Double>
+    <sys:Double x:Key="FontSize.Small">11</sys:Double>
+    <sys:Double x:Key="FontSize.Body">12</sys:Double>
+    <sys:Double x:Key="FontSize.Mono">13</sys:Double>
+    <sys:Double x:Key="FontSize.Heading">15</sys:Double>
+    <sys:Double x:Key="FontSize.Display">28</sys:Double>
+
+    <!-- ============================================================ -->
+    <!-- Spacing aliases — the same Gap values exposed under the names -->
+    <!-- the v0.5.0 token pass adopted. Keep the GapMd / GapLg keys    -->
+    <!-- working too so existing bindings don't break.                 -->
+    <!-- ============================================================ -->
+    <Thickness x:Key="Spacing.RowGap">0,4,0,0</Thickness>
+    <Thickness x:Key="Spacing.RowGapSm">0,2,0,0</Thickness>
+    <Thickness x:Key="Spacing.Card">0,12,0,0</Thickness>
+    <Thickness x:Key="Spacing.Page">0,0,0,16</Thickness>
+    <Thickness x:Key="Spacing.PageLg">0,0,0,20</Thickness>
+    <Thickness x:Key="Spacing.InlineLeft">8,0,0,0</Thickness>
+    <Thickness x:Key="Spacing.InlineLeftLg">10,0,0,0</Thickness>
+
+    <!-- ============================================================ -->
     <!-- Card elevations — three levels per UX_REVIEW Section 2.      -->
     <!--   CardFlat   : grouping inside a card (no shadow)            -->
     <!--   CardElev1  : default content surfaces (== legacy "Card")   -->

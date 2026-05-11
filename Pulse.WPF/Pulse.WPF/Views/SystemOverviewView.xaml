@@ -103,14 +103,14 @@
         </Grid.RowDefinitions>
 
         <!-- ====== Section header ====== -->
-        <DockPanel Grid.Row="0" Margin="0,0,0,20">
+        <DockPanel Grid.Row="0" Margin="{StaticResource Spacing.PageLg}">
             <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
                     Background="{Binding StatusBg}"
                     VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
                     <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
-                               Foreground="{Binding StatusColor}" Margin="8,0,0,0"
+                               Foreground="{Binding StatusColor}" Margin="{StaticResource Spacing.InlineLeft}"
                                VerticalAlignment="Center" />
                 </StackPanel>
             </Border>
@@ -122,7 +122,7 @@
         </DockPanel>
 
         <!-- ====== Six summary tiles ====== -->
-        <UniformGrid Grid.Row="1" Rows="1" Columns="6" Margin="0,0,0,20">
+        <UniformGrid Grid.Row="1" Rows="1" Columns="6" Margin="{StaticResource Spacing.PageLg}">
             <Border Style="{StaticResource SiSummaryCard}" Margin="0,0,8,0">
                 <StackPanel>
                     <DockPanel>
@@ -130,11 +130,11 @@
                                      Width="14" Height="14"
                                      Foreground="{Binding ModelStatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="Model"
-                                   FontFamily="Segoe UI Semibold" FontSize="10"
+                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Caption}"
                                    Foreground="{StaticResource MutedForegroundBrush}" />
                     </DockPanel>
                     <TextBlock Text="{Binding ModelTitle}"
-                               FontFamily="Segoe UI Semibold" FontSize="13"
+                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
                                Foreground="{StaticResource ForegroundBrush}"
                                TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
@@ -147,11 +147,11 @@
                                      Width="14" Height="14"
                                      Foreground="{Binding OsStatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="OS"
-                                   FontFamily="Segoe UI Semibold" FontSize="10"
+                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Caption}"
                                    Foreground="{StaticResource MutedForegroundBrush}" />
                     </DockPanel>
                     <TextBlock Text="{Binding OsTitle}"
-                               FontFamily="Segoe UI Semibold" FontSize="13"
+                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
                                Foreground="{StaticResource ForegroundBrush}"
                                TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
@@ -164,11 +164,11 @@
                                      Width="14" Height="14"
                                      Foreground="{Binding UptimeStatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="Uptime"
-                                   FontFamily="Segoe UI Semibold" FontSize="10"
+                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Caption}"
                                    Foreground="{StaticResource MutedForegroundBrush}" />
                     </DockPanel>
                     <TextBlock Text="{Binding UptimeTitle}"
-                               FontFamily="Segoe UI Semibold" FontSize="13"
+                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
                                Foreground="{StaticResource ForegroundBrush}"
                                TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
@@ -181,11 +181,11 @@
                                      Width="14" Height="14"
                                      Foreground="{Binding CpuStatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="CPU"
-                                   FontFamily="Segoe UI Semibold" FontSize="10"
+                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Caption}"
                                    Foreground="{StaticResource MutedForegroundBrush}" />
                     </DockPanel>
                     <TextBlock Text="{Binding CpuTitle}"
-                               FontFamily="Segoe UI Semibold" FontSize="13"
+                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
                                Foreground="{StaticResource ForegroundBrush}"
                                TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
@@ -198,28 +198,28 @@
                                      Width="14" Height="14"
                                      Foreground="{Binding RamStatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="RAM"
-                                   FontFamily="Segoe UI Semibold" FontSize="10"
+                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Caption}"
                                    Foreground="{StaticResource MutedForegroundBrush}" />
                     </DockPanel>
                     <TextBlock Text="{Binding RamTitle}"
-                               FontFamily="Segoe UI Semibold" FontSize="13"
+                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
                                Foreground="{StaticResource ForegroundBrush}"
                                TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource SiSummaryCard}" Margin="8,0,0,0">
+            <Border Style="{StaticResource SiSummaryCard}" Margin="{StaticResource Spacing.InlineLeft}">
                 <StackPanel>
                     <DockPanel>
                         <md:PackIcon DockPanel.Dock="Right" Kind="Harddisk"
                                      Width="14" Height="14"
                                      Foreground="{Binding StorageStatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="Storage"
-                                   FontFamily="Segoe UI Semibold" FontSize="10"
+                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Caption}"
                                    Foreground="{StaticResource MutedForegroundBrush}" />
                     </DockPanel>
                     <TextBlock Text="{Binding StorageTitle}"
-                               FontFamily="Segoe UI Semibold" FontSize="13"
+                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
                                Foreground="{StaticResource ForegroundBrush}"
                                TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
@@ -440,7 +440,7 @@
                                     <DataTemplate>
                                         <StackPanel Margin="0,8,0,0">
                                             <TextBlock Text="{Binding Name}" Style="{StaticResource Mono11}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                            <Grid Margin="0,4,0,0">
+                                            <Grid Margin="{StaticResource Spacing.RowGap}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="130" />
                                                     <ColumnDefinition Width="*" />
@@ -501,7 +501,7 @@
                 </Grid>
 
                 <!-- Row 4: Operating System & Locale (full width) -->
-                <Border Style="{StaticResource SiSectionCard}" Margin="0,0,0,16">
+                <Border Style="{StaticResource SiSectionCard}" Margin="{StaticResource Spacing.Page}">
                     <StackPanel>
                         <TextBlock Text="Operating System &amp; Locale" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                         <Grid>
@@ -563,7 +563,7 @@
                 </Border>
 
                 <!-- Row 5: Network adapters table (full width) -->
-                <Border Style="{StaticResource SiSectionCard}" Margin="0,0,0,16">
+                <Border Style="{StaticResource SiSectionCard}" Margin="{StaticResource Spacing.Page}">
                     <StackPanel>
                         <TextBlock Text="Network adapters" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                         <DataGrid ItemsSource="{Binding NetworkAdapters}"
@@ -583,10 +583,10 @@
                 </Border>
 
                 <!-- Row 6: Software inventory (collapsible expander) -->
-                <Border Style="{StaticResource SiSectionCard}" Margin="0,0,0,16">
+                <Border Style="{StaticResource SiSectionCard}" Margin="{StaticResource Spacing.Page}">
                     <StackPanel>
                         <TextBlock Text="Software inventory" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
-                        <DockPanel Margin="0,4,0,0">
+                        <DockPanel Margin="{StaticResource Spacing.RowGap}">
                             <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                                 <TextBlock Text="{Binding SoftwareTotal}" Style="{StaticResource BodyStrong}" />
                                 <TextBlock Text=" applications installed · " Style="{StaticResource BodyDefault}"
@@ -598,7 +598,7 @@
                         </DockPanel>
 
                         <!-- Flagged-only compact list (always visible) -->
-                        <ItemsControl ItemsSource="{Binding FlaggedApps}" Margin="0,12,0,0">
+                        <ItemsControl ItemsSource="{Binding FlaggedApps}" Margin="{StaticResource Spacing.Card}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Margin="0,3,0,3">
@@ -624,7 +624,7 @@
                                   Foreground="{StaticResource ForegroundBrush}"
                                   Background="Transparent"
                                   BorderThickness="0"
-                                  Margin="0,12,0,0"
+                                  Margin="{StaticResource Spacing.Card}"
                                   IsExpanded="False">
                             <StackPanel Margin="0,8,0,0">
                                 <TextBox Text="{Binding SearchTerm, UpdateSourceTrigger=PropertyChanged}"
@@ -660,7 +660,7 @@
                         ToolTip="Copy the entire inventory to the clipboard, formatted for pasting into a support ticket.">
                     <StackPanel Orientation="Horizontal">
                         <md:PackIcon Kind="ContentCopy" Width="16" Height="16" VerticalAlignment="Center" />
-                        <TextBlock Text="Copy as text" Margin="8,0,0,0" />
+                        <TextBlock Text="Copy as text" Margin="{StaticResource Spacing.InlineLeft}" />
                     </StackPanel>
                 </Button>
                 <Button Command="{Binding RefreshCommand}"
@@ -670,7 +670,7 @@
                         ToolTip="Re-read live data from Windows. Use after a hardware change, driver update, or BIOS update.">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <md:PackIcon Kind="Refresh" Width="18" Height="18" VerticalAlignment="Center" />
-                        <TextBlock Text="Refresh" Margin="8,0,0,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Refresh" Margin="{StaticResource Spacing.InlineLeft}" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
             </StackPanel>

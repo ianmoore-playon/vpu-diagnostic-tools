@@ -216,6 +216,14 @@ namespace Pulse.WPF.ViewModels
             OpenLastReportCommand  = new RelayCommand(OpenLastReport, () => HasLastRun);
             RefreshCommand         = new AsyncCommand(RefreshAsync);
 
+            // Route DashboardService's formerly-silent catches into the VM
+            // log sink (v0.5.0) so collection failures finally show up.
+            if (_svc is DashboardService concrete)
+            {
+                concrete.OnSilentError = (section, ex) =>
+                    AddLog($"{section} failed: {ex?.Message}", "Warn");
+            }
+
             _liveTimer = new System.Windows.Threading.DispatcherTimer
             {
                 Interval = TimeSpan.FromSeconds(2),

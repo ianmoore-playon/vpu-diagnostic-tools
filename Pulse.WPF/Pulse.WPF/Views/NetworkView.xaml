@@ -50,7 +50,7 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
                         <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold"
-                                   Foreground="{Binding StatusColor}" Margin="8,0,0,0"
+                                   Foreground="{Binding StatusColor}" Margin="{StaticResource Spacing.InlineLeft}"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
@@ -64,12 +64,12 @@
             <!-- ====== Findings banner — auto-collapses when empty ====== -->
             <controls:FindingsBanner Grid.Row="1"
                                      Findings="{Binding Findings}"
-                                     Margin="0,0,0,16" />
+                                     Margin="{StaticResource Spacing.Page}" />
 
             <!-- ====== Recommended Actions (top — auto-collapse when empty) ======
                  Bound to Recommendations.Count via CountToVis, so the panel is
                  only present when there is at least one actionable item. -->
-            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,16"
+            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="{StaticResource Spacing.Page}"
                     Visibility="{Binding Recommendations.Count, Converter={StaticResource CountToVis}}">
                 <StackPanel>
                     <DockPanel Margin="0,0,0,12">
@@ -78,7 +78,7 @@
                                      Foreground="{StaticResource YellowBrush}"
                                      VerticalAlignment="Center" />
                         <TextBlock Text="Recommended Actions" Style="{StaticResource SectionTitle}"
-                                   Margin="10,0,0,0" VerticalAlignment="Center" />
+                                   Margin="{StaticResource Spacing.InlineLeftLg}" VerticalAlignment="Center" />
                     </DockPanel>
                     <ItemsControl ItemsSource="{Binding Recommendations}">
                         <ItemsControl.ItemTemplate>
@@ -94,12 +94,12 @@
                                                     VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Severity}"
                                                            Foreground="White"
-                                                           FontWeight="SemiBold" FontSize="10" />
+                                                           FontWeight="SemiBold" FontSize="{StaticResource FontSize.Caption}" />
                                             </Border>
                                             <TextBlock Text="{Binding Title}"
                                                        FontWeight="SemiBold"
                                                        Foreground="{StaticResource ForegroundBrush}"
-                                                       Margin="8,0,0,0"
+                                                       Margin="{StaticResource Spacing.InlineLeft}"
                                                        VerticalAlignment="Center" />
                                         </StackPanel>
                                         <TextBlock Text="{Binding Body}"
@@ -120,7 +120,7 @@
             </Border>
 
             <!-- ====== Port Connectivity (split: TCP | UDP) — page focus ====== -->
-            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,16">
+            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="{StaticResource Spacing.Page}">
                 <StackPanel>
                     <TextBlock Text="Port Connectivity" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                     <Grid>
@@ -139,7 +139,7 @@
                                             CornerRadius="3" Padding="8,2"
                                             VerticalAlignment="Center">
                                         <TextBlock Text="TCP" FontWeight="SemiBold"
-                                                   FontSize="10" Foreground="White" />
+                                                   FontSize="{StaticResource FontSize.Caption}" Foreground="White" />
                                     </Border>
                                     <TextBlock Text="TCP ports" Style="{StaticResource NetSubHeading}"
                                                Margin="0" VerticalAlignment="Center" />
@@ -173,12 +173,12 @@
                                                         <TextBlock Text="{Binding Status}"
                                                                    Foreground="{Binding ResultColor}"
                                                                    FontWeight="SemiBold"
-                                                                   Margin="8,0,0,0"
+                                                                   Margin="{StaticResource Spacing.InlineLeft}"
                                                                    VerticalAlignment="Center" />
                                                     </StackPanel>
                                                     <TextBlock Text="{Binding Host}"
                                                                Style="{StaticResource MutedLabel}"
-                                                               FontSize="11"
+                                                               FontSize="{StaticResource FontSize.Small}"
                                                                Margin="0,6,0,0"
                                                                TextTrimming="CharacterEllipsis" />
                                                 </StackPanel>
@@ -198,7 +198,7 @@
                                             CornerRadius="3" Padding="8,2"
                                             VerticalAlignment="Center">
                                         <TextBlock Text="UDP" FontWeight="SemiBold"
-                                                   FontSize="10" Foreground="White" />
+                                                   FontSize="{StaticResource FontSize.Caption}" Foreground="White" />
                                     </Border>
                                     <TextBlock Text="UDP ports" Style="{StaticResource NetSubHeading}"
                                                Margin="0" VerticalAlignment="Center" />
@@ -232,12 +232,12 @@
                                                         <TextBlock Text="{Binding Status}"
                                                                    Foreground="{Binding ResultColor}"
                                                                    FontWeight="SemiBold"
-                                                                   Margin="8,0,0,0"
+                                                                   Margin="{StaticResource Spacing.InlineLeft}"
                                                                    VerticalAlignment="Center" />
                                                     </StackPanel>
                                                     <TextBlock Text="{Binding Host}"
                                                                Style="{StaticResource MutedLabel}"
-                                                               FontSize="11"
+                                                               FontSize="{StaticResource FontSize.Small}"
                                                                Margin="0,6,0,0"
                                                                TextTrimming="CharacterEllipsis" />
                                                 </StackPanel>
@@ -252,7 +252,7 @@
             </Border>
 
             <!-- ====== Combined Internet+IP card | Domain reachability ====== -->
-            <Grid Grid.Row="4" Margin="0,0,0,16">
+            <Grid Grid.Row="4" Margin="{StaticResource Spacing.Page}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="2*" MinWidth="420" />
                     <ColumnDefinition Width="16" />
@@ -299,17 +299,17 @@
                                                        Style="{StaticResource MonoValue}" />
 
                                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Link state:"
-                                                       Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                                                       Style="{StaticResource MutedLabel}" Margin="{StaticResource Spacing.RowGap}" />
                                             <TextBlock Grid.Row="1" Grid.Column="1"
                                                        Text="{Binding PrimaryAdapter.LinkState}"
                                                        Foreground="{StaticResource GreenBrush}"
-                                                       FontWeight="SemiBold" Margin="0,4,0,0" />
+                                                       FontWeight="SemiBold" Margin="{StaticResource Spacing.RowGap}" />
 
                                             <TextBlock Grid.Row="2" Grid.Column="0" Text="Link speed:"
-                                                       Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                                                       Style="{StaticResource MutedLabel}" Margin="{StaticResource Spacing.RowGap}" />
                                             <TextBlock Grid.Row="2" Grid.Column="1"
                                                        Text="{Binding PrimaryAdapter.Speed}"
-                                                       Style="{StaticResource MonoValue}" Margin="0,4,0,0" />
+                                                       Style="{StaticResource MonoValue}" Margin="{StaticResource Spacing.RowGap}" />
                                         </Grid>
                                     </StackPanel>
                                     <TextBlock Text="No internet-bound adapter detected."
@@ -346,29 +346,29 @@
                                                    Style="{StaticResource MonoValue}" />
 
                                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Assignment:"
-                                                   Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                                                   Style="{StaticResource MutedLabel}" Margin="{StaticResource Spacing.RowGap}" />
                                         <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding IpAssignment}"
                                                    FontWeight="SemiBold"
                                                    Foreground="{StaticResource ForegroundBrush}"
-                                                   Margin="0,4,0,0" />
+                                                   Margin="{StaticResource Spacing.RowGap}" />
 
                                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Subnet mask:"
-                                                   Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                                                   Style="{StaticResource MutedLabel}" Margin="{StaticResource Spacing.RowGap}" />
                                         <TextBlock Grid.Row="2" Grid.Column="1"
                                                    Text="{Binding IpConfig.SubnetMask}"
-                                                   Style="{StaticResource MonoValue}" Margin="0,4,0,0" />
+                                                   Style="{StaticResource MonoValue}" Margin="{StaticResource Spacing.RowGap}" />
 
                                         <TextBlock Grid.Row="3" Grid.Column="0" Text="Gateway:"
-                                                   Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                                                   Style="{StaticResource MutedLabel}" Margin="{StaticResource Spacing.RowGap}" />
                                         <TextBlock Grid.Row="3" Grid.Column="1"
                                                    Text="{Binding IpConfig.Gateway}"
-                                                   Style="{StaticResource MonoValue}" Margin="0,4,0,0" />
+                                                   Style="{StaticResource MonoValue}" Margin="{StaticResource Spacing.RowGap}" />
 
                                         <TextBlock Grid.Row="4" Grid.Column="0" Text="DNS:"
-                                                   Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                                                   Style="{StaticResource MutedLabel}" Margin="{StaticResource Spacing.RowGap}" />
                                         <TextBlock Grid.Row="4" Grid.Column="1"
                                                    Text="{Binding IpConfig.DnsServers}"
-                                                   Style="{StaticResource MonoValue}" Margin="0,4,0,0"
+                                                   Style="{StaticResource MonoValue}" Margin="{StaticResource Spacing.RowGap}"
                                                    TextWrapping="Wrap" />
 
                                         <TextBlock Grid.Row="5" Grid.Column="0" Text="NTP server:"
@@ -378,11 +378,11 @@
                                                    Style="{StaticResource MonoValue}" Margin="0,8,0,0" />
 
                                         <TextBlock Grid.Row="6" Grid.Column="0" Text="NTP source:"
-                                                   Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                                                   Style="{StaticResource MutedLabel}" Margin="{StaticResource Spacing.RowGap}" />
                                         <TextBlock Grid.Row="6" Grid.Column="1"
                                                    Text="{Binding IpConfig.NtpSource}"
                                                    Foreground="{StaticResource MutedForegroundBrush}"
-                                                   Margin="0,4,0,0" />
+                                                   Margin="{StaticResource Spacing.RowGap}" />
                                     </Grid>
                                 </StackPanel>
                             </Border>
@@ -408,7 +408,7 @@
                                                    TextTrimming="CharacterEllipsis" />
                                         <TextBlock Grid.Column="1" Text="{Binding Status}"
                                                    Foreground="{Binding ResultColor}"
-                                                   FontWeight="SemiBold" Margin="8,0,0,0" />
+                                                   FontWeight="SemiBold" Margin="{StaticResource Spacing.InlineLeft}" />
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -418,7 +418,7 @@
             </Grid>
 
             <!-- ====== Live Log ====== -->
-            <Border Grid.Row="5" Style="{StaticResource Card}" Margin="0,0,0,16">
+            <Border Grid.Row="5" Style="{StaticResource Card}" Margin="{StaticResource Spacing.Page}">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="Live Log"
                                Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
@@ -428,7 +428,7 @@
                         <ListBox ItemsSource="{Binding LogEntries}"
                                  Background="Transparent" BorderThickness="0"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                 FontFamily="Cascadia Mono, Consolas" FontSize="11">
+                                 FontFamily="Cascadia Mono, Consolas" FontSize="{StaticResource FontSize.Small}">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Margin="8,2">
@@ -457,7 +457,7 @@
                         MinWidth="160" MinHeight="44">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <md:PackIcon Kind="Play" Width="18" Height="18" VerticalAlignment="Center" />
-                        <TextBlock Text="Run Test" Margin="8,0,0,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Run Test" Margin="{StaticResource Spacing.InlineLeft}" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
             </DockPanel>

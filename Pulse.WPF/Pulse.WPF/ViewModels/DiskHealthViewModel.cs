@@ -19,7 +19,9 @@ namespace Pulse.WPF.ViewModels
 
         public ObservableCollection<VolumeRow> Volumes { get; } = new ObservableCollection<VolumeRow>();
         public ObservableCollection<PixellotPathRow> PixellotPaths { get; } = new ObservableCollection<PixellotPathRow>();
-        public ObservableCollection<LogEntry> LogEntries { get; } = new ObservableCollection<LogEntry>();
+        // Composed via PanelLogger (v0.5.0) — shared with the four other panels.
+        public PanelLogger Logger { get; } = new PanelLogger();
+        public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
         public bool HasFindings => Findings.Count > 0;
 
@@ -203,16 +205,7 @@ namespace Pulse.WPF.ViewModels
             }).ConfigureAwait(false);
         }
 
-        private void AddLog(string label, string result, string level)
-        {
-            LogEntries.Add(new LogEntry
-            {
-                Label = label,
-                Result = result,
-                Level = level,
-                ResultColor = StatusHelpers.BrushForLogLevel(level),
-            });
-        }
+        private void AddLog(string label, string result, string level) => Logger.Add(label, result, level);
 
         private void AddFinding(string severity, string title, string recommendation)
         {

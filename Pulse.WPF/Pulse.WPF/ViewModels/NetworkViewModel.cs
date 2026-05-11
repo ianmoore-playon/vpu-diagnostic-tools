@@ -53,7 +53,9 @@ namespace Pulse.WPF.ViewModels
         public ObservableCollection<PortTestResult> TcpPortTests { get; } = new ObservableCollection<PortTestResult>();
         public ObservableCollection<PortTestResult> UdpPortTests { get; } = new ObservableCollection<PortTestResult>();
         public ObservableCollection<DomainTestResult> DomainTests { get; } = new ObservableCollection<DomainTestResult>();
-        public ObservableCollection<LogEntry> LogEntries { get; } = new ObservableCollection<LogEntry>();
+        // Composed via PanelLogger (v0.5.0) — shared with the four other panels.
+        public PanelLogger Logger { get; } = new PanelLogger();
+        public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
         public ObservableCollection<NetworkRecommendation> Recommendations { get; } = new ObservableCollection<NetworkRecommendation>();
         public bool HasFindings => Findings.Count > 0;
@@ -306,21 +308,7 @@ namespace Pulse.WPF.ViewModels
             System.Windows.Application.Current?.Dispatcher.Invoke(() => Recommendations.Clear());
         }
 
-        private void AddLog(string label, string result, string level)
-        {
-            var entry = new LogEntry
-            {
-                Label = label,
-                Result = result,
-                Level = level,
-                ResultColor = StatusHelpers.BrushForLogLevel(level),
-            };
-            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
-            {
-                LogEntries.Add(entry);
-                while (LogEntries.Count > 200) LogEntries.RemoveAt(0);
-            });
-        }
+        private void AddLog(string label, string result, string level) => Logger.Add(label, result, level);
 
         private void AddFinding(string severity, string title, string recommendation)
         {
