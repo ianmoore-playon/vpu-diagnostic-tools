@@ -105,10 +105,10 @@
                     <ToggleButton Style="{StaticResource SidebarNavButton}"
                                   IsChecked="{Binding IsNetwork, Mode=OneWay}"
                                   Command="{Binding NavigateCommand}" CommandParameter="Network"
-                                  AutomationProperties.Name="Network">
+                                  AutomationProperties.Name="Network Configuration">
                         <StackPanel Orientation="Horizontal">
                             <md:PackIcon Kind="WifiCog" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Network" Margin="14,0,0,0" />
+                            <TextBlock Text="Network Configuration" Margin="14,0,0,0" />
                         </StackPanel>
                     </ToggleButton>
 
@@ -152,14 +152,18 @@
                         </StackPanel>
                     </ToggleButton>
 
-                    <ToggleButton Style="{StaticResource SidebarNavButton}" IsEnabled="False"
+                    <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                  IsChecked="{Binding IsEventViewer, Mode=OneWay}"
+                                  Command="{Binding NavigateCommand}" CommandParameter="EventViewer"
                                   AutomationProperties.Name="Event Viewer">
                         <StackPanel Orientation="Horizontal">
                             <md:PackIcon Kind="AlertOutline" Width="18" Height="18" VerticalAlignment="Center" />
                             <TextBlock Text="Event Viewer" Margin="14,0,0,0" />
                         </StackPanel>
                     </ToggleButton>
-                    <ToggleButton Style="{StaticResource SidebarNavButton}" IsEnabled="False"
+                    <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                  IsChecked="{Binding IsReports, Mode=OneWay}"
+                                  Command="{Binding NavigateCommand}" CommandParameter="Reports"
                                   AutomationProperties.Name="Reports">
                         <StackPanel Orientation="Horizontal">
                             <md:PackIcon Kind="FileDocumentOutline" Width="18" Height="18" VerticalAlignment="Center" />

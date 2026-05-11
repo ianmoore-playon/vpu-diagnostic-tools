@@ -60,6 +60,8 @@ namespace Pulse.WPF.ViewModels
         public bool IsHardware       => _selectedNav == "Hardware";
         public bool IsServices       => _selectedNav == "Services";
         public bool IsDisk           => _selectedNav == "DiskHealth";
+        public bool IsEventViewer    => _selectedNav == "EventViewer";
+        public bool IsReports        => _selectedNav == "Reports";
 
         private void RaisePillFlags()
         {
@@ -70,6 +72,8 @@ namespace Pulse.WPF.ViewModels
             OnPropertyChanged(nameof(IsHardware));
             OnPropertyChanged(nameof(IsServices));
             OnPropertyChanged(nameof(IsDisk));
+            OnPropertyChanged(nameof(IsEventViewer));
+            OnPropertyChanged(nameof(IsReports));
         }
 
         private object _currentView;
