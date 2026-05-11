@@ -48,13 +48,4 @@ namespace Pulse.WPF.Models
         public Brush  ValueColor { get; set; }          // resolved by the VM at population time
     }
 
-    /// <summary>
-    /// One bullet in the Summary panel on the right. Mirrors the bulleted
-    /// checklist used by Hardware / Network / Services panels.
-    /// </summary>
-    public class SystemOverviewSummaryItem
-    {
-        public string Status { get; set; } = "ok";   // "ok" / "warn" / "fail" / "neutral"
-        public string Text   { get; set; } = "";
-    }
 }

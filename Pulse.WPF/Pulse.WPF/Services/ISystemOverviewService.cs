@@ -23,7 +23,6 @@ namespace Pulse.WPF.Services
     {
         public SystemOverviewCards Cards { get; set; } = new SystemOverviewCards();
         public List<SystemOverviewRow> Inventory { get; set; } = new List<SystemOverviewRow>();
-        public List<SystemOverviewSummaryItem> Summary { get; set; } = new List<SystemOverviewSummaryItem>();
 
         // Typed per-card models — UX_REVIEW round 2 §3 / §5. The
         // structured cards bind against these; the flat Inventory list

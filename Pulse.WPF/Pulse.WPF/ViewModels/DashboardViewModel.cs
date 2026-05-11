@@ -108,6 +108,29 @@ namespace Pulse.WPF.ViewModels
         public ObservableCollection<ServiceStatusRow> Services { get; } = new ObservableCollection<ServiceStatusRow>();
         public ObservableCollection<DashboardFinding> Findings { get; } = new ObservableCollection<DashboardFinding>();
 
+        // ---- Dashboard log sink -------------------------------------------
+        // Lets formerly-silent catches surface low-severity log lines instead
+        // of swallowing failures. Capped at 200 entries.
+        public ObservableCollection<LogEntry> LogEntries { get; } = new ObservableCollection<LogEntry>();
+        internal void AddLog(string message, string level = "Info")
+        {
+            var entry = new LogEntry
+            {
+                Label = "",
+                Result = message,
+                Level = level,
+                ResultColor = StatusHelpers.BrushForLogLevel(level),
+            };
+            void apply()
+            {
+                LogEntries.Add(entry);
+                while (LogEntries.Count > 200) LogEntries.RemoveAt(0);
+            }
+            var app = System.Windows.Application.Current;
+            if (app != null && app.Dispatcher.CheckAccess()) apply();
+            else app?.Dispatcher.Invoke(apply);
+        }
+
         // ---- Network config block (read directly from snapshot) ------------
         private string _ipAddress = "—";
         public string IpAddress { get => _ipAddress; set => Set(ref _ipAddress, value); }
@@ -196,14 +219,19 @@ namespace Pulse.WPF.ViewModels
 
         // ReadGauges does ~250 ms of CPU sampling; run it on a background task
         // so the tick doesn't block the UI thread, then marshal the result back
-        // for the property assigns.
+        // for the property assigns. Body is wrapped in a single try/catch so an
+        // async-void exception can never tear down the dispatcher (v0.5.0).
         private async void OnLiveTick(object sender, EventArgs e)
         {
-            GaugeReadings g = null;
-            try { g = await Task.Run(() => _svc.ReadGauges()); }
-            catch { return; }
-            if (g == null) return;
-            ApplyGaugeReadings(g);
+            try
+            {
+                var g = await Task.Run(() => _svc.ReadGauges()).ConfigureAwait(true);
+                if (g != null) ApplyGaugeReadings(g);
+            }
+            catch (Exception ex)
+            {
+                AddLog($"Live tick failed: {ex.Message}", "Warn");
+            }
         }
 
         private void ApplyGaugeReadings(GaugeReadings g)

@@ -9,13 +9,10 @@
     <Nullable>disable</Nullable>
     <LangVersion>9.0</LangVersion>
     <ApplicationIcon />
-    <Version>0.4.7</Version>
-    <AssemblyVersion>0.4.7.0</AssemblyVersion>
-    <FileVersion>0.4.7.0</FileVersion>
-    <InformationalVersion>0.4.7</InformationalVersion>
+    <Version>0.5.0</Version>
     <Authors>PlayOn / Pixellot Field Tools</Authors>
     <Product>Pulse — Pixellot Unified Live System Evaluator (WPF Pilot)</Product>
-    <Description>WPF pilot for the Camera Connectivity panel of the Pulse VPU diagnostic tool. Side-by-side with the existing WinForms Pulse.ps1 implementation.</Description>
+    <Description>Pulse is the active WPF diagnostic line for the Pixellot VPU — Dashboard, System Overview, Camera Connectivity, Network, Hardware, Disk Health, Services, Event Viewer, and Reports.</Description>
     <NeutralLanguage>en-US</NeutralLanguage>
   </PropertyGroup>
 
@@ -30,8 +27,6 @@
     <Reference Include="System.Management" />
     <!-- ServiceController for the Pixellot Services panel -->
     <Reference Include="System.ServiceProcess" />
-    <!-- EventLogReader for disk-error scans -->
-    <Reference Include="System.Core" />
   </ItemGroup>
 
 </Project>

@@ -190,12 +190,6 @@
                                                      Fill="{Binding StatusColor}"
                                                      VerticalAlignment="Center"
                                                      ToolTip="{Binding StatusLine}" />
-                                            <TextBlock Text="{Binding Name}"
-                                                       FontFamily="Segoe UI Semibold"
-                                                       FontSize="13"
-                                                       Margin="8,0,0,0"
-                                                       VerticalAlignment="Center"
-                                                       Visibility="Collapsed" />
                                         </DockPanel>
 
                                         <!-- Primary device label.

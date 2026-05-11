@@ -20,10 +20,7 @@ namespace Pulse.WPF.ViewModels
     {
         private readonly INetworkService _net;
 
-        public ObservableCollection<NetworkAdapterRow> Adapters { get; } = new ObservableCollection<NetworkAdapterRow>();
-
-        // Single primary internet-bound adapter — what the new compact card binds to.
-        // Adapters collection is kept for legacy / future use but no longer rendered.
+        // Single primary internet-bound adapter — what the compact card binds to.
         private NetworkAdapterRow _primaryAdapter;
         public NetworkAdapterRow PrimaryAdapter
         {
@@ -51,8 +48,7 @@ namespace Pulse.WPF.ViewModels
             }
         }
 
-        public ObservableCollection<PortTestResult> PortTests { get; } = new ObservableCollection<PortTestResult>();
-        // Protocol-split views of PortTests so the view can render TCP and UDP
+        // Protocol-split port-test collections — the view renders TCP and UDP
         // tiles in two side-by-side columns. Populated in RunTestAsync.
         public ObservableCollection<PortTestResult> TcpPortTests { get; } = new ObservableCollection<PortTestResult>();
         public ObservableCollection<PortTestResult> UdpPortTests { get; } = new ObservableCollection<PortTestResult>();
@@ -88,18 +84,14 @@ namespace Pulse.WPF.ViewModels
         {
             return Task.Run(() =>
             {
-                var adapters = _net.GetAdapters();
                 var primary = _net.GetPrimaryInternetAdapter();
                 var ipCfg = _net.GetIpConfiguration();
                 System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                 {
-                    Adapters.Clear();
-                    foreach (var a in adapters) Adapters.Add(a);
                     PrimaryAdapter = primary;
                     IpConfig = ipCfg;
                     OnPropertyChanged(nameof(IpAssignment));
-                    var detected = primary ?? adapters.FirstOrDefault();
-                    DetectedNic = detected != null ? $"{detected.Name} — {detected.Ip}" : "No adapters detected";
+                    DetectedNic = primary != null ? $"{primary.Name} — {primary.Ip}" : "No adapters detected";
                 });
             });
         }
@@ -151,12 +143,10 @@ namespace Pulse.WPF.ViewModels
             }
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
             {
-                PortTests.Clear();
                 TcpPortTests.Clear();
                 UdpPortTests.Clear();
                 foreach (var p in ports)
                 {
-                    PortTests.Add(p);
                     if (string.Equals(p.Protocol, "TCP", System.StringComparison.OrdinalIgnoreCase))
                         TcpPortTests.Add(p);
                     else if (string.Equals(p.Protocol, "UDP", System.StringComparison.OrdinalIgnoreCase))

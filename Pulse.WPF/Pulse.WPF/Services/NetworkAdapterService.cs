@@ -141,57 +141,11 @@ namespace Pulse.WPF.Services
         }
 
         /// <summary>
-        /// Reject MACs that should never be rendered as a real remote:
-        ///   • null / empty
-        ///   • all-zero (INCOMPLETE neighbour row from Win32 GetIpNetTable)
-        ///   • all-FF (broadcast)
-        ///   • multicast bit set on the first octet (group address)
-        /// Centralised so the ARP loader and the resolver stay in sync.
+        /// Forwarder kept for source-compat with existing callers in this file.
+        /// The real implementation lives in <see cref="Pulse.WPF.Helpers.MacOuiTable.IsInvalidMac(string)"/>
+        /// alongside the other MAC helpers (moved v0.5.0).
         /// </summary>
-        public static bool IsInvalidMac(string mac)
-        {
-            if (string.IsNullOrEmpty(mac)) return true;
-
-            // Strip separators ("-", ":", whitespace) so the same string
-            // covers both "00-00-00-00-00-00" and "000000000000".
-            string hex;
-            try
-            {
-                var sb = new System.Text.StringBuilder(mac.Length);
-                foreach (var c in mac)
-                {
-                    if (c == '-' || c == ':' || c == ' ') continue;
-                    sb.Append(c);
-                }
-                hex = sb.ToString();
-            }
-            catch { return true; }
-
-            if (hex.Length < 12) return true;
-
-            // All-zero MAC — Win32 GetIpNetTable returns this for INCOMPLETE
-            // neighbour entries (the OS has an IP from a probe but never got
-            // an ARP reply).
-            bool allZero = true, allFf = true;
-            for (int i = 0; i < 12; i++)
-            {
-                char c = char.ToUpperInvariant(hex[i]);
-                if (c != '0') allZero = false;
-                if (c != 'F') allFf = false;
-                if (!allZero && !allFf) break;
-            }
-            if (allZero || allFf) return true;
-
-            // Multicast bit on first octet — group address, never a real host.
-            try
-            {
-                var firstOctet = Convert.ToInt32(hex.Substring(0, 2), 16);
-                if ((firstOctet & 1) != 0) return true;
-            }
-            catch { return true; }
-
-            return false;
-        }
+        public static bool IsInvalidMac(string mac) => Helpers.MacOuiTable.IsInvalidMac(mac);
 
         // ===== Win32 GetIpNetTable wrapper — equivalent to Get-NetNeighbor =====
 

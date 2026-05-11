@@ -450,10 +450,6 @@
 
             <!-- ====== Action bar ====== -->
             <DockPanel Grid.Row="6">
-                <StackPanel Orientation="Horizontal">
-                    <Button Content="Export Report"
-                            Style="{StaticResource MaterialDesignOutlinedButton}" IsEnabled="False" />
-                </StackPanel>
                 <Button DockPanel.Dock="Right"
                         Command="{Binding RunTestCommand}"
                         Style="{StaticResource MaterialDesignRaisedButton}"

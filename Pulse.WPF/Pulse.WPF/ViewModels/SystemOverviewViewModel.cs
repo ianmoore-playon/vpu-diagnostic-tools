@@ -27,12 +27,6 @@ namespace Pulse.WPF.ViewModels
     {
         private readonly ISystemOverviewService _svc;
 
-        // Flat inventory — kept for back-compat; the Copy-as-text path no
-        // longer reads from it (it walks the typed models instead) but other
-        // future surfaces (export-to-JSON, support-bundle) might.
-        public ObservableCollection<SystemOverviewRow> Inventory { get; } =
-            new ObservableCollection<SystemOverviewRow>();
-
         // ---- Top-row summary cards ------------------------------------------
         private string _modelTitle = "—";
         public string ModelTitle { get => _modelTitle; set => Set(ref _modelTitle, value); }
@@ -188,9 +182,6 @@ namespace Pulse.WPF.ViewModels
                     SoftwareTotal   = snap.SoftwareInventory.TotalCount;
                     SoftwareFlagged = snap.SoftwareInventory.FlaggedCount;
                     AllAppsView.Refresh();
-
-                    Inventory.Clear();
-                    foreach (var r in snap.Inventory) Inventory.Add(r);
 
                     UpdatePillFromCards(c);
                 });
