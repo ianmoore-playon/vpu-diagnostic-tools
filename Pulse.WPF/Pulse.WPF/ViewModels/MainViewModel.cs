@@ -21,6 +21,7 @@ namespace Pulse.WPF.ViewModels
         public ServicesViewModel Services { get; }
         public HardwareViewModel Hardware { get; }
         public DiskHealthViewModel DiskHealth { get; }
+        public EventViewerViewModel EventViewer { get; }
 
         // Sidebar state. SelectedNav drives CurrentView.
         // Accepts a few alias keys ("Home" → "Dashboard", "Disk" → "DiskHealth",
@@ -96,6 +97,7 @@ namespace Pulse.WPF.ViewModels
             IHardwareService hw = new HardwareService();
             IServicesService svcs = new ServicesService();
             IDiskHealthService disk = new DiskHealthService();
+            IEventViewerService events = new EventViewerService();
             // DashboardService composes the other panel services so the
             // Dashboard can render a single-page snapshot.
             IDashboardService dashboard = new DashboardService(netAdapters, net, svcs, disk);
@@ -108,6 +110,7 @@ namespace Pulse.WPF.ViewModels
             Services = new ServicesViewModel(svcs);
             Hardware = new HardwareViewModel(hw);
             DiskHealth = new DiskHealthViewModel(disk);
+            EventViewer = new EventViewerViewModel(events);
 
             // Hub tile clicks request a nav change — wire that back through us.
             Dashboard.RequestNavigate = target =>
@@ -142,6 +145,7 @@ namespace Pulse.WPF.ViewModels
                 case "Services":        CurrentView = Services;       _ = SafeRefresh(Services.RefreshAsync); break;
                 case "Hardware":        CurrentView = Hardware;       _ = SafeRefresh(Hardware.RefreshAsync); break;
                 case "DiskHealth":      CurrentView = DiskHealth;     _ = SafeRefresh(DiskHealth.RefreshAsync); break;
+                case "EventViewer":     CurrentView = EventViewer;    _ = SafeRefresh(EventViewer.RefreshAsync); break;
                 case "SystemOverview":  CurrentView = SystemOverview; _ = SafeRefresh(SystemOverview.RefreshAsync); break;
                 case "Dashboard":
                 default:
