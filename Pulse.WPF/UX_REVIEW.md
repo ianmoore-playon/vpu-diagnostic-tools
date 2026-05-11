@@ -431,3 +431,45 @@ NIC-card schematic the user asked for.
 - **`cameras.cfg` matching by MAC.** Today the role map is keyed by IP. A future cfg parser revision should add a MAC-keyed lookup so role attribution is robust against link-local IP shuffles.
 - **Stable port-number identifier across MAC reorders** (PCI slot / device path). MAC-ascending ordering is fine for the field but a hot-swapped NIC will renumber tiles.
 - Decoupling `FindingsBanner` from the `Findings` collection (replace with derived `FindingsCount` / `FindingsSummary`). The equality short-circuit already eliminates visible flicker, so this is "nice to have" rather than required.
+
+
+---
+
+## Week of 2026-05-11 — broad fix batch (v0.5.0)
+
+### Event Viewer panel — new
+
+Surfaces filtered Windows event-log entries so Tier-1 can triage a VPU over LogMeIn without opening `eventvwr.msc`. Reads the Application + System logs via `System.Diagnostics.EventLog` (read-only, no admin elevation needed) and case-insensitively prefix-matches sources against a small list tuned against a working VPU's evtx: `disk`, `nvme`, `iaStorAC`, `Pixellot`, `Service Control Manager`, `Application Error`, `WHEA-Logger`, `NETLOGON`, `Tcpip`, `e1iexpress`/`e1dexpress`, `Dhcp-Client`. Defaults to 48 h × Error+Warning, capped at 500 rows.
+
+Files:
+
+- `Models/EventLogEntry.cs` — pre-computed `LevelColor` / `LevelBgBrush` via `StatusHelpers.Brush(...)` so the DataGrid binds without converters or `FallbackValue` markup.
+- `Services/IEventViewerService.cs` + `Services/EventViewerService.cs` — wraps every read in try/catch (locked-down VPU images throw `SecurityException` on first access).
+- `ViewModels/EventViewerViewModel.cs` — combobox (1 h / 24 h / 48 h / 7 days), level checkboxes (Error / Warning / Information), free-text source-or-message filter via `ICollectionView`. Surfaces a Finding when ≥ 5 disk-source or Pixellot-source errors land in the last 24 h. Status pill rolls up Findings + raw error count.
+- `Views/EventViewerView.xaml` — header + pill, FindingsBanner (auto-collapse), filter row, sortable DataGrid (Timestamp / Level chip / Source / Event ID / wrapped Message), action bar with "Open Windows Event Viewer" (outlined) + "Refresh" (raised, `MinWidth=160 MinHeight=44 VerticalAlignment=Center`).
+
+### Reports panel — new
+
+Lists past diagnostic-run snapshots from `%LOCALAPPDATA%\Pulse.WPF\Reports`. There's no diagnostic engine yet, but the report-bundle concept already exists in the System Overview "Copy as text" path and the per-panel Live Log saves — so this panel lists what's there today and gives the support agent an in-app viewer + delete + "open folder" affordance. Informational status pill only (no Critical state).
+
+Files:
+
+- `Models/Report.cs` — pre-computed `TimestampLabel`, `SizeLabel`.
+- `Services/IReportsService.cs` + `Services/ReportsService.cs` — creates the dir on first use; never throws from IO (falls back to `%TEMP%\Pulse.WPF\Reports` if `%LOCALAPPDATA%` is unwritable). Returns newest-first capped at 200, reads a 200-char preview without slurping a multi-MB file.
+- `ViewModels/ReportsViewModel.cs` — Refresh / OpenFolder / Delete (with `MessageBox` confirm). Exposes `PreselectFileName` so the Dashboard's "Open Last Report" breadcrumb can land directly on a specific bundle after navigation.
+- `Views/ReportsView.xaml` — header + pill, 1:3 split with timestamped ListBox on the left + read-only TextBox content viewer on the right, muted "No diagnostic runs yet" empty state when the folder is empty. Action bar with "Open Reports Folder" + "Delete Report" (both outlined) and "Refresh" (raised).
+
+### Sidebar renames + Dashboard breadcrumb wiring
+
+- Sidebar entry "Network" renamed to "Network Configuration" to match the page's `PageTitle`. The Hardware + Disk entries already aligned to their page titles.
+- Event Viewer + Reports sidebar entries enabled (the previously-grey `IsEnabled="False"` toggles).
+- `MainViewModel.NormaliseNavKey` aliases `"Events"` → `"EventViewer"` so the existing Quick Nav tile (`TargetNav="Events"` in `DashboardService`) lands on the new panel without touching the tile data.
+- Dashboard's "Last Diagnostic Run" card pulls its content from `IReportsService.GetAllAsync()`'s top entry (pushed in via `MainViewModel.PushTopReportToDashboard()` whenever `ReportsViewModel.Reports` raises `CollectionChanged`). When the folder is empty the card swaps to a muted "No diagnostic runs yet" empty state via the new `IsLastRunEmpty` / `HasLastRun` pair on `DashboardViewModel`.
+- "Open Last Report" button now switches to the Reports tab and pre-selects the top entry via the new `DashboardViewModel.RequestOpenReport` callback + `ReportsViewModel.PreselectFileName` hook. Falls back to the legacy `Pulse_Results_*.txt` `Process.Start` path only if the cross-VM callback isn't wired.
+
+### Self-checks
+
+- All new panels match the existing panel vocabulary (header pill, FindingsBanner where relevant, sortable DataGrid styling from System Overview's Software Inventory, raised Refresh button with `MinWidth=160 MinHeight=44 VerticalAlignment=Center`).
+- No `FallbackValue={StaticResource ...}` / `FallbackValue={DynamicResource ...}` patterns.
+- All new VMs initialise their brushes via `StatusHelpers.Brush(...)` in their backing fields so first-paint bindings don't render transparent.
+- DI registrations resolve in `MainViewModel`'s composition root; DataTemplates registered in `App.xaml`.
