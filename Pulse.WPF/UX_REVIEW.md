@@ -473,3 +473,56 @@ Files:
 - No `FallbackValue={StaticResource ...}` / `FallbackValue={DynamicResource ...}` patterns.
 - All new VMs initialise their brushes via `StatusHelpers.Brush(...)` in their backing fields so first-paint bindings don't render transparent.
 - DI registrations resolve in `MainViewModel`'s composition root; DataTemplates registered in `App.xaml`.
+
+---
+
+## Week of 2026-05-11 — broad fix batch (v0.5.0)
+
+Mechanical cleanup pass across every existing panel. Sets the stage for tagging `wpf-pilot-v0.5.0` once the parallel Event Viewer / Reports / sidebar work lands.
+
+### Phase 1 — Quick wins
+
+- Action bars: Hardware, Services, Disk Health renamed "Run Test" → "Refresh" (`Kind="Refresh"` icon). The disabled "Export Report" outlined button was deleted from those three panels and from Network. Network keeps its "Run Test" because it actively probes (port scan, domain resolution, internet check).
+- Dead VM collections + model types deleted: `NetworkViewModel.Adapters` + `PortTests`, `SystemOverviewViewModel.Inventory` + clear/add loop, `SystemOverviewSnapshot.Summary`, `Models.SystemOverviewSummaryItem`, the unused `PortCardButton` style in `Themes/Styles.xaml`.
+- `Pulse.WPF.csproj`: collapsed four version tags to a single `<Version>0.5.0</Version>`; dropped the redundant `System.Core` `<Reference>`; refreshed `<Description>` to reflect that Pulse.WPF is the active line (was "WPF pilot … side-by-side with WinForms").
+- `CameraConnectivityView.xaml`: removed the collapsed-Visibility ghost `TextBlock` at lines 193–198.
+- `DashboardViewModel.OnLiveTick` is now wrapped in a single try/catch so an async-void exception can't tear down the dispatcher. The VM also grew a `LogEntries` / `AddLog` sink that the rest of the fix batch routes errors into.
+- `IsInvalidMac()` moved from `Services/NetworkAdapterService.cs` to `Helpers/MacOuiTable.cs` so the MAC helpers live together. A forwarder in `NetworkAdapterService` keeps existing callers compiling.
+
+### Phase 2 — Critical threading + Restart command
+
+- `DashboardViewModel.RefreshAsync` wraps `GetHubTiles()` / `GetLastRunSummary()` / `CollectSnapshotAsync()` in `Task.Run`. The pre-await body of `CollectSnapshotAsync` (incl. the 250 ms `Thread.Sleep` in `ReadGaugesCore`) and the cheap-reads no longer block the UI thread. Snapshot collection failures finally surface in the UI: the formerly silent catch now routes `ex.Message` into `LogEntries` as a Warn line.
+- Dashboard's hand-rolled 3-state pill routes through `StatusHelpers.PillFor(worst, warn, crit)` so the label/colour matches the other four panels.
+- `ServicesViewModel.RestartServiceCommand` is now real. Confirms via `MessageBox`, shells `sc.exe stop <name>` then `sc.exe start <name>` via `Process.Start` in a worker task, surfaces `ERROR_ACCESS_DENIED` (exit 5) as a clear log line (no silent re-launch elevated), caps the wait-for-stop at 15 s, logs every step (Stopping… / Stopped / Starting… / Started / Failed: …), and re-polls service state after each action. Button enables when `SelectedService != null`. Wired `SelectedItem="{Binding SelectedService}"` on the System Dependencies DataGrid.
+
+### Phase 3 — Medium polish
+
+- Hardware + Services Live Log demoted: the `Height="*" MinHeight=240+` Card became a default-collapsed `Expander Header="Live Log"`, same treatment Camera Connectivity already had. Frees ~260 px vertical at 1366×768.
+- `NetworkViewModel.BuildRecommendations`: when the NTP probe (UDP/123) fails, the row reads "NTP time sync failed" and exposes an "Open System Overview" `ActionCommand` wired to `App.NavigateToTab("SystemOverview")`. Same cross-tab pattern Camera Connectivity already uses.
+- Disk Health top cards (SMART / Disk & Driver Errors / OS Drive) each got a `controls:SeverityChip` so the cards read the same vocabulary as the Findings banner below. New `SmartSeverity` / `DiskErrorsSeverity` / `OsDriveSeverity` + chip-text properties on `DiskHealthViewModel` drive them.
+- `Helpers/RemoteDeviceResolver.cs` now also matches `cameras.cfg` roles by MAC. New `IPixellotConfigService.GetRolesByMac()` parses any `MAC` / `MAC_ADDRESS` / `MACADDR` / `HW_ADDR` field on a camera section, canonicalises it, and exposes a MAC-keyed map. The resolver consults it before the IP-keyed map — role attribution survives DHCP recycling the IP. `CameraConnectivityViewModel` flows the MAC map through `OnMonitorTick` + `BuildRecommendations`.
+
+### Phase 4 — Hardware redesign + NIC uptimes move + PoE shim
+
+- NIC link uptime moved off the Hardware panel and onto Camera Connectivity. `CameraNicMonitor.LinkUpSince` is now surfaced through a new `PortViewModel.Uptime` string + a `ComputeUptimeLine(...)` pass in the VM. The Camera Connectivity tile renders uptime inline under the existing "Linked Nm Ns" line. Hardware's `NicUptimes` collection, `NicUptime` model, `IHardwareService.GetNicUptimes()`, and the NIC sidebar card are all gone.
+- SmartPoE driver shim ported from PowerShell (`Modules/UIHelpers.psm1` + `Modules/CameraConnectivity.psm1` → PoE Status section). New `IPoeTelemetryService` + `WindowsPoeTelemetryService` walk the same DLL search path (`SystemDirectory`, `Program Files\ADLINK\...`, registry `InstallDir` keys, fallback `Program Files` recursive scan) and P/Invoke against `SmartPoE.dll` with the same six signatures. `HardwareService` routes `GetPoePortReadings()` + `GetPoeBudget()` through the shim and surfaces a clear empty-state Card + a Finding row (`"PoE telemetry not available — port is pending"`) when the driver bundle isn't installed. Budget < 55 W still raises a Warning, mirroring the WinForms tool.
+- Hardware top row: the three half-empty cards (GPU / Monitor / Input) collapsed into a single **Peripherals** card with three internal sub-sections styled `HwSubCard` (mirrors `NetSubCard` / `CcSubCard`). The Peripherals card uses `controls:SectionHeader` as the pilot for moving the Hardware panel onto the shared control set.
+
+### Phase 5 — Tokens pass + PanelLogger + TryRun
+
+- `Themes/Styles.xaml` grew `FontSize.Caption/Small/Body/Mono/Heading/Display` and `Spacing.RowGap/RowGapSm/Card/Page/PageLg/InlineLeft/InlineLeftLg`. The six most-repeated inline `FontSize` literals (10/11/12/13/15) and the six most-repeated margin literals across Dashboard / System Overview / Network views were lifted to those keys.
+- `Helpers/PanelLogger.cs` extracts the `AddLog` / `LogEntries` / 200-cap loop that DiskHealth / Services / Hardware / Network / Camera Connectivity VMs all had their own copy of. The five VMs compose a `Logger` instance and expose `LogEntries => Logger.Entries` so XAML bindings don't change. Composition over inheritance.
+- `Helpers/Try.cs` (`TryRun` pattern) drops in for `catch {}`. Migrated `Services/DashboardService.cs`: every silent catch routes through a `Report(section, ex)` sink, and `DashboardViewModel` hooks `OnSilentError` to surface failures as Warn log lines. **Deferred**: `Services/NetworkService.cs` still has 21 silent catches — left to a follow-up so this commit stayed focused.
+
+### Still deferred
+
+- The four other panels (Network, Services, Disk Health, Camera Connectivity, Dashboard, System Overview) haven't yet been refactored onto the reusable controls (`controls:StatusPill`, `controls:KeyValueRow`, `controls:SectionHeader`, `controls:SeverityChip`). Hardware is the pilot — the others migrate next batch.
+- `NetworkService.cs` silent-catch migration to `TryRun`.
+- Light-theme review pass — `Themes/Colors.Light.xaml` exists but hasn't been audited against the v0.5.0 surface changes.
+- v0.5.0 tag itself — the Event Viewer / Reports / sidebar work from the parallel agent has to land first. `dev` is left tag-ready.
+
+### Self-checks (passing)
+
+- `grep -rn "FallbackValue={DynamicResource\|FallbackValue={StaticResource"` — clean.
+- `grep -rn "Export Report\|Run Test" Views/` — only the Network panel's "Run Test" remains.
+- `git grep "Inventory\|SystemOverviewSummaryItem\|PortCardButton"` — no stale references.
