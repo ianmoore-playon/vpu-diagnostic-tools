@@ -24,18 +24,4 @@ namespace Pulse.WPF.Models
         public double Watts { get; set; }
     }
 
-    /// <summary>
-    /// One row in the NIC link-uptime list. Tells the agent how long each
-    /// adapter has been linked at its current speed.
-    /// </summary>
-    public class NicUptime : ObservableObject
-    {
-        public string Adapter { get; set; } = "";
-        public string Speed   { get; set; } = "";   // "1 Gbps"
-        public string Uptime  { get; set; } = "";   // "3d 14h", "12 min"
-        public Brush  UptimeColor { get; set; }
-
-        // Alias used by HardwareService — Adapter ↔ Name.
-        public string Name { get => Adapter; set => Adapter = value; }
-    }
 }

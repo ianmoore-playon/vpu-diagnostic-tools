@@ -16,11 +16,12 @@ namespace Pulse.WPF.Services
         int GetMonitorCount();
         bool HasMouse();
         bool HasKeyboard();
-        // NIC link uptime — coarse buckets, not precise. Same shape as the
-        // $sync.NicLinkUptimes the WinForms version maintains.
-        List<NicUptime> GetNicUptimes();
         // PoE — empty list when the PoE NIC isn't present or the driver shim
-        // is unavailable. TODO: integrate with the live PoE service.
+        // is unavailable. Inspect PoeTelemetryAvailable / Reason first to
+        // distinguish "no PoE card" from "driver bundle missing".
         List<PoePortReading> GetPoePortReadings();
+        bool PoeTelemetryAvailable { get; }
+        string PoeTelemetryUnavailableReason { get; }
+        PoeBudgetReading GetPoeBudget();
     }
 }

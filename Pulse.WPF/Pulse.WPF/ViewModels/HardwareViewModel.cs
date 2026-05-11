@@ -15,11 +15,18 @@ namespace Pulse.WPF.ViewModels
     {
         private readonly IHardwareService _hw;
 
-        public ObservableCollection<NicUptime> NicUptimes { get; } = new ObservableCollection<NicUptime>();
         public ObservableCollection<PoePortReading> PoePorts { get; } = new ObservableCollection<PoePortReading>();
         public ObservableCollection<LogEntry> LogEntries { get; } = new ObservableCollection<LogEntry>();
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
         public bool HasFindings => Findings.Count > 0;
+
+        // ---- PoE empty-state + budget surfacing (v0.5.0) ----
+        private bool _poeAvailable;
+        public bool PoeAvailable { get => _poeAvailable; set => Set(ref _poeAvailable, value); }
+        private string _poeUnavailableReason = "";
+        public string PoeUnavailableReason { get => _poeUnavailableReason; set => Set(ref _poeUnavailableReason, value); }
+        private string _poeBudgetW = "—";
+        public string PoeBudgetW { get => _poeBudgetW; set => Set(ref _poeBudgetW, value); }
 
         private string _gpuName = "—";
         public string GpuName { get => _gpuName; set => Set(ref _gpuName, value); }
@@ -53,8 +60,10 @@ namespace Pulse.WPF.ViewModels
                 int monCount = _hw.GetMonitorCount();
                 bool mouse = _hw.HasMouse();
                 bool kbd = _hw.HasKeyboard();
-                var uptimes = _hw.GetNicUptimes();
-                var poe = _hw.GetPoePortReadings();
+                var poeAvail = _hw.PoeTelemetryAvailable;
+                var poeReason = _hw.PoeTelemetryUnavailableReason;
+                var poeBudget = poeAvail ? _hw.GetPoeBudget() : null;
+                var poe = poeAvail ? _hw.GetPoePortReadings() : new System.Collections.Generic.List<PoePortReading>();
 
                 System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                 {
@@ -72,26 +81,43 @@ namespace Pulse.WPF.ViewModels
                     AddLog("Mouse", mouse ? "Connected" : "None", mouse ? "Pass" : "Warn");
                     AddLog("Keyboard", kbd ? "Connected" : "None", kbd ? "Pass" : "Warn");
 
-                    NicUptimes.Clear();
-                    foreach (var u in uptimes) NicUptimes.Add(u);
-                    if (uptimes.Count > 0)
-                    {
-                        AddLog("", "NIC Port Uptime", "Section");
-                        foreach (var u in uptimes)
-                            AddLog(u.Name, $"Link up: {u.Uptime}", u.Uptime == ">48h" ? "Pass" : "Info");
-                    }
-
                     PoePorts.Clear();
                     foreach (var p in poe) PoePorts.Add(p);
-                    if (poe.Count > 0)
+                    PoeAvailable = poeAvail;
+                    PoeUnavailableReason = poeReason ?? "";
+                    if (poeAvail && poeBudget != null && poeBudget.TotalW > 0)
+                    {
+                        PoeBudgetW = $"Budget: {poeBudget.TotalW:F0} W  ({poeBudget.ConsumedW:F1} W used / {poeBudget.RemainingW:F1} W free)";
+                    }
+                    else
+                    {
+                        PoeBudgetW = poeAvail ? "Budget: —" : "Budget: unavailable";
+                    }
+                    if (!poeAvail)
+                    {
+                        AddLog("", "PoE Status", "Section");
+                        AddLog("PoE telemetry", poeReason ?? "Not available", "Gray");
+                        AddFinding("Info",
+                            "PoE telemetry not available — port is pending",
+                            string.IsNullOrEmpty(poeReason)
+                                ? "Install the ADLINK SmartPoE driver bundle to surface per-port voltage / current / watts."
+                                : poeReason);
+                    }
+                    else if (poe.Count > 0)
                     {
                         AddLog("", "PoE Status", "Section");
                         foreach (var p in poe)
                         {
                             var state = p.PoeOn ? "PoE ON" : "PoE OFF";
                             AddLog(p.Port,
-                                $"{p.Voltage:F2} V  {p.Current:F3} A  {p.Watts:F1} W  [{state}]",
+                                $"{p.Voltage}  {p.Current}  {p.Wattage}  [{state}]",
                                 p.PoeOn ? "Pass" : "Gray");
+                        }
+                        if (poeBudget != null && poeBudget.Low)
+                        {
+                            AddFinding("Warning",
+                                $"PoE budget low: {poeBudget.TotalW:F0} W",
+                                "Total power budget is below the 55 W minimum — the Molex power connector on the PoE NIC may be disconnected.");
                         }
                     }
 

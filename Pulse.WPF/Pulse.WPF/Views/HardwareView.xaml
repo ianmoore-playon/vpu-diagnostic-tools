@@ -10,6 +10,26 @@
              mc:Ignorable="d"
              Background="{StaticResource AppBgBrush}">
 
+    <UserControl.Resources>
+        <!-- Hardware-local sub-card style — mirrors NetSubCard / CcSubCard
+             so the Peripherals card's three internal sections (GPU / Monitor /
+             Input) read the same way as the rest of the app (v0.5.0). -->
+        <Style x:Key="HwSubCard" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource SurfaceBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderColBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="14,12,14,12" />
+        </Style>
+
+        <Style x:Key="HwSubHeading" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI Semibold" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{StaticResource MutedForegroundBrush}" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+    </UserControl.Resources>
+
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
@@ -45,63 +65,73 @@
                                      Findings="{Binding Findings}"
                                      Margin="0,0,0,16" />
 
-            <!-- ====== Top row: GPU / Monitor / Input ====== -->
-            <Grid Grid.Row="2" Margin="0,0,0,16">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+            <!-- ====== Peripherals card (single, 3 internal sub-sections) ======
+                 Was 3 separate top-row cards (GPU / Monitor / Input) — collapsed
+                 v0.5.0 because at ≥1500 px the cards left ~50% blank columns.
+                 The three internal sub-sections use the HwSubCard pattern. -->
+            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,16">
+                <StackPanel>
+                    <controls:SectionHeader Title="Peripherals"
+                                            Subtitle="GPU, monitor and input devices the OS can see right now." />
+                    <Grid Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
 
-                <!-- GPU -->
-                <Border Grid.Column="0" Style="{StaticResource Card}">
-                    <StackPanel>
-                        <DockPanel>
-                            <md:PackIcon Kind="Gpu" Width="20" Height="20"
-                                         Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="GPU" Style="{StaticResource SectionTitle}" Margin="10,0,0,0" />
-                        </DockPanel>
-                        <TextBlock Text="{Binding GpuName}" Foreground="{StaticResource ForegroundBrush}"
-                                   FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,12,0,0" />
-                        <TextBlock Text="{Binding GpuStatus}" Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
-                    </StackPanel>
-                </Border>
+                        <!-- GPU -->
+                        <Border Grid.Column="0" Style="{StaticResource HwSubCard}">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,8">
+                                    <md:PackIcon Kind="Gpu" Width="16" Height="16"
+                                                 Foreground="{StaticResource AccentBrush}"
+                                                 VerticalAlignment="Center" />
+                                    <TextBlock Text="GPU" Style="{StaticResource HwSubHeading}" Margin="6,0,0,0" />
+                                </DockPanel>
+                                <TextBlock Text="{Binding GpuName}" Foreground="{StaticResource ForegroundBrush}"
+                                           FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding GpuStatus}" Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
 
-                <!-- Monitor -->
-                <Border Grid.Column="2" Style="{StaticResource Card}">
-                    <StackPanel>
-                        <DockPanel>
-                            <md:PackIcon Kind="Monitor" Width="20" Height="20"
-                                         Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="Monitor" Style="{StaticResource SectionTitle}" Margin="10,0,0,0" />
-                        </DockPanel>
-                        <TextBlock Text="{Binding MonitorStatus}" Foreground="{StaticResource ForegroundBrush}"
-                                   TextWrapping="Wrap" Margin="0,12,0,0" />
-                    </StackPanel>
-                </Border>
+                        <!-- Monitor -->
+                        <Border Grid.Column="2" Style="{StaticResource HwSubCard}">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,8">
+                                    <md:PackIcon Kind="Monitor" Width="16" Height="16"
+                                                 Foreground="{StaticResource AccentBrush}"
+                                                 VerticalAlignment="Center" />
+                                    <TextBlock Text="Monitor" Style="{StaticResource HwSubHeading}" Margin="6,0,0,0" />
+                                </DockPanel>
+                                <TextBlock Text="{Binding MonitorStatus}" Foreground="{StaticResource ForegroundBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
 
-                <!-- Input devices -->
-                <Border Grid.Column="4" Style="{StaticResource Card}">
-                    <StackPanel>
-                        <DockPanel>
-                            <md:PackIcon Kind="MouseVariant" Width="20" Height="20"
-                                         Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="Input Devices" Style="{StaticResource SectionTitle}" Margin="10,0,0,0" />
-                        </DockPanel>
-                        <TextBlock Text="{Binding MouseStatus}" Margin="0,12,0,0" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding KeyboardStatus}" Margin="0,4,0,0" TextWrapping="Wrap" />
-                    </StackPanel>
-                </Border>
-            </Grid>
+                        <!-- Input devices -->
+                        <Border Grid.Column="4" Style="{StaticResource HwSubCard}">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,8">
+                                    <md:PackIcon Kind="MouseVariant" Width="16" Height="16"
+                                                 Foreground="{StaticResource AccentBrush}"
+                                                 VerticalAlignment="Center" />
+                                    <TextBlock Text="Input Devices" Style="{StaticResource HwSubHeading}" Margin="6,0,0,0" />
+                                </DockPanel>
+                                <TextBlock Text="{Binding InputStatus}" Foreground="{StaticResource ForegroundBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </StackPanel>
+            </Border>
 
-            <!-- ====== PoE table + NIC sidebar ====== -->
+            <!-- ====== PoE table (NIC uptimes moved to Camera Connectivity v0.5.0) ====== -->
             <Grid Grid.Row="3" Margin="0,0,0,16">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="2*" />
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="*" MinWidth="280" />
+                    <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
                 <!-- PoE -->
@@ -113,7 +143,28 @@
                                        Foreground="{StaticResource MutedForegroundBrush}"
                                        VerticalAlignment="Center" />
                         </DockPanel>
+                        <!-- Empty-state copy when the SmartPoE driver bundle isn't installed (v0.5.0). -->
+                        <Border DockPanel.Dock="Top"
+                                Visibility="{Binding PoeAvailable, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"
+                                Background="{StaticResource WarnBgBrush}"
+                                BorderBrush="{StaticResource YellowBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="12,10"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="PoE telemetry not available"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource YellowBrush}"
+                                           Margin="0,0,0,4" />
+                                <TextBlock Text="{Binding PoeUnavailableReason}"
+                                           Foreground="{StaticResource ForegroundBrush}"
+                                           TextWrapping="Wrap"
+                                           FontSize="12" />
+                            </StackPanel>
+                        </Border>
                         <DataGrid ItemsSource="{Binding PoePorts}"
+                                  Visibility="{Binding PoeAvailable, Converter={StaticResource BoolToVis}}"
                                   Background="Transparent"
                                   BorderThickness="0"
                                   HeadersVisibility="Column"
@@ -163,30 +214,6 @@
                     </DockPanel>
                 </Border>
 
-                <!-- NIC sidebar -->
-                <Border Grid.Column="2" Style="{StaticResource Card}">
-                    <StackPanel>
-                        <TextBlock Text="NIC Link Uptime" Style="{StaticResource SectionTitle}" Margin="0,0,0,4" />
-                        <TextBlock Text="How long each adapter has been linked at its current speed."
-                                   Style="{StaticResource MutedLabel}" Margin="0,0,0,12" TextWrapping="Wrap" />
-                        <ItemsControl ItemsSource="{Binding NicUptimes}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{Binding Adapter}" Foreground="{StaticResource ForegroundBrush}" />
-                                        <TextBlock Grid.Column="1" Text="{Binding Speed}" Style="{StaticResource MutedLabel}" Margin="8,0" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="2" Text="{Binding Uptime}" Foreground="{Binding UptimeColor}" FontWeight="SemiBold" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
             </Grid>
 
             <!-- ====== Live Log (collapsed expander — matches Camera Connectivity) ====== -->

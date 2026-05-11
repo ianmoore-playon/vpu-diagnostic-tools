@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Management;
-using System.Net.NetworkInformation;
 using Pulse.WPF.Models;
 
 namespace Pulse.WPF.Services
@@ -14,6 +13,18 @@ namespace Pulse.WPF.Services
     /// </summary>
     public class HardwareService : IHardwareService
     {
+        // Lazy-init so a missing SmartPoE.dll doesn't fault during DI / unit
+        // tests. The Hardware panel only needs the service at refresh time.
+        private static readonly System.Lazy<IPoeTelemetryService> _poe =
+            new System.Lazy<IPoeTelemetryService>(() => new WindowsPoeTelemetryService());
+
+        /// <inheritdoc />
+        public bool PoeTelemetryAvailable => _poe.Value.IsAvailable;
+        /// <inheritdoc />
+        public string PoeTelemetryUnavailableReason => _poe.Value.UnavailableReason;
+        /// <inheritdoc />
+        public PoeBudgetReading GetPoeBudget() => _poe.Value.GetBudget();
+
         public string GetGpuName()
         {
             try
@@ -82,43 +93,13 @@ namespace Pulse.WPF.Services
             catch { return false; }
         }
 
-        // NIC uptime — Win32_PerfFormattedData_Tcpip_NetworkInterface doesn't
-        // surface "link came up at..." cleanly. Approximate it from the
-        // adapter's BytesTotalPersec sustained-positive observation, but
-        // fall back to a coarse "up vs down" report. Matches the
-        // ">48h" / "Xh Ym" buckets used by the WinForms side, which only
-        // gets precise data via the Camera Connectivity NIC driver shim.
-        public List<NicUptime> GetNicUptimes()
-        {
-            var rows = new List<NicUptime>();
-            try
-            {
-                foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
-                {
-                    if (nic.OperationalStatus != OperationalStatus.Up) continue;
-                    if (nic.NetworkInterfaceType != NetworkInterfaceType.Ethernet &&
-                        nic.NetworkInterfaceType != NetworkInterfaceType.GigabitEthernet)
-                        continue;
-                    // We don't have a true uptime number here — report ">48h" as the
-                    // optimistic default, mirroring the WinForms behaviour when the
-                    // PoE NIC driver shim is unavailable. Real uptime requires the
-                    // Camera Connectivity runspace's $sync.NicLinkUptimes cache.
-                    // TODO: wire up to the PoE NIC driver shim once that's ported.
-                    rows.Add(new NicUptime { Name = nic.Name, Uptime = ">48h" });
-                }
-            }
-            catch { }
-            return rows;
-        }
-
-        // PoE telemetry requires the proprietary NIC driver shim used by the
-        // WinForms Camera Connectivity panel. Returning an empty list is the
-        // correct behaviour on machines without the shim — the WinForms path
-        // does the same when $sync.PoeAvailable is false.
+        // PoE telemetry, real port (v0.5.0). Returns an empty list when the
+        // SmartPoE.dll driver bundle isn't installed; the Hardware VM picks
+        // up the empty state via PoeTelemetryAvailable / Reason.
         public List<PoePortReading> GetPoePortReadings()
         {
-            // TODO: integrate with the PoE NIC driver shim when ported.
-            return new List<PoePortReading>();
+            try { return _poe.Value.GetPortReadings(); }
+            catch { return new List<PoePortReading>(); }
         }
     }
 }

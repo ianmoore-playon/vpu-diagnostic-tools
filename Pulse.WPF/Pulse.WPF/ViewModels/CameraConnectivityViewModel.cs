@@ -343,6 +343,7 @@ namespace Pulse.WPF.ViewModels
                     // ---- Duration / Last-seen line ----
                     port.DurationText = ComputeDurationLine(st, snap);
                     port.LastSeenText = port.DurationText;
+                    port.Uptime       = ComputeUptimeLine(st, snap);
 
                     // Legacy fields — keep populated for any old binding paths.
                     port.Speed = FormatSpeed(snap.LinkSpeedBps);
@@ -481,7 +482,7 @@ namespace Pulse.WPF.ViewModels
             port.ErrorColor = StatusHelpers.Brush("MutedForegroundBrush");
             port.Errors = "—"; port.ErrorsText = ""; port.ErrorsColor = port.ErrorColor;
             port.Speed = "—"; port.Device = "No cable"; port.DeviceColor = port.StatusColor;
-            port.DurationText = ""; port.LastSeenText = "";
+            port.DurationText = ""; port.LastSeenText = ""; port.Uptime = "";
             port.IsStale = false; port.TileOpacity = 1.0; port.IsPulsing = false;
         }
 
@@ -848,6 +849,21 @@ namespace Pulse.WPF.ViewModels
             if (bps >= 1_000_000_000UL) return $"{bps / 1_000_000_000UL} Gbps";
             if (bps >= 1_000_000UL)     return $"{bps / 1_000_000UL} Mbps";
             return $"{bps} bps";
+        }
+
+        // Total link uptime — coarser, day-scale render of the same source
+        // CameraNicMonitor tracks. Moved here from the Hardware panel in
+        // v0.5.0 so link-state data lives on the link-state tab. Returns
+        // "" when the port is not currently up.
+        private static string ComputeUptimeLine(PortState st, CameraNicSnapshot snap)
+        {
+            if (!snap.IsUp || !st.LinkUpSince.HasValue) return "";
+            var d = DateTime.UtcNow - st.LinkUpSince.Value;
+            if (d.TotalSeconds < 0) d = TimeSpan.Zero;
+            if (d.TotalDays >= 2)     return $"Uptime: {(int)d.TotalDays}d {d.Hours}h";
+            if (d.TotalHours >= 2)    return $"Uptime: {(int)d.TotalHours}h {d.Minutes}m";
+            if (d.TotalMinutes >= 1)  return $"Uptime: {(int)d.TotalMinutes}m";
+            return $"Uptime: {(int)d.TotalSeconds}s";
         }
 
         private static string ComputeDurationLine(PortState st, CameraNicSnapshot snap)

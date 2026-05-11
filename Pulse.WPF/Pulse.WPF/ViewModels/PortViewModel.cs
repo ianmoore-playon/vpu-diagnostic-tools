@@ -98,6 +98,16 @@ namespace Pulse.WPF.ViewModels
         private string _durationText = "";
         public string DurationText { get => _durationText; set => Set(ref _durationText, value); }
 
+        // ---- Total uptime since first-seen-up ----
+        // Moved here from the Hardware panel (v0.5.0). DurationText resets
+        // on every link flap; Uptime is "how long this port has been up
+        // *continuously*" which, today, is exactly the same value since
+        // CameraNicMonitor doesn't preserve LinkUpSince across flaps. When a
+        // future revision starts tracking a first-seen-up timestamp this
+        // surface stays — only the VM source needs to change.
+        private string _uptime = "";
+        public string Uptime { get => _uptime; set => Set(ref _uptime, value); }
+
         // ---- Last-seen hint (kept for back-compat; new tile uses DurationText) ----
         private string _lastSeenText = "";
         public string LastSeenText { get => _lastSeenText; set => Set(ref _lastSeenText, value); }
