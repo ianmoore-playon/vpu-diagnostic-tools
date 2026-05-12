@@ -246,6 +246,36 @@
     </Style>
 
     <!-- ============================================================ -->
+    <!-- Top-bar action button (v0.5.4).                              -->
+    <!-- Used for every header-row action across panels: Refresh,    -->
+    <!-- Copy as text, Open Reports Folder, etc. Outlined, 36 px tall,-->
+    <!-- 12 pt label, 16 px icon, 8 px right margin between buttons. -->
+    <!-- Smaller than the legacy bottom-bar 44 px raised CTAs so the  -->
+    <!-- buttons sit comfortably next to the status pill without     -->
+    <!-- competing with it visually.                                 -->
+    <!-- ============================================================ -->
+    <Style x:Key="TopBarOutlinedButton" TargetType="Button"
+           BasedOn="{StaticResource MaterialDesignOutlinedButton}">
+        <Setter Property="MinHeight" Value="36" />
+        <Setter Property="Padding" Value="14,6" />
+        <Setter Property="Margin" Value="0,0,8,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+
+    <!-- Primary top-bar action — the panel's "Refresh" / "Run Test". -->
+    <!-- Same shape as TopBarOutlinedButton but with an accent-coloured-->
+    <!-- border + bold label so a tech reads it as the primary action -->
+    <!-- without it shouting like a raised CTA.                       -->
+    <Style x:Key="TopBarPrimaryButton" TargetType="Button"
+           BasedOn="{StaticResource TopBarOutlinedButton}">
+        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        <Setter Property="BorderThickness" Value="2" />
+        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <!-- ============================================================ -->
     <!-- Reusable modal dialog window style (v0.5.2 §6).               -->
     <!-- First modal in the project — keyed PulseDialogWindow so       -->
     <!-- future settings / about / etc. dialogs can re-use it.         -->

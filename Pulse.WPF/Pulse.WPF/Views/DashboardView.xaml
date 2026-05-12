@@ -192,19 +192,15 @@
                 <RowDefinition Height="Auto" />   <!-- Quick Nav (hub tiles) -->
             </Grid.RowDefinitions>
 
-            <!-- ====== Header ======
-                 Title left, status pill far-right, Refresh button between
-                 them. Refresh re-runs the full snapshot (NIC, services,
-                 internet, volumes) — the live tick only re-reads the cheap
-                 gauges, so this is the button techs use to pick up changes
-                 outside the gauges. -->
+            <!-- ====== Header (v0.5.4 top-bar buttons) ======
+                 Title left, status pill far-right, action buttons docked
+                 between the title and the pill — the place a tech reaches
+                 for actions per v0.5.4 field feedback. Status pill docks
+                 first so the action buttons sit between title + pill, not
+                 inside the pill's container. -->
             <DockPanel Grid.Row="0" Margin="{StaticResource Spacing.PageLg}" LastChildFill="True">
-                <!-- Border + Button get explicit VerticalAlignment="Center" so
-                     they don't stretch to fill the docked area, which pushed
-                     the chip's content to the top of the row and made the
-                     dot read mis-aligned against the text. -->
                 <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
-                        Background="{Binding StatusBg}" Margin="12,0,0,0"
+                        Background="{Binding StatusBg}" Margin="8,0,0,0"
                         VerticalAlignment="Center"
                         AutomationProperties.Name="Overall status"
                         AutomationProperties.HelpText="{Binding StatusLabel}">
@@ -215,19 +211,23 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
-                <Button DockPanel.Dock="Right"
-                        Command="{Binding RefreshCommand}"
-                        Style="{StaticResource MaterialDesignOutlinedButton}"
-                        Padding="16,6" VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal">
-                        <md:PackIcon Kind="Refresh" Width="16" Height="16" VerticalAlignment="Center" />
-                        <TextBlock Text="Refresh" Margin="{StaticResource Spacing.InlineLeft}" />
-                    </StackPanel>
-                </Button>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Command="{Binding RefreshCommand}"
+                            Style="{StaticResource TopBarPrimaryButton}"
+                            ToolTip="Re-run the full snapshot (NIC, services, internet, volumes).">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="Refresh" Width="16" Height="16" VerticalAlignment="Center"
+                                         Foreground="{StaticResource AccentBrush}" />
+                            <TextBlock Text="Refresh" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Dashboard" Style="{StaticResource PageTitle}" />
+                    <TextBlock Text="Dashboard" Style="{StaticResource PageTitle}"
+                               TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="{Binding VpuLabel}"
-                               Style="{StaticResource PageSubtitle}" />
+                               Style="{StaticResource PageSubtitle}"
+                               TextTrimming="CharacterEllipsis" />
                 </StackPanel>
             </DockPanel>
 
