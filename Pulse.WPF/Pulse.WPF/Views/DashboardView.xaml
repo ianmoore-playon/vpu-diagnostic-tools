@@ -183,6 +183,7 @@
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />   <!-- Header strip (title + Refresh + pill) -->
+                <RowDefinition Height="Auto" />   <!-- v0.5.6 baseline banner -->
                 <RowDefinition Height="Auto" />   <!-- Empty-state card (non-VPU host) -->
                 <RowDefinition Height="Auto" />   <!-- Active Findings (top of page so issues land first) -->
                 <RowDefinition Height="Auto" />   <!-- Identity / Pixellot SW / Last Run cards -->
@@ -212,6 +213,20 @@
                     </StackPanel>
                 </Border>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- v0.5.6 — Re-run Baseline button. Fires the same
+                         orchestrator that runs once on app launch. The
+                         AsyncCommand disables itself while a run is in
+                         flight, so the button greys out for the duration. -->
+                    <Button Command="{Binding RerunBaselineCommand}"
+                            Style="{StaticResource TopBarOutlinedButton}"
+                            Margin="0,0,8,0"
+                            ToolTip="Re-run the startup baseline across all panels.">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="PlayCircleOutline" Width="16" Height="16" VerticalAlignment="Center"
+                                         Foreground="{StaticResource AccentBrush}" />
+                            <TextBlock Text="Re-run Baseline" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                     <Button Command="{Binding RefreshCommand}"
                             Style="{StaticResource TopBarPrimaryButton}"
                             ToolTip="Re-run the full snapshot (NIC, services, internet, volumes).">
@@ -231,12 +246,62 @@
                 </StackPanel>
             </DockPanel>
 
+            <!-- ====== v0.5.6 Baseline Banner ======
+                 Shows while the startup baseline orchestrator is running
+                 ("Gathering baseline — Network probing (4/8 done)…") and
+                 swaps to a "complete" message with a Dismiss button after
+                 Completed fires. Auto-dismisses after 10 s — see
+                 DashboardViewModel.OnBaselineCompleted. Banner is collapsed
+                 entirely when neither IsBaselineRunning nor BaselineComplete
+                 is true (i.e. before the first run + after dismissal). -->
+            <Border Grid.Row="1" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
+                    Visibility="{Binding IsBaselineBannerVisible, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <md:PackIcon DockPanel.Dock="Left" Kind="Speedometer"
+                                 Width="22" Height="22"
+                                 Foreground="{StaticResource AccentBrush}"
+                                 VerticalAlignment="Center" Margin="0,0,16,0" />
+                    <!-- Dismiss button only visible after Completed fires.
+                         Manual click here also stops the auto-dismiss timer. -->
+                    <Button DockPanel.Dock="Right"
+                            Command="{Binding DismissBaselineBannerCommand}"
+                            Style="{StaticResource MaterialDesignFlatButton}"
+                            Padding="8,2,8,2" MinWidth="0"
+                            Visibility="{Binding BaselineComplete, Converter={StaticResource BoolToVis}}"
+                            ToolTip="Dismiss this banner.">
+                        <StackPanel Orientation="Horizontal">
+                            <md:PackIcon Kind="Close" Width="14" Height="14" VerticalAlignment="Center"
+                                         Foreground="{StaticResource MutedForegroundBrush}" />
+                            <TextBlock Text="Dismiss" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       Foreground="{StaticResource MutedForegroundBrush}" />
+                        </StackPanel>
+                    </Button>
+                    <StackPanel>
+                        <!-- Running caption — shown while IsBaselineRunning. -->
+                        <TextBlock Text="{Binding BaselineStatusText}"
+                                   FontFamily="Segoe UI Semibold" FontSize="14"
+                                   Foreground="{StaticResource ForegroundBrush}"
+                                   Visibility="{Binding IsBaselineRunning, Converter={StaticResource BoolToVis}}" />
+                        <!-- Completed caption — shown while BaselineComplete
+                             before the 10 s auto-dismiss timer fires. -->
+                        <TextBlock Text="{Binding BaselineResultText}"
+                                   FontFamily="Segoe UI Semibold" FontSize="14"
+                                   Foreground="{StaticResource ForegroundBrush}"
+                                   Visibility="{Binding BaselineComplete, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="Running diagnostics across all panels…"
+                                   Foreground="{StaticResource MutedForegroundBrush}"
+                                   FontSize="{StaticResource FontSize.Body}" Margin="0,4,0,0"
+                                   Visibility="{Binding IsBaselineRunning, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
             <!-- ====== Empty-state card (non-VPU host) ======
                  Top-of-page banner that fires when DashboardService can't
                  find Pixellot at all (registry blank, no agent log, no
                  services). Stops a clean dev box from masquerading as a
                  healthy VPU. (UX review rec #12.) -->
-            <Border Grid.Row="1" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
+            <Border Grid.Row="2" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
                     Visibility="{Binding IsNonVpuHost, Converter={StaticResource BoolToVis}}">
                 <DockPanel>
                     <md:PackIcon DockPanel.Dock="Left" Kind="InformationOutline"
@@ -261,7 +326,7 @@
                  should not advertise an empty issues card. CardElev2 gives
                  it a slight lift so the eye registers it before the
                  identity / status rows below. -->
-            <Border Grid.Row="2" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
+            <Border Grid.Row="3" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
                     Visibility="{Binding Findings.Count, Converter={StaticResource CountToVis}}">
                 <StackPanel>
                     <DockPanel>
@@ -287,14 +352,27 @@
                                    Foreground="{StaticResource ForegroundBrush}"
                                    Margin="12,0,0,0" VerticalAlignment="Center" />
                     </DockPanel>
-                    <ItemsControl ItemsSource="{Binding Findings}"
+                    <!-- v0.5.6 — render the top-10 by severity inline;
+                         the remainder lives in the expander below so a
+                         long baseline (e.g. 20+ event-viewer warnings)
+                         doesn't push the rest of the dashboard off-screen.
+                         Both lists share the same row template. -->
+                    <ItemsControl ItemsSource="{Binding TopFindings}"
                                   ItemTemplate="{StaticResource FindingRowTemplate}"
                                   Margin="{StaticResource Spacing.Card}" />
+                    <Expander Header="{Binding OverflowFindingsCount, StringFormat='{}{0} more findings'}"
+                              Margin="16,0,16,8"
+                              Foreground="{StaticResource MutedForegroundBrush}"
+                              Visibility="{Binding HasOverflowFindings, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl ItemsSource="{Binding OverflowFindings}"
+                                      ItemTemplate="{StaticResource FindingRowTemplate}"
+                                      Margin="0,4,0,4" />
+                    </Expander>
                 </StackPanel>
             </Border>
 
             <!-- ====== Identity / Pixellot SW / Last Run (3-up) ====== -->
-            <UniformGrid Grid.Row="3" Rows="1" Columns="3" Margin="{StaticResource Spacing.PageLg}">
+            <UniformGrid Grid.Row="4" Rows="1" Columns="3" Margin="{StaticResource Spacing.PageLg}">
                 <!-- VPU Identity -->
                 <Border Style="{StaticResource Card}" Margin="0,0,8,0">
                     <StackPanel>
@@ -387,7 +465,7 @@
             </UniformGrid>
 
             <!-- ====== System Status (gauges) ====== -->
-            <Border Grid.Row="4" Style="{StaticResource Card}" Margin="{StaticResource Spacing.PageLg}">
+            <Border Grid.Row="5" Style="{StaticResource Card}" Margin="{StaticResource Spacing.PageLg}">
                 <StackPanel>
                     <TextBlock Text="SYSTEM STATUS" Style="{StaticResource CardCaption}" />
                     <Grid>
@@ -505,7 +583,7 @@
             </Border>
 
             <!-- ====== NIC ports + Network config (2-up) ====== -->
-            <Grid Grid.Row="5" Margin="{StaticResource Spacing.PageLg}">
+            <Grid Grid.Row="6" Margin="{StaticResource Spacing.PageLg}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="16" />
@@ -598,7 +676,7 @@
             </Grid>
 
             <!-- ====== Storage + Pixellot Services (2-up) ====== -->
-            <Grid Grid.Row="6" Margin="{StaticResource Spacing.PageLg}">
+            <Grid Grid.Row="7" Margin="{StaticResource Spacing.PageLg}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="16" />
@@ -645,7 +723,7 @@
             <!-- ====== Quick Nav (hub tiles) — bottom row ======
                  Refresh button moved to the page header. Caption kept above
                  the tiles so the section is still labelled. -->
-            <Border Grid.Row="7" Style="{StaticResource Card}" Padding="16,12,16,12">
+            <Border Grid.Row="8" Style="{StaticResource Card}" Padding="16,12,16,12">
                 <StackPanel>
                     <TextBlock Text="QUICK NAV"
                                FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Small}"

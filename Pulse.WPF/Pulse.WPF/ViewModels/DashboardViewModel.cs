@@ -110,6 +110,27 @@ namespace Pulse.WPF.ViewModels
         public ObservableCollection<ServiceStatusRow> Services { get; } = new ObservableCollection<ServiceStatusRow>();
         public ObservableCollection<DashboardFinding> Findings { get; } = new ObservableCollection<DashboardFinding>();
 
+        // v0.5.6 — split Findings into a top-10 list rendered inline + an
+        // overflow list shown inside an expander below the inline list. Both
+        // are derived from Findings; consumers re-call RebuildFindingViews()
+        // after mutating Findings. (Severity-ranked: Critical -> Warning ->
+        // Info; ties broken by panel order via the merge step's append
+        // sequence.)
+        public ObservableCollection<DashboardFinding> TopFindings { get; } =
+            new ObservableCollection<DashboardFinding>();
+        public ObservableCollection<DashboardFinding> OverflowFindings { get; } =
+            new ObservableCollection<DashboardFinding>();
+        private int _overflowFindingsCount;
+        public int OverflowFindingsCount
+        {
+            get => _overflowFindingsCount;
+            set { if (Set(ref _overflowFindingsCount, value)) OnPropertyChanged(nameof(HasOverflowFindings)); }
+        }
+        public bool HasOverflowFindings => _overflowFindingsCount > 0;
+
+        // Cap kept here so the constant has a single source of truth.
+        private const int ActiveFindingsCap = 10;
+
         // ---- Dashboard log sink -------------------------------------------
         // Lets formerly-silent catches surface low-severity log lines instead
         // of swallowing failures. Capped at 200 entries.
@@ -216,6 +237,16 @@ namespace Pulse.WPF.ViewModels
             // the button used to silently no-op (rec #11 from the UX review).
             OpenLastReportCommand  = new RelayCommand(OpenLastReport, () => HasLastRun);
             RefreshCommand         = new AsyncCommand(RefreshAsync);
+            // Re-run only fires when a baseline isn't already in flight —
+            // BaselineRunner has its own re-entrancy guard but disabling
+            // the button avoids a confusing "click did nothing" UX.
+            RerunBaselineCommand   = new AsyncCommand(RerunBaselineAsync,
+                                                     () => !IsBaselineRunning && _baseline != null);
+            DismissBaselineBannerCommand = new RelayCommand(() =>
+            {
+                StopBannerAutoDismissTimer();
+                BaselineComplete = false;
+            });
 
             // Route DashboardService's formerly-silent catches into the VM
             // log sink (v0.5.0) so collection failures finally show up.
@@ -232,15 +263,261 @@ namespace Pulse.WPF.ViewModels
             _liveTimer.Tick += OnLiveTick;
         }
 
-        // v0.5.6 — handle reference to the BaselineRunner. The full banner
-        // wiring (ProgressChanged / Completed event subscriptions, aggregation
-        // of panel Findings) lives in the next commit; this stub establishes
-        // the API surface so App.xaml.cs + MainViewModel can resolve the link
-        // without a circular-reference workaround.
+        // v0.5.6 — banner state. Drives the Dashboard banner row that sits
+        // above Active Findings. IsBaselineRunning shows the "Gathering
+        // baseline…" caption + spinner; BaselineComplete swaps to the
+        // "complete" caption with a Dismiss button + 10 s auto-dismiss.
+        private bool _isBaselineRunning;
+        public bool IsBaselineRunning
+        {
+            get => _isBaselineRunning;
+            set { if (Set(ref _isBaselineRunning, value)) OnPropertyChanged(nameof(IsBaselineBannerVisible)); }
+        }
+
+        private bool _baselineComplete;
+        public bool BaselineComplete
+        {
+            get => _baselineComplete;
+            set { if (Set(ref _baselineComplete, value)) OnPropertyChanged(nameof(IsBaselineBannerVisible)); }
+        }
+
+        // Composite visibility — banner shows while running OR for the 10 s
+        // after completion. Dismissed by user click or by the auto-dismiss
+        // timer flipping BaselineComplete back to false.
+        public bool IsBaselineBannerVisible => IsBaselineRunning || BaselineComplete;
+
+        private string _baselineStatusText = "";
+        public string BaselineStatusText { get => _baselineStatusText; set => Set(ref _baselineStatusText, value); }
+
+        private string _baselineResultText = "";
+        public string BaselineResultText { get => _baselineResultText; set => Set(ref _baselineResultText, value); }
+
+        // Re-run command — disabled while a baseline is already running so a
+        // double-click can't kick a second pass. RelayCommand re-evaluates
+        // CanExecute via CommandManager.RequerySuggested.
+        public ICommand RerunBaselineCommand { get; }
+        public ICommand DismissBaselineBannerCommand { get; }
+
+        // v0.5.6 — wire the BaselineRunner's events into the banner properties
+        // + the post-completion findings aggregation. Subscribed exactly once
+        // by MainViewModel after construction; no need to support multiple
+        // attaches.
         private Pulse.WPF.Helpers.BaselineRunner _baseline;
+        private System.Windows.Threading.DispatcherTimer _bannerAutoDismissTimer;
         public void AttachBaseline(Pulse.WPF.Helpers.BaselineRunner runner)
         {
+            if (runner == null) return;
             _baseline = runner;
+            _baseline.ProgressChanged += OnBaselineProgress;
+            _baseline.Completed       += OnBaselineCompleted;
+            // RerunBaselineCommand's CanExecute reads _baseline != null;
+            // force a requery now so the button enables after attach.
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        }
+
+        // ProgressChanged fires on a background thread (from BaselineRunner's
+        // own Task) — marshal onto the dispatcher because we touch observable
+        // properties that the UI binds to.
+        private void OnBaselineProgress(BaselineProgress p)
+        {
+            void apply()
+            {
+                IsBaselineRunning = true;
+                BaselineComplete  = false;
+                StopBannerAutoDismissTimer();
+                var status = string.IsNullOrEmpty(p.CurrentPanel)
+                    ? p.Status
+                    : $"{p.CurrentPanel} {p.Status.ToLowerInvariant()}";
+                BaselineStatusText =
+                    $"Gathering baseline — {status} ({p.Completed}/{p.Total} done)";
+            }
+            var app = System.Windows.Application.Current;
+            if (app != null && app.Dispatcher.CheckAccess()) apply();
+            else app?.Dispatcher.Invoke(apply);
+        }
+
+        private void OnBaselineCompleted(BaselineResult r)
+        {
+            void apply()
+            {
+                IsBaselineRunning = false;
+                BaselineComplete  = true;
+
+                // Aggregate panel Findings into the Dashboard's Findings
+                // collection (tagged with [Panel] prefix), then sort + cap
+                // for the top-10 inline list.
+                AggregateBaselineFindings();
+
+                var totalFindings = Findings.Count;
+                if (r.Cancelled)
+                {
+                    BaselineResultText = $"Baseline cancelled — {totalFindings} finding(s) detected";
+                }
+                else if (r.FailedCount > 0)
+                {
+                    var panels = string.Join(", ", r.FailedPanels ?? new System.Collections.Generic.List<string>());
+                    BaselineResultText =
+                        $"Baseline complete with errors — {totalFindings} finding(s), {r.FailedCount} panel(s) failed" +
+                        (string.IsNullOrEmpty(panels) ? "" : $" ({panels})");
+                }
+                else
+                {
+                    BaselineResultText = $"Baseline complete — {totalFindings} finding(s) detected";
+                }
+
+                // 10 s auto-dismiss — DispatcherTimer (UI-thread) so we can
+                // safely flip BaselineComplete back from the tick handler.
+                StopBannerAutoDismissTimer();
+                _bannerAutoDismissTimer = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromSeconds(10),
+                };
+                _bannerAutoDismissTimer.Tick += (s, e) =>
+                {
+                    StopBannerAutoDismissTimer();
+                    BaselineComplete = false;
+                };
+                _bannerAutoDismissTimer.Start();
+            }
+            var app = System.Windows.Application.Current;
+            if (app != null && app.Dispatcher.CheckAccess()) apply();
+            else app?.Dispatcher.Invoke(apply);
+        }
+
+        private void StopBannerAutoDismissTimer()
+        {
+            if (_bannerAutoDismissTimer == null) return;
+            try { _bannerAutoDismissTimer.Stop(); } catch { }
+            _bannerAutoDismissTimer = null;
+        }
+
+        // Walk every panel VM's Findings collection, project each into a
+        // DashboardFinding tagged with [Panel] prefix, append to Findings,
+        // sort by severity descending, then rebuild Top/Overflow views.
+        // Panel-order tie-break: appended in fixed sequence below so a stable
+        // sort within severity preserves it.
+        private void AggregateBaselineFindings()
+        {
+            // Don't blow away DashboardService's own findings — instead merge
+            // panel findings onto the existing list. The downstream
+            // RebuildFindingViews() applies the 10-cap.
+            var mvm = ResolveMainViewModel();
+            if (mvm == null) { RebuildFindingViews(); return; }
+
+            // Helper local to project + append.
+            void Merge(string panelLabel, string targetNav,
+                       System.Collections.Generic.IEnumerable<Pulse.WPF.Models.Finding> src)
+            {
+                if (src == null) return;
+                foreach (var f in src)
+                {
+                    if (f == null) continue;
+                    Findings.Add(new DashboardFinding
+                    {
+                        Severity  = MapFindingSeverity(f.Severity),
+                        Title     = $"[{panelLabel}] {f.Title}",
+                        Detail    = f.Recommendation ?? "",
+                        Source    = panelLabel,
+                        TargetNav = targetNav ?? "",
+                    });
+                }
+            }
+
+            // Order here defines the panel-order tie-break for equal
+            // severities. Mirrors the sidebar / dashboard quick-nav order.
+            Merge("Network",      "Network",      mvm.Network?.Findings);
+            Merge("Camera",       "Camera",       mvm.Camera?.Findings);
+            Merge("Hardware",     "Hardware",     mvm.Hardware?.Findings);
+            Merge("Services",     "Services",     mvm.Services?.Findings);
+            Merge("Disk Health",  "DiskHealth",   mvm.DiskHealth?.Findings);
+            Merge("Event Viewer", "EventViewer",  mvm.EventViewer?.Findings);
+
+            // Stable severity sort (Critical first, Warning, Info/neutral,
+            // ok). Use IndexOf to preserve append order for ties.
+            var snapshot = new System.Collections.Generic.List<DashboardFinding>(Findings);
+            int Rank(string s) =>
+                s == "fail" ? 3 :
+                s == "warn" ? 2 :
+                s == "ok"   ? 1 :
+                              0;
+            snapshot.Sort((a, b) =>
+            {
+                int diff = Rank(b.Severity) - Rank(a.Severity);
+                return diff;
+            });
+            Findings.Clear();
+            foreach (var f in snapshot) Findings.Add(f);
+
+            RebuildFindingViews();
+            UpdatePill();
+        }
+
+        // DashboardFinding uses string severities ("ok"/"warn"/"fail"). Panel
+        // Findings use the FindingSeverity enum. Map for the merge step.
+        private static string MapFindingSeverity(Pulse.WPF.Models.FindingSeverity s)
+        {
+            switch (s)
+            {
+                case Pulse.WPF.Models.FindingSeverity.Critical: return "fail";
+                case Pulse.WPF.Models.FindingSeverity.Warning:  return "warn";
+                default:                                          return "neutral";
+            }
+        }
+
+        // Resolve the parent MainViewModel via the live MainWindow.
+        // DashboardViewModel is constructed by MainViewModel and stored as
+        // the panel VM; we don't keep a back-reference (would invite a
+        // cycle). The window's DataContext is always the MainViewModel.
+        private ViewModels.MainViewModel ResolveMainViewModel()
+        {
+            try
+            {
+                return System.Windows.Application.Current?.MainWindow?.DataContext
+                    as ViewModels.MainViewModel;
+            }
+            catch { return null; }
+        }
+
+        // Bound to the "Re-run Baseline" outlined button on the Dashboard
+        // top bar. Runs on a background task so the UI thread stays
+        // responsive while the runner walks the panels.
+        private async Task RerunBaselineAsync()
+        {
+            if (_baseline == null) return;
+            // Don't await on the UI thread — the runner internally marshals
+            // dispatcher work; we just need to keep the button responsive.
+            await Task.Run(async () =>
+            {
+                try { await _baseline.RunAsync().ConfigureAwait(false); }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        AppLogFile.Instance.WriteLine("Baseline", "Fail",
+                            $"Re-run failed: {ex.Message}");
+                    }
+                    catch { }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Re-derive <see cref="TopFindings"/> + <see cref="OverflowFindings"/>
+        /// from the current <see cref="Findings"/> collection. Caller must
+        /// have already ordered Findings by severity desc.
+        /// </summary>
+        public void RebuildFindingViews()
+        {
+            TopFindings.Clear();
+            OverflowFindings.Clear();
+            int n = 0;
+            foreach (var f in Findings)
+            {
+                if (n < ActiveFindingsCap) TopFindings.Add(f);
+                else                       OverflowFindings.Add(f);
+                n++;
+            }
+            OverflowFindingsCount = OverflowFindings.Count;
         }
 
         // Started by MainViewModel when the Dashboard becomes the current view;
@@ -535,9 +812,14 @@ namespace Pulse.WPF.ViewModels
             Volumes.Clear();
             if (s.Volumes  != null) foreach (var v   in s.Volumes)  Volumes.Add(v);
 
-            // Findings
+            // Findings — replace wholesale from the snapshot. The baseline
+            // orchestrator merges panel Findings on top after Completed
+            // (see AggregateBaselineFindings), so a panel Refresh that
+            // re-fires this method will repaint just the DashboardService
+            // rows — that's the same behaviour as before the v0.5.6 merge.
             Findings.Clear();
             if (s.Findings != null) foreach (var f in s.Findings) Findings.Add(f);
+            RebuildFindingViews();
 
             // Mark the first snapshot as applied so the pill stops reading
             // "Checking…" — UpdatePill respects this flag.
