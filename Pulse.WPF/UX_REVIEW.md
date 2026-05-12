@@ -745,3 +745,131 @@ tech has a continuous audit trail.
 - All theme keys referenced from the App Log sub-card (`Card`,
   `LogBgBrush`, `BorderColBrush`, `MutedForegroundBrush`,
   `ForegroundBrush`, `TopBarOutlinedButton`) verified present.
+
+## v0.5.6 — startup baseline runner
+
+### Problem
+Techs landing on the Dashboard at app launch saw stale data until they
+navigated to each panel in turn — each panel's `RefreshAsync` only
+fired on tab visit. The first-impression "everything is healthy" pill
+on the Dashboard was based on whatever the previous session had cached
+rather than a fresh poll. The Active Findings card on the Dashboard
+also only showed `DashboardService`-detected items, missing the
+panel-specific Findings (Disk Health SMART warnings, Hardware missing
+peripherals, Event Viewer recent errors, etc.) until the tech walked
+each panel.
+
+### Shape
+A dedicated orchestrator, `Helpers/BaselineRunner`, runs once on every
+app launch and exposes the same entry point to a "Re-run Baseline"
+button on the Dashboard top bar.
+
+**Phases:**
+1. *Phase 1 (parallel).* `SystemOverview`, `Hardware`, `Disk Health`,
+   `Services`, `Event Viewer` — cheap WMI reads, all kicked together
+   via `Task.WhenAll`.
+2. *Phase 2 (sequential).* `Network.RunTestAsync` — the heavy 10-20 s
+   wire probe. Kept off Phase 1 so the probe + parallel WMI don't
+   saturate small fanless VPU boards.
+3. *Phase 3 (overlapping with Phase 2 finish).* `Camera Connectivity`
+   waits ~2 monitor ticks (`Task.Delay(2200 ms)` — the monitor doesn't
+   currently expose a `TickCount`, so we use wall-clock and the
+   2 s tick interval as the budget) for the live-monitor tiles to
+   populate before snapshotting.
+4. *Phase 4 (last).* `Dashboard.RefreshAsync` runs once everything
+   else has finished — so its snapshot sees the freshly-written per-
+   run reports from Phases 1-3 and the Latest Diagnostic Run card
+   pulls the newest file.
+
+**Failure isolation.** Every panel call sits inside a per-panel try/
+catch. A single WMI access denied / network hang doesn't block the
+others; the failure is logged to `AppLogFile` and added to
+`BaselineResult.FailedPanels` for the banner caption.
+
+**Single-instance guard.** `BaselineRunner.IsRunning` is checked under
+a lock so the startup kick + the Dashboard Re-run button can't run
+concurrently; a re-entrant call is a logged no-op.
+
+### Banner UX
+A new banner row sits above the empty-state card on the Dashboard
+(`Grid.Row="1"` of the Dashboard's outer grid). While running it
+reads:
+
+    Gathering baseline — Network running (4/8 done)
+    Running diagnostics across all panels…
+
+On completion it swaps to:
+
+    Baseline complete — 3 finding(s) detected           [Dismiss]
+
+…or, on partial completion:
+
+    Baseline complete with errors — 3 finding(s), 1 panel(s) failed (Network)
+
+The banner auto-dismisses after 10 s via a `DispatcherTimer`. The
+Dismiss button cancels the timer and hides the banner immediately.
+
+### Active Findings cap + overflow expander
+Findings from every panel are projected into the Dashboard's existing
+`DashboardFinding` collection — each tagged with a `[Panel]` prefix
+on the title and a `TargetNav` value so clicking the row navigates to
+the panel that emitted it. The merged list is sorted by severity
+desc (Critical → Warning → Info/neutral), with stable panel-order
+tie-break. The top 10 land in `TopFindings` (rendered inline); the
+remainder lives in `OverflowFindings` and surfaces inside an Expander
+with the header `N more findings`.
+
+### Re-run Baseline button
+An outlined `Re-run Baseline` button sits next to the existing
+`Refresh` primary button on the Dashboard's top action bar. Bound to
+`RerunBaselineCommand`, which is an `AsyncCommand` so it disables
+itself for the duration of a run. The orchestrator's own single-
+instance guard is the second line of defence.
+
+### Tab-visit behaviour
+The pre-v0.5.6 cache-on-VM pattern is preserved — each panel VM keeps
+its last computed state across nav switches and the panel's own
+`Refresh` / `Run Test` button re-probes on demand. No code path was
+changed by this release that would alter that behaviour.
+
+### Changed surface
+- `Models/BaselineProgress.cs`, `Models/BaselineResult.cs` — DTOs for
+  the orchestrator's `ProgressChanged` + `Completed` events.
+- `Helpers/BaselineRunner.cs` — orchestrator; `RunAsync`, `IsRunning`,
+  `PanelsCompleted`, `PanelsTotal`, `CurrentPanelName`,
+  `ProgressChanged`, `Completed`.
+- `App.xaml.cs` — kicks `Baseline.RunAsync()` once via
+  `Dispatcher.BeginInvoke(Background)` after `MainWindow` loads.
+- `MainViewModel.Baseline` — wires the runner to every panel VM and
+  hands the reference to `Dashboard.AttachBaseline()`.
+- `DashboardViewModel` — `IsBaselineRunning`, `BaselineComplete`,
+  `IsBaselineBannerVisible`, `BaselineStatusText`, `BaselineResultText`,
+  `TopFindings`, `OverflowFindings`, `OverflowFindingsCount`,
+  `HasOverflowFindings`, `RerunBaselineCommand`,
+  `DismissBaselineBannerCommand`, `AttachBaseline`,
+  `AggregateBaselineFindings`, `RebuildFindingViews`.
+- `DashboardView.xaml` — new banner row (`Grid.Row="1"`),
+  `Re-run Baseline` top-bar button, `TopFindings` `ItemsControl` +
+  `OverflowFindings` `Expander`. Row indices shifted +1.
+
+### Self-checks
+- `grep -rn "FallbackValue={DynamicResource\|FallbackValue={StaticResource"
+  Pulse.WPF/` — empty. v0.4.7 ban still holds.
+- `BaselineProgress`, `BaselineResult`, `BaselineRunner` do not collide
+  with any BCL type (verified via `grep` across the SDK reference set
+  and the project).
+- `AggregateBaselineFindings` + `MapFindingSeverity` + `ResolveMainViewModel`
+  are correctly instance vs. `static` (only `MapFindingSeverity` is
+  static — pure and stateless).
+- Dashboard banner uses only existing theme keys (`CardElev2`,
+  `AccentBrush`, `ForegroundBrush`, `MutedForegroundBrush`,
+  `BoolToVis`, `MaterialDesignFlatButton`, `TopBarOutlinedButton`).
+- SystemOverview is intentionally not in the Findings merge — its
+  status rolls up via the six per-card tier badges (`ModelStatus`,
+  `OsStatus`, etc.), not Finding rows. Adding a synthetic Findings
+  collection to it would duplicate that information.
+- Camera Connectivity tick-wait: the monitor doesn't expose a
+  `TickCount` (its tick state is internal to the polling loop), so
+  the baseline uses `Task.Delay(2200 ms)` — slightly more than the
+  2 s nominal tick interval to ensure at least one full tick has
+  rendered before the snapshot.
