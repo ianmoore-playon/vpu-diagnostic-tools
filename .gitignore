@@ -1,10 +1,13 @@
-Logs/
-Pulse_Results_*.txt
-*copy*.ps1
+# Pcap captures (occasionally dropped here during NIC debugging)
 *.pcapng
 *.pcap
-Pulse_Results/
+
+# Local copies of WIP scripts
+*copy*.ps1
+
+# Local settings
 settings.json
+.DS_Store
 
 # .NET / Pulse.WPF build outputs
 **/bin/

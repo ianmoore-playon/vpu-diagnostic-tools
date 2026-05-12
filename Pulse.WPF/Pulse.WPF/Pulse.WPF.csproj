@@ -8,10 +8,10 @@
     <AssemblyName>Pulse.WPF</AssemblyName>
     <Nullable>disable</Nullable>
     <LangVersion>9.0</LangVersion>
-    <ApplicationIcon />
-    <Version>0.5.2</Version>
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
+    <Version>0.5.3</Version>
     <Authors>PlayOn / Pixellot Field Tools</Authors>
-    <Product>Pulse — Pixellot Unified Live System Evaluator (WPF Pilot)</Product>
+    <Product>Pulse — Pixellot Unified Live System Evaluator</Product>
     <Description>Pulse is the active WPF diagnostic line for the Pixellot VPU — Dashboard, System Overview, Camera Connectivity, Network, Hardware, Disk Health, Services, Event Viewer, and Reports.</Description>
     <NeutralLanguage>en-US</NeutralLanguage>
   </PropertyGroup>
