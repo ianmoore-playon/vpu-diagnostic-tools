@@ -565,3 +565,88 @@ Targeted polish based on field-tech feedback against v0.5.1. Six changes, no oth
 - `grep -rn "Configured cameras missing" Pulse.WPF/` — only in a single explanatory code comment (`// v0.5.2 §4:`), no UI string.
 - New type names unique vs. BCL: `AdapterDetails`, `AdapterDetailsViewModel`, `AdapterDetailsDialog`, `PulseDialogWindow` — verified.
 - No `private static` method calls a non-static helper (CS0120 guard).
+
+---
+
+## v0.5.4 — top-bar action buttons + suppress-downstream when offline
+
+Two parallel pieces landed under the same `wpf-pilot-v0.5.4` tag. Both are
+field-feedback driven: techs want the panel to **read at a glance** in the
+shape they reach for it.
+
+### Part 1 — Network: suppress downstream noise when there's no internet
+
+Already shipped in commit `059df49`. When `NetworkService.GetSnapshot()` finds
+`InternetReachable == false`, every downstream finding the panel would emit
+(DNS resolve fails, NTP unreachable, port-connectivity timeouts, cloud
+reachability fails) is collapsed into a single **"No internet connection"**
+finding. The Network panel's `Recommendations` follows the same rule. Rationale:
+when a tech walks up to a VPU with the WAN unplugged, the previous output read
+as 6–8 red rows and looked like a multi-system failure. The downstream rows
+are all consequences of the same root cause and only confuse triage. The full
+detail still lives in the Live Log so an engineer can scroll for the raw
+probes.
+
+### Part 2 — Top-bar action buttons
+
+Every panel's bottom action bar is gone. Action buttons now sit on the header
+row between the title and the status pill — that's where field techs reach
+when they want to act. The header `DockPanel` docks right→pill, right→action
+StackPanel, fill→title, in that order, so the pill stays the rightmost element
+and the buttons sit between title and pill (not inside the pill's container).
+
+**Shared style** (lifted to `Themes/Styles.xaml`):
+- `TopBarOutlinedButton` — `MaterialDesignOutlinedButton`-based, `MinHeight=36`,
+  `Padding=14,6`, `Margin=0,0,8,0`, `FontSize=12`. Inner content is
+  `PackIcon (16×16) + 6 px gap + TextBlock`.
+- `TopBarPrimaryButton` — `TopBarOutlinedButton` plus a 2 px `AccentBrush`
+  border, `AccentBrush` foreground, and `FontWeight="SemiBold"`. Used for the
+  primary action (Refresh / Run Test). Reads as primary without shouting like
+  a raised CTA next to the status chip.
+
+**Per-panel moves:**
+- **Dashboard** — Refresh restyled to `TopBarPrimaryButton`. Already sat at
+  the top; the bottom was just a Quick-Nav card (left as a card, not an
+  action bar). `Open Last Report` stays inside the "Last Diagnostic Run"
+  card — it's contextual to that card, not page-level.
+- **System Overview** — `Copy as text` + `Refresh` moved up. The
+  `CopyStatus` toast (transient "Copied to clipboard.") follows the Copy
+  button as a muted 11 pt inline note left of it; same VM property, no rewire.
+- **Network** — `Run Test` moved up (the panel's only action). The Live Log
+  expander still lives inline above where the action bar used to be.
+- **Camera Connectivity** — `Open Adapter Settings` → `Adapter Settings`,
+  `Open Network and Sharing Center` → `Sharing Center` (icons carry the
+  "open" affordance; full text is in ToolTip + AutomationProperties). No
+  Refresh — it's a live monitor.
+- **Hardware** — `Refresh` moved up. Single action.
+- **Services** — `Restart Service` + `Refresh` moved up. The
+  RestartServiceCommand still keys off `SelectedService` from the
+  Dependencies DataGrid, so the button stays disabled until a row is
+  picked. Per-row "Restart" buttons inside the DataGrid stay where they are
+  (row context, not page-level).
+- **Disk Health** — `Refresh` moved up. Single action.
+- **Event Viewer** — `Open Windows Event Viewer` → `Windows Event Viewer`,
+  `Refresh` moved up.
+- **Reports** — `Open Reports Folder` → `Reports Folder`, `Delete Report`,
+  `Refresh` moved up. Three buttons + pill — the longest header row in the
+  app and the reason the buttons stay outlined-only rather than raised.
+
+**Defensive narrow-width handling:** every page title + subtitle picked up
+`TextTrimming="CharacterEllipsis"`, and subtitles capped with `MaxWidth=640`.
+At 1366×768 the buttons + pill sit comfortably on every panel; the
+truncation only kicks in if the user further narrows the window.
+
+### Self-checks (passing)
+
+- `grep -rn "DockPanel Grid.Row=" Pulse.WPF/Pulse.WPF/Views/` — only Grid.Row=0
+  header rows remain. No more bottom action bars.
+- `grep -rn "MaterialDesignRaisedButton" Pulse.WPF/Pulse.WPF/Views/` — only
+  the in-app `AdapterDetailsDialog` modal still uses it (legitimate — modal
+  body, not a page header).
+- `grep -rn "FallbackValue={DynamicResource\|FallbackValue={StaticResource"
+  Pulse.WPF/` — empty. v0.4.7 ban still holds.
+- Command bindings unchanged: `RefreshCommand`, `RunTestCommand`,
+  `CopyAsTextCommand`, `OpenFolderCommand`, `DeleteCommand`,
+  `RestartServiceCommand`, `OpenEventViewerCommand`, `OpenAdapterSettingsCommand`,
+  `OpenNetworkAndSharingCenterCommand`, `OpenLastReportCommand` — all bind
+  to the same VM members that the bottom-bar buttons used.
