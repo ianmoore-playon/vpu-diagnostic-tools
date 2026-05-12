@@ -13,6 +13,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />   <!-- 0: header + actions -->
             <RowDefinition Height="*" />      <!-- 1: 2-column body -->
+            <RowDefinition Height="Auto" />   <!-- 2: App Log sub-card (v0.5.5) -->
         </Grid.RowDefinitions>
 
         <!-- ====== Header (v0.5.4 top-bar buttons) ====== -->
@@ -187,6 +188,63 @@
                 </Grid>
             </Border>
         </Grid>
+
+        <!-- ====== App Log sub-card (v0.5.5) ======
+             Spans the full width below the body grid. Shows the tail of
+             today's rolling Pulse-YYYYMMDD.log plus two outlined shortcut
+             buttons for jumping to the file / folder. -->
+        <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0" Margin="0,0,0,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <DockPanel Grid.Row="0" Margin="16,12,16,8">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Command="{Binding OpenLogsFolderCommand}"
+                                Style="{StaticResource TopBarOutlinedButton}"
+                                ToolTip="Open the daily log folder in Windows Explorer.">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <md:PackIcon Kind="FolderOpenOutline" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="Open Logs Folder" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding OpenTodayLogCommand}"
+                                Style="{StaticResource TopBarOutlinedButton}"
+                                ToolTip="Open today's rolling log file in the default text editor.">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <md:PackIcon Kind="FileDocumentOutline" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="View Today's Log" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <TextBlock Text="APP LOG  ·  Recent entries from today's rolling log"
+                               FontFamily="Segoe UI Semibold" FontSize="11"
+                               Foreground="{StaticResource MutedForegroundBrush}"
+                               VerticalAlignment="Center" />
+                </DockPanel>
+                <Border Grid.Row="1"
+                        Background="{StaticResource LogBgBrush}"
+                        BorderBrush="{StaticResource BorderColBrush}"
+                        BorderThickness="0,1,0,0"
+                        MinHeight="120">
+                    <ItemsControl ItemsSource="{Binding RecentAppLogLines}"
+                                  Margin="14,8,14,12"
+                                  AutomationProperties.Name="Recent application log lines">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}"
+                                           FontFamily="Cascadia Mono, Consolas"
+                                           FontSize="11"
+                                           Foreground="{StaticResource ForegroundBrush}"
+                                           TextWrapping="NoWrap"
+                                           Margin="0,1,0,1" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+            </Grid>
+        </Border>
 
     </Grid>
 </UserControl>

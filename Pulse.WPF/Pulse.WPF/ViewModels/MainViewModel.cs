@@ -37,6 +37,15 @@ namespace Pulse.WPF.ViewModels
                 var canonical = NormaliseNavKey(value);
                 if (Set(ref _selectedNav, canonical))
                 {
+                    // v0.5.5: stamp every nav switch into the rolling log so
+                    // a tech reading the daily log can see the user's
+                    // breadcrumb trail through the panels.
+                    try
+                    {
+                        Pulse.WPF.Helpers.AppLogFile.Instance.WriteLine(
+                            "Nav", "Info", $"Navigated to {canonical}");
+                    }
+                    catch { }
                     UpdateCurrentView();
                     RaisePillFlags();
                 }

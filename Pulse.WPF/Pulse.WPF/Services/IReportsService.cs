@@ -22,5 +22,22 @@ namespace Pulse.WPF.Services
 
         /// <summary>The directory reports live in (also the target of "Open Folder").</summary>
         string ReportsDirectory { get; }
+
+        /// <summary>The directory the rolling daily log lives in.
+        /// Surfaced via AppLogFile so the Reports panel's "Open Logs Folder"
+        /// button has somewhere to point at.</summary>
+        string LogsDirectory { get; }
+
+        /// <summary>Full path to today's rolling log file. Empty / non-existent
+        /// when the day's log hasn't been touched yet.</summary>
+        string TodayLogPath { get; }
+
+        /// <summary>Tail of today's rolling app log — used by the Reports
+        /// panel's App Log sub-card. Returns oldest-first.</summary>
+        System.Collections.Generic.IReadOnlyList<string> GetRecentAppLogLines(int count);
+
+        /// <summary>Prune reports older than the cutoff. The 200-file cap in
+        /// <see cref="GetAllAsync"/> still applies as a secondary ceiling.</summary>
+        void CleanupOlderThan(int days);
     }
 }

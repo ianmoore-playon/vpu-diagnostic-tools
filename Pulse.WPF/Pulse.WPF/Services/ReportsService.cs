@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Pulse.WPF.Helpers;
 using Pulse.WPF.Models;
 
 namespace Pulse.WPF.Services
@@ -87,6 +88,42 @@ namespace Pulse.WPF.Services
                     return $"(failed to read report: {ex.Message})";
                 }
             });
+        }
+
+        /// <summary>Surfaces AppLogFile's logs directory so the Reports
+        /// panel's "Open Logs Folder" button has a path to shell out to.</summary>
+        public string LogsDirectory => AppLogFile.Instance.LogsDirectory;
+
+        /// <summary>Path of today's rolling log file (may not exist yet —
+        /// the first log line of the day creates it).</summary>
+        public string TodayLogPath => AppLogFile.Instance.TodayPath;
+
+        public IReadOnlyList<string> GetRecentAppLogLines(int count)
+        {
+            return AppLogFile.Instance.ReadTodayTail(count);
+        }
+
+        /// <summary>Prune .txt / .json / .log reports older than the cutoff.
+        /// The MaxReports cap stays as a secondary safety net.</summary>
+        public void CleanupOlderThan(int days)
+        {
+            if (days <= 0) return;
+            try
+            {
+                if (!Directory.Exists(ReportsDirectory)) return;
+                var cutoff = DateTime.Now.AddDays(-days);
+                foreach (var path in Directory.EnumerateFiles(ReportsDirectory))
+                {
+                    if (!IsReportFile(path)) continue;
+                    try
+                    {
+                        var info = new FileInfo(path);
+                        if (info.LastWriteTime < cutoff) File.Delete(path);
+                    }
+                    catch { /* skip individual stuck file */ }
+                }
+            }
+            catch { /* directory enum failed */ }
         }
 
         public bool Delete(string fileName)

@@ -71,17 +71,28 @@ namespace Pulse.WPF.ViewModels
         private Brush _statusBg = StatusHelpers.Brush("BorderColBrush");
         public Brush StatusBg { get => _statusBg; set => Set(ref _statusBg, value); }
 
+        // ---- App Log sub-card (v0.5.5) -----------------------------------
+        // Tail of today's rolling Pulse-YYYYMMDD.log. The Reports panel adds
+        // an "App Log" sub-card below the main 2-column body that shows the
+        // most recent lines plus two folder-shortcut buttons.
+        public ObservableCollection<string> RecentAppLogLines { get; } =
+            new ObservableCollection<string>();
+
         // ---- Commands ----------------------------------------------------
         public ICommand RefreshCommand { get; }
         public ICommand OpenFolderCommand { get; }
         public ICommand DeleteCommand { get; }
+        public ICommand OpenLogsFolderCommand { get; }
+        public ICommand OpenTodayLogCommand { get; }
 
         public ReportsViewModel(IReportsService svc)
         {
             _svc = svc;
-            RefreshCommand    = new AsyncCommand(RefreshAsync);
-            OpenFolderCommand = new RelayCommand(OpenFolder);
-            DeleteCommand     = new RelayCommand(DeleteSelected, () => _selectedReport != null);
+            RefreshCommand        = new AsyncCommand(RefreshAsync);
+            OpenFolderCommand     = new RelayCommand(OpenFolder);
+            DeleteCommand         = new RelayCommand(DeleteSelected, () => _selectedReport != null);
+            OpenLogsFolderCommand = new RelayCommand(OpenLogsFolder);
+            OpenTodayLogCommand   = new RelayCommand(OpenTodayLog);
 
             // Auto-load on construction.
             _ = Task.Run(async () =>
@@ -93,13 +104,34 @@ namespace Pulse.WPF.ViewModels
         public async Task RefreshAsync()
         {
             var list = await _svc.GetAllAsync().ConfigureAwait(false);
+
+            // Tail of the rolling daily log. Read off the UI thread —
+            // ReadAllLines on a 5-10 MB file shouldn't be done in the
+            // dispatcher invoke below.
+            System.Collections.Generic.IReadOnlyList<string> tail;
+            try { tail = _svc.GetRecentAppLogLines(10); }
+            catch { tail = System.Array.Empty<string>(); }
+
             Application.Current?.Dispatcher.Invoke(() =>
             {
                 Reports.Clear();
                 foreach (var r in list) Reports.Add(r);
+
+                RecentAppLogLines.Clear();
+                foreach (var line in tail) RecentAppLogLines.Add(line);
+
                 OnPropertyChanged(nameof(HasNoReports));
                 UpdatePill();
                 TryApplyPreselection();
+
+                // Auto-select the newest report so the viewer pre-populates
+                // on panel open (v0.5.5 — Reports UX). Preselection from the
+                // Dashboard breadcrumb still wins because TryApplyPreselection
+                // ran first.
+                if (_selectedReport == null && Reports.Count > 0)
+                {
+                    SelectedReport = Reports[0];
+                }
             });
         }
 
@@ -163,6 +195,43 @@ namespace Pulse.WPF.ViewModels
                 Process.Start(psi);
             }
             catch { /* shell could be unavailable on a stripped-down image */ }
+        }
+
+        private void OpenLogsFolder()
+        {
+            try
+            {
+                var dir = _svc.LogsDirectory;
+                if (string.IsNullOrEmpty(dir)) return;
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                var psi = new ProcessStartInfo(dir) { UseShellExecute = true };
+                Process.Start(psi);
+            }
+            catch { /* shell unavailable / locked-down image */ }
+        }
+
+        private void OpenTodayLog()
+        {
+            try
+            {
+                var path = _svc.TodayLogPath;
+                if (string.IsNullOrEmpty(path)) return;
+                // The file may not exist yet if no log lines have been written
+                // today — create an empty stub so Notepad has something to
+                // open rather than throwing a "file not found" dialog.
+                if (!File.Exists(path))
+                {
+                    try { File.WriteAllText(path, ""); } catch { return; }
+                }
+                var psi = new ProcessStartInfo(path) { UseShellExecute = true };
+                Process.Start(psi);
+            }
+            catch
+            {
+                // ShellExecute can fail for .log files when no association
+                // exists — explicit Notepad fallback so the click is never lost.
+                try { Process.Start("notepad.exe", _svc.TodayLogPath); } catch { }
+            }
         }
 
         private void DeleteSelected()
