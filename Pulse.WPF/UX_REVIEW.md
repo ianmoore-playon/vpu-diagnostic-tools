@@ -873,3 +873,81 @@ changed by this release that would alter that behaviour.
   the baseline uses `Task.Delay(2200 ms)` — slightly more than the
   2 s nominal tick interval to ensure at least one full tick has
   rendered before the snapshot.
+
+
+## v0.6.0 — ScoreConnect III integration
+
+New panel: **Score Connect**, positioned in the sidebar between
+*Camera Connectivity* and *Hardware & Peripherals*. Targets the local
+ScoreConnect III HTTP API (default `http://localhost:5000`, overridable
+via `%LOCALAPPDATA%\Pulse.WPF\settings.json` -> `scoreConnectUrl`).
+
+### Detected surface
+Service status, current scoreboard configuration (vendor / sport /
+device / serial port / firmware / event type), cloud (BOT) connection
+state, available serial ports, and a real-time WebSocket scoreboard
+card with home/away/period/clock.
+
+### Read + write
+Every read endpoint is fanned out via `Task.WhenAll` after a single
+`ProbeAsync` confirms the service is reachable. Each write (Edit
+Vendor / Sport / Configuration / Decoder) goes through a two-stage
+confirm: a picker dialog populated from the read endpoints, then a
+`MessageBox` warning "this will reconfigure ScoreConnect III and may
+interrupt live data. Continue?". Operator confirmations + per-write
+HTTP status codes are audit-logged to `AppLogFile`.
+
+### Live WebSocket
+`Helpers/ScoreConnectLiveClient.cs` wraps `System.Net.WebSockets.ClientWebSocket`.
+The middleware's path isn't visible in the ScoreConnect III binary
+strings, so the client probes a candidate list (`/ws`, `/`,
+`/scoreconnect/ws`, `/notifications`) and remembers the first success.
+Reconnect is exponential-backoff (1 s -> 30 s cap). The client is
+always-on once the panel is constructed, matching the Camera
+Connectivity live-monitor pattern.
+
+### SaveNetwork deferred
+The `SaveNetwork` endpoint (changes the box's network adapter binding)
+is intentionally NOT wired into Pulse. It's too destructive for a
+diagnostic tool — a future revision can add it as a separate top-bar
+button with a sterner confirm flow + a clear "this will reboot the
+box" notice.
+
+### JSON parsing
+Pulse doesn't reference Newtonsoft.Json or System.Text.Json (project
+convention — no new NuGets for one consumer). The new
+`Helpers/JsonScrape.cs` is a tiny defensive reader that handles
+top-level objects, arrays of objects, and best-effort recursive
+parsing for the WebSocket frame path. Every read goes through
+`try/catch` wrappers so a malformed payload surfaces as empty data
+rather than a panel crash.
+
+### Bookkeeping
+- Baseline runner: ScoreConnect joins Phase 1 (cheap HTTP probe with
+  a 2 s timeout; gracefully reports `IsDetected=false` when the
+  service isn't running). Panel total bumped to 9 with Dashboard.
+- Dashboard aggregation: ScoreConnect Findings flow into the Active
+  Findings list tagged `[ScoreConnect]`, with `TargetNav=ScoreConnect`
+  for jump-to.
+- `<Version>` bumped to `0.6.0`. Explicit `<Reference>` rows added
+  for `System.Net.Http`, `System.Net.WebSockets`, and
+  `System.Net.WebSockets.Client`.
+
+### Self-checks
+- `grep -rn "FallbackValue={DynamicResource\|FallbackValue={StaticResource" Pulse.WPF/`
+  — empty. v0.4.7 ban still holds.
+- Every new type is `ScoreConnect*`-prefixed — no bare `Configuration`,
+  `Device`, `Vendor`, or `Connection` introduced (v0.5.0 BCL-collision
+  class addressed).
+- No credentials from the ScoreConnect `appsettings.json` (ScoreLinkII /
+  WebUpdate / XpicoPassword) are present in any Pulse source file.
+- New `HttpClient` is a singleton constructed in `MainViewModel` and
+  shared with `ScoreConnectService`. The `ClientWebSocket` instance is
+  disposed on every reconnect cycle inside `ScoreConnectLiveClient`.
+- All HTTP probes carry per-call `CancellationTokenSource` timeouts
+  (2 s probe / 5 s read / 10 s write) and are wrapped in `try/catch`.
+- The View binds only to existing theme keys / converters and only
+  to material design styles already referenced elsewhere in the
+  codebase (`Card`, `NetSubCard`, `StatusChip`, `PageTitle`,
+  `PageSubtitle`, `SectionTitle`, `MutedLabel`, `MonoValue`,
+  `TopBarPrimaryButton`, `MaterialDesignFlatButton`).

@@ -369,6 +369,30 @@ namespace Pulse.WPF.Services
             return rows;
         }
 
+        // ---------- Firmware update info ----------
+
+        public async Task<string> GetAvailableFirmwareUpdateAsync()
+        {
+            // GetUpdateInfoFromSportzcastUpdateApi lives on UpdaterService;
+            // the route attribute isn't in the binary's strings dump but
+            // the canonical kebab-case path is the obvious guess. The Other
+            // MVC controller exposes /CheckForFirmwareUpdates as a fallback.
+            string[] paths =
+            {
+                $"{V1Cfg}/get-firmware-update-info",
+                "Other/CheckForFirmwareUpdates",
+            };
+            foreach (var p in paths)
+            {
+                var (ok, body, _) = await TryGetAsync(p, FetchTimeoutMs).ConfigureAwait(false);
+                if (!ok || string.IsNullOrWhiteSpace(body)) continue;
+                var version = JsonScrape.String(body, "availableVersion");
+                if (string.IsNullOrEmpty(version)) version = JsonScrape.String(body, "version");
+                if (!string.IsNullOrEmpty(version)) return version;
+            }
+            return "";
+        }
+
         // ---------- Writes (Phase 3) ----------
 
         public Task<bool> SetVendorAsync(string vendorId)

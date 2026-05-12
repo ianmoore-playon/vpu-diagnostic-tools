@@ -523,6 +523,23 @@ namespace Pulse.WPF.ViewModels
             AddLog("Vendors", $"{vendors.Count} known", "Info");
             AddLog("Devices", $"{devices.Count} known", "Info");
 
+            // Firmware update — Info finding when one's advertised. The
+            // call is deliberately not parallelised with the main read fan
+            // because the Sportzcast update API can be slow / 404; we
+            // don't want it gating the rest of the panel.
+            try
+            {
+                var fwUpdate = await _svc.GetAvailableFirmwareUpdateAsync().ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(fwUpdate))
+                {
+                    AddFinding("Info",
+                        $"Firmware update {fwUpdate} available",
+                        "Open the ScoreConnect III GUI to install the available scoreboard firmware update.");
+                    AddLog("Firmware", $"Update available: {fwUpdate}", "Info");
+                }
+            }
+            catch { }
+
             // Findings + Recommendations.
             BuildFindings(cfg, bot, ports);
             BuildRecommendations(detected: true);

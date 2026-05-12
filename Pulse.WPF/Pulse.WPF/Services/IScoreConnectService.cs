@@ -41,6 +41,12 @@ namespace Pulse.WPF.Services
 
         Task<List<ScoreConnectDeviceListItem>> GetDevicesAsync();
 
+        /// <summary>Best-effort firmware update probe. Returns the offered
+        /// version when the upstream Sportzcast update API advertises one,
+        /// empty when there's nothing available or the endpoint is
+        /// unreachable. Used by the panel to surface an Info finding.</summary>
+        Task<string> GetAvailableFirmwareUpdateAsync();
+
         // ---- Write / configure (Phase 3 surface) ----
 
         Task<bool> SetVendorAsync(string vendorId);
