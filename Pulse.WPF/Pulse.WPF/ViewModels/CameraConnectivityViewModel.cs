@@ -373,7 +373,13 @@ namespace Pulse.WPF.ViewModels
                     }
 
                     // ---- History updates from transitions ----
-                    AppendHistoryFromTick(port, snap, errorsRising, isFlapping, flaps);
+                    // Pass the debounced state (st.PreviousIsUp) instead of
+                    // the raw snap.IsUp — that way Recent activity entries
+                    // only appear for transitions that survived the 2 s
+                    // debounce window, not for the I210 NIC's gigabit auto-
+                    // negotiation settling noise.
+                    AppendHistoryFromTick(port, snap, st.PreviousIsUp ?? snap.IsUp,
+                                          errorsRising, isFlapping, flaps);
 
                     // ---- Severity contributions for the page-level pill ----
                     if (info.IsConfigured && snap.IsUp && is100M && !info.IsOcr) warnings++;
@@ -409,17 +415,20 @@ namespace Pulse.WPF.ViewModels
         // History, log, and tile-clear helpers
         // -------------------------------------------------------------------
         private void AppendHistoryFromTick(PortViewModel port, CameraNicSnapshot snap,
+                                           bool debouncedIsUp,
                                            bool errorsRising, bool isFlapping, int flaps)
         {
             var key = snap.LocalMac ?? port.Name;
 
-            // -- Link transition --
+            // -- Link transition (driven by the debounced state, not the
+            //    raw snap.IsUp — so micro-toggles during gigabit auto-
+            //    negotiation don't pollute the Recent activity feed) --
             _prevUpByMac.TryGetValue(key, out var prevUp);
-            if (prevUp != snap.IsUp)
+            if (prevUp != debouncedIsUp)
             {
                 if (prevUp.HasValue)
                 {
-                    if (snap.IsUp)
+                    if (debouncedIsUp)
                     {
                         AppendHistory(port, "Link up",
                                       $"Negotiated {FormatSpeed(snap.LinkSpeedBps)}",
@@ -432,7 +441,7 @@ namespace Pulse.WPF.ViewModels
                         AddLog(port.Name, "Link down", "Fail");
                     }
                 }
-                _prevUpByMac[key] = snap.IsUp;
+                _prevUpByMac[key] = debouncedIsUp;
             }
 
             // -- Error count rose --

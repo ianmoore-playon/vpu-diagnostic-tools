@@ -24,10 +24,26 @@ namespace Pulse.WPF.Helpers
         public CameraNicSnapshot Snapshot { get; set; }
 
         // ---- Up/down ring buffer for flap detection ----
-        // Stores the timestamp of every IsUp transition observed in the last
-        // 60 s. >= 3 transitions in the window = flapping.
+        // Stores the timestamp of every *debounced* IsUp transition observed
+        // in the last 60 s. >= 3 transitions in the window = flapping.
+        //
+        // Debounce (v0.5.2 follow-up): Intel I210 NICs report multiple
+        // transient up/down/up sequences during gigabit auto-negotiation —
+        // a single physical plug-in can fire as much as 3-4 IsUp toggles in
+        // a few seconds. We only commit a state change to this list (and to
+        // PreviousIsUp) after the new state has held for >= 2 s. The tile's
+        // raw responsive state binding is unaffected; only the flap counter
+        // and the VM's per-port history feed read from this debounced source.
         public List<DateTime> LinkTransitions { get; } = new List<DateTime>();
+        // The last *committed* (debounced-stable) IsUp value. The VM reads
+        // this for its Recent activity entries.
         public bool? PreviousIsUp { get; set; }
+        // The candidate state we're currently waiting to confirm. Set when
+        // the raw IsUp first disagrees with PreviousIsUp; cleared either
+        // when the raw flips back (it was negotiation noise) or when the
+        // pending state has held long enough to be committed.
+        public bool? PendingIsUp { get; set; }
+        public DateTime? PendingSince { get; set; }
 
         // ---- Error-count samples for rising-rate detection ----
         // Stores (timestamp, errorCount) over the last 30 s. If the count went
@@ -141,6 +157,14 @@ namespace Pulse.WPF.Helpers
         public TimeSpan ErrorWindow { get; } = TimeSpan.FromSeconds(30);
         public TimeSpan LastSeenRetention { get; } = TimeSpan.FromMinutes(30);
         public int FlapTransitionsThreshold { get; } = 3;
+        // How long a new IsUp state must hold before we count it as a real
+        // transition. 2 s is long enough to filter out Intel I210 gigabit
+        // auto-negotiation noise (which settles in well under a second on
+        // healthy hardware) and short enough that legitimate flapping still
+        // crosses the threshold quickly. The tile's StatusLine binds to the
+        // raw IsUp via the per-tick snapshot — only the flap counter and the
+        // VM's Recent-activity history read from the debounced source.
+        public TimeSpan TransitionDebounce { get; } = TimeSpan.FromSeconds(2);
 
         /// <summary>
         /// Raised after a full poll completes (including the initial poll on
@@ -209,20 +233,49 @@ namespace Pulse.WPF.Helpers
                     _byMac[s.LocalMac] = st;
                 }
 
-                // -- IsUp transition tracking --
-                if (st.PreviousIsUp.HasValue && st.PreviousIsUp.Value != s.IsUp)
+                // -- IsUp transition tracking (with debounce) --
+                // PreviousIsUp is the last *committed* (stable for >=
+                // TransitionDebounce) state. PendingIsUp tracks a candidate
+                // change we're holding off on. See the field comments on
+                // PortState for the why; the short version is that I210 NICs
+                // emit settling noise during gigabit auto-negotiation and we
+                // don't want that to look like flap.
+                bool currentIsUp = s.IsUp;
+                if (!st.PreviousIsUp.HasValue)
                 {
-                    st.LinkTransitions.Add(now);
-                    if (s.IsUp) st.LinkUpSince = now;
-                    else        st.LinkUpSince = null;
+                    // First observation; seed without debounce so we have a
+                    // baseline. Subsequent changes will be debounced.
+                    st.PreviousIsUp = currentIsUp;
+                    if (currentIsUp) st.LinkUpSince = now;
                 }
-                else if (!st.PreviousIsUp.HasValue)
+                else if (currentIsUp == st.PreviousIsUp.Value)
                 {
-                    // First observation. Seed LinkUpSince if it's already up so
-                    // the duration counter starts from "now" rather than null.
-                    if (s.IsUp) st.LinkUpSince = now;
+                    // Raw state matches the committed state — any pending
+                    // change was negotiation noise; drop it.
+                    st.PendingIsUp = null;
+                    st.PendingSince = null;
                 }
-                st.PreviousIsUp = s.IsUp;
+                else
+                {
+                    // Raw state differs from committed. Either start a fresh
+                    // hold-off window or continue the existing one.
+                    if (!st.PendingIsUp.HasValue || st.PendingIsUp.Value != currentIsUp)
+                    {
+                        st.PendingIsUp = currentIsUp;
+                        st.PendingSince = now;
+                    }
+                    else if ((now - st.PendingSince.Value) >= TransitionDebounce)
+                    {
+                        // Pending has held long enough — commit the transition.
+                        st.LinkTransitions.Add(now);
+                        st.PreviousIsUp = currentIsUp;
+                        if (currentIsUp) st.LinkUpSince = now;
+                        else             st.LinkUpSince = null;
+                        st.PendingIsUp = null;
+                        st.PendingSince = null;
+                    }
+                    // else: still inside the hold-off window; keep waiting.
+                }
 
                 // -- Error-count sample --
                 st.ErrorSamples.Add((now, s.ErrorCount));
