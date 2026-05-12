@@ -117,15 +117,15 @@ namespace Pulse.WPF.Services
             return results;
         }
 
-        private static string MapLevel(WindowsEventEntryType t)
+        private static string MapLevel(EventLogEntryType t)
         {
             switch (t)
             {
-                case WindowsEventEntryType.Error:           return "Error";
-                case WindowsEventEntryType.FailureAudit:    return "Error";
-                case WindowsEventEntryType.Warning:         return "Warning";
-                case WindowsEventEntryType.Information:     return "Information";
-                case WindowsEventEntryType.SuccessAudit:    return "Information";
+                case EventLogEntryType.Error:           return "Error";
+                case EventLogEntryType.FailureAudit:    return "Error";
+                case EventLogEntryType.Warning:         return "Warning";
+                case EventLogEntryType.Information:     return "Information";
+                case EventLogEntryType.SuccessAudit:    return "Information";
                 default:                                 return "Information";
             }
         }
