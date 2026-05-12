@@ -155,17 +155,25 @@ namespace Pulse.WPF.ViewModels
                         UdpPortTests.Add(p);
                 }
             });
-            if (reqFail > 0)
+            // When the box has no internet at all, every port-blocked / domain-
+            // unreachable result is downstream of that one root cause. Don't
+            // surface them — they'd just be N copies of "go fix the cable".
+            // The "VPU has no internet connection" critical Finding above
+            // already covers it.
+            if (internet)
             {
-                AddFinding("Critical",
-                    $"{reqFail} of {reqFail + reqPass} required ports failed",
-                    "Check the firewall, router, or content-filter / VLAN policy.");
-            }
-            if (optFail > 0)
-            {
-                AddFinding("Info",
-                    $"{optFail} optional port(s) failed",
-                    "Optional ports (SportzCast / Zixi UDP/443 fallback) aren't required at every venue. See Recommended Actions for context.");
+                if (reqFail > 0)
+                {
+                    AddFinding("Critical",
+                        $"{reqFail} of {reqFail + reqPass} required ports failed",
+                        "Check the firewall, router, or content-filter / VLAN policy.");
+                }
+                if (optFail > 0)
+                {
+                    AddFinding("Info",
+                        $"{optFail} optional port(s) failed",
+                        "Optional ports (SportzCast / Zixi UDP/443 fallback) aren't required at every venue. See Recommended Actions for context.");
+                }
             }
 
             // Domain tests
@@ -186,12 +194,15 @@ namespace Pulse.WPF.ViewModels
                 DomainTests.Clear();
                 foreach (var d in doms) DomainTests.Add(d);
             });
-            if (domFail > 0)
+            if (internet && domFail > 0)
             {
                 AddFinding("Warning",
                     $"{domFail} of {domFail + domPass} domains failed DNS resolution",
                     "Check DNS server settings on this adapter.");
             }
+            // When !internet, the domain-resolution failures are downstream
+            // of the same "no uplink" root cause and are suppressed —
+            // see the comment on the required-ports finding above.
 
             // Build per-failure recommendations off the captured results.
             BuildRecommendations(internet, ports, doms);
@@ -213,6 +224,19 @@ namespace Pulse.WPF.ViewModels
                     "Critical",
                     "No internet ping",
                     "VPU has no internet connectivity. Verify the uplink cable and the gateway's WAN status before further triage."));
+
+                // Short-circuit: when the box has no internet, the per-port
+                // and per-domain failures are all downstream of that one
+                // root cause. Surfacing them as separate recommendations
+                // just buries the actual fix ("check the cable") in a wall
+                // of redundant "X is blocked" rows. Commit the single
+                // upstream recommendation and bail.
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    Recommendations.Clear();
+                    foreach (var r in built) Recommendations.Add(r);
+                });
+                return;
             }
 
             if (ports != null)
