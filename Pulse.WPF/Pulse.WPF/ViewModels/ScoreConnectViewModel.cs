@@ -243,19 +243,37 @@ namespace Pulse.WPF.ViewModels
 
         private async Task EditVendorAsync()
         {
-            var chosen = await PromptAsync(
+            // v0.6.3: ScoreConnect III has no standalone select-vendor
+            // endpoint (verified against swagger.json — only select-vendor-
+            // sport and select-vendor-configuration exist). Vendor selection
+            // happens implicitly through picking a vendor-sport. So Edit
+            // Vendor is now a two-step flow: pick vendor -> pick one of
+            // that vendor's sports -> PUT select-vendor-sport. The
+            // confirmed-change audit log line records both legs.
+            var vendor = await PromptAsync(
                 "Vendor",
-                "Choose the scoreboard vendor. Switching vendors typically drops the active scoreboard connection.",
+                "Choose the scoreboard vendor. ScoreConnect requires a sport to be picked alongside the vendor — you'll pick one in the next step.",
                 async () =>
                 {
                     var list = await _svc.GetVendorsAsync().ConfigureAwait(false);
                     return list.Cast<ScoreConnectListItem>().ToList();
                 },
                 Configuration?.Vendor).ConfigureAwait(false);
-            if (chosen == null) return;
+            if (vendor == null) return;
 
-            var ok = await _svc.SetVendorAsync(chosen).ConfigureAwait(false);
-            await ReportWriteResultAsync("Vendor", chosen, ok).ConfigureAwait(false);
+            var sport = await PromptAsync(
+                "Sport",
+                $"Choose a sport for {vendor}. ScoreConnect will switch to the new vendor and sport in one operation.",
+                async () =>
+                {
+                    var list = await _svc.GetVendorSportsAsync(vendor).ConfigureAwait(false);
+                    return list.Cast<ScoreConnectListItem>().ToList();
+                },
+                null).ConfigureAwait(false);
+            if (sport == null) return;
+
+            var ok = await _svc.SetVendorSportAsync(sport).ConfigureAwait(false);
+            await ReportWriteResultAsync("Vendor", $"{vendor} / sport {sport}", ok).ConfigureAwait(false);
         }
 
         private async Task EditSportAsync()
@@ -507,6 +525,13 @@ namespace Pulse.WPF.ViewModels
             var vendors = vendorsTask.Result;
             var devices = devicesTask.Result;
 
+            // v0.6.3: backfill Device / SerialPort / Firmware / EventType
+            // from get-selected-vendor-sport and get-selected-vendor-
+            // configuration. The main get-current-configuration response
+            // doesn't always carry these even when ScoreConnect knows them.
+            try { await _svc.FillSelectedVendorSportAsync(cfg).ConfigureAwait(false); } catch { }
+            try { await _svc.FillSelectedVendorConfigurationAsync(cfg).ConfigureAwait(false); } catch { }
+
             ApplyConfiguration(cfg);
             ApplyBotStatus(bot);
             ApplyPorts(ports);
@@ -516,9 +541,14 @@ namespace Pulse.WPF.ViewModels
             AddLog("Configuration",
                 cfg.IsEmpty ? "Not configured" : $"{cfg.Vendor} / {cfg.Sport}",
                 cfg.IsEmpty ? "Warn" : "Pass");
+            // v0.6.3: BOT discovery is unreliable on ScoreConnect III itself
+            // (known upstream limitation — even the native GUI often fails
+            // to identify the BOT over USB). "Disconnected" is Info, not
+            // Warn — it's not actionable from Pulse and the user can't fix
+            // it without restarting ScoreConnect.
             AddLog("Cloud (BOT)",
-                bot.IsConnected ? "Connected" : "Disconnected",
-                bot.IsConnected ? "Pass" : "Warn");
+                bot.IsConnected ? $"BOT identified (#{bot.ScoreConnectId})" : "BOT not identified (upstream limitation)",
+                bot.IsConnected ? "Pass" : "Info");
             AddLog("Serial ports", $"{ports.Count} visible", "Info");
             AddLog("Vendors", $"{vendors.Count} known", "Info");
             AddLog("Devices", $"{devices.Count} known", "Info");
@@ -565,12 +595,11 @@ namespace Pulse.WPF.ViewModels
                     "Open the ScoreConnect III GUI from this panel to configure a scoreboard.");
             }
 
-            if (bot != null && !bot.IsConnected)
-            {
-                AddFinding("Warning",
-                    "Cloud control unreachable",
-                    "Check TCP/1402 + scorebot.sportzcast.net in the Network panel.");
-            }
+            // v0.6.3: BOT identity is unreliable upstream — even the native
+            // ScoreConnect III GUI often fails to identify a BOT over USB.
+            // Don't false-alarm. The Recommended Actions card surfaces an
+            // Info-level row instead so the user has context without a
+            // Critical/Warning pill on the page header.
 
             // Serial-port conflict: ScoreConnect itself sees the port as
             // "in use" by something OTHER than its own decoder. We don't
@@ -618,11 +647,16 @@ namespace Pulse.WPF.ViewModels
                 }
                 if (BotStatus != null && !BotStatus.IsConnected)
                 {
+                    // v0.6.3: BOT identification is an upstream limitation —
+                    // ScoreConnect III itself often can't see a USB-connected
+                    // BOT. Downgrade to Info, change copy to reflect that
+                    // this isn't actionable from Pulse, and keep the
+                    // "Open Network" jump for the case where the user wants
+                    // to verify TCP/1402 anyway.
                     var rec = NetworkRecommendation.Create(
-                        "Warning",
-                        "Cloud (BOT) control disconnected",
-                        $"ScoreConnect can't reach {(string.IsNullOrEmpty(BotStatus.BotServerAddress) ? "the BOT server" : BotStatus.BotServerAddress)}. " +
-                        "Confirm TCP/1402 is open to scorebot.sportzcast.net on the Network panel.");
+                        "Info",
+                        "BOT not identified",
+                        "ScoreConnect III hasn't identified a BOT. This is a known upstream limitation — even the native ScoreConnect GUI often fails to see a USB-connected BOT. Try unplug/replug the BOT or restart ScoreConnect III. If you also want to confirm cloud reachability, the Network panel tests TCP/1402 + scorebot.sportzcast.net.");
                     rec.ActionLabel = "Open Network";
                     rec.ActionCommand = new RelayCommand(() =>
                     {

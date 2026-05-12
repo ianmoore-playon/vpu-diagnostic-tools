@@ -83,11 +83,13 @@ namespace Pulse.WPF.Services
                 IsDetected = false,
             };
 
-            // Try the API health route first (cheap, returns config JSON if
-            // service is up). Fall back to the root (the MVC homepage)
-            // because some ScoreConnect builds 404 the bare /api path.
+            // v0.6.3: hit /api/configuration/get-status first — swagger lists
+            // it as the documented health surface. Fall through to the older
+            // get-current-configuration probe and the MVC root so older
+            // builds still detect cleanly.
             string[] probes =
             {
+                $"{V1Cfg}/get-status",
                 $"{V1Cfg}/get-current-configuration",
                 "",
             };
@@ -99,10 +101,11 @@ namespace Pulse.WPF.Services
                 {
                     status.IsDetected = true;
                     status.ProbeError = "";
-                    // Most ScoreConnect responses don't carry a version, but
-                    // the deps.json lists 3.x — best-effort scrape so the UI
-                    // has SOMETHING when the field is present.
+                    // get-status sometimes carries a version field; fall back
+                    // to any "version"-like key elsewhere in the response.
                     var v = JsonScrape.String(body ?? "", "version");
+                    if (string.IsNullOrEmpty(v)) v = JsonScrape.String(body ?? "", "appVersion");
+                    if (string.IsNullOrEmpty(v)) v = JsonScrape.String(body ?? "", "serviceVersion");
                     if (!string.IsNullOrEmpty(v)) status.Version = v;
                     return status;
                 }
@@ -252,26 +255,107 @@ namespace Pulse.WPF.Services
 
             try
             {
-                var map = JsonScrape.ObjectAsMap(body);
-                if (map.Count == 0) return s;
-                var connected = JsonScrape.Bool(body, "botOnline")
-                              ?? JsonScrape.Bool(body, "isConnected")
-                              ?? JsonScrape.Bool(body, "cloudConnection");
-                s.IsConnected = connected ?? false;
-                s.ScoreConnectId   = PickFirst(map, "scoreConnectId", "id");
-                s.BotServerAddress = PickFirst(map, "botServerAddress", "botAddress", "botServer");
-                s.LastErrorMessage = PickFirst(map, "lastErrorMessage", "lastError", "errorMessage");
-                var lastConn = PickFirst(map, "lastConnectedAt", "lastConnected", "connectedAt");
-                if (DateTime.TryParse(lastConn,
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        System.Globalization.DateTimeStyles.AssumeUniversal,
-                        out var dt))
+                // v0.6.3: the real /api/configuration/get-bot-number response
+                // is typically a bare integer (or a tiny object with a
+                // botNumber field) per the ScoreConnectConfiguration schema
+                // in swagger. A non-zero botNumber means the box has been
+                // paired with the Sportzcast cloud and has a BOT identity;
+                // 0 / null means unpaired. Parse all three shapes:
+                //   1) bare integer:  12345
+                //   2) object:        {"botNumber": 12345, "isCloudMode": true}
+                //   3) legacy object: {"botOnline": true, "scoreConnectId": "..."}
+                var trimmed = (body ?? "").Trim();
+                if (long.TryParse(trimmed, out var bareNumber))
                 {
-                    s.LastConnectedAt = dt.ToLocalTime();
+                    s.IsConnected    = bareNumber > 0;
+                    s.ScoreConnectId = bareNumber > 0 ? bareNumber.ToString() : "";
+                }
+                else
+                {
+                    var map = JsonScrape.ObjectAsMap(body);
+                    if (map.Count == 0) return s;
+                    // Modern: botNumber integer + optional isCloudMode bool.
+                    var botNumStr = PickFirst(map, "botNumber", "bot_number");
+                    if (!string.IsNullOrEmpty(botNumStr)
+                        && long.TryParse(botNumStr, out var botNum))
+                    {
+                        s.IsConnected    = botNum > 0;
+                        s.ScoreConnectId = botNum > 0 ? botNum.ToString() : "";
+                    }
+                    else
+                    {
+                        // Legacy: explicit boolean field.
+                        var connected = JsonScrape.Bool(body, "botOnline")
+                                      ?? JsonScrape.Bool(body, "isConnected")
+                                      ?? JsonScrape.Bool(body, "cloudConnection")
+                                      ?? JsonScrape.Bool(body, "isCloudMode");
+                        s.IsConnected    = connected ?? false;
+                        s.ScoreConnectId = PickFirst(map, "scoreConnectId", "id");
+                    }
+                    s.BotServerAddress = PickFirst(map, "botServerAddress", "botAddress", "botServer");
+                    s.LastErrorMessage = PickFirst(map, "lastErrorMessage", "lastError", "errorMessage");
+                    var lastConn = PickFirst(map, "lastConnectedAt", "lastConnected", "connectedAt");
+                    if (DateTime.TryParse(lastConn,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.AssumeUniversal,
+                            out var dt))
+                    {
+                        s.LastConnectedAt = dt.ToLocalTime();
+                    }
                 }
             }
             catch { }
             return s;
+        }
+
+        // ---------- Selected vendor sport / configuration (v0.6.3) ----------
+
+        /// <summary>v0.6.3: merge get-selected-vendor-sport into the configuration
+        /// snapshot. Returns any fields the GetCurrentConfiguration response
+        /// didn't carry — Device / SerialPort / Firmware / EventType — so the
+        /// panel doesn't render blanks when ScoreConnect has the data.</summary>
+        public async Task FillSelectedVendorSportAsync(ScoreConnectConfiguration cfg)
+        {
+            if (cfg == null) return;
+            var (ok, body, _) = await TryGetAsync(
+                $"{V1Cfg}/get-selected-vendor-sport", FetchTimeoutMs).ConfigureAwait(false);
+            if (!ok || string.IsNullOrWhiteSpace(body)) return;
+            try
+            {
+                var map = JsonScrape.ObjectAsMap(body);
+                if (map.Count == 0) return;
+                if (string.IsNullOrWhiteSpace(cfg.Sport))
+                    cfg.Sport = PickFirst(map, "name", "vendorSportName", "sportName");
+                if (string.IsNullOrWhiteSpace(cfg.VendorSportId))
+                    cfg.VendorSportId = PickFirst(map, "id", "vendorSportId");
+                if (string.IsNullOrWhiteSpace(cfg.EventType))
+                    cfg.EventType = PickFirst(map, "eventTypeName", "eventType", "eventTypeId");
+            }
+            catch { }
+        }
+
+        public async Task FillSelectedVendorConfigurationAsync(ScoreConnectConfiguration cfg)
+        {
+            if (cfg == null) return;
+            var (ok, body, _) = await TryGetAsync(
+                $"{V1Cfg}/get-selected-vendor-configuration", FetchTimeoutMs).ConfigureAwait(false);
+            if (!ok || string.IsNullOrWhiteSpace(body)) return;
+            try
+            {
+                var map = JsonScrape.ObjectAsMap(body);
+                if (map.Count == 0) return;
+                if (string.IsNullOrWhiteSpace(cfg.VendorConfigurationName))
+                    cfg.VendorConfigurationName = PickFirst(map, "name", "vendorConfigurationName");
+                if (string.IsNullOrWhiteSpace(cfg.VendorConfigurationId))
+                    cfg.VendorConfigurationId = PickFirst(map, "id", "vendorConfigurationId");
+                if (string.IsNullOrWhiteSpace(cfg.SerialPort))
+                    cfg.SerialPort = PickFirst(map, "serialPort", "port", "comPort");
+                if (string.IsNullOrWhiteSpace(cfg.Firmware))
+                    cfg.Firmware = PickFirst(map, "firmware", "firmwareVersion");
+                if (string.IsNullOrWhiteSpace(cfg.Device))
+                    cfg.Device = PickFirst(map, "deviceName", "device");
+            }
+            catch { }
         }
 
         // ---------- Serial ports ----------
@@ -441,17 +525,10 @@ namespace Pulse.WPF.Services
 
         // ---------- Writes (Phase 3) ----------
 
-        public Task<bool> SetVendorAsync(string vendorId)
-        {
-            // The V1 binary maps SetVendorConfigurationId onto a generic write
-            // path — there's no dedicated "set vendor only" route in the
-            // string dump. Best inferred mapping: POST the id as the body to
-            // select-vendor-sport's parent. Fall back to a JSON object POST
-            // against set-scoreconnect-configuration if the venue runs a
-            // version that doesn't expose a vendor-only route.
-            return PostAsync($"{V1Cfg}/select-vendor/{Uri.EscapeDataString(vendorId ?? "")}",
-                             body: null);
-        }
+        // v0.6.3: SetVendorAsync removed — ScoreConnect III has no standalone
+        // select-vendor endpoint (verified against swagger.json). Vendor
+        // selection is implicit in picking a vendor-sport. Callers should
+        // call SetVendorSportAsync with the chosen vendor's sport id.
 
         public Task<bool> SetVendorSportAsync(string vendorSportId)
         {

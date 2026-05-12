@@ -47,9 +47,19 @@ namespace Pulse.WPF.Services
         /// unreachable. Used by the panel to surface an Info finding.</summary>
         Task<string> GetAvailableFirmwareUpdateAsync();
 
+        // v0.6.3 — fill in Device / SerialPort / Firmware / EventType
+        // from the dedicated "selected vendor sport / configuration"
+        // endpoints when get-current-configuration leaves them blank.
+        Task FillSelectedVendorSportAsync(ScoreConnectConfiguration cfg);
+        Task FillSelectedVendorConfigurationAsync(ScoreConnectConfiguration cfg);
+
         // ---- Write / configure (Phase 3 surface) ----
 
-        Task<bool> SetVendorAsync(string vendorId);
+        // v0.6.3: SetVendorAsync removed (ScoreConnect has no standalone
+        // select-vendor endpoint — vendor changes flow through
+        // SetVendorSportAsync). The interface drops the method to make the
+        // constraint explicit; VM callers now run a two-step vendor + sport
+        // prompt and call SetVendorSportAsync at the end.
         Task<bool> SetVendorSportAsync(string vendorSportId);
         Task<bool> SetVendorConfigurationAsync(string configId);
         Task<bool> SetDecoderInfoAsync(string vendorSportId, string serialPort);
