@@ -938,12 +938,13 @@ namespace Pulse.WPF.ViewModels
             }
             else
             {
-                sb.AppendLine($"  Vendor:      {Configuration.Vendor}");
-                sb.AppendLine($"  Sport:       {Configuration.Sport}");
-                sb.AppendLine($"  Device:      {Configuration.Device}");
-                sb.AppendLine($"  Serial port: {Configuration.SerialPort}");
-                sb.AppendLine($"  Firmware:    {Configuration.Firmware}");
-                sb.AppendLine($"  Event type:  {Configuration.EventType}");
+                sb.AppendLine($"  Vendor:        {Configuration.Vendor}");
+                sb.AppendLine($"  Sport:         {Configuration.Sport}");
+                sb.AppendLine($"  Configuration: {Configuration.VendorConfigurationName}");
+                sb.AppendLine($"  Device:        {Configuration.Device}");
+                sb.AppendLine($"  Serial port:   {Configuration.SerialPort}");
+                sb.AppendLine($"  Firmware:      {Configuration.Firmware}");
+                sb.AppendLine($"  Event type:    {Configuration.EventType}");
                 if (Configuration.ExtendedFields.Count > 0)
                 {
                     sb.AppendLine("  Extended:");

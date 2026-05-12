@@ -330,9 +330,17 @@
                                     <md:PackIcon Kind="Pencil" Width="14" Height="14" />
                                 </Button>
 
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Device:"
+                                <!-- v0.6.1: the third row now labels itself
+                                     "Configuration" and binds to the human-
+                                     readable name of the vendor configuration
+                                     (e.g. "Wired") — the typed Device field on
+                                     the response is rarely populated, and the
+                                     EditConfigurationCommand actually edits
+                                     the vendor configuration, not a device.
+                                     The earlier "Device:" label was misleading. -->
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Configuration:"
                                            Style="{StaticResource MutedLabel}" Margin="{StaticResource Spacing.RowGap}" />
-                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Configuration.Device}"
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Configuration.VendorConfigurationName}"
                                            Style="{StaticResource MonoValue}" Margin="{StaticResource Spacing.RowGap}" />
                                 <Button   Grid.Row="2" Grid.Column="2"
                                           Command="{Binding EditConfigurationCommand}"

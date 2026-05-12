@@ -48,6 +48,25 @@ namespace Pulse.WPF.Models
             set => Set(ref _vendorConfigurationId, value);
         }
 
+        /// <summary>Vendor configuration display name (v0.6.1). The real
+        /// response shape uses <c>vendorConfigurationName</c> for the
+        /// human-readable label (e.g. "Wired") — separate from the id.</summary>
+        private string _vendorConfigurationName = "";
+        public string VendorConfigurationName
+        {
+            get => _vendorConfigurationName;
+            set => Set(ref _vendorConfigurationName, value);
+        }
+
+        /// <summary>Vendor id (numeric). Surfaced separately from the name
+        /// since some ScoreConnect Set endpoints take id, not name.</summary>
+        private string _vendorId = "";
+        public string VendorId { get => _vendorId; set => Set(ref _vendorId, value); }
+
+        /// <summary>Vendor-sport id (numeric).</summary>
+        private string _vendorSportId = "";
+        public string VendorSportId { get => _vendorSportId; set => Set(ref _vendorSportId, value); }
+
         /// <summary>Any extra fields the response carried that the typed
         /// properties above don't capture. Rendered as a raw key/value table
         /// in the configuration card so nothing is lost on a version drift.</summary>

@@ -141,13 +141,23 @@ namespace Pulse.WPF.Services
             var map = JsonScrape.ObjectAsMap(body);
             if (map.Count == 0) return;
 
-            cfg.Vendor                = PickFirst(map, "vendor", "vendorName", "currentVendor", "currentSbvendor");
-            cfg.Sport                 = PickFirst(map, "sport", "vendorSport", "sportName", "currentSbCode");
-            cfg.Device                = PickFirst(map, "device", "deviceName", "deviceId");
-            cfg.SerialPort            = PickFirst(map, "serialPort", "port", "comPort", "portName");
-            cfg.Firmware              = PickFirst(map, "firmware", "firmwareVersion", "fwVersion");
-            cfg.EventType             = PickFirst(map, "eventType", "eventTypeName", "eventTypeId");
-            cfg.VendorConfigurationId = PickFirst(map, "vendorConfigurationId", "configurationId", "currentConfigurationId");
+            // v0.6.1: field aliases tuned against the real swagger.json
+            // + a live VPU report (see /Users/ian.moore/Code/swagger +
+            // VPU2-ScoreConnect-...txt). Real keys observed:
+            //   vendorName, vendorId, vendorSportName, vendorSportId,
+            //   vendorSportCode, vendorConfigurationName,
+            //   additionalConfiguration. The legacy alias list is kept as a
+            //   fallback so older ScoreConnect builds still parse cleanly.
+            cfg.Vendor                  = PickFirst(map, "vendorName", "vendor", "currentVendor", "currentSbvendor");
+            cfg.Sport                   = PickFirst(map, "vendorSportName", "sport", "vendorSport", "sportName", "vendorSportCode", "currentSbCode");
+            cfg.Device                  = PickFirst(map, "device", "deviceName", "deviceId");
+            cfg.SerialPort              = PickFirst(map, "serialPort", "port", "comPort", "portName");
+            cfg.Firmware                = PickFirst(map, "firmware", "firmwareVersion", "fwVersion");
+            cfg.EventType               = PickFirst(map, "eventType", "eventTypeName", "eventTypeId");
+            cfg.VendorConfigurationId   = PickFirst(map, "vendorConfigurationId", "configurationId", "currentConfigurationId");
+            cfg.VendorConfigurationName = PickFirst(map, "vendorConfigurationName", "configurationName");
+            cfg.VendorId                = PickFirst(map, "vendorId");
+            cfg.VendorSportId           = PickFirst(map, "vendorSportId");
 
             // Stash unrecognised fields so the operator can still see what
             // the service is reporting even when the typed mapping misses.
@@ -169,8 +179,12 @@ namespace Pulse.WPF.Services
                 case "vendorname":
                 case "currentvendor":
                 case "currentsbvendor":
+                case "vendorid":
                 case "sport":
                 case "vendorsport":
+                case "vendorsportname":
+                case "vendorsportcode":
+                case "vendorsportid":
                 case "sportname":
                 case "currentsbcode":
                 case "device":
@@ -187,7 +201,9 @@ namespace Pulse.WPF.Services
                 case "eventtypename":
                 case "eventtypeid":
                 case "vendorconfigurationid":
+                case "vendorconfigurationname":
                 case "configurationid":
+                case "configurationname":
                 case "currentconfigurationid":
                     return true;
             }
@@ -209,8 +225,17 @@ namespace Pulse.WPF.Services
         public async Task<ScoreConnectBotStatus> GetBotStatusAsync()
         {
             var s = new ScoreConnectBotStatus();
+            // v0.6.1: the real swagger.json route is /api/configuration/
+            // get-bot-number (no v2 prefix, no -configuration-status suffix).
+            // We try the documented path first and fall back to the legacy
+            // guess so an older ScoreConnect III still resolves cleanly.
             var (ok, body, _) = await TryGetAsync(
-                $"{V2Cfg}/get-bot-configuration-status", FetchTimeoutMs).ConfigureAwait(false);
+                $"{V1Cfg}/get-bot-number", FetchTimeoutMs).ConfigureAwait(false);
+            if (!ok || string.IsNullOrWhiteSpace(body))
+            {
+                (ok, body, _) = await TryGetAsync(
+                    $"{V2Cfg}/get-bot-configuration-status", FetchTimeoutMs).ConfigureAwait(false);
+            }
             if (!ok || string.IsNullOrWhiteSpace(body)) return s;
 
             try
@@ -239,12 +264,31 @@ namespace Pulse.WPF.Services
 
         // ---------- Serial ports ----------
 
-        public async Task<List<ScoreConnectSerialPortInfo>> GetAvailablePortsAsync()
+        public Task<List<ScoreConnectSerialPortInfo>> GetAvailablePortsAsync()
         {
-            // get-available-ports lives on the BotInfoService — the route
-            // attribute isn't in the binary's string dump but the canonical
-            // kebab-case translation is the obvious bet. Falls back gracefully
-            // when the endpoint is missing.
+            // v0.6.1: ScoreConnect III does not expose a get-available-ports
+            // endpoint (verified against swagger.json — the path is absent).
+            // Enumerate COM ports from the OS instead via System.IO.Ports.
+            // This is more reliable anyway — the OS always knows what serial
+            // ports exist, even when ScoreConnect doesn't.
+            var rows = new List<ScoreConnectSerialPortInfo>();
+            try
+            {
+                foreach (var name in System.IO.Ports.SerialPort.GetPortNames())
+                {
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    rows.Add(new ScoreConnectSerialPortInfo { Name = name });
+                }
+            }
+            catch { /* on a locked-down box this can throw — swallow. */ }
+            return Task.FromResult(rows);
+        }
+
+        // Legacy HTTP-based port enumeration — kept dormant in case a future
+        // ScoreConnect III build adds the endpoint and we want to prefer the
+        // service-side view (which knows which port is currently in use).
+        private async Task<List<ScoreConnectSerialPortInfo>> GetAvailablePortsViaHttpAsync()
+        {
             var rows = new List<ScoreConnectSerialPortInfo>();
             var (ok, body, _) = await TryGetAsync(
                 $"{V1Cfg}/get-available-ports", FetchTimeoutMs).ConfigureAwait(false);
