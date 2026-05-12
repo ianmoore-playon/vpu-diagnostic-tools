@@ -149,9 +149,10 @@ namespace Pulse.WPF.ViewModels
         private Brush _linkLedBrush;
         public Brush LinkLedBrush { get => _linkLedBrush; set => Set(ref _linkLedBrush, value); }
 
-        // Dimmed flag for stale-window rendering. When set, the tile
-        // primary/secondary/IP/MAC render at lower opacity and the
-        // StatusLine has the "· stale Ns" suffix.
+        // Legacy "stale" flag — v0.5.2 retired the stale-window dimming per
+        // field-tech feedback (binary state only: linked / no cable / cabled-
+        // no-link). Property retained so any external bindings don't break;
+        // the VM now always writes false.
         private bool _isStale;
         public bool IsStale { get => _isStale; set => Set(ref _isStale, value); }
 

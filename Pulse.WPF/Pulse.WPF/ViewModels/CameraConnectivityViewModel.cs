@@ -54,10 +54,11 @@ namespace Pulse.WPF.ViewModels
         private const int MaxHistoryEntriesPerPort = 240;
         private static readonly TimeSpan HistoryRetention = TimeSpan.FromMinutes(60);
 
-        // v0.4.6 §7: keep a tile's last-known remote rendered (muted) for this
-        // long after the most recent successful resolve, then flip to the
-        // "Detecting neighbour…" empty state.
-        private static readonly TimeSpan StaleWindow = TimeSpan.FromSeconds(30);
+        // v0.5.2 §2: the stale-tile dimming + "· stale Ns" suffix were field-
+        // tech confusing. Removed entirely — when ARP is lost the tile flips
+        // immediately to the next clean binary state (linked / no cable /
+        // cable-no-link). Recent activity expander still preserves the audit
+        // trail.
 
         // v0.4.6 §5 flicker fix — track the last-rendered multiset hash for
         // Recommendations and Findings so a no-change tick is a no-op.
@@ -189,22 +190,9 @@ namespace Pulse.WPF.ViewModels
                                          && !string.IsNullOrEmpty(snap.RemoteMac)
                                          && !string.IsNullOrEmpty(snap.RemoteIp);
 
-                    // ---- Stale-window (v0.4.6 §7) ----
-                    // When we have no current remote but did within the last
-                    // 30 s, render the tile in muted colours and append
-                    // "· stale Ns" to the status line.
+                    // v0.5.2 §2: stale-window dimming removed. State is now
+                    // strictly binary — linked / no cable / cable-no-link.
                     DateTime utcNow = DateTime.UtcNow;
-                    bool inStaleWindow = false;
-                    int staleSeconds = 0;
-                    if (!hasRealRemote && st.LastResolveAt.HasValue)
-                    {
-                        var ago = utcNow - st.LastResolveAt.Value;
-                        if (ago <= StaleWindow && snap.IsUp)
-                        {
-                            inStaleWindow = true;
-                            staleSeconds  = (int)Math.Min(StaleWindow.TotalSeconds, Math.Max(1, ago.TotalSeconds));
-                        }
-                    }
 
                     bool errorsRising = st.ErrorsRising(_monitor.ErrorWindow, utcNow);
                     port.ErrorLine = snap.ErrorCount > 0
@@ -231,8 +219,7 @@ namespace Pulse.WPF.ViewModels
 
                     if (!snap.IsUp && string.IsNullOrEmpty(snap.RemoteMac))
                     {
-                        // Row 1: No cable — also handles the post-stale-window
-                        // case (LastResolveAt > 30 s ago, link down).
+                        // Row 1: No cable.
                         primary = "No cable";
                         secondary = "";
                         statusLine = "No cable";
@@ -248,33 +235,33 @@ namespace Pulse.WPF.ViewModels
                         statusBrush = StatusHelpers.Brush("YellowBrush");
                         ledBrush    = StatusHelpers.Brush("YellowBrush");
                     }
-                    else if (!hasRealRemote && !inStaleWindow)
+                    else if (!hasRealRemote)
                     {
-                        // Row 3: linked, ARP not yet populated — empty state.
-                        primary = "Detecting neighbour…";
-                        secondary = "Link up, ARP not yet populated";
+                        // v0.5.2 §1: link is up but ARP hasn't cached the
+                        // neighbour yet. Field techs don't care about ARP
+                        // state — render plain "Linked" with a tiny side
+                        // note. Tile colour stays green (linked is green;
+                        // don't muddy with a "still figuring it out" hue).
+                        // If we had a previous remote in the resolve window,
+                        // keep that label for visual continuity.
+                        if (!string.IsNullOrEmpty(st.LastRemoteLabel))
+                        {
+                            primary = st.LastRemoteLabel;
+                            secondary = !string.IsNullOrEmpty(st.LastRemoteIp) ? st.LastRemoteIp : "";
+                            ipShown  = !string.IsNullOrEmpty(st.LastRemoteIp)  ? st.LastRemoteIp  : "—";
+                            macShown = !string.IsNullOrEmpty(st.LastRemoteMac) ? st.LastRemoteMac : "—";
+                        }
+                        else
+                        {
+                            primary   = "Linked";
+                            secondary = "Identifying device…";
+                        }
                         statusLine = is1G   ? "Linked · 1 Gbps"
                                    : is100M ? "Linked · 100 Mbps"
                                             : "Linked · " + FormatSpeed(snap.LinkSpeedBps);
                         statusBrush = StatusHelpers.Brush("GreenBrush");
                         ledBrush    = is1G ? StatusHelpers.Brush("GreenBrush")
                                            : StatusHelpers.Brush("YellowBrush");
-                    }
-                    else if (!hasRealRemote && inStaleWindow)
-                    {
-                        // Stale window — keep the last-known label/IP/MAC.
-                        primary   = !string.IsNullOrEmpty(st.LastRemoteLabel) ? st.LastRemoteLabel
-                                  : !string.IsNullOrEmpty(st.LastRemoteIp)    ? st.LastRemoteIp
-                                  : "Detecting neighbour…";
-                        secondary = !string.IsNullOrEmpty(st.LastRemoteIp) ? st.LastRemoteIp : "";
-                        ipShown   = !string.IsNullOrEmpty(st.LastRemoteIp)  ? st.LastRemoteIp  : "—";
-                        macShown  = !string.IsNullOrEmpty(st.LastRemoteMac) ? st.LastRemoteMac : "—";
-                        statusLine = (is1G   ? "Linked · 1 Gbps"
-                                    : is100M ? "Linked · 100 Mbps"
-                                             : "Linked · " + FormatSpeed(snap.LinkSpeedBps))
-                                   + $" · stale {staleSeconds}s";
-                        statusBrush = StatusHelpers.Brush("YellowBrush");
-                        ledBrush    = StatusHelpers.Brush("YellowBrush");
                     }
                     else if (is1G)
                     {
@@ -339,8 +326,9 @@ namespace Pulse.WPF.ViewModels
                     port.StatusText   = statusLine; // legacy
                     port.StatusColor  = statusBrush;
                     port.LinkLedBrush = ledBrush;
-                    port.IsStale      = inStaleWindow;
-                    port.TileOpacity  = inStaleWindow ? 0.65 : 1.0;
+                    // v0.5.2 §2: stale-tile dimming dropped.
+                    port.IsStale      = false;
+                    port.TileOpacity  = 1.0;
 
                     // ---- Duration / Last-seen line ----
                     port.DurationText = ComputeDurationLine(st, snap);

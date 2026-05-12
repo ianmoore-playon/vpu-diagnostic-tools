@@ -162,7 +162,6 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Style="{StaticResource CcSubCard}" Margin="0,0,12,0"
-                                        Opacity="{Binding TileOpacity}"
                                         AutomationProperties.Name="{Binding Name}"
                                         AutomationProperties.HelpText="{Binding StatusLine}">
                                     <StackPanel>
