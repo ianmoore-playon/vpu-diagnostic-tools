@@ -158,7 +158,7 @@ namespace Pulse.WPF.Services
         }
 
         // -- Identity ------------------------------------------------------------
-        private static void CollectIdentity(DashboardSnapshot snap)
+        private void CollectIdentity(DashboardSnapshot snap)
         {
             try
             {
@@ -197,7 +197,7 @@ namespace Pulse.WPF.Services
             catch { snap.VpuLabel = snap.Hostname; }
         }
 
-        private static string ParseVpuLabelFromAgentLogs()
+        private string ParseVpuLabelFromAgentLogs()
         {
             // Mirrors the Camera Connectivity engine: look in known Pixellot log
             // dirs for the newest agent_*.log, scan for vpuName + presentedProductType.
@@ -299,7 +299,7 @@ namespace Pulse.WPF.Services
         }
 
         // -- Gauges (CPU / Memory / Storage / Uptime / CPU name) ----------------
-        private static void CollectGauges(DashboardSnapshot snap)
+        private void CollectGauges(DashboardSnapshot snap)
         {
             var g = ReadGaugesCore();
             snap.CpuUsagePct     = g.CpuUsagePct;
@@ -351,7 +351,7 @@ namespace Pulse.WPF.Services
         // Shared between full snapshot collection and the live tick. Each block
         // is wrapped so a single failing query (e.g. perf-counter access denied)
         // doesn't blank the others.
-        private static GaugeReadings ReadGaugesCore()
+        private GaugeReadings ReadGaugesCore()
         {
             var g = new GaugeReadings();
 
