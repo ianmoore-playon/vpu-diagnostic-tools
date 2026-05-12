@@ -11,15 +11,14 @@
 
     <Grid Margin="32,24,32,24">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />   <!-- 0: header -->
+            <RowDefinition Height="Auto" />   <!-- 0: header + actions -->
             <RowDefinition Height="*" />      <!-- 1: 2-column body -->
-            <RowDefinition Height="Auto" />   <!-- 2: action bar -->
         </Grid.RowDefinitions>
 
-        <!-- ====== Header ====== -->
+        <!-- ====== Header (v0.5.4 top-bar buttons) ====== -->
         <DockPanel Grid.Row="0" Margin="0,0,0,16">
             <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
-                    Background="{Binding StatusBg}"
+                    Background="{Binding StatusBg}" Margin="8,0,0,0"
                     VerticalAlignment="Center"
                     AutomationProperties.Name="Reports status"
                     AutomationProperties.HelpText="{Binding StatusLabel}">
@@ -30,10 +29,39 @@
                                VerticalAlignment="Center" />
                 </StackPanel>
             </Border>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Command="{Binding OpenFolderCommand}"
+                        Style="{StaticResource TopBarOutlinedButton}"
+                        ToolTip="Open the reports folder in Windows Explorer.">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <md:PackIcon Kind="FolderOpenOutline" Width="16" Height="16" VerticalAlignment="Center" />
+                        <TextBlock Text="Reports Folder" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding DeleteCommand}"
+                        Style="{StaticResource TopBarOutlinedButton}"
+                        ToolTip="Delete the selected report. You'll be asked to confirm.">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <md:PackIcon Kind="DeleteOutline" Width="16" Height="16" VerticalAlignment="Center" />
+                        <TextBlock Text="Delete Report" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding RefreshCommand}"
+                        Style="{StaticResource TopBarPrimaryButton}"
+                        ToolTip="Re-read the reports folder.">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <md:PackIcon Kind="Refresh" Width="16" Height="16" VerticalAlignment="Center"
+                                     Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="Refresh" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
             <StackPanel>
-                <TextBlock Text="Reports" Style="{StaticResource PageTitle}" />
+                <TextBlock Text="Reports" Style="{StaticResource PageTitle}"
+                           TextTrimming="CharacterEllipsis" />
                 <TextBlock Text="Past diagnostic-run snapshots — pick one on the left to read its full contents"
-                           Style="{StaticResource PageSubtitle}" />
+                           Style="{StaticResource PageSubtitle}"
+                           TextTrimming="CharacterEllipsis" MaxWidth="640" />
             </StackPanel>
         </DockPanel>
 
@@ -160,42 +188,5 @@
             </Border>
         </Grid>
 
-        <!-- ====== Bottom action bar ====== -->
-        <DockPanel Grid.Row="2">
-            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-                <Button Command="{Binding OpenFolderCommand}"
-                        Style="{StaticResource MaterialDesignOutlinedButton}"
-                        MinWidth="180" MinHeight="44"
-                        VerticalAlignment="Center"
-                        Margin="0,0,8,0"
-                        ToolTip="Open the reports folder in Windows Explorer.">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <md:PackIcon Kind="FolderOpenOutline" Width="16" Height="16" VerticalAlignment="Center" />
-                        <TextBlock Text="Open Reports Folder" Margin="8,0,0,0" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-                <Button Command="{Binding DeleteCommand}"
-                        Style="{StaticResource MaterialDesignOutlinedButton}"
-                        MinWidth="160" MinHeight="44"
-                        VerticalAlignment="Center"
-                        ToolTip="Delete the selected report. You'll be asked to confirm.">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <md:PackIcon Kind="DeleteOutline" Width="16" Height="16" VerticalAlignment="Center" />
-                        <TextBlock Text="Delete Report" Margin="8,0,0,0" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-            </StackPanel>
-            <Button DockPanel.Dock="Right"
-                    Command="{Binding RefreshCommand}"
-                    Style="{StaticResource MaterialDesignRaisedButton}"
-                    MinWidth="160" MinHeight="44"
-                    VerticalAlignment="Center"
-                    ToolTip="Re-read the reports folder.">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <md:PackIcon Kind="Refresh" Width="18" Height="18" VerticalAlignment="Center" />
-                    <TextBlock Text="Refresh" Margin="8,0,0,0" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
-        </DockPanel>
     </Grid>
 </UserControl>

@@ -60,17 +60,16 @@
 
     <Grid Margin="32,24,32,24">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />   <!-- 0: header -->
+            <RowDefinition Height="Auto" />   <!-- 0: header + actions -->
             <RowDefinition Height="Auto" />   <!-- 1: findings banner -->
             <RowDefinition Height="Auto" />   <!-- 2: filter row -->
             <RowDefinition Height="*" />      <!-- 3: data grid -->
-            <RowDefinition Height="Auto" />   <!-- 4: action bar -->
         </Grid.RowDefinitions>
 
-        <!-- ====== Header ====== -->
+        <!-- ====== Header (v0.5.4 top-bar buttons) ====== -->
         <DockPanel Grid.Row="0" Margin="0,0,0,16">
             <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
-                    Background="{Binding StatusBg}"
+                    Background="{Binding StatusBg}" Margin="8,0,0,0"
                     VerticalAlignment="Center"
                     AutomationProperties.Name="Event Viewer status"
                     AutomationProperties.HelpText="{Binding StatusLabel}">
@@ -81,10 +80,31 @@
                                VerticalAlignment="Center" />
                 </StackPanel>
             </Border>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Command="{Binding OpenEventViewerCommand}"
+                        Style="{StaticResource TopBarOutlinedButton}"
+                        ToolTip="Open the Windows Event Viewer (eventvwr.msc) for the full historical record.">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <md:PackIcon Kind="OpenInNew" Width="16" Height="16" VerticalAlignment="Center" />
+                        <TextBlock Text="Windows Event Viewer" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding RefreshCommand}"
+                        Style="{StaticResource TopBarPrimaryButton}"
+                        ToolTip="Re-read recent event-log entries with the current filter settings.">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <md:PackIcon Kind="Refresh" Width="16" Height="16" VerticalAlignment="Center"
+                                     Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="Refresh" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
             <StackPanel>
-                <TextBlock Text="Event Viewer" Style="{StaticResource PageTitle}" />
+                <TextBlock Text="Event Viewer" Style="{StaticResource PageTitle}"
+                           TextTrimming="CharacterEllipsis" />
                 <TextBlock Text="Filtered Windows event-log entries for disk, NIC, Pixellot, and core service sources"
-                           Style="{StaticResource PageSubtitle}" />
+                           Style="{StaticResource PageSubtitle}"
+                           TextTrimming="CharacterEllipsis" MaxWidth="640" />
             </StackPanel>
         </DockPanel>
 
@@ -205,30 +225,5 @@
             </DataGrid>
         </Border>
 
-        <!-- ====== Bottom action bar ====== -->
-        <DockPanel Grid.Row="4">
-            <Button DockPanel.Dock="Left"
-                    Command="{Binding OpenEventViewerCommand}"
-                    Style="{StaticResource MaterialDesignOutlinedButton}"
-                    MinWidth="200" MinHeight="44"
-                    VerticalAlignment="Center"
-                    ToolTip="Open the Windows Event Viewer (eventvwr.msc) for the full historical record.">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <md:PackIcon Kind="OpenInNew" Width="16" Height="16" VerticalAlignment="Center" />
-                    <TextBlock Text="Open Windows Event Viewer" Margin="8,0,0,0" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
-            <Button DockPanel.Dock="Right"
-                    Command="{Binding RefreshCommand}"
-                    Style="{StaticResource MaterialDesignRaisedButton}"
-                    MinWidth="160" MinHeight="44"
-                    VerticalAlignment="Center"
-                    ToolTip="Re-read recent event-log entries with the current filter settings.">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <md:PackIcon Kind="Refresh" Width="18" Height="18" VerticalAlignment="Center" />
-                    <TextBlock Text="Refresh" Margin="8,0,0,0" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
-        </DockPanel>
     </Grid>
 </UserControl>
