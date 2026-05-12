@@ -48,6 +48,17 @@ namespace Pulse.WPF.Helpers
         public string LastRemoteLabel { get; set; }
         public DateTime? LastRemoteAt { get; set; }
 
+        // ---- Cabled-no-link hold-off (v0.5.2 §3) ----
+        // Set when the port first enters "link down, but a remote MAC is
+        // still cached" — i.e. Windows reports a cable but no negotiation.
+        // Cleared when the port leaves that state (either the link comes
+        // back up, or the cable is removed and the remote MAC falls off).
+        // The recommendations engine only fires the cable-swap advice when
+        // (now - CabledNoLinkSince) > 30 s, so a normal unplug — which
+        // Windows often shows as cabled-no-link for a tick or two before
+        // settling on no-cable — doesn't generate noise.
+        public DateTime? CabledNoLinkSince { get; set; }
+
         // ---- Last successful *resolve* timestamp ----
         // Distinct from LastRemoteAt: this is updated every tick where the
         // current snapshot still carries a real remote, so the 30-second
@@ -215,6 +226,20 @@ namespace Pulse.WPF.Helpers
 
                 // -- Error-count sample --
                 st.ErrorSamples.Add((now, s.ErrorCount));
+
+                // -- Cabled-no-link tracking (v0.5.2 §3) --
+                // "Cabled no link" = link is down AND we have a remote MAC
+                // cached. Set the timestamp on first entry, clear when the
+                // port leaves the state.
+                bool isCabledNoLink = !s.IsUp && !string.IsNullOrEmpty(s.RemoteMac);
+                if (isCabledNoLink)
+                {
+                    if (!st.CabledNoLinkSince.HasValue) st.CabledNoLinkSince = now;
+                }
+                else
+                {
+                    st.CabledNoLinkSince = null;
+                }
 
                 // -- Last-seen remote snapshot --
                 // After bug-fix #1/#2/#3, RemoteMac is null when the only ARP

@@ -540,8 +540,16 @@ namespace Pulse.WPF.ViewModels
                         $"Reseat or replace the cable on Port {portNum}. Expected 1 Gbps for {info.PrimaryLabel}, currently negotiated 100 Mbps."));
                 }
 
-                // Cable + no link.
-                if (!snap.IsUp && !string.IsNullOrEmpty(snap.RemoteMac))
+                // Cable + no link — v0.5.2 §3 hold-off.
+                // The *tile* StatusLine shows "Cable, no link" immediately
+                // (that's just state display). The *recommendation* waits 30
+                // s before firing, because Windows often reports cabled-no-
+                // link transiently when a cable is being yanked — we don't
+                // want to advise a cable swap for a normal unplug event.
+                if (!snap.IsUp
+                    && !string.IsNullOrEmpty(snap.RemoteMac)
+                    && st.CabledNoLinkSince.HasValue
+                    && (DateTime.UtcNow - st.CabledNoLinkSince.Value) >= TimeSpan.FromSeconds(30))
                 {
                     rows.Add(NetworkRecommendation.Create(
                         "Warning",
@@ -563,7 +571,11 @@ namespace Pulse.WPF.ViewModels
                         $"Plug a cable into Port {portNum} of the VPU."));
                 }
 
-                // Flapping.
+                // Flapping. v0.5.2 §3 re-check: the threshold is 3
+                // transitions in 60 s, so a single up→down→up sequence (2
+                // transitions) during a cable-yank does NOT trigger this —
+                // genuine flapping needs at least one further toggle inside
+                // the window. No hold-off needed.
                 int flaps = st.FlapCountInWindow(_monitor.FlapWindow, DateTime.UtcNow);
                 if (flaps >= _monitor.FlapTransitionsThreshold)
                 {
@@ -596,14 +608,13 @@ namespace Pulse.WPF.ViewModels
                 }
             }
 
-            // Configured cameras not visible on any port — Warning.
-            if (missingFromPorts > 0)
-            {
-                rows.Add(NetworkRecommendation.Create(
-                    "Warning",
-                    "Configured cameras missing",
-                    $"cameras.cfg lists {missingFromPorts} camera{(missingFromPorts == 1 ? "" : "s")} not visible on any VPU port. Check cabling and PoE."));
-            }
+            // v0.5.2 §4: the "Configured cameras missing" recommendation +
+            // Finding were dropped. cameras.cfg vs. port-list comparison is
+            // too noisy in the field (cameras.cfg often lists cameras for
+            // other VPU models or dev environments). The role lookup itself
+            // is still used to drive the tile primary label when a real
+            // match exists — we just don't alert on the mismatch.
+            _ = missingFromPorts; // intentionally unused now; signature kept
 
             // Wire the cross-tab buttons. Network is the most useful for any
             // link-degraded / no-link row; cameras.cfg is the right jump for
