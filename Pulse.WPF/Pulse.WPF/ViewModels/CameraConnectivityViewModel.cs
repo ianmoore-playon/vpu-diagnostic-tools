@@ -91,9 +91,10 @@ namespace Pulse.WPF.ViewModels
         public string NicCaption { get => _nicCaption; set => Set(ref _nicCaption, value); }
 
         // ----- Cross-tab + adapter-settings commands -----
-        public ICommand OpenAdapterSettingsCommand { get; }
-        public ICommand GoToNetworkCommand         { get; }
-        public ICommand OpenCamerasCfgCommand      { get; }
+        public ICommand OpenAdapterSettingsCommand        { get; }
+        public ICommand OpenNetworkAndSharingCenterCommand { get; }
+        public ICommand GoToNetworkCommand                { get; }
+        public ICommand OpenCamerasCfgCommand             { get; }
 
         public CameraConnectivityViewModel(INetworkAdapterService net, IPixellotConfigService cfg)
         {
@@ -121,6 +122,23 @@ namespace Pulse.WPF.ViewModels
             }
 
             OpenAdapterSettingsCommand = new RelayCommand(() => SafeStart("ncpa.cpl"));
+
+            // v0.5.2 §5: second outlined button beside "Open Adapter Settings".
+            // Launches the Network and Sharing Center via the legacy control
+            // panel applet by canonical name.
+            OpenNetworkAndSharingCenterCommand = new RelayCommand(() =>
+            {
+                try
+                {
+                    var psi = new ProcessStartInfo("control")
+                    {
+                        Arguments = "/name Microsoft.NetworkAndSharingCenter",
+                        UseShellExecute = true,
+                    };
+                    Process.Start(psi);
+                }
+                catch { /* same swallow as SafeStart — no toast surface yet. */ }
+            });
 
             GoToNetworkCommand = new RelayCommand(() => App.NavigateToTab("Network"));
 

@@ -362,14 +362,19 @@
             </Expander>
 
             <!-- ====== Bottom action bar ====== -->
-            <DockPanel Grid.Row="5">
-                <Button DockPanel.Dock="Left"
-                        Content="Open Adapter Settings"
+            <StackPanel Grid.Row="5" Orientation="Horizontal">
+                <Button Content="Open Adapter Settings"
                         Command="{Binding OpenAdapterSettingsCommand}"
                         Style="{StaticResource MaterialDesignOutlinedButton}"
-                        MinWidth="200" MinHeight="40"
+                        MinWidth="180" MinHeight="44"
                         AutomationProperties.Name="Open Windows network adapter settings" />
-            </DockPanel>
+                <Button Content="Open Network and Sharing Center"
+                        Command="{Binding OpenNetworkAndSharingCenterCommand}"
+                        Style="{StaticResource MaterialDesignOutlinedButton}"
+                        MinWidth="180" MinHeight="44"
+                        Margin="12,0,0,0"
+                        AutomationProperties.Name="Open Windows Network and Sharing Center" />
+            </StackPanel>
         </Grid>
     </ScrollViewer>
 </UserControl>
