@@ -162,8 +162,11 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Style="{StaticResource CcSubCard}" Margin="0,0,12,0"
+                                        Cursor="Hand"
+                                        MouseLeftButtonUp="PortTile_MouseLeftButtonUp"
                                         AutomationProperties.Name="{Binding Name}"
-                                        AutomationProperties.HelpText="{Binding StatusLine}">
+                                        AutomationProperties.HelpText="{Binding StatusLine}"
+                                        ToolTip="Click for full adapter details">
                                     <StackPanel>
                                         <!-- Header: port-number badge + Port N + status dot.
                                              v0.4.6 — the Ethernet PackIcon was removed

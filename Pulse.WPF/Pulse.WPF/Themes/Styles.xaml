@@ -246,6 +246,23 @@
     </Style>
 
     <!-- ============================================================ -->
+    <!-- Reusable modal dialog window style (v0.5.2 §6).               -->
+    <!-- First modal in the project — keyed PulseDialogWindow so       -->
+    <!-- future settings / about / etc. dialogs can re-use it.         -->
+    <!-- ============================================================ -->
+    <Style x:Key="PulseDialogWindow" TargetType="Window">
+        <Setter Property="Background" Value="{StaticResource AppBgBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="ResizeMode" Value="CanResize" />
+        <Setter Property="MinWidth" Value="520" />
+        <Setter Property="MinHeight" Value="420" />
+        <Setter Property="WindowStartupLocation" Value="CenterOwner" />
+        <Setter Property="ShowInTaskbar" Value="False" />
+    </Style>
+
+    <!-- ============================================================ -->
     <!-- Focus visual — visible on dark backgrounds.                   -->
     <!-- BorderColStrong 2 px outline per UX_REVIEW Section 6.        -->
     <!-- ============================================================ -->

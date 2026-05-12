@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using Pulse.WPF.Helpers;
@@ -334,6 +335,9 @@ namespace Pulse.WPF.ViewModels
                     // render the local self-IP (already filtered upstream).
                     port.Ip  = string.IsNullOrEmpty(ipShown)  ? "—" : ipShown;
                     port.Mac = string.IsNullOrEmpty(macShown) ? "—" : macShown;
+                    // Local MAC is always available from the snapshot; the
+                    // Adapter Details dialog uses it to resolve the adapter.
+                    port.LocalMac = snap.LocalMac ?? "";
                     port.PrimaryLabel = primary;
                     port.SecondaryLabel = secondary;
                     port.PrimaryColor = info.IsConfigured
@@ -924,5 +928,69 @@ namespace Pulse.WPF.ViewModels
         }
 
         private void AddLog(string label, string result, string level) => Logger.Add(label, result, level);
+
+        // -------------------------------------------------------------------
+        // Adapter Details (v0.5.2 §6)
+        // -------------------------------------------------------------------
+        /// <summary>
+        /// Called from the tile's MouseLeftButtonUp handler. Looks up the
+        /// adapter by the port's local MAC, builds an
+        /// <see cref="AdapterDetailsViewModel"/> with the live remote info
+        /// + recent activity, and shows the modal Adapter Details dialog.
+        /// Wrapped in try/catch — a dialog construction failure must never
+        /// kill the monitor or the page.
+        /// </summary>
+        public void OpenAdapterDetails(PortViewModel port)
+        {
+            if (port == null) return;
+            try
+            {
+                // Resolve the adapter by its *local* MAC. The remote MAC
+                // shown on the tile is the camera at the other end of the
+                // cable — not the NIC we want to introspect.
+                var details = _net?.GetAdapterDetails(port.LocalMac);
+                if (details == null)
+                {
+                    // Fall back to a mostly-empty POCO so the dialog still
+                    // opens — we render "—" everywhere we don't have data.
+                    details = new AdapterDetails { LocalMac = port.LocalMac ?? "—" };
+                }
+
+                // Pull remote info off the tile so the dialog doesn't need
+                // to re-walk ARP. Vendor + role come from the helpers.
+                if (!string.IsNullOrEmpty(port.Ip) && port.Ip != "—")
+                    details.RemoteIp = port.Ip;
+                if (!string.IsNullOrEmpty(port.Mac) && port.Mac != "—")
+                {
+                    details.RemoteMac    = port.Mac;
+                    details.RemoteVendor = MacOuiTable.LookupVendor(port.Mac);
+                }
+                try
+                {
+                    var roles      = SafeGetRoles();
+                    var rolesByMac = SafeGetRolesByMac();
+                    var info = RemoteDeviceResolver.Resolve(details.RemoteMac, details.RemoteIp, roles, rolesByMac);
+                    if (info != null && info.IsConfigured)
+                        details.RemoteRole = info.PrimaryLabel;
+                }
+                catch { }
+
+                var dialogVm = new AdapterDetailsViewModel(details, port);
+                var dialog = new Views.AdapterDetailsDialog(dialogVm);
+                // Owner = the active main window so the dialog centers + is
+                // modal to the right shell. Application.Current.MainWindow
+                // is safe in net48 / WPF; null-check tolerates design-time.
+                if (Application.Current?.MainWindow != null
+                    && !ReferenceEquals(Application.Current.MainWindow, dialog))
+                {
+                    dialog.Owner = Application.Current.MainWindow;
+                }
+                dialog.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                AddLog("AdapterDetails", $"Failed to open adapter details: {ex.Message}", "Warn");
+            }
+        }
     }
 }

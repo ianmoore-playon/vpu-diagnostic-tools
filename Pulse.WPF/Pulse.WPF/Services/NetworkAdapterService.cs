@@ -33,6 +33,259 @@ namespace Pulse.WPF.Services
             return Task.Run(() => GetCameraPorts());
         }
 
+        // ===== Adapter Details (v0.5.2 §6) =====
+        //
+        // Resolve one NIC by local MAC and populate a fully-flat POCO for
+        // the in-app Adapter Details dialog. Every reader is wrapped in its
+        // own try/catch so a partial failure (e.g. the WMI driver lookup
+        // throws on a locked-down box) doesn't blank the rest of the sheet.
+        public AdapterDetails GetAdapterDetails(string localMac)
+        {
+            if (string.IsNullOrWhiteSpace(localMac)) return null;
+            var wanted = NormaliseMac(localMac);
+
+            NetworkInterface match = null;
+            try
+            {
+                foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    string raw = null;
+                    try { raw = nic.GetPhysicalAddress()?.ToString(); }
+                    catch { /* keep iterating */ }
+                    if (string.IsNullOrEmpty(raw)) continue;
+                    if (NormaliseMac(FormatMac(raw)) == wanted) { match = nic; break; }
+                }
+            }
+            catch { /* fall through — match stays null. */ }
+
+            if (match == null) return null;
+
+            var d = new AdapterDetails
+            {
+                LocalMac = FormatMac(match.GetPhysicalAddress()?.ToString() ?? ""),
+            };
+
+            try { d.Name        = match.Name; }        catch { }
+            try { d.Description = match.Description; } catch { }
+            try
+            {
+                d.Status = match.OperationalStatus == OperationalStatus.Up ? "Up"
+                         : match.OperationalStatus == OperationalStatus.Down ? "Down"
+                         : match.OperationalStatus.ToString();
+            }
+            catch { d.Status = "Unknown"; }
+            try { d.LinkSpeed = FormatSpeedBps(match.Speed); } catch { d.LinkSpeed = "—"; }
+            // Duplex isn't surfaced by NetworkInterface in .NET Framework.
+            // Leave empty so the dialog hides the row rather than show "Unknown".
+            d.Duplex = "";
+
+            IPInterfaceProperties props = null;
+            try { props = match.GetIPProperties(); } catch { }
+
+            if (props != null)
+            {
+                // IPv4 unicast
+                try
+                {
+                    var v4 = props.UnicastAddresses.FirstOrDefault(a =>
+                        a.Address != null &&
+                        a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                    if (v4 != null)
+                    {
+                        d.IPv4Address = v4.Address.ToString();
+                        d.SubnetMask  = v4.IPv4Mask?.ToString() ?? PrefixToMask(v4.PrefixLength);
+                    }
+                }
+                catch { }
+
+                // IPv4 gateway
+                try
+                {
+                    var gw = props.GatewayAddresses.FirstOrDefault(g =>
+                        g?.Address != null &&
+                        g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                    if (gw != null) d.DefaultGateway = gw.Address.ToString();
+                }
+                catch { }
+
+                // DNS servers — IPv4 only is sufficient on a VPU.
+                try
+                {
+                    var dns = props.DnsAddresses
+                        .Where(a => a != null &&
+                                    a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                        .Select(a => a.ToString())
+                        .ToArray();
+                    if (dns.Length > 0) d.DnsServers = string.Join(", ", dns);
+                }
+                catch { }
+
+                // DHCP — enabled flag + server + lease.
+                try
+                {
+                    var v4Props = props.GetIPv4Properties();
+                    if (v4Props != null)
+                    {
+                        d.IsDhcpEnabled   = v4Props.IsDhcpEnabled;
+                        d.DhcpEnabledText = v4Props.IsDhcpEnabled ? "Enabled" : "Disabled";
+                    }
+                }
+                catch { d.DhcpEnabledText = "Unknown"; }
+
+                try
+                {
+                    var dhcp = props.DhcpServerAddresses?
+                        .Where(a => a != null)
+                        .Select(a => a.ToString())
+                        .ToArray();
+                    if (dhcp != null && dhcp.Length > 0) d.DhcpServer = string.Join(", ", dhcp);
+                }
+                catch { }
+
+                // IPv6 unicast addresses + gateways.
+                try
+                {
+                    var v6Addrs = props.UnicastAddresses
+                        .Where(a => a?.Address != null &&
+                                    a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                        .Select(a => a.Address.ToString())
+                        .ToArray();
+                    if (v6Addrs.Length > 0) d.IPv6Addresses = string.Join(", ", v6Addrs);
+
+                    var v6Gws = props.GatewayAddresses
+                        .Where(g => g?.Address != null &&
+                                    g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                        .Select(g => g.Address.ToString())
+                        .ToArray();
+                    if (v6Gws.Length > 0) d.IPv6Gateways = string.Join(", ", v6Gws);
+                }
+                catch { }
+            }
+
+            // DHCP lease — not exposed by NetworkInterface; query the registry
+            // / WMI Win32_NetworkAdapterConfiguration when available.
+            TryFillDhcpLease(d, match);
+
+            // Error counters from IPInterfaceStatistics.
+            try
+            {
+                var stats = match.GetIPStatistics();
+                if (stats != null)
+                {
+                    d.IncomingPacketsWithErrors = stats.IncomingPacketsWithErrors;
+                    d.OutgoingPacketsWithErrors = stats.OutgoingPacketsWithErrors;
+                    d.IncomingPacketsDiscarded  = stats.IncomingPacketsDiscarded;
+                    d.OutgoingPacketsDiscarded  = stats.OutgoingPacketsDiscarded;
+                }
+            }
+            catch { }
+
+            // Driver info via WMI Win32_PnPSignedDriver. Best-effort; on a
+            // locked-down box this throws and we leave the driver fields
+            // empty.
+            TryFillDriverInfo(d, match.Description);
+
+            return d;
+        }
+
+        // ---- Adapter Details helpers ----
+        private static string NormaliseMac(string mac)
+        {
+            if (string.IsNullOrEmpty(mac)) return "";
+            var sb = new System.Text.StringBuilder(mac.Length);
+            foreach (var c in mac)
+            {
+                if (c == ':' || c == '-' || c == '.' || c == ' ') continue;
+                sb.Append(char.ToUpperInvariant(c));
+            }
+            return sb.ToString();
+        }
+
+        private static string FormatSpeedBps(long bps)
+        {
+            if (bps <= 0) return "—";
+            if (bps >= 1_000_000_000L) return $"{bps / 1_000_000_000L} Gbps";
+            if (bps >= 1_000_000L)     return $"{bps / 1_000_000L} Mbps";
+            return $"{bps} bps";
+        }
+
+        private static string PrefixToMask(int prefix)
+        {
+            if (prefix < 0 || prefix > 32) return "/" + prefix;
+            if (prefix == 0) return "0.0.0.0";
+            uint mask = uint.MaxValue << (32 - prefix);
+            return $"{(mask >> 24) & 0xFF}.{(mask >> 16) & 0xFF}.{(mask >> 8) & 0xFF}.{mask & 0xFF}";
+        }
+
+        // DHCP lease — query Win32_NetworkAdapterConfiguration by MAC. The
+        // System.Management reference is already present (System Overview
+        // panel uses it). Wrap every read independently.
+        private static void TryFillDhcpLease(AdapterDetails d, NetworkInterface nic)
+        {
+            try
+            {
+                string mac = NormaliseMac(FormatMac(nic.GetPhysicalAddress()?.ToString() ?? ""));
+                if (string.IsNullOrEmpty(mac)) return;
+                using (var s = new System.Management.ManagementObjectSearcher(
+                    "SELECT MACAddress, DHCPLeaseObtained, DHCPLeaseExpires FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = TRUE"))
+                {
+                    foreach (var mo in s.Get())
+                    {
+                        string moMac = null;
+                        try { moMac = mo["MACAddress"] as string; } catch { }
+                        if (string.IsNullOrEmpty(moMac)) continue;
+                        if (NormaliseMac(moMac) != mac) continue;
+
+                        try { d.DhcpLeaseObtained = FormatCimDate(mo["DHCPLeaseObtained"] as string); } catch { }
+                        try { d.DhcpLeaseExpires  = FormatCimDate(mo["DHCPLeaseExpires"]  as string); } catch { }
+                        break;
+                    }
+                }
+            }
+            catch { /* WMI unavailable — leave lease fields empty. */ }
+        }
+
+        // Win32_NetworkAdapterConfiguration returns a CIM DATETIME string
+        // ("yyyyMMddHHmmss.ffffff±UUU"). Render the local DateTime.
+        private static string FormatCimDate(string s)
+        {
+            if (string.IsNullOrEmpty(s) || s.Length < 14) return "";
+            try
+            {
+                var dt = System.Management.ManagementDateTimeConverter.ToDateTime(s);
+                return dt.ToString("yyyy-MM-dd HH:mm:ss");
+            }
+            catch { return ""; }
+        }
+
+        private static void TryFillDriverInfo(AdapterDetails d, string description)
+        {
+            if (string.IsNullOrEmpty(description)) return;
+            try
+            {
+                // Match by DeviceName == description. The signed-driver class
+                // has DriverName / DriverVersion / DriverDate (CIM DATETIME).
+                using (var s = new System.Management.ManagementObjectSearcher(
+                    "SELECT DeviceName, DriverName, DriverVersion, DriverDate FROM Win32_PnPSignedDriver"))
+                {
+                    foreach (var mo in s.Get())
+                    {
+                        string dev = null;
+                        try { dev = mo["DeviceName"] as string; } catch { }
+                        if (string.IsNullOrEmpty(dev)) continue;
+                        if (!string.Equals(dev, description, System.StringComparison.OrdinalIgnoreCase)) continue;
+
+                        try { d.DriverName    = (mo["DriverName"]    as string) ?? dev; } catch { d.DriverName = dev; }
+                        try { d.DriverVersion = mo["DriverVersion"]  as string; } catch { }
+                        try { d.DriverDate    = FormatCimDate(mo["DriverDate"] as string); } catch { }
+                        break;
+                    }
+                }
+            }
+            catch { /* WMI unavailable or class missing — leave driver fields empty. */ }
+        }
+
+
         private List<CameraNicSnapshot> GetCameraPorts()
         {
             var arp = LoadArpTable();   // ifIndex -> { ip -> mac }

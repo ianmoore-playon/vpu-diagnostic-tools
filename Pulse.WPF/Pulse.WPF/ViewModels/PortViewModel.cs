@@ -71,11 +71,17 @@ namespace Pulse.WPF.ViewModels
         public Brush StatusColor { get => _statusColor; set => Set(ref _statusColor, value); }
 
         // ---- Identity rows (mono, copyable in the tile) ----
+        // Ip / Mac are the *remote* values shown on the tile when linked.
+        // LocalMac is the adapter's own MAC — needed by the Adapter Details
+        // dialog (v0.5.2 §6) to look the NetworkInterface back up.
         private string _ip = "";
         public string Ip { get => _ip; set => Set(ref _ip, value); }
 
         private string _mac = "";
         public string Mac { get => _mac; set => Set(ref _mac, value); }
+
+        private string _localMac = "";
+        public string LocalMac { get => _localMac; set => Set(ref _localMac, value); }
 
         // ---- Errors row ----
         // ErrorLine is the new tile binding (e.g. "0 errors" / "12 errors ↑").

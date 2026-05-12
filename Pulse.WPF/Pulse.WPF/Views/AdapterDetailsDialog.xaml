@@ -1,0 +1,295 @@
+<Window x:Class="Pulse.WPF.Views.AdapterDetailsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:vm="clr-namespace:Pulse.WPF.ViewModels"
+        d:DataContext="{d:DesignInstance Type=vm:AdapterDetailsViewModel}"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Adapter details"
+        Style="{StaticResource PulseDialogWindow}"
+        Width="720" Height="720"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+    <Window.Resources>
+        <!-- Dialog-local helpers. Two-column key/value row with a fixed
+             label width so every section lines up. -->
+        <Style x:Key="KvLabel" TargetType="TextBlock" BasedOn="{StaticResource MutedLabel}">
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Margin" Value="0,2,12,2" />
+        </Style>
+        <Style x:Key="KvValue" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,2,0,2" />
+        </Style>
+        <Style x:Key="KvMono" TargetType="TextBlock" BasedOn="{StaticResource KvValue}">
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Background="{StaticResource AppBgBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Padding="24,18,24,8">
+            <StackPanel>
+                <TextBlock Text="{Binding Title}"
+                           Style="{StaticResource PageTitle}" />
+                <TextBlock Text="{Binding Description}"
+                           Style="{StaticResource PageSubtitle}" />
+            </StackPanel>
+        </Border>
+
+        <!-- Body -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="24,0,24,8">
+            <StackPanel>
+
+                <!-- ===== Adapter ===== -->
+                <Border Style="{StaticResource Card}" Margin="0,8,0,12">
+                    <StackPanel>
+                        <TextBlock Text="Adapter" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Name"        Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Name}" Style="{StaticResource KvValue}" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Status"      Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Status}" Style="{StaticResource KvValue}" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Link speed"  Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LinkSpeed}" Style="{StaticResource KvValue}" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="MAC (local)" Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding LocalMac}" Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Description" Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Description}" Style="{StaticResource KvValue}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== IPv4 ===== -->
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="IPv4" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Address"        Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding IPv4Address}"  Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Subnet mask"    Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SubnetMask}"   Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Gateway"        Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DefaultGateway}" Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="DHCP"           Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding DhcpEnabledText}" Style="{StaticResource KvValue}" />
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="DHCP server"    Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding DhcpServer}"   Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="5" Grid.Column="0" Text="DNS servers"    Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding DnsServers}"   Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Lease obtained" Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding DhcpLeaseObtained}" Style="{StaticResource KvValue}" />
+                            <TextBlock Grid.Row="7" Grid.Column="0" Text="Lease expires"  Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding DhcpLeaseExpires}"  Style="{StaticResource KvValue}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== IPv6 (collapsed expander — less common case) ===== -->
+                <Expander Header="IPv6"
+                          Margin="0,0,0,12"
+                          Foreground="{StaticResource MutedForegroundBrush}">
+                    <Border Style="{StaticResource Card}" Margin="0,8,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Addresses" Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding IPv6Addresses}" Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Gateways"  Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding IPv6Gateways}"  Style="{StaticResource KvMono}" />
+                        </Grid>
+                    </Border>
+                </Expander>
+
+                <!-- ===== Driver ===== -->
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="Driver" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Name"    Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DriverName}"    Style="{StaticResource KvValue}" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Version" Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DriverVersion}" Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Date"    Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DriverDate}"    Style="{StaticResource KvValue}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Counters ===== -->
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="Error counters" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Incoming errors"   Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding IncomingErrors}"   Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Outgoing errors"   Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding OutgoingErrors}"   Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Incoming discards" Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding IncomingDiscards}" Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Outgoing discards" Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding OutgoingDiscards}" Style="{StaticResource KvMono}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Remote (visible only when we have one) ===== -->
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12"
+                        Visibility="{Binding HasRemote, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="Remote device" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="IP"        Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding RemoteIp}"     Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="MAC"       Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding RemoteMac}"    Style="{StaticResource KvMono}" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="OUI vendor" Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding RemoteVendor}" Style="{StaticResource KvValue}" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Role"      Style="{StaticResource KvLabel}" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding RemoteRole}"   Style="{StaticResource KvValue}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Recent activity ===== -->
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12"
+                        Visibility="{Binding RecentHistory.Count, Converter={StaticResource CountToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="Recent activity" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                        <ItemsControl ItemsSource="{Binding RecentHistory}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2,0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="72" />
+                                            <ColumnDefinition Width="80" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding TimestampLabel}"
+                                                   FontFamily="Cascadia Mono, Consolas"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource MutedForegroundBrush}" />
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding State}"
+                                                   Foreground="{Binding StateColor}"
+                                                   FontWeight="SemiBold"
+                                                   FontSize="11" />
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding Note}"
+                                                   Foreground="{StaticResource ForegroundBrush}"
+                                                   FontSize="11"
+                                                   TextWrapping="Wrap" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Footer -->
+        <Border Grid.Row="2" Background="{StaticResource CardBgBrush}"
+                BorderBrush="{StaticResource BorderColBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="24,12,24,16">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="Close"
+                            Command="{Binding CloseCommand}"
+                            Style="{StaticResource MaterialDesignRaisedButton}"
+                            MinWidth="120" MinHeight="40"
+                            IsCancel="True" IsDefault="True" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Open in Network Connections"
+                            Command="{Binding OpenNcpaCommand}"
+                            Style="{StaticResource MaterialDesignOutlinedButton}"
+                            MinWidth="200" MinHeight="40" />
+                    <Button Content="Open Network and Sharing Center"
+                            Command="{Binding OpenNetworkAndSharingCommand}"
+                            Style="{StaticResource MaterialDesignOutlinedButton}"
+                            MinWidth="220" MinHeight="40"
+                            Margin="12,0,0,0" />
+                    <Button Content="Copy as text"
+                            Command="{Binding CopyAsTextCommand}"
+                            Style="{StaticResource MaterialDesignOutlinedButton}"
+                            MinWidth="140" MinHeight="40"
+                            Margin="12,0,0,0" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>
