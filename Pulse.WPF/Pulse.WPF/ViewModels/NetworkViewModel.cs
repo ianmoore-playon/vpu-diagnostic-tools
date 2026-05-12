@@ -248,7 +248,7 @@ namespace Pulse.WPF.ViewModels
                 sb.AppendLine($"  Name:        {PrimaryAdapter.Name}");
                 sb.AppendLine($"  IP:          {PrimaryAdapter.Ip}");
                 sb.AppendLine($"  MAC:         {PrimaryAdapter.Mac}");
-                sb.AppendLine($"  Status:      {PrimaryAdapter.Status}");
+                sb.AppendLine($"  Link state:  {PrimaryAdapter.LinkState}");
                 sb.AppendLine($"  Speed:       {PrimaryAdapter.Speed}");
             }
 
