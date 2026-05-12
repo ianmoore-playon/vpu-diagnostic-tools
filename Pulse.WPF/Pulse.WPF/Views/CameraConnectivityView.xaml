@@ -87,6 +87,13 @@
                     <!-- v0.5.5: Camera is live (1 s tick) so it doesn't auto-write
                          a per-run report. This button captures a one-shot snapshot
                          when the tech actually wants to attach state to a ticket. -->
+                    <!-- v0.6.5: inline status toast — clears after 4 s via
+                         CameraConnectivityViewModel.ScheduleClearSnapshotStatus.
+                         Mirrors the SystemOverview "Copy as text" pattern. -->
+                    <TextBlock Text="{Binding SnapshotStatus}"
+                               Foreground="{StaticResource MutedForegroundBrush}"
+                               FontSize="11"
+                               VerticalAlignment="Center" Margin="0,0,8,0" />
                     <Button Command="{Binding SaveSnapshotCommand}"
                             Style="{StaticResource TopBarOutlinedButton}"
                             AutomationProperties.Name="Save a one-shot Camera Connectivity snapshot"
@@ -186,6 +193,18 @@
                          corresponding PortViewModel.LinkLedBrush. -->
                     <controls:NicCardDiagram Ports="{Binding Ports}"
                                              AutomationProperties.Name="Camera NIC card schematic" />
+
+                    <!-- v0.6.5: orientation caption. Ports are ordered by MAC
+                         ascending (NetworkAdapterService.GetCameraPortsAsync)
+                         which doesn't always match the physical jack order
+                         from a given side of the chassis. Field tech reported
+                         a tile↔jack confusion on VPU2; wording stays
+                         agnostic about which way you're facing the box. -->
+                    <TextBlock Text="Logical port order (lowest MAC first). May not match physical jack order from the front of the chassis."
+                               Foreground="{StaticResource MutedForegroundBrush}"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Margin="0,4,0,8" />
 
                     <!-- Fixed 4 * grid: every tile is always visible. ItemsControl
                          is replaced by a hand-rolled 4-column Grid because the

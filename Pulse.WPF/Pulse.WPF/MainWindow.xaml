@@ -105,10 +105,10 @@
                     <ToggleButton Style="{StaticResource SidebarNavButton}"
                                   IsChecked="{Binding IsNetwork, Mode=OneWay}"
                                   Command="{Binding NavigateCommand}" CommandParameter="Network"
-                                  AutomationProperties.Name="Network Configuration">
+                                  AutomationProperties.Name="Network">
                         <StackPanel Orientation="Horizontal">
                             <md:PackIcon Kind="WifiCog" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Network Configuration" Margin="14,0,0,0" />
+                            <TextBlock Text="Network" Margin="14,0,0,0" />
                         </StackPanel>
                     </ToggleButton>
 

@@ -180,8 +180,7 @@
                               CanUserResizeRows="False"
                               IsReadOnly="True"
                               RowBackground="Transparent"
-                              AlternatingRowBackground="#10FFFFFF"
-                              ColumnHeaderStyle="{x:Null}">
+                              AlternatingRowBackground="#10FFFFFF">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*">
                                 <DataGridTextColumn.ElementStyle>

@@ -58,7 +58,7 @@ namespace Pulse.WPF.Services
         private static readonly HubTileViewModel[] Tiles =
         {
             new HubTileViewModel { Title="System Overview",        Description="Hardware specs, OS version, uptime, and Pixellot software inventory.",      IconKey="Information",      TargetNav="SystemOverview" },
-            new HubTileViewModel { Title="Network Configuration",  Description="IP, DNS, firewall, and connectivity tests for required ports.",            IconKey="Lan",              TargetNav="Network"        },
+            new HubTileViewModel { Title="Network",                Description="IP, DNS, firewall, and connectivity tests for required ports.",            IconKey="Lan",              TargetNav="Network"        },
             new HubTileViewModel { Title="Camera Connectivity",    Description="Cameras, NICs, link status, and the Fault Isolator wizard.",               IconKey="VideoVintage",     TargetNav="Camera"         },
             new HubTileViewModel { Title="Pixellot Services",      Description="Pixellot agent, encoder, watchdog, and remote service status.",            IconKey="CogPlay",          TargetNav="Services"       },
             new HubTileViewModel { Title="Hardware & Peripherals", Description="GPU, monitor, input devices, PoE budget, and NIC link uptime.",            IconKey="Monitor",          TargetNav="Hardware"       },

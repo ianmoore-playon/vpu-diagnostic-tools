@@ -274,6 +274,15 @@ namespace Pulse.WPF.Services
 
                 if (primary != null && primary.Props != null)
                 {
+                    // v0.6.5: populate AdapterName so the Dashboard's
+                    // "Uplink Adapter" row renders the NIC description
+                    // (e.g. "Intel I210 Gigabit") instead of a blank/em-dash.
+                    // Description is the human-readable form; fall back to
+                    // Name (e.g. "Ethernet 2") when Description is empty.
+                    cfg.AdapterName = !string.IsNullOrWhiteSpace(primary.Nic.Description)
+                        ? primary.Nic.Description
+                        : primary.Nic.Name ?? "";
+
                     var v4 = primary.Props.UnicastAddresses
                         .FirstOrDefault(a => a.Address.AddressFamily == AddressFamily.InterNetwork);
                     if (v4 != null)
@@ -724,7 +733,14 @@ namespace Pulse.WPF.Services
         private async Task<DomainTestResult> RunOneDomainTestAsync(DomainTestSpec spec)
         {
             var row = new DomainTestResult { Domain = spec.Domain, ResolvedTo = "—", Status = "Info" };
-            if (spec.DnsNotExpected) return row;
+            if (spec.DnsNotExpected)
+            {
+                // v0.6.5: render a friendlier label than the bare "Info"
+                // status word. pixellot.stream is a Zixi broadcast target —
+                // it never resolves via DNS by design.
+                row.Status = "Stream-only (DNS not expected)";
+                return row;
+            }
 
             try
             {

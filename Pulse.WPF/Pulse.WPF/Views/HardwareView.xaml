@@ -187,8 +187,7 @@
                                   CanUserResizeRows="False"
                                   IsReadOnly="True"
                                   RowBackground="Transparent"
-                                  AlternatingRowBackground="#10FFFFFF"
-                                  ColumnHeaderStyle="{x:Null}">
+                                  AlternatingRowBackground="#10FFFFFF">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Port" Binding="{Binding Port}" Width="*" />
                                 <DataGridTextColumn Header="State" Binding="{Binding State}" Width="*">

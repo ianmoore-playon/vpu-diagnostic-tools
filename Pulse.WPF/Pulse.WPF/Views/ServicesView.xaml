@@ -139,8 +139,7 @@
                               CanUserResizeRows="False"
                               IsReadOnly="True"
                               RowBackground="Transparent"
-                              AlternatingRowBackground="#10FFFFFF"
-                              ColumnHeaderStyle="{x:Null}">
+                              AlternatingRowBackground="#10FFFFFF">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Service" Binding="{Binding DisplayName}" Width="*" />
                             <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*">

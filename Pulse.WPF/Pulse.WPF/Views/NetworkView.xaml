@@ -65,7 +65,7 @@
                     </Button>
                 </StackPanel>
                 <StackPanel>
-                    <TextBlock Text="Network Configuration" Style="{StaticResource PageTitle}"
+                    <TextBlock Text="Network" Style="{StaticResource PageTitle}"
                                TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="Adapters, IP, NTP and reachability — what the box can talk to right now"
                                Style="{StaticResource PageSubtitle}"

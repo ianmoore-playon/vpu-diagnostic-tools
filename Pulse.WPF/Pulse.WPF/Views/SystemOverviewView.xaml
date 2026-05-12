@@ -97,7 +97,6 @@
     <Grid Margin="32,24,32,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />   <!-- Section header + actions -->
-            <RowDefinition Height="Auto" />   <!-- 6 summary tiles -->
             <RowDefinition Height="*" />      <!-- Card grid (scroll) -->
         </Grid.RowDefinitions>
 
@@ -145,110 +144,10 @@
             </StackPanel>
         </DockPanel>
 
-        <!-- ====== Six summary tiles ====== -->
-        <UniformGrid Grid.Row="1" Rows="1" Columns="6" Margin="{StaticResource Spacing.PageLg}">
-            <Border Style="{StaticResource SiSummaryCard}" Margin="0,0,8,0">
-                <StackPanel>
-                    <DockPanel>
-                        <md:PackIcon DockPanel.Dock="Right" Kind="DesktopTower"
-                                     Width="14" Height="14"
-                                     Foreground="{Binding ModelStatusColor}" VerticalAlignment="Center" />
-                        <TextBlock Text="Model"
-                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Caption}"
-                                   Foreground="{StaticResource MutedForegroundBrush}" />
-                    </DockPanel>
-                    <TextBlock Text="{Binding ModelTitle}"
-                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
-                               Foreground="{StaticResource ForegroundBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,0" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource SiSummaryCard}" Margin="4,0,4,0">
-                <StackPanel>
-                    <DockPanel>
-                        <md:PackIcon DockPanel.Dock="Right" Kind="MicrosoftWindows"
-                                     Width="14" Height="14"
-                                     Foreground="{Binding OsStatusColor}" VerticalAlignment="Center" />
-                        <TextBlock Text="OS"
-                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Caption}"
-                                   Foreground="{StaticResource MutedForegroundBrush}" />
-                    </DockPanel>
-                    <TextBlock Text="{Binding OsTitle}"
-                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
-                               Foreground="{StaticResource ForegroundBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,0" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource SiSummaryCard}" Margin="4,0,4,0">
-                <StackPanel>
-                    <DockPanel>
-                        <md:PackIcon DockPanel.Dock="Right" Kind="ClockOutline"
-                                     Width="14" Height="14"
-                                     Foreground="{Binding UptimeStatusColor}" VerticalAlignment="Center" />
-                        <TextBlock Text="Uptime"
-                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Caption}"
-                                   Foreground="{StaticResource MutedForegroundBrush}" />
-                    </DockPanel>
-                    <TextBlock Text="{Binding UptimeTitle}"
-                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
-                               Foreground="{StaticResource ForegroundBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,0" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource SiSummaryCard}" Margin="4,0,4,0">
-                <StackPanel>
-                    <DockPanel>
-                        <md:PackIcon DockPanel.Dock="Right" Kind="Cpu64Bit"
-                                     Width="14" Height="14"
-                                     Foreground="{Binding CpuStatusColor}" VerticalAlignment="Center" />
-                        <TextBlock Text="CPU"
-                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Caption}"
-                                   Foreground="{StaticResource MutedForegroundBrush}" />
-                    </DockPanel>
-                    <TextBlock Text="{Binding CpuTitle}"
-                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
-                               Foreground="{StaticResource ForegroundBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,0" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource SiSummaryCard}" Margin="4,0,4,0">
-                <StackPanel>
-                    <DockPanel>
-                        <md:PackIcon DockPanel.Dock="Right" Kind="Memory"
-                                     Width="14" Height="14"
-                                     Foreground="{Binding RamStatusColor}" VerticalAlignment="Center" />
-                        <TextBlock Text="RAM"
-                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Caption}"
-                                   Foreground="{StaticResource MutedForegroundBrush}" />
-                    </DockPanel>
-                    <TextBlock Text="{Binding RamTitle}"
-                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
-                               Foreground="{StaticResource ForegroundBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,0" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource SiSummaryCard}" Margin="{StaticResource Spacing.InlineLeft}">
-                <StackPanel>
-                    <DockPanel>
-                        <md:PackIcon DockPanel.Dock="Right" Kind="Harddisk"
-                                     Width="14" Height="14"
-                                     Foreground="{Binding StorageStatusColor}" VerticalAlignment="Center" />
-                        <TextBlock Text="Storage"
-                                   FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Caption}"
-                                   Foreground="{StaticResource MutedForegroundBrush}" />
-                    </DockPanel>
-                    <TextBlock Text="{Binding StorageTitle}"
-                               FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
-                               Foreground="{StaticResource ForegroundBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,0" />
-                </StackPanel>
-            </Border>
-        </UniformGrid>
+        <!-- v0.6.5: the 6-tile summary strip (Identity/OS/Uptime/CPU/RAM/
+             Storage) was dropped per field feedback — every value here is
+             repeated in the section cards below, and the strip just delayed
+             eye-tracking to the real content. -->
 
         <!-- ====== Card grid (scrollable) ======
              Each 2-up row is a Grid with two "*" columns and a fixed-width
@@ -257,7 +156,7 @@
              Grid stretches the shorter card to match its sibling), which
              eliminates the empty right-column gaps that the prior WrapPanel
              layout produced. -->
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       x:Name="CardsScroll">
             <StackPanel>

@@ -31,12 +31,14 @@ namespace Pulse.WPF.Services
         {
             var temp = Environment.GetEnvironmentVariable("TEMP") ?? "";
             const long GB = 1024L * 1024L * 1024L;
+            // v0.6.5: C:\Pixellot\recordings and C:\Pixellot\temp dropped —
+            // both always render "Path not found" on production VPUs, so the
+            // rows were noise. Keep Pixellot Logs / Data / Root + Windows
+            // Temp / User Temp / User Profiles.
             return new List<PathSpec>
             {
                 new PathSpec { Path = @"C:\Pixellot\Data\Log",  Label = "Pixellot Logs",        WarnBytes = 2  * GB, CritBytes = 5  * GB },
-                new PathSpec { Path = @"C:\Pixellot\recordings", Label = "Recordings (C:)",      WarnBytes = 10 * GB, CritBytes = 50 * GB },
                 new PathSpec { Path = @"C:\Pixellot\Data",       Label = "Pixellot Data",        WarnBytes = 5  * GB, CritBytes = 20 * GB },
-                new PathSpec { Path = @"C:\Pixellot\temp",       Label = "Pixellot Temp",        WarnBytes = 1  * GB, CritBytes = 3  * GB },
                 new PathSpec { Path = @"C:\Pixellot",            Label = "Pixellot Root (total)",WarnBytes = 20 * GB, CritBytes = 80 * GB },
                 new PathSpec { Path = @"C:\Windows\Temp",        Label = "Windows Temp",         WarnBytes = 2  * GB, CritBytes = 5  * GB },
                 new PathSpec { Path = temp,                      Label = "User Temp",            WarnBytes = 2  * GB, CritBytes = 5  * GB },

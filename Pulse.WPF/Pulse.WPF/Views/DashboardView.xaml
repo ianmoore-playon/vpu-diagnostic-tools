@@ -186,7 +186,7 @@
                 <RowDefinition Height="Auto" />   <!-- v0.5.6 baseline banner -->
                 <RowDefinition Height="Auto" />   <!-- Empty-state card (non-VPU host) -->
                 <RowDefinition Height="Auto" />   <!-- Active Findings (top of page so issues land first) -->
-                <RowDefinition Height="Auto" />   <!-- Identity / Pixellot SW / Last Run cards -->
+                <RowDefinition Height="Auto" />   <!-- Identity / Pixellot SW cards -->
                 <RowDefinition Height="Auto" />   <!-- System Status gauges -->
                 <RowDefinition Height="Auto" />   <!-- NIC ports + Network config -->
                 <RowDefinition Height="Auto" />   <!-- Storage + Services -->
@@ -371,8 +371,11 @@
                 </StackPanel>
             </Border>
 
-            <!-- ====== Identity / Pixellot SW / Last Run (3-up) ====== -->
-            <UniformGrid Grid.Row="4" Rows="1" Columns="3" Margin="{StaticResource Spacing.PageLg}">
+            <!-- ====== Identity / Pixellot SW (2-up) ======
+                 v0.6.5: "Last Diagnostic Run" card dropped — the field tech
+                 reported it as empty noise. VM bindings remain dormant so
+                 baseline reports / Reports-panel breadcrumbs still work. -->
+            <UniformGrid Grid.Row="4" Rows="1" Columns="2" Margin="{StaticResource Spacing.PageLg}">
                 <!-- VPU Identity -->
                 <Border Style="{StaticResource Card}" Margin="0,0,8,0">
                     <StackPanel>
@@ -403,7 +406,7 @@
                 </Border>
 
                 <!-- Pixellot Software -->
-                <Border Style="{StaticResource Card}" Margin="4,0,4,0">
+                <Border Style="{StaticResource Card}" Margin="{StaticResource Spacing.InlineLeft}">
                     <StackPanel>
                         <TextBlock Text="PIXELLOT SOFTWARE" Style="{StaticResource CardCaption}" />
                         <TextBlock Text="{Binding PixellotApp}" Style="{StaticResource SectionTitle}"
@@ -424,43 +427,6 @@
                             <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource KvValue}" Text="{Binding PixellotDeps}" />
                         </Grid>
                     </StackPanel>
-                </Border>
-
-                <!-- Last Diagnostic Run — populated from IReportsService's
-                     top entry (set via MainViewModel.PushTopReportToDashboard).
-                     Card body swaps to a muted "No diagnostic runs yet"
-                     empty state when the reports folder is empty. -->
-                <Border Style="{StaticResource Card}" Margin="{StaticResource Spacing.InlineLeft}">
-                    <DockPanel>
-                        <TextBlock DockPanel.Dock="Top" Text="LAST DIAGNOSTIC RUN" Style="{StaticResource CardCaption}" />
-                        <Button DockPanel.Dock="Bottom"
-                                Content="Open Last Report"
-                                Command="{Binding OpenLastReportCommand}"
-                                Style="{StaticResource MaterialDesignOutlinedButton}"
-                                HorizontalAlignment="Stretch" Margin="{StaticResource Spacing.Card}" />
-                        <!-- Empty state -->
-                        <StackPanel Visibility="{Binding IsLastRunEmpty, Converter={StaticResource BoolToVis}}">
-                            <md:PackIcon Kind="FileDocumentOutline" Width="24" Height="24"
-                                         Foreground="{StaticResource MutedForegroundBrush}" />
-                            <TextBlock Text="No diagnostic runs yet"
-                                       FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Mono}"
-                                       Foreground="{StaticResource ForegroundBrush}"
-                                       Margin="0,8,0,0" />
-                            <TextBlock Text="Reports will appear here after the first saved diagnostic. Open Reports to browse the folder."
-                                       Foreground="{StaticResource MutedForegroundBrush}"
-                                       FontSize="{StaticResource FontSize.Small}" TextWrapping="Wrap" Margin="0,6,0,0" />
-                        </StackPanel>
-                        <!-- Populated state -->
-                        <StackPanel Visibility="{Binding HasLastRun, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="{Binding LastRunWhen}" Style="{StaticResource SectionTitle}" FontSize="{StaticResource FontSize.Heading}" />
-                            <TextBlock Text="{Binding LastRunResult}"
-                                       Foreground="{Binding LastRunResultColor}"
-                                       FontWeight="SemiBold" FontSize="{StaticResource FontSize.Mono}" Margin="{StaticResource Spacing.RowGap}" />
-                            <TextBlock Text="{Binding LastRunSummary}"
-                                       Foreground="{StaticResource MutedForegroundBrush}"
-                                       FontSize="{StaticResource FontSize.Small}" TextWrapping="Wrap" Margin="0,8,0,0" />
-                        </StackPanel>
-                    </DockPanel>
                 </Border>
             </UniformGrid>
 
@@ -615,7 +581,7 @@
                             <md:PackIcon DockPanel.Dock="Left" Kind="Lan"
                                          Width="18" Height="18"
                                          Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="NETWORK CONFIGURATION"
+                            <TextBlock Text="NETWORK"
                                        FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Small}"
                                        Foreground="{StaticResource MutedForegroundBrush}"
                                        Margin="{StaticResource Spacing.InlineLeftLg}" VerticalAlignment="Center" />

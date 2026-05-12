@@ -350,4 +350,32 @@
         </Setter>
     </Style>
 
+    <!-- ============================================================ -->
+    <!-- v0.6.5 — global default DataGridColumnHeader style.            -->
+    <!--                                                                -->
+    <!-- Field tech on VPU2 reported column headers rendering           -->
+    <!-- white-on-white (invisible) inside the Hardware / Services /    -->
+    <!-- Disk Health DataGrids — those views set                        -->
+    <!-- `ColumnHeaderStyle="{x:Null}"`, defeating the                  -->
+    <!-- MaterialDesignThemes default which assumed a light surface.    -->
+    <!--                                                                -->
+    <!-- This implicit style (no x:Key) applies wherever a DataGrid     -->
+    <!-- doesn't already pick its own header style (e.g. SystemOverview -->
+    <!-- which has SiDataGridHeader). Headers now read as semibold      -->
+    <!-- 10 pt muted text on the raised surface, matching the panel-    -->
+    <!-- local SiDataGridHeader idiom.                                  -->
+    <!-- ============================================================ -->
+    <Style TargetType="DataGridColumnHeader">
+        <Setter Property="Background"          Value="{StaticResource CardBgRaisedBrush}" />
+        <Setter Property="Foreground"          Value="{StaticResource MutedForegroundBrush}" />
+        <Setter Property="FontFamily"          Value="Segoe UI Semibold" />
+        <Setter Property="FontSize"            Value="10" />
+        <Setter Property="Padding"             Value="8,4,8,4" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="VerticalContentAlignment"   Value="Center" />
+        <Setter Property="BorderBrush"         Value="{StaticResource BorderColBrush}" />
+        <Setter Property="BorderThickness"     Value="0,0,0,1" />
+        <Setter Property="SeparatorBrush"      Value="{StaticResource BorderColBrush}" />
+    </Style>
+
 </ResourceDictionary>

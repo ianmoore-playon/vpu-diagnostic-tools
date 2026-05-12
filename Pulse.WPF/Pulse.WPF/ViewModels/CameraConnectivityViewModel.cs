@@ -97,6 +97,12 @@ namespace Pulse.WPF.ViewModels
         private string _nicCaption = "Camera NIC · 4 ports";
         public string NicCaption { get => _nicCaption; set => Set(ref _nicCaption, value); }
 
+        // v0.6.5: inline status toast next to the Save Snapshot button.
+        // Cleared by a 4 s DispatcherTimer (see ScheduleClearSnapshotStatus)
+        // — matches the SystemOverview "Copy as text" pattern.
+        private string _snapshotStatus = "";
+        public string SnapshotStatus { get => _snapshotStatus; set => Set(ref _snapshotStatus, value); }
+
         // ----- Cross-tab + adapter-settings commands -----
         public ICommand OpenAdapterSettingsCommand        { get; }
         public ICommand OpenNetworkAndSharingCenterCommand { get; }
@@ -170,13 +176,19 @@ namespace Pulse.WPF.ViewModels
                     var path = _reportWriter.Save("Camera", BuildReportText());
                     if (!string.IsNullOrEmpty(path))
                     {
+                        var fileName = System.IO.Path.GetFileName(path);
                         AppLogFile.Instance.WriteLine("Camera", "Info",
                             $"Snapshot saved: {path}");
-                        AddLog("Snapshot", $"Saved: {System.IO.Path.GetFileName(path)}", "Pass");
+                        AddLog("Snapshot", $"Saved: {fileName}", "Pass");
+                        // v0.6.5: inline status toast — clears after 4 s.
+                        SnapshotStatus = $"Snapshot saved: {fileName}";
+                        ScheduleClearSnapshotStatus();
                     }
                     else
                     {
                         AddLog("Snapshot", "Failed to save", "Fail");
+                        SnapshotStatus = "Snapshot save failed.";
+                        ScheduleClearSnapshotStatus();
                     }
                 }
                 catch { /* never throw from the command path */ }
@@ -293,7 +305,27 @@ namespace Pulse.WPF.ViewModels
                         // don't muddy with a "still figuring it out" hue).
                         // If we had a previous remote in the resolve window,
                         // keep that label for visual continuity.
-                        if (!string.IsNullOrEmpty(st.LastRemoteLabel))
+                        //
+                        // v0.6.5: when the port's previously-seen role is OCR
+                        // / Scoreboard, swap the "Identifying device…"
+                        // spinner copy for an explicit "no ARP traffic
+                        // expected" label. OCR cameras connect via RTSP-only
+                        // and never generate ARP, so the resolver was
+                        // permanently stuck waiting for an identification
+                        // that will never arrive.
+                        bool lastWasOcr =
+                            (!string.IsNullOrEmpty(st.LastRemoteLabel)
+                             && (st.LastRemoteLabel.IndexOf("OCR", StringComparison.OrdinalIgnoreCase) >= 0
+                                 || st.LastRemoteLabel.IndexOf("Scoreboard", StringComparison.OrdinalIgnoreCase) >= 0));
+
+                        if (lastWasOcr)
+                        {
+                            primary = st.LastRemoteLabel;
+                            secondary = "OCR scoreboard (no ARP traffic expected)";
+                            ipShown  = !string.IsNullOrEmpty(st.LastRemoteIp)  ? st.LastRemoteIp  : "—";
+                            macShown = !string.IsNullOrEmpty(st.LastRemoteMac) ? st.LastRemoteMac : "—";
+                        }
+                        else if (!string.IsNullOrEmpty(st.LastRemoteLabel))
                         {
                             primary = st.LastRemoteLabel;
                             secondary = !string.IsNullOrEmpty(st.LastRemoteIp) ? st.LastRemoteIp : "";
@@ -415,6 +447,9 @@ namespace Pulse.WPF.ViewModels
                     if (info.IsConfigured && snap.IsUp && is100M && !info.IsOcr) warnings++;
                     if (errorsRising) warnings++;
                     if (isFlapping)   warnings++;
+                    // v0.6.5: only contribute severity for ports the VPU is
+                    // actually configured to use. An unused jack going dark
+                    // should not turn the page-level pill yellow.
                     if (info.IsConfigured && !snap.IsUp && !string.IsNullOrEmpty(snap.RemoteMac)) criticals++;
                     if (info.IsConfigured && !snap.IsUp && string.IsNullOrEmpty(snap.RemoteMac)) warnings++;
                     if (DidSpeedRegress(snap)) criticals++;
@@ -607,8 +642,21 @@ namespace Pulse.WPF.ViewModels
                 // s before firing, because Windows often reports cabled-no-
                 // link transiently when a cable is being yanked — we don't
                 // want to advise a cable swap for a normal unplug event.
+                //
+                // v0.6.5: also gate on the port having a *configured* role.
+                // A dark port whose cameras.cfg entry doesn't exist is not a
+                // problem — only flag jacks the VPU expects something on. The
+                // role lookup uses st.LastRemoteIp (captured on a prior tick
+                // when the device was online) so the gate survives a current
+                // ARP loss. Same signal the no-cable-on-configured-port row
+                // below uses.
+                bool portIsConfigured = info.IsConfigured
+                    || (!string.IsNullOrEmpty(st.LastRemoteIp)
+                        && roles != null && roles.ContainsKey(st.LastRemoteIp));
+
                 if (!snap.IsUp
                     && !string.IsNullOrEmpty(snap.RemoteMac)
+                    && portIsConfigured
                     && st.CabledNoLinkSince.HasValue
                     && (DateTime.UtcNow - st.CabledNoLinkSince.Value) >= TimeSpan.FromSeconds(30))
                 {
@@ -1093,6 +1141,23 @@ namespace Pulse.WPF.ViewModels
             {
                 AddLog("AdapterDetails", $"Failed to open adapter details: {ex.Message}", "Warn");
             }
+        }
+
+        // v0.6.5: mirror of SystemOverviewViewModel.ScheduleClearStatus.
+        // Clears the SnapshotStatus toast 4 s after Save Snapshot is clicked.
+        // Kept panel-local for now — a shared helper could fold both in once
+        // a third caller appears.
+        private void ScheduleClearSnapshotStatus()
+        {
+            var app = Application.Current;
+            if (app == null) return;
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+            timer.Tick += (s, e) =>
+            {
+                SnapshotStatus = "";
+                timer.Stop();
+            };
+            timer.Start();
         }
     }
 }
