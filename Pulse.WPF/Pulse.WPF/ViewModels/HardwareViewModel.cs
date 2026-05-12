@@ -17,7 +17,8 @@ namespace Pulse.WPF.ViewModels
 
         public ObservableCollection<PoePortReading> PoePorts { get; } = new ObservableCollection<PoePortReading>();
         // Composed via PanelLogger (v0.5.0) — shared with the four other panels.
-        public PanelLogger Logger { get; } = new PanelLogger();
+        public PanelLogger Logger { get; } = new PanelLogger("Hardware");
+        private readonly ReportWriter _reportWriter = new ReportWriter();
         public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
         public bool HasFindings => Findings.Count > 0;
@@ -136,8 +137,70 @@ namespace Pulse.WPF.ViewModels
 
                     UpdateStatusPill();
                     OnPropertyChanged(nameof(HasFindings));
+
+                    // v0.5.5: auto-write a per-run report file. Runs on the
+                    // UI thread because BuildReportText walks the just-
+                    // populated observable collections.
+                    try
+                    {
+                        var path = _reportWriter.Save("Hardware", BuildReportText());
+                        if (!string.IsNullOrEmpty(path))
+                            AppLogFile.Instance.WriteLine("Hardware", "Info",
+                                $"Report saved: {path}");
+                    }
+                    catch { }
                 });
             }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Compose the Hardware panel's per-run report body — the peripherals
+        /// card content (GPU, monitor, input), the PoE block when available,
+        /// and the Findings list.
+        /// </summary>
+        public string BuildReportText()
+        {
+            var sb = new System.Text.StringBuilder();
+
+            sb.AppendLine("== Peripherals ==");
+            sb.AppendLine($"  GPU:         {GpuName}");
+            sb.AppendLine($"  Monitor:     {MonitorStatus}");
+            sb.AppendLine($"  Input:       {InputStatus}");
+
+            sb.AppendLine();
+            sb.AppendLine("== PoE ==");
+            sb.AppendLine($"  Available:   {(PoeAvailable ? "yes" : "no")}");
+            if (!PoeAvailable && !string.IsNullOrEmpty(PoeUnavailableReason))
+                sb.AppendLine($"  Reason:      {PoeUnavailableReason}");
+            sb.AppendLine($"  {PoeBudgetW}");
+            if (PoeAvailable && PoePorts.Count > 0)
+            {
+                foreach (var p in PoePorts)
+                {
+                    var state = p.PoeOn ? "PoE ON" : "PoE OFF";
+                    sb.AppendLine($"  {p.Port,-10} {p.Voltage,-8} {p.Current,-8} {p.Wattage,-8} [{state}]");
+                }
+            }
+
+            if (Findings.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("== Findings ==");
+                foreach (var f in Findings)
+                    sb.AppendLine($"  [{f.Severity}] {f.Title}\n      -> {f.Recommendation}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("## Live Log (last 50 entries)");
+            var tail = LogEntries.Count > 50 ? 50 : LogEntries.Count;
+            for (int i = LogEntries.Count - tail; i < LogEntries.Count; i++)
+            {
+                var e = LogEntries[i];
+                var label = string.IsNullOrEmpty(e.Label) ? "" : e.Label + "  ";
+                sb.AppendLine($"  [{e.Level,-5}] {label}{e.Result}");
+            }
+
+            return sb.ToString();
         }
 
         private void AddLog(string label, string result, string level) => Logger.Add(label, result, level);

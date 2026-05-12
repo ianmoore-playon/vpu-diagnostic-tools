@@ -26,6 +26,7 @@ namespace Pulse.WPF.ViewModels
     public class SystemOverviewViewModel : ObservableObject
     {
         private readonly ISystemOverviewService _svc;
+        private readonly ReportWriter _reportWriter = new ReportWriter();
 
         // ---- Top-row summary cards ------------------------------------------
         private string _modelTitle = "—";
@@ -185,6 +186,22 @@ namespace Pulse.WPF.ViewModels
 
                     UpdatePillFromCards(c);
                 });
+
+                // v0.5.5: auto-write a per-run report once the dispatcher
+                // assignments have settled. Read the body off the UI thread —
+                // BuildReportText walks the just-assigned typed models so the
+                // dispatcher invoke above must complete first.
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    try
+                    {
+                        var path = _reportWriter.Save("SystemOverview", BuildReportText());
+                        if (!string.IsNullOrEmpty(path))
+                            AppLogFile.Instance.WriteLine("SystemOverview", "Info",
+                                $"Report saved: {path}");
+                    }
+                    catch { }
+                });
             });
         }
 
@@ -235,6 +252,26 @@ namespace Pulse.WPF.ViewModels
         // Per UX_REVIEW round 2: this is the single most useful Tier-1 action
         // on this page.
         private void CopyInventoryToClipboard()
+        {
+            try
+            {
+                Clipboard.SetText(BuildReportText());
+                CopyStatus = "Copied to clipboard.";
+                ScheduleClearStatus();
+            }
+            catch (Exception ex)
+            {
+                CopyStatus = $"Copy failed: {ex.Message}";
+                ScheduleClearStatus();
+            }
+        }
+
+        /// <summary>
+        /// Compose the system-overview transcript shared by Copy-as-text AND
+        /// the per-run report writer (v0.5.5). Walks the typed per-card models
+        /// so the output mirrors the on-screen card layout.
+        /// </summary>
+        public string BuildReportText()
         {
             var sb = new StringBuilder();
             sb.AppendLine("PULSE — System Overview");
@@ -379,17 +416,7 @@ namespace Pulse.WPF.ViewModels
                 Kv(sb, $"  {a.DisplayName}", $"{a.Publisher} — confirm this is intentional");
             }
 
-            try
-            {
-                Clipboard.SetText(sb.ToString());
-                CopyStatus = "Copied to clipboard.";
-                ScheduleClearStatus();
-            }
-            catch (Exception ex)
-            {
-                CopyStatus = $"Copy failed: {ex.Message}";
-                ScheduleClearStatus();
-            }
+            return sb.ToString();
         }
 
         private static void Kv(StringBuilder sb, string label, string value)

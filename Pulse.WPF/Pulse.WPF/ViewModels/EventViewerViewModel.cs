@@ -24,6 +24,7 @@ namespace Pulse.WPF.ViewModels
     public class EventViewerViewModel : ObservableObject
     {
         private readonly IEventViewerService _svc;
+        private readonly ReportWriter _reportWriter = new ReportWriter();
 
         // ---- Findings + recommendations banner --------------------------
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
@@ -154,7 +155,57 @@ namespace Pulse.WPF.ViewModels
                 RefreshView();
                 RecomputeFindings();
                 UpdatePill();
+
+                // v0.5.5: per-run report file.
+                try
+                {
+                    var path = _reportWriter.Save("EventViewer", BuildReportText());
+                    if (!string.IsNullOrEmpty(path))
+                        AppLogFile.Instance.WriteLine("EventViewer", "Info",
+                            $"Report saved: {path}");
+                }
+                catch { }
             });
+        }
+
+        /// <summary>
+        /// Compose the Event Viewer panel's per-run report body — current
+        /// filter state + the entries currently in the grid (cap at 100 rows).
+        /// </summary>
+        public string BuildReportText()
+        {
+            var sb = new System.Text.StringBuilder();
+
+            sb.AppendLine("== Filter ==");
+            sb.AppendLine($"  Window:        {SelectedWindow}");
+            sb.AppendLine($"  Errors:        {(ShowErrors ? "on" : "off")}");
+            sb.AppendLine($"  Warnings:      {(ShowWarnings ? "on" : "off")}");
+            sb.AppendLine($"  Information:   {(ShowInformation ? "on" : "off")}");
+            if (!string.IsNullOrWhiteSpace(SourceFilter))
+                sb.AppendLine($"  Source filter: {SourceFilter}");
+
+            if (Findings.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("== Findings ==");
+                foreach (var f in Findings)
+                    sb.AppendLine($"  [{f.Severity}] {f.Title}\n      -> {f.Recommendation}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("== Entries ==");
+            sb.AppendLine($"  (capped at 100 rows; total in panel: {Entries.Count})");
+            int cap = System.Math.Min(100, Entries.Count);
+            for (int i = 0; i < cap; i++)
+            {
+                var e = Entries[i];
+                var msg = (e.Message ?? "").Replace('\r', ' ').Replace('\n', ' ');
+                if (msg.Length > 240) msg = msg.Substring(0, 240) + "…";
+                sb.AppendLine($"  {e.TimestampLabel}  [{e.Level,-11}] {e.Source}  ({e.EventId})");
+                sb.AppendLine($"      {msg}");
+            }
+
+            return sb.ToString();
         }
 
         private bool FilterEntry(object o)

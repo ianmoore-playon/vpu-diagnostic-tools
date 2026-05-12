@@ -20,7 +20,8 @@ namespace Pulse.WPF.ViewModels
         public ObservableCollection<VolumeRow> Volumes { get; } = new ObservableCollection<VolumeRow>();
         public ObservableCollection<PixellotPathRow> PixellotPaths { get; } = new ObservableCollection<PixellotPathRow>();
         // Composed via PanelLogger (v0.5.0) — shared with the four other panels.
-        public PanelLogger Logger { get; } = new PanelLogger();
+        public PanelLogger Logger { get; } = new PanelLogger("DiskHealth");
+        private readonly ReportWriter _reportWriter = new ReportWriter();
         public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
         public bool HasFindings => Findings.Count > 0;
@@ -201,8 +202,75 @@ namespace Pulse.WPF.ViewModels
 
                     UpdateStatusPill();
                     OnPropertyChanged(nameof(HasFindings));
+
+                    // v0.5.5: per-run report file.
+                    try
+                    {
+                        var path = _reportWriter.Save("DiskHealth", BuildReportText());
+                        if (!string.IsNullOrEmpty(path))
+                            AppLogFile.Instance.WriteLine("DiskHealth", "Info",
+                                $"Report saved: {path}");
+                    }
+                    catch { }
                 });
             }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Compose the Disk Health panel's per-run report body — SMART
+        /// status, disk error count, OS-drive free space, the top three
+        /// card values, and the Findings list.
+        /// </summary>
+        public string BuildReportText()
+        {
+            var sb = new System.Text.StringBuilder();
+
+            sb.AppendLine("== Top Cards ==");
+            sb.AppendLine($"  SMART:          [{SmartChipText}] {SmartHealthSummary}");
+            sb.AppendLine($"  Disk Errors:    [{DiskErrorsChipText}] {DiskErrorsSummary}");
+            sb.AppendLine($"  OS Drive Free:  [{OsDriveChipText}] {OsDriveFreeSummary}");
+
+            sb.AppendLine();
+            sb.AppendLine("== Volumes ==");
+            if (Volumes.Count == 0)
+            {
+                sb.AppendLine("  (no volumes collected)");
+            }
+            else
+            {
+                foreach (var v in Volumes)
+                {
+                    sb.AppendLine($"  [{v.Severity,-4}] {v.DeviceId,-4} {v.Label,-16}  {v.FreeGb,7:0.#} GB free / {v.TotalGb,7:0.#} GB ({v.PercentUsed}% used)  [{v.Role}]");
+                }
+            }
+
+            if (PixellotPaths.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("== Pixellot Storage Paths ==");
+                foreach (var p in PixellotPaths)
+                    sb.AppendLine($"  [{p.Severity,-4}] {p.Label,-24}  {p.SizeFormatted}");
+            }
+
+            if (Findings.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("== Findings ==");
+                foreach (var f in Findings)
+                    sb.AppendLine($"  [{f.Severity}] {f.Title}\n      -> {f.Recommendation}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("## Live Log (last 50 entries)");
+            var tail = LogEntries.Count > 50 ? 50 : LogEntries.Count;
+            for (int i = LogEntries.Count - tail; i < LogEntries.Count; i++)
+            {
+                var e = LogEntries[i];
+                var label = string.IsNullOrEmpty(e.Label) ? "" : e.Label + "  ";
+                sb.AppendLine($"  [{e.Level,-5}] {label}{e.Result}");
+            }
+
+            return sb.ToString();
         }
 
         private void AddLog(string label, string result, string level) => Logger.Add(label, result, level);

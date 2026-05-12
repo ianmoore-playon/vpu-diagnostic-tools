@@ -84,6 +84,18 @@
                             <TextBlock Text="Sharing Center" Margin="6,0,0,0" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
+                    <!-- v0.5.5: Camera is live (1 s tick) so it doesn't auto-write
+                         a per-run report. This button captures a one-shot snapshot
+                         when the tech actually wants to attach state to a ticket. -->
+                    <Button Command="{Binding SaveSnapshotCommand}"
+                            Style="{StaticResource TopBarOutlinedButton}"
+                            AutomationProperties.Name="Save a one-shot Camera Connectivity snapshot"
+                            ToolTip="Write a Camera-Connectivity snapshot into the reports folder.">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="ContentSaveOutline" Width="16" Height="16" VerticalAlignment="Center" />
+                            <TextBlock Text="Save Snapshot" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
                 <StackPanel>
                     <TextBlock Text="Camera Connectivity" Style="{StaticResource PageTitle}"

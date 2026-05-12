@@ -69,7 +69,13 @@ namespace Pulse.WPF.ViewModels
         // ----- Public bindings -----
         public ObservableCollection<PortViewModel>          Ports           { get; } = new ObservableCollection<PortViewModel>();
         // Composed via PanelLogger (v0.5.0) — shared with the four other panels.
-        public PanelLogger Logger { get; } = new PanelLogger();
+        public PanelLogger Logger { get; } = new PanelLogger("Camera");
+        // v0.5.5: Camera is a live monitor, so it doesn't auto-write a report
+        // per tick (86,400 files/day would be absurd). Instead we expose a
+        // user-driven "Save Snapshot" top-bar button that captures the
+        // current state. The rolling AppLogFile still catches every live-
+        // monitor transition via PanelLogger.
+        private readonly ReportWriter _reportWriter = new ReportWriter();
         public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding>                Findings        { get; } = new ObservableCollection<Finding>();
         public ObservableCollection<NetworkRecommendation>  Recommendations { get; } = new ObservableCollection<NetworkRecommendation>();
@@ -96,6 +102,7 @@ namespace Pulse.WPF.ViewModels
         public ICommand OpenNetworkAndSharingCenterCommand { get; }
         public ICommand GoToNetworkCommand                { get; }
         public ICommand OpenCamerasCfgCommand             { get; }
+        public ICommand SaveSnapshotCommand               { get; }
 
         public CameraConnectivityViewModel(INetworkAdapterService net, IPixellotConfigService cfg)
         {
@@ -150,6 +157,29 @@ namespace Pulse.WPF.ViewModels
                 // something useful even if the service dir is missing.
                 var path = _cfg?.CamerasCfgPath ?? @"C:\Pixellot\Data\configuration\cameras.cfg";
                 SafeStart(path);
+            });
+
+            // v0.5.5: one-shot per-run report. Camera is live (1 s tick) so
+            // there's no automatic per-refresh write — this button captures a
+            // snapshot when the tech actually wants to attach the state to a
+            // ticket. Rolling AppLogFile is still updated every tick.
+            SaveSnapshotCommand = new RelayCommand(() =>
+            {
+                try
+                {
+                    var path = _reportWriter.Save("Camera", BuildReportText());
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        AppLogFile.Instance.WriteLine("Camera", "Info",
+                            $"Snapshot saved: {path}");
+                        AddLog("Snapshot", $"Saved: {System.IO.Path.GetFileName(path)}", "Pass");
+                    }
+                    else
+                    {
+                        AddLog("Snapshot", "Failed to save", "Fail");
+                    }
+                }
+                catch { /* never throw from the command path */ }
             });
 
             // 1 s monitor — the prior agent locked this. Auto-start.
@@ -937,6 +967,69 @@ namespace Pulse.WPF.ViewModels
         }
 
         private void AddLog(string label, string result, string level) => Logger.Add(label, result, level);
+
+        /// <summary>
+        /// Compose the Camera Connectivity panel's per-run snapshot body.
+        /// Camera doesn't auto-write per tick — this is invoked by the
+        /// "Save Snapshot" top-bar button (v0.5.5 option (a)). Captures the
+        /// 4 port tiles' state + cameras.cfg / OUI matches + Live Log tail.
+        /// </summary>
+        public string BuildReportText()
+        {
+            var sb = new System.Text.StringBuilder();
+
+            sb.AppendLine($"== NIC ==");
+            sb.AppendLine($"  {NicCaption}");
+            sb.AppendLine($"  Status:        {StatusLabel}");
+            if (!string.IsNullOrEmpty(_cfg?.CamerasCfgPath))
+                sb.AppendLine($"  cameras.cfg:   {_cfg.CamerasCfgPath}");
+
+            sb.AppendLine();
+            sb.AppendLine("== Ports ==");
+            foreach (var p in Ports)
+            {
+                sb.AppendLine($"  {p.Name}  [{p.StatusText}]  {p.StatusLine}");
+                sb.AppendLine($"      Primary:   {p.PrimaryLabel}");
+                if (!string.IsNullOrEmpty(p.SecondaryLabel))
+                    sb.AppendLine($"      Secondary: {p.SecondaryLabel}");
+                if (!string.IsNullOrEmpty(p.Ip))     sb.AppendLine($"      Remote IP: {p.Ip}");
+                if (!string.IsNullOrEmpty(p.Mac))    sb.AppendLine($"      Remote MAC:{p.Mac}");
+                if (!string.IsNullOrEmpty(p.LocalMac)) sb.AppendLine($"      Local MAC: {p.LocalMac}");
+                if (!string.IsNullOrEmpty(p.Speed))  sb.AppendLine($"      Speed:     {p.Speed}");
+                if (!string.IsNullOrEmpty(p.Device)) sb.AppendLine($"      Device:    {p.Device}");
+                if (!string.IsNullOrEmpty(p.Uptime)) sb.AppendLine($"      Uptime:    {p.Uptime}");
+                if (!string.IsNullOrEmpty(p.ErrorsText) && p.ErrorsText != "0")
+                    sb.AppendLine($"      Errors:    {p.ErrorsText}");
+            }
+
+            if (Findings.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("== Findings ==");
+                foreach (var f in Findings)
+                    sb.AppendLine($"  [{f.Severity}] {f.Title}\n      -> {f.Recommendation}");
+            }
+
+            if (Recommendations.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("== Recommendations ==");
+                foreach (var r in Recommendations)
+                    sb.AppendLine($"  [{r.Severity}] {r.Title}\n      -> {r.Body}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("## Live Log (last 50 entries)");
+            var tail = LogEntries.Count > 50 ? 50 : LogEntries.Count;
+            for (int i = LogEntries.Count - tail; i < LogEntries.Count; i++)
+            {
+                var e = LogEntries[i];
+                var label = string.IsNullOrEmpty(e.Label) ? "" : e.Label + "  ";
+                sb.AppendLine($"  [{e.Level,-5}] {label}{e.Result}");
+            }
+
+            return sb.ToString();
+        }
 
         // -------------------------------------------------------------------
         // Adapter Details (v0.5.2 §6)

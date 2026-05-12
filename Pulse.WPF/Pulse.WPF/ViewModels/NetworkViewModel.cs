@@ -53,8 +53,10 @@ namespace Pulse.WPF.ViewModels
         public ObservableCollection<PortTestResult> TcpPortTests { get; } = new ObservableCollection<PortTestResult>();
         public ObservableCollection<PortTestResult> UdpPortTests { get; } = new ObservableCollection<PortTestResult>();
         public ObservableCollection<DomainTestResult> DomainTests { get; } = new ObservableCollection<DomainTestResult>();
-        // Composed via PanelLogger (v0.5.0) — shared with the four other panels.
-        public PanelLogger Logger { get; } = new PanelLogger();
+        // Composed via PanelLogger (v0.5.0) — shared with the four other
+        // panels. v0.5.5: PanelName tags every line in the rolling app log.
+        public PanelLogger Logger { get; } = new PanelLogger("Network");
+        private readonly ReportWriter _reportWriter = new ReportWriter();
         public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
         public ObservableCollection<NetworkRecommendation> Recommendations { get; } = new ObservableCollection<NetworkRecommendation>();
@@ -208,6 +210,105 @@ namespace Pulse.WPF.ViewModels
             BuildRecommendations(internet, ports, doms);
 
             UpdateStatusPill();
+
+            // v0.5.5: per-run report file — composes the same vocabulary as
+            // the live log but as a static snapshot the tech can attach to a
+            // ticket. AppLogFile already captured every AddLog above; the
+            // per-run file is the user-facing artifact.
+            try
+            {
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    var path = _reportWriter.Save("Network", BuildReportText());
+                    if (!string.IsNullOrEmpty(path))
+                        AppLogFile.Instance.WriteLine("Network", "Info",
+                            $"Report saved: {path}");
+                });
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Compose the Network panel's per-run report body. Mirrors the
+        /// vocabulary of System Overview's CopyInventoryToClipboard — section
+        /// headers, key/value blocks, tables for port + domain collections,
+        /// then a Findings / Recommendations / Live Log tail footer.
+        /// </summary>
+        public string BuildReportText()
+        {
+            var sb = new System.Text.StringBuilder();
+
+            sb.AppendLine("== Primary Adapter ==");
+            if (PrimaryAdapter == null)
+            {
+                sb.AppendLine("  (no adapter detected)");
+            }
+            else
+            {
+                sb.AppendLine($"  Name:        {PrimaryAdapter.Name}");
+                sb.AppendLine($"  IP:          {PrimaryAdapter.Ip}");
+                sb.AppendLine($"  MAC:         {PrimaryAdapter.Mac}");
+                sb.AppendLine($"  Status:      {PrimaryAdapter.Status}");
+                sb.AppendLine($"  Speed:       {PrimaryAdapter.Speed}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("== IP Configuration ==");
+            sb.AppendLine($"  Assignment:  {IpAssignment}");
+            sb.AppendLine($"  Adapter:     {IpConfig?.AdapterName}");
+            sb.AppendLine($"  IPv4:        {IpConfig?.IpAddress}");
+            sb.AppendLine($"  Subnet:      {IpConfig?.SubnetMask}");
+            sb.AppendLine($"  Gateway:     {IpConfig?.Gateway}");
+            sb.AppendLine($"  DNS:         {IpConfig?.DnsServers}");
+            sb.AppendLine($"  NTP:         {IpConfig?.NtpServer}");
+            sb.AppendLine($"  DHCP:        {IpConfig?.Dhcp}");
+
+            sb.AppendLine();
+            sb.AppendLine("== Port Tests ==");
+            foreach (var p in TcpPortTests)
+                sb.AppendLine($"  [{p.Status,-4}] TCP/{p.Port,-5} {p.Host}  ({p.Purpose})");
+            foreach (var p in UdpPortTests)
+                sb.AppendLine($"  [{p.Status,-4}] UDP/{p.Port,-5} {p.Host}  ({p.Purpose})");
+            if (TcpPortTests.Count == 0 && UdpPortTests.Count == 0)
+                sb.AppendLine("  (no port tests recorded — run a test first)");
+
+            sb.AppendLine();
+            sb.AppendLine("== Domain Tests ==");
+            foreach (var d in DomainTests)
+            {
+                var detail = d.Status == "Pass" ? $" -> {d.ResolvedTo}" : "";
+                sb.AppendLine($"  [{d.Status,-4}] {d.Domain}{detail}");
+            }
+            if (DomainTests.Count == 0)
+                sb.AppendLine("  (no domain tests recorded — run a test first)");
+
+            if (Findings.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("== Findings ==");
+                foreach (var f in Findings)
+                    sb.AppendLine($"  [{f.Severity}] {f.Title}\n      -> {f.Recommendation}");
+            }
+
+            if (Recommendations.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("== Recommendations ==");
+                foreach (var r in Recommendations)
+                    sb.AppendLine($"  [{r.Severity}] {r.Title}\n      -> {r.Body}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("## Live Log (last 50 entries)");
+            var tail = LogEntries.Count > 50 ? 50 : LogEntries.Count;
+            for (int i = LogEntries.Count - tail; i < LogEntries.Count; i++)
+            {
+                var e = LogEntries[i];
+                var label = string.IsNullOrEmpty(e.Label) ? "" : e.Label + "  ";
+                sb.AppendLine($"  [{e.Level,-5}] {label}{e.Result}");
+            }
+
+            return sb.ToString();
         }
 
         // Build the actionable per-failure recommendation list. Called at the

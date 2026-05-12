@@ -20,6 +20,7 @@ namespace Pulse.WPF.ViewModels
     public class DashboardViewModel : ObservableObject
     {
         private readonly IDashboardService _svc;
+        private readonly ReportWriter _reportWriter = new ReportWriter();
 
         // ---- Quick Nav tiles + last-run summary (kept from v0.2.0) ----------
         public ObservableCollection<HubTileViewModel> Tiles { get; } =
@@ -324,7 +325,96 @@ namespace Pulse.WPF.ViewModels
                 ApplyTilesAndLastRun(tiles ?? new List<HubTileViewModel>(), last);
                 if (snap != null) ApplySnapshot(snap);
                 if (snapErr != null) AddLog($"Snapshot collection failed: {snapErr.Message}", "Warn");
+
+                // v0.5.5: per-run report file.
+                try
+                {
+                    var path = _reportWriter.Save("Dashboard", BuildReportText());
+                    if (!string.IsNullOrEmpty(path))
+                        AppLogFile.Instance.WriteLine("Dashboard", "Info",
+                            $"Report saved: {path}");
+                }
+                catch { }
             });
+        }
+
+        /// <summary>
+        /// Compose the Dashboard panel's per-run report body — gauge
+        /// readings, hub-tile statuses, the last diagnostic-run summary,
+        /// and the Findings list.
+        /// </summary>
+        public string BuildReportText()
+        {
+            var sb = new System.Text.StringBuilder();
+
+            sb.AppendLine("== Identity ==");
+            sb.AppendLine($"  Hostname:    {Hostname}");
+            sb.AppendLine($"  Model:       {VpuModel}");
+            sb.AppendLine($"  Mfr/Product: {Manufacturer} / {ProductName}");
+            sb.AppendLine($"  Serial:      {SerialNumber}");
+            sb.AppendLine($"  App:         {PixellotApp}");
+            sb.AppendLine($"  Image:       {PixellotImage}");
+            sb.AppendLine($"  Deps:        {PixellotDeps}");
+
+            sb.AppendLine();
+            sb.AppendLine("== Gauges ==");
+            sb.AppendLine($"  CPU:         {CpuPctText}  ({CpuName}, {CpuCoresText})");
+            sb.AppendLine($"  Memory:      {MemPctText}  ({MemCaption})");
+            sb.AppendLine($"  Disk:        {DiskPctText}  ({DiskCaption})");
+            sb.AppendLine($"  Uptime:      {UptimeText}");
+            if (TemperatureVisible)
+                sb.AppendLine($"  Temperature: {TemperatureText}");
+
+            sb.AppendLine();
+            sb.AppendLine("== Network ==");
+            sb.AppendLine($"  Uplink:      {UplinkAdapter}");
+            sb.AppendLine($"  IP:          {IpAddress}");
+            sb.AppendLine($"  Gateway:     {Gateway}");
+            sb.AppendLine($"  DNS:         {DnsServers}");
+            sb.AppendLine($"  NTP:         {NtpServer}");
+            sb.AppendLine($"  Internet:    {InternetText}");
+
+            if (NicPorts.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("== NIC Ports ==");
+                foreach (var p in NicPorts)
+                    sb.AppendLine($"  Port {p.PortNumber}  {p.Name,-32}  {p.SpeedLabel,-10}  {p.StatusText}");
+            }
+
+            if (Tiles.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("== Hub Tiles ==");
+                foreach (var t in Tiles)
+                    sb.AppendLine($"  [{t.StatusText,-10}] {t.Title,-22}  {t.Description}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("== Last Diagnostic Run ==");
+            sb.AppendLine($"  {LastRunSummary}");
+            sb.AppendLine($"  When:        {LastRunWhen}");
+            sb.AppendLine($"  Result:      {LastRunResult}");
+
+            if (Findings.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("== Findings ==");
+                foreach (var f in Findings)
+                    sb.AppendLine($"  [{f.Severity}] {f.Title}\n      -> {f.Recommendation}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("## Live Log (last 50 entries)");
+            var tail = LogEntries.Count > 50 ? 50 : LogEntries.Count;
+            for (int i = LogEntries.Count - tail; i < LogEntries.Count; i++)
+            {
+                var e = LogEntries[i];
+                var label = string.IsNullOrEmpty(e.Label) ? "" : e.Label + "  ";
+                sb.AppendLine($"  [{e.Level,-5}] {label}{e.Result}");
+            }
+
+            return sb.ToString();
         }
 
         private void ApplyTilesAndLastRun(List<HubTileViewModel> tiles,
