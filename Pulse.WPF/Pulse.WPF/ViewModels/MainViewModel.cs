@@ -24,6 +24,11 @@ namespace Pulse.WPF.ViewModels
         public EventViewerViewModel EventViewer { get; }
         public ReportsViewModel Reports { get; }
 
+        // v0.5.6 — startup baseline orchestrator. Owned here so App.xaml.cs
+        // can kick the first run after the main window shows, and the
+        // Dashboard re-run button can fire the same instance.
+        public Pulse.WPF.Helpers.BaselineRunner Baseline { get; }
+
         // Sidebar state. SelectedNav drives CurrentView.
         // Accepts a few alias keys ("Home" → "Dashboard", "Disk" → "DiskHealth",
         // and the legacy "SystemOverview" → "Dashboard" mapping is gone now —
@@ -127,6 +132,14 @@ namespace Pulse.WPF.ViewModels
             DiskHealth = new DiskHealthViewModel(disk);
             EventViewer = new EventViewerViewModel(events);
             Reports = new ReportsViewModel(reports);
+
+            // v0.5.6 — wire the baseline orchestrator with references to every
+            // panel VM. The Dashboard subscribes for the banner UI; App.xaml.cs
+            // kicks the first run once the main window shows.
+            Baseline = new Pulse.WPF.Helpers.BaselineRunner(
+                Dashboard, SystemOverview, Network, Camera,
+                Services, Hardware, DiskHealth, EventViewer);
+            Dashboard.AttachBaseline(Baseline);
 
             // Hub tile clicks request a nav change — wire that back through us.
             Dashboard.RequestNavigate = target =>

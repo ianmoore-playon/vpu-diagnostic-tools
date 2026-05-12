@@ -232,6 +232,17 @@ namespace Pulse.WPF.ViewModels
             _liveTimer.Tick += OnLiveTick;
         }
 
+        // v0.5.6 — handle reference to the BaselineRunner. The full banner
+        // wiring (ProgressChanged / Completed event subscriptions, aggregation
+        // of panel Findings) lives in the next commit; this stub establishes
+        // the API surface so App.xaml.cs + MainViewModel can resolve the link
+        // without a circular-reference workaround.
+        private Pulse.WPF.Helpers.BaselineRunner _baseline;
+        public void AttachBaseline(Pulse.WPF.Helpers.BaselineRunner runner)
+        {
+            _baseline = runner;
+        }
+
         // Started by MainViewModel when the Dashboard becomes the current view;
         // stopped when navigating away. Matches what the legacy WinForms tool
         // did with its System.Windows.Forms.Timer.

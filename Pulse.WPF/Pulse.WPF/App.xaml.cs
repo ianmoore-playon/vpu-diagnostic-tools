@@ -55,6 +55,55 @@ namespace Pulse.WPF
                 }
                 catch { }
             });
+
+            // v0.5.6 — kick the startup baseline runner once the main window
+            // is fully loaded. MainWindow is constructed by StartupUri after
+            // OnStartup returns, so we queue the kick at Background priority:
+            // the dispatcher executes it after the window's Loaded event has
+            // fired (and after the first frame paints), giving a responsive
+            // UI before the orchestrator starts churning panels.
+            Dispatcher.BeginInvoke(
+                new System.Action(KickStartupBaseline),
+                System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        // Resolve the MainViewModel from the live MainWindow and start the
+        // baseline orchestrator on a background task. Single-shot — guarded
+        // by BaselineRunner.IsRunning if anything else races us. Safe if
+        // MainWindow isn't up yet (design-time, very early shutdown): just
+        // re-queue once.
+        private bool _baselineKicked;
+        private void KickStartupBaseline()
+        {
+            if (_baselineKicked) return;
+            var win = Current?.MainWindow;
+            if (win == null || !(win.DataContext is ViewModels.MainViewModel mvm) || mvm.Baseline == null)
+            {
+                // Window not ready yet — re-queue once at Loaded priority.
+                Dispatcher.BeginInvoke(new System.Action(KickStartupBaseline),
+                    System.Windows.Threading.DispatcherPriority.Loaded);
+                return;
+            }
+            _baselineKicked = true;
+            try
+            {
+                AppLogFile.Instance.WriteLine("Baseline", "Info",
+                    "Startup baseline kicked");
+            }
+            catch { }
+            _ = Task.Run(async () =>
+            {
+                try { await mvm.Baseline.RunAsync().ConfigureAwait(false); }
+                catch (System.Exception ex)
+                {
+                    try
+                    {
+                        AppLogFile.Instance.WriteLine("Baseline", "Fail",
+                            $"Baseline RunAsync threw: {ex.Message}");
+                    }
+                    catch { }
+                }
+            });
         }
     }
 }
