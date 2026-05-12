@@ -13,7 +13,7 @@ namespace Pulse.WPF.Models
     /// Brushes are resolved lazily via <see cref="StatusHelpers.Brush"/> so
     /// resource lookup happens against the active theme at first paint.
     /// </summary>
-    public class EventLogEntry
+    public class WindowsEventEntry
     {
         public DateTime TimeGenerated { get; set; }
         public string   Source        { get; set; }

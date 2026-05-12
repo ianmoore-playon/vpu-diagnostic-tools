@@ -9,7 +9,7 @@ namespace Pulse.WPF.Services
 {
     /// <summary>
     /// Pulls entries from the Application + System Windows event logs and
-    /// hands the panel a flat list of <see cref="EventLogEntry"/> rows.
+    /// hands the panel a flat list of <see cref="WindowsEventEntry"/> rows.
     ///
     /// Read-time gotchas worth flagging for future maintainers:
     ///   - <see cref="EventLog.Entries"/> enumerates oldest-first and is
@@ -31,18 +31,18 @@ namespace Pulse.WPF.Services
         // System catches disk / NIC / SCM / driver complaints.
         private static readonly string[] LogsToRead = { "Application", "System" };
 
-        public Task<List<EventLogEntry>> GetRecentAsync(int hoursBack,
+        public Task<List<WindowsEventEntry>> GetRecentAsync(int hoursBack,
                                                         IEnumerable<string> sources,
                                                         IEnumerable<string> levels)
         {
             return Task.Run(() => Read(hoursBack, sources, levels));
         }
 
-        private static List<EventLogEntry> Read(int hoursBack,
+        private static List<WindowsEventEntry> Read(int hoursBack,
                                                  IEnumerable<string> sources,
                                                  IEnumerable<string> levels)
         {
-            var results = new List<EventLogEntry>();
+            var results = new List<WindowsEventEntry>();
             var cutoff  = DateTime.Now.AddHours(-Math.Max(1, hoursBack));
 
             // Case-insensitive prefix list. Empty means "match any".
@@ -73,7 +73,7 @@ namespace Pulse.WPF.Services
                         int total = entries.Count;
                         for (int i = total - 1; i >= 0 && results.Count < MaxEntries; i--)
                         {
-                            EventLogEntry row;
+                            WindowsEventEntry row;
                             try
                             {
                                 var e = entries[i];
@@ -84,7 +84,7 @@ namespace Pulse.WPF.Services
 
                                 if (!MatchesSource(e.Source, sourcePrefixes)) continue;
 
-                                row = new EventLogEntry
+                                row = new WindowsEventEntry
                                 {
                                     TimeGenerated = e.TimeGenerated,
                                     Source        = e.Source ?? "",
@@ -117,15 +117,15 @@ namespace Pulse.WPF.Services
             return results;
         }
 
-        private static string MapLevel(EventLogEntryType t)
+        private static string MapLevel(WindowsEventEntryType t)
         {
             switch (t)
             {
-                case EventLogEntryType.Error:           return "Error";
-                case EventLogEntryType.FailureAudit:    return "Error";
-                case EventLogEntryType.Warning:         return "Warning";
-                case EventLogEntryType.Information:     return "Information";
-                case EventLogEntryType.SuccessAudit:    return "Information";
+                case WindowsEventEntryType.Error:           return "Error";
+                case WindowsEventEntryType.FailureAudit:    return "Error";
+                case WindowsEventEntryType.Warning:         return "Warning";
+                case WindowsEventEntryType.Information:     return "Information";
+                case WindowsEventEntryType.SuccessAudit:    return "Information";
                 default:                                 return "Information";
             }
         }

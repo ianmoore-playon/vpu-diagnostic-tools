@@ -17,10 +17,10 @@ namespace Pulse.WPF.Services
         /// filters. Capped at 500 rows to keep the UI responsive.
         ///
         /// <paramref name="sources"/> matches case-insensitively against the
-        /// start of <c>EventLogEntry.Source</c> so caller can pass either an
+        /// start of <c>WindowsEventEntry.Source</c> so caller can pass either an
         /// exact source name ("WHEA-Logger") or a prefix ("Pixellot").
         /// </summary>
-        Task<List<EventLogEntry>> GetRecentAsync(int hoursBack,
+        Task<List<WindowsEventEntry>> GetRecentAsync(int hoursBack,
                                                  IEnumerable<string> sources,
                                                  IEnumerable<string> levels);
     }

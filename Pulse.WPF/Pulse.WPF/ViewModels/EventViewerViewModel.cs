@@ -29,7 +29,7 @@ namespace Pulse.WPF.ViewModels
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
 
         // ---- Entries collection + filtered view ------------------------
-        public ObservableCollection<EventLogEntry> Entries { get; } = new ObservableCollection<EventLogEntry>();
+        public ObservableCollection<WindowsEventEntry> Entries { get; } = new ObservableCollection<WindowsEventEntry>();
         public ICollectionView EntriesView { get; }
 
         // ---- Filter state -----------------------------------------------
@@ -143,9 +143,9 @@ namespace Pulse.WPF.ViewModels
             if (_showInformation) levels.Add("Information");
             if (levels.Count == 0) { levels.Add("Error"); levels.Add("Warning"); }
 
-            List<EventLogEntry> rows;
+            List<WindowsEventEntry> rows;
             try { rows = await _svc.GetRecentAsync(hours, DefaultSources, levels); }
-            catch { rows = new List<EventLogEntry>(); }
+            catch { rows = new List<WindowsEventEntry>(); }
 
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
             {
@@ -159,7 +159,7 @@ namespace Pulse.WPF.ViewModels
 
         private bool FilterEntry(object o)
         {
-            if (!(o is EventLogEntry e)) return false;
+            if (!(o is WindowsEventEntry e)) return false;
 
             // Level toggles.
             if (e.Level == "Error"       && !_showErrors)      return false;
