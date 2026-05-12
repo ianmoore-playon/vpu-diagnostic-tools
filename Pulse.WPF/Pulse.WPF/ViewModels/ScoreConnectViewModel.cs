@@ -28,6 +28,14 @@ namespace Pulse.WPF.ViewModels
     public class ScoreConnectViewModel : ObservableObject
     {
         private readonly IScoreConnectService _svc;
+        // v0.6.0 Phase 4 — Live WebSocket. Constructed once in the ctor,
+        // started lazily on first RefreshAsync (once we know the service is
+        // reachable). The client owns its own reconnect loop with
+        // exponential backoff, so we deliberately don't stop it on every
+        // panel-leave — the panel pattern matches CameraConnectivity's
+        // "always-on monitor" approach.
+        private readonly Pulse.WPF.Helpers.ScoreConnectLiveClient _liveClient;
+        private bool _liveStarted;
 
         // ---- Bindings ----
 
@@ -137,6 +145,13 @@ namespace Pulse.WPF.ViewModels
         public ScoreConnectViewModel(IScoreConnectService svc)
         {
             _svc = svc ?? throw new ArgumentNullException(nameof(svc));
+            // The HTTP base URL comes from the service so the WS scheme /
+            // host stays in lockstep with however the operator configured
+            // ScoreConnect III in settings.json.
+            _liveClient = new Pulse.WPF.Helpers.ScoreConnectLiveClient(_svc.BaseUrl);
+            _liveClient.MessageReceived += OnLiveMessageReceived;
+            _liveClient.ConnectionStateChanged += OnLiveConnectionStateChanged;
+
             RefreshCommand = new AsyncCommand(RefreshAsync);
             OpenScoreConnectGuiCommand = new RelayCommand(OpenScoreConnectGui);
 
@@ -455,6 +470,25 @@ namespace Pulse.WPF.ViewModels
                 return;
             }
 
+            // v0.6.0 Phase 4 — kick the live client on the first successful
+            // probe. The client owns its own reconnect loop so we only need
+            // to start it once; subsequent refreshes are no-ops.
+            if (!_liveStarted)
+            {
+                _liveStarted = true;
+                try
+                {
+                    await _liveClient.StartAsync().ConfigureAwait(false);
+                    AppLogFile.Instance.WriteLine("ScoreConnect", "Info",
+                        "Live WebSocket client started.");
+                }
+                catch (Exception ex)
+                {
+                    AppLogFile.Instance.WriteLine("ScoreConnect", "Warn",
+                        $"Failed to start live WebSocket: {ex.Message}");
+                }
+            }
+
             // Phase 1: read every endpoint in parallel — they all share one
             // HttpClient but the loopback listener can comfortably handle
             // half-a-dozen overlapping reads.
@@ -731,6 +765,123 @@ namespace Pulse.WPF.ViewModels
                 StatusLabel = pill.Label;
                 StatusColor = pill.Fg;
                 StatusBg    = pill.Bg;
+            });
+        }
+
+        // ---------- Phase 4: live WebSocket data ----------
+
+        // Best-effort projection of an inbound WS frame onto LiveScoreData.
+        // The exact key spellings ScoreConnect emits aren't documented, so
+        // every field tries a handful of common spellings and falls back to
+        // ExtendedFields for anything we don't recognise. Mutation is
+        // partial — a frame that only carries a clock update doesn't clobber
+        // the home/away scores.
+        private void OnLiveMessageReceived(string raw, Dictionary<string, object> parsed)
+        {
+            if (string.IsNullOrEmpty(raw)) return;
+
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            {
+                var data = LiveScoreData ?? new ScoreConnectLiveScoreData();
+                if (parsed != null)
+                {
+                    ApplyIfPresent(parsed, "homeScore",  "HomeScore", "scoreHome",
+                                   v => data.HomeScore = v);
+                    ApplyIfPresent(parsed, "awayScore",  "AwayScore", "scoreAway",
+                                   v => data.AwayScore = v);
+                    ApplyIfPresent(parsed, "homeTeam",   "HomeTeam",  "teamHome",
+                                   v => data.HomeTeam = v);
+                    ApplyIfPresent(parsed, "awayTeam",   "AwayTeam",  "teamAway",
+                                   v => data.AwayTeam = v);
+                    ApplyIfPresent(parsed, "period",     "Period",    "quarter", "inning",
+                                   v => data.Period = v);
+                    ApplyIfPresent(parsed, "clock",      "Clock",     "gameClock",
+                                   v => data.Clock = v);
+
+                    // Anything we didn't typed-bind goes into ExtendedFields
+                    // — these are visible in the report so we never silently
+                    // lose data on a schema drift.
+                    foreach (var kv in parsed)
+                    {
+                        if (IsTypedLiveKey(kv.Key)) continue;
+                        var s = kv.Value?.ToString() ?? "";
+                        if (s.Length > 0 && s.Length < 200)
+                            data.ExtendedFields[kv.Key] = s;
+                    }
+                }
+                else
+                {
+                    // Non-JSON frame — surface the raw text in ExtendedFields
+                    // and log a single Info line so the operator can see
+                    // something arrived.
+                    data.ExtendedFields["__raw"] = raw.Length > 300 ? raw.Substring(0, 300) + "..." : raw;
+                }
+                data.LastUpdatedAt = DateTime.Now;
+                LiveScoreData = data;
+            });
+        }
+
+        private static void ApplyIfPresent(
+            Dictionary<string, object> map, string a, string b, string c,
+            Action<string> setter)
+        {
+            ApplyIfPresent(map, new[] { a, b, c }, setter);
+        }
+        private static void ApplyIfPresent(
+            Dictionary<string, object> map, string a, string b, string c, string d,
+            Action<string> setter)
+        {
+            ApplyIfPresent(map, new[] { a, b, c, d }, setter);
+        }
+        private static void ApplyIfPresent(
+            Dictionary<string, object> map, string[] keys, Action<string> setter)
+        {
+            foreach (var k in keys)
+            {
+                if (map.TryGetValue(k, out var v) && v != null)
+                {
+                    var s = v.ToString();
+                    if (!string.IsNullOrEmpty(s)) { setter(s); return; }
+                }
+            }
+        }
+
+        private static bool IsTypedLiveKey(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return true;
+            switch (key.ToLowerInvariant())
+            {
+                case "homescore": case "scorehome":
+                case "awayscore": case "scoreaway":
+                case "hometeam":  case "teamhome":
+                case "awayteam":  case "teamaway":
+                case "period":    case "quarter": case "inning":
+                case "clock":     case "gameclock":
+                    return true;
+            }
+            return false;
+        }
+
+        // Toggle the LIVE / OFFLINE pill in the Live Scoreboard card. When
+        // the live feed drops mid-session, also surface a Warning finding +
+        // recommendation so the operator notices.
+        private void OnLiveConnectionStateChanged(bool connected)
+        {
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            {
+                bool wasConnected = LiveConnected;
+                LiveConnected = connected;
+
+                // Only emit a "feed disconnected" finding when we had a
+                // previously-good connection — avoids spamming Findings
+                // during the initial path-discovery phase.
+                if (wasConnected && !connected)
+                {
+                    AddFinding("Warning",
+                        "Live data feed disconnected",
+                        "The ScoreConnect III WebSocket dropped. The client will retry automatically with backoff; if the feed doesn't return within a minute, restart the ScoreConnect III service.");
+                    UpdateStatusPill();
+                }
             });
         }
 
