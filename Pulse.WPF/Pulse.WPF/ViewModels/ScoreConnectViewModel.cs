@@ -140,11 +140,290 @@ namespace Pulse.WPF.ViewModels
             RefreshCommand = new AsyncCommand(RefreshAsync);
             OpenScoreConnectGuiCommand = new RelayCommand(OpenScoreConnectGui);
 
-            // Phase 2 stubs — replaced by real handlers in Phase 3.
-            EditVendorCommand        = new RelayCommand(() => { });
-            EditSportCommand         = new RelayCommand(() => { });
-            EditConfigurationCommand = new RelayCommand(() => { });
-            EditDecoderCommand       = new RelayCommand(() => { });
+            // v0.6.0 Phase 3 — Edit commands open a picker dialog populated
+            // from the read endpoints, then a second confirm before invoking
+            // the corresponding Set* service method.
+            EditVendorCommand        = new AsyncCommand(EditVendorAsync);
+            EditSportCommand         = new AsyncCommand(EditSportAsync);
+            EditConfigurationCommand = new AsyncCommand(EditConfigurationAsync);
+            EditDecoderCommand       = new AsyncCommand(EditDecoderAsync);
+        }
+
+        // ---------- Phase 3: write flows ----------
+
+        // Shared two-stage confirm. Returns the chosen id when the user
+        // commits, null when they bail at either prompt. <paramref name="loadItems"/>
+        // is called from the dispatcher thread so it can block on a service
+        // read — callers should keep it cheap (10s is the write-timeout
+        // ceiling, but we don't bound the read here; the service does).
+        private async Task<string> PromptAsync(
+            string title,
+            string description,
+            Func<Task<List<ScoreConnectListItem>>> loadItems,
+            string currentSelectionId)
+        {
+            if (!IsDetected) return null;
+
+            List<ScoreConnectListItem> items;
+            try
+            {
+                items = await loadItems().ConfigureAwait(false);
+            }
+            catch
+            {
+                items = new List<ScoreConnectListItem>();
+            }
+            if (items == null || items.Count == 0)
+            {
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    System.Windows.MessageBox.Show(
+                        $"ScoreConnect III didn't return any options for \"{title}\". " +
+                        "Try Refresh, or open the ScoreConnect GUI to verify the service is configured.",
+                        title,
+                        System.Windows.MessageBoxButton.OK,
+                        System.Windows.MessageBoxImage.Information);
+                });
+                return null;
+            }
+
+            string chosenId = null;
+            string chosenName = null;
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            {
+                var owner = System.Windows.Application.Current?.MainWindow;
+                var dlg = new Views.ScoreConnectPickerDialog(title, description, items, currentSelectionId)
+                {
+                    Owner = owner,
+                };
+                var ok = dlg.ShowDialog();
+                if (ok == true)
+                {
+                    chosenId = dlg.SelectedId;
+                    chosenName = dlg.SelectedName;
+                }
+            });
+            if (string.IsNullOrEmpty(chosenId)) return null;
+
+            // Second-stage confirm — every write to ScoreConnect III may
+            // interrupt a live feed, so make the user re-affirm.
+            bool confirmed = false;
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            {
+                var resp = System.Windows.MessageBox.Show(
+                    $"Set {title.ToLowerInvariant()} to \"{chosenName}\"?\n\n" +
+                    "This will reconfigure ScoreConnect III and may interrupt live data. Continue?",
+                    "Confirm ScoreConnect change",
+                    System.Windows.MessageBoxButton.OKCancel,
+                    System.Windows.MessageBoxImage.Warning,
+                    System.Windows.MessageBoxResult.Cancel);
+                confirmed = resp == System.Windows.MessageBoxResult.OK;
+            });
+            if (!confirmed) return null;
+
+            AppLogFile.Instance.WriteLine("ScoreConnect", "Info",
+                $"Operator confirmed change: {title} -> {chosenName} ({chosenId})");
+            return chosenId;
+        }
+
+        private async Task EditVendorAsync()
+        {
+            var chosen = await PromptAsync(
+                "Vendor",
+                "Choose the scoreboard vendor. Switching vendors typically drops the active scoreboard connection.",
+                async () =>
+                {
+                    var list = await _svc.GetVendorsAsync().ConfigureAwait(false);
+                    return list.Cast<ScoreConnectListItem>().ToList();
+                },
+                Configuration?.Vendor).ConfigureAwait(false);
+            if (chosen == null) return;
+
+            var ok = await _svc.SetVendorAsync(chosen).ConfigureAwait(false);
+            await ReportWriteResultAsync("Vendor", chosen, ok).ConfigureAwait(false);
+        }
+
+        private async Task EditSportAsync()
+        {
+            // Sports are scoped by the currently-configured vendor's id —
+            // we only have the vendor *name* on the typed configuration
+            // model, so resolve the id from the vendor list first.
+            var vendorId = await ResolveCurrentVendorIdAsync().ConfigureAwait(false);
+            if (string.IsNullOrEmpty(vendorId))
+            {
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    System.Windows.MessageBox.Show(
+                        "Pick a vendor first — the sport list is scoped to the chosen vendor.",
+                        "Sport",
+                        System.Windows.MessageBoxButton.OK,
+                        System.Windows.MessageBoxImage.Information);
+                });
+                return;
+            }
+
+            var chosen = await PromptAsync(
+                "Sport",
+                "Choose the sport. Changing sport typically resets the active scoreboard data layout.",
+                async () =>
+                {
+                    var list = await _svc.GetVendorSportsAsync(vendorId).ConfigureAwait(false);
+                    return list.Cast<ScoreConnectListItem>().ToList();
+                },
+                Configuration?.Sport).ConfigureAwait(false);
+            if (chosen == null) return;
+
+            var ok = await _svc.SetVendorSportAsync(chosen).ConfigureAwait(false);
+            await ReportWriteResultAsync("Sport", chosen, ok).ConfigureAwait(false);
+        }
+
+        private async Task EditConfigurationAsync()
+        {
+            // Configurations are scoped by the current vendor-sport. We have
+            // the sport NAME, not id — resolve through the vendor's sport list.
+            var vendorId = await ResolveCurrentVendorIdAsync().ConfigureAwait(false);
+            if (string.IsNullOrEmpty(vendorId))
+            {
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    System.Windows.MessageBox.Show(
+                        "Pick a vendor and sport first — vendor configurations are scoped to a specific sport.",
+                        "Vendor configuration",
+                        System.Windows.MessageBoxButton.OK,
+                        System.Windows.MessageBoxImage.Information);
+                });
+                return;
+            }
+            var sportId = await ResolveCurrentVendorSportIdAsync(vendorId).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(sportId))
+            {
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    System.Windows.MessageBox.Show(
+                        "Couldn't resolve the current vendor-sport id from the configuration. Try Refresh and retry.",
+                        "Vendor configuration",
+                        System.Windows.MessageBoxButton.OK,
+                        System.Windows.MessageBoxImage.Information);
+                });
+                return;
+            }
+
+            var chosen = await PromptAsync(
+                "Vendor configuration",
+                "Choose a vendor configuration. Configurations bundle device + protocol + scoreboard layout.",
+                async () =>
+                {
+                    var list = await _svc.GetVendorConfigurationsAsync(sportId).ConfigureAwait(false);
+                    return list.Cast<ScoreConnectListItem>().ToList();
+                },
+                Configuration?.VendorConfigurationId).ConfigureAwait(false);
+            if (chosen == null) return;
+
+            var ok = await _svc.SetVendorConfigurationAsync(chosen).ConfigureAwait(false);
+            await ReportWriteResultAsync("Vendor configuration", chosen, ok).ConfigureAwait(false);
+        }
+
+        private async Task EditDecoderAsync()
+        {
+            // The decoder write needs a vendorSportId + serialPort. Reuse
+            // the available-ports list as the picker; we don't expose serial
+            // port discovery as its own endpoint here.
+            var vendorId = await ResolveCurrentVendorIdAsync().ConfigureAwait(false);
+            var sportId  = string.IsNullOrEmpty(vendorId)
+                ? null
+                : await ResolveCurrentVendorSportIdAsync(vendorId).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(sportId))
+            {
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    System.Windows.MessageBox.Show(
+                        "Pick a vendor and sport first — the decoder is bound to a vendor-sport.",
+                        "Decoder",
+                        System.Windows.MessageBoxButton.OK,
+                        System.Windows.MessageBoxImage.Information);
+                });
+                return;
+            }
+
+            var chosen = await PromptAsync(
+                "Serial port",
+                "Choose the COM port the scoreboard decoder should listen on. Make sure no other process is currently holding the port open.",
+                () => Task.FromResult(AvailablePorts
+                    .Select(p => (ScoreConnectListItem)new ScoreConnectVendorListItem
+                    {
+                        Id   = p.Name,
+                        Name = p.IsInUse ? $"{p.Name}  (in use)" : p.Name,
+                    })
+                    .ToList()),
+                Configuration?.SerialPort).ConfigureAwait(false);
+            if (chosen == null) return;
+
+            var ok = await _svc.SetDecoderInfoAsync(sportId, chosen).ConfigureAwait(false);
+            await ReportWriteResultAsync("Decoder serial port", chosen, ok).ConfigureAwait(false);
+        }
+
+        // Cross-reference the typed Configuration.Vendor name back to its
+        // list-item id. ScoreConnect returns the name on the configuration
+        // response but the Set* writes expect ids.
+        private async Task<string> ResolveCurrentVendorIdAsync()
+        {
+            if (Vendors.Count == 0)
+            {
+                try
+                {
+                    var list = await _svc.GetVendorsAsync().ConfigureAwait(false);
+                    ApplyVendors(list);
+                }
+                catch { }
+            }
+            var name = Configuration?.Vendor;
+            if (string.IsNullOrEmpty(name)) return null;
+            var match = Vendors.FirstOrDefault(v =>
+                string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase));
+            return match?.Id;
+        }
+
+        private async Task<string> ResolveCurrentVendorSportIdAsync(string vendorId)
+        {
+            if (string.IsNullOrEmpty(vendorId)) return null;
+            try
+            {
+                var list = await _svc.GetVendorSportsAsync(vendorId).ConfigureAwait(false);
+                if (list == null) return null;
+                var name = Configuration?.Sport;
+                if (string.IsNullOrEmpty(name)) return null;
+                var match = list.FirstOrDefault(v =>
+                    string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase));
+                return match?.Id;
+            }
+            catch { return null; }
+        }
+
+        private async Task ReportWriteResultAsync(string what, string value, bool ok)
+        {
+            if (ok)
+            {
+                AppLogFile.Instance.WriteLine("ScoreConnect", "Pass",
+                    $"{what} updated -> {value}");
+                AddLog(what, $"Updated -> {value}", "Pass");
+                // Refresh so the panel shows the new state.
+                await RefreshAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                AppLogFile.Instance.WriteLine("ScoreConnect", "Fail",
+                    $"{what} update failed (value={value})");
+                AddLog(what, $"Update failed", "Fail");
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    var rec = NetworkRecommendation.Create(
+                        "Critical",
+                        $"{what} change failed",
+                        $"ScoreConnect III rejected the {what.ToLowerInvariant()} update. " +
+                        "Check the rolling app log for the HTTP status, then verify the value is still valid in the ScoreConnect GUI.");
+                    Recommendations.Insert(0, rec);
+                });
+            }
         }
 
         // ---------- Refresh ----------
