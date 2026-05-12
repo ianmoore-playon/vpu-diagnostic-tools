@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Pulse.WPF.Models;
@@ -27,5 +28,13 @@ namespace Pulse.WPF.Services
         Task<List<PortTestResult>> RunPortTestsAsync();
         Task<List<DomainTestResult>> RunDomainTestsAsync();
         Task<bool> CheckInternetAsync();
+
+        /// <summary>
+        /// Raised when a formerly-silent catch block intercepts an exception.
+        /// Mirrors DashboardService.OnSilentError — wired by NetworkViewModel
+        /// in its constructor so collection / probe failures surface in the
+        /// panel's Live Log and the rolling AppLogFile (v0.6.4).
+        /// </summary>
+        event Action<string, Exception> OnSilentError;
     }
 }

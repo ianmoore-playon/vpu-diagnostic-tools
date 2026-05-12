@@ -22,6 +22,16 @@ namespace Pulse.WPF.Services
     {
         private const int TimeoutMs = 2000;
 
+        /// <summary>
+        /// Optional error reporter — when set, every formerly-silent catch in
+        /// this service is rerouted here so the Network panel's Live Log can
+        /// surface collection failures. NetworkViewModel hooks this in its
+        /// constructor (v0.6.4). Mirrors DashboardService.OnSilentError.
+        /// </summary>
+        public event Action<string, Exception> OnSilentError;
+
+        private void Report(string section, Exception ex) => OnSilentError?.Invoke(section, ex);
+
         // ---- Canonical probe set ----
         // Reviewed 2026-05-07 against two pcapng captures of a known-working
         // Windows VPU during a live stream:
@@ -108,6 +118,11 @@ namespace Pulse.WPF.Services
                         nic.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
 
                     IPInterfaceProperties props;
+                    // Per-NIC GetIPProperties() can throw "The network location
+                    // cannot be reached" on transient NICs (VPN tunnels mid-
+                    // teardown, Hyper-V virtual switches). Skipping the NIC is
+                    // correct; logging every per-NIC failure would flood the
+                    // panel — kept defensive.
                     try { props = nic.GetIPProperties(); }
                     catch { continue; }
 
@@ -133,7 +148,7 @@ namespace Pulse.WPF.Services
                     };
                 }
             }
-            catch { }
+            catch (Exception _ex) { Report("Adapter enum", _ex); }
             return null;
         }
 
@@ -155,6 +170,10 @@ namespace Pulse.WPF.Services
                 {
                     string ip = "—";
                     int ifIdx = 0;
+                    // Per-NIC properties read can throw on transient interfaces;
+                    // skip the row's IP/index rather than aborting the whole
+                    // adapter list. Kept defensive — same reasoning as the
+                    // GetPrimaryInternetAdapter inner catch.
                     try
                     {
                         var props = nic.GetIPProperties();
@@ -174,9 +193,10 @@ namespace Pulse.WPF.Services
                     });
                 }
             }
-            catch
+            catch (Exception _ex)
             {
                 // Diagnostic services must not throw on a misconfigured machine.
+                Report("Adapter enum", _ex);
             }
 
             return rows;
@@ -200,6 +220,10 @@ namespace Pulse.WPF.Services
             return "Auxiliary";
         }
 
+        // Pure static helper — returns 0 on any failure. Kept defensive so it
+        // can be safely called from anywhere (including ctor / hot paths)
+        // without an OnSilentError handler in scope. The outer callers that
+        // depend on its value already log meaningfully when they get 0.
         private static int TryFindInternetInterfaceIndex()
         {
             try
@@ -274,10 +298,10 @@ namespace Pulse.WPF.Services
                         var v4Props = primary.Props.GetIPv4Properties();
                         cfg.Dhcp = v4Props != null && v4Props.IsDhcpEnabled ? "Enabled" : "Disabled";
                     }
-                    catch { }
+                    catch (Exception _ex) { Report("IP config", _ex); }
                 }
             }
-            catch { }
+            catch (Exception _ex) { Report("IP config", _ex); }
 
             // Configured NTP peer — registry. Live source — w32tm /query /source.
             try
@@ -296,7 +320,7 @@ namespace Pulse.WPF.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception _ex) { Report("NTP read", _ex); }
 
             try
             {
@@ -316,11 +340,14 @@ namespace Pulse.WPF.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception _ex) { Report("NTP source", _ex); }
 
             return cfg;
         }
 
+        // Pure static helper used by the GetIpConfiguration LINQ filter. Kept
+        // defensive — the null return is the signal to skip the NIC; logging
+        // every per-NIC props read on a 12-NIC machine would be noise.
         private static IPInterfaceProperties SafeGetProps(NetworkInterface n)
         {
             try { return n.GetIPProperties(); } catch { return null; }
@@ -352,7 +379,10 @@ namespace Pulse.WPF.Services
             return await PingAsync("1.1.1.1");
         }
 
-        private static async Task<bool> PingAsync(string host)
+        // Converted to instance method (v0.6.4) so it can route ping failures
+        // through Report instead of swallowing them. Behaviour-preserving:
+        // still returns false on any exception.
+        private async Task<bool> PingAsync(string host)
         {
             try
             {
@@ -362,7 +392,7 @@ namespace Pulse.WPF.Services
                     return r != null && r.Status == IPStatus.Success;
                 }
             }
-            catch { return false; }
+            catch (Exception _ex) { Report("Ping", _ex); return false; }
         }
 
         public async Task<List<PortTestResult>> RunPortTestsAsync()
@@ -409,7 +439,7 @@ namespace Pulse.WPF.Services
         // value GetIpConfiguration() surfaces for the IP card. Strips the
         // ",0x9" flag suffix Windows appends. Returns null if the key is
         // missing or empty so the NTP probe falls back to the static spec
-        // host (the public ntp.org pool).
+        // host (the public ntp.org pool). Pure static helper, kept defensive.
         private static string TryGetConfiguredNtpServer()
         {
             try
@@ -428,7 +458,11 @@ namespace Pulse.WPF.Services
             catch { return null; }
         }
 
-        private static async Task<PortTestResult> RunOnePortTestAsync(PortTestSpec spec)
+        // Converted to instance method (v0.6.4) so probe dispatch failures
+        // (DNS resolution mid-probe, unexpected exceptions) can be reported
+        // through the new OnSilentError surface instead of being silently
+        // converted to Fail rows.
+        private async Task<PortTestResult> RunOnePortTestAsync(PortTestSpec spec)
         {
             var row = new PortTestResult
             {
@@ -453,13 +487,21 @@ namespace Pulse.WPF.Services
                 else
                     ok = await TestUdpEchoAsync(spec.Host, spec.Port).ConfigureAwait(false);
             }
-            catch { ok = false; }
+            catch (Exception _ex)
+            {
+                Report($"Port probe {spec.Protocol}/{spec.Port}", _ex);
+                ok = false;
+            }
 
             row.Status = ok ? "Pass" : "Fail";
             return row;
         }
 
-        private static async Task<bool> TestTcpAsync(string host, int port)
+        // Converted to instance method (v0.6.4) — surfaces TCP connect
+        // exceptions ("No such host is known", "actively refused") through
+        // OnSilentError so the live log can show the underlying error
+        // alongside the Fail row.
+        private async Task<bool> TestTcpAsync(string host, int port)
         {
             try
             {
@@ -470,11 +512,12 @@ namespace Pulse.WPF.Services
                     return done == connect && tcp.Connected;
                 }
             }
-            catch { return false; }
+            catch (Exception _ex) { Report($"TCP probe {host}:{port}", _ex); return false; }
         }
 
         // Real DNS A-record query for pixellot.tv. Mirrors Test-UdpDns.
-        private static Task<bool> TestUdpDnsAsync(string server)
+        // Instance method (v0.6.4) so probe failures route through Report.
+        private Task<bool> TestUdpDnsAsync(string server)
         {
             return Task.Run(() =>
             {
@@ -498,7 +541,9 @@ namespace Pulse.WPF.Services
                     var r = udp.Receive(ref from);
                     return r != null && r.Length > 6 && (r[3] & 0x0F) == 0;
                 }
-                catch { return false; }
+                catch (Exception _ex) { Report("DNS probe", _ex); return false; }
+                // udp?.Close() in finally — defensive cleanup, swallow per
+                // .NET idiom; logging a dispose failure adds no value.
                 finally { try { udp?.Close(); } catch { } }
             });
         }
@@ -516,7 +561,7 @@ namespace Pulse.WPF.Services
         //      /samples:1 /dataonly` and report success when Windows itself
         //      can complete a sample. This mirrors the manual cross-check
         //      Support uses to rule out a Pixellot-style false negative.
-        private static async Task<bool> TestUdpNtpAsync(string server)
+        private async Task<bool> TestUdpNtpAsync(string server)
         {
             if (await DirectNtpProbeAsync(server).ConfigureAwait(false)) return true;
             return await TestNtpViaW32tmAsync(server).ConfigureAwait(false);
@@ -524,7 +569,8 @@ namespace Pulse.WPF.Services
 
         // Properly-formed NTPv4 client request. Populates the Transmit Timestamp
         // and validates the server's response. RFC 5905 §7.3.
-        private static Task<bool> DirectNtpProbeAsync(string server)
+        // Instance method (v0.6.4) so probe failures route through Report.
+        private Task<bool> DirectNtpProbeAsync(string server)
         {
             return Task.Run(() =>
             {
@@ -569,7 +615,9 @@ namespace Pulse.WPF.Services
                     if (mode != 4) return false;     // 4 = server
                     return true;
                 }
-                catch { return false; }
+                catch (Exception _ex) { Report("NTP probe", _ex); return false; }
+                // udp?.Close() in finally — defensive cleanup, swallow per
+                // .NET idiom; logging a dispose failure adds no value.
                 finally { try { udp?.Close(); } catch { } }
             });
         }
@@ -580,7 +628,8 @@ namespace Pulse.WPF.Services
         //   "16:42:30, +00.0001234s"
         // Output we treat as failure looks like:
         //   "16:42:30, error: 0x800705B4 (timeout)"
-        private static Task<bool> TestNtpViaW32tmAsync(string server)
+        // Instance method (v0.6.4) so probe failures route through Report.
+        private Task<bool> TestNtpViaW32tmAsync(string server)
         {
             return Task.Run(() =>
             {
@@ -601,6 +650,9 @@ namespace Pulse.WPF.Services
                         // generous; default w32tm timeout is ~2 s.
                         if (!p.WaitForExit(4000))
                         {
+                            // p.Kill() — best-effort cleanup of a hung
+                            // w32tm.exe; if it throws (already exited), the
+                            // result is still a Fail. Defensive, kept silent.
                             try { p.Kill(); } catch { }
                             return false;
                         }
@@ -612,11 +664,12 @@ namespace Pulse.WPF.Services
                             stdout, @",\s*[+-]\d");
                     }
                 }
-                catch { return false; }
+                catch (Exception _ex) { Report("NTP probe (w32tm)", _ex); return false; }
             });
         }
 
-        private static Task<bool> TestUdpEchoAsync(string server, int port)
+        // Instance method (v0.6.4) so probe failures route through Report.
+        private Task<bool> TestUdpEchoAsync(string server, int port)
         {
             return Task.Run(() =>
             {
@@ -635,11 +688,16 @@ namespace Pulse.WPF.Services
                     var r = udp.Receive(ref from);
                     return Encoding.ASCII.GetString(r) == $"testing UDP on port {port}";
                 }
-                catch { return false; }
+                catch (Exception _ex) { Report($"UDP probe :{port}", _ex); return false; }
+                // udp?.Close() in finally — defensive cleanup, swallow per
+                // .NET idiom; logging a dispose failure adds no value.
                 finally { try { udp?.Close(); } catch { } }
             });
         }
 
+        // Pure static helper — Dns.GetHostAddressesAsync wrapper with a
+        // hard timeout. Returns null on failure; callers already treat null
+        // as "no probe target" and surface their own Fail row. Kept defensive.
         private static IPAddress[] ResolveAddrs(string host)
         {
             try
@@ -660,7 +718,10 @@ namespace Pulse.WPF.Services
             return results.ToList();
         }
 
-        private static async Task<DomainTestResult> RunOneDomainTestAsync(DomainTestSpec spec)
+        // Instance method (v0.6.4) so DNS resolve failures route through
+        // Report. Behaviour preserved: on exception the row's Status stays
+        // "Fail" and the original ResolvedTo placeholder ("—") is retained.
+        private async Task<DomainTestResult> RunOneDomainTestAsync(DomainTestSpec spec)
         {
             var row = new DomainTestResult { Domain = spec.Domain, ResolvedTo = "—", Status = "Info" };
             if (spec.DnsNotExpected) return row;
@@ -677,7 +738,7 @@ namespace Pulse.WPF.Services
                 row.ResolvedTo = t.Result[0].ToString();
                 row.Status = "Pass";
             }
-            catch { row.Status = "Fail"; }
+            catch (Exception _ex) { Report($"DNS resolve {spec.Domain}", _ex); row.Status = "Fail"; }
             return row;
         }
     }

@@ -80,6 +80,16 @@ namespace Pulse.WPF.ViewModels
             _net = net;
             RunTestCommand = new AsyncCommand(RunTestAsync);
             OpenAdapterSettingsCommand = new RelayCommand(OpenAdapterSettings);
+
+            // Route NetworkService's formerly-silent catches into the panel
+            // log sink (v0.6.4) so collection / probe failures finally show
+            // up in the Live Log + rolling AppLogFile. Mirrors the
+            // DashboardViewModel constructor wiring against DashboardService.
+            if (_net != null)
+            {
+                _net.OnSilentError += (section, ex) =>
+                    AddLog(section, $"{ex?.GetType().Name}: {ex?.Message}", "Warn");
+            }
         }
 
         // Called when the panel becomes visible. Cheap to call repeatedly —
