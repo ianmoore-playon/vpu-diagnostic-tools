@@ -33,19 +33,18 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />   <!-- 0: Section header -->
+                <RowDefinition Height="Auto" />   <!-- 0: Section header + actions -->
                 <RowDefinition Height="Auto" />   <!-- 1: Findings banner -->
                 <RowDefinition Height="Auto" />   <!-- 2: Recommended Actions (auto-collapse) -->
                 <RowDefinition Height="Auto" />   <!-- 3: Port Connectivity (TCP | UDP) -->
                 <RowDefinition Height="Auto" />   <!-- 4: Combined Internet+IP | Domain reachability -->
                 <RowDefinition Height="*" MinHeight="200" /> <!-- 5: Live Log -->
-                <RowDefinition Height="Auto" />   <!-- 6: Action bar -->
             </Grid.RowDefinitions>
 
-            <!-- ====== Section header ====== -->
+            <!-- ====== Section header (v0.5.4 top-bar buttons) ====== -->
             <DockPanel Grid.Row="0" Margin="0,0,0,24">
                 <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
-                        Background="{Binding StatusBg}"
+                        Background="{Binding StatusBg}" Margin="8,0,0,0"
                         VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
@@ -54,10 +53,23 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Command="{Binding RunTestCommand}"
+                            Style="{StaticResource TopBarPrimaryButton}"
+                            ToolTip="Re-run the full network connectivity test.">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="Play" Width="16" Height="16" VerticalAlignment="Center"
+                                         Foreground="{StaticResource AccentBrush}" />
+                            <TextBlock Text="Run Test" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
                 <StackPanel>
-                    <TextBlock Text="Network Configuration" Style="{StaticResource PageTitle}" />
+                    <TextBlock Text="Network Configuration" Style="{StaticResource PageTitle}"
+                               TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="Adapters, IP, NTP and reachability — what the box can talk to right now"
-                               Style="{StaticResource PageSubtitle}" />
+                               Style="{StaticResource PageSubtitle}"
+                               TextTrimming="CharacterEllipsis" MaxWidth="640" />
                 </StackPanel>
             </DockPanel>
 
@@ -448,19 +460,6 @@
                 </DockPanel>
             </Border>
 
-            <!-- ====== Action bar ====== -->
-            <DockPanel Grid.Row="6">
-                <Button DockPanel.Dock="Right"
-                        Command="{Binding RunTestCommand}"
-                        Style="{StaticResource MaterialDesignRaisedButton}"
-                        Padding="22,10" FontWeight="SemiBold"
-                        MinWidth="160" MinHeight="44">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <md:PackIcon Kind="Play" Width="18" Height="18" VerticalAlignment="Center" />
-                        <TextBlock Text="Run Test" Margin="{StaticResource Spacing.InlineLeft}" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-            </DockPanel>
         </Grid>
     </ScrollViewer>
 </UserControl>
