@@ -49,7 +49,15 @@ namespace Pulse.WPF.Services
         // Common endpoint roots. Centralised so a rename ripples through
         // exactly once. Kept as private const strings instead of f-strings so
         // the route catalog is greppable from a single place.
-        private const string V1Cfg = "api/v1/configuration";
+        // v0.6.2: the live VPU log shows every "api/v1/configuration/..." call
+        // 404'd — the real swagger.json has no v1 prefix; routes live at
+        // /api/configuration/... The constant name is kept (V1Cfg) so the
+        // dozen call sites don't churn, but it now resolves to the documented
+        // path. The legacy v1Fallback handler in TryGetAsync still tries the
+        // old prefix when a probe fails, so an older ScoreConnect III build
+        // (if any) still works.
+        private const string V1Cfg = "api/configuration";
+        private const string LegacyV1Cfg = "api/v1/configuration";
         private const string V2Cfg = "api/v2/configuration";
 
         private readonly HttpClient _http;
@@ -117,6 +125,10 @@ namespace Pulse.WPF.Services
             {
                 $"{V1Cfg}/get-current-configuration-extended",
                 $"{V1Cfg}/get-current-configuration",
+                // v2 prefix is not used by current ScoreConnect builds (no
+                // route registered); the TryGetAsync fallback already retries
+                // V1Cfg -> LegacyV1Cfg on 404, so the third entry would only
+                // ever fire for an exotic build. Kept for back-compat.
                 $"{V2Cfg}/get-current-configuration",
             };
 
@@ -415,26 +427,16 @@ namespace Pulse.WPF.Services
 
         // ---------- Firmware update info ----------
 
-        public async Task<string> GetAvailableFirmwareUpdateAsync()
+        public Task<string> GetAvailableFirmwareUpdateAsync()
         {
-            // GetUpdateInfoFromSportzcastUpdateApi lives on UpdaterService;
-            // the route attribute isn't in the binary's strings dump but
-            // the canonical kebab-case path is the obvious guess. The Other
-            // MVC controller exposes /CheckForFirmwareUpdates as a fallback.
-            string[] paths =
-            {
-                $"{V1Cfg}/get-firmware-update-info",
-                "Other/CheckForFirmwareUpdates",
-            };
-            foreach (var p in paths)
-            {
-                var (ok, body, _) = await TryGetAsync(p, FetchTimeoutMs).ConfigureAwait(false);
-                if (!ok || string.IsNullOrWhiteSpace(body)) continue;
-                var version = JsonScrape.String(body, "availableVersion");
-                if (string.IsNullOrEmpty(version)) version = JsonScrape.String(body, "version");
-                if (!string.IsNullOrEmpty(version)) return version;
-            }
-            return "";
+            // v0.6.2: swagger.json on the current ScoreConnect III has no
+            // firmware-update endpoint at all (verified — the path is
+            // absent). The /Other/CheckForFirmwareUpdates MVC route also
+            // doesn't exist in the same version. Returning empty so we
+            // stop polluting the rolling AppLogFile with 404s every
+            // baseline. If a future build re-exposes the endpoint, wire
+            // the call back here.
+            return Task.FromResult("");
         }
 
         // ---------- Writes (Phase 3) ----------
@@ -480,14 +482,37 @@ namespace Pulse.WPF.Services
                 ("vendorId",        vendorId        ?? ""),
                 ("vendorSportId",   vendorSportId   ?? ""),
                 ("configurationId", configurationId ?? ""));
-            return PostAsync($"{V2Cfg}/set-scoreconnect-configuration", json);
+            // v0.6.2: the documented route is /api/configuration/... (no v2).
+            return PostAsync($"{V1Cfg}/set-scoreconnect-configuration", json);
         }
 
         // ---------- Internals: HTTP plumbing ----------
 
         // Async GET with a per-call timeout (HttpClient.Timeout is per-instance,
         // and we share one instance via DI). Returns (ok, body, errorString).
+        //
+        // v0.6.2: when a probe targets the documented prefix (api/configuration)
+        // and gets a 404, transparently retry against the legacy
+        // (api/v1/configuration) prefix. Older ScoreConnect III builds
+        // registered both prefixes; the current one drops the v1 alias. This
+        // keeps Pulse compatible with both without bloating every call site.
         private async Task<(bool ok, string body, string error)> TryGetAsync(
+            string path, int timeoutMs)
+        {
+            var primary = await TryGetOneAsync(path, timeoutMs).ConfigureAwait(false);
+            if (primary.ok) return primary;
+            // 404 on the documented path -> try the legacy v1 prefix.
+            if ((primary.error ?? "").StartsWith("HTTP 404") &&
+                path.StartsWith(V1Cfg + "/", System.StringComparison.OrdinalIgnoreCase))
+            {
+                var legacyPath = LegacyV1Cfg + path.Substring(V1Cfg.Length);
+                var legacy = await TryGetOneAsync(legacyPath, timeoutMs).ConfigureAwait(false);
+                if (legacy.ok) return legacy;
+            }
+            return primary;
+        }
+
+        private async Task<(bool ok, string body, string error)> TryGetOneAsync(
             string path, int timeoutMs)
         {
             var url = JoinUrl(_baseUrl, path);
