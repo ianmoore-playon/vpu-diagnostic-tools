@@ -122,6 +122,19 @@
                         </StackPanel>
                     </ToggleButton>
 
+                    <!-- v0.6.0 — ScoreConnect III integration panel.
+                         Positioned between Camera Connectivity and Hardware
+                         per the UX_REVIEW v0.6.0 ledger entry. -->
+                    <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                  IsChecked="{Binding IsScoreConnect, Mode=OneWay}"
+                                  Command="{Binding NavigateCommand}" CommandParameter="ScoreConnect"
+                                  AutomationProperties.Name="Score Connect">
+                        <StackPanel Orientation="Horizontal">
+                            <md:PackIcon Kind="ScoreboardOutline" Width="18" Height="18" VerticalAlignment="Center" />
+                            <TextBlock Text="Score Connect" Margin="14,0,0,0" />
+                        </StackPanel>
+                    </ToggleButton>
+
                     <ToggleButton Style="{StaticResource SidebarNavButton}"
                                   IsChecked="{Binding IsHardware, Mode=OneWay}"
                                   Command="{Binding NavigateCommand}" CommandParameter="Hardware"

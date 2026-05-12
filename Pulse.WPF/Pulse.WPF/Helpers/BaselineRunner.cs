@@ -40,6 +40,10 @@ namespace Pulse.WPF.Helpers
         private readonly HardwareViewModel _hardware;
         private readonly DiskHealthViewModel _diskHealth;
         private readonly EventViewerViewModel _eventViewer;
+        // v0.6.0 — ScoreConnect III panel. Joins Phase 1 because its probe
+        // is a cheap HTTP GET against localhost; gracefully reports
+        // IsDetected=false when the service isn't running on this VPU.
+        private readonly ScoreConnectViewModel _scoreConnect;
 
         // Mutex around the run — see the class doc for why a re-entrant call
         // is a no-op rather than an exception.
@@ -71,7 +75,8 @@ namespace Pulse.WPF.Helpers
             ServicesViewModel services,
             HardwareViewModel hardware,
             DiskHealthViewModel diskHealth,
-            EventViewerViewModel eventViewer)
+            EventViewerViewModel eventViewer,
+            ScoreConnectViewModel scoreConnect)
         {
             _dashboard      = dashboard      ?? throw new ArgumentNullException(nameof(dashboard));
             _systemOverview = systemOverview ?? throw new ArgumentNullException(nameof(systemOverview));
@@ -81,6 +86,7 @@ namespace Pulse.WPF.Helpers
             _hardware       = hardware       ?? throw new ArgumentNullException(nameof(hardware));
             _diskHealth     = diskHealth     ?? throw new ArgumentNullException(nameof(diskHealth));
             _eventViewer    = eventViewer    ?? throw new ArgumentNullException(nameof(eventViewer));
+            _scoreConnect   = scoreConnect   ?? throw new ArgumentNullException(nameof(scoreConnect));
         }
 
         /// <summary>
@@ -106,14 +112,15 @@ namespace Pulse.WPF.Helpers
 
             var sw = Stopwatch.StartNew();
             var result = new BaselineResult();
-            // Total = 7 panels (Phase 1 = 5, Phase 2 = 1, Phase 3 = 1) + Dashboard.
-            // Dashboard is intentionally counted in the total so the banner reads
-            // "(8/8 done)" on completion, matching the user's mental model.
-            PanelsTotal = 8;
+            // Total = 8 panels (Phase 1 = 6 with ScoreConnect, Phase 2 = 1,
+            // Phase 3 = 1) + Dashboard. Dashboard is intentionally counted in
+            // the total so the banner reads "(9/9 done)" on completion,
+            // matching the user's mental model.
+            PanelsTotal = 9;
             PanelsCompleted = 0;
 
             AppLogFile.Instance.WriteLine("Baseline", "Section",
-                "Baseline run starting (8 panels)");
+                "Baseline run starting (9 panels)");
 
             try
             {
@@ -128,6 +135,11 @@ namespace Pulse.WPF.Helpers
                     InvokePanelAsync("Disk Health",     () => _diskHealth.RefreshAsync(),     result, ct),
                     InvokePanelAsync("Services",        () => _services.RefreshAsync(),       result, ct),
                     InvokePanelAsync("Event Viewer",    () => _eventViewer.RefreshAsync(),    result, ct),
+                    // v0.6.0 — ScoreConnect III HTTP probe. Cheap (2s timeout)
+                    // and gracefully reports "not detected" when the service
+                    // isn't running, so it's safe to fan out alongside the
+                    // WMI reads here.
+                    InvokePanelAsync("Score Connect",   () => _scoreConnect.RefreshAsync(),   result, ct),
                 };
                 await Task.WhenAll(phase1).ConfigureAwait(false);
 

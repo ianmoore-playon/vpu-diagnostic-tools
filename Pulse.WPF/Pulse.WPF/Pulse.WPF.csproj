@@ -9,10 +9,10 @@
     <Nullable>disable</Nullable>
     <LangVersion>9.0</LangVersion>
     <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
-    <Version>0.5.6</Version>
+    <Version>0.6.0</Version>
     <Authors>PlayOn / Pixellot Field Tools</Authors>
     <Product>Pulse — Pixellot Unified Live System Evaluator</Product>
-    <Description>Pulse is the active WPF diagnostic line for the Pixellot VPU — Dashboard, System Overview, Camera Connectivity, Network, Hardware, Disk Health, Services, Event Viewer, and Reports.</Description>
+    <Description>Pulse is the active WPF diagnostic line for the Pixellot VPU — Dashboard, System Overview, Camera Connectivity, Network, Score Connect, Hardware, Disk Health, Services, Event Viewer, and Reports.</Description>
     <NeutralLanguage>en-US</NeutralLanguage>
   </PropertyGroup>
 
@@ -27,6 +27,13 @@
     <Reference Include="System.Management" />
     <!-- ServiceController for the Pixellot Services panel -->
     <Reference Include="System.ServiceProcess" />
+    <!-- v0.6.0 — HttpClient (ScoreConnect III API) + ClientWebSocket (Phase 4
+         live data). Both ship in the .NET Framework 4.8 GAC; the explicit
+         <Reference> entries make the build deterministic when csproj globs
+         are evaluated without the SDK reference assemblies. -->
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Net.WebSockets" />
+    <Reference Include="System.Net.WebSockets.Client" />
   </ItemGroup>
 
 </Project>

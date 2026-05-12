@@ -425,12 +425,13 @@ namespace Pulse.WPF.ViewModels
 
             // Order here defines the panel-order tie-break for equal
             // severities. Mirrors the sidebar / dashboard quick-nav order.
-            Merge("Network",      "Network",      mvm.Network?.Findings);
-            Merge("Camera",       "Camera",       mvm.Camera?.Findings);
-            Merge("Hardware",     "Hardware",     mvm.Hardware?.Findings);
-            Merge("Services",     "Services",     mvm.Services?.Findings);
-            Merge("Disk Health",  "DiskHealth",   mvm.DiskHealth?.Findings);
-            Merge("Event Viewer", "EventViewer",  mvm.EventViewer?.Findings);
+            Merge("Network",       "Network",      mvm.Network?.Findings);
+            Merge("Camera",        "Camera",       mvm.Camera?.Findings);
+            Merge("ScoreConnect",  "ScoreConnect", mvm.ScoreConnect?.Findings);
+            Merge("Hardware",      "Hardware",     mvm.Hardware?.Findings);
+            Merge("Services",      "Services",     mvm.Services?.Findings);
+            Merge("Disk Health",   "DiskHealth",   mvm.DiskHealth?.Findings);
+            Merge("Event Viewer",  "EventViewer",  mvm.EventViewer?.Findings);
 
             // Stable severity sort (Critical first, Warning, Info/neutral,
             // ok). Use IndexOf to preserve append order for ties.

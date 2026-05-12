@@ -23,6 +23,7 @@ namespace Pulse.WPF.ViewModels
         public DiskHealthViewModel DiskHealth { get; }
         public EventViewerViewModel EventViewer { get; }
         public ReportsViewModel Reports { get; }
+        public ScoreConnectViewModel ScoreConnect { get; }
 
         // v0.5.6 — startup baseline orchestrator. Owned here so App.xaml.cs
         // can kick the first run after the main window shows, and the
@@ -77,6 +78,7 @@ namespace Pulse.WPF.ViewModels
         public bool IsSystemOverview => _selectedNav == "SystemOverview";
         public bool IsNetwork        => _selectedNav == "Network";
         public bool IsCamera         => _selectedNav == "Camera";
+        public bool IsScoreConnect   => _selectedNav == "ScoreConnect";
         public bool IsHardware       => _selectedNav == "Hardware";
         public bool IsServices       => _selectedNav == "Services";
         public bool IsDisk           => _selectedNav == "DiskHealth";
@@ -89,6 +91,7 @@ namespace Pulse.WPF.ViewModels
             OnPropertyChanged(nameof(IsSystemOverview));
             OnPropertyChanged(nameof(IsNetwork));
             OnPropertyChanged(nameof(IsCamera));
+            OnPropertyChanged(nameof(IsScoreConnect));
             OnPropertyChanged(nameof(IsHardware));
             OnPropertyChanged(nameof(IsServices));
             OnPropertyChanged(nameof(IsDisk));
@@ -118,6 +121,16 @@ namespace Pulse.WPF.ViewModels
             IDiskHealthService disk = new DiskHealthService();
             IEventViewerService events = new EventViewerService();
             IReportsService reports = new ReportsService();
+            // v0.6.0: shared HttpClient for the ScoreConnect HTTP API. One
+            // instance lives for the lifetime of the app (recommended
+            // pattern — new-per-call exhausts loopback sockets under
+            // repeated panel refreshes). The Timeout knob is set generously
+            // and each call layers its own per-request CancellationToken.
+            var scoreConnectHttp = new System.Net.Http.HttpClient
+            {
+                Timeout = System.TimeSpan.FromSeconds(15),
+            };
+            IScoreConnectService scoreConnect = new ScoreConnectService(scoreConnectHttp);
             // DashboardService composes the other panel services so the
             // Dashboard can render a single-page snapshot.
             IDashboardService dashboard = new DashboardService(netAdapters, net, svcs, disk);
@@ -127,6 +140,7 @@ namespace Pulse.WPF.ViewModels
             SystemOverview = new SystemOverviewViewModel(specs);
             Network = new NetworkViewModel(net);
             Camera = new CameraConnectivityViewModel(netAdapters, cfg);
+            ScoreConnect = new ScoreConnectViewModel(scoreConnect);
             Services = new ServicesViewModel(svcs);
             Hardware = new HardwareViewModel(hw);
             DiskHealth = new DiskHealthViewModel(disk);
@@ -138,7 +152,7 @@ namespace Pulse.WPF.ViewModels
             // kicks the first run once the main window shows.
             Baseline = new Pulse.WPF.Helpers.BaselineRunner(
                 Dashboard, SystemOverview, Network, Camera,
-                Services, Hardware, DiskHealth, EventViewer);
+                Services, Hardware, DiskHealth, EventViewer, ScoreConnect);
             Dashboard.AttachBaseline(Baseline);
 
             // Hub tile clicks request a nav change — wire that back through us.
@@ -191,6 +205,7 @@ namespace Pulse.WPF.ViewModels
             {
                 case "Network":         CurrentView = Network;        _ = SafeRefresh(Network.RefreshAsync); break;
                 case "Camera":          CurrentView = Camera;         break; // Camera VM self-refreshes via its DispatcherTimer.
+                case "ScoreConnect":    CurrentView = ScoreConnect;   _ = SafeRefresh(ScoreConnect.RefreshAsync); break;
                 case "Services":        CurrentView = Services;       _ = SafeRefresh(Services.RefreshAsync); break;
                 case "Hardware":        CurrentView = Hardware;       _ = SafeRefresh(Hardware.RefreshAsync); break;
                 case "DiskHealth":      CurrentView = DiskHealth;     _ = SafeRefresh(DiskHealth.RefreshAsync); break;
