@@ -20,12 +20,45 @@ namespace Pulse.WPF.ViewModels
         private readonly IServicesService _svc;
 
         public ObservableCollection<ServiceStatusRow> Services { get; } = new ObservableCollection<ServiceStatusRow>();
+        // v0.6.6 — the View binds to `CoreServices` (top WrapPanel of tiles)
+        // and `SystemDependencies` (DataGrid below). Both surface the same
+        // underlying `Services` collection; the previous mismatch (View
+        // bound to names the VM didn't expose) was the root cause of the
+        // "Pixellot Services panel empty on first nav" bug — WPF silently
+        // resolves missing bindings to nothing, so no XAML/binding error
+        // showed up, just blank tiles + an empty grid. Aliasing here keeps
+        // the change minimal and means a future split (true core-vs-
+        // dependency separation in IServicesService) can repoint each
+        // alias to its own ObservableCollection without churning the
+        // XAML.
+        public ObservableCollection<ServiceStatusRow> CoreServices => Services;
+        public ObservableCollection<ServiceStatusRow> SystemDependencies => Services;
+
         // Composed via PanelLogger (v0.5.0) — shared with the four other panels.
         public PanelLogger Logger { get; } = new PanelLogger("Services");
         private readonly ReportWriter _reportWriter = new ReportWriter();
         public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
         public bool HasFindings => Findings.Count > 0;
+
+        // v0.6.6 — "Services panel is loading…" empty-state placeholder.
+        // True until the first RefreshAsync populates Services; flipped
+        // off inside the dispatcher block of RefreshAsync so the placeholder
+        // disappears the moment any row lands (success or zero-row failure).
+        // The View binds Visibility on a single muted TextBlock to this
+        // flag so an early-nav (before BaselineRunner Phase 1 completes)
+        // doesn't render an empty panel that looks broken.
+        private bool _isLoading = true;
+        public bool IsLoading
+        {
+            get => _isLoading;
+            set
+            {
+                if (Set(ref _isLoading, value))
+                    OnPropertyChanged(nameof(IsReady));
+            }
+        }
+        public bool IsReady => !_isLoading;
 
         private string _statusLabel = "Ready";
         public string StatusLabel { get => _statusLabel; set => Set(ref _statusLabel, value); }
@@ -250,6 +283,10 @@ namespace Pulse.WPF.ViewModels
 
                     UpdateStatusPill();
                     OnPropertyChanged(nameof(HasFindings));
+                    // v0.6.6 — first refresh has landed; flip the loading
+                    // placeholder off. Done inside the dispatcher block so
+                    // the cards render in the same UI tick as the data.
+                    IsLoading = false;
 
                     // v0.5.5: per-run report file.
                     try
