@@ -13,18 +13,21 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />   <!-- Header -->
+                <RowDefinition Height="Auto" />   <!-- Header + actions -->
                 <RowDefinition Height="Auto" />   <!-- Findings banner -->
                 <RowDefinition Height="Auto" />   <!-- 6 service cards -->
                 <RowDefinition Height="Auto" />   <!-- Dependencies -->
                 <RowDefinition Height="Auto" />   <!-- Log (collapsed expander) -->
-                <RowDefinition Height="Auto" />   <!-- Action bar -->
             </Grid.RowDefinitions>
 
-            <!-- ====== Section header ====== -->
+            <!-- ====== Section header (v0.5.4 top-bar buttons) ======
+                 Restart Service binds to the currently-selected row in
+                 the Dependencies DataGrid, so it stays disabled until a
+                 row is picked. The per-row "Restart" buttons inside the
+                 DataGrid still live where they are (row context). -->
             <DockPanel Grid.Row="0" Margin="0,0,0,24">
                 <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
-                        Background="{Binding StatusBg}"
+                        Background="{Binding StatusBg}" Margin="8,0,0,0"
                         VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
@@ -33,10 +36,31 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Command="{Binding RestartServiceCommand}"
+                            Style="{StaticResource TopBarOutlinedButton}"
+                            ToolTip="Stop then start the service selected in the dependencies grid below.">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="Restart" Width="16" Height="16" VerticalAlignment="Center" />
+                            <TextBlock Text="Restart Service" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding RunTestCommand}"
+                            Style="{StaticResource TopBarPrimaryButton}"
+                            ToolTip="Re-poll the Pixellot processes and Windows services they depend on.">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="Refresh" Width="16" Height="16" VerticalAlignment="Center"
+                                         Foreground="{StaticResource AccentBrush}" />
+                            <TextBlock Text="Refresh" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
                 <StackPanel>
-                    <TextBlock Text="Pixellot Services" Style="{StaticResource PageTitle}" />
+                    <TextBlock Text="Pixellot Services" Style="{StaticResource PageTitle}"
+                               TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="Pixellot agent processes and the Windows services they depend on"
-                               Style="{StaticResource PageSubtitle}" />
+                               Style="{StaticResource PageSubtitle}"
+                               TextTrimming="CharacterEllipsis" MaxWidth="640" />
                 </StackPanel>
             </DockPanel>
 
@@ -178,24 +202,6 @@
                 </Border>
             </Expander>
 
-            <!-- ====== Action bar ====== -->
-            <DockPanel Grid.Row="5">
-                <StackPanel Orientation="Horizontal">
-                    <Button Content="Restart Service"
-                            Command="{Binding RestartServiceCommand}"
-                            Style="{StaticResource MaterialDesignOutlinedButton}" />
-                </StackPanel>
-                <Button DockPanel.Dock="Right"
-                        Command="{Binding RunTestCommand}"
-                        Style="{StaticResource MaterialDesignRaisedButton}"
-                        Padding="22,10" FontWeight="SemiBold"
-                        MinWidth="160" MinHeight="44">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <md:PackIcon Kind="Refresh" Width="18" Height="18" VerticalAlignment="Center" />
-                        <TextBlock Text="Refresh" Margin="8,0,0,0" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-            </DockPanel>
         </Grid>
     </ScrollViewer>
 </UserControl>
