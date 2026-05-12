@@ -40,18 +40,21 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />   <!-- 0: Section header -->
+                <RowDefinition Height="Auto" />   <!-- 0: Section header + actions -->
                 <RowDefinition Height="Auto" />   <!-- 1: Findings banner -->
                 <RowDefinition Height="Auto" />   <!-- 2: Recommended Actions -->
                 <RowDefinition Height="Auto" />   <!-- 3: NIC diagram strip (4 tiles) -->
                 <RowDefinition Height="Auto" />   <!-- 4: Live Log expander -->
-                <RowDefinition Height="Auto" />   <!-- 5: Action bar -->
             </Grid.RowDefinitions>
 
-            <!-- ====== Section header ====== -->
+            <!-- ====== Section header (v0.5.4 top-bar buttons) ======
+                 No Refresh button on this panel — it's a live monitor.
+                 The two Windows-shortcut buttons (Adapter Settings, Network
+                 and Sharing Center) move from the bottom action bar to the
+                 header row. -->
             <DockPanel Grid.Row="0" Margin="0,0,0,16">
                 <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
-                        Background="{Binding StatusBg}"
+                        Background="{Binding StatusBg}" Margin="8,0,0,0"
                         VerticalAlignment="Center"
                         AutomationProperties.Name="Overall panel status"
                         AutomationProperties.HelpText="{Binding StatusLabel}">
@@ -62,10 +65,32 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Command="{Binding OpenAdapterSettingsCommand}"
+                            Style="{StaticResource TopBarOutlinedButton}"
+                            AutomationProperties.Name="Open Windows network adapter settings"
+                            ToolTip="Open Windows Network Connections (ncpa.cpl).">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="OpenInNew" Width="16" Height="16" VerticalAlignment="Center" />
+                            <TextBlock Text="Adapter Settings" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding OpenNetworkAndSharingCenterCommand}"
+                            Style="{StaticResource TopBarOutlinedButton}"
+                            AutomationProperties.Name="Open Windows Network and Sharing Center"
+                            ToolTip="Open the legacy Network and Sharing Center applet.">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="OpenInNew" Width="16" Height="16" VerticalAlignment="Center" />
+                            <TextBlock Text="Sharing Center" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
                 <StackPanel>
-                    <TextBlock Text="Camera Connectivity" Style="{StaticResource PageTitle}" />
+                    <TextBlock Text="Camera Connectivity" Style="{StaticResource PageTitle}"
+                               TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="Live diagram of the 4 camera-NIC ports — link state, role, errors, history"
-                               Style="{StaticResource PageSubtitle}" />
+                               Style="{StaticResource PageSubtitle}"
+                               TextTrimming="CharacterEllipsis" MaxWidth="640" />
                 </StackPanel>
             </DockPanel>
 
@@ -364,20 +389,6 @@
                 </Border>
             </Expander>
 
-            <!-- ====== Bottom action bar ====== -->
-            <StackPanel Grid.Row="5" Orientation="Horizontal">
-                <Button Content="Open Adapter Settings"
-                        Command="{Binding OpenAdapterSettingsCommand}"
-                        Style="{StaticResource MaterialDesignOutlinedButton}"
-                        MinWidth="180" MinHeight="44"
-                        AutomationProperties.Name="Open Windows network adapter settings" />
-                <Button Content="Open Network and Sharing Center"
-                        Command="{Binding OpenNetworkAndSharingCenterCommand}"
-                        Style="{StaticResource MaterialDesignOutlinedButton}"
-                        MinWidth="180" MinHeight="44"
-                        Margin="12,0,0,0"
-                        AutomationProperties.Name="Open Windows Network and Sharing Center" />
-            </StackPanel>
         </Grid>
     </ScrollViewer>
 </UserControl>
