@@ -401,7 +401,7 @@ namespace Pulse.WPF.ViewModels
                 sb.AppendLine();
                 sb.AppendLine("== Findings ==");
                 foreach (var f in Findings)
-                    sb.AppendLine($"  [{f.Severity}] {f.Title}\n      -> {f.Recommendation}");
+                    sb.AppendLine($"  [{f.Severity}] {f.Title}\n      -> {f.Detail}");
             }
 
             sb.AppendLine();

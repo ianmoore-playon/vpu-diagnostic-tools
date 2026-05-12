@@ -650,3 +650,98 @@ truncation only kicks in if the user further narrows the window.
   `RestartServiceCommand`, `OpenEventViewerCommand`, `OpenAdapterSettingsCommand`,
   `OpenNetworkAndSharingCenterCommand`, `OpenLastReportCommand` — all bind
   to the same VM members that the bottom-bar buttons used.
+
+## v0.5.5 — unified logging + reports flow
+
+A single, predictable artifact-and-trail story now spans every panel.
+
+### Per-run report files (auto-written)
+Every panel's `RefreshAsync` / `RunTestAsync` ends with a `ReportWriter.Save(...)`
+call that drops a plain-text bundle into `%LOCALAPPDATA%\Pulse.WPF\Reports\`,
+matching the existing 200-file cap the Reports panel already enumerates.
+Filename shape:
+
+    <HOSTNAME>-<Panel>-<YYYYMMDD>-<HHMMSS>.txt
+    e.g. VPU2-Network-20260512-164301.txt
+
+Hostname is sanitised to alphanumerics + dashes so unusual machine names
+can't produce invalid filenames. The header carries the Pulse branding
+line, generation timestamp, hostname, Pulse version, and panel name.
+The body is whatever the panel's new `BuildReportText()` produces — same
+vocabulary as System Overview's existing `CopyInventoryToClipboard`
+(section headers, key/value blocks, tables for collections, Findings,
+Recommendations, then a "## Live Log (last 50 entries)" footer).
+
+System Overview's clipboard path and report path share the same builder
+so the two artifacts always agree.
+
+### Rolling daily app log
+A new `AppLogFile` singleton appends to `%LOCALAPPDATA%\Pulse.WPF\Logs\
+Pulse-YYYYMMDD.log`. Every entry carries a timestamp, the panel tag, the
+severity level, and the message:
+
+    2026-05-12 14:43:02.123  [Network]  Pass  Port TCP/443 to pixellot.tv reachable
+
+The rolling log captures:
+- Every `PanelLogger.Add(...)` call (Pass / Fail / Warn / Section / Info
+  lines from any diagnostic panel) — written through automatically since
+  `PanelLogger` now mirrors each UI entry into `AppLogFile`.
+- Panel navigations from `MainViewModel.SelectedNav`.
+- "App start, version X" on startup.
+- Live-monitor events from Camera Connectivity (link transitions,
+  flap-detected, errors rose) — these can't generate per-run files but
+  still belong in the rolling stream.
+
+Retention: 90 days, swept on app startup (background `Task.Run`). The
+existing 200-file cap on the Reports folder stays as a secondary
+ceiling; a parallel 90-day prune runs against the Reports folder too.
+All disk IO is wrapped — a locked file or full disk leaves the tool
+intact.
+
+### Reports panel UX
+- Auto-shows the newest report on panel open (after any preselection
+  from the Dashboard's "Open Last Report" breadcrumb wins).
+- New "App Log" sub-card spans the full width below the existing 2-column
+  body. Shows the 10-line tail of today's rolling log in mono, plus two
+  outlined buttons matching the top-bar style:
+  - "Open Logs Folder" → shell to `%LOCALAPPDATA%\Pulse.WPF\Logs`.
+  - "View Today's Log" → opens today's `Pulse-YYYYMMDD.log` in the
+    default text editor (Notepad fallback when no association exists).
+- Existing top-bar buttons (Reports Folder, Delete Report, Refresh) stay.
+
+### Camera Connectivity exception
+Camera is a live monitor (1 s tick) so an auto-write per `OnMonitorTick`
+would produce 86,400 files/day. Option (a) shipped: a "Save Snapshot"
+outlined button joins the top bar (next to Adapter Settings / Sharing
+Center), styled `TopBarOutlinedButton` so it reads as a sibling action.
+The button captures the 4 port tiles' state, the cameras.cfg / OUI
+matches, Findings, Recommendations, and the Live Log tail into a
+one-shot per-run file. The rolling AppLogFile still catches every live
+transition via `PanelLogger`, so even without pressing the button the
+tech has a continuous audit trail.
+
+### New / extended types
+- `Helpers/AppLogFile.cs` — singleton, thread-safe; `WriteLine`,
+  `CleanupOlderThan`, `TodayPath`, `ReadTodayTail`.
+- `Helpers/ReportWriter.cs` — composes header + body, sanitises
+  filename tokens, returns the saved path (or null on failure).
+- `Helpers/PanelLogger.cs` — `PanelName` property; every `Add` now also
+  writes through to `AppLogFile`.
+- `Services/IReportsService.cs` / `ReportsService.cs` — surface
+  `LogsDirectory`, `TodayLogPath`, `GetRecentAppLogLines`,
+  `CleanupOlderThan`.
+- `ViewModels/ReportsViewModel.cs` — `RecentAppLogLines`,
+  `OpenLogsFolderCommand`, `OpenTodayLogCommand`; auto-selects newest.
+- Eight panel VMs gain `BuildReportText()`; seven of them auto-write on
+  RefreshAsync. Camera writes via `SaveSnapshotCommand`.
+
+### Self-checks
+- `grep -rn "FallbackValue={DynamicResource" Pulse.WPF/` — empty. v0.4.7
+  ban still holds.
+- `grep -rn "AppLogFile\|ReportWriter" Pulse.WPF/Pulse.WPF/` — only the
+  intended consumers (helpers, services, VMs, App.xaml.cs).
+- `LogEntry` name reused (existed in `Models/`); no new BCL collisions
+  introduced.
+- All theme keys referenced from the App Log sub-card (`Card`,
+  `LogBgBrush`, `BorderColBrush`, `MutedForegroundBrush`,
+  `ForegroundBrush`, `TopBarOutlinedButton`) verified present.
