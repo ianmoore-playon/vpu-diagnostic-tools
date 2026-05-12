@@ -526,3 +526,42 @@ Mechanical cleanup pass across every existing panel. Sets the stage for tagging 
 - `grep -rn "FallbackValue={DynamicResource\|FallbackValue={StaticResource"` — clean.
 - `grep -rn "Export Report\|Run Test" Views/` — only the Network panel's "Run Test" remains.
 - `git grep "Inventory\|SystemOverviewSummaryItem\|PortCardButton"` — no stale references.
+
+---
+
+## Camera Connectivity — v0.5.2 field-feedback polish
+
+Targeted polish based on field-tech feedback against v0.5.1. Six changes, no other panels touched. Tagged `wpf-pilot-v0.5.2` once the GH Actions build is green.
+
+### Changes shipped
+
+1. **Deprioritise the "Detecting neighbour…" empty state.** Linked-but-ARP-not-yet-populated now renders the plain `"Linked"` primary with a muted `"Identifying device…"` side note (or the last-known device label if we have one in the resolve window). Tile colour stays green — linked is green, no "still figuring it out" amber.
+2. **Drop the stale-tile dimming + "· stale Ns" suffix entirely.** Field techs read "stale" as a problem. State is now strictly binary: linked / no cable / cabled-no-link. When ARP is lost, the tile flips immediately without dimming or strikethrough copy. The Recent activity expander still preserves the audit trail. `PortViewModel.IsStale` and `TileOpacity` are retained as no-op backing fields so external bindings don't break.
+3. **30 s hold-off on the "Cabled, no link" recommendation.** Windows often reports cabled-no-link transiently when a cable is being yanked, before settling on no-cable. New `PortState.CabledNoLinkSince` timestamp gates the recommendation — only fires when the trailing duration exceeds 30 s. The tile's StatusLine "Cable, no link" still shows immediately (that's state display, not advice). Flap detection (3 transitions / 60 s) already won't trigger on a single up→down→up unplug (2 transitions), so no further hold-off there.
+4. **Drop the "Configured cameras missing" warning entirely** — both as a Recommended Action row and as a Finding emit. The cameras.cfg-vs-port-list comparison was too noisy in the field (cameras.cfg lists cameras for other VPU models, dev environments). The cameras.cfg-keyed role lookup is preserved (still drives the tile primary label when a real match exists) — we just stop alerting on the mismatch.
+5. **Action bar: add "Open Network and Sharing Center" button** beside "Open Adapter Settings", same outlined-button conventions (`MinWidth=180 MinHeight=44`). Launches the legacy control-panel applet via `control /name Microsoft.NetworkAndSharingCenter`.
+6. **Per-port click → in-app Adapter Details dialog.** Each port tile becomes clickable (`Cursor=Hand` + `MouseLeftButtonUp` → `vm.OpenAdapterDetails(port)`) and opens an owned modal showing the full config of that specific adapter:
+   - Adapter name + description + status + link speed + local MAC.
+   - IPv4: address, subnet mask, gateway, DHCP (enabled/server/lease obtained/lease expires), DNS servers.
+   - IPv6 (collapsed expander — secondary).
+   - Driver info via WMI `Win32_PnPSignedDriver` (name, version, date).
+   - Error counters: in/out errors + discards from `IPInterfaceStatistics`.
+   - Remote info: IP, MAC, OUI vendor, cameras.cfg role (when matched).
+   - Last ~10 Recent activity entries snapshotted from the tile.
+   - Footer: **Open in Network Connections** (`ncpa.cpl`), **Open Network and Sharing Center** (same as the action bar), **Copy as text** (formatted plain-text snapshot for support tickets), **Close**.
+   - First modal in Pulse.WPF — also introduces a reusable `PulseDialogWindow` style in `Themes/Styles.xaml` so future settings / about / etc. dialogs share the look.
+   - New types: `Services.AdapterDetails` POCO, `Services.INetworkAdapterService.GetAdapterDetails(string localMac)`, `ViewModels.AdapterDetailsViewModel`, `Views.AdapterDetailsDialog`. Names verified unique vs. BCL (no `System.Net.AdapterDetails` etc.). `PortViewModel` grew a `LocalMac` field so the dialog can resolve the adapter back from a clicked tile.
+
+### Intentionally deferred
+
+- **Per-port direct OS properties-dialog via COM.** Rather than scaffolding `INetCfgComponent` / `ncext.dll` COM interop to open the per-adapter Properties sheet directly, the dialog footer points the user at Network Connections (`ncpa.cpl`) where they pick the adapter manually. The COM path is fragile across Windows builds and offers little over the in-app sheet now that all the data is rendered live. Revisit if a support case actually needs a one-click jump.
+- **`cameras.cfg`-vs-ports mismatch surface.** Removed entirely in v0.5.2 §4. If a quieter representation is wanted (e.g. a tiny "cfg lists N cameras not on a port" pill on the panel header, not a Recommended Action), that's fresh product input — not a regression to fix.
+
+### Self-checks (passing)
+
+- `grep -rn "FallbackValue={DynamicResource\|FallbackValue={StaticResource"` — clean.
+- `grep -rn "stale\b" Pulse.WPF/Pulse.WPF/ViewModels/CameraConnectivityViewModel.cs Pulse.WPF/Pulse.WPF/Helpers/CameraNicMonitor.cs` — only code comments remain; no UI string.
+- `grep -rn "Detecting neighbour" Pulse.WPF/` — empty.
+- `grep -rn "Configured cameras missing" Pulse.WPF/` — only in a single explanatory code comment (`// v0.5.2 §4:`), no UI string.
+- New type names unique vs. BCL: `AdapterDetails`, `AdapterDetailsViewModel`, `AdapterDetailsDialog`, `PulseDialogWindow` — verified.
+- No `private static` method calls a non-static helper (CS0120 guard).
