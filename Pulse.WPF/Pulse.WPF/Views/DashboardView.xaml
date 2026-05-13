@@ -488,42 +488,16 @@
                                        Margin="0,8,0,0" />
                         </StackPanel>
 
-                        <!-- Uptime + Internet are read as plain stat tiles
-                             (icon + value); only the load gauges + Temperature
-                             use the ring frame. Per round-2 feedback the ring
-                             on Uptime/Internet read as decorative. -->
-                        <StackPanel Grid.Column="3" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                    AutomationProperties.Name="Uptime"
-                                    AutomationProperties.HelpText="{Binding UptimeText}">
-                            <md:PackIcon Kind="ClockOutline" Width="28" Height="28"
-                                         Foreground="{StaticResource AccentBrush}"
-                                         HorizontalAlignment="Center" />
-                            <TextBlock Text="{Binding UptimeText}"
-                                       FontFamily="Segoe UI Semibold" FontSize="16"
-                                       Foreground="{StaticResource ForegroundBrush}"
-                                       HorizontalAlignment="Center" Margin="0,8,0,0" />
-                            <TextBlock Text="Uptime" HorizontalAlignment="Center" FontSize="{StaticResource FontSize.Caption}"
-                                       Foreground="{StaticResource MutedForegroundBrush}" />
-                        </StackPanel>
+                        <!-- v0.6.8 — gauge row reordered per field feedback:
+                             Temperature now sits adjacent to the three load
+                             gauges (col 3), Uptime (col 4) and Internet (col 5,
+                             last) follow. The ring on Uptime/Internet is plain
+                             icon+value per the round-2 verdict ("decorative ring").
 
-                        <StackPanel Grid.Column="4" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                    AutomationProperties.Name="Internet"
-                                    AutomationProperties.HelpText="{Binding InternetText}">
-                            <md:PackIcon Kind="Earth" Width="28" Height="28"
-                                         Foreground="{Binding InternetColor}"
-                                         HorizontalAlignment="Center" />
-                            <TextBlock Text="{Binding InternetText}"
-                                       FontFamily="Segoe UI Semibold" FontSize="16"
-                                       Foreground="{Binding InternetColor}"
-                                       HorizontalAlignment="Center" Margin="0,8,0,0" />
-                            <TextBlock Text="Internet" HorizontalAlignment="Center" FontSize="{StaticResource FontSize.Caption}"
-                                       Foreground="{StaticResource MutedForegroundBrush}" />
-                        </StackPanel>
-
-                        <!-- Temperature still uses a ring so it reads as a
-                             measurement next to the gauges. Hidden on
+                             Temperature still uses a ring so it reads as a
+                             measurement next to CPU/Memory/Storage. Hidden on
                              machines without ACPI thermal data. -->
-                        <StackPanel Grid.Column="5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        <StackPanel Grid.Column="3" HorizontalAlignment="Center" VerticalAlignment="Center"
                                     AutomationProperties.Name="Temperature"
                                     AutomationProperties.HelpText="{Binding TemperatureText}"
                                     Visibility="{Binding TemperatureVisible, Converter={StaticResource BoolToVis}}">
@@ -543,6 +517,36 @@
                             </Grid>
                             <TextBlock Text="Temperature" HorizontalAlignment="Center" FontSize="{StaticResource FontSize.Caption}"
                                        Foreground="{StaticResource MutedForegroundBrush}" Margin="0,8,0,0" />
+                        </StackPanel>
+
+                        <!-- v0.6.8 — Uptime moves to col 4 (was col 3). -->
+                        <StackPanel Grid.Column="4" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    AutomationProperties.Name="Uptime"
+                                    AutomationProperties.HelpText="{Binding UptimeText}">
+                            <md:PackIcon Kind="ClockOutline" Width="28" Height="28"
+                                         Foreground="{StaticResource AccentBrush}"
+                                         HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding UptimeText}"
+                                       FontFamily="Segoe UI Semibold" FontSize="16"
+                                       Foreground="{StaticResource ForegroundBrush}"
+                                       HorizontalAlignment="Center" Margin="0,8,0,0" />
+                            <TextBlock Text="Uptime" HorizontalAlignment="Center" FontSize="{StaticResource FontSize.Caption}"
+                                       Foreground="{StaticResource MutedForegroundBrush}" />
+                        </StackPanel>
+
+                        <!-- v0.6.8 — Internet moves to col 5 (last; was col 4). -->
+                        <StackPanel Grid.Column="5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    AutomationProperties.Name="Internet"
+                                    AutomationProperties.HelpText="{Binding InternetText}">
+                            <md:PackIcon Kind="Earth" Width="28" Height="28"
+                                         Foreground="{Binding InternetColor}"
+                                         HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding InternetText}"
+                                       FontFamily="Segoe UI Semibold" FontSize="16"
+                                       Foreground="{Binding InternetColor}"
+                                       HorizontalAlignment="Center" Margin="0,8,0,0" />
+                            <TextBlock Text="Internet" HorizontalAlignment="Center" FontSize="{StaticResource FontSize.Caption}"
+                                       Foreground="{StaticResource MutedForegroundBrush}" />
                         </StackPanel>
                     </Grid>
                 </StackPanel>

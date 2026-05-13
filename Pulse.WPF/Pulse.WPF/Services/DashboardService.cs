@@ -409,10 +409,21 @@ namespace Pulse.WPF.Services
             }
             catch (Exception _ex) { Report("Dashboard collection", _ex); }
 
-            // Temperature — MSAcpi_ThermalZoneTemperature in root\WMI returns
-            // tenths of a Kelvin. Most consumer hardware returns nothing or
-            // throws "Not Supported" — leave NaN in that case so the UI hides
-            // the temperature tile cleanly.
+            // Temperature — try every reasonable WMI source so the gauge
+            // populates on as many VPU configurations as possible. v0.6.8
+            // expanded this from a single source after field reports of the
+            // gauge silently staying hidden on otherwise-healthy boxes.
+            //   1. MSAcpi_ThermalZoneTemperature (root\WMI) — most common,
+            //      tenths of Kelvin. Some BIOSes expose multiple zones —
+            //      we now read all of them and pick the highest.
+            //   2. Win32_PerfFormattedData_Counters_ThermalZoneInformation
+            //      (root\CIMV2) — newer Windows path, returns Celsius
+            //      directly. Fires when MSAcpi is empty on some Intel SKUs.
+            //   3. Win32_TemperatureProbe.CurrentReading — usually empty on
+            //      consumer hardware but harmless to try.
+            // Each source is wrapped independently; one failing source must
+            // not block the others.
+            double bestC = double.NaN;
             try
             {
                 using (var s = new ManagementObjectSearcher(
@@ -423,14 +434,64 @@ namespace Pulse.WPF.Services
                         var raw = Convert.ToDouble(o["CurrentTemperature"] ?? 0);
                         if (raw > 0)
                         {
-                            // Tenths of Kelvin → Celsius
-                            g.TemperatureC = Math.Round(raw / 10.0 - 273.15, 0);
-                            break;
+                            var c = raw / 10.0 - 273.15;
+                            if (double.IsNaN(bestC) || c > bestC) bestC = c;
                         }
                     }
                 }
             }
-            catch { /* unsupported on this hardware — leave TemperatureC = NaN */ }
+            catch { /* zone-0 unsupported — try the perf counter next */ }
+
+            if (double.IsNaN(bestC))
+            {
+                try
+                {
+                    using (var s = new ManagementObjectSearcher(
+                        @"root\CIMV2",
+                        "SELECT Temperature FROM Win32_PerfFormattedData_Counters_ThermalZoneInformation"))
+                    {
+                        foreach (ManagementObject o in s.Get())
+                        {
+                            // Win32_PerfFormattedData_Counters_ThermalZoneInformation
+                            // reports temperature in Kelvin (not tenths). Convert to °C
+                            // and drop obviously-bogus readings (some BIOSes return 0
+                            // or absolute values below freezing).
+                            var raw = Convert.ToDouble(o["Temperature"] ?? 0);
+                            if (raw > 200) // sanity: a real CPU never reads < -73 °C
+                            {
+                                var c = raw - 273.15;
+                                if (double.IsNaN(bestC) || c > bestC) bestC = c;
+                            }
+                        }
+                    }
+                }
+                catch { /* perf-counter class missing — try probe next */ }
+            }
+
+            if (double.IsNaN(bestC))
+            {
+                try
+                {
+                    using (var s = new ManagementObjectSearcher(
+                        @"root\CIMV2",
+                        "SELECT CurrentReading FROM Win32_TemperatureProbe"))
+                    {
+                        foreach (ManagementObject o in s.Get())
+                        {
+                            var raw = Convert.ToDouble(o["CurrentReading"] ?? 0);
+                            // CurrentReading is tenths of Kelvin per the spec.
+                            if (raw > 0)
+                            {
+                                var c = raw / 10.0 - 273.15;
+                                if (double.IsNaN(bestC) || c > bestC) bestC = c;
+                            }
+                        }
+                    }
+                }
+                catch { /* nothing more to try — leave NaN, UI hides */ }
+            }
+
+            g.TemperatureC = double.IsNaN(bestC) ? double.NaN : Math.Round(bestC, 0);
 
             return g;
         }
