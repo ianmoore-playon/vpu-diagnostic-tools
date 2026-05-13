@@ -332,17 +332,47 @@ namespace Pulse.WPF.ViewModels
                             ipShown  = !string.IsNullOrEmpty(st.LastRemoteIp)  ? st.LastRemoteIp  : "—";
                             macShown = !string.IsNullOrEmpty(st.LastRemoteMac) ? st.LastRemoteMac : "—";
                         }
+                        else if (is100M)
+                        {
+                            // v0.6.9: link up at 100 Mbps with no ARP yet — on
+                            // a Pixellot VPU this is almost certainly the OCR
+                            // / Scoreboard camera. Main cameras negotiate 1
+                            // Gbps; only the OCR runs at 100 Mbps. Skip the
+                            // "Identifying device…" spinner and call it OCR.
+                            primary   = "OCR / Scoreboard";
+                            secondary = "Inferred from 100 Mbps speed";
+                            info.IsOcr = true;        // silences degraded-speed warning
+                            info.IsConfigured = true; // colours the primary label like configured OCR
+                        }
                         else
                         {
                             primary   = "Linked";
                             secondary = "Identifying device…";
                         }
-                        statusLine = is1G   ? "Linked · 1 Gbps"
-                                   : is100M ? "Linked · 100 Mbps"
-                                            : "Linked · " + FormatSpeed(snap.LinkSpeedBps);
-                        statusBrush = StatusHelpers.Brush("GreenBrush");
-                        ledBrush    = is1G ? StatusHelpers.Brush("GreenBrush")
-                                           : StatusHelpers.Brush("YellowBrush");
+                        // Status line + LED:
+                        //   1 Gbps         -> green
+                        //   100 Mbps + OCR (inferred above) -> green with OCR suffix
+                        //   100 Mbps + no OCR signal        -> yellow (degraded)
+                        //   anything else  -> yellow
+                        if (is1G)
+                        {
+                            statusLine  = "Linked · 1 Gbps";
+                            statusBrush = StatusHelpers.Brush("GreenBrush");
+                            ledBrush    = StatusHelpers.Brush("GreenBrush");
+                        }
+                        else if (is100M && info.IsOcr)
+                        {
+                            statusLine  = "Linked · 100 Mbps · OCR (inferred)";
+                            statusBrush = StatusHelpers.Brush("GreenBrush");
+                            ledBrush    = StatusHelpers.Brush("GreenBrush");
+                        }
+                        else
+                        {
+                            statusLine  = is100M ? "Linked · 100 Mbps"
+                                                 : "Linked · " + FormatSpeed(snap.LinkSpeedBps);
+                            statusBrush = StatusHelpers.Brush("GreenBrush");
+                            ledBrush    = StatusHelpers.Brush("YellowBrush");
+                        }
                     }
                     else if (is1G)
                     {
@@ -359,6 +389,23 @@ namespace Pulse.WPF.ViewModels
                         statusLine = "Linked · 100 Mbps · OCR (expected)";
                         statusBrush = StatusHelpers.Brush("GreenBrush");
                         ledBrush    = StatusHelpers.Brush("GreenBrush");
+                    }
+                    else if (is100M && info.Source == DeviceIdentitySource.OuiVendor)
+                    {
+                        // v0.6.9: ARP resolved to a Pixellot-OUI vendor but
+                        // no cameras.cfg entry. At 100 Mbps this is almost
+                        // certainly the OCR camera (main cameras run at 1
+                        // Gbps). Promote the inference rather than rendering
+                        // the misleading "Pixellot - Unknown role" yellow
+                        // degraded state.
+                        primary = "OCR / Scoreboard";
+                        secondary = "Inferred from 100 Mbps speed";
+                        ipShown = snap.RemoteIp; macShown = snap.RemoteMac;
+                        statusLine = "Linked · 100 Mbps · OCR (inferred)";
+                        statusBrush = StatusHelpers.Brush("GreenBrush");
+                        ledBrush    = StatusHelpers.Brush("GreenBrush");
+                        info.IsOcr = true; // so the warning roll-up below doesn't fire
+                        info.IsConfigured = true; // colour the primary label like a real OCR
                     }
                     else if (is100M)
                     {
@@ -444,7 +491,16 @@ namespace Pulse.WPF.ViewModels
                                           errorsRising, isFlapping, flaps);
 
                     // ---- Severity contributions for the page-level pill ----
-                    if (info.IsConfigured && snap.IsUp && is100M && !info.IsOcr) warnings++;
+                    // v0.6.9: drop the info.IsConfigured guard from the
+                    // degraded-speed warning. A non-OCR port at 100 Mbps is
+                    // always a real problem regardless of whether
+                    // cameras.cfg knows about it — the previous gating
+                    // produced a false-"All Clear" on Port 3 of an 82574L
+                    // VPU when the port wasn't in cameras.cfg yet. The
+                    // OCR-from-speed inference above sets info.IsOcr = true
+                    // for Pixellot-OUI ports at 100 Mbps, so OCR cameras
+                    // don't trip this.
+                    if (snap.IsUp && is100M && !info.IsOcr) warnings++;
                     if (errorsRising) warnings++;
                     if (isFlapping)   warnings++;
                     // v0.6.5: only contribute severity for ports the VPU is
@@ -924,7 +980,12 @@ namespace Pulse.WPF.ViewModels
             }
             else if (linked > 0)
             {
-                StatusLabel = $"All Clear ({linked} linked at 1 Gbps)";
+                // v0.6.9: pill text used to assert "at 1 Gbps" unconditionally
+                // — wrong on a VPU with an OCR camera at 100 Mbps in the mix.
+                // Stay accurate without overstating the speed claim.
+                StatusLabel = linked == 1
+                    ? "All Clear (1 port linked)"
+                    : $"All Clear ({linked} ports linked)";
                 StatusSeverity = "ok";
                 StatusColor = StatusHelpers.Brush("GreenBrush");
                 StatusBg    = StatusHelpers.Brush("OkBgBrush");
