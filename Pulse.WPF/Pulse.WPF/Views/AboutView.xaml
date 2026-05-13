@@ -1,0 +1,89 @@
+<UserControl x:Class="Pulse.WPF.Views.AboutView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:vm="clr-namespace:Pulse.WPF.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:AboutViewModel}"
+             mc:Ignorable="d"
+             Background="{StaticResource AppBgBrush}">
+
+    <Grid Margin="32,24,32,24">
+        <Border Style="{StaticResource Card}"
+                HorizontalAlignment="Center" VerticalAlignment="Center"
+                MaxWidth="520" Padding="32,28,32,28">
+            <StackPanel HorizontalAlignment="Center">
+                <Image Source="/Pulse.WPF;component/Assets/icon.png"
+                       Width="64" Height="64"
+                       HorizontalAlignment="Center" Margin="0,0,0,16" />
+
+                <TextBlock Text="Pulse"
+                           FontFamily="Segoe UI Semibold" FontSize="28"
+                           Foreground="{StaticResource ForegroundBrush}"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="Pixellot Unified Live System Evaluator"
+                           Foreground="{StaticResource MutedForegroundBrush}"
+                           FontSize="13"
+                           HorizontalAlignment="Center"
+                           Margin="0,2,0,12" />
+
+                <Border Background="{StaticResource SurfaceBgBrush}"
+                        BorderBrush="{StaticResource BorderColBrush}"
+                        BorderThickness="1" CornerRadius="6"
+                        Padding="14,8,14,8"
+                        HorizontalAlignment="Center" Margin="0,0,0,18">
+                    <TextBlock Text="{Binding VersionDisplay}"
+                               ToolTip="{Binding VersionTooltip}"
+                               Foreground="{StaticResource AccentBrush}"
+                               FontFamily="Cascadia Mono, Consolas" FontSize="14"
+                               FontWeight="SemiBold" />
+                </Border>
+
+                <TextBlock Text="WPF .NET Framework 4.8 diagnostic tool for Pixellot VPU field support."
+                           Foreground="{StaticResource ForegroundBrush}"
+                           TextWrapping="Wrap" TextAlignment="Center"
+                           Margin="0,0,0,18" />
+
+                <Grid Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="100" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Hostname:"
+                               Style="{StaticResource MutedLabel}" />
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding MachineName}"
+                               Style="{StaticResource MonoValue}" />
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="OS:"
+                               Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding OsDescription}"
+                               Style="{StaticResource MonoValue}" Margin="0,4,0,0"
+                               TextWrapping="Wrap" />
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Button Command="{Binding OpenReleasesCommand}"
+                            Style="{StaticResource TopBarOutlinedButton}"
+                            ToolTip="https://github.com/ianmoore-playon/pulse-releases">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="OpenInNew" Width="16" Height="16" VerticalAlignment="Center" />
+                            <TextBlock Text="View releases" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding OpenSourceRepoCommand}"
+                            Style="{StaticResource TopBarOutlinedButton}"
+                            ToolTip="https://github.com/ianmoore-playon/vpu-diagnostic-tools (source — private)">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="Github" Width="16" Height="16" VerticalAlignment="Center" />
+                            <TextBlock Text="Source repo" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

@@ -9,7 +9,7 @@
     <Nullable>disable</Nullable>
     <LangVersion>9.0</LangVersion>
     <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
-    <Version>0.6.6</Version>
+    <Version>0.6.7</Version>
     <Authors>PlayOn / Pixellot Field Tools</Authors>
     <Product>Pulse — Pixellot Unified Live System Evaluator</Product>
     <Description>Pulse is the active WPF diagnostic line for the Pixellot VPU — Dashboard, System Overview, Camera Connectivity, Network, Score Connect, Hardware, Disk Health, Services, Event Viewer, and Reports.</Description>
@@ -39,6 +39,16 @@
          .NET Framework 4.8 the SerialPort type ships inside System.dll
          (System.IO.Ports namespace), which the SDK auto-references — no
          extra Reference entry needed. -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- v0.6.7 — expose the bundled Assets PNGs as WPF Resources so the
+         About panel can resolve the icon via the pack:// URI
+         "/Pulse.WPF;component/Assets/icon.png". icon.ico stays declared
+         separately above as the EXE-level ApplicationIcon. -->
+    <Resource Include="Assets\icon.png" />
+    <Resource Include="Assets\logo.png" />
+    <Resource Include="Assets\logo-horizontal.png" />
   </ItemGroup>
 
 </Project>

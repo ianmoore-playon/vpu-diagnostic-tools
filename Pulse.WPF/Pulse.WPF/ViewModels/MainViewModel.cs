@@ -23,6 +23,12 @@ namespace Pulse.WPF.ViewModels
         public DiskHealthViewModel DiskHealth { get; }
         public EventViewerViewModel EventViewer { get; }
         public ReportsViewModel Reports { get; }
+        // v0.6.7 — two minimal sidebar entries that used to be IsEnabled=False
+        // placeholders. Settings exposes the ScoreConnect URL editor + folder
+        // shortcuts + a manual "Run baseline now" trigger; About is an identity
+        // card (icon + version + hostname + GitHub link).
+        public SettingsViewModel Settings { get; }
+        public AboutViewModel About { get; }
         public ScoreConnectViewModel ScoreConnect { get; }
 
         // v0.5.6 — startup baseline orchestrator. Owned here so App.xaml.cs
@@ -84,6 +90,8 @@ namespace Pulse.WPF.ViewModels
         public bool IsDisk           => _selectedNav == "DiskHealth";
         public bool IsEventViewer    => _selectedNav == "EventViewer";
         public bool IsReports        => _selectedNav == "Reports";
+        public bool IsSettings       => _selectedNav == "Settings";
+        public bool IsAbout          => _selectedNav == "About";
 
         private void RaisePillFlags()
         {
@@ -97,6 +105,8 @@ namespace Pulse.WPF.ViewModels
             OnPropertyChanged(nameof(IsDisk));
             OnPropertyChanged(nameof(IsEventViewer));
             OnPropertyChanged(nameof(IsReports));
+            OnPropertyChanged(nameof(IsSettings));
+            OnPropertyChanged(nameof(IsAbout));
         }
 
         private object _currentView;
@@ -146,6 +156,11 @@ namespace Pulse.WPF.ViewModels
             DiskHealth = new DiskHealthViewModel(disk);
             EventViewer = new EventViewerViewModel(events);
             Reports = new ReportsViewModel(reports);
+            // v0.6.7 — Settings + About. Settings exposes a hook that
+            // MainViewModel populates below so the panel can fire the
+            // baseline runner without taking a hard dependency on it.
+            Settings = new SettingsViewModel();
+            About = new AboutViewModel();
 
             // v0.5.6 — wire the baseline orchestrator with references to every
             // panel VM. The Dashboard subscribes for the banner UI; App.xaml.cs
@@ -154,6 +169,10 @@ namespace Pulse.WPF.ViewModels
                 Dashboard, SystemOverview, Network, Camera,
                 Services, Hardware, DiskHealth, EventViewer, ScoreConnect);
             Dashboard.AttachBaseline(Baseline);
+            // v0.6.7 — wire the Settings panel's "Run baseline now" button
+            // back through the orchestrator. Kept as a Func hook so Settings
+            // doesn't take a direct dependency on BaselineRunner.
+            Settings.RunBaselineAsyncHook = () => Baseline.RunAsync();
 
             // Hub tile clicks request a nav change — wire that back through us.
             Dashboard.RequestNavigate = target =>
@@ -211,6 +230,8 @@ namespace Pulse.WPF.ViewModels
                 case "DiskHealth":      CurrentView = DiskHealth;     _ = SafeRefresh(DiskHealth.RefreshAsync); break;
                 case "EventViewer":     CurrentView = EventViewer;    _ = SafeRefresh(EventViewer.RefreshAsync); break;
                 case "Reports":         CurrentView = Reports;        _ = SafeRefresh(Reports.RefreshAsync); break;
+                case "Settings":        CurrentView = Settings;       break; // no refresh — read from AppSettings on construction
+                case "About":           CurrentView = About;          break; // pure identity card
                 case "SystemOverview":  CurrentView = SystemOverview; _ = SafeRefresh(SystemOverview.RefreshAsync); break;
                 case "Dashboard":
                 default:

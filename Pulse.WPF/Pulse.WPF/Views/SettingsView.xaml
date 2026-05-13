@@ -1,0 +1,135 @@
+<UserControl x:Class="Pulse.WPF.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:vm="clr-namespace:Pulse.WPF.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:SettingsViewModel}"
+             mc:Ignorable="d"
+             Background="{StaticResource AppBgBrush}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="32,24,32,24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />   <!-- 0: header -->
+                <RowDefinition Height="Auto" />   <!-- 1: ScoreConnect URL card -->
+                <RowDefinition Height="Auto" />   <!-- 2: Logs &amp; Reports card -->
+                <RowDefinition Height="Auto" />   <!-- 3: Diagnostics card -->
+            </Grid.RowDefinitions>
+
+            <!-- ====== Header ====== -->
+            <DockPanel Grid.Row="0" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="Settings" Style="{StaticResource PageTitle}"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="App preferences and diagnostic helpers."
+                               Style="{StaticResource PageSubtitle}"
+                               TextTrimming="CharacterEllipsis" MaxWidth="640" />
+                </StackPanel>
+            </DockPanel>
+
+            <!-- ====== Card 1: ScoreConnect III API ====== -->
+            <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="ScoreConnect III API"
+                               Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                    <TextBlock Text="Base URL Pulse uses to talk to the local ScoreConnect III service. Default is http://localhost:5000."
+                               Foreground="{StaticResource MutedForegroundBrush}"
+                               TextWrapping="Wrap" Margin="0,0,0,12" />
+                    <TextBox Text="{Binding ScoreConnectUrl, UpdateSourceTrigger=PropertyChanged}"
+                             FontFamily="Cascadia Mono, Consolas" FontSize="13"
+                             Padding="10,8" Margin="0,0,0,12" />
+                    <StackPanel Orientation="Horizontal">
+                        <Button Command="{Binding SaveScoreConnectUrlCommand}"
+                                Style="{StaticResource TopBarPrimaryButton}"
+                                ToolTip="Persist the new URL to %LOCALAPPDATA%\Pulse.WPF\settings.json.">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <md:PackIcon Kind="ContentSaveOutline" Width="16" Height="16" VerticalAlignment="Center"
+                                             Foreground="{StaticResource AccentBrush}" />
+                                <TextBlock Text="Save" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding ResetScoreConnectUrlCommand}"
+                                Style="{StaticResource TopBarOutlinedButton}"
+                                ToolTip="Restore the default http://localhost:5000.">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <md:PackIcon Kind="RestoreAlert" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="Reset to default" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <TextBlock Text="{Binding SaveStatus}"
+                                   Foreground="{StaticResource MutedForegroundBrush}"
+                                   FontSize="12" VerticalAlignment="Center"
+                                   Margin="12,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ====== Card 2: Logs &amp; Reports ====== -->
+            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="Logs &amp; Reports"
+                               Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Logs folder:"
+                                   Style="{StaticResource MutedLabel}" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding LogsFolderPath}"
+                                   Style="{StaticResource MonoValue}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Reports folder:"
+                                   Style="{StaticResource MutedLabel}" Margin="0,4,0,0" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ReportsFolderPath}"
+                                   Style="{StaticResource MonoValue}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                    </Grid>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Command="{Binding OpenLogsFolderCommand}"
+                                Style="{StaticResource TopBarOutlinedButton}"
+                                ToolTip="Open the rolling-log folder in Explorer.">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <md:PackIcon Kind="FolderOpenOutline" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="Open Logs Folder" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding OpenReportsFolderCommand}"
+                                Style="{StaticResource TopBarOutlinedButton}"
+                                ToolTip="Open the per-run reports folder in Explorer.">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <md:PackIcon Kind="FolderOpenOutline" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="Open Reports Folder" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ====== Card 3: Diagnostics ====== -->
+            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="Diagnostics"
+                               Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                    <TextBlock Text="Re-run the startup baseline across every panel on demand. Each panel's per-run report drops into the Reports folder above."
+                               Foreground="{StaticResource MutedForegroundBrush}"
+                               TextWrapping="Wrap" Margin="0,0,0,12" />
+                    <Button Command="{Binding RunBaselineCommand}"
+                            Style="{StaticResource TopBarPrimaryButton}"
+                            HorizontalAlignment="Left"
+                            ToolTip="Fire BaselineRunner.RunAsync() right now.">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="PlayCircleOutline" Width="16" Height="16" VerticalAlignment="Center"
+                                         Foreground="{StaticResource AccentBrush}" />
+                            <TextBlock Text="Run baseline now" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

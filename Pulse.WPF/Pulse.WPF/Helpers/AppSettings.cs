@@ -34,6 +34,30 @@ namespace Pulse.WPF.Helpers
         /// via the <c>scoreConnectUrl</c> key in settings.json.</summary>
         public string ScoreConnectUrl { get; private set; } = DefaultScoreConnectUrl;
 
+        /// <summary>v0.6.7 — write-side mutator used by the Settings panel.
+        /// Persists the new URL to settings.json. Returns true on a clean
+        /// write, false on IO failure (the in-memory value is updated either
+        /// way so the panel reflects the user's choice for the session even
+        /// if the disk write fails on a locked-down box).</summary>
+        public bool SetScoreConnectUrl(string url)
+        {
+            ScoreConnectUrl = (url ?? DefaultScoreConnectUrl).Trim().TrimEnd('/');
+            try
+            {
+                // Minimal hand-written JSON to match the existing flat-object
+                // schema. Quote escaping limited to backslash + quote — the
+                // ScoreConnect URL won't contain control characters.
+                var escaped = ScoreConnectUrl.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                var payload = "{\n  \"scoreConnectUrl\": \"" + escaped + "\"\n}\n";
+                File.WriteAllText(SettingsPath, payload, Encoding.UTF8);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private AppSettings()
         {
             try

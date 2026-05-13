@@ -64,6 +64,13 @@
             <DataTemplate DataType="{x:Type vm:ReportsViewModel}">
                 <views:ReportsView />
             </DataTemplate>
+            <!-- v0.6.7 — Settings + About sidebar entries. -->
+            <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+                <views:SettingsView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:AboutViewModel}">
+                <views:AboutView />
+            </DataTemplate>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

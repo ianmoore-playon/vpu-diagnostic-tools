@@ -60,14 +60,18 @@
                                FontSize="10"
                                Margin="22,0,0,10"
                                AutomationProperties.Name="Pulse version" />
-                    <ToggleButton Style="{StaticResource SidebarNavButton}" IsEnabled="False"
+                    <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                  IsChecked="{Binding IsSettings, Mode=OneWay}"
+                                  Command="{Binding NavigateCommand}" CommandParameter="Settings"
                                   AutomationProperties.Name="Settings">
                         <StackPanel Orientation="Horizontal">
                             <md:PackIcon Kind="Cog" Width="18" Height="18" VerticalAlignment="Center" />
                             <TextBlock Text="Settings" Margin="14,0,0,0" />
                         </StackPanel>
                     </ToggleButton>
-                    <ToggleButton Style="{StaticResource SidebarNavButton}" IsEnabled="False"
+                    <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                  IsChecked="{Binding IsAbout, Mode=OneWay}"
+                                  Command="{Binding NavigateCommand}" CommandParameter="About"
                                   AutomationProperties.Name="About Pulse">
                         <StackPanel Orientation="Horizontal">
                             <md:PackIcon Kind="InformationOutline" Width="18" Height="18" VerticalAlignment="Center" />
