@@ -342,7 +342,7 @@ namespace Pulse.WPF.ViewModels
                             primary   = "OCR / Scoreboard";
                             secondary = "Inferred from 100 Mbps speed";
                             info.IsOcr = true;        // silences degraded-speed warning
-                            info.IsConfigured = true; // colours the primary label like configured OCR
+                            info.Source = DeviceIdentitySource.PixellotConfig; // IsConfigured is derived from Source; this drives the accent colouring
                         }
                         else
                         {
@@ -405,7 +405,7 @@ namespace Pulse.WPF.ViewModels
                         statusBrush = StatusHelpers.Brush("GreenBrush");
                         ledBrush    = StatusHelpers.Brush("GreenBrush");
                         info.IsOcr = true; // so the warning roll-up below doesn't fire
-                        info.IsConfigured = true; // colour the primary label like a real OCR
+                        info.Source = DeviceIdentitySource.PixellotConfig; // IsConfigured derives from Source — drives the accent colouring
                     }
                     else if (is100M)
                     {
