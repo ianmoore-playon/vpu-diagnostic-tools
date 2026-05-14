@@ -111,6 +111,8 @@ For hands-on VPU validation, use `V1_LAB_CHECKLIST.md`.
   baseline re-runs.
 - Network required and optional ports are classified correctly.
 - ScoreConnect settings changes are reflected without misleading the user.
+- ScoreConnect live data is sourced from fresh GraphicsManager Sportzcast log
+  frames and reports the log path/status for support evidence.
 - No shipped button presents a fake action.
 - Each shipped panel has a clear status pill, findings when appropriate,
   recommended actions, and report output.

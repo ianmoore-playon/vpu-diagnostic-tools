@@ -22,21 +22,19 @@ namespace Pulse.WPF.ViewModels
     ///
     /// Structure mirrors <see cref="NetworkViewModel"/> — PanelLogger,
     /// ReportWriter, Findings, Recommendations, StatusLabel/Color/Bg pill.
-    /// The write flows (Edit Vendor / Sport / Configuration / Decoder) ship
-    /// in Phase 3; the WebSocket subscribe arrives in Phase 4.
+    /// Live scoreboard data is scraped from GraphicsManager's Sportzcast log
+    /// so the panel reflects the feed Pixellot's graphics pipeline receives.
     /// </summary>
     public class ScoreConnectViewModel : ObservableObject
     {
         private readonly IScoreConnectService _svc;
-        // v0.6.0 Phase 4 — Live WebSocket. Constructed once in the ctor,
-        // started lazily on first RefreshAsync (once we know the service is
-        // reachable). The client owns its own reconnect loop with
-        // exponential backoff, so we deliberately don't stop it on every
-        // panel-leave — the panel pattern matches CameraConnectivity's
-        // "always-on monitor" approach.
-        private Pulse.WPF.Helpers.ScoreConnectLiveClient _liveClient;
-        private string _liveClientBaseUrl = "";
-        private bool _liveStarted;
+        // The live scoreboard card is fed from GraphicsManager's own log.
+        // That log contains the Sportzcast data after GraphicsManager parses
+        // it and before it enters Pixellot's graphics pipeline, which makes
+        // it a better field signal than the older best-guess WebSocket path.
+        private readonly GraphicsManagerSportzcastLogFeed _graphicsManagerLogFeed =
+            new GraphicsManagerSportzcastLogFeed();
+        private bool _liveFeedStarted;
 
         // ---- Bindings ----
 
@@ -93,6 +91,22 @@ namespace Pulse.WPF.ViewModels
             set => Set(ref _liveConnected, value);
         }
 
+        private string _liveFeedDetail = "Waiting for GraphicsManager log";
+        public string LiveFeedDetail
+        {
+            get => _liveFeedDetail;
+            set => Set(ref _liveFeedDetail, value);
+        }
+
+        private string _liveFeedLogPath = "";
+        public string LiveFeedLogPath
+        {
+            get => _liveFeedLogPath;
+            set => Set(ref _liveFeedLogPath, value);
+        }
+
+        public string LiveFeedSourceLabel => "GraphicsManager log";
+
         public ObservableCollection<ScoreConnectSerialPortInfo> AvailablePorts { get; }
             = new ObservableCollection<ScoreConnectSerialPortInfo>();
 
@@ -147,10 +161,9 @@ namespace Pulse.WPF.ViewModels
         public ScoreConnectViewModel(IScoreConnectService svc)
         {
             _svc = svc ?? throw new ArgumentNullException(nameof(svc));
-            // The HTTP base URL comes from the service so the WS scheme /
-            // host stays in lockstep with however the operator configured
-            // ScoreConnect III in settings.json.
-            CreateLiveClient(_svc.BaseUrl);
+            _graphicsManagerLogFeed.MessageReceived += OnLiveMessageReceived;
+            _graphicsManagerLogFeed.ConnectionStateChanged += OnLiveConnectionStateChanged;
+            _graphicsManagerLogFeed.StatusChanged += OnLiveFeedStatusChanged;
             AppSettings.Instance.ScoreConnectUrlChanged += OnScoreConnectUrlChanged;
 
             RefreshCommand = new AsyncCommand(RefreshAsync);
@@ -170,37 +183,6 @@ namespace Pulse.WPF.ViewModels
             AppLogFile.Instance.WriteLine("ScoreConnect", "Info",
                 $"ScoreConnect URL changed -> {url}");
             _ = RefreshAsync();
-        }
-
-        private void CreateLiveClient(string baseUrl)
-        {
-            _liveClient = new Pulse.WPF.Helpers.ScoreConnectLiveClient(baseUrl);
-            _liveClientBaseUrl = baseUrl ?? "";
-            _liveClient.MessageReceived += OnLiveMessageReceived;
-            _liveClient.ConnectionStateChanged += OnLiveConnectionStateChanged;
-        }
-
-        private async Task EnsureLiveClientBaseUrlAsync()
-        {
-            var baseUrl = _svc.BaseUrl;
-            if (_liveClient != null &&
-                string.Equals(_liveClientBaseUrl, baseUrl, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            var old = _liveClient;
-            if (old != null)
-            {
-                old.MessageReceived -= OnLiveMessageReceived;
-                old.ConnectionStateChanged -= OnLiveConnectionStateChanged;
-                try { await old.StopAsync().ConfigureAwait(false); } catch { }
-                try { old.Dispose(); } catch { }
-            }
-
-            CreateLiveClient(baseUrl);
-            _liveStarted = false;
-            System.Windows.Application.Current?.Dispatcher.Invoke(() => LiveConnected = false);
         }
 
         // ---------- Phase 3: write flows ----------
@@ -502,11 +484,11 @@ namespace Pulse.WPF.ViewModels
 
         public async Task RefreshAsync()
         {
-            await EnsureLiveClientBaseUrlAsync().ConfigureAwait(false);
             ClearLogsAndFindings();
             ClearRecommendations();
             AddLog("", "Score Connect", "Section");
             SetPillRunning();
+            await EnsureLiveFeedStartedAsync().ConfigureAwait(false);
 
             // Phase 1: probe.
             var status = await _svc.ProbeAsync().ConfigureAwait(false);
@@ -526,25 +508,6 @@ namespace Pulse.WPF.ViewModels
                 UpdateStatusPill();
                 WriteReport();
                 return;
-            }
-
-            // v0.6.0 Phase 4 — kick the live client on the first successful
-            // probe. The client owns its own reconnect loop so we only need
-            // to start it once; subsequent refreshes are no-ops.
-            if (!_liveStarted)
-            {
-                _liveStarted = true;
-                try
-                {
-                    await _liveClient.StartAsync().ConfigureAwait(false);
-                    AppLogFile.Instance.WriteLine("ScoreConnect", "Info",
-                        "Live WebSocket client started.");
-                }
-                catch (Exception ex)
-                {
-                    AppLogFile.Instance.WriteLine("ScoreConnect", "Warn",
-                        $"Failed to start live WebSocket: {ex.Message}");
-                }
             }
 
             // Phase 1: read every endpoint in parallel — they all share one
@@ -616,6 +579,24 @@ namespace Pulse.WPF.ViewModels
 
             UpdateStatusPill();
             WriteReport();
+        }
+
+        private async Task EnsureLiveFeedStartedAsync()
+        {
+            if (_liveFeedStarted) return;
+            _liveFeedStarted = true;
+            try
+            {
+                await _graphicsManagerLogFeed.StartAsync().ConfigureAwait(false);
+                AppLogFile.Instance.WriteLine("ScoreConnect", "Info",
+                    "GraphicsManager Sportzcast log feed started.");
+            }
+            catch (Exception ex)
+            {
+                _liveFeedStarted = false;
+                AppLogFile.Instance.WriteLine("ScoreConnect", "Warn",
+                    $"Failed to start GraphicsManager log feed: {ex.Message}");
+            }
         }
 
         // ---------- Findings + Recommendations ----------
@@ -859,14 +840,13 @@ namespace Pulse.WPF.ViewModels
             });
         }
 
-        // ---------- Phase 4: live WebSocket data ----------
+        // ---------- Live GraphicsManager / Sportzcast data ----------
 
-        // Best-effort projection of an inbound WS frame onto LiveScoreData.
-        // The exact key spellings ScoreConnect emits aren't documented, so
-        // every field tries a handful of common spellings and falls back to
-        // ExtendedFields for anything we don't recognise. Mutation is
-        // partial — a frame that only carries a clock update doesn't clobber
-        // the home/away scores.
+        // Best-effort projection of an inbound live frame onto LiveScoreData.
+        // The GraphicsManager tailer emits the same typed key names as the
+        // older WebSocket path, so this parser can remain tolerant of both.
+        // Mutation is partial — a frame that only carries a clock update
+        // doesn't clobber the home/away scores.
         private void OnLiveMessageReceived(string raw, Dictionary<string, object> parsed)
         {
             if (string.IsNullOrEmpty(raw)) return;
@@ -907,8 +887,32 @@ namespace Pulse.WPF.ViewModels
                     // something arrived.
                     data.ExtendedFields["__raw"] = raw.Length > 300 ? raw.Substring(0, 300) + "..." : raw;
                 }
-                data.LastUpdatedAt = DateTime.Now;
+                data.LastUpdatedAt = ParsedLogTimestampLocal(parsed) ?? DateTime.Now;
                 LiveScoreData = data;
+            });
+        }
+
+        private static DateTime? ParsedLogTimestampLocal(Dictionary<string, object> parsed)
+        {
+            try
+            {
+                if (parsed == null || !parsed.TryGetValue("logTimestampUtc", out var value) || value == null)
+                    return null;
+                if (DateTimeOffset.TryParse(Convert.ToString(value), out var dto))
+                    return dto.ToLocalTime().DateTime;
+            }
+            catch { }
+            return null;
+        }
+
+        private void OnLiveFeedStatusChanged(string status, string path)
+        {
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            {
+                LiveFeedDetail = string.IsNullOrWhiteSpace(status)
+                    ? "Waiting for GraphicsManager log"
+                    : status;
+                LiveFeedLogPath = path ?? "";
             });
         }
 
@@ -954,8 +958,8 @@ namespace Pulse.WPF.ViewModels
         }
 
         // Toggle the LIVE / OFFLINE pill in the Live Scoreboard card. When
-        // the live feed drops mid-session, also surface a Warning finding +
-        // recommendation so the operator notices.
+        // the GraphicsManager log feed goes stale mid-session, also surface
+        // a Warning finding + recommendation so the operator notices.
         private void OnLiveConnectionStateChanged(bool connected)
         {
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
@@ -970,7 +974,7 @@ namespace Pulse.WPF.ViewModels
                 {
                     AddFinding("Warning",
                         "Live data feed disconnected",
-                        "The ScoreConnect III WebSocket dropped. The client will retry automatically with backoff; if the feed doesn't return within a minute, restart the ScoreConnect III service.");
+                        "Pulse stopped seeing fresh Sportzcast frames in the GraphicsManager log. Confirm GraphicsManager is running and receiving data from the Sportzcast device.");
                     UpdateStatusPill();
                 }
             });
@@ -1045,6 +1049,29 @@ namespace Pulse.WPF.ViewModels
                     sb.AppendLine($"  Last conn:   {BotStatus.LastConnectedAt.Value:yyyy-MM-dd HH:mm:ss}");
                 if (!string.IsNullOrEmpty(BotStatus.LastErrorMessage))
                     sb.AppendLine($"  Last error:  {BotStatus.LastErrorMessage}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("== Live Scoreboard Feed ==");
+            sb.AppendLine($"  Source:      {LiveFeedSourceLabel}");
+            sb.AppendLine($"  Status:      {(LiveConnected ? "Live" : "Offline")}");
+            sb.AppendLine($"  Detail:      {LiveFeedDetail}");
+            if (!string.IsNullOrWhiteSpace(LiveFeedLogPath))
+                sb.AppendLine($"  Log path:    {LiveFeedLogPath}");
+            if (LiveScoreData != null)
+            {
+                sb.AppendLine($"  Home score:  {LiveScoreData.HomeScore}");
+                sb.AppendLine($"  Away score:  {LiveScoreData.AwayScore}");
+                sb.AppendLine($"  Period:      {LiveScoreData.Period}");
+                sb.AppendLine($"  Clock:       {LiveScoreData.Clock}");
+                if (LiveScoreData.LastUpdatedAt.HasValue)
+                    sb.AppendLine($"  Updated:     {LiveScoreData.LastUpdatedAt.Value:yyyy-MM-dd HH:mm:ss}");
+                if (LiveScoreData.ExtendedFields.Count > 0)
+                {
+                    sb.AppendLine("  Extended:");
+                    foreach (var kv in LiveScoreData.ExtendedFields)
+                        sb.AppendLine($"    {kv.Key}: {kv.Value}");
+                }
             }
 
             sb.AppendLine();
