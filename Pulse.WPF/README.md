@@ -104,6 +104,9 @@ For hands-on VPU validation, use `V1_LAB_CHECKLIST.md`.
 - Startup-only network settling does not create a false all-failed network
   baseline; the Network panel defers and asks for a manual run when Windows is
   still bringing the uplink online.
+- Fresh-boot service/process warm-up does not create immediate Critical service
+  findings; the Services panel shows a grace notice and re-checks
+  automatically.
 - Dashboard reflects real panel findings and does not duplicate them across
   baseline re-runs.
 - Network required and optional ports are classified correctly.
