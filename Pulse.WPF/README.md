@@ -17,22 +17,21 @@ owns the issue. Every shipped diagnostic should answer:
 
 - Dashboard - one-page baseline summary, gauges, top findings, and report
   shortcuts.
-- System Overview - hardware, OS, Pixellot software, network adapter, and
-  software inventory.
+- System Overview - hardware, peripherals, OS, Pixellot software, network
+  adapter, and software inventory.
 - Network - uplink adapter, IP/DNS/DHCP/NTP state, required port probes, and
   domain checks.
 - Camera Connectivity - live camera-NIC port map, link speed, ARP/device
   resolution, flap/error detection, and snapshots.
 - Score Connect - local ScoreConnect III API probe, scoreboard configuration,
   serial ports, BOT/cloud context, and live WebSocket feed when available.
-- Hardware & Peripherals - GPU, monitor/input devices, and PoE telemetry when
-  the SmartPoE path is present.
 - Pixellot Services - Pixellot process/service health and guarded restart
   actions.
 - Disk & System Health - volume free space, Pixellot path sizes, SMART status,
   and disk-related event-log errors.
 - Event Viewer - recent VPU-relevant Windows events with filtered findings.
-- Reports - saved per-panel reports plus the rolling app log.
+- Reports - saved per-panel reports, zipped support bundles, and the rolling
+  app log.
 - Settings / About - ScoreConnect URL, folder shortcuts, manual baseline, and
   app identity.
 
@@ -53,6 +52,7 @@ reporting path:
 
 - Rolling log: `%LOCALAPPDATA%\Pulse.WPF\Logs\Pulse-YYYYMMDD.log`
 - Reports: `%LOCALAPPDATA%\Pulse.WPF\Reports`
+- Last baseline: `%LOCALAPPDATA%\Pulse.WPF\State\last-baseline.xml`
 - Settings: `%LOCALAPPDATA%\Pulse.WPF\settings.json`
 
 ## Project Layout
@@ -96,9 +96,14 @@ The workflow in `.github/workflows/wpf-pilot-build.yml` builds on
 `wpf-pilot-v*` tags create a release and mirror the artifact to the public
 `ianmoore-playon/pulse-releases` repo used by the field launcher.
 
+For hands-on VPU validation, use `V1_LAB_CHECKLIST.md`.
+
 ## V1 Readiness Bar
 
 - Startup baseline completes without freezing the UI.
+- Startup-only network settling does not create a false all-failed network
+  baseline; the Network panel defers and asks for a manual run when Windows is
+  still bringing the uplink online.
 - Dashboard reflects real panel findings and does not duplicate them across
   baseline re-runs.
 - Network required and optional ports are classified correctly.
@@ -106,5 +111,7 @@ The workflow in `.github/workflows/wpf-pilot-build.yml` builds on
 - No shipped button presents a fake action.
 - Each shipped panel has a clear status pill, findings when appropriate,
   recommended actions, and report output.
+- Reports can generate a single support bundle with baseline summary, panel
+  reports, and app log evidence.
 - The Windows build passes in CI and the public launcher installs/updates the
   release successfully.

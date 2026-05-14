@@ -127,12 +127,31 @@ namespace Pulse.WPF.ViewModels
 
             ClearLogsAndFindings();
             ClearRecommendations();
+            ClearProbeResults();
             AddLog("", "Connectivity", "Section");
             SetPillRunning();
 
-            var internet = startupReadinessGuard
+            var startupCheck = startupReadinessGuard
                 ? await CheckInternetWithStartupGuardAsync().ConfigureAwait(false)
+                : null;
+            var internet = startupCheck != null
+                ? startupCheck.Internet
                 : await _net.CheckInternetAsync().ConfigureAwait(false);
+
+            if (startupCheck != null && startupCheck.Deferred)
+            {
+                AddLog("Internet",
+                    "Startup network baseline deferred - adapter/route not stable yet",
+                    "Warn");
+                AddFinding("Warning",
+                    "Network baseline deferred during startup",
+                    "Windows had not exposed a stable uplink route yet. Open Network and click Run Test once the adapter settles.");
+                BuildStartupDeferredRecommendation(startupCheck.Detail);
+                UpdateStatusPill();
+                SaveReportSnapshot();
+                return;
+            }
+
             AddLog("Internet", internet ? "Reachable" : "No response - check uplink adapter",
                 internet ? "Pass" : "Fail");
             if (!internet)
@@ -235,20 +254,7 @@ namespace Pulse.WPF.ViewModels
             // the live log but as a static snapshot the tech can attach to a
             // ticket. AppLogFile already captured every AddLog above; the
             // per-run file is the user-facing artifact.
-            try
-            {
-                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
-                {
-                    var path = _reportWriter.Save("Network", BuildReportText());
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        LastReportPath = path;
-                        AppLogFile.Instance.WriteLine("Network", "Info",
-                            $"Report saved: {path}");
-                    }
-                });
-            }
-            catch { }
+            SaveReportSnapshot();
         }
 
         /// <summary>
@@ -434,14 +440,39 @@ namespace Pulse.WPF.ViewModels
             });
         }
 
+        private void BuildStartupDeferredRecommendation(string detail)
+        {
+            var body = string.IsNullOrWhiteSpace(detail)
+                ? "The startup baseline ran before Windows finished bringing the uplink online. Wait for link/DNS to settle, then click Run Test for a strict network result."
+                : $"The startup baseline ran before Windows finished bringing the uplink online ({detail}). Wait for link/DNS to settle, then click Run Test for a strict network result.";
+            var rec = NetworkRecommendation.Create(
+                "Warning",
+                "Re-run Network after startup settles",
+                body);
+
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            {
+                Recommendations.Clear();
+                Recommendations.Add(rec);
+            });
+        }
+
         // ----- helpers -----
 
-        private async Task<bool> CheckInternetWithStartupGuardAsync()
+        private async Task<StartupInternetCheckResult> CheckInternetWithStartupGuardAsync()
         {
             var readiness = await ProbeStartupNetworkReadinessAsync().ConfigureAwait(false);
-            var internet = readiness.Internet;
 
-            if (readiness.IsReady) return true;
+            if (readiness.HasUsableUplink)
+            {
+                if (!readiness.DnsReady)
+                {
+                    AddLog("Startup",
+                        "DNS warm-up did not resolve immediately - continuing full network test",
+                        "Warn");
+                }
+                return StartupInternetCheckResult.Ready(readiness.Internet, readiness.Detail);
+            }
 
             AddLog("Startup",
                 "Network not ready on first baseline probe - retrying before port/DNS tests",
@@ -454,22 +485,20 @@ namespace Pulse.WPF.ViewModels
                 await RefreshAsync().ConfigureAwait(false);
 
                 readiness = await ProbeStartupNetworkReadinessAsync().ConfigureAwait(false);
-                internet = readiness.Internet;
 
-                if (readiness.IsReady)
+                if (readiness.HasUsableUplink)
                 {
                     AddLog("Startup",
                         $"Network ready after startup retry {i + 1}",
                         "Pass");
-                    return true;
+                    return StartupInternetCheckResult.Ready(readiness.Internet, readiness.Detail);
                 }
             }
 
-            var detail = $"route={readiness.RouteReady}, internet={readiness.Internet}, dns={readiness.DnsReady}";
             AddLog("Startup",
-                $"Network readiness guard expired - running with current state ({detail})",
+                $"Network readiness guard expired - deferring startup network baseline ({readiness.Detail})",
                 "Warn");
-            return internet;
+            return StartupInternetCheckResult.Defer(readiness.Detail);
         }
 
         private async Task<StartupNetworkReadiness> ProbeStartupNetworkReadinessAsync()
@@ -491,7 +520,35 @@ namespace Pulse.WPF.ViewModels
             public bool Internet { get; set; }
             public bool DnsReady { get; set; }
             public bool RouteReady { get; set; }
-            public bool IsReady => Internet && DnsReady && RouteReady;
+            public bool HasUsableUplink => Internet && RouteReady;
+            public string Detail => $"route={RouteReady}, internet={Internet}, dns={DnsReady}";
+        }
+
+        private sealed class StartupInternetCheckResult
+        {
+            public bool Internet { get; private set; }
+            public bool Deferred { get; private set; }
+            public string Detail { get; private set; }
+
+            public static StartupInternetCheckResult Ready(bool internet, string detail)
+            {
+                return new StartupInternetCheckResult
+                {
+                    Internet = internet,
+                    Deferred = false,
+                    Detail = detail ?? "",
+                };
+            }
+
+            public static StartupInternetCheckResult Defer(string detail)
+            {
+                return new StartupInternetCheckResult
+                {
+                    Internet = false,
+                    Deferred = true,
+                    Detail = detail ?? "",
+                };
+            }
         }
 
         private bool HasUsableRoute()
@@ -547,6 +604,37 @@ namespace Pulse.WPF.ViewModels
         private void ClearRecommendations()
         {
             System.Windows.Application.Current?.Dispatcher.Invoke(() => Recommendations.Clear());
+        }
+
+        private void ClearProbeResults()
+        {
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            {
+                TcpPortTests.Clear();
+                UdpPortTests.Clear();
+                DomainTests.Clear();
+            });
+        }
+
+        private void SaveReportSnapshot()
+        {
+            try
+            {
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    var path = _reportWriter.Save("Network", BuildReportText());
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        LastReportPath = path;
+                        AppLogFile.Instance.WriteLine("Network", "Info",
+                            $"Report saved: {path}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                AddLog("Report", $"Failed to save report: {ex.Message}", "Warn");
+            }
         }
 
         private void AddLog(string label, string result, string level) => Logger.Add(label, result, level);
