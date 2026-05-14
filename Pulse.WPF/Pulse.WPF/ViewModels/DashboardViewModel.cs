@@ -188,6 +188,7 @@ namespace Pulse.WPF.ViewModels
         // trust in a diagnostic tool. Until then, the pill reads "Checking…"
         // muted.
         private bool _hasSnapshot;
+        private bool _hasBaselinePanelFindings;
         private string _statusLabel = "Checking…";
         public string StatusLabel { get => _statusLabel; set => Set(ref _statusLabel, value); }
         private Brush _statusColor = StatusHelpers.Brush("MutedForegroundBrush");
@@ -431,6 +432,8 @@ namespace Pulse.WPF.ViewModels
         // sequence below so equal severities keep the sidebar order.
         private void AggregateBaselineFindings()
         {
+            _hasBaselinePanelFindings = true;
+
             // Keep DashboardService's own findings, but remove the previous
             // panel-finding projection before adding the new baseline result.
             // Without this, every baseline re-run stacks another copy of the
@@ -445,7 +448,13 @@ namespace Pulse.WPF.ViewModels
             foreach (var f in retained) Findings.Add(f);
 
             var mvm = ResolveMainViewModel();
-            if (mvm == null) { RebuildFindingViews(); return; }
+            if (mvm == null)
+            {
+                RebuildFindingViews();
+                UpdateTileStatuses();
+                UpdatePill();
+                return;
+            }
 
             var seen = new System.Collections.Generic.HashSet<string>(
                 System.StringComparer.OrdinalIgnoreCase);
@@ -920,9 +929,18 @@ namespace Pulse.WPF.ViewModels
             // Mark the first snapshot as applied so the pill stops reading
             // "Checking…" — UpdatePill respects this flag.
             _hasSnapshot = true;
-            RebuildFindingViews();
-            UpdateTileStatuses();
-            UpdatePill();
+
+            // After the baseline has run, panel Findings are the source of
+            // truth for specialized checks (especially Camera). A manual
+            // Dashboard refresh should keep those panel findings merged on
+            // top of the fresh snapshot instead of replacing them.
+            if (_hasBaselinePanelFindings) AggregateBaselineFindings();
+            else
+            {
+                RebuildFindingViews();
+                UpdateTileStatuses();
+                UpdatePill();
+            }
         }
 
         private void UpdateTileStatuses()
