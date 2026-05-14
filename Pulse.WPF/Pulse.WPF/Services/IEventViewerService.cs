@@ -13,6 +13,12 @@ namespace Pulse.WPF.Services
     public interface IEventViewerService
     {
         /// <summary>
+        /// Log names/details that could not be read during the last query.
+        /// An empty list means the query inspected every configured log.
+        /// </summary>
+        IReadOnlyList<string> LastReadFailures { get; }
+
+        /// <summary>
         /// Returns the most-recent event-log entries that match the supplied
         /// filters. Capped at 500 rows to keep the UI responsive.
         ///

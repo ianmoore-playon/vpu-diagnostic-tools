@@ -616,37 +616,10 @@ namespace Pulse.WPF.Services
             // will fail" because there's no game.
             var isVpu = !snap.IsNonVpuHost;
 
-            // NIC ports — any down link on a known-camera-NIC is worth surfacing.
-            if (snap.NicPorts != null)
-            {
-                int n = 1;
-                foreach (var nic in snap.NicPorts)
-                {
-                    if (!nic.IsUp)
-                    {
-                        findings.Add(new DashboardFinding
-                        {
-                            Severity  = "fail",
-                            Title     = $"Camera {n} not connected — check the cable",
-                            Detail    = $"Port {n} ({nic.Name}) — link down",
-                            Source    = "Camera",
-                            TargetNav = "Camera",
-                        });
-                    }
-                    else if (nic.LinkSpeedBps > 0 && nic.LinkSpeedBps < 1_000_000_000UL)
-                    {
-                        findings.Add(new DashboardFinding
-                        {
-                            Severity  = "warn",
-                            Title     = $"Camera {n} is connected at slow speed — check the cable",
-                            Detail    = $"Port {n} ({nic.Name}) — {nic.LinkSpeedBps / 1_000_000UL} Mbps (gigabit expected)",
-                            Source    = "Camera",
-                            TargetNav = "Camera",
-                        });
-                    }
-                    n++;
-                }
-            }
+            // Camera-specific findings are owned by CameraConnectivityViewModel.
+            // That panel knows configured roles, OCR exceptions, and which dark
+            // ports are expected. Dashboard still renders the NIC table, but
+            // Active Findings should not contradict the role-aware Camera panel.
 
             // Internet — fail-tier on a real VPU (no internet → game uploads
             // fail), warn on dev hosts where there's no production cost.

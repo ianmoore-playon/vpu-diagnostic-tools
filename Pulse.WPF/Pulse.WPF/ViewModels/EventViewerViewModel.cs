@@ -145,15 +145,34 @@ namespace Pulse.WPF.ViewModels
             if (levels.Count == 0) { levels.Add("Error"); levels.Add("Warning"); }
 
             List<WindowsEventEntry> rows;
-            try { rows = await _svc.GetRecentAsync(hours, DefaultSources, levels); }
-            catch { rows = new List<WindowsEventEntry>(); }
+            List<string> readFailures = new List<string>();
+            Exception queryError = null;
+            try
+            {
+                rows = await _svc.GetRecentAsync(hours, DefaultSources, levels);
+                readFailures = _svc.LastReadFailures != null
+                    ? _svc.LastReadFailures.ToList()
+                    : new List<string>();
+            }
+            catch (Exception ex)
+            {
+                rows = new List<WindowsEventEntry>();
+                queryError = ex;
+                try
+                {
+                    readFailures = _svc.LastReadFailures != null
+                        ? _svc.LastReadFailures.ToList()
+                        : new List<string>();
+                }
+                catch { readFailures = new List<string>(); }
+            }
 
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
             {
                 Entries.Clear();
                 foreach (var r in rows) Entries.Add(r);
                 RefreshView();
-                RecomputeFindings();
+                RecomputeFindings(readFailures, queryError);
                 UpdatePill();
 
                 // v0.5.5: per-run report file.
@@ -235,9 +254,36 @@ namespace Pulse.WPF.ViewModels
         // Findings banner fires when there are ≥ 5 errors in the last 24h
         // from disk / nvme / Pixellot sources — the "this VPU is sick"
         // threshold worth surfacing without burying the tech in detail.
-        private void RecomputeFindings()
+        private void RecomputeFindings(IEnumerable<string> readFailures = null, Exception queryError = null)
         {
             Findings.Clear();
+            var failures = (readFailures ?? Array.Empty<string>())
+                .Where(f => !string.IsNullOrWhiteSpace(f))
+                .ToList();
+
+            if (queryError != null)
+            {
+                Findings.Add(Finding.Create(
+                    "Warning",
+                    "Event Viewer query failed",
+                    $"Pulse could not inspect Windows event logs: {queryError.Message}. Run Pulse as Administrator and refresh this panel.",
+                    "Event Viewer"));
+            }
+
+            if (failures.Count > 0)
+            {
+                var title = failures.Count == 1
+                    ? "Could not read 1 Windows event log"
+                    : $"Could not read {failures.Count} Windows event logs";
+                var detail = string.Join("; ", failures.Take(2));
+                if (failures.Count > 2) detail += $"; +{failures.Count - 2} more";
+                Findings.Add(Finding.Create(
+                    "Warning",
+                    title,
+                    $"Run Pulse as Administrator and refresh Event Viewer. This panel may miss disk, service, or driver faults until the unreadable logs are available. Details: {detail}",
+                    "Event Viewer"));
+            }
+
             var since = DateTime.Now.AddHours(-24);
             int diskErrors = Entries.Count(e =>
                 e.Level == "Error" &&

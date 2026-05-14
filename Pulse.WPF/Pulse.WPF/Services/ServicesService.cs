@@ -52,6 +52,10 @@ namespace Pulse.WPF.Services
                     return new ServiceStatusRow
                     {
                         Name = label,
+                        DisplayName = procName,
+                        RowKind = "Process",
+                        StartMode = "Process",
+                        RestartUnavailableReason = "Restart unavailable for process rows",
                         Status = "Running",
                         Detail = $"PID {pids}",
                         Severity = "Pass",
@@ -62,6 +66,10 @@ namespace Pulse.WPF.Services
                     return new ServiceStatusRow
                     {
                         Name = label,
+                        DisplayName = procName,
+                        RowKind = "Process",
+                        StartMode = "Process",
+                        RestartUnavailableReason = "Restart unavailable for process rows",
                         Status = "Stopped",
                         Detail = "Not running — normal when cameras are idle",
                         Severity = "Gray",
@@ -70,6 +78,10 @@ namespace Pulse.WPF.Services
                 return new ServiceStatusRow
                 {
                     Name = label,
+                    DisplayName = procName,
+                    RowKind = "Process",
+                    StartMode = "Process",
+                    RestartUnavailableReason = "Restart unavailable for process rows",
                     Status = "Stopped",
                     Detail = "Required process not running",
                     Severity = "Fail",
@@ -80,6 +92,10 @@ namespace Pulse.WPF.Services
                 return new ServiceStatusRow
                 {
                     Name = label,
+                    DisplayName = procName,
+                    RowKind = "Process",
+                    StartMode = "Process",
+                    RestartUnavailableReason = "Restart unavailable for process rows",
                     Status = "Unknown",
                     Detail = $"Query failed: {ex.Message}",
                     Severity = "Warn",
@@ -110,11 +126,24 @@ namespace Pulse.WPF.Services
                 return new ServiceStatusRow
                 {
                     Name = "Scoreconnect",
+                    DisplayName = "Scoreconnect",
+                    RowKind = "Windows service",
+                    RestartUnavailableReason = "Scoreconnect service is not registered",
                     Status = "Not detected",
                     Detail = "Not installed on this VPU",
                     Severity = "Gray",
                 };
             }
+
+            var primaryService = services?.OrderBy(s => s.ServiceName, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+            var serviceName = primaryService?.ServiceName ?? "";
+            var displayName = !string.IsNullOrWhiteSpace(primaryService?.DisplayName)
+                ? primaryService.DisplayName
+                : "Scoreconnect";
+            var rowName = !string.IsNullOrWhiteSpace(serviceName) ? serviceName : "Scoreconnect";
+            var restartUnavailable = string.IsNullOrWhiteSpace(serviceName)
+                ? "Scoreconnect process detected but no Windows service was registered"
+                : "";
 
             var svcRunning = services?.Any(s => s.Status == ServiceControllerStatus.Running) ?? false;
             var procRunning = procs?.Length > 0;
@@ -125,7 +154,12 @@ namespace Pulse.WPF.Services
                     : (svcRunning ? "Service running, no process detected" : $"{procs.Length} process(es) running");
                 return new ServiceStatusRow
                 {
-                    Name = "Scoreconnect",
+                    Name = rowName,
+                    DisplayName = displayName,
+                    RowKind = "Windows service",
+                    ServiceName = serviceName,
+                    StartMode = string.IsNullOrWhiteSpace(serviceName) ? "Process" : "Registered",
+                    RestartUnavailableReason = restartUnavailable,
                     Status = "Running",
                     Detail = detail,
                     Severity = "Pass",
@@ -133,7 +167,12 @@ namespace Pulse.WPF.Services
             }
             return new ServiceStatusRow
             {
-                Name = "Scoreconnect",
+                Name = rowName,
+                DisplayName = displayName,
+                RowKind = "Windows service",
+                ServiceName = serviceName,
+                StartMode = string.IsNullOrWhiteSpace(serviceName) ? "Process" : "Registered",
+                RestartUnavailableReason = restartUnavailable,
                 Status = "Stopped",
                 Detail = "Service registered, process not found",
                 Severity = "Warn",

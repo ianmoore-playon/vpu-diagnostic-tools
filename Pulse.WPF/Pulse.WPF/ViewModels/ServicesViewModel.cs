@@ -20,19 +20,8 @@ namespace Pulse.WPF.ViewModels
         private readonly IServicesService _svc;
 
         public ObservableCollection<ServiceStatusRow> Services { get; } = new ObservableCollection<ServiceStatusRow>();
-        // v0.6.6 — the View binds to `CoreServices` (top WrapPanel of tiles)
-        // and `SystemDependencies` (DataGrid below). Both surface the same
-        // underlying `Services` collection; the previous mismatch (View
-        // bound to names the VM didn't expose) was the root cause of the
-        // "Pixellot Services panel empty on first nav" bug — WPF silently
-        // resolves missing bindings to nothing, so no XAML/binding error
-        // showed up, just blank tiles + an empty grid. Aliasing here keeps
-        // the change minimal and means a future split (true core-vs-
-        // dependency separation in IServicesService) can repoint each
-        // alias to its own ObservableCollection without churning the
-        // XAML.
-        public ObservableCollection<ServiceStatusRow> CoreServices => Services;
-        public ObservableCollection<ServiceStatusRow> SystemDependencies => Services;
+        public ObservableCollection<ServiceStatusRow> CoreServices { get; } = new ObservableCollection<ServiceStatusRow>();
+        public ObservableCollection<ServiceStatusRow> SystemDependencies { get; } = new ObservableCollection<ServiceStatusRow>();
 
         // Composed via PanelLogger (v0.5.0) — shared with the four other panels.
         public PanelLogger Logger { get; } = new PanelLogger("Services");
@@ -78,7 +67,19 @@ namespace Pulse.WPF.ViewModels
             set
             {
                 if (Set(ref _selectedService, value))
+                {
+                    OnPropertyChanged(nameof(SelectedServiceRestartHint));
                     CommandManager.InvalidateRequerySuggested();
+                }
+            }
+        }
+        public string SelectedServiceRestartHint
+        {
+            get
+            {
+                if (_selectedService == null) return "Select a Windows service row to restart it.";
+                if (_selectedService.CanRestart) return $"Restarts Windows service {_selectedService.ServiceName}.";
+                return _selectedService.RestartAvailability;
             }
         }
 
@@ -88,7 +89,7 @@ namespace Pulse.WPF.ViewModels
             RunTestCommand = new AsyncCommand(RefreshAsync);
             RestartServiceCommand = new AsyncCommand(
                 RestartSelectedServiceAsync,
-                () => _selectedService != null);
+                () => _selectedService != null && _selectedService.CanRestart);
         }
 
         // Restart the selected Windows service via sc.exe stop / sc.exe start.
@@ -100,7 +101,13 @@ namespace Pulse.WPF.ViewModels
         {
             var svc = _selectedService;
             if (svc == null) return;
-            var name = svc.Name;
+            if (!svc.CanRestart)
+            {
+                AppendLog($"Restart unavailable for {DisplayNameOrName(svc)} — {svc.RestartAvailability}", "Warn");
+                return;
+            }
+            var name = svc.ServiceName;
+            var display = DisplayNameOrName(svc);
             if (string.IsNullOrWhiteSpace(name))
             {
                 AppendLog($"Restart aborted — no service name on selected row.", "Warn");
@@ -108,7 +115,7 @@ namespace Pulse.WPF.ViewModels
             }
 
             // Modal confirmation. Cancel = bail with no side effects.
-            var prompt = $"Restart {name}? The service will be unavailable for ~5–15 seconds.";
+            var prompt = $"Restart {display}? The service will be unavailable for ~5–15 seconds.";
             MessageBoxResult choice;
             try
             {
@@ -123,7 +130,7 @@ namespace Pulse.WPF.ViewModels
             }
             if (choice != MessageBoxResult.OK) return;
 
-            AppendLog($"Restart requested for {name}", "Section");
+            AppendLog($"Restart requested for {display} ({name})", "Section");
             await Task.Run(() => RunScRestart(name)).ConfigureAwait(false);
 
             // Re-poll status so the tile/grid re-paints.
@@ -251,34 +258,43 @@ namespace Pulse.WPF.ViewModels
         {
             await Task.Run(() =>
             {
-                var rows = _svc.GetServiceStatuses();
+                var rows = _svc.GetServiceStatuses() ?? new System.Collections.Generic.List<ServiceStatusRow>();
                 System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                 {
                     Services.Clear();
+                    CoreServices.Clear();
+                    SystemDependencies.Clear();
                     LogEntries.Clear();
                     Findings.Clear();
+                    SelectedService = null;
 
-                    AddLog("", "Core Pixellot Processes", "Section");
-                    foreach (var r in rows)
+                    AddLog("", "VPU Processes", "Section");
+                    foreach (var r in rows.Where(r => !r.IsWindowsService))
                     {
-                        Services.Add(r);
-                        AddLog(r.Name, r.Status + (string.IsNullOrEmpty(r.Detail) ? "" : "  " + r.Detail),
-                            r.Severity == "Pass" ? "Pass" :
-                            r.Severity == "Fail" ? "Fail" :
-                            r.Severity == "Warn" ? "Warn" : "Gray");
+                        AddServiceRow(r);
+                    }
+
+                    AddLog("", "Windows Services", "Section");
+                    foreach (var r in rows.Where(r => r.IsWindowsService))
+                    {
+                        AddServiceRow(r);
                     }
 
                     foreach (var fail in rows.Where(r => r.Severity == "Fail"))
                     {
                         AddFinding("Critical",
                             $"{fail.Name} is not running",
-                            $"Restart {fail.Name} or reboot the VPU. Persistent failures usually mean a missing config or a corrupted install.");
+                            fail.CanRestart
+                                ? $"Select {DisplayNameOrName(fail)} in Windows Services and use Restart Service. Persistent failures usually mean a missing config or a corrupted install."
+                                : $"Reboot the VPU or call support. {DisplayNameOrName(fail)} is a process row, not a Windows service that Pulse can restart directly.");
                     }
                     foreach (var warn in rows.Where(r => r.Severity == "Warn"))
                     {
                         AddFinding("Warning",
                             $"{warn.Name}: {warn.Detail}",
-                            $"Investigate {warn.Name} — start the service or remove the orphan registration.");
+                            warn.CanRestart
+                                ? $"Select {DisplayNameOrName(warn)} in Windows Services and use Restart Service, then refresh this panel."
+                                : $"Investigate {DisplayNameOrName(warn)} — {warn.RestartAvailability}.");
                     }
 
                     UpdateStatusPill();
@@ -316,17 +332,19 @@ namespace Pulse.WPF.ViewModels
             }
             else
             {
-                sb.AppendLine("  Name                                  Status         StartMode   Detail");
-                sb.AppendLine("  ------------------------------------  -------------  ----------  -----------------------");
+                sb.AppendLine("  Name                                  Kind             Status         Restart                 Detail");
+                sb.AppendLine("  ------------------------------------  ---------------  -------------  ----------------------  -----------------------");
                 foreach (var r in Services)
                 {
                     var name = (r.DisplayName ?? r.Name ?? "").PadRight(36);
                     if (name.Length > 36) name = name.Substring(0, 36);
+                    var kind = (r.RowKind ?? "").PadRight(15);
+                    if (kind.Length > 15) kind = kind.Substring(0, 15);
                     var status = (r.Status ?? "").PadRight(13);
                     if (status.Length > 13) status = status.Substring(0, 13);
-                    var startMode = (r.StartMode ?? "").PadRight(10);
-                    if (startMode.Length > 10) startMode = startMode.Substring(0, 10);
-                    sb.AppendLine($"  {name}  {status}  {startMode}  {r.Detail}");
+                    var restart = (r.CanRestart ? r.ServiceName : "Unavailable").PadRight(22);
+                    if (restart.Length > 22) restart = restart.Substring(0, 22);
+                    sb.AppendLine($"  {name}  {kind}  {status}  {restart}  {r.Detail}");
                 }
             }
 
@@ -352,6 +370,27 @@ namespace Pulse.WPF.ViewModels
         }
 
         private void AddLog(string label, string result, string level) => Logger.Add(label, result, level);
+
+        private void AddServiceRow(ServiceStatusRow r)
+        {
+            if (r == null) return;
+            Services.Add(r);
+            if (r.IsWindowsService) SystemDependencies.Add(r);
+            else CoreServices.Add(r);
+
+            AddLog(r.Name, r.Status + (string.IsNullOrEmpty(r.Detail) ? "" : "  " + r.Detail),
+                r.Severity == "Pass" ? "Pass" :
+                r.Severity == "Fail" ? "Fail" :
+                r.Severity == "Warn" ? "Warn" : "Gray");
+        }
+
+        private static string DisplayNameOrName(ServiceStatusRow row)
+        {
+            if (row == null) return "selected row";
+            if (!string.IsNullOrWhiteSpace(row.DisplayName)) return row.DisplayName;
+            if (!string.IsNullOrWhiteSpace(row.Name)) return row.Name;
+            return "selected row";
+        }
 
         private void AddFinding(string severity, string title, string recommendation)
         {

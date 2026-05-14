@@ -17,8 +17,8 @@ namespace Pulse.WPF.Services
     ///     as we cross the time window.
     ///   - A locked-down VPU image can refuse the read with
     ///     <see cref="System.Security.SecurityException"/> on first access.
-    ///     We swallow that here so the panel still renders empty instead of
-    ///     crashing the tab.
+    ///     We report that back through LastReadFailures so the panel can show
+    ///     an honest warning instead of a false-green empty state.
     ///   - <c>EventLog</c> instances hold an unmanaged handle — caller code
     ///     should use the <c>using</c> we apply here, not store them.
     /// </summary>
@@ -31,6 +31,17 @@ namespace Pulse.WPF.Services
         // System catches disk / NIC / SCM / driver complaints.
         private static readonly string[] LogsToRead = { "Application", "System" };
 
+        private readonly object _failureLock = new object();
+        private List<string> _lastReadFailures = new List<string>();
+
+        public IReadOnlyList<string> LastReadFailures
+        {
+            get
+            {
+                lock (_failureLock) return _lastReadFailures.ToArray();
+            }
+        }
+
         public Task<List<WindowsEventEntry>> GetRecentAsync(int hoursBack,
                                                         IEnumerable<string> sources,
                                                         IEnumerable<string> levels)
@@ -38,11 +49,12 @@ namespace Pulse.WPF.Services
             return Task.Run(() => Read(hoursBack, sources, levels));
         }
 
-        private static List<WindowsEventEntry> Read(int hoursBack,
-                                                 IEnumerable<string> sources,
-                                                 IEnumerable<string> levels)
+        private List<WindowsEventEntry> Read(int hoursBack,
+                                             IEnumerable<string> sources,
+                                             IEnumerable<string> levels)
         {
             var results = new List<WindowsEventEntry>();
+            var failures = new List<string>();
             var cutoff  = DateTime.Now.AddHours(-Math.Max(1, hoursBack));
 
             // Case-insensitive prefix list. Empty means "match any".
@@ -103,13 +115,17 @@ namespace Pulse.WPF.Services
                         }
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
                     // SecurityException / IO failures — log is unreadable on
-                    // this box. Leave the result list as-is and move on.
+                    // this box. Leave the result list as-is and move on, but
+                    // keep the failure so the panel can warn the operator.
+                    failures.Add($"{logName}: {ex.Message}");
                     Debug.WriteLine($"EventViewerService: failed to read {logName} log");
                 }
             }
+
+            lock (_failureLock) _lastReadFailures = failures;
 
             // Newest first across both logs.
             results.Sort((a, b) => b.TimeGenerated.CompareTo(a.TimeGenerated));

@@ -20,11 +20,9 @@
                 <RowDefinition Height="Auto" />   <!-- Log (collapsed expander) -->
             </Grid.RowDefinitions>
 
-            <!-- ====== Section header (v0.5.4 top-bar buttons) ======
-                 Restart Service binds to the currently-selected row in
-                 the Dependencies DataGrid, so it stays disabled until a
-                 row is picked. The per-row "Restart" buttons inside the
-                 DataGrid still live where they are (row context). -->
+            <!-- ====== Section header ======
+                 Restart Service only enables for rows backed by a real
+                 Windows service name; process-only rows are observational. -->
             <DockPanel Grid.Row="0" Margin="0,0,0,24">
                 <Border DockPanel.Dock="Right" Style="{StaticResource StatusChip}"
                         Background="{Binding StatusBg}" Margin="8,0,0,0"
@@ -39,7 +37,7 @@
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Command="{Binding RestartServiceCommand}"
                             Style="{StaticResource TopBarOutlinedButton}"
-                            ToolTip="Stop then start the service selected in the dependencies grid below.">
+                            ToolTip="{Binding SelectedServiceRestartHint}">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <md:PackIcon Kind="Restart" Width="16" Height="16" VerticalAlignment="Center" />
                             <TextBlock Text="Restart Service" Margin="6,0,0,0" VerticalAlignment="Center" />
@@ -56,9 +54,9 @@
                     </Button>
                 </StackPanel>
                 <StackPanel>
-                    <TextBlock Text="Pixellot Services" Style="{StaticResource PageTitle}"
+                    <TextBlock Text="VPU Processes &amp; Services" Style="{StaticResource PageTitle}"
                                TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="Pixellot agent processes and the Windows services they depend on"
+                    <TextBlock Text="Pixellot process health and restartable Windows service checks"
                                Style="{StaticResource PageSubtitle}"
                                TextTrimming="CharacterEllipsis" MaxWidth="640" />
                 </StackPanel>
@@ -87,7 +85,7 @@
                 </StackPanel>
             </Border>
 
-            <!-- ====== Core service cards (WrapPanel of 6 tiles) ======
+            <!-- ====== VPU process cards ======
                  v0.6.6: also gated on IsReady so the WrapPanel doesn't
                  reserve empty space below the placeholder above. -->
             <ItemsControl Grid.Row="2" ItemsSource="{Binding CoreServices}" Margin="0,0,0,16"
@@ -143,10 +141,10 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <!-- ====== System Dependencies ====== -->
+            <!-- ====== Restartable Windows services ====== -->
             <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,16">
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="System Dependencies"
+                    <TextBlock DockPanel.Dock="Top" Text="Windows Services"
                                Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                     <DataGrid ItemsSource="{Binding SystemDependencies}"
                               SelectedItem="{Binding SelectedService, Mode=TwoWay}"
@@ -185,6 +183,15 @@
                                         <Setter Property="Foreground" Value="{Binding StatusColor}" />
                                         <Setter Property="FontWeight" Value="SemiBold" />
                                         <Setter Property="Padding" Value="8,0" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Restart" Binding="{Binding RestartAvailability}" Width="2*">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource MutedForegroundBrush}" />
+                                        <Setter Property="Padding" Value="8,0" />
+                                        <Setter Property="TextWrapping" Value="Wrap" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
