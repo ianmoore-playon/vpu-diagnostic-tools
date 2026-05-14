@@ -120,6 +120,8 @@ namespace Pulse.WPF.ViewModels
             new ObservableCollection<DashboardFinding>();
         public ObservableCollection<DashboardFinding> OverflowFindings { get; } =
             new ObservableCollection<DashboardFinding>();
+        public ObservableCollection<DashboardFinding> CommandFindings { get; } =
+            new ObservableCollection<DashboardFinding>();
         private int _overflowFindingsCount;
         public int OverflowFindingsCount
         {
@@ -127,9 +129,19 @@ namespace Pulse.WPF.ViewModels
             set { if (Set(ref _overflowFindingsCount, value)) OnPropertyChanged(nameof(HasOverflowFindings)); }
         }
         public bool HasOverflowFindings => _overflowFindingsCount > 0;
+        private int _commandOverflowFindingsCount;
+        public int CommandOverflowFindingsCount
+        {
+            get => _commandOverflowFindingsCount;
+            set { if (Set(ref _commandOverflowFindingsCount, value)) OnPropertyChanged(nameof(HasCommandOverflowFindings)); }
+        }
+        public bool HasCommandOverflowFindings => _commandOverflowFindingsCount > 0;
+        public bool HasFindings => Findings.Count > 0;
+        public bool HasNoFindings => _hasSnapshot && Findings.Count == 0;
 
         // Cap kept here so the constant has a single source of truth.
         private const int ActiveFindingsCap = 10;
+        private const int CommandFindingsCap = 3;
 
         // ---- Dashboard log sink -------------------------------------------
         // Lets formerly-silent catches surface low-severity log lines instead
@@ -292,6 +304,13 @@ namespace Pulse.WPF.ViewModels
         private string _baselineResultText = "";
         public string BaselineResultText { get => _baselineResultText; set => Set(ref _baselineResultText, value); }
 
+        private string _baselineSummaryText = "Baseline pending";
+        public string BaselineSummaryText { get => _baselineSummaryText; set => Set(ref _baselineSummaryText, value); }
+        private Brush _baselineSummaryColor = StatusHelpers.Brush("MutedForegroundBrush");
+        public Brush BaselineSummaryColor { get => _baselineSummaryColor; set => Set(ref _baselineSummaryColor, value); }
+        private Brush _baselineSummaryBg = StatusHelpers.Brush("BorderColBrush");
+        public Brush BaselineSummaryBg { get => _baselineSummaryBg; set => Set(ref _baselineSummaryBg, value); }
+
         // Re-run command — disabled while a baseline is already running so a
         // double-click can't kick a second pass. RelayCommand re-evaluates
         // CanExecute via CommandManager.RequerySuggested.
@@ -330,6 +349,9 @@ namespace Pulse.WPF.ViewModels
                     : $"{p.CurrentPanel} {p.Status.ToLowerInvariant()}";
                 BaselineStatusText =
                     $"Gathering baseline — {status} ({p.Completed}/{p.Total} done)";
+                BaselineSummaryText = $"Baseline running • {status} • {p.Completed}/{p.Total} panels";
+                BaselineSummaryColor = StatusHelpers.Brush("InfoBrush");
+                BaselineSummaryBg = StatusHelpers.Brush("InfoBgBrush");
             }
             var app = System.Windows.Application.Current;
             if (app != null && app.Dispatcher.CheckAccess()) apply();
@@ -349,9 +371,14 @@ namespace Pulse.WPF.ViewModels
                 AggregateBaselineFindings();
 
                 var totalFindings = Findings.Count;
+                var totalPanels = r.CompletedCount + r.FailedCount;
+                var completedAt = DateTime.Now.ToString("h:mm tt");
                 if (r.Cancelled)
                 {
                     BaselineResultText = $"Baseline cancelled — {totalFindings} finding(s) detected";
+                    BaselineSummaryText = $"Baseline cancelled {completedAt} • {totalPanels} panel(s) checked • {totalFindings} finding(s)";
+                    BaselineSummaryColor = StatusHelpers.Brush("YellowBrush");
+                    BaselineSummaryBg = StatusHelpers.Brush("WarnBgBrush");
                 }
                 else if (r.FailedCount > 0)
                 {
@@ -359,10 +386,16 @@ namespace Pulse.WPF.ViewModels
                     BaselineResultText =
                         $"Baseline complete with errors — {totalFindings} finding(s), {r.FailedCount} panel(s) failed" +
                         (string.IsNullOrEmpty(panels) ? "" : $" ({panels})");
+                    BaselineSummaryText = $"Baseline completed {completedAt} • {r.CompletedCount}/{totalPanels} panels • {totalFindings} finding(s)";
+                    BaselineSummaryColor = StatusHelpers.Brush("YellowBrush");
+                    BaselineSummaryBg = StatusHelpers.Brush("WarnBgBrush");
                 }
                 else
                 {
                     BaselineResultText = $"Baseline complete — {totalFindings} finding(s) detected";
+                    BaselineSummaryText = $"Baseline completed {completedAt} • {totalPanels}/{totalPanels} panels • {totalFindings} finding(s)";
+                    BaselineSummaryColor = totalFindings > 0 ? StatusHelpers.Brush("YellowBrush") : StatusHelpers.Brush("GreenBrush");
+                    BaselineSummaryBg = totalFindings > 0 ? StatusHelpers.Brush("WarnBgBrush") : StatusHelpers.Brush("OkBgBrush");
                 }
 
                 // 10 s auto-dismiss — DispatcherTimer (UI-thread) so we can
@@ -471,6 +504,7 @@ namespace Pulse.WPF.ViewModels
             foreach (var item in indexed) Findings.Add(item.Item1);
 
             RebuildFindingViews();
+            UpdateTileStatuses();
             UpdatePill();
         }
 
@@ -557,14 +591,19 @@ namespace Pulse.WPF.ViewModels
         {
             TopFindings.Clear();
             OverflowFindings.Clear();
+            CommandFindings.Clear();
             int n = 0;
             foreach (var f in Findings)
             {
                 if (n < ActiveFindingsCap) TopFindings.Add(f);
                 else                       OverflowFindings.Add(f);
+                if (n < CommandFindingsCap) CommandFindings.Add(f);
                 n++;
             }
             OverflowFindingsCount = OverflowFindings.Count;
+            CommandOverflowFindingsCount = Math.Max(0, Findings.Count - CommandFindings.Count);
+            OnPropertyChanged(nameof(HasFindings));
+            OnPropertyChanged(nameof(HasNoFindings));
         }
 
         // Started by MainViewModel when the Dashboard becomes the current view;
@@ -756,7 +795,18 @@ namespace Pulse.WPF.ViewModels
                                           LastRunSummary last)
         {
             Tiles.Clear();
-            if (tiles != null) foreach (var t in tiles) Tiles.Add(t);
+            if (tiles != null)
+            {
+                foreach (var t in tiles)
+                {
+                    if (t == null) continue;
+                    t.StatusText = "Not run";
+                    t.StatusColor = StatusHelpers.Brush("MutedForegroundBrush");
+                    t.StatusBg = StatusHelpers.Brush("BorderColBrush");
+                    Tiles.Add(t);
+                }
+            }
+            UpdateTileStatuses();
 
             if (last == null)
             {
@@ -866,12 +916,84 @@ namespace Pulse.WPF.ViewModels
             // rows — that's the same behaviour as before the v0.5.6 merge.
             Findings.Clear();
             if (s.Findings != null) foreach (var f in s.Findings) Findings.Add(f);
-            RebuildFindingViews();
 
             // Mark the first snapshot as applied so the pill stops reading
             // "Checking…" — UpdatePill respects this flag.
             _hasSnapshot = true;
+            RebuildFindingViews();
+            UpdateTileStatuses();
             UpdatePill();
+        }
+
+        private void UpdateTileStatuses()
+        {
+            if (Tiles == null) return;
+
+            foreach (var tile in Tiles)
+            {
+                if (tile == null) continue;
+
+                if (!_hasSnapshot)
+                {
+                    tile.StatusText = "Not run";
+                    tile.StatusColor = StatusHelpers.Brush("MutedForegroundBrush");
+                    tile.StatusBg = StatusHelpers.Brush("BorderColBrush");
+                    continue;
+                }
+
+                if (string.Equals(NormalizeNav(tile.TargetNav), "Reports", StringComparison.OrdinalIgnoreCase))
+                {
+                    tile.StatusText = HasLastRun ? "Evidence ready" : "No report";
+                    tile.StatusColor = HasLastRun ? StatusHelpers.Brush("InfoBrush")
+                                                 : StatusHelpers.Brush("MutedForegroundBrush");
+                    tile.StatusBg = HasLastRun ? StatusHelpers.Brush("InfoBgBrush")
+                                               : StatusHelpers.Brush("BorderColBrush");
+                    continue;
+                }
+
+                var worst = WorstFindingForTarget(tile.TargetNav);
+                if (worst == "fail")
+                {
+                    tile.StatusText = "Critical";
+                    tile.StatusColor = StatusHelpers.Brush("RedBrush");
+                    tile.StatusBg = StatusHelpers.Brush("ErrBgBrush");
+                }
+                else if (worst == "warn")
+                {
+                    tile.StatusText = "Warning";
+                    tile.StatusColor = StatusHelpers.Brush("YellowBrush");
+                    tile.StatusBg = StatusHelpers.Brush("WarnBgBrush");
+                }
+                else
+                {
+                    tile.StatusText = "Healthy";
+                    tile.StatusColor = StatusHelpers.Brush("GreenBrush");
+                    tile.StatusBg = StatusHelpers.Brush("OkBgBrush");
+                }
+            }
+        }
+
+        private string WorstFindingForTarget(string targetNav)
+        {
+            var target = NormalizeNav(targetNav);
+            string worst = "";
+            foreach (var f in Findings)
+            {
+                if (f == null) continue;
+                if (!string.Equals(NormalizeNav(f.TargetNav), target, StringComparison.OrdinalIgnoreCase)) continue;
+                if (f.Severity == "fail") return "fail";
+                if (f.Severity == "warn") worst = "warn";
+            }
+            return worst;
+        }
+
+        private static string NormalizeNav(string nav)
+        {
+            if (string.IsNullOrWhiteSpace(nav)) return "";
+            var trimmed = nav.Trim();
+            if (string.Equals(trimmed, "Events", StringComparison.OrdinalIgnoreCase)) return "EventViewer";
+            if (string.Equals(trimmed, "Disk", StringComparison.OrdinalIgnoreCase)) return "DiskHealth";
+            return trimmed;
         }
 
         // Pill reflects the worst Finding severity. Four states, in order of
@@ -966,6 +1088,7 @@ namespace Pulse.WPF.ViewModels
             {
                 IsLastRunEmpty = true;
                 OnPropertyChanged(nameof(HasLastRun));
+                UpdateTileStatuses();
                 return;
             }
             IsLastRunEmpty = false;
@@ -973,6 +1096,7 @@ namespace Pulse.WPF.ViewModels
             if (timestamp.HasValue) LastRunWhen = timestamp.Value.ToString("MMM d, h:mm tt");
             if (string.IsNullOrEmpty(LastRunResult) || LastRunResult == "—") LastRunResult = "Saved report";
             if (!string.IsNullOrEmpty(sizeLabel)) LastRunSummary = $"Bundle: {fileName} ({sizeLabel})";
+            UpdateTileStatuses();
         }
 
         // Filename of the on-disk report that the breadcrumb should
