@@ -34,7 +34,8 @@ namespace Pulse.WPF.ViewModels
         // exponential backoff, so we deliberately don't stop it on every
         // panel-leave — the panel pattern matches CameraConnectivity's
         // "always-on monitor" approach.
-        private readonly Pulse.WPF.Helpers.ScoreConnectLiveClient _liveClient;
+        private Pulse.WPF.Helpers.ScoreConnectLiveClient _liveClient;
+        private string _liveClientBaseUrl = "";
         private bool _liveStarted;
 
         // ---- Bindings ----
@@ -135,8 +136,8 @@ namespace Pulse.WPF.ViewModels
         public ICommand RefreshCommand { get; }
         public ICommand OpenScoreConnectGuiCommand { get; }
 
-        // Phase 3 wires real edit dialogs onto these — Phase 2 ships stub
-        // commands so the View bindings resolve cleanly.
+        // Edit commands open guarded picker dialogs and require a second
+        // confirmation before writing to ScoreConnect III.
         public ICommand EditVendorCommand { get; protected set; }
         public ICommand EditSportCommand { get; protected set; }
         public ICommand EditConfigurationCommand { get; protected set; }
@@ -148,9 +149,8 @@ namespace Pulse.WPF.ViewModels
             // The HTTP base URL comes from the service so the WS scheme /
             // host stays in lockstep with however the operator configured
             // ScoreConnect III in settings.json.
-            _liveClient = new Pulse.WPF.Helpers.ScoreConnectLiveClient(_svc.BaseUrl);
-            _liveClient.MessageReceived += OnLiveMessageReceived;
-            _liveClient.ConnectionStateChanged += OnLiveConnectionStateChanged;
+            CreateLiveClient(_svc.BaseUrl);
+            AppSettings.Instance.ScoreConnectUrlChanged += OnScoreConnectUrlChanged;
 
             RefreshCommand = new AsyncCommand(RefreshAsync);
             OpenScoreConnectGuiCommand = new RelayCommand(OpenScoreConnectGui);
@@ -162,6 +162,44 @@ namespace Pulse.WPF.ViewModels
             EditSportCommand         = new AsyncCommand(EditSportAsync);
             EditConfigurationCommand = new AsyncCommand(EditConfigurationAsync);
             EditDecoderCommand       = new AsyncCommand(EditDecoderAsync);
+        }
+
+        private void OnScoreConnectUrlChanged(string url)
+        {
+            AppLogFile.Instance.WriteLine("ScoreConnect", "Info",
+                $"ScoreConnect URL changed -> {url}");
+            _ = RefreshAsync();
+        }
+
+        private void CreateLiveClient(string baseUrl)
+        {
+            _liveClient = new Pulse.WPF.Helpers.ScoreConnectLiveClient(baseUrl);
+            _liveClientBaseUrl = baseUrl ?? "";
+            _liveClient.MessageReceived += OnLiveMessageReceived;
+            _liveClient.ConnectionStateChanged += OnLiveConnectionStateChanged;
+        }
+
+        private async Task EnsureLiveClientBaseUrlAsync()
+        {
+            var baseUrl = _svc.BaseUrl;
+            if (_liveClient != null &&
+                string.Equals(_liveClientBaseUrl, baseUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var old = _liveClient;
+            if (old != null)
+            {
+                old.MessageReceived -= OnLiveMessageReceived;
+                old.ConnectionStateChanged -= OnLiveConnectionStateChanged;
+                try { await old.StopAsync().ConfigureAwait(false); } catch { }
+                try { old.Dispose(); } catch { }
+            }
+
+            CreateLiveClient(baseUrl);
+            _liveStarted = false;
+            System.Windows.Application.Current?.Dispatcher.Invoke(() => LiveConnected = false);
         }
 
         // ---------- Phase 3: write flows ----------
@@ -463,6 +501,7 @@ namespace Pulse.WPF.ViewModels
 
         public async Task RefreshAsync()
         {
+            await EnsureLiveClientBaseUrlAsync().ConfigureAwait(false);
             ClearLogsAndFindings();
             ClearRecommendations();
             AddLog("", "Score Connect", "Section");
@@ -749,7 +788,7 @@ namespace Pulse.WPF.ViewModels
 
         private void OpenScoreConnectGui()
         {
-            var url = Status?.BaseUrl ?? AppSettings.Instance.ScoreConnectUrl;
+            var url = _svc.BaseUrl;
             try
             {
                 Process.Start(new ProcessStartInfo

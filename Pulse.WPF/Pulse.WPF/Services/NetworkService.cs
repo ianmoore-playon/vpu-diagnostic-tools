@@ -439,6 +439,7 @@ namespace Pulse.WPF.Services
                 Port = s.Port,
                 Host = s.Host,
                 Reliable = s.Reliable,
+                Optional = s.Optional,
                 Purpose = s.Purpose,
                 Note = s.Note,
             };

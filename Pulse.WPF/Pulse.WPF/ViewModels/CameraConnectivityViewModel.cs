@@ -1071,7 +1071,7 @@ namespace Pulse.WPF.ViewModels
             {
                 // Suppress — the recommendation row is already on screen so
                 // the user knows what was supposed to happen. We don't have a
-                // reliable toast surface in the WPF pilot yet.
+                // reliable toast surface for this helper path yet.
             }
         }
 

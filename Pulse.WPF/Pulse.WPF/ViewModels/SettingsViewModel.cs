@@ -89,7 +89,7 @@ namespace Pulse.WPF.ViewModels
             // Mirror the canonical value back into the field so a trailing
             // slash typed by the user is normalised in the textbox.
             ScoreConnectUrl = AppSettings.Instance.ScoreConnectUrl;
-            ShowToast(ok ? "Saved" : "Saved in-session (disk write failed)");
+            ShowToast(ok ? "Saved - Score Connect uses this URL" : "Saved in-session - Score Connect uses this URL");
         }
 
         private void SafeOpen(string path)

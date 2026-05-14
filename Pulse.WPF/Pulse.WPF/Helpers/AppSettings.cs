@@ -34,6 +34,11 @@ namespace Pulse.WPF.Helpers
         /// via the <c>scoreConnectUrl</c> key in settings.json.</summary>
         public string ScoreConnectUrl { get; private set; } = DefaultScoreConnectUrl;
 
+        /// <summary>Raised when the ScoreConnect URL changes at runtime so
+        /// the Score Connect panel can re-probe without requiring an app
+        /// restart.</summary>
+        public event Action<string> ScoreConnectUrlChanged;
+
         /// <summary>v0.6.7 — write-side mutator used by the Settings panel.
         /// Persists the new URL to settings.json. Returns true on a clean
         /// write, false on IO failure (the in-memory value is updated either
@@ -41,7 +46,9 @@ namespace Pulse.WPF.Helpers
         /// if the disk write fails on a locked-down box).</summary>
         public bool SetScoreConnectUrl(string url)
         {
-            ScoreConnectUrl = (url ?? DefaultScoreConnectUrl).Trim().TrimEnd('/');
+            var next = NormaliseScoreConnectUrl(url);
+            var changed = !string.Equals(ScoreConnectUrl, next, StringComparison.OrdinalIgnoreCase);
+            ScoreConnectUrl = next;
             try
             {
                 // Minimal hand-written JSON to match the existing flat-object
@@ -50,10 +57,12 @@ namespace Pulse.WPF.Helpers
                 var escaped = ScoreConnectUrl.Replace("\\", "\\\\").Replace("\"", "\\\"");
                 var payload = "{\n  \"scoreConnectUrl\": \"" + escaped + "\"\n}\n";
                 File.WriteAllText(SettingsPath, payload, Encoding.UTF8);
+                if (changed) RaiseScoreConnectUrlChanged();
                 return true;
             }
             catch
             {
+                if (changed) RaiseScoreConnectUrlChanged();
                 return false;
             }
         }
@@ -84,7 +93,7 @@ namespace Pulse.WPF.Helpers
                 var url = JsonScrape.String(text, "scoreConnectUrl");
                 if (!string.IsNullOrWhiteSpace(url))
                 {
-                    ScoreConnectUrl = url.TrimEnd('/');
+                    ScoreConnectUrl = NormaliseScoreConnectUrl(url);
                 }
             }
             catch
@@ -92,6 +101,18 @@ namespace Pulse.WPF.Helpers
                 // A malformed settings file mustn't crash the diagnostic tool;
                 // fall back to the compiled defaults silently.
             }
+        }
+
+        private static string NormaliseScoreConnectUrl(string url)
+        {
+            var s = (url ?? DefaultScoreConnectUrl).Trim().TrimEnd('/');
+            return string.IsNullOrWhiteSpace(s) ? DefaultScoreConnectUrl : s;
+        }
+
+        private void RaiseScoreConnectUrlChanged()
+        {
+            try { ScoreConnectUrlChanged?.Invoke(ScoreConnectUrl); }
+            catch { /* subscriber bugs must not block settings persistence */ }
         }
     }
 }

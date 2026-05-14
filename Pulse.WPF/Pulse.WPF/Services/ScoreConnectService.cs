@@ -61,16 +61,17 @@ namespace Pulse.WPF.Services
         private const string V2Cfg = "api/v2/configuration";
 
         private readonly HttpClient _http;
-        private readonly string _baseUrl;
 
-        public string BaseUrl => _baseUrl;
+        public string BaseUrl => CurrentBaseUrl;
 
         public ScoreConnectService(HttpClient http)
         {
             _http = http ?? throw new ArgumentNullException(nameof(http));
-            _baseUrl = (AppSettings.Instance.ScoreConnectUrl ??
-                        AppSettings.DefaultScoreConnectUrl).TrimEnd('/');
         }
+
+        private static string CurrentBaseUrl =>
+            (AppSettings.Instance.ScoreConnectUrl ??
+             AppSettings.DefaultScoreConnectUrl).TrimEnd('/');
 
         // ---------- Probe ----------
 
@@ -78,7 +79,7 @@ namespace Pulse.WPF.Services
         {
             var status = new ScoreConnectStatus
             {
-                BaseUrl = _baseUrl,
+                BaseUrl = BaseUrl,
                 LastProbedAt = DateTime.Now,
                 IsDetected = false,
             };
@@ -592,7 +593,7 @@ namespace Pulse.WPF.Services
         private async Task<(bool ok, string body, string error)> TryGetOneAsync(
             string path, int timeoutMs)
         {
-            var url = JoinUrl(_baseUrl, path);
+            var url = JoinUrl(BaseUrl, path);
             using (var cts = new CancellationTokenSource(timeoutMs))
             {
                 try
@@ -626,7 +627,7 @@ namespace Pulse.WPF.Services
 
         private async Task<bool> PostAsync(string path, string body)
         {
-            var url = JoinUrl(_baseUrl, path);
+            var url = JoinUrl(BaseUrl, path);
             using (var cts = new CancellationTokenSource(WriteTimeoutMs))
             {
                 try
