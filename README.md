@@ -1,9 +1,10 @@
 # Pulse — Pixellot VPU Diagnostic Tool
 
 A WPF diagnostic tool for Pixellot VPU field support. Covers camera-NIC and
-cable health, network connectivity, Pixellot services, hardware, disk &
-system health, the Windows event log, and a Reports panel — all live, with
-plain-language next-step guidance and a per-panel Recommended Actions card.
+cable health, network connectivity, Pixellot services, system overview
+hardware/peripherals, disk health, the Windows event log, and a Reports panel
+with support bundles — all live, with plain-language next-step guidance and
+per-panel Recommended Actions.
 
 The active development line is **`Pulse.WPF/`** — a C# / WPF .NET Framework
 4.8 project. There is no longer a separate PowerShell / WinForms tool;
