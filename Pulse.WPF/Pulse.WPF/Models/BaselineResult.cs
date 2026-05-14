@@ -21,7 +21,7 @@ namespace Pulse.WPF.Models
 
         /// <summary>Display names of failed panels, in the order they
         /// were attempted. Used by the banner to compose a short list
-        /// for tier-1 ("Network, Hardware failed").</summary>
+        /// for tier-1 ("Network, Event Viewer failed").</summary>
         public List<string> FailedPanels { get; set; } = new List<string>();
 
         /// <summary>End-to-end wall time. Used for the AppLogFile summary

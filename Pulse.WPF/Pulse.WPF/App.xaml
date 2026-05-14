@@ -49,9 +49,6 @@
             <DataTemplate DataType="{x:Type vm:NetworkViewModel}">
                 <views:NetworkView />
             </DataTemplate>
-            <DataTemplate DataType="{x:Type vm:HardwareViewModel}">
-                <views:HardwareView />
-            </DataTemplate>
             <DataTemplate DataType="{x:Type vm:ServicesViewModel}">
                 <views:ServicesView />
             </DataTemplate>

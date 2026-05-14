@@ -76,7 +76,7 @@ namespace Pulse.WPF.Models
     /// is the engineer-facing technical line shown on hover (binds to
     /// ToolTip on the row). Severity drives the dot colour; TargetNav is
     /// the SidebarNav key clicking the row should navigate to ("Network",
-    /// "Hardware", "Services", "DiskHealth", "Camera"). Source is kept for
+    /// "SystemOverview", "Services", "DiskHealth", "Camera"). Source is kept for
     /// telemetry / debugging — not rendered on the row anymore.
     /// </summary>
     public class DashboardFinding

@@ -37,7 +37,6 @@ namespace Pulse.WPF.Helpers
         private readonly NetworkViewModel _network;
         private readonly CameraConnectivityViewModel _camera;
         private readonly ServicesViewModel _services;
-        private readonly HardwareViewModel _hardware;
         private readonly DiskHealthViewModel _diskHealth;
         private readonly EventViewerViewModel _eventViewer;
         // v0.6.0 — ScoreConnect III panel. Joins Phase 1 because its probe
@@ -73,7 +72,6 @@ namespace Pulse.WPF.Helpers
             NetworkViewModel network,
             CameraConnectivityViewModel camera,
             ServicesViewModel services,
-            HardwareViewModel hardware,
             DiskHealthViewModel diskHealth,
             EventViewerViewModel eventViewer,
             ScoreConnectViewModel scoreConnect)
@@ -83,7 +81,6 @@ namespace Pulse.WPF.Helpers
             _network        = network        ?? throw new ArgumentNullException(nameof(network));
             _camera         = camera         ?? throw new ArgumentNullException(nameof(camera));
             _services       = services       ?? throw new ArgumentNullException(nameof(services));
-            _hardware       = hardware       ?? throw new ArgumentNullException(nameof(hardware));
             _diskHealth     = diskHealth     ?? throw new ArgumentNullException(nameof(diskHealth));
             _eventViewer    = eventViewer    ?? throw new ArgumentNullException(nameof(eventViewer));
             _scoreConnect   = scoreConnect   ?? throw new ArgumentNullException(nameof(scoreConnect));
@@ -112,26 +109,25 @@ namespace Pulse.WPF.Helpers
 
             var sw = Stopwatch.StartNew();
             var result = new BaselineResult();
-            // Total = 8 panels (Phase 1 = 6 with ScoreConnect, Phase 2 = 1,
+            // Total = 7 panels (Phase 1 = 5 with ScoreConnect, Phase 2 = 1,
             // Phase 3 = 1) + Dashboard. Dashboard is intentionally counted in
-            // the total so the banner reads "(9/9 done)" on completion,
+            // the total so the banner reads "(8/8 done)" on completion,
             // matching the user's mental model.
-            PanelsTotal = 9;
+            PanelsTotal = 8;
             PanelsCompleted = 0;
 
             AppLogFile.Instance.WriteLine("Baseline", "Section",
-                "Baseline run starting (9 panels)");
+                "Baseline run starting (8 panels)");
 
             try
             {
                 // ---- Phase 1: cheap WMI reads in parallel ----
-                // SystemOverview, Hardware, Disk Health, Services, Event Viewer.
+                // SystemOverview, Disk Health, Services, Event Viewer.
                 // Each call is independently wrapped — one failure doesn't
                 // poison the others. Task.WhenAll then awaits the lot.
                 var phase1 = new[]
                 {
                     InvokePanelAsync("System Overview", () => _systemOverview.RefreshAsync(), result, ct),
-                    InvokePanelAsync("Hardware",        () => _hardware.RefreshAsync(),       result, ct),
                     InvokePanelAsync("Disk Health",     () => _diskHealth.RefreshAsync(),     result, ct),
                     InvokePanelAsync("Services",        () => _services.RefreshAsync(),       result, ct),
                     InvokePanelAsync("Event Viewer",    () => _eventViewer.RefreshAsync(),    result, ct),

@@ -15,7 +15,7 @@ namespace Pulse.WPF.ViewModels
     /// Dashboard (home) panel VM. Renders the one-page snapshot returned by
     /// IDashboardService.CollectSnapshotAsync — identity, gauges, NIC ports,
     /// network config, services, volumes, and rolled-up findings — plus the
-    /// 8-tile Quick Nav row at the bottom for getting to a specific panel.
+    /// Quick Nav row at the bottom for getting to a specific panel.
     /// </summary>
     public class DashboardViewModel : ObservableObject
     {
@@ -483,10 +483,10 @@ namespace Pulse.WPF.ViewModels
 
             // Order here defines the panel-order tie-break for equal
             // severities. Mirrors the sidebar / dashboard quick-nav order.
+            Merge("System Overview", "SystemOverview", mvm.SystemOverview?.Findings);
             Merge("Network",       "Network",      mvm.Network?.Findings);
             Merge("Camera",        "Camera",       mvm.Camera?.Findings);
             Merge("ScoreConnect",  "ScoreConnect", mvm.ScoreConnect?.Findings);
-            Merge("Hardware",      "Hardware",     mvm.Hardware?.Findings);
             Merge("Services",      "Services",     mvm.Services?.Findings);
             Merge("Disk Health",   "DiskHealth",   mvm.DiskHealth?.Findings);
             Merge("Event Viewer",  "EventViewer",  mvm.EventViewer?.Findings);
@@ -522,10 +522,10 @@ namespace Pulse.WPF.ViewModels
             if (f == null) return false;
             if (f.FromBaseline) return true;
             var title = f.Title ?? "";
-            return title.StartsWith("[Network]", StringComparison.OrdinalIgnoreCase)
+            return title.StartsWith("[System Overview]", StringComparison.OrdinalIgnoreCase)
+                || title.StartsWith("[Network]", StringComparison.OrdinalIgnoreCase)
                 || title.StartsWith("[Camera]", StringComparison.OrdinalIgnoreCase)
                 || title.StartsWith("[ScoreConnect]", StringComparison.OrdinalIgnoreCase)
-                || title.StartsWith("[Hardware]", StringComparison.OrdinalIgnoreCase)
                 || title.StartsWith("[Services]", StringComparison.OrdinalIgnoreCase)
                 || title.StartsWith("[Disk Health]", StringComparison.OrdinalIgnoreCase)
                 || title.StartsWith("[Event Viewer]", StringComparison.OrdinalIgnoreCase);
@@ -1011,6 +1011,7 @@ namespace Pulse.WPF.ViewModels
             var trimmed = nav.Trim();
             if (string.Equals(trimmed, "Events", StringComparison.OrdinalIgnoreCase)) return "EventViewer";
             if (string.Equals(trimmed, "Disk", StringComparison.OrdinalIgnoreCase)) return "DiskHealth";
+            if (string.Equals(trimmed, "Hardware", StringComparison.OrdinalIgnoreCase)) return "SystemOverview";
             return trimmed;
         }
 

@@ -19,13 +19,15 @@ namespace Pulse.WPF.ViewModels
     /// "System Information" tab. Six summary cards across the top
     /// (Model / OS / Uptime / CPU / RAM / Storage), then a structured
     /// per-card layout (Identity / Pixellot Software / Processor / Memory /
-    /// Graphics / Storage / OS &amp; Locale / Network adapters / Software
-    /// Inventory) per UX_REVIEW round 2 §3. All data sourced from
-    /// ISystemOverviewService.Collect().
+    /// Graphics / Hardware &amp; Peripherals / Storage / OS &amp; Locale /
+    /// Network adapters / Software Inventory) per UX_REVIEW round 2 §3.
+    /// Inventory data comes from ISystemOverviewService.Collect(); live
+    /// peripherals and PoE status are merged from IHardwareService.
     /// </summary>
     public class SystemOverviewViewModel : ObservableObject
     {
         private readonly ISystemOverviewService _svc;
+        private readonly IHardwareService _hardware;
         private readonly ReportWriter _reportWriter = new ReportWriter();
 
         // ---- Top-row summary cards ------------------------------------------
@@ -84,6 +86,31 @@ namespace Pulse.WPF.ViewModels
         public ObservableCollection<NicInventoryRow> NetworkAdapters { get; } =
             new ObservableCollection<NicInventoryRow>();
 
+        // ---- Hardware & Peripherals (merged from former standalone panel) ---
+        public ObservableCollection<PoePortReading> PoePorts { get; } =
+            new ObservableCollection<PoePortReading>();
+        public ObservableCollection<Finding> Findings { get; } =
+            new ObservableCollection<Finding>();
+        public bool HasFindings => Findings.Count > 0;
+
+        private string _gpuName = "—";
+        public string GpuName { get => _gpuName; set => Set(ref _gpuName, value); }
+
+        private string _monitorStatus = "—";
+        public string MonitorStatus { get => _monitorStatus; set => Set(ref _monitorStatus, value); }
+
+        private string _inputStatus = "—";
+        public string InputStatus { get => _inputStatus; set => Set(ref _inputStatus, value); }
+
+        private bool _poeAvailable;
+        public bool PoeAvailable { get => _poeAvailable; set => Set(ref _poeAvailable, value); }
+
+        private string _poeUnavailableReason = "";
+        public string PoeUnavailableReason { get => _poeUnavailableReason; set => Set(ref _poeUnavailableReason, value); }
+
+        private string _poeBudgetW = "—";
+        public string PoeBudgetW { get => _poeBudgetW; set => Set(ref _poeBudgetW, value); }
+
         // ---- Software Inventory (collapsible) -------------------------------
         // Default: collapsed; shows total + flagged. Expanded: searchable
         // DataGrid bound to AllAppsView (filtered by SearchTerm).
@@ -125,9 +152,10 @@ namespace Pulse.WPF.ViewModels
         public ICommand RefreshCommand { get; }
         public ICommand CopyAsTextCommand { get; }
 
-        public SystemOverviewViewModel(ISystemOverviewService svc)
+        public SystemOverviewViewModel(ISystemOverviewService svc, IHardwareService hardware = null)
         {
             _svc = svc;
+            _hardware = hardware ?? new HardwareService();
             RefreshCommand = new AsyncCommand(RefreshAsync);
             CopyAsTextCommand = new RelayCommand(CopyInventoryToClipboard);
 
@@ -147,6 +175,7 @@ namespace Pulse.WPF.ViewModels
             return Task.Run(() =>
             {
                 var snap = _svc.Collect();
+                var peripherals = CollectPeripheralSnapshot();
                 System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                 {
                     var c = snap.Cards;
@@ -184,6 +213,7 @@ namespace Pulse.WPF.ViewModels
                     SoftwareFlagged = snap.SoftwareInventory.FlaggedCount;
                     AllAppsView.Refresh();
 
+                    ApplyPeripheralSnapshot(peripherals);
                     UpdatePillFromCards(c);
                 });
 
@@ -205,6 +235,107 @@ namespace Pulse.WPF.ViewModels
             });
         }
 
+        private PeripheralSnapshot CollectPeripheralSnapshot()
+        {
+            var snap = new PeripheralSnapshot();
+            if (_hardware == null)
+            {
+                snap.PoeAvailable = false;
+                snap.PoeUnavailableReason = "Hardware service unavailable.";
+                return snap;
+            }
+
+            try { snap.GpuName = _hardware.GetGpuName(); }
+            catch { snap.GpuName = "Query failed"; }
+
+            try { snap.MonitorCount = _hardware.GetMonitorCount(); }
+            catch { snap.MonitorCount = 0; }
+
+            try { snap.MousePresent = _hardware.HasMouse(); }
+            catch { snap.MousePresent = false; }
+
+            try { snap.KeyboardPresent = _hardware.HasKeyboard(); }
+            catch { snap.KeyboardPresent = false; }
+
+            try
+            {
+                snap.PoeAvailable = _hardware.PoeTelemetryAvailable;
+                snap.PoeUnavailableReason = _hardware.PoeTelemetryUnavailableReason ?? "";
+            }
+            catch
+            {
+                snap.PoeAvailable = false;
+                snap.PoeUnavailableReason = "PoE telemetry query failed.";
+            }
+
+            if (snap.PoeAvailable)
+            {
+                try { snap.PoeBudget = _hardware.GetPoeBudget(); } catch { }
+                try { snap.PoePorts = _hardware.GetPoePortReadings() ?? new System.Collections.Generic.List<PoePortReading>(); }
+                catch { snap.PoePorts = new System.Collections.Generic.List<PoePortReading>(); }
+            }
+
+            return snap;
+        }
+
+        private void ApplyPeripheralSnapshot(PeripheralSnapshot snap)
+        {
+            if (snap == null) snap = new PeripheralSnapshot();
+
+            GpuName = string.IsNullOrWhiteSpace(snap.GpuName) ? "—" : snap.GpuName;
+            MonitorStatus = snap.MonitorCount > 0 ? $"{snap.MonitorCount} connected" : "None detected";
+            InputStatus = $"Mouse: {(snap.MousePresent ? "OK" : "missing")} / Keyboard: {(snap.KeyboardPresent ? "OK" : "missing")}";
+
+            PoePorts.Clear();
+            foreach (var p in snap.PoePorts ?? new System.Collections.Generic.List<PoePortReading>()) PoePorts.Add(p);
+            PoeAvailable = snap.PoeAvailable;
+            PoeUnavailableReason = snap.PoeUnavailableReason ?? "";
+            if (snap.PoeAvailable && snap.PoeBudget != null && snap.PoeBudget.TotalW > 0)
+            {
+                PoeBudgetW = $"Budget: {snap.PoeBudget.TotalW:F0} W  ({snap.PoeBudget.ConsumedW:F1} W used / {snap.PoeBudget.RemainingW:F1} W free)";
+            }
+            else
+            {
+                PoeBudgetW = snap.PoeAvailable ? "Budget: —" : "Budget: unavailable";
+            }
+
+            Findings.Clear();
+            if (snap.PoeAvailable && snap.PoeBudget != null && snap.PoeBudget.Low)
+            {
+                Findings.Add(Finding.Create(
+                    "Warning",
+                    $"PoE budget low: {snap.PoeBudget.TotalW:F0} W",
+                    "Total power budget is below the 55 W minimum — the Molex power connector on the PoE NIC may be disconnected.",
+                    "PoE"));
+            }
+
+            if (snap.MonitorCount == 0)
+            {
+                Findings.Add(Finding.Create(
+                    "Warning",
+                    "No monitor detected",
+                    "Confirm the display cable is seated; without a monitor the VPU cannot show local diagnostics.",
+                    "Peripherals"));
+            }
+            if (!snap.MousePresent)
+            {
+                Findings.Add(Finding.Create(
+                    "Warning",
+                    "Mouse not detected",
+                    "Plug in a USB mouse so on-site techs can interact with the VPU.",
+                    "Peripherals"));
+            }
+            if (!snap.KeyboardPresent)
+            {
+                Findings.Add(Finding.Create(
+                    "Warning",
+                    "Keyboard not detected",
+                    "Plug in a USB keyboard for local sign-in.",
+                    "Peripherals"));
+            }
+            OnPropertyChanged(nameof(HasFindings));
+        }
+
         private static Brush StatusForTier(string tier)
         {
             switch (tier)
@@ -218,6 +349,18 @@ namespace Pulse.WPF.ViewModels
 
         private void UpdatePillFromCards(SystemOverviewCards c)
         {
+            int crit = Findings.Count(f => f.Severity == FindingSeverity.Critical);
+            int warn = Findings.Count(f => f.Severity == FindingSeverity.Warning);
+            if (crit > 0 || warn > 0)
+            {
+                var worstFinding = crit > 0 ? "Critical" : "Warning";
+                var pill = StatusHelpers.PillFor(worstFinding, warn, crit);
+                StatusLabel = pill.Label;
+                StatusColor = pill.Fg;
+                StatusBg = pill.Bg;
+                return;
+            }
+
             string worst = "ok";
             int rank = 1;
             foreach (var t in new[] { c.ModelStatus, c.OsStatus, c.UptimeStatus, c.CpuStatus, c.RamStatus, c.StorageStatus })
@@ -353,6 +496,36 @@ namespace Pulse.WPF.ViewModels
                 gpuN++;
             }
 
+            // Hardware & Peripherals
+            sb.AppendLine();
+            sb.AppendLine("== Hardware & Peripherals ==");
+            Kv(sb, "Primary GPU", GpuName);
+            Kv(sb, "Monitor",     MonitorStatus);
+            Kv(sb, "Input",       InputStatus);
+
+            sb.AppendLine();
+            sb.AppendLine("== PoE ==");
+            Kv(sb, "Available", PoeAvailable ? "yes" : "no");
+            if (!PoeAvailable && !string.IsNullOrEmpty(PoeUnavailableReason))
+                Kv(sb, "Reason", PoeUnavailableReason);
+            Kv(sb, "Budget", PoeBudgetW);
+            if (PoeAvailable && PoePorts.Count > 0)
+            {
+                foreach (var p in PoePorts)
+                {
+                    var state = p.PoeOn ? "PoE ON" : "PoE OFF";
+                    Kv(sb, p.Port, $"{p.Voltage}  {p.Current}  {p.Wattage}  [{state}]");
+                }
+            }
+
+            if (Findings.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("== System Overview Findings ==");
+                foreach (var f in Findings)
+                    sb.AppendLine($"  [{f.Severity}] {f.Title}\n      -> {f.Recommendation}");
+            }
+
             // Storage
             sb.AppendLine();
             sb.AppendLine("== Storage Devices ==");
@@ -437,6 +610,19 @@ namespace Pulse.WPF.ViewModels
                 timer.Stop();
             };
             timer.Start();
+        }
+
+        private class PeripheralSnapshot
+        {
+            public string GpuName { get; set; } = "—";
+            public int MonitorCount { get; set; }
+            public bool MousePresent { get; set; }
+            public bool KeyboardPresent { get; set; }
+            public bool PoeAvailable { get; set; }
+            public string PoeUnavailableReason { get; set; } = "";
+            public PoeBudgetReading PoeBudget { get; set; }
+            public System.Collections.Generic.List<PoePortReading> PoePorts { get; set; } =
+                new System.Collections.Generic.List<PoePortReading>();
         }
     }
 }

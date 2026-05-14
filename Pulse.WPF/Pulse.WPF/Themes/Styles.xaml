@@ -400,8 +400,8 @@
     <!-- v0.6.5 — global default DataGridColumnHeader style.            -->
     <!--                                                                -->
     <!-- Field tech on VPU2 reported column headers rendering           -->
-    <!-- white-on-white (invisible) inside the Hardware / Services /    -->
-    <!-- Disk Health DataGrids — those views set                        -->
+    <!-- white-on-white (invisible) inside the Services / Disk Health   -->
+    <!-- DataGrids — those views set                                    -->
     <!-- `ColumnHeaderStyle="{x:Null}"`, defeating the                  -->
     <!-- MaterialDesignThemes default which assumed a light surface.    -->
     <!--                                                                -->

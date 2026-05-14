@@ -4,7 +4,7 @@ using Pulse.WPF.Models;
 namespace Pulse.WPF.Services
 {
     /// <summary>
-    /// Hardware panel data source. Pure C# port of PoeNicHardware.psm1
+    /// System Overview hardware/peripherals data source. Pure C# port of PoeNicHardware.psm1
     /// excluding the PoE telemetry — that requires the Camera Connectivity
     /// runspace's NIC driver shim, which is out of scope for the WPF backend
     /// rewrite. PoE readings stay empty until the Camera Connectivity
