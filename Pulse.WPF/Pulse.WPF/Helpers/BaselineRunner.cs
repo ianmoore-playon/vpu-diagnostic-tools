@@ -94,7 +94,7 @@ namespace Pulse.WPF.Helpers
         /// Task.Run at startup or directly from the Re-run command. Returns
         /// once the Completed event has been raised.
         /// </summary>
-        public async Task RunAsync(CancellationToken ct = default)
+        public async Task RunAsync(CancellationToken ct = default, bool startupNetworkReadinessGuard = false)
         {
             // Single-instance guard. Concurrent invocation is treated as a
             // benign no-op (the operator hit Re-run while a startup run was
@@ -150,9 +150,11 @@ namespace Pulse.WPF.Helpers
                 // Don't parallelise with Phase 1 — the probe + parallel WMI
                 // saturate small fanless VPU boards. Use RunTestAsync (not
                 // RefreshAsync) so this matches what the panel's "Run Test"
-                // button does.
+                // button does. The startup kick enables a short readiness guard
+                // so route/DNS settling doesn't produce a false all-failed
+                // Network baseline; manual re-runs stay immediate.
                 await InvokePanelAsync("Network",
-                    () => _network.RunTestAsync(), result, ct).ConfigureAwait(false);
+                    () => _network.RunTestAsync(startupNetworkReadinessGuard), result, ct).ConfigureAwait(false);
 
                 if (ct.IsCancellationRequested) { result.Cancelled = true; goto Finish; }
 

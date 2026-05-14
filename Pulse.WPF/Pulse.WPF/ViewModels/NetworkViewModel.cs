@@ -1,7 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -112,7 +114,12 @@ namespace Pulse.WPF.ViewModels
 
         // Run the full network diagnostic — internet check, port tests, domain tests.
         // Mirrors Start-NetDiagnostic in NetworkDiagnostics.psm1.
-        public async Task RunTestAsync()
+        public Task RunTestAsync()
+        {
+            return RunTestAsync(startupReadinessGuard: false);
+        }
+
+        public async Task RunTestAsync(bool startupReadinessGuard)
         {
             // Refresh side cards first so the user always sees current adapter state.
             await RefreshAsync().ConfigureAwait(false);
@@ -122,7 +129,9 @@ namespace Pulse.WPF.ViewModels
             AddLog("", "Connectivity", "Section");
             SetPillRunning();
 
-            var internet = await _net.CheckInternetAsync().ConfigureAwait(false);
+            var internet = startupReadinessGuard
+                ? await CheckInternetWithStartupGuardAsync().ConfigureAwait(false)
+                : await _net.CheckInternetAsync().ConfigureAwait(false);
             AddLog("Internet", internet ? "Reachable" : "No response - check uplink adapter",
                 internet ? "Pass" : "Fail");
             if (!internet)
@@ -422,6 +431,91 @@ namespace Pulse.WPF.ViewModels
         }
 
         // ----- helpers -----
+
+        private async Task<bool> CheckInternetWithStartupGuardAsync()
+        {
+            var readiness = await ProbeStartupNetworkReadinessAsync().ConfigureAwait(false);
+            var internet = readiness.Internet;
+
+            if (readiness.IsReady) return true;
+
+            AddLog("Startup",
+                "Network not ready on first baseline probe - retrying before port/DNS tests",
+                "Warn");
+
+            int[] delaysMs = { 2000, 4000 };
+            for (int i = 0; i < delaysMs.Length; i++)
+            {
+                await Task.Delay(delaysMs[i]).ConfigureAwait(false);
+                await RefreshAsync().ConfigureAwait(false);
+
+                readiness = await ProbeStartupNetworkReadinessAsync().ConfigureAwait(false);
+                internet = readiness.Internet;
+
+                if (readiness.IsReady)
+                {
+                    AddLog("Startup",
+                        $"Network ready after startup retry {i + 1}",
+                        "Pass");
+                    return true;
+                }
+            }
+
+            var detail = $"route={readiness.RouteReady}, internet={readiness.Internet}, dns={readiness.DnsReady}";
+            AddLog("Startup",
+                $"Network readiness guard expired - running with current state ({detail})",
+                "Warn");
+            return internet;
+        }
+
+        private async Task<StartupNetworkReadiness> ProbeStartupNetworkReadinessAsync()
+        {
+            var internetTask = _net.CheckInternetAsync();
+            var dnsTask = ResolveWarmupHostAsync("pixellot.tv");
+            await Task.WhenAll(internetTask, dnsTask).ConfigureAwait(false);
+
+            return new StartupNetworkReadiness
+            {
+                Internet = internetTask.Result,
+                DnsReady = dnsTask.Result,
+                RouteReady = HasUsableRoute(),
+            };
+        }
+
+        private sealed class StartupNetworkReadiness
+        {
+            public bool Internet { get; set; }
+            public bool DnsReady { get; set; }
+            public bool RouteReady { get; set; }
+            public bool IsReady => Internet && DnsReady && RouteReady;
+        }
+
+        private bool HasUsableRoute()
+        {
+            return HasValue(IpConfig?.IpAddress) &&
+                   HasValue(IpConfig?.Gateway) &&
+                   HasValue(IpConfig?.DnsServers);
+        }
+
+        private static bool HasValue(string value)
+        {
+            return !string.IsNullOrWhiteSpace(value) &&
+                   value.Trim() != "—";
+        }
+
+        private static async Task<bool> ResolveWarmupHostAsync(string host)
+        {
+            try
+            {
+                var resolve = Dns.GetHostAddressesAsync(host);
+                var done = await Task.WhenAny(resolve, Task.Delay(1500)).ConfigureAwait(false);
+                return done == resolve && resolve.Result != null && resolve.Result.Length > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
         private void OpenAdapterSettings()
         {
