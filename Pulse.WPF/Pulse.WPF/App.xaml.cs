@@ -93,7 +93,7 @@ namespace Pulse.WPF
             catch { }
             _ = Task.Run(async () =>
             {
-                try { await mvm.Baseline.RunAsync().ConfigureAwait(false); }
+                try { await mvm.Baseline.RunAsync(startupNetworkReadinessGuard: true).ConfigureAwait(false); }
                 catch (System.Exception ex)
                 {
                     try
