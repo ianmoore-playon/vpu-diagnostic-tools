@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -21,6 +22,7 @@ namespace Pulse.WPF.ViewModels
     {
         private readonly IDashboardService _svc;
         private readonly ReportWriter _reportWriter = new ReportWriter();
+        public string LastReportPath { get; private set; }
 
         // ---- Quick Nav tiles + last-run summary (kept from v0.2.0) ----------
         public ObservableCollection<HubTileViewModel> Tiles { get; } =
@@ -217,6 +219,7 @@ namespace Pulse.WPF.ViewModels
         // ---- Commands -------------------------------------------------------
         public ICommand NavigateCommand { get; }
         public ICommand OpenLastReportCommand { get; }
+        public ICommand GenerateSupportBundleCommand { get; }
         public ICommand RefreshCommand { get; }
         public Action<string> RequestNavigate { get; set; }   // wired up by MainViewModel
 
@@ -224,6 +227,7 @@ namespace Pulse.WPF.ViewModels
         // filename of the most recent report so the Reports panel can pre-
         // select it after navigation. Keeps the cross-VM coordination simple.
         public Action<string> RequestOpenReport { get; set; }
+        public Func<Task<string>> GenerateSupportBundleAsyncHook { get; set; }
 
         // True when there are no diagnostic reports on disk — drives the
         // "No diagnostic runs yet" muted empty state in the Dashboard's
@@ -249,6 +253,8 @@ namespace Pulse.WPF.ViewModels
             // CanExecute disables Open Last Report when no report exists —
             // the button used to silently no-op (rec #11 from the UX review).
             OpenLastReportCommand  = new RelayCommand(OpenLastReport, () => HasLastRun);
+            GenerateSupportBundleCommand = new AsyncCommand(GenerateSupportBundleAsync,
+                                                           () => GenerateSupportBundleAsyncHook != null);
             RefreshCommand         = new AsyncCommand(RefreshAsync);
             // Re-run only fires when a baseline isn't already in flight —
             // BaselineRunner has its own re-entrancy guard but disabling
@@ -335,6 +341,44 @@ namespace Pulse.WPF.ViewModels
             System.Windows.Input.CommandManager.InvalidateRequerySuggested();
         }
 
+        public void ApplyPersistedBaseline(BaselineSnapshot snapshot)
+        {
+            if (snapshot == null) return;
+            void apply()
+            {
+                if (IsBaselineRunning) return;
+                var completedAt = snapshot.CompletedAtLocal.ToString("MMM d, h:mm tt");
+                var totalPanels = snapshot.PanelsTotal > 0 ? snapshot.PanelsTotal : 8;
+                BaselineSummaryText =
+                    $"Last baseline {completedAt} • {snapshot.CompletedCount}/{totalPanels} panels • {snapshot.FindingCount} finding(s)";
+
+                if (snapshot.CriticalFindingCount > 0)
+                {
+                    BaselineSummaryColor = StatusHelpers.Brush("RedBrush");
+                    BaselineSummaryBg = StatusHelpers.Brush("ErrBgBrush");
+                }
+                else if (snapshot.Cancelled || snapshot.FailedCount > 0)
+                {
+                    BaselineSummaryColor = StatusHelpers.Brush("YellowBrush");
+                    BaselineSummaryBg = StatusHelpers.Brush("WarnBgBrush");
+                }
+                else if (snapshot.WarningFindingCount > 0)
+                {
+                    BaselineSummaryColor = StatusHelpers.Brush("YellowBrush");
+                    BaselineSummaryBg = StatusHelpers.Brush("WarnBgBrush");
+                }
+                else
+                {
+                    BaselineSummaryColor = StatusHelpers.Brush("GreenBrush");
+                    BaselineSummaryBg = StatusHelpers.Brush("OkBgBrush");
+                }
+            }
+
+            var app = System.Windows.Application.Current;
+            if (app != null && app.Dispatcher.CheckAccess()) apply();
+            else app?.Dispatcher.Invoke(apply);
+        }
+
         // ProgressChanged fires on a background thread (from BaselineRunner's
         // own Task) — marshal onto the dispatcher because we touch observable
         // properties that the UI binds to.
@@ -371,8 +415,14 @@ namespace Pulse.WPF.ViewModels
                 // for the top-10 inline list.
                 AggregateBaselineFindings();
 
-                var totalFindings = Findings.Count;
-                var totalPanels = r.CompletedCount + r.FailedCount;
+                var snapshot = r.Snapshot;
+                var totalFindings = snapshot != null ? snapshot.FindingCount : Findings.Count;
+                var totalPanels = snapshot != null && snapshot.PanelsTotal > 0
+                    ? snapshot.PanelsTotal
+                    : r.CompletedCount + r.FailedCount;
+                var criticalFindings = snapshot != null
+                    ? snapshot.CriticalFindingCount
+                    : CountFindingsBySeverity("fail");
                 var completedAt = DateTime.Now.ToString("h:mm tt");
                 if (r.Cancelled)
                 {
@@ -395,8 +445,12 @@ namespace Pulse.WPF.ViewModels
                 {
                     BaselineResultText = $"Baseline complete — {totalFindings} finding(s) detected";
                     BaselineSummaryText = $"Baseline completed {completedAt} • {totalPanels}/{totalPanels} panels • {totalFindings} finding(s)";
-                    BaselineSummaryColor = totalFindings > 0 ? StatusHelpers.Brush("YellowBrush") : StatusHelpers.Brush("GreenBrush");
-                    BaselineSummaryBg = totalFindings > 0 ? StatusHelpers.Brush("WarnBgBrush") : StatusHelpers.Brush("OkBgBrush");
+                    BaselineSummaryColor = criticalFindings > 0
+                        ? StatusHelpers.Brush("RedBrush")
+                        : (totalFindings > 0 ? StatusHelpers.Brush("YellowBrush") : StatusHelpers.Brush("GreenBrush"));
+                    BaselineSummaryBg = criticalFindings > 0
+                        ? StatusHelpers.Brush("ErrBgBrush")
+                        : (totalFindings > 0 ? StatusHelpers.Brush("WarnBgBrush") : StatusHelpers.Brush("OkBgBrush"));
                 }
 
                 // 10 s auto-dismiss — DispatcherTimer (UI-thread) so we can
@@ -423,6 +477,17 @@ namespace Pulse.WPF.ViewModels
             if (_bannerAutoDismissTimer == null) return;
             try { _bannerAutoDismissTimer.Stop(); } catch { }
             _bannerAutoDismissTimer = null;
+        }
+
+        private int CountFindingsBySeverity(string severity)
+        {
+            int count = 0;
+            foreach (var f in Findings)
+            {
+                if (f != null && string.Equals(f.Severity, severity, StringComparison.OrdinalIgnoreCase))
+                    count++;
+            }
+            return count;
         }
 
         // Walk every panel VM's Findings collection, project each into a
@@ -591,6 +656,49 @@ namespace Pulse.WPF.ViewModels
             }).ConfigureAwait(false);
         }
 
+        private async Task GenerateSupportBundleAsync()
+        {
+            if (GenerateSupportBundleAsyncHook == null)
+            {
+                AddLog("Support bundle generator is not ready.", "Warn");
+                return;
+            }
+
+            try
+            {
+                BaselineSummaryText = "Generating support bundle…";
+                BaselineSummaryColor = StatusHelpers.Brush("InfoBrush");
+                BaselineSummaryBg = StatusHelpers.Brush("InfoBgBrush");
+
+                var path = await GenerateSupportBundleAsyncHook();
+                var fileName = string.IsNullOrEmpty(path) ? "" : Path.GetFileName(path);
+                BaselineSummaryText = string.IsNullOrEmpty(fileName)
+                    ? "Support bundle created"
+                    : $"Support bundle created • {fileName}";
+                BaselineSummaryColor = StatusHelpers.Brush("InfoBrush");
+                BaselineSummaryBg = StatusHelpers.Brush("InfoBgBrush");
+                AddLog(string.IsNullOrEmpty(fileName)
+                    ? "Support bundle created."
+                    : $"Support bundle created: {fileName}", "Pass");
+
+                if (!string.IsNullOrEmpty(fileName))
+                    RequestOpenReport?.Invoke(fileName);
+            }
+            catch (Exception ex)
+            {
+                BaselineSummaryText = $"Support bundle failed • {ex.Message}";
+                BaselineSummaryColor = StatusHelpers.Brush("RedBrush");
+                BaselineSummaryBg = StatusHelpers.Brush("ErrBgBrush");
+                AddLog($"Support bundle failed: {ex.Message}", "Fail");
+                try
+                {
+                    AppLogFile.Instance.WriteLine("Dashboard", "Fail",
+                        $"Support bundle failed: {ex.Message}");
+                }
+                catch { }
+            }
+        }
+
         /// <summary>
         /// Re-derive <see cref="TopFindings"/> + <see cref="OverflowFindings"/>
         /// from the current <see cref="Findings"/> collection. Caller must
@@ -714,8 +822,11 @@ namespace Pulse.WPF.ViewModels
                 {
                     var path = _reportWriter.Save("Dashboard", BuildReportText());
                     if (!string.IsNullOrEmpty(path))
+                    {
+                        LastReportPath = path;
                         AppLogFile.Instance.WriteLine("Dashboard", "Info",
                             $"Report saved: {path}");
+                    }
                 }
                 catch { }
             });
@@ -1083,7 +1194,11 @@ namespace Pulse.WPF.ViewModels
                 return;
             }
 
-            if (string.IsNullOrEmpty(_lastReportPath)) return;
+            if (string.IsNullOrEmpty(_lastReportPath))
+            {
+                AddLog("No saved report is available to open.", "Warn");
+                return;
+            }
             try
             {
                 var psi = new ProcessStartInfo(_lastReportPath) { UseShellExecute = true };
@@ -1093,7 +1208,11 @@ namespace Pulse.WPF.ViewModels
             {
                 // ShellExecute can fail when no association exists — fall
                 // back to Notepad explicitly so the click is never lost.
-                try { Process.Start("notepad.exe", _lastReportPath); } catch { }
+                try { Process.Start("notepad.exe", _lastReportPath); }
+                catch (Exception ex)
+                {
+                    AddLog($"Failed to open report: {ex.Message}", "Fail");
+                }
             }
         }
 

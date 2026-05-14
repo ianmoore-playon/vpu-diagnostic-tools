@@ -31,6 +31,15 @@
                 </StackPanel>
             </Border>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Command="{Binding GenerateSupportBundleCommand}"
+                        Style="{StaticResource TopBarPrimaryButton}"
+                        ToolTip="Create a support bundle with the latest baseline, panel reports, and app log.">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <md:PackIcon Kind="FileDocumentOutline" Width="16" Height="16" VerticalAlignment="Center"
+                                     Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="Support Bundle" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
                 <Button Command="{Binding OpenFolderCommand}"
                         Style="{StaticResource TopBarOutlinedButton}"
                         ToolTip="Open the reports folder in Windows Explorer.">
@@ -63,6 +72,13 @@
                 <TextBlock Text="Past diagnostic-run snapshots — pick one on the left to read its full contents"
                            Style="{StaticResource PageSubtitle}"
                            TextTrimming="CharacterEllipsis" MaxWidth="640" />
+                <TextBlock Text="{Binding ActionStatus}"
+                           Foreground="{StaticResource MutedForegroundBrush}"
+                           FontSize="{StaticResource FontSize.Small}"
+                           Margin="0,4,0,0"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="640"
+                           Visibility="{Binding ActionStatus, Converter={StaticResource StringToVis}}" />
             </StackPanel>
         </DockPanel>
 

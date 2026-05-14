@@ -51,6 +51,13 @@ namespace Pulse.WPF.ViewModels
             set => Set(ref _selectedReportContent, value);
         }
 
+        private string _actionStatus = "";
+        public string ActionStatus
+        {
+            get => _actionStatus;
+            set => Set(ref _actionStatus, value);
+        }
+
         // Used by the Dashboard's "Open Last Report" command to pre-select
         // a specific bundle once Reports finishes loading. Cleared after
         // use so a subsequent visit doesn't fight the user's selection.
@@ -80,15 +87,19 @@ namespace Pulse.WPF.ViewModels
 
         // ---- Commands ----------------------------------------------------
         public ICommand RefreshCommand { get; }
+        public ICommand GenerateSupportBundleCommand { get; }
         public ICommand OpenFolderCommand { get; }
         public ICommand DeleteCommand { get; }
         public ICommand OpenLogsFolderCommand { get; }
         public ICommand OpenTodayLogCommand { get; }
+        public Func<Task<string>> GenerateSupportBundleAsyncHook { get; set; }
 
         public ReportsViewModel(IReportsService svc)
         {
             _svc = svc;
             RefreshCommand        = new AsyncCommand(RefreshAsync);
+            GenerateSupportBundleCommand = new AsyncCommand(GenerateSupportBundleAsync,
+                                                           () => GenerateSupportBundleAsyncHook != null);
             OpenFolderCommand     = new RelayCommand(OpenFolder);
             DeleteCommand         = new RelayCommand(DeleteSelected, () => _selectedReport != null);
             OpenLogsFolderCommand = new RelayCommand(OpenLogsFolder);
@@ -193,8 +204,12 @@ namespace Pulse.WPF.ViewModels
                 if (!Directory.Exists(_svc.ReportsDirectory)) Directory.CreateDirectory(_svc.ReportsDirectory);
                 var psi = new ProcessStartInfo(_svc.ReportsDirectory) { UseShellExecute = true };
                 Process.Start(psi);
+                SetActionStatus($"Opened reports folder: {_svc.ReportsDirectory}");
             }
-            catch { /* shell could be unavailable on a stripped-down image */ }
+            catch (Exception ex)
+            {
+                SetActionStatus($"Couldn't open reports folder: {ex.Message}");
+            }
         }
 
         private void OpenLogsFolder()
@@ -202,12 +217,20 @@ namespace Pulse.WPF.ViewModels
             try
             {
                 var dir = _svc.LogsDirectory;
-                if (string.IsNullOrEmpty(dir)) return;
+                if (string.IsNullOrEmpty(dir))
+                {
+                    SetActionStatus("Log folder is not available.");
+                    return;
+                }
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
                 var psi = new ProcessStartInfo(dir) { UseShellExecute = true };
                 Process.Start(psi);
+                SetActionStatus($"Opened logs folder: {dir}");
             }
-            catch { /* shell unavailable / locked-down image */ }
+            catch (Exception ex)
+            {
+                SetActionStatus($"Couldn't open logs folder: {ex.Message}");
+            }
         }
 
         private void OpenTodayLog()
@@ -215,22 +238,40 @@ namespace Pulse.WPF.ViewModels
             try
             {
                 var path = _svc.TodayLogPath;
-                if (string.IsNullOrEmpty(path)) return;
+                if (string.IsNullOrEmpty(path))
+                {
+                    SetActionStatus("Today's log path is not available.");
+                    return;
+                }
                 // The file may not exist yet if no log lines have been written
                 // today — create an empty stub so Notepad has something to
                 // open rather than throwing a "file not found" dialog.
                 if (!File.Exists(path))
                 {
-                    try { File.WriteAllText(path, ""); } catch { return; }
+                    try { File.WriteAllText(path, ""); }
+                    catch (Exception ex)
+                    {
+                        SetActionStatus($"Couldn't create today's log file: {ex.Message}");
+                        return;
+                    }
                 }
                 var psi = new ProcessStartInfo(path) { UseShellExecute = true };
                 Process.Start(psi);
+                SetActionStatus($"Opened today's log: {Path.GetFileName(path)}");
             }
             catch
             {
                 // ShellExecute can fail for .log files when no association
                 // exists — explicit Notepad fallback so the click is never lost.
-                try { Process.Start("notepad.exe", _svc.TodayLogPath); } catch { }
+                try
+                {
+                    Process.Start("notepad.exe", _svc.TodayLogPath);
+                    SetActionStatus($"Opened today's log: {Path.GetFileName(_svc.TodayLogPath)}");
+                }
+                catch (Exception ex)
+                {
+                    SetActionStatus($"Couldn't open today's log: {ex.Message}");
+                }
             }
         }
 
@@ -253,7 +294,47 @@ namespace Pulse.WPF.ViewModels
                 SelectedReportContent = "";
                 OnPropertyChanged(nameof(HasNoReports));
                 UpdatePill();
+                SetActionStatus($"Deleted report: {sel.FileName}");
             }
+            else
+            {
+                SetActionStatus($"Couldn't delete report: {sel.FileName}");
+            }
+        }
+
+        private async Task GenerateSupportBundleAsync()
+        {
+            if (GenerateSupportBundleAsyncHook == null)
+            {
+                SetActionStatus("Support bundle generator is not ready.");
+                return;
+            }
+
+            SetActionStatus("Generating support bundle…");
+            try
+            {
+                var path = await GenerateSupportBundleAsyncHook();
+                var fileName = string.IsNullOrEmpty(path) ? "" : Path.GetFileName(path);
+                SetActionStatus(string.IsNullOrEmpty(fileName)
+                    ? "Support bundle created."
+                    : $"Support bundle created: {fileName}");
+                await RefreshAsync();
+                if (!string.IsNullOrEmpty(fileName)) PreselectFileName = fileName;
+            }
+            catch (Exception ex)
+            {
+                SetActionStatus($"Support bundle failed: {ex.Message}");
+            }
+        }
+
+        private void SetActionStatus(string message)
+        {
+            ActionStatus = message ?? "";
+            try
+            {
+                AppLogFile.Instance.WriteLine("Reports", "Info", ActionStatus);
+            }
+            catch { }
         }
     }
 }

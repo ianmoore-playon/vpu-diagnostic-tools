@@ -5,10 +5,8 @@ namespace Pulse.WPF.Models
 {
     /// <summary>
     /// One saved diagnostic-run snapshot, listed in the Reports panel.
-    /// Bundles are plain .txt files in %LOCALAPPDATA%\Pulse.WPF\Reports —
-    /// produced today by the System Overview "Copy as text" path and the
-    /// per-panel Live Log "Copy" actions; later by the real diagnostic
-    /// engine.
+    /// Bundles are text reports or zipped support packages under
+    /// %LOCALAPPDATA%\Pulse.WPF\Reports.
     ///
     /// Pre-computes TimestampLabel + SizeLabel so the ListBox's DataTemplate
     /// can bind without converters.

@@ -25,6 +25,7 @@ namespace Pulse.WPF.ViewModels
     {
         private readonly IEventViewerService _svc;
         private readonly ReportWriter _reportWriter = new ReportWriter();
+        public string LastReportPath { get; private set; }
 
         // ---- Findings + recommendations banner --------------------------
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
@@ -180,8 +181,11 @@ namespace Pulse.WPF.ViewModels
                 {
                     var path = _reportWriter.Save("EventViewer", BuildReportText());
                     if (!string.IsNullOrEmpty(path))
+                    {
+                        LastReportPath = path;
                         AppLogFile.Instance.WriteLine("EventViewer", "Info",
                             $"Report saved: {path}");
+                    }
                 }
                 catch { }
             });
@@ -347,14 +351,23 @@ namespace Pulse.WPF.ViewModels
             return false;
         }
 
-        private static void OpenWindowsEventViewer()
+        private void OpenWindowsEventViewer()
         {
             try
             {
                 var psi = new ProcessStartInfo("eventvwr.msc") { UseShellExecute = true };
                 Process.Start(psi);
+                AppLogFile.Instance.WriteLine("EventViewer", "Info",
+                    "Opened Windows Event Viewer.");
             }
-            catch { /* Locked-down boxes may not allow MMC snap-ins. */ }
+            catch (Exception ex)
+            {
+                StatusLabel = "Event Viewer blocked";
+                StatusColor = StatusHelpers.Brush("RedBrush");
+                StatusBg = StatusHelpers.Brush("ErrBgBrush");
+                AppLogFile.Instance.WriteLine("EventViewer", "Fail",
+                    $"Failed to open Windows Event Viewer: {ex.Message}");
+            }
         }
     }
 }

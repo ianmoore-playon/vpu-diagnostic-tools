@@ -5,7 +5,7 @@ using Pulse.WPF.Models;
 namespace Pulse.WPF.Services
 {
     /// <summary>
-    /// Enumerates and reads saved diagnostic-run reports living under
+    /// Enumerates and reads saved diagnostic-run reports and support bundles living under
     /// %LOCALAPPDATA%\Pulse.WPF\Reports. Implementations must never throw
     /// from IO — the panel falls back to an empty state.
     /// </summary>

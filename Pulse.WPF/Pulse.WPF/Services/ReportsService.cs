@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Threading.Tasks;
 using Pulse.WPF.Helpers;
@@ -9,7 +10,7 @@ using Pulse.WPF.Models;
 namespace Pulse.WPF.Services
 {
     /// <summary>
-    /// Reads .txt / .json report bundles from %LOCALAPPDATA%\Pulse.WPF\Reports.
+    /// Reads .txt / .json / .zip report bundles from %LOCALAPPDATA%\Pulse.WPF\Reports.
     /// Creates the directory on first use; all IO is wrapped in try/catch
     /// so the panel always renders even on a locked-down profile.
     /// </summary>
@@ -81,6 +82,8 @@ namespace Pulse.WPF.Services
                 {
                     var path = Path.Combine(ReportsDirectory, fileName);
                     if (!File.Exists(path)) return "(report file no longer exists)";
+                    if (string.Equals(Path.GetExtension(path), ".zip", StringComparison.OrdinalIgnoreCase))
+                        return ReadZipSummary(path);
                     return File.ReadAllText(path);
                 }
                 catch (Exception ex)
@@ -103,7 +106,7 @@ namespace Pulse.WPF.Services
             return AppLogFile.Instance.ReadTodayTail(count);
         }
 
-        /// <summary>Prune .txt / .json / .log reports older than the cutoff.
+        /// <summary>Prune .txt / .json / .log / .zip reports older than the cutoff.
         /// The MaxReports cap stays as a secondary safety net.</summary>
         public void CleanupOlderThan(int days)
         {
@@ -145,13 +148,16 @@ namespace Pulse.WPF.Services
         private static bool IsReportFile(string path)
         {
             var ext = (Path.GetExtension(path) ?? "").ToLowerInvariant();
-            return ext == ".txt" || ext == ".json" || ext == ".log";
+            return ext == ".txt" || ext == ".json" || ext == ".log" || ext == ".zip";
         }
 
         private static string ReadPreview(string path)
         {
             try
             {
+                if (string.Equals(Path.GetExtension(path), ".zip", StringComparison.OrdinalIgnoreCase))
+                    return ReadZipSummary(path, 200).Replace("\r", " ").Replace("\n", " ").Trim();
+
                 // Read first ~200 chars without slurping a multi-megabyte file.
                 using (var sr = new StreamReader(path))
                 {
@@ -163,6 +169,29 @@ namespace Pulse.WPF.Services
                 }
             }
             catch { return ""; }
+        }
+
+        private static string ReadZipSummary(string path, int maxChars = 0)
+        {
+            try
+            {
+                using (var zip = ZipFile.OpenRead(path))
+                {
+                    var entry = zip.GetEntry("Pulse-Support-Summary.txt");
+                    if (entry == null) return "(support bundle summary not found)";
+                    using (var sr = new StreamReader(entry.Open()))
+                    {
+                        if (maxChars <= 0) return sr.ReadToEnd();
+                        var buf = new char[maxChars];
+                        var read = sr.ReadBlock(buf, 0, buf.Length);
+                        return read <= 0 ? "" : new string(buf, 0, read);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return $"(failed to read support bundle summary: {ex.Message})";
+            }
         }
     }
 }

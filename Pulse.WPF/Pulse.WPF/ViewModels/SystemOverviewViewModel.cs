@@ -29,6 +29,7 @@ namespace Pulse.WPF.ViewModels
         private readonly ISystemOverviewService _svc;
         private readonly IHardwareService _hardware;
         private readonly ReportWriter _reportWriter = new ReportWriter();
+        public string LastReportPath { get; private set; }
 
         // ---- Top-row summary cards ------------------------------------------
         private string _modelTitle = "—";
@@ -227,8 +228,11 @@ namespace Pulse.WPF.ViewModels
                     {
                         var path = _reportWriter.Save("SystemOverview", BuildReportText());
                         if (!string.IsNullOrEmpty(path))
+                        {
+                            LastReportPath = path;
                             AppLogFile.Instance.WriteLine("SystemOverview", "Info",
                                 $"Report saved: {path}");
+                        }
                     }
                     catch { }
                 });

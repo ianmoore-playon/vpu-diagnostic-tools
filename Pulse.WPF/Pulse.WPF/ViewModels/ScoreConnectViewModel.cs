@@ -114,6 +114,7 @@ namespace Pulse.WPF.ViewModels
 
         public PanelLogger Logger { get; } = new PanelLogger("ScoreConnect");
         private readonly ReportWriter _reportWriter = new ReportWriter();
+        public string LastReportPath { get; private set; }
         public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
         public ObservableCollection<NetworkRecommendation> Recommendations { get; }
@@ -985,8 +986,11 @@ namespace Pulse.WPF.ViewModels
                 {
                     var path = _reportWriter.Save("ScoreConnect", BuildReportText());
                     if (!string.IsNullOrEmpty(path))
+                    {
+                        LastReportPath = path;
                         AppLogFile.Instance.WriteLine("ScoreConnect", "Info",
                             $"Report saved: {path}");
+                    }
                 });
             }
             catch { }

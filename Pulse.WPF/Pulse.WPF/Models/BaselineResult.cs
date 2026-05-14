@@ -32,5 +32,9 @@ namespace Pulse.WPF.Models
         /// CancellationToken before all panels finished. Banner reads this
         /// to swap the "complete" caption to "cancelled".</summary>
         public bool Cancelled { get; set; }
+
+        /// <summary>Persisted baseline snapshot built from the same panel
+        /// Findings collections the Dashboard renders after completion.</summary>
+        public BaselineSnapshot Snapshot { get; set; }
     }
 }

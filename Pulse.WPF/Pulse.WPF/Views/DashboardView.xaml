@@ -275,6 +275,16 @@
                             <TextBlock Text="Run All Diagnostics" Margin="6,0,0,0" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
+                    <Button Command="{Binding GenerateSupportBundleCommand}"
+                            Style="{StaticResource TopBarOutlinedButton}"
+                            Margin="0,0,8,0"
+                            ToolTip="Create a support bundle with the latest baseline, panel reports, and app log.">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="FileDocumentOutline" Width="16" Height="16" VerticalAlignment="Center"
+                                         Foreground="{StaticResource AccentBrush}" />
+                            <TextBlock Text="Support Bundle" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                     <Button Command="{Binding RefreshCommand}"
                             Style="{StaticResource TopBarPrimaryButton}"
                             ToolTip="Refresh the Dashboard snapshot without running every panel test.">
