@@ -5,7 +5,7 @@
         xmlns:vm="clr-namespace:Pulse.WPF.ViewModels"
         xmlns:views="clr-namespace:Pulse.WPF.Views"
         xmlns:helpers="clr-namespace:Pulse.WPF.Helpers"
-        Title="Pulse — Pixellot Unified Live System Evaluator (WPF Pilot)"
+        Title="Pulse — Pixellot Unified Live System Evaluator"
         Width="1500" Height="850" MinWidth="1180" MinHeight="720"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource AppBgBrush}"

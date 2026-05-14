@@ -68,8 +68,9 @@ namespace Pulse.WPF.Services
 
         // ---- Settings surface ----
 
-        /// <summary>Current base URL the service is probing. Surfaced to the
-        /// VM so the Service Status card can show "where am I looking".</summary>
+        /// <summary>Current base URL the service is probing. This reflects
+        /// the runtime Settings value, so saving a new URL does not require
+        /// restarting Pulse.</summary>
         string BaseUrl { get; }
     }
 }

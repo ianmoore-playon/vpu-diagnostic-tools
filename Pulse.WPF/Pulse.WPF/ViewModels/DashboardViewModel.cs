@@ -392,17 +392,31 @@ namespace Pulse.WPF.ViewModels
         }
 
         // Walk every panel VM's Findings collection, project each into a
-        // DashboardFinding tagged with [Panel] prefix, append to Findings,
-        // sort by severity descending, then rebuild Top/Overflow views.
-        // Panel-order tie-break: appended in fixed sequence below so a stable
-        // sort within severity preserves it.
+        // DashboardFinding tagged with [Panel] prefix, replace the previous
+        // baseline merge, sort by severity descending, then rebuild
+        // Top/Overflow views. Panel-order tie-break: appended in fixed
+        // sequence below so equal severities keep the sidebar order.
         private void AggregateBaselineFindings()
         {
-            // Don't blow away DashboardService's own findings — instead merge
-            // panel findings onto the existing list. The downstream
-            // RebuildFindingViews() applies the 10-cap.
+            // Keep DashboardService's own findings, but remove the previous
+            // panel-finding projection before adding the new baseline result.
+            // Without this, every baseline re-run stacks another copy of the
+            // same "[Network] ..." / "[Disk Health] ..." rows.
+            var retained = new System.Collections.Generic.List<DashboardFinding>();
+            foreach (var f in Findings)
+            {
+                if (f == null || IsBaselineAggregate(f)) continue;
+                retained.Add(f);
+            }
+            Findings.Clear();
+            foreach (var f in retained) Findings.Add(f);
+
             var mvm = ResolveMainViewModel();
             if (mvm == null) { RebuildFindingViews(); return; }
+
+            var seen = new System.Collections.Generic.HashSet<string>(
+                System.StringComparer.OrdinalIgnoreCase);
+            foreach (var f in Findings) seen.Add(FindingKey(f));
 
             // Helper local to project + append.
             void Merge(string panelLabel, string targetNav,
@@ -412,14 +426,16 @@ namespace Pulse.WPF.ViewModels
                 foreach (var f in src)
                 {
                     if (f == null) continue;
-                    Findings.Add(new DashboardFinding
+                    var projected = new DashboardFinding
                     {
                         Severity  = MapFindingSeverity(f.Severity),
                         Title     = $"[{panelLabel}] {f.Title}",
                         Detail    = f.Recommendation ?? "",
                         Source    = panelLabel,
                         TargetNav = targetNav ?? "",
-                    });
+                        FromBaseline = true,
+                    };
+                    if (seen.Add(FindingKey(projected))) Findings.Add(projected);
                 }
             }
 
@@ -434,23 +450,53 @@ namespace Pulse.WPF.ViewModels
             Merge("Event Viewer",  "EventViewer",  mvm.EventViewer?.Findings);
 
             // Stable severity sort (Critical first, Warning, Info/neutral,
-            // ok). Use IndexOf to preserve append order for ties.
-            var snapshot = new System.Collections.Generic.List<DashboardFinding>(Findings);
+            // ok) while preserving append order for ties.
+            var indexed = new System.Collections.Generic.List<System.Tuple<DashboardFinding, int>>();
+            int ordinal = 0;
+            foreach (var f in Findings)
+            {
+                indexed.Add(System.Tuple.Create(f, ordinal++));
+            }
             int Rank(string s) =>
                 s == "fail" ? 3 :
                 s == "warn" ? 2 :
                 s == "ok"   ? 1 :
                               0;
-            snapshot.Sort((a, b) =>
+            indexed.Sort((a, b) =>
             {
-                int diff = Rank(b.Severity) - Rank(a.Severity);
-                return diff;
+                int diff = Rank(b.Item1.Severity) - Rank(a.Item1.Severity);
+                return diff != 0 ? diff : a.Item2 - b.Item2;
             });
             Findings.Clear();
-            foreach (var f in snapshot) Findings.Add(f);
+            foreach (var item in indexed) Findings.Add(item.Item1);
 
             RebuildFindingViews();
             UpdatePill();
+        }
+
+        private static bool IsBaselineAggregate(DashboardFinding f)
+        {
+            if (f == null) return false;
+            if (f.FromBaseline) return true;
+            var title = f.Title ?? "";
+            return title.StartsWith("[Network]", StringComparison.OrdinalIgnoreCase)
+                || title.StartsWith("[Camera]", StringComparison.OrdinalIgnoreCase)
+                || title.StartsWith("[ScoreConnect]", StringComparison.OrdinalIgnoreCase)
+                || title.StartsWith("[Hardware]", StringComparison.OrdinalIgnoreCase)
+                || title.StartsWith("[Services]", StringComparison.OrdinalIgnoreCase)
+                || title.StartsWith("[Disk Health]", StringComparison.OrdinalIgnoreCase)
+                || title.StartsWith("[Event Viewer]", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string FindingKey(DashboardFinding f)
+        {
+            if (f == null) return "";
+            return string.Join("|",
+                f.Severity ?? "",
+                f.Source ?? "",
+                f.Title ?? "",
+                f.Detail ?? "",
+                f.TargetNav ?? "");
         }
 
         // DashboardFinding uses string severities ("ok"/"warn"/"fail"). Panel

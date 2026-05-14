@@ -86,5 +86,9 @@ namespace Pulse.WPF.Models
         public string Detail    { get; set; } = "";
         public string Source    { get; set; } = "";
         public string TargetNav { get; set; } = "";
+        // True when DashboardViewModel projected this from a panel's
+        // Findings collection after a baseline run. Used to replace the
+        // previous baseline merge on re-run instead of stacking duplicates.
+        public bool FromBaseline { get; set; }
     }
 }
