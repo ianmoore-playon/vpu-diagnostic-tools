@@ -1,6 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Input;
 using Pulse.WPF.Helpers;
+using Pulse.WPF.Models;
 using Pulse.WPF.Services;
 
 namespace Pulse.WPF.ViewModels
@@ -34,6 +39,8 @@ namespace Pulse.WPF.ViewModels
         // can kick the first run after the main window shows, and the
         // Dashboard re-run button can fire the same instance.
         public Pulse.WPF.Helpers.BaselineRunner Baseline { get; }
+        private readonly IReportsService _reportsService;
+        private readonly SupportBundleService _supportBundleService;
 
         // Sidebar state. SelectedNav drives CurrentView.
         // Accepts a few alias keys ("Home" → "Dashboard", "Disk" → "DiskHealth",
@@ -129,6 +136,8 @@ namespace Pulse.WPF.ViewModels
             IDiskHealthService disk = new DiskHealthService();
             IEventViewerService events = new EventViewerService();
             IReportsService reports = new ReportsService();
+            _reportsService = reports;
+            _supportBundleService = new SupportBundleService(reports.ReportsDirectory);
             // v0.6.0: shared HttpClient for the ScoreConnect HTTP API. One
             // instance lives for the lifetime of the app (recommended
             // pattern — new-per-call exhausts loopback sockets under
@@ -166,6 +175,10 @@ namespace Pulse.WPF.ViewModels
                 Dashboard, SystemOverview, Network, Camera,
                 Services, DiskHealth, EventViewer, ScoreConnect);
             Dashboard.AttachBaseline(Baseline);
+            Dashboard.ApplyPersistedBaseline(Baseline.LastSnapshot);
+            Dashboard.GenerateSupportBundleAsyncHook = GenerateSupportBundleAsync;
+            Reports.GenerateSupportBundleAsyncHook = GenerateSupportBundleAsync;
+            CommandManager.InvalidateRequerySuggested();
             // v0.6.7 — wire the Settings panel's "Run baseline now" button
             // back through the orchestrator. Kept as a Func hook so Settings
             // doesn't take a direct dependency on BaselineRunner.
@@ -247,6 +260,86 @@ namespace Pulse.WPF.ViewModels
             var top = Reports.Reports.Count > 0 ? Reports.Reports[0] : null;
             if (top == null) Dashboard.ApplyLastReport(null, null, null);
             else              Dashboard.ApplyLastReport(top.FileName, top.Timestamp, top.SizeLabel);
+        }
+
+        private async Task<string> GenerateSupportBundleAsync()
+        {
+            var snapshot = CaptureCurrentBaselineSnapshot();
+            var sections = CaptureSupportBundleSections();
+            var logLines = _reportsService.GetRecentAppLogLines(80);
+
+            var path = await Task.Run(() =>
+                _supportBundleService.Create(snapshot, sections, logLines)).ConfigureAwait(false);
+
+            if (snapshot != null)
+            {
+                snapshot.SupportBundlePath = path;
+                Baseline.SaveSnapshot(snapshot);
+            }
+
+            AppLogFile.Instance.WriteLine("Reports", "Info",
+                $"Support bundle created: {path}");
+
+            await Reports.RefreshAsync().ConfigureAwait(false);
+            var fileName = string.IsNullOrEmpty(path) ? "" : Path.GetFileName(path);
+            var app = Application.Current;
+            if (app != null)
+            {
+                app.Dispatcher.Invoke(() =>
+                {
+                    if (!string.IsNullOrEmpty(fileName)) Reports.PreselectFileName = fileName;
+                    PushTopReportToDashboard();
+                });
+            }
+            return path;
+        }
+
+        private BaselineSnapshot CaptureCurrentBaselineSnapshot()
+        {
+            BaselineSnapshot snapshot = null;
+            void collect()
+            {
+                snapshot = Baseline.CaptureCurrentSnapshot();
+            }
+
+            var app = Application.Current;
+            if (app != null && !app.Dispatcher.CheckAccess()) app.Dispatcher.Invoke(collect);
+            else collect();
+            return snapshot;
+        }
+
+        private List<SupportBundleSection> CaptureSupportBundleSections()
+        {
+            List<SupportBundleSection> sections = null;
+            void collect()
+            {
+                sections = new List<SupportBundleSection>
+                {
+                    Section("Dashboard", "Dashboard.txt", Dashboard.BuildReportText()),
+                    Section("System Overview", "SystemOverview.txt", SystemOverview.BuildReportText()),
+                    Section("Network", "Network.txt", Network.BuildReportText()),
+                    Section("Camera", "Camera.txt", Camera.BuildReportText()),
+                    Section("ScoreConnect", "ScoreConnect.txt", ScoreConnect.BuildReportText()),
+                    Section("Services", "Services.txt", Services.BuildReportText()),
+                    Section("Disk Health", "DiskHealth.txt", DiskHealth.BuildReportText()),
+                    Section("Event Viewer", "EventViewer.txt", EventViewer.BuildReportText()),
+                };
+            }
+
+            var app = Application.Current;
+            if (app != null && !app.Dispatcher.CheckAccess()) app.Dispatcher.Invoke(collect);
+            else collect();
+            return sections ?? new List<SupportBundleSection>();
+        }
+
+        private static SupportBundleSection Section(string title, string fileName, string content)
+        {
+            return new SupportBundleSection
+            {
+                Title = title,
+                FileName = fileName,
+                Content = content ?? "",
+            };
         }
 
         private static async Task SafeRefresh(System.Func<Task> refresh)

@@ -26,6 +26,7 @@ namespace Pulse.WPF.ViewModels
         // Composed via PanelLogger (v0.5.0) — shared with the four other panels.
         public PanelLogger Logger { get; } = new PanelLogger("Services");
         private readonly ReportWriter _reportWriter = new ReportWriter();
+        public string LastReportPath { get; private set; }
         public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
         public bool HasFindings => Findings.Count > 0;
@@ -309,8 +310,11 @@ namespace Pulse.WPF.ViewModels
                     {
                         var path = _reportWriter.Save("Services", BuildReportText());
                         if (!string.IsNullOrEmpty(path))
+                        {
+                            LastReportPath = path;
                             AppLogFile.Instance.WriteLine("Services", "Info",
                                 $"Report saved: {path}");
+                        }
                     }
                     catch { }
                 });

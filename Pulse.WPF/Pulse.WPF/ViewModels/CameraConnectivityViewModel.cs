@@ -76,6 +76,7 @@ namespace Pulse.WPF.ViewModels
         // current state. The rolling AppLogFile still catches every live-
         // monitor transition via PanelLogger.
         private readonly ReportWriter _reportWriter = new ReportWriter();
+        public string LastReportPath { get; private set; }
         public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding>                Findings        { get; } = new ObservableCollection<Finding>();
         public ObservableCollection<NetworkRecommendation>  Recommendations { get; } = new ObservableCollection<NetworkRecommendation>();
@@ -150,8 +151,14 @@ namespace Pulse.WPF.ViewModels
                         UseShellExecute = true,
                     };
                     Process.Start(psi);
+                    AddLog("Windows", "Opened Network and Sharing Center", "Info");
                 }
-                catch { /* same swallow as SafeStart — no toast surface yet. */ }
+                catch (Exception ex)
+                {
+                    AddLog("Windows", $"Failed to open Network and Sharing Center: {ex.Message}", "Fail");
+                    SnapshotStatus = "Could not open Network and Sharing Center.";
+                    ScheduleClearSnapshotStatus();
+                }
             });
 
             GoToNetworkCommand = new RelayCommand(() => App.NavigateToTab("Network"));
@@ -176,6 +183,7 @@ namespace Pulse.WPF.ViewModels
                     var path = _reportWriter.Save("Camera", BuildReportText());
                     if (!string.IsNullOrEmpty(path))
                     {
+                        LastReportPath = path;
                         var fileName = System.IO.Path.GetFileName(path);
                         AppLogFile.Instance.WriteLine("Camera", "Info",
                             $"Snapshot saved: {path}");
@@ -1060,18 +1068,19 @@ namespace Pulse.WPF.ViewModels
             return "";
         }
 
-        private static void SafeStart(string target)
+        private void SafeStart(string target)
         {
             try
             {
                 var psi = new ProcessStartInfo(target) { UseShellExecute = true };
                 Process.Start(psi);
+                AddLog("Windows", $"Opened: {target}", "Info");
             }
-            catch
+            catch (Exception ex)
             {
-                // Suppress — the recommendation row is already on screen so
-                // the user knows what was supposed to happen. We don't have a
-                // reliable toast surface for this helper path yet.
+                AddLog("Windows", $"Failed to open {target}: {ex.Message}", "Fail");
+                SnapshotStatus = $"Could not open {target}.";
+                ScheduleClearSnapshotStatus();
             }
         }
 

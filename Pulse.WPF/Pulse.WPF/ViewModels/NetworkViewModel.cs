@@ -59,6 +59,7 @@ namespace Pulse.WPF.ViewModels
         // panels. v0.5.5: PanelName tags every line in the rolling app log.
         public PanelLogger Logger { get; } = new PanelLogger("Network");
         private readonly ReportWriter _reportWriter = new ReportWriter();
+        public string LastReportPath { get; private set; }
         public ObservableCollection<LogEntry> LogEntries => Logger.Entries;
         public ObservableCollection<Finding> Findings { get; } = new ObservableCollection<Finding>();
         public ObservableCollection<NetworkRecommendation> Recommendations { get; } = new ObservableCollection<NetworkRecommendation>();
@@ -240,8 +241,11 @@ namespace Pulse.WPF.ViewModels
                 {
                     var path = _reportWriter.Save("Network", BuildReportText());
                     if (!string.IsNullOrEmpty(path))
+                    {
+                        LastReportPath = path;
                         AppLogFile.Instance.WriteLine("Network", "Info",
                             $"Report saved: {path}");
+                    }
                 });
             }
             catch { }
@@ -519,7 +523,15 @@ namespace Pulse.WPF.ViewModels
 
         private void OpenAdapterSettings()
         {
-            try { Process.Start("ncpa.cpl"); } catch { }
+            try
+            {
+                Process.Start("ncpa.cpl");
+                AddLog("Adapter settings", "Opened Windows adapter settings", "Info");
+            }
+            catch (Exception ex)
+            {
+                AddLog("Adapter settings", $"Failed to open: {ex.Message}", "Fail");
+            }
         }
 
         private void ClearLogsAndFindings()
