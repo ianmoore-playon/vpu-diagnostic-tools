@@ -17,9 +17,8 @@ namespace Pulse.WPF.Services
     ///
     /// Behaviour when the DLL isn't installed: <see cref="IsAvailable"/>
     /// stays false and <see cref="UnavailableReason"/> contains a copy-
-    /// paste-able explanation. The Hardware panel renders that string in
-    /// an empty-state card and adds a Finding row so the tech can see
-    /// what's missing.
+    /// paste-able explanation. System Overview renders that string in the
+    /// PoE empty-state card so the tech can see what's missing.
     /// </summary>
     public sealed class WindowsPoeTelemetryService : IPoeTelemetryService, IDisposable
     {

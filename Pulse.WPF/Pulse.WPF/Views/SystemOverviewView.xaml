@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
              xmlns:vm="clr-namespace:Pulse.WPF.ViewModels"
+             xmlns:controls="clr-namespace:Pulse.WPF.Controls"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              d:DataContext="{d:DesignInstance Type=vm:SystemOverviewViewModel, IsDesignTimeCreatable=True}"
@@ -97,6 +98,7 @@
     <Grid Margin="32,24,32,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />   <!-- Section header + actions -->
+            <RowDefinition Height="Auto" />   <!-- Findings banner -->
             <RowDefinition Height="*" />      <!-- Card grid (scroll) -->
         </Grid.RowDefinitions>
 
@@ -144,6 +146,10 @@
             </StackPanel>
         </DockPanel>
 
+        <controls:FindingsBanner Grid.Row="1"
+                                 Findings="{Binding Findings}"
+                                 Margin="0,0,0,16" />
+
         <!-- v0.6.5: the 6-tile summary strip (Identity/OS/Uptime/CPU/RAM/
              Storage) was dropped per field feedback — every value here is
              repeated in the section cards below, and the strip just delayed
@@ -156,7 +162,7 @@
              Grid stretches the shorter card to match its sibling), which
              eliminates the empty right-column gaps that the prior WrapPanel
              layout produced. -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       x:Name="CardsScroll">
             <StackPanel>
@@ -423,7 +429,92 @@
                     </Border>
                 </Grid>
 
-                <!-- Row 4: Operating System & Locale (full width) -->
+                <!-- Row 4: Hardware & Peripherals (merged from former Hardware tab) -->
+                <Border Style="{StaticResource SiSectionCard}" Margin="{StaticResource Spacing.Page}">
+                    <StackPanel>
+                        <TextBlock Text="Hardware &amp; Peripherals" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                        <Grid Margin="0,4,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="16" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="16" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <DockPanel Margin="0,0,0,8">
+                                    <md:PackIcon Kind="Gpu" Width="16" Height="16"
+                                                 Foreground="{StaticResource AccentBrush}"
+                                                 VerticalAlignment="Center" />
+                                    <TextBlock Text="GPU" Style="{StaticResource SiSubHeading}" Margin="6,0,0,0" />
+                                </DockPanel>
+                                <TextBlock Text="{Binding GpuName}" Style="{StaticResource SiKvValue}" FontWeight="SemiBold" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2">
+                                <DockPanel Margin="0,0,0,8">
+                                    <md:PackIcon Kind="Monitor" Width="16" Height="16"
+                                                 Foreground="{StaticResource AccentBrush}"
+                                                 VerticalAlignment="Center" />
+                                    <TextBlock Text="Monitor" Style="{StaticResource SiSubHeading}" Margin="6,0,0,0" />
+                                </DockPanel>
+                                <TextBlock Text="{Binding MonitorStatus}" Style="{StaticResource SiKvValue}" FontWeight="SemiBold" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="4">
+                                <DockPanel Margin="0,0,0,8">
+                                    <md:PackIcon Kind="MouseVariant" Width="16" Height="16"
+                                                 Foreground="{StaticResource AccentBrush}"
+                                                 VerticalAlignment="Center" />
+                                    <TextBlock Text="Input Devices" Style="{StaticResource SiSubHeading}" Margin="6,0,0,0" />
+                                </DockPanel>
+                                <TextBlock Text="{Binding InputStatus}" Style="{StaticResource SiKvValue}" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Border BorderBrush="{StaticResource BorderColBrush}" BorderThickness="0,1,0,0" Margin="0,0,0,14" />
+                        <DockPanel Margin="0,0,0,12">
+                            <TextBlock Text="PoE Status" Style="{StaticResource SectionTitle}" />
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding PoeBudgetW}"
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       VerticalAlignment="Center" />
+                        </DockPanel>
+                        <Border Visibility="{Binding PoeAvailable, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"
+                                Background="{StaticResource WarnBgBrush}"
+                                BorderBrush="{StaticResource YellowBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="12,10"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="PoE telemetry not available"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource YellowBrush}"
+                                           Margin="0,0,0,4" />
+                                <TextBlock Text="{Binding PoeUnavailableReason}"
+                                           Foreground="{StaticResource ForegroundBrush}"
+                                           TextWrapping="Wrap"
+                                           FontSize="12" />
+                            </StackPanel>
+                        </Border>
+                        <DataGrid ItemsSource="{Binding PoePorts}"
+                                  Visibility="{Binding PoeAvailable, Converter={StaticResource BoolToVis}}"
+                                  Style="{StaticResource SiDataGrid}"
+                                  CellStyle="{StaticResource SiDataGridCell}"
+                                  ColumnHeaderStyle="{StaticResource SiDataGridHeader}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Port" Binding="{Binding Port}" Width="*" />
+                                <DataGridTextColumn Header="State" Binding="{Binding State}" Width="*" />
+                                <DataGridTextColumn Header="Voltage" Binding="{Binding Voltage}" Width="*" />
+                                <DataGridTextColumn Header="Current" Binding="{Binding Current}" Width="*" />
+                                <DataGridTextColumn Header="Wattage" Binding="{Binding Wattage}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Row 5: Operating System & Locale (full width) -->
                 <Border Style="{StaticResource SiSectionCard}" Margin="{StaticResource Spacing.Page}">
                     <StackPanel>
                         <TextBlock Text="Operating System &amp; Locale" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
@@ -485,7 +576,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Row 5: Network adapters table (full width) -->
+                <!-- Row 6: Network adapters table (full width) -->
                 <Border Style="{StaticResource SiSectionCard}" Margin="{StaticResource Spacing.Page}">
                     <StackPanel>
                         <TextBlock Text="Network adapters" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
@@ -505,7 +596,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Row 6: Software inventory (collapsible expander) -->
+                <!-- Row 7: Software inventory (collapsible expander) -->
                 <Border Style="{StaticResource SiSectionCard}" Margin="{StaticResource Spacing.Page}">
                     <StackPanel>
                         <TextBlock Text="Software inventory" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />

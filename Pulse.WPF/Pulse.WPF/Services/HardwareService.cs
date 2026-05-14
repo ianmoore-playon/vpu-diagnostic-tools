@@ -14,7 +14,7 @@ namespace Pulse.WPF.Services
     public class HardwareService : IHardwareService
     {
         // Lazy-init so a missing SmartPoE.dll doesn't fault during DI / unit
-        // tests. The Hardware panel only needs the service at refresh time.
+        // tests. System Overview only needs the service at refresh time.
         private static readonly System.Lazy<IPoeTelemetryService> _poe =
             new System.Lazy<IPoeTelemetryService>(() => new WindowsPoeTelemetryService());
 
@@ -94,7 +94,7 @@ namespace Pulse.WPF.Services
         }
 
         // PoE telemetry, real port (v0.5.0). Returns an empty list when the
-        // SmartPoE.dll driver bundle isn't installed; the Hardware VM picks
+        // SmartPoE.dll driver bundle isn't installed; System Overview picks
         // up the empty state via PoeTelemetryAvailable / Reason.
         public List<PoePortReading> GetPoePortReadings()
         {

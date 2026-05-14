@@ -19,7 +19,6 @@ namespace Pulse.WPF.ViewModels
         public NetworkViewModel Network { get; }
         public CameraConnectivityViewModel Camera { get; }
         public ServicesViewModel Services { get; }
-        public HardwareViewModel Hardware { get; }
         public DiskHealthViewModel DiskHealth { get; }
         public EventViewerViewModel EventViewer { get; }
         public ReportsViewModel Reports { get; }
@@ -71,6 +70,7 @@ namespace Pulse.WPF.ViewModels
             {
                 case "Home":           return "Dashboard";
                 case "Disk":           return "DiskHealth";
+                case "Hardware":       return "SystemOverview";
                 // The Dashboard Quick Nav tile for Event Viewer uses the
                 // legacy "Events" key from when the panel hadn't shipped —
                 // map it through here so a single rename is enough.
@@ -85,7 +85,6 @@ namespace Pulse.WPF.ViewModels
         public bool IsNetwork        => _selectedNav == "Network";
         public bool IsCamera         => _selectedNav == "Camera";
         public bool IsScoreConnect   => _selectedNav == "ScoreConnect";
-        public bool IsHardware       => _selectedNav == "Hardware";
         public bool IsServices       => _selectedNav == "Services";
         public bool IsDisk           => _selectedNav == "DiskHealth";
         public bool IsEventViewer    => _selectedNav == "EventViewer";
@@ -100,7 +99,6 @@ namespace Pulse.WPF.ViewModels
             OnPropertyChanged(nameof(IsNetwork));
             OnPropertyChanged(nameof(IsCamera));
             OnPropertyChanged(nameof(IsScoreConnect));
-            OnPropertyChanged(nameof(IsHardware));
             OnPropertyChanged(nameof(IsServices));
             OnPropertyChanged(nameof(IsDisk));
             OnPropertyChanged(nameof(IsEventViewer));
@@ -147,12 +145,11 @@ namespace Pulse.WPF.ViewModels
             ISystemOverviewService specs = new SystemOverviewService();
 
             Dashboard = new DashboardViewModel(dashboard);
-            SystemOverview = new SystemOverviewViewModel(specs);
+            SystemOverview = new SystemOverviewViewModel(specs, hw);
             Network = new NetworkViewModel(net);
             Camera = new CameraConnectivityViewModel(netAdapters, cfg);
             ScoreConnect = new ScoreConnectViewModel(scoreConnect);
             Services = new ServicesViewModel(svcs);
-            Hardware = new HardwareViewModel(hw);
             DiskHealth = new DiskHealthViewModel(disk);
             EventViewer = new EventViewerViewModel(events);
             Reports = new ReportsViewModel(reports);
@@ -167,7 +164,7 @@ namespace Pulse.WPF.ViewModels
             // kicks the first run once the main window shows.
             Baseline = new Pulse.WPF.Helpers.BaselineRunner(
                 Dashboard, SystemOverview, Network, Camera,
-                Services, Hardware, DiskHealth, EventViewer, ScoreConnect);
+                Services, DiskHealth, EventViewer, ScoreConnect);
             Dashboard.AttachBaseline(Baseline);
             // v0.6.7 — wire the Settings panel's "Run baseline now" button
             // back through the orchestrator. Kept as a Func hook so Settings
@@ -226,7 +223,6 @@ namespace Pulse.WPF.ViewModels
                 case "Camera":          CurrentView = Camera;         break; // Camera VM self-refreshes via its DispatcherTimer.
                 case "ScoreConnect":    CurrentView = ScoreConnect;   _ = SafeRefresh(ScoreConnect.RefreshAsync); break;
                 case "Services":        CurrentView = Services;       _ = SafeRefresh(Services.RefreshAsync); break;
-                case "Hardware":        CurrentView = Hardware;       _ = SafeRefresh(Hardware.RefreshAsync); break;
                 case "DiskHealth":      CurrentView = DiskHealth;     _ = SafeRefresh(DiskHealth.RefreshAsync); break;
                 case "EventViewer":     CurrentView = EventViewer;    _ = SafeRefresh(EventViewer.RefreshAsync); break;
                 case "Reports":         CurrentView = Reports;        _ = SafeRefresh(Reports.RefreshAsync); break;

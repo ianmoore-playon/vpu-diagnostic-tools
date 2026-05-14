@@ -121,15 +121,6 @@
                             </StackPanel>
                         </ToggleButton>
                         <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                      IsChecked="{Binding IsHardware, Mode=OneWay}"
-                                      Command="{Binding NavigateCommand}" CommandParameter="Hardware"
-                                      AutomationProperties.Name="Hardware and Peripherals">
-                            <StackPanel Orientation="Horizontal">
-                                <md:PackIcon Kind="Memory" Width="18" Height="18" VerticalAlignment="Center" />
-                                <TextBlock Text="Hardware &amp; Peripherals" Margin="14,0,0,0" />
-                            </StackPanel>
-                        </ToggleButton>
-                        <ToggleButton Style="{StaticResource SidebarNavButton}"
                                       IsChecked="{Binding IsServices, Mode=OneWay}"
                                       Command="{Binding NavigateCommand}" CommandParameter="Services"
                                       AutomationProperties.Name="Pixellot Services">

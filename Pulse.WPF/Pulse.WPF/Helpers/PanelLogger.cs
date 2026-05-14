@@ -5,7 +5,7 @@ namespace Pulse.WPF.Helpers
 {
     /// <summary>
     /// Live-log sink shared by the diagnostic-panel VMs (DiskHealth,
-    /// Services, Hardware, Network, Camera, EventViewer). Each VM used to
+    /// Services, Network, Camera, EventViewer). Each VM used to
     /// carry its own `AddLog` + `LogEntries` + 200-entry cap loop; extracted
     /// here in v0.5.0 so the behaviour stays consistent and adding a new
     /// panel doesn't drag the same boilerplate along.

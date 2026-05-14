@@ -7,20 +7,20 @@ namespace Pulse.WPF.Services
     /// Telemetry from the ADLINK SmartPoE NIC driver shim. The C# port of the
     /// PowerShell-side AdlinkPoE P/Invoke wrappers in Modules/UIHelpers.psm1
     /// (v0.5.0). Lives behind an interface so an unsupported host can be
-    /// faked / stubbed without touching the Hardware panel.
+    /// faked / stubbed without touching System Overview.
     /// </summary>
     public interface IPoeTelemetryService
     {
         /// <summary>
         /// True when SmartPoE.dll loaded and Register_Card succeeded. When
-        /// false, the Hardware panel renders the "driver bundle not installed"
+        /// false, System Overview renders the "driver bundle not installed"
         /// empty state instead of an empty DataGrid.
         /// </summary>
         bool IsAvailable { get; }
 
         /// <summary>
         /// Human-readable explanation for why telemetry is unavailable —
-        /// surfaced in the Hardware Findings banner. Empty when IsAvailable.
+        /// surfaced in the System Overview PoE block. Empty when IsAvailable.
         /// </summary>
         string UnavailableReason { get; }
 

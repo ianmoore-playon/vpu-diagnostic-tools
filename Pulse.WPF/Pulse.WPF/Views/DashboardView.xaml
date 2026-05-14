@@ -921,9 +921,9 @@
                                      RelativeSource, TargetNav passes through as the
                                      command parameter. -->
                                 <!-- Width bumped from 160 → 220 so the longer
-                                     titles ("Hardware & Peripherals",
-                                     "Network Configuration", "System & Disk
-                                     Health") render in full. WrapPanel still
+                                     titles ("Network Configuration",
+                                     "System & Disk Health") render in full.
+                                     WrapPanel still
                                      flows to a second row below 1200 px. -->
                                 <Button Style="{StaticResource HubTile}"
                                         Command="{Binding DataContext.NavigateCommand,

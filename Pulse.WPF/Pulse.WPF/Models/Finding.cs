@@ -83,7 +83,7 @@ namespace Pulse.WPF.Models
         /// <summary>
         /// Convenience factory that accepts the severity as a string ("Critical",
         /// "Warning", "Info"). Used by the diagnostic ViewModels (Network,
-        /// Hardware, Services, DiskHealth, SystemOverview) which build Findings
+        /// Services, DiskHealth, SystemOverview) which build Findings
         /// from service results where severity is a string.
         /// </summary>
         public static Finding Create(string severity, string title, string recommendation, string category = null)
