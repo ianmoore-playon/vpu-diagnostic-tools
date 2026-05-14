@@ -60,7 +60,7 @@
         <Setter Property="Background" Value="{StaticResource CardBgBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource BorderColBrush}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="CornerRadius" Value="6" />
         <Setter Property="Padding" Value="16" />
     </Style>
 
@@ -68,11 +68,11 @@
         <Setter Property="Background" Value="{StaticResource CardBgBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource BorderColBrush}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="CornerRadius" Value="6" />
         <Setter Property="Padding" Value="16" />
         <Setter Property="Effect">
             <Setter.Value>
-                <DropShadowEffect Color="Black" BlurRadius="12" Opacity="0.18" ShadowDepth="2" />
+                <DropShadowEffect Color="Black" BlurRadius="10" Opacity="0.10" ShadowDepth="1" />
             </Setter.Value>
         </Setter>
     </Style>
@@ -90,8 +90,16 @@
         </Setter>
     </Style>
 
-    <!-- Backwards-compat: legacy "Card" key. Existing XAML is unchanged. -->
-    <Style x:Key="Card" TargetType="Border" BasedOn="{StaticResource CardElev1}" />
+    <!-- Backwards-compat: legacy "Card" key. Existing XAML is unchanged,
+         but the default surface is now flatter and quieter. Use CardElev1/2
+         only for intentionally raised diagnostic surfaces. -->
+    <Style x:Key="Card" TargetType="Border" BasedOn="{StaticResource CardFlat}" />
+
+    <Style x:Key="DashboardHeroSurface" TargetType="Border" BasedOn="{StaticResource CardElev2}">
+        <Setter Property="Padding" Value="20" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Background" Value="{StaticResource CardBgRaisedBrush}" />
+    </Style>
 
     <!-- ============================================================ -->
     <!-- Typography — 7-step scale per UX_REVIEW Section 2.           -->
@@ -237,6 +245,37 @@
         </Setter>
     </Style>
 
+    <Style x:Key="SubsystemHealthTile" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource CardBgBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderColBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Padding" Value="12" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bg"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="bg" Property="Background" Value="{StaticResource CardBgRaisedBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ====== Service-status pill (Pixellot Services) ======
          Same shape as StatusChip but smaller, used inline in tables. -->
     <Style x:Key="StatusChipSm" TargetType="Border">
@@ -316,12 +355,19 @@
     </Style>
 
     <!-- ====== Sidebar nav button ====== -->
+    <Style x:Key="SidebarGroupLabel" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="Segoe UI Semibold" />
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Foreground" Value="{StaticResource SubtleForegroundBrush}" />
+        <Setter Property="Margin" Value="20,18,20,6" />
+    </Style>
+
     <Style x:Key="SidebarNavButton" TargetType="ToggleButton">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{StaticResource MutedForegroundBrush}" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
-        <Setter Property="Padding" Value="20,12" />
+        <Setter Property="Padding" Value="20,10" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
@@ -340,7 +386,7 @@
                             <Setter TargetName="bg" Property="Background" Value="{StaticResource SidebarHoverBrush}" />
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="bg" Property="Background" Value="{StaticResource CardBgRaisedBrush}" />
+                            <Setter TargetName="bg" Property="Background" Value="{StaticResource CardBgBrush}" />
                             <Setter TargetName="bg" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
                             <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
                         </Trigger>

@@ -23,7 +23,7 @@
     <!-- ====== Outer layout: sidebar (left) + content area (right) ====== -->
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="220" />   <!-- Sidebar nav -->
+            <ColumnDefinition Width="232" />   <!-- Sidebar nav -->
             <ColumnDefinition Width="*" />     <!-- Content -->
         </Grid.ColumnDefinitions>
 
@@ -34,7 +34,7 @@
                 AutomationProperties.Name="Primary navigation">
             <DockPanel>
                 <!-- Brand block -->
-                <StackPanel DockPanel.Dock="Top" Margin="20,24,20,32">
+                <StackPanel DockPanel.Dock="Top" Margin="20,22,20,22">
                     <StackPanel Orientation="Horizontal">
                         <md:PackIcon Kind="Pulse" Width="28" Height="28"
                                      Foreground="{StaticResource AccentBrush}"
@@ -48,8 +48,8 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Bottom-pinned utility buttons -->
-                <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,16">
+                <!-- Bottom-pinned version chrome -->
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,18">
                     <!-- Version chrome — read once from the assembly via
                          Pulse.WPF.Helpers.AppVersion. Tooltip shows the full
                          version + commit SHA when InformationalVersion was
@@ -58,26 +58,8 @@
                                ToolTip="{x:Static helpers:AppVersion.Tooltip}"
                                Foreground="{StaticResource MutedForegroundBrush}"
                                FontSize="10"
-                               Margin="22,0,0,10"
+                               Margin="22,0,0,0"
                                AutomationProperties.Name="Pulse version" />
-                    <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                  IsChecked="{Binding IsSettings, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="Settings"
-                                  AutomationProperties.Name="Settings">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="Cog" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Settings" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
-                    <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                  IsChecked="{Binding IsAbout, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="About"
-                                  AutomationProperties.Name="About Pulse">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="InformationOutline" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="About" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
                 </StackPanel>
 
                 <!-- ====== Main nav stack ======
@@ -85,116 +67,136 @@
                        - Binds IsChecked to MainViewModel.IsX (one-way OK in WPF since
                          setter triggers via Command).
                        - Binds Command + CommandParameter to NavigateCommand("Key"). -->
-                <StackPanel>
-                    <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                  IsChecked="{Binding IsHome, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="Dashboard"
-                                  AutomationProperties.Name="Dashboard">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="ViewDashboardOutline" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Dashboard" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,0,0,12">
+                        <TextBlock Text="TRIAGE" Style="{StaticResource SidebarGroupLabel}" />
+                        <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                      IsChecked="{Binding IsHome, Mode=OneWay}"
+                                      Command="{Binding NavigateCommand}" CommandParameter="Dashboard"
+                                      AutomationProperties.Name="Dashboard">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="ViewDashboardOutline" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="Dashboard" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
 
-                    <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                  IsChecked="{Binding IsSystemOverview, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="SystemOverview"
-                                  AutomationProperties.Name="System Overview">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="InformationOutline" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="System Overview" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
+                        <TextBlock Text="CONNECTIVITY" Style="{StaticResource SidebarGroupLabel}" />
+                        <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                      IsChecked="{Binding IsNetwork, Mode=OneWay}"
+                                      Command="{Binding NavigateCommand}" CommandParameter="Network"
+                                      AutomationProperties.Name="Network">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="WifiCog" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="Network" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                      IsChecked="{Binding IsCamera, Mode=OneWay}"
+                                      Command="{Binding NavigateCommand}" CommandParameter="Camera"
+                                      AutomationProperties.Name="Camera Connectivity">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="CameraOutline" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="Camera Connectivity" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                      IsChecked="{Binding IsScoreConnect, Mode=OneWay}"
+                                      Command="{Binding NavigateCommand}" CommandParameter="ScoreConnect"
+                                      AutomationProperties.Name="Score Connect">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="ScoreboardOutline" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="Score Connect" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
 
-                    <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                  IsChecked="{Binding IsNetwork, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="Network"
-                                  AutomationProperties.Name="Network">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="WifiCog" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Network" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
+                        <TextBlock Text="SYSTEM" Style="{StaticResource SidebarGroupLabel}" />
+                        <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                      IsChecked="{Binding IsSystemOverview, Mode=OneWay}"
+                                      Command="{Binding NavigateCommand}" CommandParameter="SystemOverview"
+                                      AutomationProperties.Name="System Overview">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="InformationOutline" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="System Overview" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                      IsChecked="{Binding IsHardware, Mode=OneWay}"
+                                      Command="{Binding NavigateCommand}" CommandParameter="Hardware"
+                                      AutomationProperties.Name="Hardware and Peripherals">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="Memory" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="Hardware &amp; Peripherals" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                      IsChecked="{Binding IsServices, Mode=OneWay}"
+                                      Command="{Binding NavigateCommand}" CommandParameter="Services"
+                                      AutomationProperties.Name="Pixellot Services">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="ServerNetwork" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="Pixellot Services" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                      IsChecked="{Binding IsDisk, Mode=OneWay}"
+                                      Command="{Binding NavigateCommand}" CommandParameter="Disk"
+                                      AutomationProperties.Name="Disk and System Health">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="Harddisk" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="Disk &amp; System Health" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                      IsChecked="{Binding IsEventViewer, Mode=OneWay}"
+                                      Command="{Binding NavigateCommand}" CommandParameter="EventViewer"
+                                      AutomationProperties.Name="Event Viewer">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="AlertOutline" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="Event Viewer" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
 
-                    <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                  IsChecked="{Binding IsCamera, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="Camera"
-                                  AutomationProperties.Name="Camera Connectivity">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="CameraOutline" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Camera Connectivity" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
+                        <TextBlock Text="EVIDENCE" Style="{StaticResource SidebarGroupLabel}" />
+                        <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                      IsChecked="{Binding IsReports, Mode=OneWay}"
+                                      Command="{Binding NavigateCommand}" CommandParameter="Reports"
+                                      AutomationProperties.Name="Reports">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="FileDocumentOutline" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="Reports" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
 
-                    <!-- v0.6.0 — ScoreConnect III integration panel.
-                         Positioned between Camera Connectivity and Hardware
-                         per the UX_REVIEW v0.6.0 ledger entry. -->
-                    <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                  IsChecked="{Binding IsScoreConnect, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="ScoreConnect"
-                                  AutomationProperties.Name="Score Connect">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="ScoreboardOutline" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Score Connect" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
-
-                    <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                  IsChecked="{Binding IsHardware, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="Hardware"
-                                  AutomationProperties.Name="Hardware and Peripherals">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="Memory" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Hardware &amp; Peripherals" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
-
-                    <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                  IsChecked="{Binding IsServices, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="Services"
-                                  AutomationProperties.Name="Pixellot Services">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="ServerNetwork" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Pixellot Services" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
-
-                    <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                  IsChecked="{Binding IsDisk, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="Disk"
-                                  AutomationProperties.Name="Disk and System Health">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="Harddisk" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Disk &amp; System Health" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
-
-                    <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                  IsChecked="{Binding IsEventViewer, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="EventViewer"
-                                  AutomationProperties.Name="Event Viewer">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="AlertOutline" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Event Viewer" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
-                    <ToggleButton Style="{StaticResource SidebarNavButton}"
-                                  IsChecked="{Binding IsReports, Mode=OneWay}"
-                                  Command="{Binding NavigateCommand}" CommandParameter="Reports"
-                                  AutomationProperties.Name="Reports">
-                        <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="FileDocumentOutline" Width="18" Height="18" VerticalAlignment="Center" />
-                            <TextBlock Text="Reports" Margin="14,0,0,0" />
-                        </StackPanel>
-                    </ToggleButton>
-                </StackPanel>
+                        <TextBlock Text="SETUP" Style="{StaticResource SidebarGroupLabel}" />
+                        <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                      IsChecked="{Binding IsSettings, Mode=OneWay}"
+                                      Command="{Binding NavigateCommand}" CommandParameter="Settings"
+                                      AutomationProperties.Name="Settings">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="Cog" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="Settings" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Style="{StaticResource SidebarNavButton}"
+                                      IsChecked="{Binding IsAbout, Mode=OneWay}"
+                                      Command="{Binding NavigateCommand}" CommandParameter="About"
+                                      AutomationProperties.Name="About Pulse">
+                            <StackPanel Orientation="Horizontal">
+                                <md:PackIcon Kind="InformationOutline" Width="18" Height="18" VerticalAlignment="Center" />
+                                <TextBlock Text="About" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
+                    </StackPanel>
+                </ScrollViewer>
             </DockPanel>
         </Border>
 
         <!-- ====== Content area: a single ContentControl whose Content is the
              active panel viewmodel. App.xaml owns the DataTemplate for each
              VM type, so this is the only place that knows about the panels. -->
-        <ContentControl Grid.Column="1"
-                        Content="{Binding CurrentView}" />
+        <Border Grid.Column="1" Background="{StaticResource AppBgBrush}">
+            <ContentControl Content="{Binding CurrentView}" />
+        </Border>
     </Grid>
 </Window>

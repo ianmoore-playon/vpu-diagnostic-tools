@@ -177,12 +177,60 @@
                 </StackPanel>
             </Border>
         </DataTemplate>
+
+        <DataTemplate x:Key="SubsystemTileTemplate">
+            <Button Style="{StaticResource SubsystemHealthTile}"
+                    Command="{Binding DataContext.NavigateCommand,
+                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    CommandParameter="{Binding TargetNav}"
+                    Margin="0,0,8,8"
+                    AutomationProperties.Name="{Binding Title}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <DockPanel Grid.Row="0">
+                        <Border DockPanel.Dock="Right"
+                                Background="{Binding StatusBg}"
+                                CornerRadius="9"
+                                Padding="7,2,7,2"
+                                Margin="8,0,0,0">
+                            <TextBlock Text="{Binding StatusText}"
+                                       FontFamily="Segoe UI Semibold"
+                                       FontSize="{StaticResource FontSize.Caption}"
+                                       Foreground="{Binding StatusColor}" />
+                        </Border>
+                        <md:PackIcon DockPanel.Dock="Left"
+                                     Kind="{Binding IconKind}"
+                                     Width="17" Height="17"
+                                     Foreground="{StaticResource AccentBrush}"
+                                     VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Title}"
+                                   Margin="8,0,0,0"
+                                   VerticalAlignment="Center"
+                                   FontFamily="Segoe UI Semibold"
+                                   FontSize="{StaticResource FontSize.Body}"
+                                   Foreground="{StaticResource ForegroundBrush}"
+                                   TextTrimming="CharacterEllipsis" />
+                    </DockPanel>
+                    <TextBlock Grid.Row="1"
+                               Text="{Binding Description}"
+                               Margin="0,8,0,0"
+                               Foreground="{StaticResource MutedForegroundBrush}"
+                               FontSize="{StaticResource FontSize.Small}"
+                               TextWrapping="Wrap"
+                               MaxHeight="34" />
+                </Grid>
+            </Button>
+        </DataTemplate>
     </UserControl.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />   <!-- Header strip (title + Refresh + pill) -->
+                <RowDefinition Height="Auto" />   <!-- Command center cockpit -->
                 <RowDefinition Height="Auto" />   <!-- v0.5.6 baseline banner -->
                 <RowDefinition Height="Auto" />   <!-- Empty-state card (non-VPU host) -->
                 <RowDefinition Height="Auto" />   <!-- Active Findings (top of page so issues land first) -->
@@ -220,20 +268,20 @@
                     <Button Command="{Binding RerunBaselineCommand}"
                             Style="{StaticResource TopBarOutlinedButton}"
                             Margin="0,0,8,0"
-                            ToolTip="Re-run the startup baseline across all panels.">
+                            ToolTip="Run the full diagnostics baseline across all panels.">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <md:PackIcon Kind="PlayCircleOutline" Width="16" Height="16" VerticalAlignment="Center"
                                          Foreground="{StaticResource AccentBrush}" />
-                            <TextBlock Text="Re-run Baseline" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Run All Diagnostics" Margin="6,0,0,0" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                     <Button Command="{Binding RefreshCommand}"
                             Style="{StaticResource TopBarPrimaryButton}"
-                            ToolTip="Re-run the full snapshot (NIC, services, internet, volumes).">
+                            ToolTip="Refresh the Dashboard snapshot without running every panel test.">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <md:PackIcon Kind="Refresh" Width="16" Height="16" VerticalAlignment="Center"
                                          Foreground="{StaticResource AccentBrush}" />
-                            <TextBlock Text="Refresh" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Refresh Dashboard" Margin="6,0,0,0" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                 </StackPanel>
@@ -246,6 +294,163 @@
                 </StackPanel>
             </DockPanel>
 
+            <!-- ====== Command Center ======
+                 First-viewport triage cockpit: verdict, baseline state,
+                 compact vitals, top findings, and subsystem drill-downs. -->
+            <Border Grid.Row="1" Style="{StaticResource DashboardHeroSurface}" Margin="{StaticResource Spacing.PageLg}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.08*" />
+                        <ColumnDefinition Width="24" />
+                        <ColumnDefinition Width="0.92*" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="COMMAND CENTER" Style="{StaticResource CardCaption}" />
+                        <DockPanel LastChildFill="True">
+                            <Border DockPanel.Dock="Right"
+                                    Style="{StaticResource StatusChip}"
+                                    Background="{Binding StatusBg}"
+                                    Margin="12,0,0,0"
+                                    VerticalAlignment="Top">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding StatusLabel}"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding StatusColor}"
+                                               Margin="{StaticResource Spacing.InlineLeft}"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                            <StackPanel>
+                                <TextBlock Text="{Binding StatusLabel}"
+                                           FontFamily="Segoe UI Semibold"
+                                           FontSize="32"
+                                           Foreground="{Binding StatusColor}"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding VpuLabel}"
+                                           Foreground="{StaticResource MutedForegroundBrush}"
+                                           FontSize="{StaticResource FontSize.Heading}"
+                                           Margin="0,2,0,0"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <Border Background="{Binding BaselineSummaryBg}"
+                                BorderBrush="{Binding BaselineSummaryColor}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="10,7"
+                                Margin="0,18,0,0">
+                            <DockPanel>
+                                <md:PackIcon DockPanel.Dock="Left"
+                                             Kind="Speedometer"
+                                             Width="17" Height="17"
+                                             Foreground="{Binding BaselineSummaryColor}"
+                                             VerticalAlignment="Center"
+                                             Margin="0,0,8,0" />
+                                <TextBlock Text="{Binding BaselineSummaryText}"
+                                           Foreground="{Binding BaselineSummaryColor}"
+                                           FontFamily="Segoe UI Semibold"
+                                           FontSize="{StaticResource FontSize.Body}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </DockPanel>
+                        </Border>
+
+                        <Grid Margin="0,18,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="8" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="8" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="8" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0" Style="{StaticResource CardFlat}" Padding="12,10">
+                                <StackPanel>
+                                    <TextBlock Text="CPU" Style="{StaticResource MetaSm}" />
+                                    <TextBlock Text="{Binding CpuPctText}" Style="{StaticResource SectionTitle}"
+                                               Foreground="{Binding CpuColor}" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2" Style="{StaticResource CardFlat}" Padding="12,10">
+                                <StackPanel>
+                                    <TextBlock Text="MEMORY" Style="{StaticResource MetaSm}" />
+                                    <TextBlock Text="{Binding MemPctText}" Style="{StaticResource SectionTitle}"
+                                               Foreground="{Binding MemColor}" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="4" Style="{StaticResource CardFlat}" Padding="12,10">
+                                <StackPanel>
+                                    <TextBlock Text="DISK" Style="{StaticResource MetaSm}" />
+                                    <TextBlock Text="{Binding DiskPctText}" Style="{StaticResource SectionTitle}"
+                                               Foreground="{Binding DiskColor}" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="6" Style="{StaticResource CardFlat}" Padding="12,10">
+                                <StackPanel>
+                                    <TextBlock Text="INTERNET" Style="{StaticResource MetaSm}" />
+                                    <TextBlock Text="{Binding InternetText}" Style="{StaticResource SectionTitle}"
+                                               Foreground="{Binding InternetColor}" Margin="0,4,0,0"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right"
+                                       Text="{Binding CommandOverflowFindingsCount, StringFormat='{}{0} more below'}"
+                                       FontSize="{StaticResource FontSize.Small}"
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       Visibility="{Binding HasCommandOverflowFindings, Converter={StaticResource BoolToVis}}" />
+                            <TextBlock Text="TOP FINDINGS"
+                                       FontFamily="Segoe UI Semibold"
+                                       FontSize="{StaticResource FontSize.Body}"
+                                       Foreground="{StaticResource ForegroundBrush}" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource CardFlat}"
+                                Padding="12"
+                                Margin="0,10,0,14"
+                                Visibility="{Binding HasNoFindings, Converter={StaticResource BoolToVis}}">
+                            <DockPanel>
+                                <md:PackIcon DockPanel.Dock="Left"
+                                             Kind="CheckCircleOutline"
+                                             Width="18" Height="18"
+                                             Foreground="{StaticResource GreenBrush}"
+                                             Margin="0,0,10,0" />
+                                <TextBlock Text="No active findings detected in the latest snapshot."
+                                           Foreground="{StaticResource MutedForegroundBrush}"
+                                           TextWrapping="Wrap" />
+                            </DockPanel>
+                        </Border>
+
+                        <ItemsControl ItemsSource="{Binding CommandFindings}"
+                                      ItemTemplate="{StaticResource FindingRowTemplate}"
+                                      Margin="0,8,0,14"
+                                      Visibility="{Binding CommandFindings.Count, Converter={StaticResource CountToVis}}" />
+
+                        <TextBlock Text="SUBSYSTEMS"
+                                   FontFamily="Segoe UI Semibold"
+                                   FontSize="{StaticResource FontSize.Body}"
+                                   Foreground="{StaticResource ForegroundBrush}"
+                                   Margin="0,0,0,10" />
+                        <ItemsControl ItemsSource="{Binding Tiles}"
+                                      ItemTemplate="{StaticResource SubsystemTileTemplate}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="2" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
             <!-- ====== v0.5.6 Baseline Banner ======
                  Shows while the startup baseline orchestrator is running
                  ("Gathering baseline — Network probing (4/8 done)…") and
@@ -254,7 +459,7 @@
                  DashboardViewModel.OnBaselineCompleted. Banner is collapsed
                  entirely when neither IsBaselineRunning nor BaselineComplete
                  is true (i.e. before the first run + after dismissal). -->
-            <Border Grid.Row="1" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
+            <Border Grid.Row="2" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
                     Visibility="{Binding IsBaselineBannerVisible, Converter={StaticResource BoolToVis}}">
                 <DockPanel>
                     <md:PackIcon DockPanel.Dock="Left" Kind="Speedometer"
@@ -301,7 +506,7 @@
                  find Pixellot at all (registry blank, no agent log, no
                  services). Stops a clean dev box from masquerading as a
                  healthy VPU. (UX review rec #12.) -->
-            <Border Grid.Row="2" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
+            <Border Grid.Row="3" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
                     Visibility="{Binding IsNonVpuHost, Converter={StaticResource BoolToVis}}">
                 <DockPanel>
                     <md:PackIcon DockPanel.Dock="Left" Kind="InformationOutline"
@@ -326,7 +531,7 @@
                  should not advertise an empty issues card. CardElev2 gives
                  it a slight lift so the eye registers it before the
                  identity / status rows below. -->
-            <Border Grid.Row="3" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
+            <Border Grid.Row="4" Style="{StaticResource CardElev2}" Margin="{StaticResource Spacing.PageLg}"
                     Visibility="{Binding Findings.Count, Converter={StaticResource CountToVis}}">
                 <StackPanel>
                     <DockPanel>
@@ -375,7 +580,7 @@
                  v0.6.5: "Last Diagnostic Run" card dropped — the field tech
                  reported it as empty noise. VM bindings remain dormant so
                  baseline reports / Reports-panel breadcrumbs still work. -->
-            <UniformGrid Grid.Row="4" Rows="1" Columns="2" Margin="{StaticResource Spacing.PageLg}">
+            <UniformGrid Grid.Row="5" Rows="1" Columns="2" Margin="{StaticResource Spacing.PageLg}">
                 <!-- VPU Identity -->
                 <Border Style="{StaticResource Card}" Margin="0,0,8,0">
                     <StackPanel>
@@ -431,7 +636,7 @@
             </UniformGrid>
 
             <!-- ====== System Status (gauges) ====== -->
-            <Border Grid.Row="5" Style="{StaticResource Card}" Margin="{StaticResource Spacing.PageLg}">
+            <Border Grid.Row="6" Style="{StaticResource Card}" Margin="{StaticResource Spacing.PageLg}">
                 <StackPanel>
                     <TextBlock Text="SYSTEM STATUS" Style="{StaticResource CardCaption}" />
                     <Grid>
@@ -553,7 +758,7 @@
             </Border>
 
             <!-- ====== NIC ports + Network config (2-up) ====== -->
-            <Grid Grid.Row="6" Margin="{StaticResource Spacing.PageLg}">
+            <Grid Grid.Row="7" Margin="{StaticResource Spacing.PageLg}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="16" />
@@ -646,7 +851,7 @@
             </Grid>
 
             <!-- ====== Storage + Pixellot Services (2-up) ====== -->
-            <Grid Grid.Row="7" Margin="{StaticResource Spacing.PageLg}">
+            <Grid Grid.Row="8" Margin="{StaticResource Spacing.PageLg}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="16" />
@@ -693,7 +898,7 @@
             <!-- ====== Quick Nav (hub tiles) — bottom row ======
                  Refresh button moved to the page header. Caption kept above
                  the tiles so the section is still labelled. -->
-            <Border Grid.Row="8" Style="{StaticResource Card}" Padding="16,12,16,12">
+            <Border Grid.Row="9" Style="{StaticResource Card}" Padding="16,12,16,12" Visibility="Collapsed">
                 <StackPanel>
                     <TextBlock Text="QUICK NAV"
                                FontFamily="Segoe UI Semibold" FontSize="{StaticResource FontSize.Small}"
