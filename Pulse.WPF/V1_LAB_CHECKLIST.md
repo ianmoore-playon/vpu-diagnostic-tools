@@ -43,8 +43,10 @@ Capture notes in the support bundle whenever a step behaves unexpectedly.
   states and Save Snapshot writes a report.
 - ScoreConnect: confirm local API detection, scoreboard settings, serial ports,
   and live feed status make sense for the unit.
-- Services: confirm Pixellot service/process rows populate and restart actions
-  are guarded.
+- Services: on a freshly booted VPU, confirm missing Pixellot processes show
+  the fresh-boot grace notice/watchdog warning rather than an immediate
+  Critical. After startup settles, refresh and confirm real missing processes
+  become Critical and restart actions remain guarded.
 - Disk Health: confirm SMART, volume space, Pixellot paths, and disk events
   populate.
 - Event Viewer: confirm filtered events load and "Open Windows Event Viewer"

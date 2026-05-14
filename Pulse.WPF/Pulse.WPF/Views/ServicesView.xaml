@@ -15,6 +15,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />   <!-- Header + actions -->
                 <RowDefinition Height="Auto" />   <!-- Findings banner -->
+                <RowDefinition Height="Auto" />   <!-- Fresh boot notice -->
                 <RowDefinition Height="Auto" />   <!-- 6 service cards -->
                 <RowDefinition Height="Auto" />   <!-- Dependencies -->
                 <RowDefinition Height="Auto" />   <!-- Log (collapsed expander) -->
@@ -66,13 +67,35 @@
                                      Findings="{Binding Findings}"
                                      Margin="0,0,0,16" />
 
+            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,16"
+                    Background="{StaticResource WarnBgBrush}"
+                    BorderBrush="{StaticResource YellowBrush}"
+                    Visibility="{Binding HasStartupGraceNotice, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <md:PackIcon DockPanel.Dock="Left" Kind="ClockOutline"
+                                 Width="22" Height="22"
+                                 Foreground="{StaticResource YellowBrush}"
+                                 VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <StackPanel>
+                        <TextBlock Text="Fresh boot grace window"
+                                   FontFamily="Segoe UI Semibold"
+                                   FontSize="14"
+                                   Foreground="{StaticResource ForegroundBrush}" />
+                        <TextBlock Text="{Binding StartupGraceNoticeText}"
+                                   Foreground="{StaticResource MutedForegroundBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
             <!-- ====== v0.6.6 loading placeholder ======
                  Visible until the first RefreshAsync populates the
                  Services collection. Stops the panel from looking
                  broken on the first 1-2 s of cold-start before
                  BaselineRunner Phase 1 lands. Hidden the moment
                  IsReady flips true (see ServicesViewModel.IsLoading). -->
-            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,16"
+            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,16"
                     Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
                             VerticalAlignment="Center" Margin="0,16,0,16">
@@ -88,7 +111,7 @@
             <!-- ====== VPU process cards ======
                  v0.6.6: also gated on IsReady so the WrapPanel doesn't
                  reserve empty space below the placeholder above. -->
-            <ItemsControl Grid.Row="2" ItemsSource="{Binding CoreServices}" Margin="0,0,0,16"
+            <ItemsControl Grid.Row="3" ItemsSource="{Binding CoreServices}" Margin="0,0,0,16"
                           Visibility="{Binding IsReady, Converter={StaticResource BoolToVis}}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -142,7 +165,7 @@
             </ItemsControl>
 
             <!-- ====== Restartable Windows services ====== -->
-            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,16">
+            <Border Grid.Row="4" Style="{StaticResource Card}" Margin="0,0,0,16">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="Windows Services"
                                Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
@@ -201,7 +224,7 @@
             </Border>
 
             <!-- ====== Live Log (collapsed expander — matches Camera Connectivity) ====== -->
-            <Expander Grid.Row="4" Header="Live Log" Margin="0,0,0,16"
+            <Expander Grid.Row="5" Header="Live Log" Margin="0,0,0,16"
                       Foreground="{StaticResource MutedForegroundBrush}">
                 <Border Style="{StaticResource Card}" Margin="0,8,0,0">
                     <Border BorderBrush="{StaticResource BorderColBrush}" BorderThickness="0,1,0,0"

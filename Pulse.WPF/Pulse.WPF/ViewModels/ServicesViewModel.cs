@@ -3,10 +3,12 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Management;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Pulse.WPF.Helpers;
 using Pulse.WPF.Models;
 using Pulse.WPF.Services;
@@ -17,7 +19,11 @@ namespace Pulse.WPF.ViewModels
     /// rows and rolls up Findings for any required process not running.</summary>
     public class ServicesViewModel : ObservableObject
     {
+        private static readonly TimeSpan StartupGraceWindow = TimeSpan.FromMinutes(5);
         private readonly IServicesService _svc;
+        private readonly object _refreshGate = new object();
+        private bool _refreshInFlight;
+        private DispatcherTimer _startupWatchdogTimer;
 
         public ObservableCollection<ServiceStatusRow> Services { get; } = new ObservableCollection<ServiceStatusRow>();
         public ObservableCollection<ServiceStatusRow> CoreServices { get; } = new ObservableCollection<ServiceStatusRow>();
@@ -56,6 +62,18 @@ namespace Pulse.WPF.ViewModels
         public Brush StatusColor { get => _statusColor; set => Set(ref _statusColor, value); }
         private Brush _statusBg = StatusHelpers.Brush("BorderColBrush");
         public Brush StatusBg { get => _statusBg; set => Set(ref _statusBg, value); }
+
+        private string _startupGraceNoticeText = "";
+        public string StartupGraceNoticeText
+        {
+            get => _startupGraceNoticeText;
+            set
+            {
+                if (Set(ref _startupGraceNoticeText, value))
+                    OnPropertyChanged(nameof(HasStartupGraceNotice));
+            }
+        }
+        public bool HasStartupGraceNotice => !string.IsNullOrWhiteSpace(_startupGraceNoticeText);
 
         public ICommand RunTestCommand { get; }
         public ICommand RestartServiceCommand { get; }
@@ -257,68 +275,105 @@ namespace Pulse.WPF.ViewModels
 
         public async Task RefreshAsync()
         {
-            await Task.Run(() =>
+            lock (_refreshGate)
             {
-                var rows = _svc.GetServiceStatuses() ?? new System.Collections.Generic.List<ServiceStatusRow>();
-                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                if (_refreshInFlight) return;
+                _refreshInFlight = true;
+            }
+
+            try
+            {
+                await Task.Run(() =>
                 {
-                    Services.Clear();
-                    CoreServices.Clear();
-                    SystemDependencies.Clear();
-                    LogEntries.Clear();
-                    Findings.Clear();
-                    SelectedService = null;
+                    var rows = _svc.GetServiceStatuses() ?? new System.Collections.Generic.List<ServiceStatusRow>();
+                    var uptime = TryGetSystemUptime();
+                    var startupGraceActive = uptime.HasValue && uptime.Value < StartupGraceWindow;
+                    var startupGraceNames = startupGraceActive
+                        ? new System.Collections.Generic.HashSet<string>(
+                            rows.Where(IsRequiredProcessFailure)
+                                .Select(r => r.Name)
+                                .Where(n => !string.IsNullOrWhiteSpace(n)),
+                            StringComparer.OrdinalIgnoreCase)
+                        : new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var startupGraceMissCount = startupGraceNames.Count;
 
-                    AddLog("", "VPU Processes", "Section");
-                    foreach (var r in rows.Where(r => !r.IsWindowsService))
+                    System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                     {
-                        AddServiceRow(r);
-                    }
+                        Services.Clear();
+                        CoreServices.Clear();
+                        SystemDependencies.Clear();
+                        LogEntries.Clear();
+                        Findings.Clear();
+                        SelectedService = null;
 
-                    AddLog("", "Windows Services", "Section");
-                    foreach (var r in rows.Where(r => r.IsWindowsService))
-                    {
-                        AddServiceRow(r);
-                    }
+                        ApplyStartupGraceNotice(startupGraceActive, uptime, startupGraceMissCount);
+                        ScheduleStartupWatchdog(startupGraceActive && startupGraceMissCount > 0, uptime);
 
-                    foreach (var fail in rows.Where(r => r.Severity == "Fail"))
-                    {
-                        AddFinding("Critical",
-                            $"{fail.Name} is not running",
-                            fail.CanRestart
-                                ? $"Select {DisplayNameOrName(fail)} in Windows Services and use Restart Service. Persistent failures usually mean a missing config or a corrupted install."
-                                : $"Reboot the VPU or call support. {DisplayNameOrName(fail)} is a process row, not a Windows service that Pulse can restart directly.");
-                    }
-                    foreach (var warn in rows.Where(r => r.Severity == "Warn"))
-                    {
-                        AddFinding("Warning",
-                            $"{warn.Name}: {warn.Detail}",
-                            warn.CanRestart
-                                ? $"Select {DisplayNameOrName(warn)} in Windows Services and use Restart Service, then refresh this panel."
-                                : $"Investigate {DisplayNameOrName(warn)} — {warn.RestartAvailability}.");
-                    }
-
-                    UpdateStatusPill();
-                    OnPropertyChanged(nameof(HasFindings));
-                    // v0.6.6 — first refresh has landed; flip the loading
-                    // placeholder off. Done inside the dispatcher block so
-                    // the cards render in the same UI tick as the data.
-                    IsLoading = false;
-
-                    // v0.5.5: per-run report file.
-                    try
-                    {
-                        var path = _reportWriter.Save("Services", BuildReportText());
-                        if (!string.IsNullOrEmpty(path))
+                        AddLog("", "VPU Processes", "Section");
+                        foreach (var r in rows.Where(r => !r.IsWindowsService))
                         {
-                            LastReportPath = path;
-                            AppLogFile.Instance.WriteLine("Services", "Info",
-                                $"Report saved: {path}");
+                            ApplyStartupGraceToRow(r, startupGraceNames);
+                            AddServiceRow(r);
                         }
-                    }
-                    catch { }
-                });
-            }).ConfigureAwait(false);
+
+                        AddLog("", "Windows Services", "Section");
+                        foreach (var r in rows.Where(r => r.IsWindowsService))
+                        {
+                            AddServiceRow(r);
+                        }
+
+                        foreach (var fail in rows.Where(r => r.Severity == "Fail"))
+                        {
+                            AddFinding("Critical",
+                                $"{fail.Name} is not running",
+                                fail.CanRestart
+                                    ? $"Select {DisplayNameOrName(fail)} in Windows Services and use Restart Service. Persistent failures usually mean a missing config or a corrupted install."
+                                    : $"Reboot the VPU or call support. {DisplayNameOrName(fail)} is a process row, not a Windows service that Pulse can restart directly.");
+                        }
+                        foreach (var warn in rows.Where(r => r.Severity == "Warn"))
+                        {
+                            if (IsStartupGraceRow(warn, startupGraceNames))
+                            {
+                                AddFinding("Warning",
+                                    $"{warn.Name} may still be starting",
+                                    $"This VPU booted {FormatUptime(uptime)} ago. Wait for startup to finish or let Pulse re-check automatically before treating this as a service failure.");
+                            }
+                            else
+                            {
+                                AddFinding("Warning",
+                                    $"{warn.Name}: {warn.Detail}",
+                                    warn.CanRestart
+                                        ? $"Select {DisplayNameOrName(warn)} in Windows Services and use Restart Service, then refresh this panel."
+                                        : $"Investigate {DisplayNameOrName(warn)} — {warn.RestartAvailability}.");
+                            }
+                        }
+
+                        UpdateStatusPill();
+                        OnPropertyChanged(nameof(HasFindings));
+                        // v0.6.6 — first refresh has landed; flip the loading
+                        // placeholder off. Done inside the dispatcher block so
+                        // the cards render in the same UI tick as the data.
+                        IsLoading = false;
+
+                        // v0.5.5: per-run report file.
+                        try
+                        {
+                            var path = _reportWriter.Save("Services", BuildReportText());
+                            if (!string.IsNullOrEmpty(path))
+                            {
+                                LastReportPath = path;
+                                AppLogFile.Instance.WriteLine("Services", "Info",
+                                    $"Report saved: {path}");
+                            }
+                        }
+                        catch { }
+                    });
+                }).ConfigureAwait(false);
+            }
+            finally
+            {
+                lock (_refreshGate) { _refreshInFlight = false; }
+            }
         }
 
         /// <summary>
@@ -330,6 +385,11 @@ namespace Pulse.WPF.ViewModels
             var sb = new System.Text.StringBuilder();
 
             sb.AppendLine("== Pixellot Services ==");
+            if (HasStartupGraceNotice)
+            {
+                sb.AppendLine($"  Startup notice: {StartupGraceNoticeText}");
+                sb.AppendLine();
+            }
             if (Services.Count == 0)
             {
                 sb.AppendLine("  (no services collected)");
@@ -378,6 +438,7 @@ namespace Pulse.WPF.ViewModels
         private void AddServiceRow(ServiceStatusRow r)
         {
             if (r == null) return;
+            ApplyServiceColors(r);
             Services.Add(r);
             if (r.IsWindowsService) SystemDependencies.Add(r);
             else CoreServices.Add(r);
@@ -399,6 +460,151 @@ namespace Pulse.WPF.ViewModels
         private void AddFinding(string severity, string title, string recommendation)
         {
             Findings.Add(Finding.Create(severity, title, recommendation));
+        }
+
+        private static bool IsRequiredProcessFailure(ServiceStatusRow row)
+        {
+            return row != null &&
+                   !row.IsWindowsService &&
+                   string.Equals(row.Severity, "Fail", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsStartupGraceRow(
+            ServiceStatusRow row,
+            System.Collections.Generic.HashSet<string> startupGraceNames)
+        {
+            return row != null &&
+                   startupGraceNames != null &&
+                   startupGraceNames.Contains(row.Name ?? "");
+        }
+
+        private static void ApplyStartupGraceToRow(
+            ServiceStatusRow row,
+            System.Collections.Generic.HashSet<string> startupGraceNames)
+        {
+            if (!IsStartupGraceRow(row, startupGraceNames)) return;
+            row.Severity = "Warn";
+            row.Status = "Starting?";
+            row.Detail = string.IsNullOrWhiteSpace(row.Detail)
+                ? "Startup grace active - process may still be launching"
+                : row.Detail + " - startup grace active; process may still be launching";
+        }
+
+        private void ApplyStartupGraceNotice(
+            bool startupGraceActive,
+            TimeSpan? uptime,
+            int affectedCount)
+        {
+            if (!startupGraceActive)
+            {
+                StartupGraceNoticeText = "";
+                return;
+            }
+
+            var remaining = StartupGraceWindow - uptime.GetValueOrDefault();
+            if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
+            var affected = affectedCount > 0
+                ? $"{affectedCount} required process(es) are not running yet. "
+                : "";
+            var recheck = affectedCount > 0
+                ? $" Pulse will re-check in {FormatDelay(WatchdogDelay(remaining))}."
+                : " No required processes are missing right now.";
+            StartupGraceNoticeText =
+                $"Fresh boot detected ({FormatUptime(uptime)} uptime). {affected}Pixellot services may still be starting.{recheck}";
+        }
+
+        private void ScheduleStartupWatchdog(bool startupGraceActive, TimeSpan? uptime)
+        {
+            StopStartupWatchdog();
+            if (!startupGraceActive || !uptime.HasValue) return;
+
+            var remaining = StartupGraceWindow - uptime.Value;
+            if (remaining <= TimeSpan.Zero) return;
+
+            var delay = WatchdogDelay(remaining);
+            _startupWatchdogTimer = new DispatcherTimer { Interval = delay };
+            _startupWatchdogTimer.Tick += async (s, e) =>
+            {
+                StopStartupWatchdog();
+                await RefreshAsync().ConfigureAwait(false);
+                AppendLog("Startup grace re-check completed", "Info");
+            };
+            _startupWatchdogTimer.Start();
+        }
+
+        private void StopStartupWatchdog()
+        {
+            if (_startupWatchdogTimer == null) return;
+            try { _startupWatchdogTimer.Stop(); } catch { }
+            _startupWatchdogTimer = null;
+        }
+
+        private static TimeSpan WatchdogDelay(TimeSpan remaining)
+        {
+            if (remaining < TimeSpan.FromSeconds(15)) return TimeSpan.FromSeconds(15);
+            if (remaining > TimeSpan.FromSeconds(90)) return TimeSpan.FromSeconds(90);
+            return remaining;
+        }
+
+        private static TimeSpan? TryGetSystemUptime()
+        {
+            try
+            {
+                using (var searcher = new ManagementObjectSearcher("SELECT LastBootUpTime FROM Win32_OperatingSystem"))
+                using (var results = searcher.Get())
+                {
+                    foreach (ManagementObject o in results)
+                    {
+                        var raw = o["LastBootUpTime"] as string;
+                        if (string.IsNullOrWhiteSpace(raw)) continue;
+                        var boot = ManagementDateTimeConverter.ToDateTime(raw);
+                        var uptime = DateTime.Now - boot;
+                        return uptime < TimeSpan.Zero ? TimeSpan.Zero : uptime;
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static string FormatUptime(TimeSpan? uptime)
+        {
+            if (!uptime.HasValue) return "unknown";
+            var value = uptime.Value;
+            if (value.TotalMinutes < 1) return $"{Math.Max(0, (int)value.TotalSeconds)}s";
+            if (value.TotalHours < 1) return $"{(int)value.TotalMinutes}m";
+            if (value.TotalDays < 1) return $"{(int)value.TotalHours}h {value.Minutes}m";
+            return $"{(int)value.TotalDays}d {value.Hours}h";
+        }
+
+        private static string FormatDelay(TimeSpan delay)
+        {
+            if (delay.TotalMinutes < 1) return $"{Math.Max(1, (int)Math.Ceiling(delay.TotalSeconds))}s";
+            return $"{(int)Math.Ceiling(delay.TotalMinutes)}m";
+        }
+
+        private static void ApplyServiceColors(ServiceStatusRow row)
+        {
+            if (row == null) return;
+            switch ((row.Severity ?? "").Trim())
+            {
+                case "Pass":
+                    row.StatusColor = StatusHelpers.Brush("GreenBrush");
+                    row.StatusBg = StatusHelpers.Brush("OkBgBrush");
+                    break;
+                case "Warn":
+                    row.StatusColor = StatusHelpers.Brush("YellowBrush");
+                    row.StatusBg = StatusHelpers.Brush("WarnBgBrush");
+                    break;
+                case "Fail":
+                    row.StatusColor = StatusHelpers.Brush("RedBrush");
+                    row.StatusBg = StatusHelpers.Brush("ErrBgBrush");
+                    break;
+                default:
+                    row.StatusColor = StatusHelpers.Brush("MutedForegroundBrush");
+                    row.StatusBg = StatusHelpers.Brush("BorderColBrush");
+                    break;
+            }
         }
 
         private void UpdateStatusPill()
