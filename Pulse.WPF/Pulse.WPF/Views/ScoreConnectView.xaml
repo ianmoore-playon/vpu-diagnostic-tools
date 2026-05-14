@@ -216,6 +216,12 @@
                             <TextBlock Text="Live Scoreboard" Style="{StaticResource SectionTitle}"
                                        Margin="0" VerticalAlignment="Center" />
                         </DockPanel>
+                        <TextBlock Text="{Binding LiveFeedDetail}"
+                                   Foreground="{StaticResource MutedForegroundBrush}"
+                                   FontSize="{StaticResource FontSize.Caption}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding LiveFeedLogPath}"
+                                   Margin="0,-4,0,10" />
 
                         <Grid>
                             <Grid.ColumnDefinitions>

@@ -42,7 +42,8 @@ Capture notes in the support bundle whenever a step behaves unexpectedly.
 - Camera Connectivity: confirm four camera ports render with live link/device
   states and Save Snapshot writes a report.
 - ScoreConnect: confirm local API detection, scoreboard settings, serial ports,
-  and live feed status make sense for the unit.
+  and that the live scoreboard card follows fresh GraphicsManager Sportzcast
+  log frames from `C:\Pixellot\Data\Log`.
 - Services: on a freshly booted VPU, confirm missing Pixellot processes show
   the fresh-boot grace notice/watchdog warning rather than an immediate
   Critical. After startup settles, refresh and confirm real missing processes
