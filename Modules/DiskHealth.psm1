@@ -404,6 +404,12 @@ $diskTimer.Add_Tick({
         $btnDiskRun.Enabled=$true; $btnDiskRun.Text=[char]0x25B6+"  Run Test"
         $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
 
+        # R2: surface any runspace errors that accumulated during the run.
+        $diskErrs = Get-DiagRunspaceErrors $script:diskState
+        foreach ($em in $diskErrs) {
+            Add-LogRow $dgvDiskLog "Runspace error" $em "Fail"
+        }
+
         # Update Overall Status pill
         $diskWorst = "ok"
         $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
@@ -537,14 +543,18 @@ function Start-DiskDiagnostic {
     $dgvDiskLog.Rows.Clear(); $btnDiskRun.Enabled=$false; $btnDiskRun.Text="  Running..."
     $btnDiskCancel.Visible=$true; $script:diskSpinIdx=0
     $lblDiskStatus.ForeColor=$ColAccent; $lblDiskStatus.Text=" |  Starting..."
-    if ($script:diskRunspace) { try { $script:diskRunspace.Close() } catch { } }
-    if ($script:diskPs) { try { $script:diskPs.Dispose() } catch { }; $script:diskPs = $null }
-    $script:diskRunspace = [runspacefactory]::CreateRunspace()
-    $script:diskRunspace.ApartmentState="STA"; $script:diskRunspace.ThreadOptions="ReuseThread"; $script:diskRunspace.Open()
-    $script:diskPs = [powershell]::Create(); $script:diskPs.Runspace=$script:diskRunspace
-    $script:diskPs.AddScript($DiskScript) | Out-Null
-    $script:diskPs.AddParameters(@{ sync=$sync }) | Out-Null
-    $script:diskPs.BeginInvoke() | Out-Null; $diskTimer.Start()
+    # R2/R13: Start-DiagRunspace handles cleanup of $script:diskState, TLS-1.2
+    # bump inside the runspace, and captures the IAsyncResult so EndInvoke can
+    # surface errors in the timer's Complete branch.
+    $script:diskState = Start-DiagRunspace `
+        -Script    $DiskScript `
+        -Parameters @{ sync = $sync } `
+        -Previous   $script:diskState
+    # Back-compat shims for any consumer still reading the legacy script-scoped
+    # names (FormClosing dispose, etc.).
+    $script:diskRunspace = $script:diskState.Runspace
+    $script:diskPs       = $script:diskState.Ps
+    $diskTimer.Start()
 }
 
 $btnDiskRun.Add_Click({ Start-DiskDiagnostic })

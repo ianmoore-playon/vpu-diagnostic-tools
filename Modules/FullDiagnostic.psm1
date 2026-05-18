@@ -146,6 +146,37 @@ function Invoke-FdModule {
     & $Mod.RunFn
 }
 
+# R12: stagger module-start invocations. Previously every module's runspace
+# opened in the same tick — WMI/CIM on stressed Win10 LTSC routinely throttles
+# concurrent queries and a 7-way burst could hit 0x80041032 / 60 s timeouts.
+# 250 ms between starts keeps the total startup under 2 s while letting each
+# runspace's first WMI query land cleanly.
+function Invoke-FdModulesStaggered {
+    param([hashtable[]]$Modules, [int]$DelayMs = 250)
+    if (-not $Modules -or $Modules.Count -eq 0) { return }
+    # Fire the first immediately so the UI has visible motion right away.
+    Invoke-FdModule $Modules[0]
+    if ($Modules.Count -eq 1) { return }
+    # Stagger the remaining via a one-shot timer chain. We can't use Start-Sleep
+    # here because we're on the UI thread; blocking it would freeze the form.
+    $script:fdStaggerQueue = [System.Collections.ArrayList]::new()
+    for ($i = 1; $i -lt $Modules.Count; $i++) { [void]$script:fdStaggerQueue.Add($Modules[$i]) }
+    if (-not $script:fdStaggerTimer) {
+        $script:fdStaggerTimer = New-Object System.Windows.Forms.Timer
+        $script:fdStaggerTimer.Add_Tick({
+            if ($script:fdStaggerQueue.Count -eq 0) {
+                $script:fdStaggerTimer.Stop()
+                return
+            }
+            $next = $script:fdStaggerQueue[0]
+            $script:fdStaggerQueue.RemoveAt(0)
+            Invoke-FdModule $next
+        })
+    }
+    $script:fdStaggerTimer.Interval = $DelayMs
+    $script:fdStaggerTimer.Start()
+}
+
 # --- Panel -------------------------------------------------------------------
 # AutoScroll lets the panel scroll vertically when the 7 module rows + bottom
 # buttons exceed the available content height (e.g. on smaller windows or after
@@ -574,7 +605,8 @@ function Start-FailedDiagnostic {
         $row.LastWorst           = "neutral"
     }
 
-    foreach ($i in $toRerun) { Invoke-FdModule $fdModuleDefs[$i] }
+    $rerunMods = @($toRerun | ForEach-Object { $fdModuleDefs[$_] })
+    Invoke-FdModulesStaggered -Modules $rerunMods
 
     if (-not $timerFullDiag.Enabled) { $timerFullDiag.Start() }
 }
@@ -611,7 +643,7 @@ function Start-FullDiagnostic {
         $row.LastWorst           = "neutral"
     }
 
-    foreach ($mod in $fdModuleDefs) { Invoke-FdModule $mod }
+    Invoke-FdModulesStaggered -Modules $fdModuleDefs
 
     $timerFullDiag.Start()
 }

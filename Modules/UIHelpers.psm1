@@ -562,3 +562,119 @@ function Add-LogRow {
     }
     try { $Grid.FirstDisplayedScrollingRowIndex = $Grid.Rows.Count - 1 } catch { }
 }
+
+
+# ---------- Diagnostic runspace helpers (R2 / R13 from agent review) ---------
+# Every module's background script is hosted in its own runspace. The pre-1.0.54
+# pattern was:
+#     $rs  = [runspacefactory]::CreateRunspace()
+#     $rs.Open()
+#     $ps  = [powershell]::Create(); $ps.Runspace = $rs
+#     $ps.AddScript(...) | $ps.AddParameters(...) | Out-Null
+#     $ps.BeginInvoke() | Out-Null    # <- IAsyncResult dropped
+# The dropped IAsyncResult meant EndInvoke was never called and exceptions raised
+# inside the script silently accumulated in $ps.Streams.Error. A runspace that
+# threw on its first cmdlet would set Running=$true and never flip Complete=$true,
+# so the panel spun forever.
+#
+# The helpers below standardise:
+#   - InitialSessionState that pre-applies TLS 1.2 (legacy VPU images default to
+#     TLS 1.0 inside a fresh runspace, breaking github.com calls from inside it).
+#   - IAsyncResult capture (returned to the caller for later EndInvoke).
+#   - Error harvest from $ps.Streams.Error AND any terminating exception thrown
+#     by EndInvoke. Modules call Get-DiagRunspaceErrors in their timer's
+#     Complete branch and surface the result via Add-LogRow.
+
+function Start-DiagRunspace {
+    <#
+    .SYNOPSIS
+        Hosts a background script in a new runspace with TLS 1.2 + error capture.
+    .DESCRIPTION
+        Replaces the pre-1.0.54 BeginInvoke()|Out-Null pattern. Returns a hashtable
+        the caller stores on $script:* so the matching timer can call
+        Get-DiagRunspaceErrors when Complete flips true.
+        Prepends a TLS-1.2 bump to the pipeline so any HTTPS call from inside
+        the runspace doesn't fall back to TLS 1.0 (R13).
+    .PARAMETER Script
+        The script block to run inside the runspace.
+    .PARAMETER Parameters
+        Hashtable of parameters to AddParameters().
+    .PARAMETER Previous
+        Optional - the State hashtable from a prior call. Its Runspace + Ps are
+        closed/disposed before the new one is created.
+    #>
+    param(
+        [Parameter(Mandatory)] [scriptblock]$Script,
+        [hashtable]$Parameters,
+        [hashtable]$Variables,   # name->value pairs set via SessionStateProxy
+        [hashtable]$Previous
+    )
+
+    if ($Previous) {
+        if ($Previous.Runspace) { try { $Previous.Runspace.Close()   } catch { } }
+        if ($Previous.Ps)       { try { $Previous.Ps.Dispose()       } catch { } }
+    }
+
+    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+    $rs.ApartmentState = [System.Threading.ApartmentState]::STA
+    $rs.ThreadOptions  = [System.Management.Automation.Runspaces.PSThreadOptions]::ReuseThread
+    $rs.Open()
+    if ($Variables) {
+        foreach ($k in $Variables.Keys) {
+            $rs.SessionStateProxy.SetVariable($k, $Variables[$k])
+        }
+    }
+
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    # R13: defensively bump TLS to 1.2 inside the runspace. Cheap on healthy
+    # boxes, prevents a silent HTTPS failure on legacy VPU images if any
+    # future runspace script does an HTTPS call.
+    $ps.AddScript({
+        try {
+            [System.Net.ServicePointManager]::SecurityProtocol =
+                [System.Net.SecurityProtocolType]::Tls12 -bor
+                [System.Net.ServicePointManager]::SecurityProtocol
+        } catch { }
+    }) | Out-Null
+    $ps.AddScript($Script) | Out-Null
+    if ($Parameters) { $ps.AddParameters($Parameters) | Out-Null }
+
+    $async = $ps.BeginInvoke()
+    return @{
+        Runspace      = $rs
+        Ps            = $ps
+        Async         = $async
+        ErrorsHandled = $false
+    }
+}
+
+function Get-DiagRunspaceErrors {
+    <#
+    .SYNOPSIS
+        Harvests runspace errors after the background script completes.
+    .DESCRIPTION
+        Call this from a module's timer when the *Complete sync flag flips true.
+        Idempotent — ErrorsHandled guards against double-EndInvoke.
+        Returns @() on success or an array of error description strings.
+    #>
+    param([hashtable]$State)
+    if (-not $State -or -not $State.Ps -or -not $State.Async) { return @() }
+    if ($State.ErrorsHandled) { return @() }
+    $State.ErrorsHandled = $true
+    $errs = @()
+    try {
+        $State.Ps.EndInvoke($State.Async) | Out-Null
+    } catch {
+        # Terminating exception thrown by the script.
+        $errs += "Script threw: $($_.Exception.GetType().Name): $($_.Exception.Message)"
+    }
+    foreach ($e in $State.Ps.Streams.Error) {
+        $msg = $e.ToString()
+        $where = if ($e.InvocationInfo -and $e.InvocationInfo.PositionMessage) {
+            ($e.InvocationInfo.PositionMessage -replace "[\r\n]+"," ").Trim()
+        } else { "" }
+        $errs += if ($where) { "$msg  ($where)" } else { $msg }
+    }
+    return $errs
+}

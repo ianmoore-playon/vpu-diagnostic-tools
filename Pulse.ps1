@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.54-beta"
+$ScriptVersion = "1.0.55-beta"
 
 # ---------- Self-elevation ---------------------------------------------------
 # R4 fix: if the tech cancels the UAC prompt, surface a clear message in a

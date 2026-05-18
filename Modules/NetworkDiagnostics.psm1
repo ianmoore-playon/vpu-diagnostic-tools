@@ -313,6 +313,15 @@ $netTimer.Add_Tick({
             if ($val) { $sync.Cards[$netKey] = @{ Value = $val; Status = $sts } }
         }
         $netTimer.Stop()
+        # R2: surface any runspace errors. Network uses an rtbNetLog RichTextBox
+        # rather than a DataGridView, so append the error inline.
+        $netErrs = Get-DiagRunspaceErrors $script:netState
+        foreach ($em in $netErrs) {
+            $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
+            $rtbNetLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 8)
+            $rtbNetLog.SelectionColor = $ColLogFail
+            $rtbNetLog.AppendText("`n  Runspace error: $em")
+        }
         $btnNetCancel.Visible = $false
         $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Test"
         $lblNetStatus.ForeColor = $ColMuted
@@ -736,20 +745,20 @@ function Start-NetDiagnostic {
     $lblNetStatus.ForeColor = $ColAccent; $lblNetStatus.Text = " |  Starting..."
     $script:netSpinIdx = 0
 
-    if ($script:netRunspace) { try { $script:netRunspace.Close() } catch { } }
-    if ($script:netPs) { try { $script:netPs.Dispose() } catch { }; $script:netPs = $null }
-    $script:netRunspace = [runspacefactory]::CreateRunspace()
-    $script:netRunspace.ApartmentState = "STA"
-    $script:netRunspace.ThreadOptions  = "ReuseThread"
-    $script:netRunspace.Open()
-    $script:netRunspace.SessionStateProxy.SetVariable("sync",         $sync)
-    $script:netRunspace.SessionStateProxy.SetVariable("PortTests",    $PortTests)
-    $script:netRunspace.SessionStateProxy.SetVariable("DomainTests",  $DomainTests)
-    $script:netRunspace.SessionStateProxy.SetVariable("NetTimeoutMs", $NetTimeoutMs)
-    $script:netPs = [powershell]::Create()
-    $script:netPs.Runspace = $script:netRunspace
-    $script:netPs.AddScript($NetScript) | Out-Null
-    $script:netPs.BeginInvoke() | Out-Null
+    # R2/R13: standardised runspace hosting. NetScript depends on session-scoped
+    # variables ($sync / $PortTests / etc.) rather than parameters, so we pass
+    # them via the Variables hashtable (mirrors the old SessionStateProxy calls).
+    $script:netState = Start-DiagRunspace `
+        -Script    $NetScript `
+        -Variables @{
+            sync         = $sync
+            PortTests    = $PortTests
+            DomainTests  = $DomainTests
+            NetTimeoutMs = $NetTimeoutMs
+        } `
+        -Previous $script:netState
+    $script:netRunspace = $script:netState.Runspace
+    $script:netPs       = $script:netState.Ps
     $netTimer.Start()
 }
 

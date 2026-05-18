@@ -11,6 +11,27 @@ Version format: `MAJOR.MINOR.PATCH[-PRERELEASE]`
 
 ---
 
+## [1.0.55-beta] - 2026-05-18
+
+Runspace + session-state refactor — closes the deferred R2 / R3 / R12 / R13
+items from the four-agent review.
+
+### Changed
+
+- **R2 - Runspace error capture.** New `Start-DiagRunspace` + `Get-DiagRunspaceErrors` helpers in `UIHelpers.psm1`. All seven module Start-* functions migrated to the helper; each timer's Complete branch now harvests `Streams.Error` + any terminating exception via `EndInvoke` and surfaces them in the panel's log (Camera, Disk, Events, Services, Hw, SysInfo) or RichTextBox (Network) as "Runspace error" rows. Previously the IAsyncResult was dropped and an exception on the first cmdlet left the runspace silently spinning with `Complete=$false` forever.
+- **R12 - Runspace stagger.** `FullDiagnostic.Invoke-FdModulesStaggered` fires the first module immediately and queues the remaining six via a one-shot WinForms timer at 250 ms intervals. Total startup stays under 2 s but each runspace's first WMI/CIM query lands cleanly — WMI on stressed Win10 LTSC throttles concurrent queries and the previous 7-way burst could hit `0x80041032` or 60 s timeouts. The timer pattern doesn't block the UI thread (`Start-Sleep` would).
+- **R13 - TLS 1.2 bump inside every runspace.** Each background script is now prepended with a tiny `[ServicePointManager]::SecurityProtocol` bump so any future HTTPS call from inside a runspace doesn't fall back to the legacy default. Cheap on healthy boxes; prevents silent failure on legacy VPU images.
+
+### Fixed
+
+- **R3 - Module-load WMI no longer blocks UI thread.** `CameraConnectivity.psm1`'s `$script:detectedNics = @(Get-NetAdapter ...)` at dot-source time used to hang module load (and therefore window paint) on a sick-WMI box — exactly the failure mode Pulse exists to diagnose. Replaced with a runspace-hosted Get-NetAdapter with a 6-second deadline. On timeout, the module logs a warning and the live monitor populates the NIC list later instead.
+
+### Notes
+
+- The remaining deferred item from the v1.0.54 batch is **R5** (silent-catch migration of 77+ `catch { }` blocks in Run.ps1 / CameraConnectivity.psm1). The dangerous ones (SMART acquisition, disk event log read, services pre-gate) were converted in v1.0.54. Setting `$ErrorActionPreference = 'Stop'` globally (R7) is held until R5 is finished so previously-silent errors don't flood the log when the global preference flips.
+
+---
+
 ## [1.0.54-beta] - 2026-05-18
 
 Reviewer batch — addresses every finding from the UX / Diagnostic Logic /

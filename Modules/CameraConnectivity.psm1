@@ -1011,12 +1011,45 @@ $center.Controls.Add($lblEta)
 
 # ---- Detected NIC list (used by diagram + diagnostic) ----------------------
 $portRowW = 1040; $portRowX0 = 28   # v1.0.49: tightened from 1224 so the status cards row ends at X=1068, well clear of the right-edge sidebar at X=1124
-$script:detectedNics = @(Get-NetAdapter | Where-Object {
-    $d = $_.InterfaceDescription
-    ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
-} | Sort-Object {
-    try { (Get-NetAdapterHardwareInfo -Name $_.Name -ErrorAction Stop).Function } catch { 999 }
-}, Name)
+# R3 fix: wrap the dot-source-time Get-NetAdapter call in a 6-second job so a
+# stuck WMI / NetTCPIP layer can't block module load (and therefore the entire
+# UI thread + window paint). Sick-WMI is one of the failure modes Pulse exists
+# to diagnose; the tool itself must survive it.
+$script:detectedNics = @()
+# Use a runspace-hosted timeout (~80ms overhead) instead of Start-Job (~500ms+)
+# or ThreadJob (may not be present on locked-down LTSC images). 6-second cap.
+$detectPs   = $null
+$detectAsync= $null
+try {
+    $detectPs = [powershell]::Create()
+    $detectPs.AddScript({
+        param($Patterns)
+        Get-NetAdapter | Where-Object {
+            $d = $_.InterfaceDescription
+            ($Patterns | Where-Object { $d -like $_ }).Count -gt 0
+        } | Sort-Object {
+            try { (Get-NetAdapterHardwareInfo -Name $_.Name -ErrorAction Stop).Function } catch { 999 }
+        }, Name
+    }).AddArgument($NicDriverPatterns) | Out-Null
+    $detectAsync = $detectPs.BeginInvoke()
+    if ($detectAsync.AsyncWaitHandle.WaitOne(6000)) {
+        $script:detectedNics = @($detectPs.EndInvoke($detectAsync))
+    } else {
+        Write-Warning "NIC detection timed out at module load (WMI/NetTCPIP not responding within 6s); cards will populate from the live monitor instead."
+        $detectPs.Stop()
+    }
+} catch {
+    # Fallback: try the synchronous call once. Better to have an empty
+    # $detectedNics than crash module load.
+    try {
+        $script:detectedNics = @(Get-NetAdapter | Where-Object {
+            $d = $_.InterfaceDescription
+            ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
+        })
+    } catch { $script:detectedNics = @() }
+} finally {
+    if ($detectPs) { try { $detectPs.Dispose() } catch { } }
+}
 
 # ---- $cards hashtable ------------------------------------------------------
 # The Camera diagnostic timer iterates $cards.Keys and calls Update-CardStatus
@@ -1964,6 +1997,9 @@ $timer.Add_Tick({
     if ($sync.Complete -and -not $sync.Running) {
         $timer.Stop()
         $btnCancel.Visible = $false
+        # R2: surface any runspace errors from the camera diagnostic run.
+        $camErrs = Get-DiagRunspaceErrors $script:camDiagState
+        foreach ($em in $camErrs) { Add-LogRow $dgvLog "Runspace error" $em "Fail" }
         $btnRun.Enabled = $true
         $btnRun.Text = if ($cboNic.SelectedIndex -le 0) {
             [char]0x25B6 + "  Run Test"
@@ -2036,34 +2072,29 @@ function Start-CameraConnDiagnostic {
     $btnRetest.Enabled = $false
     $script:spinIdx = 0; $lblStatus.ForeColor = $ColAccent; $lblStatus.Text = " |  Starting..."
 
-    if ($script:runspace) { try { $script:runspace.Close() } catch { } }
-    if ($script:diagPs) { try { $script:diagPs.Dispose() } catch { }; $script:diagPs = $null }
-    $script:runspace = [runspacefactory]::CreateRunspace()
-    $script:runspace.ApartmentState = "STA"
-    $script:runspace.ThreadOptions  = "ReuseThread"
-    $script:runspace.Open()
-
-    $script:diagPs = [powershell]::Create()
-    $script:diagPs.Runspace = $script:runspace
-    $script:diagPs.AddScript($DiagScript) | Out-Null
+    # R2/R13: standardised runspace hosting with TLS-1.2 + IAsyncResult capture.
     $filterNicVal = if ($cboNic.SelectedIndex -gt 0) { Get-NicNameFromCbo ($cboNic.SelectedItem -as [string]) } else { "" }
-    $script:diagPs.AddParameters(@{
-        sync               = $sync
-        NicDriverPatterns  = $NicDriverPatterns
-        RenegotiateWaitSec = $RenegotiateWaitSec
-        EventLogHours      = $EventLogHours
-        PixellotLogPaths   = $PixellotLogPaths
-        RtspPort           = $RtspPort
-        OutputFile         = $newOutput
-        RunId              = $newRunId
-        ScriptVersion      = $ScriptVersion
-        OcrMacOui          = $OcrMacOui
-        PixCameraRoles     = $script:PixCameraRoles
-        FilterNic          = $filterNicVal
-        PoeDllPath         = if ($PoeDllPath) { $PoeDllPath } else { "" }
-        PoeMgmtSupported   = if ($script:nicCardInfo) { [bool]$script:nicCardInfo.PoeMgmtSupported } else { $true }
-    }) | Out-Null
-    $script:diagPs.BeginInvoke() | Out-Null
+    $script:camDiagState = Start-DiagRunspace `
+        -Script    $DiagScript `
+        -Parameters @{
+            sync               = $sync
+            NicDriverPatterns  = $NicDriverPatterns
+            RenegotiateWaitSec = $RenegotiateWaitSec
+            EventLogHours      = $EventLogHours
+            PixellotLogPaths   = $PixellotLogPaths
+            RtspPort           = $RtspPort
+            OutputFile         = $newOutput
+            RunId              = $newRunId
+            ScriptVersion      = $ScriptVersion
+            OcrMacOui          = $OcrMacOui
+            PixCameraRoles     = $script:PixCameraRoles
+            FilterNic          = $filterNicVal
+            PoeDllPath         = if ($PoeDllPath) { $PoeDllPath } else { "" }
+            PoeMgmtSupported   = if ($script:nicCardInfo) { [bool]$script:nicCardInfo.PoeMgmtSupported } else { $true }
+        } `
+        -Previous $script:camDiagState
+    $script:runspace = $script:camDiagState.Runspace
+    $script:diagPs   = $script:camDiagState.Ps
     $timer.Start()
 }
 

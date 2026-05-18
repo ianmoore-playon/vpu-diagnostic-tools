@@ -476,6 +476,9 @@ $sysInfoTimer.Add_Tick({
     }
     if ($sync.SysInfoComplete) {
         $sysInfoTimer.Stop()
+        # R2: surface any runspace errors.
+        $siErrs = Get-DiagRunspaceErrors $script:sysInfoState
+        foreach ($em in $siErrs) { Add-LogRow $siGrid "Runspace error" $em "Fail" }
         $btnSiRefresh.Enabled = $true
         $btnSiRefresh.Text    = [char]0xE72C + "  Refresh"
         $lblSiStatus.Text     = "Collected at $(Get-Date -Format 'h:mm:ss tt')"
@@ -510,22 +513,15 @@ function Start-SysInfoCollection {
     $sync.SysInfoComplete  = $false
     $sync.SysInfoCancelled = $false
     $sync.SysInfoStep      = "Starting..."
-    if ($script:sysInfoRunspace) {
-        try { $script:sysInfoRunspace.Close(); $script:sysInfoRunspace.Dispose() } catch { }
-    }
-    if ($script:sysInfoPs) {
-        try { $script:sysInfoPs.Dispose() } catch { }; $script:sysInfoPs = $null
-    }
-    $script:sysInfoRunspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $script:sysInfoRunspace.ApartmentState = "STA"
-    $script:sysInfoRunspace.ThreadOptions  = "ReuseThread"
-    $script:sysInfoRunspace.Open()
-    # Pass $sync to the runspace via AddArgument only — using SessionStateProxy.SetVariable
-    # AND AddArgument both was wasted work and made the contract ambiguous.
-    $script:sysInfoPs = [System.Management.Automation.PowerShell]::Create()
-    $script:sysInfoPs.Runspace = $script:sysInfoRunspace
-    $script:sysInfoPs.AddScript($SysInfoScript).AddArgument($sync) | Out-Null
-    $script:sysInfoPs.BeginInvoke() | Out-Null
+    # R2/R13: standardised runspace hosting. SysInfoScript declares param($sync)
+    # so we pass via Parameters @{sync=$sync} (named) — equivalent to the old
+    # positional AddArgument($sync).
+    $script:sysInfoState = Start-DiagRunspace `
+        -Script    $SysInfoScript `
+        -Parameters @{ sync = $sync } `
+        -Previous   $script:sysInfoState
+    $script:sysInfoRunspace = $script:sysInfoState.Runspace
+    $script:sysInfoPs       = $script:sysInfoState.Ps
     $sysInfoTimer.Start()
 }
 

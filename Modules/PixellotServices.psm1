@@ -160,6 +160,10 @@ $svcTimer.Add_Tick({
         $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Run Test"
         $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
 
+        # R2: surface any runspace errors.
+        $svcErrs = Get-DiagRunspaceErrors $script:svcState
+        foreach ($em in $svcErrs) { Add-LogRow $dgvSvcLog "Runspace error" $em "Fail" }
+
         # Update Overall Status pill from worst card status (v1.0.43)
         $svcWorst = "ok"
         $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
@@ -291,14 +295,14 @@ function Start-SvcDiagnostic {
     $dgvSvcLog.Rows.Clear(); $btnSvcRun.Enabled=$false; $btnSvcRun.Text="  Running..."
     $btnSvcCancel.Visible=$true; $script:svcSpinIdx=0
     $lblSvcStatus.ForeColor=$ColAccent; $lblSvcStatus.Text=" |  Starting..."
-    if ($script:svcRunspace) { try { $script:svcRunspace.Close() } catch { } }
-    if ($script:svcPs) { try { $script:svcPs.Dispose() } catch { }; $script:svcPs = $null }
-    $script:svcRunspace = [runspacefactory]::CreateRunspace()
-    $script:svcRunspace.ApartmentState="STA"; $script:svcRunspace.ThreadOptions="ReuseThread"; $script:svcRunspace.Open()
-    $script:svcPs = [powershell]::Create(); $script:svcPs.Runspace=$script:svcRunspace
-    $script:svcPs.AddScript($SvcScript) | Out-Null
-    $script:svcPs.AddParameters(@{ sync=$sync }) | Out-Null
-    $script:svcPs.BeginInvoke() | Out-Null; $svcTimer.Start()
+    # R2/R13: standardised runspace hosting.
+    $script:svcState = Start-DiagRunspace `
+        -Script    $SvcScript `
+        -Parameters @{ sync = $sync } `
+        -Previous   $script:svcState
+    $script:svcRunspace = $script:svcState.Runspace
+    $script:svcPs       = $script:svcState.Ps
+    $svcTimer.Start()
 }
 
 $btnSvcRun.Add_Click({ Start-SvcDiagnostic })

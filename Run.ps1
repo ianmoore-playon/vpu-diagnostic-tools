@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.54-beta"
+$ScriptVersion = "1.0.55-beta"
 
 # ---------- Self-elevation ---------------------------------------------------
 # R4 fix: if the tech cancels the UAC prompt, surface a clear message in a
@@ -769,6 +769,122 @@ function Add-LogRow {
         $r.Cells[1].Style.ForeColor = $col
     }
     try { $Grid.FirstDisplayedScrollingRowIndex = $Grid.Rows.Count - 1 } catch { }
+}
+
+
+# ---------- Diagnostic runspace helpers (R2 / R13 from agent review) ---------
+# Every module's background script is hosted in its own runspace. The pre-1.0.54
+# pattern was:
+#     $rs  = [runspacefactory]::CreateRunspace()
+#     $rs.Open()
+#     $ps  = [powershell]::Create(); $ps.Runspace = $rs
+#     $ps.AddScript(...) | $ps.AddParameters(...) | Out-Null
+#     $ps.BeginInvoke() | Out-Null    # <- IAsyncResult dropped
+# The dropped IAsyncResult meant EndInvoke was never called and exceptions raised
+# inside the script silently accumulated in $ps.Streams.Error. A runspace that
+# threw on its first cmdlet would set Running=$true and never flip Complete=$true,
+# so the panel spun forever.
+#
+# The helpers below standardise:
+#   - InitialSessionState that pre-applies TLS 1.2 (legacy VPU images default to
+#     TLS 1.0 inside a fresh runspace, breaking github.com calls from inside it).
+#   - IAsyncResult capture (returned to the caller for later EndInvoke).
+#   - Error harvest from $ps.Streams.Error AND any terminating exception thrown
+#     by EndInvoke. Modules call Get-DiagRunspaceErrors in their timer's
+#     Complete branch and surface the result via Add-LogRow.
+
+function Start-DiagRunspace {
+    <#
+    .SYNOPSIS
+        Hosts a background script in a new runspace with TLS 1.2 + error capture.
+    .DESCRIPTION
+        Replaces the pre-1.0.54 BeginInvoke()|Out-Null pattern. Returns a hashtable
+        the caller stores on $script:* so the matching timer can call
+        Get-DiagRunspaceErrors when Complete flips true.
+        Prepends a TLS-1.2 bump to the pipeline so any HTTPS call from inside
+        the runspace doesn't fall back to TLS 1.0 (R13).
+    .PARAMETER Script
+        The script block to run inside the runspace.
+    .PARAMETER Parameters
+        Hashtable of parameters to AddParameters().
+    .PARAMETER Previous
+        Optional - the State hashtable from a prior call. Its Runspace + Ps are
+        closed/disposed before the new one is created.
+    #>
+    param(
+        [Parameter(Mandatory)] [scriptblock]$Script,
+        [hashtable]$Parameters,
+        [hashtable]$Variables,   # name->value pairs set via SessionStateProxy
+        [hashtable]$Previous
+    )
+
+    if ($Previous) {
+        if ($Previous.Runspace) { try { $Previous.Runspace.Close()   } catch { } }
+        if ($Previous.Ps)       { try { $Previous.Ps.Dispose()       } catch { } }
+    }
+
+    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+    $rs.ApartmentState = [System.Threading.ApartmentState]::STA
+    $rs.ThreadOptions  = [System.Management.Automation.Runspaces.PSThreadOptions]::ReuseThread
+    $rs.Open()
+    if ($Variables) {
+        foreach ($k in $Variables.Keys) {
+            $rs.SessionStateProxy.SetVariable($k, $Variables[$k])
+        }
+    }
+
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    # R13: defensively bump TLS to 1.2 inside the runspace. Cheap on healthy
+    # boxes, prevents a silent HTTPS failure on legacy VPU images if any
+    # future runspace script does an HTTPS call.
+    $ps.AddScript({
+        try {
+            [System.Net.ServicePointManager]::SecurityProtocol =
+                [System.Net.SecurityProtocolType]::Tls12 -bor
+                [System.Net.ServicePointManager]::SecurityProtocol
+        } catch { }
+    }) | Out-Null
+    $ps.AddScript($Script) | Out-Null
+    if ($Parameters) { $ps.AddParameters($Parameters) | Out-Null }
+
+    $async = $ps.BeginInvoke()
+    return @{
+        Runspace      = $rs
+        Ps            = $ps
+        Async         = $async
+        ErrorsHandled = $false
+    }
+}
+
+function Get-DiagRunspaceErrors {
+    <#
+    .SYNOPSIS
+        Harvests runspace errors after the background script completes.
+    .DESCRIPTION
+        Call this from a module's timer when the *Complete sync flag flips true.
+        Idempotent — ErrorsHandled guards against double-EndInvoke.
+        Returns @() on success or an array of error description strings.
+    #>
+    param([hashtable]$State)
+    if (-not $State -or -not $State.Ps -or -not $State.Async) { return @() }
+    if ($State.ErrorsHandled) { return @() }
+    $State.ErrorsHandled = $true
+    $errs = @()
+    try {
+        $State.Ps.EndInvoke($State.Async) | Out-Null
+    } catch {
+        # Terminating exception thrown by the script.
+        $errs += "Script threw: $($_.Exception.GetType().Name): $($_.Exception.Message)"
+    }
+    foreach ($e in $State.Ps.Streams.Error) {
+        $msg = $e.ToString()
+        $where = if ($e.InvocationInfo -and $e.InvocationInfo.PositionMessage) {
+            ($e.InvocationInfo.PositionMessage -replace "[\r\n]+"," ").Trim()
+        } else { "" }
+        $errs += if ($where) { "$msg  ($where)" } else { $msg }
+    }
+    return $errs
 }
 
 # ---------- Shared state (runspace <-> UI timer) ----------------------------
@@ -2513,12 +2629,45 @@ $center.Controls.Add($lblEta)
 
 # ---- Detected NIC list (used by diagram + diagnostic) ----------------------
 $portRowW = 1040; $portRowX0 = 28   # v1.0.49: tightened from 1224 so the status cards row ends at X=1068, well clear of the right-edge sidebar at X=1124
-$script:detectedNics = @(Get-NetAdapter | Where-Object {
-    $d = $_.InterfaceDescription
-    ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
-} | Sort-Object {
-    try { (Get-NetAdapterHardwareInfo -Name $_.Name -ErrorAction Stop).Function } catch { 999 }
-}, Name)
+# R3 fix: wrap the dot-source-time Get-NetAdapter call in a 6-second job so a
+# stuck WMI / NetTCPIP layer can't block module load (and therefore the entire
+# UI thread + window paint). Sick-WMI is one of the failure modes Pulse exists
+# to diagnose; the tool itself must survive it.
+$script:detectedNics = @()
+# Use a runspace-hosted timeout (~80ms overhead) instead of Start-Job (~500ms+)
+# or ThreadJob (may not be present on locked-down LTSC images). 6-second cap.
+$detectPs   = $null
+$detectAsync= $null
+try {
+    $detectPs = [powershell]::Create()
+    $detectPs.AddScript({
+        param($Patterns)
+        Get-NetAdapter | Where-Object {
+            $d = $_.InterfaceDescription
+            ($Patterns | Where-Object { $d -like $_ }).Count -gt 0
+        } | Sort-Object {
+            try { (Get-NetAdapterHardwareInfo -Name $_.Name -ErrorAction Stop).Function } catch { 999 }
+        }, Name
+    }).AddArgument($NicDriverPatterns) | Out-Null
+    $detectAsync = $detectPs.BeginInvoke()
+    if ($detectAsync.AsyncWaitHandle.WaitOne(6000)) {
+        $script:detectedNics = @($detectPs.EndInvoke($detectAsync))
+    } else {
+        Write-Warning "NIC detection timed out at module load (WMI/NetTCPIP not responding within 6s); cards will populate from the live monitor instead."
+        $detectPs.Stop()
+    }
+} catch {
+    # Fallback: try the synchronous call once. Better to have an empty
+    # $detectedNics than crash module load.
+    try {
+        $script:detectedNics = @(Get-NetAdapter | Where-Object {
+            $d = $_.InterfaceDescription
+            ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
+        })
+    } catch { $script:detectedNics = @() }
+} finally {
+    if ($detectPs) { try { $detectPs.Dispose() } catch { } }
+}
 
 # ---- $cards hashtable ------------------------------------------------------
 # The Camera diagnostic timer iterates $cards.Keys and calls Update-CardStatus
@@ -3466,6 +3615,9 @@ $timer.Add_Tick({
     if ($sync.Complete -and -not $sync.Running) {
         $timer.Stop()
         $btnCancel.Visible = $false
+        # R2: surface any runspace errors from the camera diagnostic run.
+        $camErrs = Get-DiagRunspaceErrors $script:camDiagState
+        foreach ($em in $camErrs) { Add-LogRow $dgvLog "Runspace error" $em "Fail" }
         $btnRun.Enabled = $true
         $btnRun.Text = if ($cboNic.SelectedIndex -le 0) {
             [char]0x25B6 + "  Run Test"
@@ -3538,34 +3690,29 @@ function Start-CameraConnDiagnostic {
     $btnRetest.Enabled = $false
     $script:spinIdx = 0; $lblStatus.ForeColor = $ColAccent; $lblStatus.Text = " |  Starting..."
 
-    if ($script:runspace) { try { $script:runspace.Close() } catch { } }
-    if ($script:diagPs) { try { $script:diagPs.Dispose() } catch { }; $script:diagPs = $null }
-    $script:runspace = [runspacefactory]::CreateRunspace()
-    $script:runspace.ApartmentState = "STA"
-    $script:runspace.ThreadOptions  = "ReuseThread"
-    $script:runspace.Open()
-
-    $script:diagPs = [powershell]::Create()
-    $script:diagPs.Runspace = $script:runspace
-    $script:diagPs.AddScript($DiagScript) | Out-Null
+    # R2/R13: standardised runspace hosting with TLS-1.2 + IAsyncResult capture.
     $filterNicVal = if ($cboNic.SelectedIndex -gt 0) { Get-NicNameFromCbo ($cboNic.SelectedItem -as [string]) } else { "" }
-    $script:diagPs.AddParameters(@{
-        sync               = $sync
-        NicDriverPatterns  = $NicDriverPatterns
-        RenegotiateWaitSec = $RenegotiateWaitSec
-        EventLogHours      = $EventLogHours
-        PixellotLogPaths   = $PixellotLogPaths
-        RtspPort           = $RtspPort
-        OutputFile         = $newOutput
-        RunId              = $newRunId
-        ScriptVersion      = $ScriptVersion
-        OcrMacOui          = $OcrMacOui
-        PixCameraRoles     = $script:PixCameraRoles
-        FilterNic          = $filterNicVal
-        PoeDllPath         = if ($PoeDllPath) { $PoeDllPath } else { "" }
-        PoeMgmtSupported   = if ($script:nicCardInfo) { [bool]$script:nicCardInfo.PoeMgmtSupported } else { $true }
-    }) | Out-Null
-    $script:diagPs.BeginInvoke() | Out-Null
+    $script:camDiagState = Start-DiagRunspace `
+        -Script    $DiagScript `
+        -Parameters @{
+            sync               = $sync
+            NicDriverPatterns  = $NicDriverPatterns
+            RenegotiateWaitSec = $RenegotiateWaitSec
+            EventLogHours      = $EventLogHours
+            PixellotLogPaths   = $PixellotLogPaths
+            RtspPort           = $RtspPort
+            OutputFile         = $newOutput
+            RunId              = $newRunId
+            ScriptVersion      = $ScriptVersion
+            OcrMacOui          = $OcrMacOui
+            PixCameraRoles     = $script:PixCameraRoles
+            FilterNic          = $filterNicVal
+            PoeDllPath         = if ($PoeDllPath) { $PoeDllPath } else { "" }
+            PoeMgmtSupported   = if ($script:nicCardInfo) { [bool]$script:nicCardInfo.PoeMgmtSupported } else { $true }
+        } `
+        -Previous $script:camDiagState
+    $script:runspace = $script:camDiagState.Runspace
+    $script:diagPs   = $script:camDiagState.Ps
     $timer.Start()
 }
 
@@ -4633,6 +4780,15 @@ $netTimer.Add_Tick({
             if ($val) { $sync.Cards[$netKey] = @{ Value = $val; Status = $sts } }
         }
         $netTimer.Stop()
+        # R2: surface any runspace errors. Network uses an rtbNetLog RichTextBox
+        # rather than a DataGridView, so append the error inline.
+        $netErrs = Get-DiagRunspaceErrors $script:netState
+        foreach ($em in $netErrs) {
+            $rtbNetLog.SelectionStart = $rtbNetLog.TextLength; $rtbNetLog.SelectionLength = 0
+            $rtbNetLog.SelectionFont  = New-Object System.Drawing.Font("Consolas", 8)
+            $rtbNetLog.SelectionColor = $ColLogFail
+            $rtbNetLog.AppendText("`n  Runspace error: $em")
+        }
         $btnNetCancel.Visible = $false
         $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Test"
         $lblNetStatus.ForeColor = $ColMuted
@@ -5056,20 +5212,20 @@ function Start-NetDiagnostic {
     $lblNetStatus.ForeColor = $ColAccent; $lblNetStatus.Text = " |  Starting..."
     $script:netSpinIdx = 0
 
-    if ($script:netRunspace) { try { $script:netRunspace.Close() } catch { } }
-    if ($script:netPs) { try { $script:netPs.Dispose() } catch { }; $script:netPs = $null }
-    $script:netRunspace = [runspacefactory]::CreateRunspace()
-    $script:netRunspace.ApartmentState = "STA"
-    $script:netRunspace.ThreadOptions  = "ReuseThread"
-    $script:netRunspace.Open()
-    $script:netRunspace.SessionStateProxy.SetVariable("sync",         $sync)
-    $script:netRunspace.SessionStateProxy.SetVariable("PortTests",    $PortTests)
-    $script:netRunspace.SessionStateProxy.SetVariable("DomainTests",  $DomainTests)
-    $script:netRunspace.SessionStateProxy.SetVariable("NetTimeoutMs", $NetTimeoutMs)
-    $script:netPs = [powershell]::Create()
-    $script:netPs.Runspace = $script:netRunspace
-    $script:netPs.AddScript($NetScript) | Out-Null
-    $script:netPs.BeginInvoke() | Out-Null
+    # R2/R13: standardised runspace hosting. NetScript depends on session-scoped
+    # variables ($sync / $PortTests / etc.) rather than parameters, so we pass
+    # them via the Variables hashtable (mirrors the old SessionStateProxy calls).
+    $script:netState = Start-DiagRunspace `
+        -Script    $NetScript `
+        -Variables @{
+            sync         = $sync
+            PortTests    = $PortTests
+            DomainTests  = $DomainTests
+            NetTimeoutMs = $NetTimeoutMs
+        } `
+        -Previous $script:netState
+    $script:netRunspace = $script:netState.Runspace
+    $script:netPs       = $script:netState.Ps
     $netTimer.Start()
 }
 
@@ -5392,6 +5548,9 @@ $hwTimer.Add_Tick({
         $hwTimer.Stop(); $btnHwCancel.Visible=$false
         $btnHwRun.Enabled=$true; $btnHwRun.Text=[char]0x25B6+"  Run Test"
         $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
+        # R2: surface any runspace errors.
+        $hwErrs = Get-DiagRunspaceErrors $script:hwState
+        foreach ($em in $hwErrs) { Add-LogRow $dgvHwLog "Runspace error" $em "Fail" }
         # NIC port diagram now lives on Camera Connectivity (v1.0.47); ask it to refresh.
         try { Update-HwPortDiagram } catch { }
 
@@ -5534,14 +5693,14 @@ function Start-HwDiagnostic {
     $dgvHwLog.Rows.Clear(); $btnHwRun.Enabled=$false; $btnHwRun.Text="  Running..."
     $btnHwCancel.Visible=$true; $script:hwSpinIdx=0
     $lblHwStatus.ForeColor=$ColAccent; $lblHwStatus.Text=" |  Starting..."
-    if ($script:hwRunspace) { try { $script:hwRunspace.Close() } catch { } }
-    if ($script:hwPs) { try { $script:hwPs.Dispose() } catch { }; $script:hwPs = $null }
-    $script:hwRunspace = [runspacefactory]::CreateRunspace()
-    $script:hwRunspace.ApartmentState="STA"; $script:hwRunspace.ThreadOptions="ReuseThread"; $script:hwRunspace.Open()
-    $script:hwPs = [powershell]::Create(); $script:hwPs.Runspace=$script:hwRunspace
-    $script:hwPs.AddScript($HwScript) | Out-Null
-    $script:hwPs.AddParameters(@{ sync=$sync }) | Out-Null
-    $script:hwPs.BeginInvoke() | Out-Null; $hwTimer.Start()
+    # R2/R13: standardised runspace hosting.
+    $script:hwState = Start-DiagRunspace `
+        -Script    $HwScript `
+        -Parameters @{ sync = $sync } `
+        -Previous   $script:hwState
+    $script:hwRunspace = $script:hwState.Runspace
+    $script:hwPs       = $script:hwState.Ps
+    $hwTimer.Start()
 }
 
 $btnHwRun.Add_Click({ Start-HwDiagnostic })
@@ -5708,6 +5867,10 @@ $svcTimer.Add_Tick({
         $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Run Test"
         $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
 
+        # R2: surface any runspace errors.
+        $svcErrs = Get-DiagRunspaceErrors $script:svcState
+        foreach ($em in $svcErrs) { Add-LogRow $dgvSvcLog "Runspace error" $em "Fail" }
+
         # Update Overall Status pill from worst card status (v1.0.43)
         $svcWorst = "ok"
         $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
@@ -5839,14 +6002,14 @@ function Start-SvcDiagnostic {
     $dgvSvcLog.Rows.Clear(); $btnSvcRun.Enabled=$false; $btnSvcRun.Text="  Running..."
     $btnSvcCancel.Visible=$true; $script:svcSpinIdx=0
     $lblSvcStatus.ForeColor=$ColAccent; $lblSvcStatus.Text=" |  Starting..."
-    if ($script:svcRunspace) { try { $script:svcRunspace.Close() } catch { } }
-    if ($script:svcPs) { try { $script:svcPs.Dispose() } catch { }; $script:svcPs = $null }
-    $script:svcRunspace = [runspacefactory]::CreateRunspace()
-    $script:svcRunspace.ApartmentState="STA"; $script:svcRunspace.ThreadOptions="ReuseThread"; $script:svcRunspace.Open()
-    $script:svcPs = [powershell]::Create(); $script:svcPs.Runspace=$script:svcRunspace
-    $script:svcPs.AddScript($SvcScript) | Out-Null
-    $script:svcPs.AddParameters(@{ sync=$sync }) | Out-Null
-    $script:svcPs.BeginInvoke() | Out-Null; $svcTimer.Start()
+    # R2/R13: standardised runspace hosting.
+    $script:svcState = Start-DiagRunspace `
+        -Script    $SvcScript `
+        -Parameters @{ sync = $sync } `
+        -Previous   $script:svcState
+    $script:svcRunspace = $script:svcState.Runspace
+    $script:svcPs       = $script:svcState.Ps
+    $svcTimer.Start()
 }
 
 $btnSvcRun.Add_Click({ Start-SvcDiagnostic })
@@ -6257,6 +6420,12 @@ $diskTimer.Add_Tick({
         $btnDiskRun.Enabled=$true; $btnDiskRun.Text=[char]0x25B6+"  Run Test"
         $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
 
+        # R2: surface any runspace errors that accumulated during the run.
+        $diskErrs = Get-DiagRunspaceErrors $script:diskState
+        foreach ($em in $diskErrs) {
+            Add-LogRow $dgvDiskLog "Runspace error" $em "Fail"
+        }
+
         # Update Overall Status pill
         $diskWorst = "ok"
         $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
@@ -6390,14 +6559,18 @@ function Start-DiskDiagnostic {
     $dgvDiskLog.Rows.Clear(); $btnDiskRun.Enabled=$false; $btnDiskRun.Text="  Running..."
     $btnDiskCancel.Visible=$true; $script:diskSpinIdx=0
     $lblDiskStatus.ForeColor=$ColAccent; $lblDiskStatus.Text=" |  Starting..."
-    if ($script:diskRunspace) { try { $script:diskRunspace.Close() } catch { } }
-    if ($script:diskPs) { try { $script:diskPs.Dispose() } catch { }; $script:diskPs = $null }
-    $script:diskRunspace = [runspacefactory]::CreateRunspace()
-    $script:diskRunspace.ApartmentState="STA"; $script:diskRunspace.ThreadOptions="ReuseThread"; $script:diskRunspace.Open()
-    $script:diskPs = [powershell]::Create(); $script:diskPs.Runspace=$script:diskRunspace
-    $script:diskPs.AddScript($DiskScript) | Out-Null
-    $script:diskPs.AddParameters(@{ sync=$sync }) | Out-Null
-    $script:diskPs.BeginInvoke() | Out-Null; $diskTimer.Start()
+    # R2/R13: Start-DiagRunspace handles cleanup of $script:diskState, TLS-1.2
+    # bump inside the runspace, and captures the IAsyncResult so EndInvoke can
+    # surface errors in the timer's Complete branch.
+    $script:diskState = Start-DiagRunspace `
+        -Script    $DiskScript `
+        -Parameters @{ sync = $sync } `
+        -Previous   $script:diskState
+    # Back-compat shims for any consumer still reading the legacy script-scoped
+    # names (FormClosing dispose, etc.).
+    $script:diskRunspace = $script:diskState.Runspace
+    $script:diskPs       = $script:diskState.Ps
+    $diskTimer.Start()
 }
 
 $btnDiskRun.Add_Click({ Start-DiskDiagnostic })
@@ -6543,6 +6716,10 @@ $evtTimer.Add_Tick({
         $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Run Test"
         $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
 
+        # R2: surface any runspace errors.
+        $evtErrs = Get-DiagRunspaceErrors $script:evtState
+        foreach ($em in $evtErrs) { Add-LogRow $dgvEvtLog "Runspace error" $em "Fail" }
+
         $evtC = $sync.Cards["EvtStatus"]
         $evtSt = if ($evtC) { $evtC.Status } else { "neutral" }
         Set-SectionPill $evtHeader $evtSt
@@ -6642,14 +6819,14 @@ function Start-EvtDiagnostic {
     $dgvEvtLog.Rows.Clear(); $btnEvtRun.Enabled=$false; $btnEvtRun.Text="  Running..."
     $btnEvtCancel.Visible=$true; $script:evtSpinIdx=0
     $lblEvtStatus.ForeColor=$ColAccent; $lblEvtStatus.Text=" |  Starting..."
-    if ($script:evtRunspace) { try { $script:evtRunspace.Close() } catch { } }
-    if ($script:evtPs) { try { $script:evtPs.Dispose() } catch { }; $script:evtPs = $null }
-    $script:evtRunspace = [runspacefactory]::CreateRunspace()
-    $script:evtRunspace.ApartmentState="STA"; $script:evtRunspace.ThreadOptions="ReuseThread"; $script:evtRunspace.Open()
-    $script:evtPs = [powershell]::Create(); $script:evtPs.Runspace=$script:evtRunspace
-    $script:evtPs.AddScript($EvtScript) | Out-Null
-    $script:evtPs.AddParameters(@{ sync=$sync; EvtHours=24 }) | Out-Null
-    $script:evtPs.BeginInvoke() | Out-Null; $evtTimer.Start()
+    # R2/R13: see DiskHealth.psm1 for rationale.
+    $script:evtState = Start-DiagRunspace `
+        -Script    $EvtScript `
+        -Parameters @{ sync = $sync; EvtHours = 24 } `
+        -Previous   $script:evtState
+    $script:evtRunspace = $script:evtState.Runspace
+    $script:evtPs       = $script:evtState.Ps
+    $evtTimer.Start()
 }
 
 $btnEvtRun.Add_Click({ Start-EvtDiagnostic })
@@ -7133,6 +7310,9 @@ $sysInfoTimer.Add_Tick({
     }
     if ($sync.SysInfoComplete) {
         $sysInfoTimer.Stop()
+        # R2: surface any runspace errors.
+        $siErrs = Get-DiagRunspaceErrors $script:sysInfoState
+        foreach ($em in $siErrs) { Add-LogRow $siGrid "Runspace error" $em "Fail" }
         $btnSiRefresh.Enabled = $true
         $btnSiRefresh.Text    = [char]0xE72C + "  Refresh"
         $lblSiStatus.Text     = "Collected at $(Get-Date -Format 'h:mm:ss tt')"
@@ -7167,22 +7347,15 @@ function Start-SysInfoCollection {
     $sync.SysInfoComplete  = $false
     $sync.SysInfoCancelled = $false
     $sync.SysInfoStep      = "Starting..."
-    if ($script:sysInfoRunspace) {
-        try { $script:sysInfoRunspace.Close(); $script:sysInfoRunspace.Dispose() } catch { }
-    }
-    if ($script:sysInfoPs) {
-        try { $script:sysInfoPs.Dispose() } catch { }; $script:sysInfoPs = $null
-    }
-    $script:sysInfoRunspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $script:sysInfoRunspace.ApartmentState = "STA"
-    $script:sysInfoRunspace.ThreadOptions  = "ReuseThread"
-    $script:sysInfoRunspace.Open()
-    # Pass $sync to the runspace via AddArgument only — using SessionStateProxy.SetVariable
-    # AND AddArgument both was wasted work and made the contract ambiguous.
-    $script:sysInfoPs = [System.Management.Automation.PowerShell]::Create()
-    $script:sysInfoPs.Runspace = $script:sysInfoRunspace
-    $script:sysInfoPs.AddScript($SysInfoScript).AddArgument($sync) | Out-Null
-    $script:sysInfoPs.BeginInvoke() | Out-Null
+    # R2/R13: standardised runspace hosting. SysInfoScript declares param($sync)
+    # so we pass via Parameters @{sync=$sync} (named) — equivalent to the old
+    # positional AddArgument($sync).
+    $script:sysInfoState = Start-DiagRunspace `
+        -Script    $SysInfoScript `
+        -Parameters @{ sync = $sync } `
+        -Previous   $script:sysInfoState
+    $script:sysInfoRunspace = $script:sysInfoState.Runspace
+    $script:sysInfoPs       = $script:sysInfoState.Ps
     $sysInfoTimer.Start()
 }
 
@@ -7339,6 +7512,37 @@ function Get-FdActionText {
 function Invoke-FdModule {
     param([hashtable]$Mod)
     & $Mod.RunFn
+}
+
+# R12: stagger module-start invocations. Previously every module's runspace
+# opened in the same tick — WMI/CIM on stressed Win10 LTSC routinely throttles
+# concurrent queries and a 7-way burst could hit 0x80041032 / 60 s timeouts.
+# 250 ms between starts keeps the total startup under 2 s while letting each
+# runspace's first WMI query land cleanly.
+function Invoke-FdModulesStaggered {
+    param([hashtable[]]$Modules, [int]$DelayMs = 250)
+    if (-not $Modules -or $Modules.Count -eq 0) { return }
+    # Fire the first immediately so the UI has visible motion right away.
+    Invoke-FdModule $Modules[0]
+    if ($Modules.Count -eq 1) { return }
+    # Stagger the remaining via a one-shot timer chain. We can't use Start-Sleep
+    # here because we're on the UI thread; blocking it would freeze the form.
+    $script:fdStaggerQueue = [System.Collections.ArrayList]::new()
+    for ($i = 1; $i -lt $Modules.Count; $i++) { [void]$script:fdStaggerQueue.Add($Modules[$i]) }
+    if (-not $script:fdStaggerTimer) {
+        $script:fdStaggerTimer = New-Object System.Windows.Forms.Timer
+        $script:fdStaggerTimer.Add_Tick({
+            if ($script:fdStaggerQueue.Count -eq 0) {
+                $script:fdStaggerTimer.Stop()
+                return
+            }
+            $next = $script:fdStaggerQueue[0]
+            $script:fdStaggerQueue.RemoveAt(0)
+            Invoke-FdModule $next
+        })
+    }
+    $script:fdStaggerTimer.Interval = $DelayMs
+    $script:fdStaggerTimer.Start()
 }
 
 # --- Panel -------------------------------------------------------------------
@@ -7769,7 +7973,8 @@ function Start-FailedDiagnostic {
         $row.LastWorst           = "neutral"
     }
 
-    foreach ($i in $toRerun) { Invoke-FdModule $fdModuleDefs[$i] }
+    $rerunMods = @($toRerun | ForEach-Object { $fdModuleDefs[$_] })
+    Invoke-FdModulesStaggered -Modules $rerunMods
 
     if (-not $timerFullDiag.Enabled) { $timerFullDiag.Start() }
 }
@@ -7806,7 +8011,7 @@ function Start-FullDiagnostic {
         $row.LastWorst           = "neutral"
     }
 
-    foreach ($mod in $fdModuleDefs) { Invoke-FdModule $mod }
+    Invoke-FdModulesStaggered -Modules $fdModuleDefs
 
     $timerFullDiag.Start()
 }

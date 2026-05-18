@@ -138,6 +138,10 @@ $evtTimer.Add_Tick({
         $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Run Test"
         $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
 
+        # R2: surface any runspace errors.
+        $evtErrs = Get-DiagRunspaceErrors $script:evtState
+        foreach ($em in $evtErrs) { Add-LogRow $dgvEvtLog "Runspace error" $em "Fail" }
+
         $evtC = $sync.Cards["EvtStatus"]
         $evtSt = if ($evtC) { $evtC.Status } else { "neutral" }
         Set-SectionPill $evtHeader $evtSt
@@ -237,14 +241,14 @@ function Start-EvtDiagnostic {
     $dgvEvtLog.Rows.Clear(); $btnEvtRun.Enabled=$false; $btnEvtRun.Text="  Running..."
     $btnEvtCancel.Visible=$true; $script:evtSpinIdx=0
     $lblEvtStatus.ForeColor=$ColAccent; $lblEvtStatus.Text=" |  Starting..."
-    if ($script:evtRunspace) { try { $script:evtRunspace.Close() } catch { } }
-    if ($script:evtPs) { try { $script:evtPs.Dispose() } catch { }; $script:evtPs = $null }
-    $script:evtRunspace = [runspacefactory]::CreateRunspace()
-    $script:evtRunspace.ApartmentState="STA"; $script:evtRunspace.ThreadOptions="ReuseThread"; $script:evtRunspace.Open()
-    $script:evtPs = [powershell]::Create(); $script:evtPs.Runspace=$script:evtRunspace
-    $script:evtPs.AddScript($EvtScript) | Out-Null
-    $script:evtPs.AddParameters(@{ sync=$sync; EvtHours=24 }) | Out-Null
-    $script:evtPs.BeginInvoke() | Out-Null; $evtTimer.Start()
+    # R2/R13: see DiskHealth.psm1 for rationale.
+    $script:evtState = Start-DiagRunspace `
+        -Script    $EvtScript `
+        -Parameters @{ sync = $sync; EvtHours = 24 } `
+        -Previous   $script:evtState
+    $script:evtRunspace = $script:evtState.Runspace
+    $script:evtPs       = $script:evtState.Ps
+    $evtTimer.Start()
 }
 
 $btnEvtRun.Add_Click({ Start-EvtDiagnostic })

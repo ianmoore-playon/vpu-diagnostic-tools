@@ -132,6 +132,9 @@ $hwTimer.Add_Tick({
         $hwTimer.Stop(); $btnHwCancel.Visible=$false
         $btnHwRun.Enabled=$true; $btnHwRun.Text=[char]0x25B6+"  Run Test"
         $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
+        # R2: surface any runspace errors.
+        $hwErrs = Get-DiagRunspaceErrors $script:hwState
+        foreach ($em in $hwErrs) { Add-LogRow $dgvHwLog "Runspace error" $em "Fail" }
         # NIC port diagram now lives on Camera Connectivity (v1.0.47); ask it to refresh.
         try { Update-HwPortDiagram } catch { }
 
@@ -274,14 +277,14 @@ function Start-HwDiagnostic {
     $dgvHwLog.Rows.Clear(); $btnHwRun.Enabled=$false; $btnHwRun.Text="  Running..."
     $btnHwCancel.Visible=$true; $script:hwSpinIdx=0
     $lblHwStatus.ForeColor=$ColAccent; $lblHwStatus.Text=" |  Starting..."
-    if ($script:hwRunspace) { try { $script:hwRunspace.Close() } catch { } }
-    if ($script:hwPs) { try { $script:hwPs.Dispose() } catch { }; $script:hwPs = $null }
-    $script:hwRunspace = [runspacefactory]::CreateRunspace()
-    $script:hwRunspace.ApartmentState="STA"; $script:hwRunspace.ThreadOptions="ReuseThread"; $script:hwRunspace.Open()
-    $script:hwPs = [powershell]::Create(); $script:hwPs.Runspace=$script:hwRunspace
-    $script:hwPs.AddScript($HwScript) | Out-Null
-    $script:hwPs.AddParameters(@{ sync=$sync }) | Out-Null
-    $script:hwPs.BeginInvoke() | Out-Null; $hwTimer.Start()
+    # R2/R13: standardised runspace hosting.
+    $script:hwState = Start-DiagRunspace `
+        -Script    $HwScript `
+        -Parameters @{ sync = $sync } `
+        -Previous   $script:hwState
+    $script:hwRunspace = $script:hwState.Runspace
+    $script:hwPs       = $script:hwState.Ps
+    $hwTimer.Start()
 }
 
 $btnHwRun.Add_Click({ Start-HwDiagnostic })
