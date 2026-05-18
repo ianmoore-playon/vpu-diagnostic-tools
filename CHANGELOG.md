@@ -2,15 +2,20 @@
 
 All notable changes to `Pulse.ps1` are documented here.
 
-Version format: `MAJOR.MINOR.PATCH`
+Version format: `MAJOR.MINOR.PATCH[-PRERELEASE]`
 
 - **MAJOR** — full rewrites or fundamental architecture changes
 - **MINOR** — new functional flows, significant new features, new tabs or workflows
 - **PATCH** — bug fixes, UI polish, text changes, minor improvements
+- **PRERELEASE** — `-beta` while the tool is in alpha/beta. Dropped at v1 GA.
 
 ---
 
-## [1.0.53] - 2026-05-18
+## [1.0.53-beta] - 2026-05-18
+
+### Changed
+
+- **Pre-release suffix added.** Every build now carries `-beta` in `version.txt` and `$ScriptVersion` until v1.0 GA. Communicates the alpha/beta status of the tool in the header bar, About panel, launcher banner, and report headers. The async update-check at `Pulse.ps1:1042` strips the suffix before the `[version]` cast so stable ↔ beta comparisons still work.
 
 ### Removed
 

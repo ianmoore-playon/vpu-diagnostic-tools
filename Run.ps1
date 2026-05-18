@@ -5,7 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.53"
+$ScriptVersion = "1.0.53-beta"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -7874,8 +7874,10 @@ $form.Add_Load({
             try {
                 $data = $Event.MessageData
                 if (-not $EventArgs.Error -and
-                    $EventArgs.Result -match '\$ScriptVersion\s*=\s*"(\d+\.\d+\.\d+)"') {
-                    if ([version]$Matches[1] -gt [version]$data.CurVer) {
+                    $EventArgs.Result -match '\$ScriptVersion\s*=\s*"(\d+\.\d+\.\d+)(?:-[a-z0-9]+)?"') {
+                    # Strip pre-release suffix before [version] cast — handles both stable and -beta builds.
+                    $curNumeric = ($data.CurVer -replace '-.+$', '')
+                    if ([version]$Matches[1] -gt [version]$curNumeric) {
                         $data.Sync.UpdateAvailable = $Matches[1]
                     }
                 }
