@@ -779,11 +779,11 @@ namespace Pulse.WPF.Services
         {
             try
             {
-                return Task.Run(async () =>
+                return Task.Run<IPAddress[]>(async () =>
                 {
                     var dnsTask = Dns.GetHostAddressesAsync(host);
                     var winner  = await Task.WhenAny(dnsTask, Task.Delay(TimeoutMs)).ConfigureAwait(false);
-                    if (winner != dnsTask) return null;
+                    if (winner != dnsTask) return (IPAddress[])null;
                     return await dnsTask.ConfigureAwait(false);
                 }).GetAwaiter().GetResult();
             }
