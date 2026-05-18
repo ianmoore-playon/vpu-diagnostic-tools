@@ -5,22 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.52"
-
-# Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
-$script:FeedbackToken = ""
-try {
-    $keyPath = "C:\ProgramData\Pulse\feedback.key"
-    if (Test-Path $keyPath) {
-        Add-Type -AssemblyName System.Security
-        $enc   = [System.IO.File]::ReadAllBytes($keyPath)
-        $bytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
-            $enc, $null, [System.Security.Cryptography.DataProtectionScope]::LocalMachine
-        )
-        $script:FeedbackToken = [System.Text.Encoding]::UTF8.GetString($bytes)
-        [System.Array]::Clear($bytes, 0, $bytes.Length)
-    }
-} catch { $script:FeedbackToken = "" }
+$ScriptVersion = "1.0.53"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -518,7 +503,7 @@ $tabTip.SetToolTip($navDisk,        "Drive free space, disk health, and system m
 $tabTip.SetToolTip($navEvents,      "Recent OS system errors filtered for hardware and service-related issues")
 $tabTip.SetToolTip($navReports,     "View, copy, or export previously saved diagnostic reports")
 $tabTip.SetToolTip($navSettings,    "Theme and application settings")
-$tabTip.SetToolTip($navAbout,       "Help, version, and feedback form")
+$tabTip.SetToolTip($navAbout,       "Help and version information")
 
 # Tab-bar Run Diagnostic button removed — primary action is now per-panel.
 # Define a hidden compat button so $btnTabFullDiag.Add_Click in module wiring still works.
@@ -737,24 +722,6 @@ $btnSetOpenDir.Cursor    = [System.Windows.Forms.Cursors]::Hand
 $btnSetOpenDir.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 180, 32)), 6))
 $cardReports.Controls.Add($btnSetOpenDir)
 $btnSetOpenDir.Add_Click({ if (Test-Path $OutputDir) { Start-Process explorer.exe $OutputDir } })
-
-# Feedback — token configuration shortcut
-$cardFeedback = _NewSetCard -Y 374 -H 110 -Title "Feedback"
-$lblSetFbName = New-Object System.Windows.Forms.Label
-$lblSetFbName.Text      = "GitHub Token"
-$lblSetFbName.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
-$lblSetFbName.ForeColor = $ColText
-$lblSetFbName.Location  = New-Object System.Drawing.Point(16, 44)
-$lblSetFbName.AutoSize  = $true
-$cardFeedback.Controls.Add($lblSetFbName)
-
-$lblSetFbState = New-Object System.Windows.Forms.Label
-$lblSetFbState.Text      = if ($script:FeedbackToken) { "Configured. Feedback will post directly to the tools team." } else { "Not configured. Feedback will be copied to clipboard as a fallback." }
-$lblSetFbState.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
-$lblSetFbState.ForeColor = if ($script:FeedbackToken) { $ColGreen } else { $ColYellow }
-$lblSetFbState.Location  = New-Object System.Drawing.Point(16, 64)
-$lblSetFbState.Size      = New-Object System.Drawing.Size(440, 18)
-$cardFeedback.Controls.Add($lblSetFbState)
 
 # About card on the right column — version + license + repo link
 $cardAbout = New-Object System.Windows.Forms.Panel
@@ -1074,7 +1041,6 @@ $form.Add_Load({
     # Stash $wc and the event subscription so FormClosing can clean them up.
     try {
         $script:updateWc = New-Object System.Net.WebClient
-        if ($env:VPU_DEPLOY_TOKEN) { $script:updateWc.Headers.Add("Authorization", "Bearer $env:VPU_DEPLOY_TOKEN") }
         $script:updateSub = Register-ObjectEvent -InputObject $script:updateWc -EventName DownloadStringCompleted `
             -MessageData @{ Sync = $sync; CurVer = $ScriptVersion } -Action {
             try {

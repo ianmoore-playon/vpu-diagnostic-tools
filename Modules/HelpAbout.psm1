@@ -10,17 +10,18 @@ $pnlHelp.BackColor = $ColBg; $pnlHelp.Visible = $false
 $pnlHelp.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlHelp)
 
-# v1.0.43 redesign — section header + guide content + feedback section
+# v1.0.43 redesign — section header + guide content
+# v1.0.53 — feedback form removed; user feedback goes through Slack / email.
 $helpHeader = New-SectionHeader -Parent $pnlHelp `
     -Title    "About & Help" `
-    -Subtitle "How to use Pulse, FAQ, and a feedback form for reporting issues."
+    -Subtitle "How to use Pulse and answers to common questions."
 Set-SectionPill $helpHeader "ok" "Pulse $ScriptVersion"
 
-# Help content — anchored top only so feedback section can sit at the bottom
+# Help content — fills the panel below the section header.
 $rtbHelp = New-Object System.Windows.Forms.RichTextBox
-$rtbHelp.Size = New-Object System.Drawing.Size(($pnlHelp.Width - 56), ($ContentH - 320))
+$rtbHelp.Size = New-Object System.Drawing.Size(($pnlHelp.Width - 56), ($ContentH - 130))
 $rtbHelp.Location = New-Object System.Drawing.Point(28, 110)
-$rtbHelp.Anchor = $AnchorTLR
+$rtbHelp.Anchor = $AnchorTLRB
 $rtbHelp.BackColor = $ColBg; $rtbHelp.ForeColor = $ColText
 $rtbHelp.Font = New-Object System.Drawing.Font("Segoe UI", 9); $rtbHelp.ReadOnly = $true
 $rtbHelp.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -41,7 +42,7 @@ $helpSections = @(
     @{ H="Camera Fault Isolator"; B="The Camera tab includes a guided fault-isolation wizard accessible via the Open Fault Isolator button. The wizard walks through a four-phase swap test to identify whether a degraded port is caused by the NIC, the cable, or the camera itself.`n`nPhase 1 captures the baseline link speed for the suspect port. Phase 2 swaps the cable to a known-good port to test if the fault follows the NIC port. Phase 3 swaps the cable to test if the fault follows the cable. Phase 4 swaps the camera to test if the fault follows the camera.`n`nEach phase produces a plain-language verdict, and the wizard concludes with a Run Full Diagnostic action to confirm the fix." }
     @{ H="System Information sections"; B="The System Information tab surfaces hardware specs and configuration details:`n`n- Pixellot Software: registry-derived App Version, System Image Version, and Package Dependencies.`n- Operating System / System: edition, build, manufacturer, model, BIOS, serial number.`n- Time & Locale: timezone, NTP server, W32Time service status. Flags UTC default as a likely misconfiguration.`n- Pixellot Calibrations: scans known calibration paths and lists files with last-modified times.`n- Installed Software: counts installed apps and flags known-conflicting software (other AV, OBS, BitTorrent, etc.)." }
     @{ H="Frequently asked questions"; B="Q: VPU.exe shows Not streaming - is that a problem?`nA: No. VPU.exe only runs when cameras are actively streaming. It is normal for it to be absent between games.`n`nQ: A NIC port shows No link - is that a fault?`nA: No link is normal for ports that do not have a camera connected. Only ports with a camera attached that show 100 Mbps are faults.`n`nQ: Network tests fail for pixellot.stream - is that a problem?`nA: pixellot.stream is no longer probed directly. Reliable port tests now hit Pixellot's prod-echo.pixellot.tv echo server, and the pixellot.stream domain shows an INFO row in the domain test (it is a stream-only destination).`n`nQ: The tool says it cannot read the event log - what does that mean?`nA: This can happen if the Windows Event Log service is stopped or the account running the tool lacks permission. Restart the service via services.msc." }
-    @{ H="About Pulse"; B="Pulse — Pixellot Unified Live System Evaluator`nVersion: see the header bar`nRepository: https://github.com/ianmoore-playon/vpu-diagnostic-tools`nLicense: Internal use within PlayOn Sports / NFHS Network. Not for external distribution.`n`nFeedback and bug reports go through the Submit Feedback form below — these are routed directly to the tools team. The form requires a feedback token configured at install time; if the token is missing, feedback is copied to the clipboard for manual handoff." }
+    @{ H="About Pulse"; B="Pulse — Pixellot Unified Live System Evaluator`nVersion: see the header bar`nRepository: https://github.com/ianmoore-playon/vpu-diagnostic-tools`nLicense: Internal use within PlayOn Sports / NFHS Network. Not for external distribution.`n`nFeedback and bug reports: please share directly with the tools team over Slack or email." }
 )
 $firstHelp = $true
 foreach ($s in $helpSections) {
@@ -55,159 +56,3 @@ foreach ($s in $helpSections) {
     $rtbHelp.SelectionFont = New-Object System.Drawing.Font("Segoe UI", 9); $rtbHelp.SelectionColor = $ColMuted; $rtbHelp.AppendText("$($s.B)`n")
     $firstHelp = $false
 }
-
-# ---- Feedback Section -------------------------------------------------------
-$sepFb = New-Object System.Windows.Forms.Panel
-$sepFb.Size     = New-Object System.Drawing.Size($WideW, 1)
-$sepFb.Location = New-Object System.Drawing.Point(0, ($ContentH - 189))
-$sepFb.BackColor = $ColCard
-$sepFb.Anchor   = $AnchorBLR
-$pnlHelp.Controls.Add($sepFb)
-
-$lblFbTitle = New-Object System.Windows.Forms.Label
-$lblFbTitle.Text      = "Submit Feedback"
-$lblFbTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5)
-$lblFbTitle.ForeColor = $ColText
-$lblFbTitle.Location  = New-Object System.Drawing.Point(24, ($ContentH - 183))
-$lblFbTitle.AutoSize  = $true
-$lblFbTitle.Anchor    = $AnchorBL
-$pnlHelp.Controls.Add($lblFbTitle)
-
-$lblFbSub = New-Object System.Windows.Forms.Label
-$lblFbSub.Text      = "Report a problem or suggest an improvement — sent directly to the Pixellot tools team."
-$lblFbSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
-$lblFbSub.ForeColor = $ColMuted
-$lblFbSub.Location  = New-Object System.Drawing.Point(24, ($ContentH - 163))
-$lblFbSub.Size      = New-Object System.Drawing.Size(900, 18)
-$lblFbSub.Anchor    = $AnchorBL
-$pnlHelp.Controls.Add($lblFbSub)
-
-$lblFbType = New-Object System.Windows.Forms.Label
-$lblFbType.Text      = "Type:"
-$lblFbType.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
-$lblFbType.ForeColor = $ColText
-$lblFbType.Location  = New-Object System.Drawing.Point(24, ($ContentH - 137))
-$lblFbType.AutoSize  = $true
-$lblFbType.Anchor    = $AnchorBL
-$pnlHelp.Controls.Add($lblFbType)
-
-$cboFbType = New-Object System.Windows.Forms.ComboBox
-$cboFbType.Items.AddRange(@("Bug Report", "Suggestion")) | Out-Null
-$cboFbType.SelectedIndex = 0
-$cboFbType.Size          = New-Object System.Drawing.Size(180, 24)
-$cboFbType.Location      = New-Object System.Drawing.Point(70, ($ContentH - 140))
-$cboFbType.BackColor     = $ColCard
-$cboFbType.ForeColor     = $ColText
-$cboFbType.Font          = New-Object System.Drawing.Font("Segoe UI", 9)
-$cboFbType.FlatStyle     = [System.Windows.Forms.FlatStyle]::Flat
-$cboFbType.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-$cboFbType.Anchor        = $AnchorBL
-$pnlHelp.Controls.Add($cboFbType)
-
-$chkFbSysInfo = New-Object System.Windows.Forms.CheckBox
-$chkFbSysInfo.Text      = "Include system info (hostname, OS, Pulse version)"
-$chkFbSysInfo.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
-$chkFbSysInfo.ForeColor = $ColMuted
-$chkFbSysInfo.Location  = New-Object System.Drawing.Point(270, ($ContentH - 138))
-$chkFbSysInfo.Size      = New-Object System.Drawing.Size(380, 20)
-$chkFbSysInfo.Checked   = $true
-$chkFbSysInfo.Anchor    = $AnchorBL
-$pnlHelp.Controls.Add($chkFbSysInfo)
-
-$lblFbDetails = New-Object System.Windows.Forms.Label
-$lblFbDetails.Text      = "Details:"
-$lblFbDetails.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
-$lblFbDetails.ForeColor = $ColText
-$lblFbDetails.Location  = New-Object System.Drawing.Point(24, ($ContentH - 107))
-$lblFbDetails.AutoSize  = $true
-$lblFbDetails.Anchor    = $AnchorBL
-$pnlHelp.Controls.Add($lblFbDetails)
-
-$txtFbDetails = New-Object System.Windows.Forms.TextBox
-$txtFbDetails.Multiline    = $true
-$txtFbDetails.Size         = New-Object System.Drawing.Size(1148, 52)
-$txtFbDetails.Location     = New-Object System.Drawing.Point(70, ($ContentH - 110))
-$txtFbDetails.BackColor    = $ColCard
-$txtFbDetails.ForeColor    = $ColText
-$txtFbDetails.Font         = New-Object System.Drawing.Font("Segoe UI", 9)
-$txtFbDetails.BorderStyle  = [System.Windows.Forms.BorderStyle]::FixedSingle
-$txtFbDetails.ScrollBars   = [System.Windows.Forms.ScrollBars]::Vertical
-$txtFbDetails.Anchor       = $AnchorBLR
-$pnlHelp.Controls.Add($txtFbDetails)
-
-$lblFbStatus = New-Object System.Windows.Forms.Label
-$lblFbStatus.Text      = ""
-$lblFbStatus.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
-$lblFbStatus.ForeColor = $ColMuted
-$lblFbStatus.Location  = New-Object System.Drawing.Point(24, ($ContentH - 50))
-$lblFbStatus.Size      = New-Object System.Drawing.Size(900, 18)
-$lblFbStatus.Anchor    = $AnchorBL
-$pnlHelp.Controls.Add($lblFbStatus)
-
-$btnFbSend = New-Object System.Windows.Forms.Button
-$btnFbSend.Text      = "Send Feedback"
-$btnFbSend.Size      = New-Object System.Drawing.Size(130, 28)
-$btnFbSend.Location  = New-Object System.Drawing.Point(($WideW - 154), ($ContentH - 54))
-$btnFbSend.BackColor = $ColAccent
-$btnFbSend.ForeColor = [System.Drawing.Color]::White
-$btnFbSend.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnFbSend.FlatAppearance.BorderSize = 0
-$btnFbSend.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
-$btnFbSend.Cursor    = [System.Windows.Forms.Cursors]::Hand
-$btnFbSend.Anchor    = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
-$pnlHelp.Controls.Add($btnFbSend)
-
-$btnFbSend.Add_Click({
-    $fbType = $cboFbType.SelectedItem
-    $fbText = $txtFbDetails.Text.Trim()
-
-    if (-not $script:FeedbackToken) {
-        $lblFbStatus.ForeColor = $ColYellow
-        $lblFbStatus.Text = "Feedback token not configured — contact your administrator."
-        return
-    }
-    if (-not $fbText) {
-        $lblFbStatus.ForeColor = $ColYellow
-        $lblFbStatus.Text = "Please enter a description before sending."
-        return
-    }
-
-    $firstLine  = ($fbText -split "`n")[0].Trim()
-    $issueTitle = "[$fbType] " + $(if ($firstLine.Length -gt 100) { $firstLine.Substring(0,100) + "..." } else { $firstLine })
-
-    $sysBlock = ""
-    if ($chkFbSysInfo.Checked) {
-        $vpuModel = if ($sync.VpuModel) { $sync.VpuModel } else { "Unknown" }
-        $sysBlock  = "`n`n---`n**System Info**`n- Host: $($env:COMPUTERNAME)`n- OS: $([System.Environment]::OSVersion.VersionString)`n- Pulse: $ScriptVersion`n- VPU Model: $vpuModel"
-    }
-
-    $label     = if ($fbType -eq "Bug Report") { "bug" } else { "enhancement" }
-    $issueBody = @{ title=$issueTitle; body="$fbText$sysBlock"; labels=@($label) } | ConvertTo-Json -Compress
-
-    $btnFbSend.Enabled     = $false
-    $lblFbStatus.ForeColor = $ColMuted
-    $lblFbStatus.Text      = "Submitting..."
-
-    $wc = $null
-    try {
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("Authorization",        "Bearer $script:FeedbackToken")
-        $wc.Headers.Add("User-Agent",           "Pulse-VPU-Diagnostics/$ScriptVersion")
-        $wc.Headers.Add("Content-Type",         "application/json")
-        $wc.Headers.Add("Accept",               "application/vnd.github+json")
-        $wc.Headers.Add("X-GitHub-Api-Version", "2022-11-28")
-        $result = $wc.UploadString("https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/issues", "POST", $issueBody)
-        $resp   = $result | ConvertFrom-Json
-        $lblFbStatus.ForeColor = $ColGreen
-        $lblFbStatus.Text      = "Submitted — Issue #$($resp.number). Thank you!"
-        $txtFbDetails.Text     = ""
-    } catch {
-        $plain = "[$fbType]`n$fbText$sysBlock"
-        try { [System.Windows.Forms.Clipboard]::SetText($plain) } catch { }
-        $lblFbStatus.ForeColor = $ColYellow
-        $lblFbStatus.Text      = "Could not reach GitHub. Feedback copied to clipboard."
-    } finally {
-        if ($wc) { try { $wc.Dispose() } catch { } }
-        $btnFbSend.Enabled = $true
-    }
-})

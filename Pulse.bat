@@ -43,9 +43,6 @@ echo    You may minimise it, but do not close it.
 echo  --------------------------------------------------------------
 echo.
 
-:: ---- Deploy token (contents:read PAT — allows download from private repo) --
-set "VPU_DEPLOY_TOKEN=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"
-
 :: ---- Version and install state --------------------------------------------
 set "InstallDir=%ProgramFiles%\Pulse"
 set "NeedDownload=1"
@@ -61,7 +58,7 @@ if exist "%InstallDir%\version.txt" (
 :: avoid CMD misinterpreting | inside a parenthesised block.
 if exist "%InstallDir%\.commit" (
     echo    Checking for updates...
-    PowerShell -NoProfile -Command "try { $w = Invoke-WebRequest 'https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/commits/main' -UseBasicParsing -TimeoutSec 10 -Headers @{Authorization='Bearer %VPU_DEPLOY_TOKEN%'}; $s = (ConvertFrom-Json $w.Content).sha; Set-Content '%TEMP%\vpu-sha.txt' $s -NoNewline } catch { Set-Content '%TEMP%\vpu-sha.txt' 'OFFLINE' -NoNewline }"
+    PowerShell -NoProfile -Command "try { $w = Invoke-WebRequest 'https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/commits/main' -UseBasicParsing -TimeoutSec 10; $s = (ConvertFrom-Json $w.Content).sha; Set-Content '%TEMP%\vpu-sha.txt' $s -NoNewline } catch { Set-Content '%TEMP%\vpu-sha.txt' 'OFFLINE' -NoNewline }"
     set /p RemoteSHA=<"%TEMP%\vpu-sha.txt"
     set /p LocalSHA=<"%InstallDir%\.commit"
     del "%TEMP%\vpu-sha.txt" >nul 2>&1
@@ -89,7 +86,7 @@ if "!NeedDownload!"=="1" (
     )
     echo.
     set "VPU_INST=%InstallDir%"
-    PowerShell -NoProfile -Command "$wc=New-Object Net.WebClient; $wc.Headers.Add('Authorization','Bearer %VPU_DEPLOY_TOKEN%'); try { $wc.DownloadFile('https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/main/Download.ps1','%TEMP%\vpu-dl.ps1') } catch { }"
+    PowerShell -NoProfile -Command "$wc=New-Object Net.WebClient; try { $wc.DownloadFile('https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/main/Download.ps1','%TEMP%\vpu-dl.ps1') } catch { }"
     if exist "%TEMP%\vpu-dl.ps1" (
         PowerShell -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\vpu-dl.ps1"
     ) else (
@@ -132,13 +129,8 @@ if "!NeedDownload!"=="1" (
     )
     echo    Done.
 
-    :: ---- Feedback token setup (first install only) -------------------------
-    if not exist "C:\ProgramData\Pulse\feedback.key" (
-        PowerShell -NoProfile -ExecutionPolicy Bypass -File "%InstallDir%\Set-FeedbackToken.ps1"
-    )
-
     :: Record installed commit SHA for future update checks (no | pipe used)
-    PowerShell -NoProfile -Command "try { $w = Invoke-WebRequest 'https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/commits/main' -UseBasicParsing -TimeoutSec 10 -Headers @{Authorization='Bearer %VPU_DEPLOY_TOKEN%'}; $s = (ConvertFrom-Json $w.Content).sha; [System.IO.File]::WriteAllText('%InstallDir%\.commit', $s) } catch { }"
+    PowerShell -NoProfile -Command "try { $w = Invoke-WebRequest 'https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/commits/main' -UseBasicParsing -TimeoutSec 10; $s = (ConvertFrom-Json $w.Content).sha; [System.IO.File]::WriteAllText('%InstallDir%\.commit', $s) } catch { }"
 )
 
 :: ---- Launcher log ----------------------------------------------------------

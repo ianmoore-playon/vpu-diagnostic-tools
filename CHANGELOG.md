@@ -10,6 +10,22 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.0.53] - 2026-05-18
+
+### Removed
+
+- **In-app feedback form removed.** The Help/About panel no longer carries the Submit Feedback section, the Settings panel no longer carries the Feedback card, and `Set-FeedbackToken.ps1` is deleted. The encrypted `C:\ProgramData\Pulse\feedback.key` is no longer read or written. Feedback now goes directly to the tools team over Slack or email — see the About Pulse copy. Drops the runtime dependency on a GitHub `issues:write` PAT.
+
+### Changed
+
+- **Repository switched to public; deploy-token auth removed.** `Pulse.bat` no longer carries the `VPU_DEPLOY_TOKEN` PAT — the update-check (`api.github.com/.../commits/main`), the `Download.ps1` fetch, and the SHA-record call all hit GitHub anonymously. `Download.ps1` uses the public `archive/refs/heads/main.zip` endpoint instead of the authenticated zipball API. Removes the embedded-PAT pattern entirely.
+
+### Security
+
+- **Rotated two leaked PATs** (`contents:read` deploy token + `issues:write` feedback token). Both were revoked on GitHub. The new code path no longer requires either.
+
+---
+
 ## [1.0.47] - 2026-05-02
 
 ### Changed

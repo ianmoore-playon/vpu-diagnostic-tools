@@ -5,22 +5,7 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.47"
-
-# Load feedback token from DPAPI-encrypted file (set once per machine via Set-FeedbackToken.ps1)
-$script:FeedbackToken = ""
-try {
-    $keyPath = "C:\ProgramData\Pulse\feedback.key"
-    if (Test-Path $keyPath) {
-        Add-Type -AssemblyName System.Security
-        $enc   = [System.IO.File]::ReadAllBytes($keyPath)
-        $bytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
-            $enc, $null, [System.Security.Cryptography.DataProtectionScope]::LocalMachine
-        )
-        $script:FeedbackToken = [System.Text.Encoding]::UTF8.GetString($bytes)
-        [System.Array]::Clear($bytes, 0, $bytes.Length)
-    }
-} catch { $script:FeedbackToken = "" }
+$ScriptVersion = "1.0.53"
 
 # ---------- Self-elevation ---------------------------------------------------
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -73,6 +58,102 @@ $PixellotLogPaths   = @(
 )
 $RtspPort  = 554
 $OcrMacOui = "00-D0-89"
+
+# ---------- Pixellot camera role lookup --------------------------------------
+# The authoritative source for "which IP / MAC is which role" is Pixellot's
+# own configuration files in C:\Pixellot\Data\configuration. The agent reads
+# these on startup and pushes the resolved cameraInfo to its backend, so the
+# data here always matches what Pixellot's own HW Info screen shows.
+#
+# File format is NOT standard INI — it's:
+#     [SECTION]
+#     KEY_NAME, type, value      // optional inline comment
+#
+# We care about these sections:
+#     cameras.cfg  [CAMERA_0..N]            UID = rtsp:////<IP>/h264
+#     cameras.cfg  [ADDITIONAL_ANGLE_0..N]  UID = rtsp:////<IP>/h264
+#     pip.cfg      [PIP]                    CAMERA_URL = rtsp:////<IP>/h264
+$PixellotConfigDir = "C:\Pixellot\Data\configuration"
+
+function Read-PixellotCfg {
+    param([string]$Path)
+    $result = @{}
+    if (-not (Test-Path $Path -ErrorAction SilentlyContinue)) { return $result }
+    $section = $null
+    foreach ($raw in (Get-Content $Path -ErrorAction SilentlyContinue)) {
+        $line = $raw.Trim()
+        if (-not $line) { continue }
+        # Strip full-line comments first.
+        if ($line.StartsWith('//')) { continue }
+        # Strip trailing inline comments. We can't bare-match '//' because
+        # values like `rtsp:////169.254.16.50/h264` contain `//` inside the
+        # URL; in Pixellot's .cfg format actual comments are always preceded
+        # by whitespace, so we look for ` //` (or tab + //) and split there.
+        $m = [regex]::Match($line, '\s+//')
+        if ($m.Success) { $line = $line.Substring(0, $m.Index).Trim() }
+        if (-not $line) { continue }
+        if ($line -match '^\[(.+)\]$') {
+            $section = $matches[1].Trim()
+            if (-not $result.ContainsKey($section)) { $result[$section] = @{} }
+            continue
+        }
+        if (-not $section) { continue }
+        # KEY, type, value  — split into max 3 parts so values can contain commas.
+        $parts = $line -split ',', 3
+        if ($parts.Count -ge 3) {
+            $key = $parts[0].Trim()
+            $val = $parts[2].Trim().Trim('"')
+            if ($key) { $result[$section][$key] = $val }
+        }
+    }
+    return $result
+}
+
+function Get-PixellotIpFromRtsp {
+    param([string]$Url)
+    if (-not $Url) { return $null }
+    # rtsp://host/path  or  rtsp:////host/path  (Pixellot uses 4 slashes)
+    if ($Url -match 'rtsp:/+([^/:]+)') {
+        $h = $matches[1]
+        if ($h -match '^\d+\.\d+\.\d+\.\d+$') { return $h }
+    }
+    return $null
+}
+
+# Build a hashtable mapping IP → role string by parsing cameras.cfg + pip.cfg.
+# Returns @{} when the config dir doesn't exist (non-Pixellot machine, or
+# install path differs) — callers fall back to OUI-based heuristics.
+function Get-PixellotCameraRoles {
+    $roles = @{}
+    $camsCfg = Read-PixellotCfg (Join-Path $PixellotConfigDir "cameras.cfg")
+    foreach ($section in $camsCfg.Keys) {
+        if ($section -match '^CAMERA_(\d+)$') {
+            $idx = [int]$matches[1]
+            $ip  = Get-PixellotIpFromRtsp $camsCfg[$section]['UID']
+            if ($ip) { $roles[$ip] = "Main Camera $($idx + 1)" }
+        } elseif ($section -match '^ADDITIONAL_ANGLE_(\d+)$') {
+            $idx = [int]$matches[1]
+            $ip  = Get-PixellotIpFromRtsp $camsCfg[$section]['UID']
+            if ($ip) { $roles[$ip] = "Additional Angle $($idx + 1)" }
+        } elseif ($section -eq 'PIP') {
+            # Some Pixellot installs put the PIP section in cameras.cfg
+            $ip = Get-PixellotIpFromRtsp $camsCfg[$section]['CAMERA_URL']
+            if ($ip) { $roles[$ip] = "OCR / Scoreboard" }
+        }
+    }
+    # Standard location for the PIP section
+    $pipCfg = Read-PixellotCfg (Join-Path $PixellotConfigDir "pip.cfg")
+    if ($pipCfg.ContainsKey('PIP')) {
+        $ip = Get-PixellotIpFromRtsp $pipCfg['PIP']['CAMERA_URL']
+        if ($ip) { $roles[$ip] = "OCR / Scoreboard" }
+    }
+    return $roles
+}
+
+# Initialised once at startup; refreshed when the Camera Connectivity panel
+# becomes visible so role changes (e.g. tech swaps a camera and the agent
+# rewrites cameras.cfg) are picked up without restarting Pulse.
+$script:PixCameraRoles = Get-PixellotCameraRoles
 
 # ---------- ADLINK SmartPoE DLL search ---------------------------------------
 $PoeDllPath = $null
@@ -551,7 +632,7 @@ function New-ActionBar {
         [System.Windows.Forms.Panel]$Parent,
         [int]$Y,
         [string]$ExportText  = "Export Report",
-        [string]$PrimaryText = "Run Full Diagnostic"
+        [string]$PrimaryText = "Run Test"
     )
     $bar = New-Object System.Windows.Forms.Panel
     $bar.Size      = New-Object System.Drawing.Size(($Parent.Width - 56), 56)
@@ -774,8 +855,20 @@ $form = New-Object System.Windows.Forms.Form
 $form.Text = "Pulse - Pixellot Unified Live System Evaluator"
 # v1.0.42 redesign: 1500x800 to accommodate the 220-wide left sidebar without
 # shrinking the content area (was 1280x760 with 0-wide sidebar + top tab bar).
-$form.ClientSize = New-Object System.Drawing.Size(1500, 800)
-$form.MinimumSize = $form.Size
+# v1.0.49: bumped to 1600 wide so the Camera Connectivity diagram + status row
+# has breathing room next to the right-anchored NIC Info / Legend sidebar.
+# v1.0.52: clamp to the screen working area at startup so VPUs with
+# 1366x768 / 1440x900 monitors don't open with the right edge off-screen.
+# AutoScrollMinSize keeps the *layout* at the design size; if the form is
+# smaller than that, scrollbars appear so every panel stays reachable.
+$wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+$desiredW = [Math]::Min(1600, [Math]::Max(1280, $wa.Width  - 16))
+$desiredH = [Math]::Min(900,  [Math]::Max(720,  $wa.Height - 32))
+$form.ClientSize  = New-Object System.Drawing.Size($desiredW, $desiredH)
+# MinimumSize is the *outer* size including chrome (~16px borders + ~40px caption).
+$form.MinimumSize = New-Object System.Drawing.Size(1296, 760)
+$form.AutoScroll        = $true
+$form.AutoScrollMinSize = New-Object System.Drawing.Size(1600, 800)
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.BackColor = $ColBg
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
@@ -820,7 +913,7 @@ $AnchorTR   = [System.Windows.Forms.AnchorStyles]::Top    -bor [System.Windows.F
 [int]$ContentX = $SideW
 [int]$ContentY = 0
 [int]$ContentH = 800 - $SbarH                   # 768
-[int]$ContentW = 1500 - $SideW                  # 1280 — matches old WideW
+[int]$ContentW = 1600 - $SideW                  # 1380 (v1.0.49: form widened from 1500 to 1600)
 [int]$WideW    = $ContentW
 [int]$NarrowW  = $ContentW
 [int]$RightX   = $ContentW
@@ -967,7 +1060,7 @@ $tabTip.SetToolTip($navDisk,        "Drive free space, disk health, and system m
 $tabTip.SetToolTip($navEvents,      "Recent OS system errors filtered for hardware and service-related issues")
 $tabTip.SetToolTip($navReports,     "View, copy, or export previously saved diagnostic reports")
 $tabTip.SetToolTip($navSettings,    "Theme and application settings")
-$tabTip.SetToolTip($navAbout,       "Help, version, and feedback form")
+$tabTip.SetToolTip($navAbout,       "Help and version information")
 
 # Tab-bar Run Diagnostic button removed — primary action is now per-panel.
 # Define a hidden compat button so $btnTabFullDiag.Add_Click in module wiring still works.
@@ -1159,6 +1252,7 @@ function New-HubTile {
     $tLbl.Location     = New-Object System.Drawing.Point(20, 96)
     $tLbl.Size         = New-Object System.Drawing.Size(([int]$W - 28), 24)
     $tLbl.BackColor    = [System.Drawing.Color]::Transparent
+    $tLbl.AutoEllipsis = $true
     $pnl.Controls.Add($tLbl)
 
     $dLbl = New-Object System.Windows.Forms.Label
@@ -1169,6 +1263,13 @@ function New-HubTile {
     $dLbl.Size      = New-Object System.Drawing.Size(([int]$W - 28), 56)
     $dLbl.BackColor = [System.Drawing.Color]::Transparent
     $pnl.Controls.Add($dLbl)
+
+    # Stash inner-label refs on the panel Tag so Update-HubTileLayout can
+    # resize them when the tile width changes. Without this, the labels
+    # stay at their initial (W-28) = 72px width and titles like
+    # "Hardware & Peripherals" get truncated to "Hardwar".
+    $pnl.Tag | Add-Member -NotePropertyName TitleLbl -NotePropertyValue $tLbl -Force
+    $pnl.Tag | Add-Member -NotePropertyName DescLbl  -NotePropertyValue $dLbl -Force
 
     return $pnl
 }
@@ -1253,6 +1354,14 @@ function Update-HubTileLayout {
         $tile.Anchor = [System.Windows.Forms.AnchorStyles]::None
         $tile.Bounds = New-Object System.Drawing.Rectangle($newX, $newY, $hCW, $hCH)
         $tile.Region = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, $hCW, $hCH)), 10))
+        # Resize inner labels so titles/descriptions don't get truncated to
+        # the placeholder W=100 they were created with.
+        if ($tile.Tag -and $tile.Tag.TitleLbl) {
+            $tile.Tag.TitleLbl.Size = New-Object System.Drawing.Size(([int]$hCW - 28), 24)
+        }
+        if ($tile.Tag -and $tile.Tag.DescLbl) {
+            $tile.Tag.DescLbl.Size  = New-Object System.Drawing.Size(([int]$hCW - 28), 56)
+        }
     }
     if ($pnlHubActions) {
         $pnlHubActions.Location = New-Object System.Drawing.Point($hMargin, (110 + $hRows*($hCH+$hGap) + 12))
@@ -1376,6 +1485,7 @@ $DiagScript = {
     param($sync, $NicDriverPatterns, $RenegotiateWaitSec, $EventLogHours,
           $PixellotLogPaths, $RtspPort, $OutputFile, $RunId, $ScriptVersion,
           [string]$OcrMacOui = "00-D0-89",
+          $PixCameraRoles = @{},
           [string]$FilterNic = "",
           [string]$PoeDllPath = "",
           [bool]$PoeMgmtSupported = $true)
@@ -1795,17 +1905,41 @@ $DiagScript = {
                 $_.State      -ne  "Unreachable" -and
                 ([Convert]::ToInt32(($_.LinkLayerAddress -split '-')[0], 16) -band 1) -eq 0
             }
+        # Pull the NIC's link speed once per port so we can speed-fallback
+        # for cameras that aren't in cameras.cfg (different agent install
+        # path, swapped camera, etc.). OCR cameras are 100 Mbps-only on
+        # all known revisions, main cameras are gigabit.
+        $linkSpeed = ""
+        try { $linkSpeed = "$((Get-NetAdapter -Name $nic.Name -ErrorAction SilentlyContinue).LinkSpeed)" } catch { }
         foreach ($nb in $neighbors) {
             if ($discoveredCameras | Where-Object { $_.IP -eq $nb.IPAddress }) { continue }
-            $isOcr = $nb.LinkLayerAddress -like "$OcrMacOui-*"
+            # Authoritative role from cameras.cfg / pip.cfg (passed in via
+            # $PixCameraRoles). Falls back to a speed-based label when the
+            # IP isn't in the config; we deliberately do *not* try to
+            # subtype Pixellot devices via the 4th MAC octet because
+            # different camera revisions share overlapping prefixes.
+            $roleLabel = $null
+            if ($PixCameraRoles -and $PixCameraRoles.ContainsKey($nb.IPAddress)) {
+                $roleLabel = [string]$PixCameraRoles[$nb.IPAddress]
+            }
+            $isPixellot = ($nb.LinkLayerAddress -like "$OcrMacOui-*")
+            $is100M = ($linkSpeed -match '^\s*100\s*Mbps')
+            $is1G   = ($linkSpeed -match '\b\d+\s*Gbps\b' -or $linkSpeed -match '^\s*1000\s*Mbps')
+            $label = if ($roleLabel)         { $roleLabel } `
+                     elseif ($isPixellot -and $is100M) { "OCR Camera" } `
+                     elseif ($isPixellot -and $is1G)   { "Main Camera (probable)" } `
+                     elseif ($isPixellot)              { "Pixellot Camera" } `
+                     else                              { "Unknown device" }
+            $isOcr = ($roleLabel -and $roleLabel -match 'OCR|Scoreboard') -or
+                     ($label -eq 'OCR Camera')
             $discoveredCameras += [PSCustomObject]@{
                 IP       = $nb.IPAddress
                 MAC      = $nb.LinkLayerAddress
-                Label    = if ($isOcr) { "OCR Camera" } else { "S2 Camera" }
+                Label    = $label
                 Optional = $isOcr
                 NicName  = $nic.Name
             }
-            Add-Log ("  Found  : {0,-18} MAC: {1}  Type: {2}" -f $nb.IPAddress, $nb.LinkLayerAddress, (if ($isOcr) { "OCR Camera" } else { "S2 Camera" })) "Info"
+            Add-Log ("  Found  : {0,-18} MAC: {1}  Role: {2}" -f $nb.IPAddress, $nb.LinkLayerAddress, $label) "Info"
         }
     }
     Add-Log ""
@@ -1869,12 +2003,32 @@ $DiagScript = {
         foreach ($r in $camResults) { $sync.CamResults.Add($r) | Out-Null }
         $sync.StepsDone["CamPing"] = if ($mainPingCount -gt 0) { "pass" } else { "fail" }
 
+        # Ping (CHU) reflects ICMP reachability of every discovered camera —
+        # it answers "is the camera at the network layer?" using whatever IP
+        # ARP discovery returned (no hardcoded IPs).
         if ($mainPingCount -eq $mainTotal -and $mainTotal -gt 0) {
-            Set-Card "PingCHU"   "Success" "ok";   Set-Card "ChuDetect" "Online"  "ok"
+            Set-Card "PingCHU" "Success" "ok"
         } elseif ($mainPingCount -gt 0) {
-            Set-Card "PingCHU"   "Partial" "warn"; Set-Card "ChuDetect" "Partial" "warn"
+            Set-Card "PingCHU" "Partial" "warn"
         } else {
-            Set-Card "PingCHU"   "No Response" "fail"; Set-Card "ChuDetect" "Offline" "fail"
+            Set-Card "PingCHU" "No Response" "fail"
+        }
+
+        # CHU Detection now reflects RTSP port 554 — "is the camera actually
+        # serving its video stream?". An OCR camera doesn't expose RTSP, so we
+        # only count non-optional (S2/CHU) cameras. This makes the two cards
+        # complementary rather than duplicated.
+        $rtspMain = @($camResults | Where-Object { -not $_.Optional })
+        $rtspOkN  = @($rtspMain | Where-Object { $_.Rtsp }).Count
+        $rtspTot  = $rtspMain.Count
+        if ($rtspTot -eq 0) {
+            Set-Card "ChuDetect" "No CHU" "neutral"
+        } elseif ($rtspOkN -eq $rtspTot) {
+            Set-Card "ChuDetect" "Online" "ok"
+        } elseif ($rtspOkN -gt 0) {
+            Set-Card "ChuDetect" "Partial" "warn"
+        } else {
+            Set-Card "ChuDetect" "Offline" "fail"
         }
     }
 
@@ -2050,6 +2204,7 @@ $DiagScript = {
     } else {
         Add-Log "  [INFO] SmartPoE.dll not found - PoE monitoring not available on this system." "Gray"
         Add-Summary "PoE Budget" "N/A" "Gray"
+        Set-Card "PoEBudget" "N/A" "neutral"
     }
     $sync.StepsDone["PoePower"] = "pass"
     Add-Log ""
@@ -2182,12 +2337,33 @@ $lblNicHdr.Location  = New-Object System.Drawing.Point(16, 6)
 $lblNicHdr.AutoSize  = $true
 $pnlCamToolbar.Controls.Add($lblNicHdr)
 
+# Helper — extract just the NIC interface name (e.g. "Ethernet 24") from a
+# cboNic item text. v1.0.49 changed the format from "<NicName>  (<short>)"
+# to "Port N — <NicName> — <Device>", so call sites use this helper instead
+# of inlining a fragile regex. Returns empty string for "All Ports".
+function Get-NicNameFromCbo {
+    param([string]$Text)
+    if (-not $Text -or $Text -eq "All Ports") { return "" }
+    # Both em-dash (—) and ASCII hyphen-minus are accepted to be tolerant
+    # of the build-time character normalisation that happens in Run.ps1.
+    $parts = $Text -split '\s+[—–\-]\s+'
+    if ($parts.Count -ge 2) { return $parts[1].Trim() }
+    return $Text.Trim()
+}
+
 $cboNic = New-Object System.Windows.Forms.ComboBox
-$cboNic.Size          = New-Object System.Drawing.Size(220, 22)
+$cboNic.Size          = New-Object System.Drawing.Size(320, 22)   # widened from 220 to fit "Ethernet 24 — Main Camera (1 Gbps)"
 $cboNic.Location      = New-Object System.Drawing.Point(16, 26)
 $cboNic.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-$cboNic.BackColor     = $ColBg
-$cboNic.Font          = New-Object System.Drawing.Font("Segoe UI", 8.5)
+# v1.0.49: explicit dark/light foreground + flat style. The default ComboBox
+# in DropDownList mode renders the selected item using the system theme's
+# button text color, which on the dark theme can come out as near-black on
+# our dark blue card background — practically invisible. Setting ForeColor
+# to $ColText guarantees the same readable color used elsewhere on the panel.
+$cboNic.FlatStyle     = [System.Windows.Forms.FlatStyle]::Flat
+$cboNic.BackColor     = $ColCard
+$cboNic.ForeColor     = $ColText
+$cboNic.Font          = New-Object System.Drawing.Font("Segoe UI", 9)
 $pnlCamToolbar.Controls.Add($cboNic)
 
 $lblRunSteps = New-Object System.Windows.Forms.Label
@@ -2234,7 +2410,7 @@ $lblEta.Visible = $false
 $center.Controls.Add($lblEta)
 
 # ---- Detected NIC list (used by diagram + diagnostic) ----------------------
-$portRowW = 1224; $portRowX0 = 28
+$portRowW = 1040; $portRowX0 = 28   # v1.0.49: tightened from 1224 so the status cards row ends at X=1068, well clear of the right-edge sidebar at X=1124
 $script:detectedNics = @(Get-NetAdapter | Where-Object {
     $d = $_.InterfaceDescription
     ($NicDriverPatterns | Where-Object { $d -like $_ }).Count -gt 0
@@ -2289,6 +2465,7 @@ $script:nicLightX     = $script:nicJackStartX - $script:nicStatusOffX
 $pnlHwNicCanvas.Add_Paint({
     $g = $args[1].Graphics
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
     $cw = $pnlHwNicCanvas.Width
     # PCB body — soft green-tinted rectangle to evoke the PCB without using a photo
     $pcbColor = [System.Drawing.Color]::FromArgb(28, 56, 38)
@@ -2301,42 +2478,68 @@ $pnlHwNicCanvas.Add_Paint({
     $brkBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(140, 145, 152))
     $brkRect  = New-Object System.Drawing.Rectangle(20, ($script:nicCardY + $script:nicCardH), ($cw - 40), 14)
     $g.FillRectangle($brkBrush, $brkRect); $brkBrush.Dispose()
-    # Status light — small green LED next to Port 1
+    # Status light — small green LED next to Port 1 (always green; indicates card power, not link)
     $litX = $script:nicLightX
-    $litY = $script:nicJackY + ($script:nicJackH / 2) - 4
+    $litY = $script:nicJackY + ($script:nicJackH / 2) - 5
     $litBrush = New-Object System.Drawing.SolidBrush($ColGreen)
-    $g.FillEllipse($litBrush, $litX, $litY, 8, 8); $litBrush.Dispose()
-    $hintFont = New-Object System.Drawing.Font("Segoe UI", 6.5)
-    $hintBrush = New-Object System.Drawing.SolidBrush($ColMuted)
-    $g.DrawString("PWR", $hintFont, $hintBrush, ($litX - 5), ($litY + 11))
+    $g.FillEllipse($litBrush, $litX, $litY, 10, 10); $litBrush.Dispose()
+    $hintFont = New-Object System.Drawing.Font("Segoe UI Semibold", 7)
+    $hintBrush = New-Object System.Drawing.SolidBrush($ColText)
+    $g.DrawString("PWR", $hintFont, $hintBrush, ($litX - 6), ($litY + 13))
     $hintFont.Dispose(); $hintBrush.Dispose()
-    # 4 RJ45 jack openings (Port 1 leftmost)
+    # 4 RJ45 jack openings (Port 1 leftmost). Per-port LED is now ABOVE the jack
+    # for visibility; the jack itself stays clean to read as a physical port.
     $jackBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(15, 25, 35))
     $jackPen   = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(80, 90, 100), 1)
+    $portLblFont = New-Object System.Drawing.Font("Segoe UI Semibold", 8)
+    $portLblBrush = New-Object System.Drawing.SolidBrush($ColText)
+    $speedFont = New-Object System.Drawing.Font("Segoe UI", 7)
     for ($p = 0; $p -lt 4; $p++) {
         $jx = $script:nicJackStartX + $p * ($script:nicJackW + $script:nicJackGap)
         $jackRect = New-Object System.Drawing.Rectangle($jx, $script:nicJackY, $script:nicJackW, $script:nicJackH)
         $g.FillRectangle($jackBrush, $jackRect)
         $g.DrawRectangle($jackPen, $jackRect)
-        $lblFont  = New-Object System.Drawing.Font("Segoe UI", 7)
-        $lblBrush = New-Object System.Drawing.SolidBrush($ColMuted)
-        $g.DrawString("Port $($p + 1)", $lblFont, $lblBrush, ($jx + 8), ($script:nicJackY + $script:nicJackH + 16))
-        $lblFont.Dispose(); $lblBrush.Dispose()
+        # Port label centered under the jack — bright + semibold
+        $portLabel = "Port $($p + 1)"
+        $portLblSize = $g.MeasureString($portLabel, $portLblFont)
+        $portLblX = $jx + (($script:nicJackW - $portLblSize.Width) / 2)
+        $g.DrawString($portLabel, $portLblFont, $portLblBrush, $portLblX, ($script:nicJackY + $script:nicJackH + 16))
     }
-    $jackBrush.Dispose(); $jackPen.Dispose()
-    # Per-port colored LED dots inside each jack
+    $jackBrush.Dispose(); $jackPen.Dispose(); $portLblFont.Dispose(); $portLblBrush.Dispose()
+    # Per-port colored LED dots — moved ABOVE each jack and made larger.
+    # The companion text underneath each LED gives a quick speed/state read
+    # without requiring the user to read the port detail boxes.
     if ($script:hwPortLedColors -and $script:hwPortLedColors.Count -ge 4) {
         for ($p = 0; $p -lt 4; $p++) {
             $jx = $script:nicJackStartX + $p * ($script:nicJackW + $script:nicJackGap)
-            $ledX = $jx + ($script:nicJackW / 2) - 3
-            $ledY = $script:nicJackY + $script:nicJackH - 10
+            $ledX = $jx + ($script:nicJackW / 2) - 6
+            $ledY = $script:nicJackY - 13
+            # Soft outer halo for the LED so it reads as illuminated
+            $haloColor = [System.Drawing.Color]::FromArgb(60, $script:hwPortLedColors[$p].R, $script:hwPortLedColors[$p].G, $script:hwPortLedColors[$p].B)
+            $haloBrush = New-Object System.Drawing.SolidBrush($haloColor)
+            $g.FillEllipse($haloBrush, ($ledX - 3), ($ledY - 3), 18, 18); $haloBrush.Dispose()
             $ledBrush = New-Object System.Drawing.SolidBrush($script:hwPortLedColors[$p])
-            $g.FillEllipse($ledBrush, $ledX, $ledY, 6, 6)
-            $ledBrush.Dispose()
+            $g.FillEllipse($ledBrush, $ledX, $ledY, 12, 12); $ledBrush.Dispose()
         }
     }
+    # Per-port speed hint — drawn between the jack and the "Port N" label
+    if ($script:hwPortSpeedLabels -and $script:hwPortSpeedLabels.Count -ge 4) {
+        for ($p = 0; $p -lt 4; $p++) {
+            $jx = $script:nicJackStartX + $p * ($script:nicJackW + $script:nicJackGap)
+            $sLabel = $script:hwPortSpeedLabels[$p]
+            if (-not $sLabel) { continue }
+            $sColor = if ($script:hwPortLedColors -and $script:hwPortLedColors.Count -gt $p) { $script:hwPortLedColors[$p] } else { $ColMuted }
+            $sBrush = New-Object System.Drawing.SolidBrush($sColor)
+            $sSize  = $g.MeasureString($sLabel, $speedFont)
+            $sX = $jx + (($script:nicJackW - $sSize.Width) / 2)
+            $g.DrawString($sLabel, $speedFont, $sBrush, $sX, ($script:nicJackY + $script:nicJackH + 1))
+            $sBrush.Dispose()
+        }
+    }
+    $speedFont.Dispose()
 })
-$script:hwPortLedColors = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
+$script:hwPortLedColors    = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
+$script:hwPortSpeedLabels  = @("", "", "", "")
 
 # 4 port detail boxes — Y=266, 240×110 each. Click jumps to Fault Isolator
 # with the matching port pre-selected (preserved from prior P1..P4 cards).
@@ -2395,9 +2598,18 @@ for ($p = 0; $p -lt 4; $p++) {
         $parent.Controls.Add($lblV)
         return $lblV
     }
-    $lblSpeedV  = _AddCamPortRow $tile 36 "Speed:"  $ColMuted $ColText
-    $lblDuplexV = _AddCamPortRow $tile 54 "Duplex:" $ColMuted $ColText
-    $lblMacV    = _AddCamPortRow $tile 72 "MAC:"    $ColMuted $ColText
+    # Row order: Device (what's plugged in) → Speed (link rate) → IP +
+    # MAC of the REMOTE end (the camera/OCR, not this NIC port) → Errors.
+    # Duplex was dropped — it's effectively always Full on modern cameras.
+    # Spacing tightened from 18 → 15 px to fit 5 info rows in the 110-tall
+    # tile. The MAC and IP shown here come from ARP (Get-NetNeighbor) — the
+    # local NIC's own MAC stays visible in the right-side NIC Information
+    # sidebar so we don't lose that.
+    $lblDeviceV = _AddCamPortRow $tile 30 "Device:" $ColMuted $ColText
+    $lblSpeedV  = _AddCamPortRow $tile 45 "Speed:"  $ColMuted $ColText
+    $lblIpV     = _AddCamPortRow $tile 60 "IP:"     $ColMuted $ColText
+    $lblIpV.Font  = New-Object System.Drawing.Font("Consolas", 8)
+    $lblMacV    = _AddCamPortRow $tile 75 "MAC:"    $ColMuted $ColText
     $lblMacV.Font = New-Object System.Drawing.Font("Consolas", 8)
     $lblErrV    = _AddCamPortRow $tile 90 "Errors:" $ColMuted $ColText
 
@@ -2406,8 +2618,9 @@ for ($p = 0; $p -lt 4; $p++) {
         Tile      = $tile
         StatusIcn = $lblStatusIcon
         StatusTxt = $lblStatusText
+        DeviceV   = $lblDeviceV
         SpeedV    = $lblSpeedV
-        DuplexV   = $lblDuplexV
+        IpV       = $lblIpV
         MacV      = $lblMacV
         ErrV      = $lblErrV
         NicName   = $null   # populated by Update-HwPortDiagram so the click handler can jump to Fault Isolator
@@ -2430,10 +2643,13 @@ for ($p = 0; $p -lt 4; $p++) {
     foreach ($ctrl in @($tile.Controls)) { $ctrl.Add_Click($portTileClickHandler); $ctrl.Cursor = [System.Windows.Forms.Cursors]::Hand }
 }
 
-# Right sidebar: NIC Information (Y=176..286) + Status Legend (Y=294..376)
+# Right sidebar: NIC Information (Y=176..286) + Status Legend (Y=294..380)
+# v1.0.49: form widened from 1500 to 1600; the sidebar now sits at X=1124
+# (was 1024) so there's a clear 100px gap between Port 4's detail box and
+# the Status Legend instead of having them butt against each other.
 $pnlHwNicInfo = New-Object System.Windows.Forms.Panel
 $pnlHwNicInfo.Size      = New-Object System.Drawing.Size(228, 110)
-$pnlHwNicInfo.Location  = New-Object System.Drawing.Point(1024, 176)
+$pnlHwNicInfo.Location  = New-Object System.Drawing.Point(1124, 176)
 $pnlHwNicInfo.BackColor = $ColCard
 $pnlHwNicInfo.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 228, 110)), 8))
 $pnlHwNicInfo.Anchor    = $AnchorTR
@@ -2449,8 +2665,8 @@ $lblNicInfoHdr.AutoSize  = $true
 $pnlHwNicInfo.Controls.Add($lblNicInfoHdr)
 
 $script:hwNicInfoLines = @{}
-$infoRows = @("Model","MAC Base","Driver","Total ports")
-$ny = 28
+$infoRows = @("Model","MAC Base","Driver","Total ports","PoE Mgmt")
+$ny = 26
 foreach ($row in $infoRows) {
     $lblL = New-Object System.Windows.Forms.Label
     $lblL.Text      = "$($row):"
@@ -2470,14 +2686,21 @@ foreach ($row in $infoRows) {
     $lblV.AutoEllipsis = $true
     $pnlHwNicInfo.Controls.Add($lblV)
     $script:hwNicInfoLines[$row] = $lblV
-    $ny += 19
+    $ny += 16
 }
 
+# Tooltip on the PoE Mgmt value — explains the "0 W is normal" case for the
+# unsupported card models (GIE64 / I350 / I354) so agents don't chase a
+# non-issue.
+$script:hwPoeNoteTip = New-Object System.Windows.Forms.ToolTip
+$script:hwPoeNoteTip.AutoPopDelay = 12000
+$script:hwPoeNoteTip.InitialDelay = 400
+
 $pnlHwLegend = New-Object System.Windows.Forms.Panel
-$pnlHwLegend.Size      = New-Object System.Drawing.Size(228, 100)
-$pnlHwLegend.Location  = New-Object System.Drawing.Point(1024, 294)
+$pnlHwLegend.Size      = New-Object System.Drawing.Size(228, 86)
+$pnlHwLegend.Location  = New-Object System.Drawing.Point(1124, 294)
 $pnlHwLegend.BackColor = $ColCard
-$pnlHwLegend.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 228, 100)), 8))
+$pnlHwLegend.Region    = New-Object System.Drawing.Region([GfxHelper]::RoundedRect((New-Object System.Drawing.Rectangle(0, 0, 228, 86)), 8))
 $pnlHwLegend.Anchor    = $AnchorTR
 $center.Controls.Add($pnlHwLegend)
 
@@ -2496,7 +2719,7 @@ $legendItems = @(
     @{ Color=$ColMuted;  Text="No cable / disabled" },
     @{ Color=$ColRed;    Text="Error / fault" }
 )
-$ly = 28
+$ly = 26
 foreach ($it in $legendItems) {
     $dot = New-Object System.Windows.Forms.Panel
     $dot.Size      = New-Object System.Drawing.Size(8, 8)
@@ -2510,9 +2733,9 @@ foreach ($it in $legendItems) {
     $lblL.ForeColor = $ColText
     $lblL.BackColor = [System.Drawing.Color]::Transparent
     $lblL.Location  = New-Object System.Drawing.Point(28, $ly)
-    $lblL.Size      = New-Object System.Drawing.Size(196, 16)
+    $lblL.Size      = New-Object System.Drawing.Size(196, 14)
     $pnlHwLegend.Controls.Add($lblL)
-    $ly += 17
+    $ly += 14
 }
 
 # ---- Status cards row (Y=384..474): SmartSpeed, Ping, ARP, CHU, PoE --------
@@ -2520,9 +2743,9 @@ $statusRowY = 384
 $statusCardW = [int](($portRowW - 4*10) / 5)   # ≈ 236
 $statusDefs = @(
     @{Key="SmartSpeed"; Title="SmartSpeed";    Sub="Intel events (48h)"; Icon=[char]0xE7BA}
-    @{Key="PingCHU";    Title="Ping (CHU)";    Sub="Camera head unit";   Icon=[char]0xE701}
+    @{Key="PingCHU";    Title="Ping (CHU)";    Sub="ICMP reachability";  Icon=[char]0xE701}
     @{Key="ArpEntry";   Title="ARP Entry";     Sub="L2 neighbor table";  Icon=[char]0xE9D5}
-    @{Key="ChuDetect";  Title="CHU Detection"; Sub="Camera response";    Icon=[char]0xE722}
+    @{Key="ChuDetect";  Title="CHU Detection"; Sub="RTSP port 554";      Icon=[char]0xE722}
     @{Key="PoEBudget";  Title="PoE Budget";    Sub="ADLINK SmartPoE";    Icon=[char]0xE7E8}
 )
 $statusX = $portRowX0
@@ -2673,7 +2896,7 @@ $lnkClear.Size    = New-Object System.Drawing.Size(0, 0)
 $center.Controls.Add($lnkClear)
 
 # ---- Bottom action bar (Y=698) — Export | Run / Cancel --------------------
-$camActions = New-ActionBar -Parent $center -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$camActions = New-ActionBar -Parent $center -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Test")
 $btnRun     = $camActions.PrimaryBtn
 $btnExport  = $camActions.ExportBtn
 
@@ -2752,6 +2975,78 @@ $form.Controls.Add($right)
 # Pulls live link state from Get-NetAdapter and populates: the colored LED
 # dots in each jack (canvas), the 4 port detail boxes, and the NIC Information
 # sidebar. Tier color logic mirrors the original Hardware-tab implementation.
+
+# Detect what's plugged into a single port via its ARP neighbor table.
+# Mirrors the discovery logic in the diagnostic runspace ($CamScript) but
+# runs synchronously off the UI thread for live monitoring (~50ms / port).
+#
+# Returns a hashtable:
+#   @{ Label = "Main Camera" | "OCR (100M)" | "OCR (1G)" | "No device" | "Unknown"
+#      Mac   = "AA-BB-CC-..." (remote device's MAC, from ARP)
+#      Ip    = "169.254.x.x"  (remote device's IP, from ARP) }
+#
+# When a port has more than one ARP neighbor (e.g. stale entries from a
+# previous swap), the most-recently-active one wins — Reachable > Stale,
+# tiebreak by lowest IP. The returned MAC is what's actually responding
+# right now, which fixes the false-positive "OCR" labelling we get when
+# only the OUI prefix is checked.
+function Get-PortDevice {
+    param([System.Object]$Adapter, [string]$LinkSpeed)
+    $result = @{ Label = "No device"; Mac = ""; Ip = "" }
+    if (-not $Adapter -or $Adapter.Status -ne "Up") { return $result }
+    try {
+        $neighbors = @(Get-NetNeighbor -InterfaceIndex $Adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.IPAddress  -like "169.254.*" -and
+                $_.State      -ne  "Unreachable" -and
+                $_.LinkLayerAddress -and
+                # Skip multicast/broadcast (LSB of first octet set)
+                ([Convert]::ToInt32(($_.LinkLayerAddress -split '-')[0], 16) -band 1) -eq 0
+            })
+        if ($neighbors.Count -eq 0) { return $result }
+
+        # Pick the "most active" neighbor: Reachable wins over Stale wins
+        # over anything else. Within the same state, lowest IP wins so
+        # the choice is deterministic across refreshes.
+        $statePriority = @{ Reachable = 3; Permanent = 2; Stale = 1 }
+        $primary = $neighbors |
+            Sort-Object @{Expression = { if ($statePriority.ContainsKey([string]$_.State)) { $statePriority[[string]$_.State] } else { 0 } }; Descending = $true},
+                       IPAddress |
+            Select-Object -First 1
+
+        $result.Mac = "$($primary.LinkLayerAddress)"
+        $result.Ip  = "$($primary.IPAddress)"
+
+        # 1) Authoritative role from Pixellot's own config (cameras.cfg /
+        #    pip.cfg). When present this is the same data the Pixellot HW
+        #    Info screen shows — no guessing required.
+        if ($script:PixCameraRoles -and $script:PixCameraRoles.ContainsKey($result.Ip)) {
+            $result.Label = $script:PixCameraRoles[$result.Ip]
+            return $result
+        }
+        # 2) Speed-based fallback for Pixellot OUI devices not in the
+        #    config (different install path, swapped camera the agent
+        #    hasn't re-registered yet, etc.). Mirrors the diagnostic's
+        #    own logic: OCR cameras are 100 Mbps-only, main cameras are
+        #    always gigabit. We don't try to subtype with the 4th MAC
+        #    octet — that produced false positives in v1.0.50 because
+        #    different camera revisions share overlapping prefixes.
+        if ($primary.LinkLayerAddress -like "$OcrMacOui-*") {
+            $is100M = ($LinkSpeed -match '^\s*100\s*Mbps')
+            $is1G   = ($LinkSpeed -match '\b\d+\s*Gbps\b' -or $LinkSpeed -match '^\s*1000\s*Mbps')
+            if     ($is100M) { $result.Label = "OCR Camera" }
+            elseif ($is1G)   { $result.Label = "Main Camera (probable)" }
+            else             { $result.Label = "Pixellot Camera" }
+        } else {
+            $result.Label = "Unknown device"
+        }
+        return $result
+    } catch {
+        $result.Label = "Unknown"
+        return $result
+    }
+}
+
 function Update-HwPortDiagram {
     $sortedNics = @()
     try {
@@ -2777,7 +3072,8 @@ function Update-HwPortDiagram {
         } catch { }
     }
 
-    $ledColors = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
+    $ledColors    = @($ColMuted, $ColMuted, $ColMuted, $ColMuted)
+    $speedLabels  = @("", "", "", "")
     for ($tileIdx = 0; $tileIdx -lt 4; $tileIdx++) {
         $tile = $script:hwPortTiles[$tileIdx]
         $portNum  = $tile.PortNum
@@ -2809,9 +3105,6 @@ function Update-HwPortDiagram {
                 "off"  { "No Link" }
                 default{ "Linked" }
             }
-            $duplexLabel = if ($nic.FullDuplex -eq $true) { "Full" } `
-                           elseif ($nic.FullDuplex -eq $false) { "Half" } `
-                           else { "--" }
             $errCount = "--"
             try {
                 $stats = Get-NetAdapterStatistics -Name $nic.Name -ErrorAction SilentlyContinue
@@ -2821,32 +3114,57 @@ function Update-HwPortDiagram {
                 }
             } catch { }
 
+            # Live remote-endpoint detection. Returns @{ Label; Mac; Ip }
+            # — Mac and Ip describe the device on the OTHER end of the
+            # cable (camera or OCR), discovered via ARP. The local NIC's
+            # MAC ($mac, captured above) is no longer shown in the port
+            # box; it lives in the NIC Information sidebar instead.
+            $devInfo     = Get-PortDevice -Adapter $nic -LinkSpeed $speed
+            $deviceLabel = $devInfo.Label
+            $remoteMac   = if ($devInfo.Mac) { $devInfo.Mac } else { "--" }
+            $remoteIp    = if ($devInfo.Ip)  { $devInfo.Ip }  else { "--" }
+            $deviceColor = switch -Wildcard ($deviceLabel) {
+                "Main Camera"  { $ColGreen }
+                "OCR (1G)"     { $ColAccent }
+                "OCR (100M)"   { $ColAccent }
+                "No device"    { $ColMuted }
+                default        { $ColYellow }
+            }
+
             $tile.StatusIcn.Text      = if ($tier -eq "off") { [char]0x26AB } elseif ($tier -eq "warn") { [char]0x26A0 } else { [char]0x25CF }
             $tile.StatusIcn.ForeColor = $accentColor
             $tile.StatusTxt.Text      = $statusText
             $tile.StatusTxt.ForeColor = $accentColor
+            $tile.DeviceV.Text        = $deviceLabel
+            $tile.DeviceV.ForeColor   = $deviceColor
             $tile.SpeedV.Text         = $speedLabel
             $tile.SpeedV.ForeColor    = if ($isUp) { $accentColor } else { $ColMuted }
-            $tile.DuplexV.Text        = $duplexLabel
-            $tile.MacV.Text           = $mac
+            $tile.IpV.Text            = $remoteIp
+            $tile.IpV.ForeColor       = if ($remoteIp -ne "--") { $ColText } else { $ColMuted }
+            $tile.MacV.Text           = $remoteMac
+            $tile.MacV.ForeColor      = if ($remoteMac -ne "--") { $ColText } else { $ColMuted }
             $tile.ErrV.Text           = $errCount
             $tile.ErrV.ForeColor      = if ($errCount -ne "--" -and [int]$errCount -gt 0) { $ColYellow } else { $ColText }
             $tile.NicName             = $nic.Name
             $ledColors[$portNum - 1]  = $accentColor
+            $speedLabels[$portNum - 1] = $speedLabel
         } else {
             $tile.StatusIcn.Text      = [char]0x26AB
             $tile.StatusIcn.ForeColor = $ColMuted
             $tile.StatusTxt.Text      = "Not detected"
             $tile.StatusTxt.ForeColor = $ColMuted
+            $tile.DeviceV.Text        = "--"
             $tile.SpeedV.Text         = "--"
-            $tile.DuplexV.Text        = "--"
+            $tile.IpV.Text            = "--"
             $tile.MacV.Text           = "--"
             $tile.ErrV.Text           = "--"
             $tile.NicName             = $null
+            $speedLabels[$portNum - 1] = ""
         }
     }
 
-    $script:hwPortLedColors = $ledColors
+    $script:hwPortLedColors    = $ledColors
+    $script:hwPortSpeedLabels  = $speedLabels
     if ($pnlHwNicCanvas) { $pnlHwNicCanvas.Invalidate() }
 
     if ($script:hwNicInfoLines) {
@@ -2858,11 +3176,34 @@ function Update-HwPortDiagram {
         $macBase = if ($sortedNics.Count -gt 0) { $sortedNics[0].MacAddress } else { "--" }
         $driverState = if ($sortedNics.Count -gt 0 -and $sortedNics[0].Status) { "Loaded" } else { "Not loaded" }
         $totalPorts  = "$($sortedNics.Count) detected"
+
+        # PoE management capability — derived from the card model. When this
+        # card doesn't expose SmartPoE telemetry we surface that explicitly so
+        # a "0 W" budget reading isn't mistaken for a hardware fault.
+        $poeMgmtSupported = $false
+        if ($modelInfo -and $modelInfo.ContainsKey('PoeMgmtSupported')) { $poeMgmtSupported = [bool]$modelInfo.PoeMgmtSupported }
+        $poeMgmtText  = if ($sortedNics.Count -eq 0) { "--" } `
+                        elseif ($poeMgmtSupported)   { "Supported" } `
+                        else                          { "Not supported" }
+        $poeMgmtColor = if ($sortedNics.Count -eq 0) { $ColMuted } `
+                        elseif ($poeMgmtSupported)   { $ColGreen } `
+                        else                          { $ColYellow }
+        $poeMgmtTip   = if (-not $poeMgmtSupported -and $sortedNics.Count -gt 0) {
+            "This NIC model doesn't expose ADLINK SmartPoE telemetry, so the PoE Budget card will read 0 W or N/A. That's normal for this card and is not a fault — power is still delivered to the cameras, it just can't be monitored from software."
+        } else { "" }
+
         if ($script:hwNicInfoLines["Model"])       { $script:hwNicInfoLines["Model"].Text       = $modelStr }
         if ($script:hwNicInfoLines["MAC Base"])    { $script:hwNicInfoLines["MAC Base"].Text    = $macBase }
         if ($script:hwNicInfoLines["Driver"])      { $script:hwNicInfoLines["Driver"].Text      = $driverState }
         if ($script:hwNicInfoLines["Driver"])      { $script:hwNicInfoLines["Driver"].ForeColor = if ($driverState -eq "Loaded") { $ColGreen } else { $ColRed } }
         if ($script:hwNicInfoLines["Total ports"]) { $script:hwNicInfoLines["Total ports"].Text = $totalPorts }
+        if ($script:hwNicInfoLines["PoE Mgmt"]) {
+            $script:hwNicInfoLines["PoE Mgmt"].Text      = $poeMgmtText
+            $script:hwNicInfoLines["PoE Mgmt"].ForeColor = $poeMgmtColor
+            if ($script:hwPoeNoteTip) {
+                try { $script:hwPoeNoteTip.SetToolTip($script:hwNicInfoLines["PoE Mgmt"], $poeMgmtTip) } catch { }
+            }
+        }
     }
 }
 
@@ -2884,13 +3225,73 @@ function Update-CamPortBoxFromDiag {
     $Tile.StatusIcn.Text      = if ($Status -eq "fail") { [char]0x26A0 } elseif ($Status -eq "warn") { [char]0x26A0 } elseif ($Status -eq "ok") { [char]0x25CF } else { [char]0x26AB }
 }
 
+# Rebuild the Test Scope dropdown items so each one shows the live device
+# detected on that port. Preserves the user's current selection by index
+# (index 0 is always "All Ports"). Called on panel visibility change so a
+# tech who plugs in a new camera and switches tabs sees the update.
+function Update-NicDropdown {
+    if (-not $cboNic) { return }
+    try {
+        $prevIdx = $cboNic.SelectedIndex
+        $cboNic.BeginUpdate()
+        $cboNic.Items.Clear()
+        $cboNic.Items.Add("All Ports") | Out-Null
+        $sortedDetected = @($script:detectedNics | Sort-Object MacAddress)
+        $portIdx = 1
+        foreach ($n in $sortedDetected) {
+            $deviceLabel = "No device"
+            try {
+                $devInfo = Get-PortDevice -Adapter $n -LinkSpeed $n.LinkSpeed
+                if ($devInfo -and $devInfo.Label) { $deviceLabel = $devInfo.Label }
+            } catch { }
+            $cboNic.Items.Add("Port $portIdx — $($n.Name) — $deviceLabel") | Out-Null
+            $portIdx++
+        }
+        if ($prevIdx -ge 0 -and $prevIdx -lt $cboNic.Items.Count) {
+            $cboNic.SelectedIndex = $prevIdx
+        } elseif ($cboNic.Items.Count -gt 0) {
+            $cboNic.SelectedIndex = 0
+        }
+        $cboNic.EndUpdate()
+    } catch { }
+}
+
 # Refresh the diagram on every panel show (link state may have changed since
 # last visit) and immediately at module load so the diagram isn't blank before
 # the user runs anything.
 $center.Add_VisibleChanged({
-    if ($center.Visible) { try { Update-HwPortDiagram } catch { } }
+    if ($center.Visible) {
+        # Refresh the IP→role table from cameras.cfg/pip.cfg before the
+        # diagram and dropdown re-paint. Picks up role changes (e.g. tech
+        # swapped a camera and the agent rewrote the config) without a
+        # tool restart.
+        try { $script:PixCameraRoles = Get-PixellotCameraRoles } catch { }
+        try { Update-HwPortDiagram } catch { }
+        try { Update-NicDropdown }   catch { }
+        if ($script:hwLiveTimer) { $script:hwLiveTimer.Start() }
+    } else {
+        if ($script:hwLiveTimer) { $script:hwLiveTimer.Stop() }
+    }
 })
 try { Update-HwPortDiagram } catch { }
+
+# ---------- Live port-status polling -----------------------------------------
+# Get-NetAdapter is fast (~30-60ms) so we can refresh the NIC diagram and the
+# port detail boxes every few seconds while the Camera Connectivity panel is
+# visible. The user no longer has to re-run the diagnostic just to see whether
+# a cable was plugged in or a port came back up. Skipped while a diagnostic
+# run is active so we don't fight with the runspace's own card writes.
+$script:hwLiveTimer = New-Object System.Windows.Forms.Timer
+$script:hwLiveTimer.Interval = 3000
+$script:hwLiveTimer.Add_Tick({
+    if ($sync.Running) { return }
+    try { Update-HwPortDiagram } catch { }
+})
+# Start immediately if the Camera panel is the initial view (rare but
+# possible when launched with -StartTab Camera). Otherwise the visibility
+# handler above will start/stop it.
+if ($center -and $center.Visible) { $script:hwLiveTimer.Start() }
+$form.Add_FormClosing({ if ($script:hwLiveTimer) { $script:hwLiveTimer.Stop() } })
 
 # ---------- Timer (polls $sync every 300ms, updates UI) ---------------------
 $script:runspace    = $null
@@ -2965,9 +3366,9 @@ $timer.Add_Tick({
         $btnCancel.Visible = $false
         $btnRun.Enabled = $true
         $btnRun.Text = if ($cboNic.SelectedIndex -le 0) {
-            [char]0x25B6 + "  Run Full Diagnostic"
+            [char]0x25B6 + "  Run Test"
         } else {
-            $n = ($cboNic.SelectedItem -as [string]) -replace '\s+\(.*', ''
+            $n = Get-NicNameFromCbo ($cboNic.SelectedItem -as [string])
             [char]0x25B6 + "  Test $n Only"
         }
         $btnRetest.Enabled = $true
@@ -3045,7 +3446,7 @@ function Start-CameraConnDiagnostic {
     $script:diagPs = [powershell]::Create()
     $script:diagPs.Runspace = $script:runspace
     $script:diagPs.AddScript($DiagScript) | Out-Null
-    $filterNicVal = if ($cboNic.SelectedIndex -gt 0) { ($cboNic.SelectedItem -as [string]) -replace '\s+\(.*', '' } else { "" }
+    $filterNicVal = if ($cboNic.SelectedIndex -gt 0) { Get-NicNameFromCbo ($cboNic.SelectedItem -as [string]) } else { "" }
     $script:diagPs.AddParameters(@{
         sync               = $sync
         NicDriverPatterns  = $NicDriverPatterns
@@ -3057,6 +3458,7 @@ function Start-CameraConnDiagnostic {
         RunId              = $newRunId
         ScriptVersion      = $ScriptVersion
         OcrMacOui          = $OcrMacOui
+        PixCameraRoles     = $script:PixCameraRoles
         FilterNic          = $filterNicVal
         PoeDllPath         = if ($PoeDllPath) { $PoeDllPath } else { "" }
         PoeMgmtSupported   = if ($script:nicCardInfo) { [bool]$script:nicCardInfo.PoeMgmtSupported } else { $true }
@@ -3107,10 +3509,10 @@ $btnLogDetailed.Add_Click({
 $cboNic.Add_SelectedIndexChanged({
     if (-not $sync.Running) {
         if ($cboNic.SelectedIndex -le 0) {
-            $btnRun.Text = [char]0x25B6 + "  Run Full Diagnostic"
+            $btnRun.Text = [char]0x25B6 + "  Run Test"
             $lblRunSteps.Text = "Runs: Port Speed  *  Ping  *  ARP  *  CHU Detection"
         } else {
-            $nicName = ($cboNic.SelectedItem -as [string]) -replace '\s+\(.*', ''
+            $nicName = Get-NicNameFromCbo ($cboNic.SelectedItem -as [string])
             $btnRun.Text = [char]0x25B6 + "  Test $nicName Only"
             $lblRunSteps.Text = "Scope: $nicName only  *  Port Speed  *  Ping  *  ARP  *  CHU Detection"
         }
@@ -4116,7 +4518,7 @@ $netTimer.Add_Tick({
         }
         $netTimer.Stop()
         $btnNetCancel.Visible = $false
-        $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Full Diagnostic"
+        $btnNetRun.Enabled = $true; $btnNetRun.Text = [char]0x25B6 + "  Run Test"
         $lblNetStatus.ForeColor = $ColMuted
         $lblNetStatus.Text = "Last run: $(Get-Date -Format 'h:mm tt')"
 
@@ -4142,7 +4544,7 @@ $netTimer.Add_Tick({
         $domPassN = [int]$sync.NetDomainPass
         if ($domFailN -gt 0)       { $sumItems += @{ Status="fail"; Text="$domFailN of $($domFailN + $domPassN) domains failed DNS — check DNS server settings" } }
         elseif ($domPassN -gt 0)   { $sumItems += @{ Status="ok";   Text="DNS resolution working for $domPassN of $domPassN domains" } }
-        if ($sumItems.Count -eq 0) { $sumItems = @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" }) }
+        if ($sumItems.Count -eq 0) { $sumItems = @(@{ Status="neutral"; Text="Run Test to populate the summary" }) }
         Set-SummaryItems $netSummary $sumItems
 
         # Action banner — kept for the most actionable failures, hidden when all green
@@ -4201,9 +4603,8 @@ function New-NetCard {
 $netLeftX = 28; $netLeftW = 600
 $netRightX = 644; $netRightW = 600
 
-$netCardAdapters = New-NetCard $pnlNetwork "Network Adapters"            $netLeftX 110 $netLeftW 180
-$netCardIP       = New-NetCard $pnlNetwork "IP Configuration"            $netLeftX 302 $netLeftW 200
-$netCardFW       = New-NetCard $pnlNetwork "Firewall Status"             $netLeftX 514 $netLeftW 130
+$netCardAdapters = New-NetCard $pnlNetwork "Network Adapters"            $netLeftX 110 $netLeftW 200
+$netCardIP       = New-NetCard $pnlNetwork "IP Configuration"            $netLeftX 322 $netLeftW 280
 
 # ---- Right column: Connectivity Tests + Summary --------------------------
 $netCardTests   = New-NetCard $pnlNetwork "Connectivity Tests"           $netRightX 110 $netRightW 408
@@ -4221,7 +4622,7 @@ $rtbNetLog.ReadOnly    = $true
 $rtbNetLog.BorderStyle = [System.Windows.Forms.BorderStyle]::None
 $rtbNetLog.ScrollBars  = [System.Windows.Forms.RichTextBoxScrollBars]::Vertical
 $rtbNetLog.Dock        = [System.Windows.Forms.DockStyle]::Fill
-$rtbNetLog.Text        = "Click Run Full Diagnostic to test ports and domains."
+$rtbNetLog.Text        = "Click Run Test to test ports and domains."
 $netCardTests.Body.Controls.Add($rtbNetLog)
 
 # Card-content helper: simple key/value row writer.
@@ -4245,38 +4646,112 @@ function Add-NetKV {
     return $lblV
 }
 
-# Populate the side cards from Win32_NetworkAdapterConfiguration / Get-NetIPConfiguration /
-# Get-NetFirewallProfile when the panel becomes visible. This is fast (sub-100ms) and
-# avoids stale data when a tech changes adapter settings between visits to the panel.
+# Convert a CIDR prefix length (e.g. 24) into a dotted subnet mask (255.255.255.0).
+# Avoids the limited switch-by-prefix that only covered /8, /16, /24.
+function ConvertTo-DottedMask {
+    param([int]$Prefix)
+    if ($Prefix -lt 0 -or $Prefix -gt 32) { return "/$Prefix" }
+    if ($Prefix -eq 0)  { return "0.0.0.0" }
+    if ($Prefix -eq 32) { return "255.255.255.255" }
+    $mask = ([uint32]::MaxValue) -shl (32 - $Prefix) -band [uint32]::MaxValue
+    return ("{0}.{1}.{2}.{3}" -f `
+        (($mask -shr 24) -band 0xFF),
+        (($mask -shr 16) -band 0xFF),
+        (($mask -shr  8) -band 0xFF),
+        ( $mask          -band 0xFF))
+}
+
+# Identify what an adapter is used for. Combines IP-based detection
+# (169.254.x.x → camera link-local) with description matching for the
+# common Pixellot 4-port NIC chipsets, and falls back to "Internet" when
+# the adapter holds the default gateway.
+function Get-AdapterPurpose {
+    param($Adapter, [string]$Ip, $InternetAdapterIndex)
+    $desc = "$($Adapter.InterfaceDescription)"
+    $isCameraNic = $desc -match "I210|I350|82574L|I211|GIE7"
+    if ($Ip -like "169.254.*") {
+        if ($isCameraNic) { return "Camera (link-local)" }
+        return "Link-local (no DHCP)"
+    }
+    if ($InternetAdapterIndex -and $Adapter.ifIndex -eq $InternetAdapterIndex) {
+        return "Internet"
+    }
+    if ($isCameraNic) { return "Camera NIC port" }
+    return "Auxiliary"
+}
+
+# Render a 4-column row inside the adapters card. Re-used for both the
+# header row and the per-adapter rows so column geometry stays in sync.
+function Add-AdapterRow {
+    param(
+        [System.Windows.Forms.Panel]$Body, [int]$Y,
+        [string]$Name, [string]$Ip, [string]$Speed, [string]$Purpose,
+        [System.Drawing.Color]$Color = $ColText, [bool]$Header = $false
+    )
+    $bodyW = $Body.Width
+    # Column widths inside a 584-px body: 150 / 130 / 80 / remainder
+    $cols = @(
+        @{ X=8;   W=150; Text=$Name },
+        @{ X=160; W=130; Text=$Ip },
+        @{ X=292; W=80;  Text=$Speed },
+        @{ X=378; W=($bodyW - 386); Text=$Purpose }
+    )
+    foreach ($c in $cols) {
+        $lbl = New-Object System.Windows.Forms.Label
+        $lbl.Text      = $c.Text
+        $lbl.Font      = if ($Header) { New-Object System.Drawing.Font("Segoe UI Semibold", 8) } `
+                         else         { New-Object System.Drawing.Font("Segoe UI", 8.5) }
+        $lbl.ForeColor = if ($Header) { $ColMuted } else { $Color }
+        $lbl.Location  = New-Object System.Drawing.Point($c.X, $Y)
+        $lbl.Size      = New-Object System.Drawing.Size($c.W, 18)
+        $lbl.AutoEllipsis = $true
+        $Body.Controls.Add($lbl)
+    }
+}
+
+# Populate the side cards from Win32_NetworkAdapterConfiguration / Get-NetIPConfiguration
+# when the panel becomes visible. This is fast (sub-100ms) and avoids stale
+# data when a tech changes adapter settings between visits to the panel.
 function Update-NetSideCards {
-    # Network Adapters
+    # ---- Network Adapters ---------------------------------------------------
     $abody = $netCardAdapters.Body
     $abody.Controls.Clear()
     try {
-        $ups = @(Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Status -eq "Up" } | Sort-Object Name | Select-Object -First 4)
+        $ups = @(Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Status -eq "Up" } | Sort-Object Name | Select-Object -First 6)
+        # Identify the Internet-bound adapter (the one with a default gateway).
+        $internetIfIndex = $null
+        try {
+            $primaryNet = Get-NetIPConfiguration -ErrorAction SilentlyContinue |
+                          Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" } |
+                          Select-Object -First 1
+            if ($primaryNet) { $internetIfIndex = $primaryNet.InterfaceIndex }
+        } catch { }
+
         $rowY = 0
         if ($ups.Count -eq 0) {
             Add-NetKV $abody $rowY "Status:" "No active adapters detected" $ColYellow | Out-Null
         } else {
-            $hdrK = New-Object System.Windows.Forms.Label
-            $hdrK.Text="Adapter"; $hdrK.Font=New-Object System.Drawing.Font("Segoe UI Semibold",8); $hdrK.ForeColor=$ColMuted
-            $hdrK.Location=New-Object System.Drawing.Point(8,$rowY); $hdrK.Size=New-Object System.Drawing.Size(220,18)
-            $abody.Controls.Add($hdrK)
-            $hdrV = New-Object System.Windows.Forms.Label
-            $hdrV.Text="IP / Speed"; $hdrV.Font=New-Object System.Drawing.Font("Segoe UI Semibold",8); $hdrV.ForeColor=$ColMuted
-            $hdrV.Location=New-Object System.Drawing.Point(232,$rowY); $hdrV.Size=New-Object System.Drawing.Size(($abody.Width-240),18)
-            $abody.Controls.Add($hdrV)
+            Add-AdapterRow $abody $rowY "Adapter" "IP" "Speed" "Purpose" $ColMuted $true
             $rowY += 22
             foreach ($a in $ups) {
                 $ip = (Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1).IPAddress
-                $ipStr = if ($ip) { $ip } else { "—" }
-                Add-NetKV $abody $rowY "$($a.Name)" "$ipStr   $($a.LinkSpeed)" $ColText 220 | Out-Null
+                $ipStr     = if ($ip) { $ip } else { "—" }
+                $speedStr  = "$($a.LinkSpeed)"
+                $purpose   = Get-AdapterPurpose -Adapter $a -Ip $ipStr -InternetAdapterIndex $internetIfIndex
+                $color     = switch -Wildcard ($purpose) {
+                                "Internet"             { $ColGreen }
+                                "Camera*"              { $ColAccent }
+                                "Link-local*"          { $ColYellow }
+                                default                { $ColMuted }
+                             }
+                Add-AdapterRow $abody $rowY "$($a.Name)" $ipStr $speedStr $purpose $color $false
                 $rowY += 22
             }
         }
     } catch { Add-NetKV $abody 0 "Status:" "Adapter query failed" $ColYellow | Out-Null }
 
-    # IP Configuration (best-effort: first Up adapter with a default gateway)
+    # ---- IP Configuration ---------------------------------------------------
+    # Show the primary (Internet-bound) interface plus Time / NTP detail.
     $ibody = $netCardIP.Body
     $ibody.Controls.Clear()
     try {
@@ -4287,7 +4762,7 @@ function Update-NetSideCards {
             $rowY = 0
             $ipv4 = ($primary.IPv4Address | Select-Object -First 1).IPAddress
             $mask = ($primary.IPv4Address | Select-Object -First 1).PrefixLength
-            $maskStr = switch ($mask) { 24{"255.255.255.0"} 16{"255.255.0.0"} 8{"255.0.0.0"} default{"/$mask"} }
+            $maskStr = ConvertTo-DottedMask $mask
             $gw   = ($primary.IPv4DefaultGateway | Select-Object -First 1).NextHop
             $dns  = ($primary.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | Select-Object -First 1).ServerAddresses
             $dnsStr = if ($dns) { ($dns -join ", ") } else { "—" }
@@ -4298,28 +4773,30 @@ function Update-NetSideCards {
             $cfg = Get-NetIPInterface -InterfaceIndex $primary.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
             $dhcp = if ($cfg.Dhcp -eq "Enabled") { "Enabled" } else { "Disabled" }
             $dhcpColor = if ($dhcp -eq "Enabled") { $ColGreen } else { $ColMuted }
-            Add-NetKV $ibody $rowY "DHCP:" $dhcp $dhcpColor | Out-Null
+            Add-NetKV $ibody $rowY "DHCP:" $dhcp $dhcpColor | Out-Null; $rowY += 22
+
+            # NTP server — both the configured peer list and the currently-synced source.
+            # `w32tm /query /source` returns the live source (e.g. "time.windows.com" or
+            # "Local CMOS Clock" when not synced); the registry holds the configured peers.
+            $ntpConfigured = ""
+            try {
+                $reg = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters" -ErrorAction SilentlyContinue
+                if ($reg -and $reg.NtpServer) { $ntpConfigured = (($reg.NtpServer -split ',')[0]).Trim() }
+            } catch { }
+            $ntpLive = ""
+            try {
+                $src = (& w32tm /query /source 2>$null) -join " "
+                if ($src) { $ntpLive = $src.Trim() }
+            } catch { }
+            $ntpServerStr = if ($ntpConfigured) { $ntpConfigured } else { "—" }
+            $ntpLiveStr   = if ($ntpLive)       { $ntpLive }       else { "Not queried" }
+            $liveColor    = if ($ntpLive -match "Local CMOS|^$") { $ColYellow } else { $ColGreen }
+            Add-NetKV $ibody $rowY "NTP Server:" $ntpServerStr $ColText | Out-Null; $rowY += 22
+            Add-NetKV $ibody $rowY "NTP Source:" $ntpLiveStr   $liveColor | Out-Null
         } else {
             Add-NetKV $ibody 0 "Status:" "No active interface with default gateway" $ColYellow | Out-Null
         }
     } catch { Add-NetKV $ibody 0 "Status:" "IP configuration query failed" $ColYellow | Out-Null }
-
-    # Firewall Status (per profile)
-    $fbody = $netCardFW.Body
-    $fbody.Controls.Clear()
-    try {
-        $profiles = @(Get-NetFirewallProfile -ErrorAction Stop)
-        $rowY = 0
-        foreach ($p in @("Domain","Private","Public")) {
-            $prof = $profiles | Where-Object { $_.Name -eq $p } | Select-Object -First 1
-            if ($prof) {
-                $state = if ($prof.Enabled) { "On" } else { "Off" }
-                $color = if ($prof.Enabled) { $ColGreen } else { $ColYellow }
-                Add-NetKV $fbody $rowY "$($p) Profile:" $state $color 140 | Out-Null
-                $rowY += 22
-            }
-        }
-    } catch { Add-NetKV $fbody 0 "Status:" "Firewall query failed" $ColYellow | Out-Null }
 }
 
 # Refresh side cards on visibility change (fast — no runspace needed)
@@ -4361,7 +4838,7 @@ $lblNetActionText.Size      = New-Object System.Drawing.Size(($pnlNetAction.Widt
 $pnlNetAction.Controls.Add($lblNetActionText)
 
 # ---- Bottom action bar — Export + Run -------------------------------------
-$netActions = New-ActionBar -Parent $pnlNetwork -Y 720 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$netActions = New-ActionBar -Parent $pnlNetwork -Y 720 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Test")
 
 $btnNetRun     = $netActions.PrimaryBtn
 $btnNetExport  = $netActions.ExportBtn
@@ -4608,17 +5085,18 @@ $pnlHelp.BackColor = $ColBg; $pnlHelp.Visible = $false
 $pnlHelp.Anchor = $AnchorTLRB
 $form.Controls.Add($pnlHelp)
 
-# v1.0.43 redesign — section header + guide content + feedback section
+# v1.0.43 redesign — section header + guide content
+# v1.0.53 — feedback form removed; user feedback goes through Slack / email.
 $helpHeader = New-SectionHeader -Parent $pnlHelp `
     -Title    "About & Help" `
-    -Subtitle "How to use Pulse, FAQ, and a feedback form for reporting issues."
+    -Subtitle "How to use Pulse and answers to common questions."
 Set-SectionPill $helpHeader "ok" "Pulse $ScriptVersion"
 
-# Help content — anchored top only so feedback section can sit at the bottom
+# Help content — fills the panel below the section header.
 $rtbHelp = New-Object System.Windows.Forms.RichTextBox
-$rtbHelp.Size = New-Object System.Drawing.Size(($pnlHelp.Width - 56), ($ContentH - 320))
+$rtbHelp.Size = New-Object System.Drawing.Size(($pnlHelp.Width - 56), ($ContentH - 130))
 $rtbHelp.Location = New-Object System.Drawing.Point(28, 110)
-$rtbHelp.Anchor = $AnchorTLR
+$rtbHelp.Anchor = $AnchorTLRB
 $rtbHelp.BackColor = $ColBg; $rtbHelp.ForeColor = $ColText
 $rtbHelp.Font = New-Object System.Drawing.Font("Segoe UI", 9); $rtbHelp.ReadOnly = $true
 $rtbHelp.BorderStyle = [System.Windows.Forms.BorderStyle]::None
@@ -4639,7 +5117,7 @@ $helpSections = @(
     @{ H="Camera Fault Isolator"; B="The Camera tab includes a guided fault-isolation wizard accessible via the Open Fault Isolator button. The wizard walks through a four-phase swap test to identify whether a degraded port is caused by the NIC, the cable, or the camera itself.`n`nPhase 1 captures the baseline link speed for the suspect port. Phase 2 swaps the cable to a known-good port to test if the fault follows the NIC port. Phase 3 swaps the cable to test if the fault follows the cable. Phase 4 swaps the camera to test if the fault follows the camera.`n`nEach phase produces a plain-language verdict, and the wizard concludes with a Run Full Diagnostic action to confirm the fix." }
     @{ H="System Information sections"; B="The System Information tab surfaces hardware specs and configuration details:`n`n- Pixellot Software: registry-derived App Version, System Image Version, and Package Dependencies.`n- Operating System / System: edition, build, manufacturer, model, BIOS, serial number.`n- Time & Locale: timezone, NTP server, W32Time service status. Flags UTC default as a likely misconfiguration.`n- Pixellot Calibrations: scans known calibration paths and lists files with last-modified times.`n- Installed Software: counts installed apps and flags known-conflicting software (other AV, OBS, BitTorrent, etc.)." }
     @{ H="Frequently asked questions"; B="Q: VPU.exe shows Not streaming - is that a problem?`nA: No. VPU.exe only runs when cameras are actively streaming. It is normal for it to be absent between games.`n`nQ: A NIC port shows No link - is that a fault?`nA: No link is normal for ports that do not have a camera connected. Only ports with a camera attached that show 100 Mbps are faults.`n`nQ: Network tests fail for pixellot.stream - is that a problem?`nA: pixellot.stream is no longer probed directly. Reliable port tests now hit Pixellot's prod-echo.pixellot.tv echo server, and the pixellot.stream domain shows an INFO row in the domain test (it is a stream-only destination).`n`nQ: The tool says it cannot read the event log - what does that mean?`nA: This can happen if the Windows Event Log service is stopped or the account running the tool lacks permission. Restart the service via services.msc." }
-    @{ H="About Pulse"; B="Pulse — Pixellot Unified Live System Evaluator`nVersion: see the header bar`nRepository: https://github.com/ianmoore-playon/vpu-diagnostic-tools`nLicense: Internal use within PlayOn Sports / NFHS Network. Not for external distribution.`n`nFeedback and bug reports go through the Submit Feedback form below — these are routed directly to the tools team. The form requires a feedback token configured at install time; if the token is missing, feedback is copied to the clipboard for manual handoff." }
+    @{ H="About Pulse"; B="Pulse — Pixellot Unified Live System Evaluator`nVersion: see the header bar`nRepository: https://github.com/ianmoore-playon/vpu-diagnostic-tools`nLicense: Internal use within PlayOn Sports / NFHS Network. Not for external distribution.`n`nFeedback and bug reports: please share directly with the tools team over Slack or email." }
 )
 $firstHelp = $true
 foreach ($s in $helpSections) {
@@ -4653,162 +5131,6 @@ foreach ($s in $helpSections) {
     $rtbHelp.SelectionFont = New-Object System.Drawing.Font("Segoe UI", 9); $rtbHelp.SelectionColor = $ColMuted; $rtbHelp.AppendText("$($s.B)`n")
     $firstHelp = $false
 }
-
-# ---- Feedback Section -------------------------------------------------------
-$sepFb = New-Object System.Windows.Forms.Panel
-$sepFb.Size     = New-Object System.Drawing.Size($WideW, 1)
-$sepFb.Location = New-Object System.Drawing.Point(0, ($ContentH - 189))
-$sepFb.BackColor = $ColCard
-$sepFb.Anchor   = $AnchorBLR
-$pnlHelp.Controls.Add($sepFb)
-
-$lblFbTitle = New-Object System.Windows.Forms.Label
-$lblFbTitle.Text      = "Submit Feedback"
-$lblFbTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5)
-$lblFbTitle.ForeColor = $ColText
-$lblFbTitle.Location  = New-Object System.Drawing.Point(24, ($ContentH - 183))
-$lblFbTitle.AutoSize  = $true
-$lblFbTitle.Anchor    = $AnchorBL
-$pnlHelp.Controls.Add($lblFbTitle)
-
-$lblFbSub = New-Object System.Windows.Forms.Label
-$lblFbSub.Text      = "Report a problem or suggest an improvement — sent directly to the Pixellot tools team."
-$lblFbSub.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
-$lblFbSub.ForeColor = $ColMuted
-$lblFbSub.Location  = New-Object System.Drawing.Point(24, ($ContentH - 163))
-$lblFbSub.Size      = New-Object System.Drawing.Size(900, 18)
-$lblFbSub.Anchor    = $AnchorBL
-$pnlHelp.Controls.Add($lblFbSub)
-
-$lblFbType = New-Object System.Windows.Forms.Label
-$lblFbType.Text      = "Type:"
-$lblFbType.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
-$lblFbType.ForeColor = $ColText
-$lblFbType.Location  = New-Object System.Drawing.Point(24, ($ContentH - 137))
-$lblFbType.AutoSize  = $true
-$lblFbType.Anchor    = $AnchorBL
-$pnlHelp.Controls.Add($lblFbType)
-
-$cboFbType = New-Object System.Windows.Forms.ComboBox
-$cboFbType.Items.AddRange(@("Bug Report", "Suggestion")) | Out-Null
-$cboFbType.SelectedIndex = 0
-$cboFbType.Size          = New-Object System.Drawing.Size(180, 24)
-$cboFbType.Location      = New-Object System.Drawing.Point(70, ($ContentH - 140))
-$cboFbType.BackColor     = $ColCard
-$cboFbType.ForeColor     = $ColText
-$cboFbType.Font          = New-Object System.Drawing.Font("Segoe UI", 9)
-$cboFbType.FlatStyle     = [System.Windows.Forms.FlatStyle]::Flat
-$cboFbType.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-$cboFbType.Anchor        = $AnchorBL
-$pnlHelp.Controls.Add($cboFbType)
-
-$chkFbSysInfo = New-Object System.Windows.Forms.CheckBox
-$chkFbSysInfo.Text      = "Include system info (hostname, OS, Pulse version)"
-$chkFbSysInfo.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
-$chkFbSysInfo.ForeColor = $ColMuted
-$chkFbSysInfo.Location  = New-Object System.Drawing.Point(270, ($ContentH - 138))
-$chkFbSysInfo.Size      = New-Object System.Drawing.Size(380, 20)
-$chkFbSysInfo.Checked   = $true
-$chkFbSysInfo.Anchor    = $AnchorBL
-$pnlHelp.Controls.Add($chkFbSysInfo)
-
-$lblFbDetails = New-Object System.Windows.Forms.Label
-$lblFbDetails.Text      = "Details:"
-$lblFbDetails.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
-$lblFbDetails.ForeColor = $ColText
-$lblFbDetails.Location  = New-Object System.Drawing.Point(24, ($ContentH - 107))
-$lblFbDetails.AutoSize  = $true
-$lblFbDetails.Anchor    = $AnchorBL
-$pnlHelp.Controls.Add($lblFbDetails)
-
-$txtFbDetails = New-Object System.Windows.Forms.TextBox
-$txtFbDetails.Multiline    = $true
-$txtFbDetails.Size         = New-Object System.Drawing.Size(1148, 52)
-$txtFbDetails.Location     = New-Object System.Drawing.Point(70, ($ContentH - 110))
-$txtFbDetails.BackColor    = $ColCard
-$txtFbDetails.ForeColor    = $ColText
-$txtFbDetails.Font         = New-Object System.Drawing.Font("Segoe UI", 9)
-$txtFbDetails.BorderStyle  = [System.Windows.Forms.BorderStyle]::FixedSingle
-$txtFbDetails.ScrollBars   = [System.Windows.Forms.ScrollBars]::Vertical
-$txtFbDetails.Anchor       = $AnchorBLR
-$pnlHelp.Controls.Add($txtFbDetails)
-
-$lblFbStatus = New-Object System.Windows.Forms.Label
-$lblFbStatus.Text      = ""
-$lblFbStatus.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
-$lblFbStatus.ForeColor = $ColMuted
-$lblFbStatus.Location  = New-Object System.Drawing.Point(24, ($ContentH - 50))
-$lblFbStatus.Size      = New-Object System.Drawing.Size(900, 18)
-$lblFbStatus.Anchor    = $AnchorBL
-$pnlHelp.Controls.Add($lblFbStatus)
-
-$btnFbSend = New-Object System.Windows.Forms.Button
-$btnFbSend.Text      = "Send Feedback"
-$btnFbSend.Size      = New-Object System.Drawing.Size(130, 28)
-$btnFbSend.Location  = New-Object System.Drawing.Point(($WideW - 154), ($ContentH - 54))
-$btnFbSend.BackColor = $ColAccent
-$btnFbSend.ForeColor = [System.Drawing.Color]::White
-$btnFbSend.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-$btnFbSend.FlatAppearance.BorderSize = 0
-$btnFbSend.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
-$btnFbSend.Cursor    = [System.Windows.Forms.Cursors]::Hand
-$btnFbSend.Anchor    = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
-$pnlHelp.Controls.Add($btnFbSend)
-
-$btnFbSend.Add_Click({
-    $fbType = $cboFbType.SelectedItem
-    $fbText = $txtFbDetails.Text.Trim()
-
-    if (-not $script:FeedbackToken) {
-        $lblFbStatus.ForeColor = $ColYellow
-        $lblFbStatus.Text = "Feedback token not configured — contact your administrator."
-        return
-    }
-    if (-not $fbText) {
-        $lblFbStatus.ForeColor = $ColYellow
-        $lblFbStatus.Text = "Please enter a description before sending."
-        return
-    }
-
-    $firstLine  = ($fbText -split "`n")[0].Trim()
-    $issueTitle = "[$fbType] " + $(if ($firstLine.Length -gt 100) { $firstLine.Substring(0,100) + "..." } else { $firstLine })
-
-    $sysBlock = ""
-    if ($chkFbSysInfo.Checked) {
-        $vpuModel = if ($sync.VpuModel) { $sync.VpuModel } else { "Unknown" }
-        $sysBlock  = "`n`n---`n**System Info**`n- Host: $($env:COMPUTERNAME)`n- OS: $([System.Environment]::OSVersion.VersionString)`n- Pulse: $ScriptVersion`n- VPU Model: $vpuModel"
-    }
-
-    $label     = if ($fbType -eq "Bug Report") { "bug" } else { "enhancement" }
-    $issueBody = @{ title=$issueTitle; body="$fbText$sysBlock"; labels=@($label) } | ConvertTo-Json -Compress
-
-    $btnFbSend.Enabled     = $false
-    $lblFbStatus.ForeColor = $ColMuted
-    $lblFbStatus.Text      = "Submitting..."
-
-    $wc = $null
-    try {
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("Authorization",        "Bearer $script:FeedbackToken")
-        $wc.Headers.Add("User-Agent",           "Pulse-VPU-Diagnostics/$ScriptVersion")
-        $wc.Headers.Add("Content-Type",         "application/json")
-        $wc.Headers.Add("Accept",               "application/vnd.github+json")
-        $wc.Headers.Add("X-GitHub-Api-Version", "2022-11-28")
-        $result = $wc.UploadString("https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/issues", "POST", $issueBody)
-        $resp   = $result | ConvertFrom-Json
-        $lblFbStatus.ForeColor = $ColGreen
-        $lblFbStatus.Text      = "Submitted — Issue #$($resp.number). Thank you!"
-        $txtFbDetails.Text     = ""
-    } catch {
-        $plain = "[$fbType]`n$fbText$sysBlock"
-        try { [System.Windows.Forms.Clipboard]::SetText($plain) } catch { }
-        $lblFbStatus.ForeColor = $ColYellow
-        $lblFbStatus.Text      = "Could not reach GitHub. Feedback copied to clipboard."
-    } finally {
-        if ($wc) { try { $wc.Dispose() } catch { } }
-        $btnFbSend.Enabled = $true
-    }
-})
 # =============================================================================
 #  PoeNicHardware.psm1  -  VPU Hardware panel
 #  Shows GPU model, monitor/mouse/keyboard status, NIC link uptime, and PoE data.
@@ -4941,7 +5263,7 @@ $hwTimer.Add_Tick({
     }
     if ($sync.HwComplete -and -not $sync.HwRunning) {
         $hwTimer.Stop(); $btnHwCancel.Visible=$false
-        $btnHwRun.Enabled=$true; $btnHwRun.Text=[char]0x25B6+"  Run Full Diagnostic"
+        $btnHwRun.Enabled=$true; $btnHwRun.Text=[char]0x25B6+"  Run Test"
         $lblHwStatus.ForeColor=$ColMuted; $lblHwStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
         # NIC port diagram now lives on Camera Connectivity (v1.0.47); ask it to refresh.
         try { Update-HwPortDiagram } catch { }
@@ -5049,10 +5371,10 @@ $dgvHwLog = New-LogGrid -X 8 -Y 32 -W 724 -H 420
 $hwLogCard.Controls.Add($dgvHwLog)
 
 $hwSummary = New-SummaryPanel -Parent $pnlPoE -X 784 -Y 220 -W 480 -H 460 -Title "Summary"
-Set-SummaryItems $hwSummary @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" })
+Set-SummaryItems $hwSummary @(@{ Status="neutral"; Text="Run Test to populate the summary" })
 
 # Bottom action bar
-$hwActions = New-ActionBar -Parent $pnlPoE -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$hwActions = New-ActionBar -Parent $pnlPoE -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Test")
 $btnHwRun    = $hwActions.PrimaryBtn
 $btnHwExport = $hwActions.ExportBtn
 
@@ -5220,7 +5542,7 @@ $svcTimer.Add_Tick({
     }
     if ($sync.SvcComplete -and -not $sync.SvcRunning) {
         $svcTimer.Stop(); $btnSvcCancel.Visible=$false
-        $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Run Full Diagnostic"
+        $btnSvcRun.Enabled=$true; $btnSvcRun.Text=[char]0x25B6+"  Run Test"
         $lblSvcStatus.ForeColor=$ColMuted; $lblSvcStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
 
         # Update Overall Status pill from worst card status (v1.0.43)
@@ -5308,10 +5630,10 @@ $dgvSvcLog = New-LogGrid -X 8 -Y 38 -W 784 -H 414
 $svcLogCard.Controls.Add($dgvSvcLog)
 
 $svcSummary = New-SummaryPanel -Parent $pnlServices -X 844 -Y 220 -W 420 -H 460 -Title "Summary"
-Set-SummaryItems $svcSummary @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" })
+Set-SummaryItems $svcSummary @(@{ Status="neutral"; Text="Run Test to populate the summary" })
 
 # Bottom action bar
-$svcActions = New-ActionBar -Parent $pnlServices -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$svcActions = New-ActionBar -Parent $pnlServices -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Test")
 $btnSvcRun    = $svcActions.PrimaryBtn
 $btnSvcExport = $svcActions.ExportBtn
 
@@ -5706,7 +6028,7 @@ $diskTimer.Add_Tick({
     }
     if ($sync.DiskComplete -and -not $sync.DiskRunning) {
         $diskTimer.Stop(); $btnDiskCancel.Visible=$false
-        $btnDiskRun.Enabled=$true; $btnDiskRun.Text=[char]0x25B6+"  Run Full Diagnostic"
+        $btnDiskRun.Enabled=$true; $btnDiskRun.Text=[char]0x25B6+"  Run Test"
         $lblDiskStatus.ForeColor=$ColMuted; $lblDiskStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
 
         # Update Overall Status pill
@@ -5796,10 +6118,10 @@ $dgvDiskLog = New-LogGrid -X 8 -Y 38 -W 784 -H 414
 $diskLogCard.Controls.Add($dgvDiskLog)
 
 $diskSummary = New-SummaryPanel -Parent $pnlDisk -X 844 -Y 220 -W 420 -H 460 -Title "Summary"
-Set-SummaryItems $diskSummary @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" })
+Set-SummaryItems $diskSummary @(@{ Status="neutral"; Text="Run Test to populate the summary" })
 
 # Bottom action bar
-$diskActions = New-ActionBar -Parent $pnlDisk -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$diskActions = New-ActionBar -Parent $pnlDisk -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Test")
 $btnDiskRun    = $diskActions.PrimaryBtn
 $btnDiskExport = $diskActions.ExportBtn
 
@@ -5968,7 +6290,7 @@ $evtTimer.Add_Tick({
     }
     if ($sync.EvtComplete -and -not $sync.EvtRunning) {
         $evtTimer.Stop(); $btnEvtCancel.Visible=$false
-        $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Run Full Diagnostic"
+        $btnEvtRun.Enabled=$true; $btnEvtRun.Text=[char]0x25B6+"  Run Test"
         $lblEvtStatus.ForeColor=$ColMuted; $lblEvtStatus.Text="Last run: $(Get-Date -Format 'h:mm tt')"
 
         $evtC = $sync.Cards["EvtStatus"]
@@ -6027,9 +6349,9 @@ $dgvEvtLog = New-LogGrid -X 8 -Y 38 -W 784 -H 414
 $evtLogCard.Controls.Add($dgvEvtLog)
 
 $evtSummary = New-SummaryPanel -Parent $pnlEvents -X 844 -Y 220 -W 420 -H 460 -Title "Summary"
-Set-SummaryItems $evtSummary @(@{ Status="neutral"; Text="Run Full Diagnostic to populate the summary" })
+Set-SummaryItems $evtSummary @(@{ Status="neutral"; Text="Run Test to populate the summary" })
 
-$evtActions = New-ActionBar -Parent $pnlEvents -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Full Diagnostic")
+$evtActions = New-ActionBar -Parent $pnlEvents -Y 698 -ExportText "Export Report" -PrimaryText ([char]0x25B6 + "  Run Test")
 $btnEvtRun    = $evtActions.PrimaryBtn
 $btnEvtExport = $evtActions.ExportBtn
 
@@ -7229,24 +7551,6 @@ $btnSetOpenDir.Region    = New-Object System.Drawing.Region([GfxHelper]::Rounded
 $cardReports.Controls.Add($btnSetOpenDir)
 $btnSetOpenDir.Add_Click({ if (Test-Path $OutputDir) { Start-Process explorer.exe $OutputDir } })
 
-# Feedback — token configuration shortcut
-$cardFeedback = _NewSetCard -Y 374 -H 110 -Title "Feedback"
-$lblSetFbName = New-Object System.Windows.Forms.Label
-$lblSetFbName.Text      = "GitHub Token"
-$lblSetFbName.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
-$lblSetFbName.ForeColor = $ColText
-$lblSetFbName.Location  = New-Object System.Drawing.Point(16, 44)
-$lblSetFbName.AutoSize  = $true
-$cardFeedback.Controls.Add($lblSetFbName)
-
-$lblSetFbState = New-Object System.Windows.Forms.Label
-$lblSetFbState.Text      = if ($script:FeedbackToken) { "Configured. Feedback will post directly to the tools team." } else { "Not configured. Feedback will be copied to clipboard as a fallback." }
-$lblSetFbState.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
-$lblSetFbState.ForeColor = if ($script:FeedbackToken) { $ColGreen } else { $ColYellow }
-$lblSetFbState.Location  = New-Object System.Drawing.Point(16, 64)
-$lblSetFbState.Size      = New-Object System.Drawing.Size(440, 18)
-$cardFeedback.Controls.Add($lblSetFbState)
-
 # About card on the right column — version + license + repo link
 $cardAbout = New-Object System.Windows.Forms.Panel
 $cardAbout.Size      = New-Object System.Drawing.Size(580, 374)
@@ -7531,11 +7835,22 @@ $btnTabFullDiag.Add_Click({ Start-FullDiagnostic })
 $form.Add_Load({
     $cboNic.Items.Add("All Ports") | Out-Null
     try {
-        foreach ($n in $script:detectedNics) {
-            $short = $n.InterfaceDescription -replace 'Intel\(R\) 82574L Gigabit Network Connection','CHU NIC'
-            $short = $short -replace 'Intel\(R\) I210 Gigabit Network Connection','CHU NIC'
-            $cboNic.Items.Add("$($n.Name)  ($short)") | Out-Null
+        # Sort the detected NICs by MAC so port-1 (lowest MAC) is first — this
+        # matches how Update-HwPortDiagram lays them out on the diagram, so
+        # "Ethernet 24" in slot 1 of the dropdown corresponds to physical Port 1.
+        $sortedDetected = @($script:detectedNics | Sort-Object MacAddress)
+        $portIdx = 1
+        foreach ($n in $sortedDetected) {
+            # Live device probe — same logic Update-HwPortDiagram uses, so
+            # the dropdown entry shows what's actually plugged into the port.
+            $deviceLabel = "No device"
+            try {
+                $devInfo = Get-PortDevice -Adapter $n -LinkSpeed $n.LinkSpeed
+                if ($devInfo -and $devInfo.Label) { $deviceLabel = $devInfo.Label }
+            } catch { }
+            $cboNic.Items.Add("Port $portIdx — $($n.Name) — $deviceLabel") | Out-Null
             $cboGuidePortA.Items.Add($n.Name) | Out-Null
+            $portIdx++
         }
         $script:nicCardInfo = Get-AdlinkCardInfo $script:detectedNics
         $lblNicCardVal.Text = $script:nicCardInfo.Label
@@ -7554,7 +7869,6 @@ $form.Add_Load({
     # Stash $wc and the event subscription so FormClosing can clean them up.
     try {
         $script:updateWc = New-Object System.Net.WebClient
-        if ($env:VPU_DEPLOY_TOKEN) { $script:updateWc.Headers.Add("Authorization", "Bearer $env:VPU_DEPLOY_TOKEN") }
         $script:updateSub = Register-ObjectEvent -InputObject $script:updateWc -EventName DownloadStringCompleted `
             -MessageData @{ Sync = $sync; CurVer = $ScriptVersion } -Action {
             try {

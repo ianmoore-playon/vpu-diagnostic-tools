@@ -1,15 +1,13 @@
 # =============================================================================
 #  Download.ps1  —  Downloads and installs Pulse — Pixellot Unified Live System Evaluator
 #  Called by Pulse.bat for both first-install and update scenarios.
-#  Reads install path from $env:VPU_INST and deploy token from $env:VPU_DEPLOY_TOKEN.
+#  Reads install path from $env:VPU_INST. The repo is public — no auth needed.
 # =============================================================================
 
 $inst        = $env:VPU_INST
-$deployToken = $env:VPU_DEPLOY_TOKEN
-$authHeader  = "Bearer $deployToken"
 
-# Use the API zipball endpoint — works with auth and follows redirects to the archive
-$url   = 'https://api.github.com/repos/ianmoore-playon/vpu-diagnostic-tools/zipball/main'
+# Use the archive endpoint — public, anonymous, follows redirects to the CDN.
+$url   = 'https://github.com/ianmoore-playon/vpu-diagnostic-tools/archive/refs/heads/main.zip'
 $zip   = [IO.Path]::Combine($env:TEMP, 'vpu-diag.zip')
 $stage = [IO.Path]::Combine($env:TEMP, 'vpu-diag-stage')
 
@@ -19,8 +17,8 @@ if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 $curlCmd = Get-Command 'curl.exe' -ErrorAction SilentlyContinue
 if ($curlCmd) {
     Write-Host '   Downloading...'
-    # -L follows the redirect; auth header is stripped automatically on cross-host redirect to CDN
-    & 'curl.exe' -L --progress-bar -H "Authorization: $authHeader" -o $zip $url
+    # -L follows the redirect to the GitHub archive CDN.
+    & 'curl.exe' -L --progress-bar -o $zip $url
     if ($LASTEXITCODE -ne 0) {
         Write-Host '   ERROR: curl download failed.' -ForegroundColor Red
         exit 1
@@ -32,14 +30,12 @@ if ($curlCmd) {
     try {
         $req = [Net.HttpWebRequest]::Create($url)
         $req.Method = 'HEAD'
-        $req.Headers.Add('Authorization', $authHeader)
         $resp = $req.GetResponse()
         $total = $resp.ContentLength
         $resp.Close()
     } catch {}
 
     $wc = New-Object Net.WebClient
-    $wc.Headers.Add('Authorization', $authHeader)
     $wc.DownloadFileAsync([uri]$url, $zip)
     $t0 = Get-Date
 
