@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
@@ -440,7 +442,11 @@ namespace Pulse.WPF.Services
                     Id   = PickFirst(row, "id", "vendorId"),
                     Name = PickFirst(row, "name", "vendorName"),
                 };
-                if (string.IsNullOrEmpty(item.Name)) item.Name = item.Id;
+                // v0.6.20: fall back to the local wwwroot\data files when the
+                // API didn't give us a human-readable name. Final fallback
+                // remains the numeric ID so the dropdown is never blank.
+                if (string.IsNullOrEmpty(item.Name))
+                    item.Name = SportzcastDataDirReader.GetVendorName(item.Id) ?? item.Id;
                 if (!string.IsNullOrEmpty(item.Id)) rows.Add(item);
             }
             return rows;
@@ -461,7 +467,8 @@ namespace Pulse.WPF.Services
                     Id   = PickFirst(row, "id", "vendorSportId", "sportId"),
                     Name = PickFirst(row, "name", "sportName", "sport"),
                 };
-                if (string.IsNullOrEmpty(item.Name)) item.Name = item.Id;
+                if (string.IsNullOrEmpty(item.Name))
+                    item.Name = SportzcastDataDirReader.GetSportName(item.Id) ?? item.Id;
                 if (!string.IsNullOrEmpty(item.Id)) rows.Add(item);
             }
             return rows;
@@ -483,7 +490,8 @@ namespace Pulse.WPF.Services
                     Id   = PickFirst(row, "id", "configurationId", "vendorConfigurationId"),
                     Name = PickFirst(row, "name", "configurationName", "description"),
                 };
-                if (string.IsNullOrEmpty(item.Name)) item.Name = item.Id;
+                if (string.IsNullOrEmpty(item.Name))
+                    item.Name = SportzcastDataDirReader.GetConfigurationName(item.Id) ?? item.Id;
                 if (!string.IsNullOrEmpty(item.Id)) rows.Add(item);
             }
             return rows;
@@ -533,16 +541,28 @@ namespace Pulse.WPF.Services
 
         public Task<bool> SetVendorSportAsync(string vendorSportId)
         {
-            return PostAsync(
+            // v0.6.20 / field finding: a real ScoreConnect III on a current
+            // Pixellot VPU returns 405 (Method Not Allowed) for POST on this
+            // route. The endpoint is registered as PUT — matches the other
+            // ScoreConnect III configuration mutators (swap-team-names,
+            // swap-team-data) which are also PUT per the swagger. Try PUT
+            // first; fall back to POST on 405/404 so older installs that
+            // still register POST stay supported.
+            return WriteAsync(
+                HttpMethod.Put,
                 $"{V1Cfg}/select-vendor-sport/{Uri.EscapeDataString(vendorSportId ?? "")}",
-                body: null);
+                body: null,
+                allowPostFallback: true);
         }
 
         public Task<bool> SetVendorConfigurationAsync(string configId)
         {
-            return PostAsync(
+            // v0.6.20: see SetVendorSportAsync — same 405-on-POST class.
+            return WriteAsync(
+                HttpMethod.Put,
                 $"{V1Cfg}/select-vendor-configuration/{Uri.EscapeDataString(configId ?? "")}",
-                body: null);
+                body: null,
+                allowPostFallback: true);
         }
 
         public Task<bool> SetDecoderInfoAsync(string vendorSportId, string serialPort)
@@ -640,46 +660,70 @@ namespace Pulse.WPF.Services
             }
         }
 
-        private async Task<bool> PostAsync(string path, string body)
+        private Task<bool> PostAsync(string path, string body)
+            => WriteAsync(HttpMethod.Post, path, body, allowPostFallback: false);
+
+        // v0.6.20: unified write helper that supports a PUT-first attempt
+        // with optional POST fallback on 405. ScoreConnect III's select-
+        // vendor-sport / select-vendor-configuration endpoints reject POST
+        // with HTTP 405 (the route is registered as PUT). Older installs
+        // accepted POST; the fallback keeps compatibility without
+        // hard-coding which version we're talking to.
+        private async Task<bool> WriteAsync(HttpMethod method, string path, string body, bool allowPostFallback)
         {
             var url = JoinUrl(BaseUrl, path);
             using (var cts = new CancellationTokenSource(WriteTimeoutMs))
             {
                 try
                 {
-                    HttpContent content = null;
-                    if (body != null)
+                    HttpContent BuildContent() =>
+                        body == null ? null : new StringContent(body, Encoding.UTF8, "application/json");
+
+                    var primaryStatus = await SendOneAsync(method, url, BuildContent(), cts.Token, path)
+                        .ConfigureAwait(false);
+                    if (primaryStatus.ok) return true;
+
+                    // 405 (Method Not Allowed) on PUT -> retry as POST. Older
+                    // ScoreConnect III versions registered the same route on
+                    // POST. We only fall back when explicitly requested by
+                    // the caller (writes-with-bodies don't need the dance).
+                    if (allowPostFallback && method != HttpMethod.Post && primaryStatus.status == 405)
                     {
-                        content = new StringContent(body, Encoding.UTF8, "application/json");
+                        var fallbackStatus = await SendOneAsync(HttpMethod.Post, url, BuildContent(), cts.Token, path)
+                            .ConfigureAwait(false);
+                        return fallbackStatus.ok;
                     }
-                    using (var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = content })
-                    using (var resp = await _http.SendAsync(req, cts.Token).ConfigureAwait(false))
-                    {
-                        var status = (int)resp.StatusCode;
-                        var respBody = "";
-                        try
-                        {
-                            respBody = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        }
-                        catch { }
-                        AppLogFile.Instance.WriteLine("ScoreConnect",
-                            resp.IsSuccessStatusCode ? "Pass" : "Fail",
-                            $"POST {path} -> {status} (body={Truncate(respBody, 200)})");
-                        return resp.IsSuccessStatusCode;
-                    }
+                    return false;
                 }
                 catch (OperationCanceledException)
                 {
                     AppLogFile.Instance.WriteLine("ScoreConnect", "Fail",
-                        $"POST {path} timed out after {WriteTimeoutMs}ms");
+                        $"{method.Method} {path} timed out after {WriteTimeoutMs}ms");
                     return false;
                 }
                 catch (Exception ex)
                 {
                     AppLogFile.Instance.WriteLine("ScoreConnect", "Fail",
-                        $"POST {path} failed: {ex.Message}");
+                        $"{method.Method} {path} failed: {ex.Message}");
                     return false;
                 }
+            }
+        }
+
+        private async Task<(bool ok, int status)> SendOneAsync(
+            HttpMethod method, string url, HttpContent content, CancellationToken ct, string pathForLog)
+        {
+            using (var req = new HttpRequestMessage(method, url) { Content = content })
+            using (var resp = await _http.SendAsync(req, ct).ConfigureAwait(false))
+            {
+                var status = (int)resp.StatusCode;
+                string respBody = "";
+                try { respBody = await resp.Content.ReadAsStringAsync().ConfigureAwait(false); }
+                catch { }
+                AppLogFile.Instance.WriteLine("ScoreConnect",
+                    resp.IsSuccessStatusCode ? "Pass" : "Fail",
+                    $"{method.Method} {pathForLog} -> {status} (body={Truncate(respBody, 200)})");
+                return (resp.IsSuccessStatusCode, status);
             }
         }
 

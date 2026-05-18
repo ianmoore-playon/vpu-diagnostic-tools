@@ -1040,3 +1040,18 @@ Addresses 22 findings from a four-agent review (UX / Diagnostic Logic / C# .NET 
 - **R5 silent-catch migration**: ~80+ `catch { }` blocks still in flight. `Try.Run` exists but is referenced zero times outside the helper itself. Mechanical but invasive — needs a per-function audit so newly-surfaced errors don't flood the live log.
 - **U5 STYLE_GUIDE§5 shared-control adoption**: hand-rolled StatusPill + SectionHeader copies across 9 panels. Belongs in a chrome consolidation pass.
 - **R6 silent dispatcher-invoke catches** in 6 ViewModels. Belongs with R5.
+
+## v0.6.20 — ScoreConnect field feedback (live-feed + vendor write + name lookup)
+
+Three issues from the v0.6.19 field test on a live VPU:
+
+1. **Live data feed disconnected — flag stayed stale after reconnect.** When the user stopped + restarted the ScoreConnect service, the GraphicsManager feed came back but the "Live data feed disconnected" Warning Finding persisted. Navigating away and back to the tab silently cleared it. Now `OnLiveConnectionStateChanged` removes any prior `Live data feed disconnected` / `Live data feed flapping` finding on the false→true transition and logs a `Reconnected — clearing prior warning` Pass line. Disconnect tracking also gained a flap window: 3+ disconnects within 5 minutes escalates the finding wording to "Live data feed flapping" with a different recommendation (check process / cable / scoreboard power).
+
+2. **Vendor change failed — `POST api/configuration/select-vendor-sport/{id} → 405`.** ScoreConnect III on a current Pixellot VPU rejects POST on this route; the endpoint is registered as PUT (matches the `swap-team-names` / `swap-team-data` pattern from the swagger). `SetVendorSportAsync` and `SetVendorConfigurationAsync` now use PUT, with an automatic POST fallback if the server returns 405 on PUT — keeps compatibility with older installs that registered POST. The fallback is gated behind a new `WriteAsync(method, path, body, allowPostFallback)` helper; the existing `PostAsync` continues to call it with `allowPostFallback: false` so writes-with-bodies (`set-decoder-info`, `set-scoreconnect-configuration`) are unaffected.
+
+3. **Numeric vendor IDs in the dropdowns.** ScoreConnect III's API returns vendor / vendor-sport / vendor-configuration items with numeric Id and (often) empty Name fields — the web UI dereferences names from local JSON files under `C:\Program Files (x86)\Sportzcast LLC\ScoreConnectIII\wwwroot\data\`. Pulse now reads the same directory at first access and uses it as a fallback name source: `GetVendorsAsync` / `GetVendorSportsAsync` / `GetVendorConfigurationsAsync` consult `SportzcastDataDirReader` when the API gave us nothing better. New helper `Pulse.WPF/Pulse.WPF/Helpers/SportzcastDataDirReader.cs` — scans both 32-bit and 64-bit Program Files locations, accepts both array-of-objects and dict-of-strings JSON shapes, and caches the result for the process lifetime. Final fallback remains the numeric ID, so a missing data directory degrades gracefully to pre-v0.6.20 behavior.
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.6.19 → 0.6.20.
+- New file: `Pulse.WPF/Pulse.WPF/Helpers/SportzcastDataDirReader.cs`.

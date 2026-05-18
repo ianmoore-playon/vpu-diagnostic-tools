@@ -957,9 +957,27 @@ namespace Pulse.WPF.ViewModels
             return false;
         }
 
+        // -- Live-feed flap detection (v0.6.20) ---------------------------
+        // Track recent disconnect timestamps so we can:
+        //   * Clear the stale "Live data feed disconnected" Warning when the
+        //     feed reconnects (otherwise the finding persisted across a
+        //     successful reconnect — field tech had to navigate away+back to
+        //     dismiss it).
+        //   * Escalate the wording to "Live data feed flapping" when we see
+        //     more than 2 disconnects within the flap window (5 min).
+        private const string LiveFeedDisconnectTitle = "Live data feed disconnected";
+        private const string LiveFeedFlappingTitle   = "Live data feed flapping";
+        private static readonly TimeSpan FlapWindow  = TimeSpan.FromMinutes(5);
+        private const int FlapCountThreshold         = 2;   // 3rd disconnect inside the window -> flapping
+        private readonly System.Collections.Generic.List<DateTime> _liveDisconnectTimes
+            = new System.Collections.Generic.List<DateTime>();
+        private readonly object _liveFeedFindingGate = new object();
+
         // Toggle the LIVE / OFFLINE pill in the Live Scoreboard card. When
         // the GraphicsManager log feed goes stale mid-session, also surface
-        // a Warning finding + recommendation so the operator notices.
+        // a Warning finding + recommendation so the operator notices. On
+        // reconnect, the matching Warning is removed and a one-shot Info
+        // line is written to the live log so the tech has a paper trail.
         private void OnLiveConnectionStateChanged(bool connected)
         {
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
@@ -967,17 +985,84 @@ namespace Pulse.WPF.ViewModels
                 bool wasConnected = LiveConnected;
                 LiveConnected = connected;
 
-                // Only emit a "feed disconnected" finding when we had a
-                // previously-good connection — avoids spamming Findings
-                // during the initial path-discovery phase.
                 if (wasConnected && !connected)
                 {
-                    AddFinding("Warning",
-                        "Live data feed disconnected",
-                        "Pulse stopped seeing fresh Sportzcast frames in the GraphicsManager log. Confirm GraphicsManager is running and receiving data from the Sportzcast device.");
+                    // Disconnect transition. Record timestamp and decide
+                    // whether this counts as flapping. Older entries outside
+                    // the flap window are pruned first so the count reflects
+                    // recent history only.
+                    DateTime now = DateTime.UtcNow;
+                    int recentCount;
+                    lock (_liveFeedFindingGate)
+                    {
+                        _liveDisconnectTimes.RemoveAll(t => (now - t) > FlapWindow);
+                        _liveDisconnectTimes.Add(now);
+                        recentCount = _liveDisconnectTimes.Count;
+                    }
+                    if (recentCount > FlapCountThreshold)
+                    {
+                        ReplaceLiveFeedFinding(
+                            LiveFeedFlappingTitle,
+                            $"Pulse has seen the Sportzcast log feed disconnect {recentCount} times in the last {FlapWindow.TotalMinutes:F0} minutes. Check the GraphicsManager process, the Sportzcast device's serial cable, and the venue's power for the scoreboard hardware.");
+                        AddLog("LiveFeed", $"Flapping: {recentCount} disconnects in {FlapWindow.TotalMinutes:F0} min", "Warn");
+                    }
+                    else
+                    {
+                        ReplaceLiveFeedFinding(
+                            LiveFeedDisconnectTitle,
+                            "Pulse stopped seeing fresh Sportzcast frames in the GraphicsManager log. Confirm GraphicsManager is running and receiving data from the Sportzcast device.");
+                        AddLog("LiveFeed", "Disconnected", "Warn");
+                    }
+                    UpdateStatusPill();
+                }
+                else if (!wasConnected && connected)
+                {
+                    // Reconnect. Clear any of our live-feed warnings; the
+                    // tech doesn't need to see the stale "disconnected"
+                    // chip after the feed has actually come back. Log a
+                    // one-shot Info line so the recovery is recorded.
+                    bool removedAny = RemoveLiveFeedFindings();
+                    if (removedAny)
+                    {
+                        AddLog("LiveFeed", "Reconnected — clearing prior warning", "Pass");
+                    }
+                    else
+                    {
+                        AddLog("LiveFeed", "Connected", "Pass");
+                    }
                     UpdateStatusPill();
                 }
             });
+        }
+
+        // Replace any prior live-feed finding (disconnect OR flapping) with a
+        // fresh one. Keeps the Findings list from accumulating duplicates
+        // when the feed flaps; the most-recent message wins.
+        private void ReplaceLiveFeedFinding(string title, string recommendation)
+        {
+            // Must run on the UI thread because Findings is bound to an
+            // ItemsControl. Callers already dispatcher-invoke into here.
+            RemoveLiveFeedFindings();
+            var f = Pulse.WPF.Models.Finding.Create("Warning", title, recommendation);
+            Findings.Add(f);
+            OnPropertyChanged(nameof(HasFindings));
+        }
+
+        // Returns true if any existing live-feed finding was removed.
+        private bool RemoveLiveFeedFindings()
+        {
+            bool removed = false;
+            for (int i = Findings.Count - 1; i >= 0; i--)
+            {
+                var t = Findings[i]?.Title ?? "";
+                if (t == LiveFeedDisconnectTitle || t == LiveFeedFlappingTitle)
+                {
+                    Findings.RemoveAt(i);
+                    removed = true;
+                }
+            }
+            if (removed) OnPropertyChanged(nameof(HasFindings));
+            return removed;
         }
 
         // ---------- Report (BuildReportText + write) ----------
