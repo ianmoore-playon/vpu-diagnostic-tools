@@ -41,8 +41,15 @@ namespace Pulse.WPF.Helpers
         // before comparison; we match by `Contains` so partial filenames
         // (e.g. "vendor-list.json", "vendors.json", "Vendor_v2.json") all
         // hit the vendor bucket.
+        //
+        // "scoreboardcodes" is the schema Sportzcast uses for the master
+        // ScoreBOT codes file — each row carries SCOREBOARD / SBVENDOR /
+        // SBCODE / VENDORCODE, and a single file populates both the sports
+        // bucket (SBCODE -> SCOREBOARD) and the vendors bucket (derived as
+        // the common prefix among rows sharing SBVENDOR).
         private static readonly (string Bucket, string[] Needles)[] BucketHints =
         {
+            ("scoreboardcodes",new[] { "scoreboard code", "scorebot scoreboard" }),
             ("vendors",        new[] { "vendor-list", "vendors" }),
             ("sports",         new[] { "vendor-sport", "sport-list", "sports" }),
             ("configurations", new[] { "vendor-configuration", "configuration" }),
@@ -122,11 +129,21 @@ namespace Pulse.WPF.Helpers
                 {
                     var bucket = BucketForFile(file);
                     if (bucket == null) continue;
-                    var dict = _byBucket[bucket];
                     string text;
                     try { text = File.ReadAllText(file); }
                     catch { continue; }
-                    MergeNamePairs(text, dict);
+                    if (bucket == "scoreboardcodes")
+                    {
+                        // Special case: one file populates two buckets.
+                        // SBCODE -> SCOREBOARD goes into the sports bucket
+                        // (so sport IDs returned by the API get a human-
+                        // readable name when the API itself returns empty
+                        // names). Vendor names are derived as the common
+                        // prefix among all SCOREBOARDs sharing an SBVENDOR.
+                        MergeScoreboardCodes(text, _byBucket["sports"], _byBucket["vendors"]);
+                        continue;
+                    }
+                    MergeNamePairs(text, _byBucket[bucket]);
                 }
             }
             catch
@@ -226,6 +243,89 @@ namespace Pulse.WPF.Helpers
                     dict[k.Trim()] = v.Trim();
                 }
             }
+        }
+
+        // ScoreBOT Scoreboard Codes schema:
+        //   [{"ID":N,"SCOREBOARD":"...","SBVENDOR":N,"SBCODE":N,"VENDORCODE":N}, ...]
+        // Populates two buckets:
+        //   sports  : SBCODE   -> SCOREBOARD                       (verbatim)
+        //   vendors : SBVENDOR -> longest common word prefix of all
+        //                          SCOREBOARDs sharing that SBVENDOR
+        // The vendor-name derivation is heuristic — Sportzcast doesn't
+        // ship an explicit vendor-name field in this file. For vendor 14
+        // ("All American Baseball/Basketball/Football") the prefix is
+        // "All American"; for vendor 52 ("Alge Timing") it's "Alge Timing".
+        // When the prefix is empty (rows share no leading word) we fall
+        // back to the first SCOREBOARD verbatim — a reasonable hint, and
+        // still better than the bare numeric ID.
+        private static void MergeScoreboardCodes(string text,
+            Dictionary<string, string> sports,
+            Dictionary<string, string> vendors)
+        {
+            List<Dictionary<string, string>> rows;
+            try { rows = JsonScrape.TopLevelArrayOfObjects(text); }
+            catch { return; }
+            if (rows == null || rows.Count == 0) return;
+
+            // Group SCOREBOARDs by SBVENDOR; populate the sports bucket as
+            // we iterate. Newer rows overwrite older for the same SBCODE —
+            // that's fine since SBCODE is supposed to be unique per ID.
+            var byVendor = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in rows)
+            {
+                var sb = PickFirst(row, "SCOREBOARD", "scoreboard", "Name");
+                var vendorId = PickFirst(row, "SBVENDOR", "sbVendor", "vendorId");
+                var sportId  = PickFirst(row, "SBCODE",   "sbCode",   "sportId");
+
+                if (!string.IsNullOrWhiteSpace(sportId) && !string.IsNullOrWhiteSpace(sb))
+                    sports[sportId.Trim()] = sb.Trim();
+
+                if (!string.IsNullOrWhiteSpace(vendorId) && !string.IsNullOrWhiteSpace(sb))
+                {
+                    if (!byVendor.TryGetValue(vendorId.Trim(), out var list))
+                    {
+                        list = new List<string>();
+                        byVendor[vendorId.Trim()] = list;
+                    }
+                    list.Add(sb.Trim());
+                }
+            }
+
+            foreach (var kv in byVendor)
+            {
+                var name = LongestCommonWordPrefix(kv.Value);
+                if (string.IsNullOrEmpty(name) && kv.Value.Count > 0) name = kv.Value[0];
+                if (!string.IsNullOrEmpty(name)) vendors[kv.Key] = name;
+            }
+        }
+
+        // Returns the longest leading whitespace-delimited word sequence
+        // shared by every string in `items`. Used to derive a vendor name
+        // from a group of scoreboard names. Case-insensitive comparison
+        // on the comparator side; original casing of the first item is
+        // returned so display reads naturally ("All American" not "ALL AMERICAN").
+        private static string LongestCommonWordPrefix(List<string> items)
+        {
+            if (items == null || items.Count == 0) return "";
+            if (items.Count == 1) return items[0];
+            var splits = items.Select(s => (s ?? "").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)).ToList();
+            int min = splits.Min(a => a.Length);
+            var prefix = new List<string>();
+            for (int i = 0; i < min; i++)
+            {
+                var word = splits[0][i];
+                bool allMatch = splits.All(a => string.Equals(a[i], word, StringComparison.OrdinalIgnoreCase));
+                if (!allMatch) break;
+                prefix.Add(word);
+            }
+            // Drop trailing common-but-meaningless tokens (parens, dashes).
+            while (prefix.Count > 0)
+            {
+                var last = prefix[prefix.Count - 1];
+                if (last == "-" || last == "—" || last.StartsWith("(")) prefix.RemoveAt(prefix.Count - 1);
+                else break;
+            }
+            return string.Join(" ", prefix);
         }
 
         private static bool LooksLikeFieldNameNotId(string key)

@@ -1055,3 +1055,32 @@ Three issues from the v0.6.19 field test on a live VPU:
 
 - `Pulse.WPF.csproj` Version bumped 0.6.19 → 0.6.20.
 - New file: `Pulse.WPF/Pulse.WPF/Helpers/SportzcastDataDirReader.cs`.
+
+## v0.6.21 — ScoreConnect field feedback (version + ScoreLink + codes file)
+
+Continuing from v0.6.20 (live-feed flapping, vendor-write PUT/POST). Four field requests against the Score Connect tab:
+
+1. **ScoreConnect version field was blank.** The `Service Status` card pulled `version` / `appVersion` / `serviceVersion` from the API's get-status response, but the response on a current Pixellot VPU carries no version field. Added `ReadScoreConnectExeVersion()` in `ScoreConnectService` which falls back to `FileVersionInfo.GetVersionInfo(...)` on the local `ScoreConnectIII.exe` (both 32-bit and 64-bit Program Files candidates tried). Prefers `ProductVersion` over `FileVersion` since the installer stamps the friendlier marketing string there.
+
+2. **"Available Serial Ports" panel replaced with a ScoreLink Device status card.** The old panel listed every COM port Windows enumerated — including stale entries from prior Bluetooth pairings and unrelated USB serial adapters — which wasn't useful for triage. New behaviour: a one-bit answer ("ScoreLink device connected (COM4)" green vs "ScoreLink not connected" red) backed by a `Win32_PnPEntity` query for currently-attached USB devices only. New helper `Pulse.WPF/Pulse.WPF/Helpers/ScoreLinkDetector.cs` matches the PnP description against:
+   - `MCP2221 USB-I2C/UART Combo` → ScoreLink 1
+   - `ScoreLinkII` → ScoreLink 2
+   Newer model wins when both somehow attach. COM port number is extracted from the device's PnP Name (e.g. `USB Serial Port (COM4)`).
+
+3. **ScoreBOT Scoreboard Codes file format taught to `SportzcastDataDirReader`.** The reader (v0.6.20) recognised generic `vendor-list.json` / `sports.json` shapes but missed the master ScoreBOT codes file shipped at `C:\Program Files (x86)\Sportzcast LLC\ScoreConnectIII\wwwroot\data\ScoreBOT Scoreboard Codes.json`. The schema is one row per scoreboard with `SCOREBOARD` / `SBVENDOR` / `SBCODE`. New `MergeScoreboardCodes` populates both buckets from this one file:
+   - **sports**: `SBCODE -> SCOREBOARD` (verbatim)
+   - **vendors**: `SBVENDOR -> longest common word prefix of all SCOREBOARDs sharing that SBVENDOR` (falls back to the first scoreboard name when no common prefix exists). Heuristic — Sportzcast doesn't ship explicit vendor names — but better than the bare numeric ID.
+
+4. **(Deferred — v0.7) Scoreboard-styled panel layout per sport.** User request: make the Score Connect tab's panel group look like an actual scoreboard, sport-dependent (basketball: home/away/period/clock/shots; football: home/away/quarter/clock/down/distance/yard-line; baseball: home/away/inning/outs/strikes/balls; etc.). The Live Scoreboard card should be the primary panel and pull from Sportzcast log frames. Captured for v0.7 redesign — needs:
+   - A sport-detection pipeline (probably keyed off the live-feed payload + current ScoreConnect configuration's sport ID + `SBCODE → SCOREBOARD` lookup via SportzcastDataDirReader).
+   - Per-sport `DataTemplate`s for the Live Scoreboard card.
+   - A mapping from the GraphicsManager Sportzcast log frame field names to the per-sport scoreboard fields (current `LiveScoreData` model exposes `HomeScore`/`AwayScore`/`Period`/`Clock`/`LastUpdatedAt` only — needs sport-specific extensions).
+   - A "sample frame" capture mode for picking field names off a real log when scaffolding a new sport.
+
+   Out of scope for v0.6.21; the existing single Live Scoreboard card stays unchanged so this iteration ships clean.
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.6.20 → 0.6.21.
+- New file: `Pulse.WPF/Pulse.WPF/Helpers/ScoreLinkDetector.cs`.
+- `SportzcastDataDirReader` gains a `scoreboardcodes` bucket + `MergeScoreboardCodes` parser.

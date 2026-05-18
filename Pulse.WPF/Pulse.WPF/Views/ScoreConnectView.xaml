@@ -481,43 +481,61 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Available serial ports -->
+                <!-- ScoreLink device (v0.6.21). Replaces the previous
+                     "Available Serial Ports" list — that panel showed every
+                     COM port Windows enumerated (including stale Bluetooth
+                     pairings) which wasn't useful for triage. Now this card
+                     gives a single yes/no answer: is the ScoreLink box
+                     currently plugged in, on which COM port. Backed by
+                     Win32_PnPEntity so stale ports never appear. -->
                 <Border Grid.Column="2" Style="{StaticResource Card}">
                     <StackPanel>
-                        <TextBlock Text="Available Serial Ports" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
-                        <TextBlock Text="No serial ports reported by ScoreConnect III."
+                        <TextBlock Text="ScoreLink Device" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                        <Border CornerRadius="6" Padding="14,10"
+                                BorderThickness="1">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="{StaticResource ErrBgBrush}" />
+                                    <Setter Property="BorderBrush" Value="{StaticResource RedBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ScoreLinkConnected}" Value="True">
+                                            <Setter Property="Background" Value="{StaticResource OkBgBrush}" />
+                                            <Setter Property="BorderBrush" Value="{StaticResource GreenBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <DockPanel>
+                                <Ellipse DockPanel.Dock="Left" Width="12" Height="12"
+                                         VerticalAlignment="Center" Margin="0,0,12,0">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{StaticResource RedBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ScoreLinkConnected}" Value="True">
+                                                    <Setter Property="Fill" Value="{StaticResource GreenBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <TextBlock Text="{Binding ScoreLinkStatusLabel}"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource ForegroundBrush}"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                            </DockPanel>
+                        </Border>
+                        <TextBlock Margin="0,10,0,0"
                                    Foreground="{StaticResource MutedForegroundBrush}"
-                                   Visibility="{Binding AvailablePorts.Count, Converter={StaticResource CountToVis}, ConverterParameter=Invert}" />
-                        <ItemsControl ItemsSource="{Binding AvailablePorts}"
-                                      Visibility="{Binding AvailablePorts.Count, Converter={StaticResource CountToVis}}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{StaticResource AppBgBrush}"
-                                            BorderBrush="{StaticResource BorderColBrush}" BorderThickness="1"
-                                            CornerRadius="6" Margin="0,0,0,6" Padding="12,8">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="80" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding Name}"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="{StaticResource ForegroundBrush}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding OwningVendor}"
-                                                       Style="{StaticResource MutedLabel}"
-                                                       VerticalAlignment="Center" />
-                                            <Border Grid.Column="2" CornerRadius="3" Padding="6,1"
-                                                    Background="{StaticResource YellowBrush}"
-                                                    Visibility="{Binding IsInUse, Converter={StaticResource BoolToVis}}">
-                                                <TextBlock Text="IN USE" Foreground="White" FontWeight="SemiBold"
-                                                           FontSize="{StaticResource FontSize.Caption}" />
-                                            </Border>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                                   FontSize="{StaticResource FontSize.Caption}"
+                                   TextWrapping="Wrap">
+                            <Run Text="Detects via Win32_PnPEntity. ScoreLink 1 matches " />
+                            <Run Text="MCP2221 USB-I2C/UART Combo" FontFamily="Consolas" />
+                            <Run Text="; ScoreLink 2 matches " />
+                            <Run Text="ScoreLinkII" FontFamily="Consolas" />
+                            <Run Text=". Stale or unrelated COM ports are not shown." />
+                        </TextBlock>
                     </StackPanel>
                 </Border>
             </Grid>

@@ -109,6 +109,12 @@ namespace Pulse.WPF.Services
                     var v = JsonScrape.String(body ?? "", "version");
                     if (string.IsNullOrEmpty(v)) v = JsonScrape.String(body ?? "", "appVersion");
                     if (string.IsNullOrEmpty(v)) v = JsonScrape.String(body ?? "", "serviceVersion");
+                    // v0.6.21 / field finding: the live VPU's get-status response
+                    // carries no version field, leaving the Service Status card
+                    // blank. Fall back to FileVersionInfo on the ScoreConnect III
+                    // executable — it's right there on disk and always populated
+                    // by the installer.
+                    if (string.IsNullOrEmpty(v)) v = ReadScoreConnectExeVersion();
                     if (!string.IsNullOrEmpty(v)) status.Version = v;
                     return status;
                 }
@@ -116,6 +122,36 @@ namespace Pulse.WPF.Services
             }
 
             return status;
+        }
+
+        // Tries the canonical 32-bit and 64-bit install paths for
+        // ScoreConnectIII.exe and returns FileVersion. Returns "" on any
+        // failure (path missing, locked, unreadable) so callers can keep
+        // their existing empty-string-means-unknown contract.
+        private static string ReadScoreConnectExeVersion()
+        {
+            string[] candidates =
+            {
+                @"C:\Program Files (x86)\Sportzcast LLC\ScoreConnectIII\ScoreConnectIII.exe",
+                @"C:\Program Files\Sportzcast LLC\ScoreConnectIII\ScoreConnectIII.exe",
+            };
+            foreach (var path in candidates)
+            {
+                try
+                {
+                    if (!System.IO.File.Exists(path)) continue;
+                    var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(path);
+                    // FileVersion is the linker-stamped string; ProductVersion is
+                    // sometimes the marketing version. Prefer ProductVersion when
+                    // present so the panel reads the same string the installer
+                    // shows.
+                    var v = info.ProductVersion;
+                    if (string.IsNullOrWhiteSpace(v)) v = info.FileVersion;
+                    if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+                }
+                catch { }
+            }
+            return "";
         }
 
         // ---------- Configuration reads ----------

@@ -110,6 +110,58 @@ namespace Pulse.WPF.ViewModels
         public ObservableCollection<ScoreConnectSerialPortInfo> AvailablePorts { get; }
             = new ObservableCollection<ScoreConnectSerialPortInfo>();
 
+        // v0.6.21: replaces the noisy "Available Serial Ports" list with a
+        // one-bit answer. Bound by the Score Connect view's ScoreLink card.
+        // Status is recomputed inside BaselineAsync (and on tab refresh) by
+        // calling Pulse.WPF.Helpers.ScoreLinkDetector.Detect(), which reads
+        // Win32_PnPEntity for currently-attached USB devices only — stale
+        // entries from previous pairings don't appear.
+        private bool _scoreLinkConnected;
+        public bool ScoreLinkConnected
+        {
+            get => _scoreLinkConnected;
+            set
+            {
+                if (Set(ref _scoreLinkConnected, value))
+                    OnPropertyChanged(nameof(ScoreLinkStatusLabel));
+            }
+        }
+
+        private string _scoreLinkPort = "";
+        public string ScoreLinkPort
+        {
+            get => _scoreLinkPort;
+            set
+            {
+                if (Set(ref _scoreLinkPort, value))
+                    OnPropertyChanged(nameof(ScoreLinkStatusLabel));
+            }
+        }
+
+        private string _scoreLinkModel = "";
+        public string ScoreLinkModel
+        {
+            get => _scoreLinkModel;
+            set
+            {
+                if (Set(ref _scoreLinkModel, value))
+                    OnPropertyChanged(nameof(ScoreLinkStatusLabel));
+            }
+        }
+
+        /// <summary>Composed one-line label for the ScoreLink card.</summary>
+        public string ScoreLinkStatusLabel
+        {
+            get
+            {
+                if (!ScoreLinkConnected) return "ScoreLink not connected";
+                var model = string.IsNullOrEmpty(ScoreLinkModel) ? "ScoreLink" : ScoreLinkModel;
+                if (string.IsNullOrEmpty(ScoreLinkPort))
+                    return $"{model} device connected";
+                return $"{model} device connected ({ScoreLinkPort})";
+            }
+        }
+
         public ObservableCollection<ScoreConnectVendorListItem> Vendors { get; }
             = new ObservableCollection<ScoreConnectVendorListItem>();
 
@@ -555,6 +607,35 @@ namespace Pulse.WPF.ViewModels
             AddLog("Serial ports", $"{ports.Count} visible", "Info");
             AddLog("Vendors", $"{vendors.Count} known", "Info");
             AddLog("Devices", $"{devices.Count} known", "Info");
+
+            // v0.6.21: detect a currently-plugged ScoreLink box via Win32_PnPEntity.
+            // The old "Available Serial Ports" panel showed every COM device
+            // Windows enumerated (including stale Bluetooth pairings) which
+            // wasn't useful for triage. This one-bit answer goes through the
+            // live PnP tree so only currently-attached devices count.
+            try
+            {
+                var sl = await Task.Run(Pulse.WPF.Helpers.ScoreLinkDetector.Detect).ConfigureAwait(false);
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    ScoreLinkConnected = sl.IsConnected;
+                    ScoreLinkPort      = sl.PortName ?? "";
+                    ScoreLinkModel     = sl.Model ?? "";
+                });
+                if (sl.IsConnected)
+                {
+                    var pStr = string.IsNullOrEmpty(sl.PortName) ? "no COM port" : sl.PortName;
+                    AddLog("ScoreLink", $"{sl.Model} connected ({pStr})", "Pass");
+                }
+                else
+                {
+                    AddLog("ScoreLink", "Not connected", "Info");
+                }
+            }
+            catch (Exception ex)
+            {
+                AddLog("ScoreLink", $"Detection failed: {ex.Message}", "Warn");
+            }
 
             // Firmware update — Info finding when one's advertised. The
             // call is deliberately not parallelised with the main read fan
