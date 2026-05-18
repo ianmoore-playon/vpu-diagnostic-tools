@@ -72,25 +72,32 @@ namespace Pulse.WPF.Helpers
 
         public async Task StopAsync()
         {
+            // R4 fix: _ws is mutated from the run-loop thread inside
+            // TryConnectAndPumpAsync. Reading _ws without the lock here can
+            // race the run loop's "_ws = ws; ... _ws = null" sequence and
+            // call CloseAsync on a half-initialised or already-disposed
+            // client. Snapshot under the lock and operate on the snapshot.
             CancellationTokenSource cts;
             Task t;
+            ClientWebSocket wsSnapshot;
             lock (_gate)
             {
                 cts = _cts;
                 t = _runTask;
+                wsSnapshot = _ws;
                 _cts = null;
                 _runTask = null;
             }
             try { cts?.Cancel(); } catch { }
             try
             {
-                if (_ws != null && _ws.State == WebSocketState.Open)
+                if (wsSnapshot != null && wsSnapshot.State == WebSocketState.Open)
                 {
                     try
                     {
                         using (var ctsClose = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
                         {
-                            await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure,
+                            await wsSnapshot.CloseAsync(WebSocketCloseStatus.NormalClosure,
                                                  "shutdown",
                                                  ctsClose.Token).ConfigureAwait(false);
                         }
@@ -181,7 +188,10 @@ namespace Pulse.WPF.Helpers
                     await ws.ConnectAsync(new Uri(wsUrl), ctsConnect.Token).ConfigureAwait(false);
                 }
 
-                _ws = ws;
+                // R4 fix: assign _ws under the same lock that StopAsync reads
+                // it under, so StopAsync can't race a half-initialised
+                // client.
+                lock (_gate) { _ws = ws; }
                 EffectivePath = path;
                 AppLogFile.Instance.WriteLine("ScoreConnect", "Pass",
                     $"WebSocket connected at {wsUrl}");
@@ -205,7 +215,7 @@ namespace Pulse.WPF.Helpers
             {
                 SetConnected(false);
                 try { ws?.Dispose(); } catch { }
-                _ws = null;
+                lock (_gate) { _ws = null; }
             }
         }
 
@@ -230,20 +240,43 @@ namespace Pulse.WPF.Helpers
         {
             var buffer = new byte[16 * 1024];
             var assembled = new MemoryAccumulator();
+            // D14 fix: enforce a per-receive idle timeout. ReceiveAsync used
+            // to block forever; a half-open TCP that never emitted a close
+            // frame kept IsConnected=true indefinitely and the live card on
+            // the panel showed stale data as live. The 60 s window is well
+            // above any reasonable scoreboard message gap (Pixellot emits
+            // at least once every few seconds during a game) but short
+            // enough that a wedged connection is detected within a minute.
+            var idleTimeout = TimeSpan.FromSeconds(60);
             while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
             {
                 WebSocketReceiveResult r;
-                try
+                using (var idleCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
                 {
-                    r = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct)
-                                .ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) { return; }
-                catch (Exception ex)
-                {
-                    AppLogFile.Instance.WriteLine("ScoreConnect", "Warn",
-                        $"WebSocket receive failed: {ex.Message}");
-                    return;
+                    idleCts.CancelAfter(idleTimeout);
+                    try
+                    {
+                        r = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), idleCts.Token)
+                                    .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        return;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Idle timeout — treat as a soft disconnect so the
+                        // outer loop reconnects.
+                        AppLogFile.Instance.WriteLine("ScoreConnect", "Warn",
+                            $"WebSocket idle for {idleTimeout.TotalSeconds:F0} s - reconnecting");
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogFile.Instance.WriteLine("ScoreConnect", "Warn",
+                            $"WebSocket receive failed: {ex.Message}");
+                        return;
+                    }
                 }
                 if (r.MessageType == WebSocketMessageType.Close)
                 {

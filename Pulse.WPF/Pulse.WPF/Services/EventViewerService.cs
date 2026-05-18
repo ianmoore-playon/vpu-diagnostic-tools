@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.Eventing.Reader;
 using System.Linq;
 using System.Threading.Tasks;
 using Pulse.WPF.Models;
@@ -72,47 +73,72 @@ namespace Pulse.WPF.Services
                 levelSet.Add("Warning");
             }
 
+            // R11 fix: switch from EventLog.Entries (random-access indexer that
+            // becomes O(N) per call on large logs — Server 2019 boxes with
+            // long uptimes routinely hit 50k+ rows) to EventLogReader with
+            // ReverseDirection=true. DiskHealthService.CountDiskErrorEvents48h
+            // already uses this pattern. Builds the same time/level XPath
+            // filter so the reader prunes server-side instead of walking
+            // every entry. The level filter uses XPath levels 2 (Error),
+            // 3 (Warning); the time filter uses timediff against the cutoff.
+            long timeDiffMs = (long)Math.Round((DateTime.Now - cutoff).TotalMilliseconds);
+            if (timeDiffMs < 0) timeDiffMs = 0;
+            var wantError   = levelSet.Contains("Error");
+            var wantWarning = levelSet.Contains("Warning");
+            var wantInfo    = levelSet.Contains("Information");
+            var lvlClauses = new List<string>();
+            if (wantError)   lvlClauses.Add("Level=1 or Level=2");
+            if (wantWarning) lvlClauses.Add("Level=3");
+            if (wantInfo)    lvlClauses.Add("Level=4");
+            if (lvlClauses.Count == 0) lvlClauses.Add("Level=1 or Level=2 or Level=3");
+            var lvlExpr = string.Join(" or ", lvlClauses.Select(x => $"({x})"));
+            var xpath = $"*[System[({lvlExpr}) and TimeCreated[timediff(@SystemTime) <= {timeDiffMs}]]]";
+
             foreach (var logName in LogsToRead)
             {
+                EventLogReader reader = null;
                 try
                 {
-                    using (var log = new EventLog(logName))
+                    var q = new EventLogQuery(logName, PathType.LogName, xpath) { ReverseDirection = true };
+                    reader = new EventLogReader(q);
+                    EventRecord rec;
+                    while ((rec = reader.ReadEvent()) != null && results.Count < MaxEntries)
                     {
-                        // EventLog.Entries is indexed but enumerates oldest-first
-                        // when iterated. Walk in reverse so we stop at the
-                        // window cutoff as soon as possible.
-                        var entries = log.Entries;
-                        int total = entries.Count;
-                        for (int i = total - 1; i >= 0 && results.Count < MaxEntries; i--)
+                        WindowsEventEntry row = null;
+                        try
                         {
-                            WindowsEventEntry row;
-                            try
+                            var time  = rec.TimeCreated ?? DateTime.MinValue;
+                            if (time != DateTime.MinValue && time < cutoff)
                             {
-                                var e = entries[i];
-                                if (e.TimeGenerated < cutoff) break;
-
-                                var level = MapLevel(e.EntryType);
-                                if (!levelSet.Contains(level)) continue;
-
-                                if (!MatchesSource(e.Source, sourcePrefixes)) continue;
-
-                                row = new WindowsEventEntry
-                                {
-                                    TimeGenerated = e.TimeGenerated,
-                                    Source        = e.Source ?? "",
-                                    Level         = level,
-                                    EventId       = (int)(e.InstanceId & 0xFFFF),
-                                    Message       = TrimMessage(e.Message),
-                                };
+                                rec.Dispose();
+                                break;
                             }
-                            catch
+                            var level = MapEventLogReaderLevel(rec.Level);
+                            if (!levelSet.Contains(level)) { rec.Dispose(); continue; }
+
+                            var source = rec.ProviderName ?? "";
+                            if (!MatchesSource(source, sourcePrefixes)) { rec.Dispose(); continue; }
+
+                            string formatted = "";
+                            try { formatted = rec.FormatDescription() ?? ""; }
+                            catch { /* missing message DLL — leave blank */ }
+
+                            row = new WindowsEventEntry
                             {
-                                // Individual entries can throw when the message
-                                // template DLL is missing — skip them.
-                                continue;
-                            }
-                            results.Add(row);
+                                TimeGenerated = time,
+                                Source        = source,
+                                Level         = level,
+                                EventId       = rec.Id,
+                                Message       = TrimMessage(formatted),
+                            };
                         }
+                        catch
+                        {
+                            // Individual entries can throw when the message
+                            // template DLL is missing — skip them.
+                        }
+                        finally { rec?.Dispose(); }
+                        if (row != null) results.Add(row);
                     }
                 }
                 catch (Exception ex)
@@ -122,6 +148,10 @@ namespace Pulse.WPF.Services
                     // keep the failure so the panel can warn the operator.
                     failures.Add($"{logName}: {ex.Message}");
                     Debug.WriteLine($"EventViewerService: failed to read {logName} log");
+                }
+                finally
+                {
+                    reader?.Dispose();
                 }
             }
 
@@ -143,6 +173,21 @@ namespace Pulse.WPF.Services
                 case EventLogEntryType.Information:     return "Information";
                 case EventLogEntryType.SuccessAudit:    return "Information";
                 default:                                 return "Information";
+            }
+        }
+
+        // EventLogReader uses a numeric Level field (per Windows Event schema:
+        // 1=Critical, 2=Error, 3=Warning, 4=Information, 5=Verbose). Map to
+        // the string vocabulary the rest of this service uses.
+        private static string MapEventLogReaderLevel(byte? level)
+        {
+            switch (level)
+            {
+                case 1: return "Error";       // Critical
+                case 2: return "Error";
+                case 3: return "Warning";
+                case 4: return "Information";
+                default: return "Information";
             }
         }
 

@@ -228,13 +228,23 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
+                            <!-- U1 fix: drop FallbackValue=0 on Home/Away score
+                                 TextBlocks. With no LiveScoreData attached the
+                                 40-pt bold "0" rendered exactly like a real
+                                 stuck game at 0-0. Now the score TextBlocks
+                                 are gated on LiveScoreData being non-null;
+                                 when there's no live feed the card shows the
+                                 team-name row with an em-dash and the score
+                                 area collapses to keep the column heights
+                                 stable. -->
                             <Border Grid.Column="0" Style="{StaticResource NetSubCard}" Margin="0,0,8,0">
                                 <StackPanel>
                                     <TextBlock Text="HOME" Style="{StaticResource NetSubHeading}" />
                                     <TextBlock Text="{Binding LiveScoreData.HomeTeam, FallbackValue=—}"
                                                FontWeight="SemiBold"
                                                Foreground="{StaticResource ForegroundBrush}" />
-                                    <TextBlock Text="{Binding LiveScoreData.HomeScore, FallbackValue=0}"
+                                    <TextBlock Text="{Binding LiveScoreData.HomeScore}"
+                                               Visibility="{Binding LiveScoreData, Converter={StaticResource NullToVis}}"
                                                FontSize="40" FontWeight="Bold"
                                                Foreground="{StaticResource ForegroundBrush}"
                                                Margin="0,4,0,0" />
@@ -246,7 +256,8 @@
                                     <TextBlock Text="{Binding LiveScoreData.AwayTeam, FallbackValue=—}"
                                                FontWeight="SemiBold"
                                                Foreground="{StaticResource ForegroundBrush}" />
-                                    <TextBlock Text="{Binding LiveScoreData.AwayScore, FallbackValue=0}"
+                                    <TextBlock Text="{Binding LiveScoreData.AwayScore}"
+                                               Visibility="{Binding LiveScoreData, Converter={StaticResource NullToVis}}"
                                                FontSize="40" FontWeight="Bold"
                                                Foreground="{StaticResource ForegroundBrush}"
                                                Margin="0,4,0,0" />

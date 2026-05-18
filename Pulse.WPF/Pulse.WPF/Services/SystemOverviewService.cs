@@ -146,7 +146,23 @@ namespace Pulse.WPF.Services
                         os.Uptime = upStr;
                         rows.Add(Info("Uptime", upStr));
                         cards.UptimeTitle  = upStr;
-                        cards.UptimeStatus = up.TotalDays > 30 ? "warn" : "ok";
+                        // D11 fix: bumped from > 30 days to > 180 days to
+                        // match the threshold used in the PowerShell-tool's
+                        // post-review tuning. VPUs are designed to run 24/7;
+                        // 30+ days was warning noise that eroded trust. Also
+                        // emit an explicit row so the panel surfaces the
+                        // recommendation instead of just a yellow card with
+                        // no message.
+                        if (up.TotalDays > 180)
+                        {
+                            cards.UptimeStatus = "warn";
+                            rows.Add(Warn("Uptime",
+                                $"{(int)Math.Floor(up.TotalDays)} days — Windows updates may be pending; schedule a reboot during the next maintenance window."));
+                        }
+                        else
+                        {
+                            cards.UptimeStatus = "ok";
+                        }
                     }
 
                     var osShort = (caption ?? "")

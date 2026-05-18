@@ -99,7 +99,15 @@ namespace Pulse.WPF.ViewModels
             {
                 var vols = _disk.GetVolumes();
                 var paths = _disk.GetPixellotPaths();
-                var smart = _disk.SmartPredictsFailure();
+                // D1/R16 fix: use the richer SmartResult so we can distinguish
+                // "queried successfully" from "couldn't query" instead of
+                // silently rendering Healthy when SMART data is unavailable.
+                Pulse.WPF.Services.DiskHealthService.SmartResult smartResult = null;
+                if (_disk is Pulse.WPF.Services.DiskHealthService concrete)
+                    smartResult = concrete.GetSmartStatus();
+                var smart = smartResult != null
+                    ? (smartResult.Queried ? (bool?)smartResult.PredictsFailure : null)
+                    : _disk.SmartPredictsFailure();
                 int errs = _disk.CountDiskErrorEvents48h();
 
                 System.Windows.Application.Current?.Dispatcher.Invoke(() =>
@@ -131,10 +139,27 @@ namespace Pulse.WPF.ViewModels
                     AddLog("", "SMART & Errors", "Section");
                     if (smart == null)
                     {
+                        // D1/R16 fix: an unavailable SMART query should NOT
+                        // render Healthy. Surface as Warning with an explicit
+                        // reason that distinguishes "elevation required" from
+                        // "the box's WMI doesn't expose this".
+                        var elevated = Pulse.WPF.Services.DiskHealthService.IsRunningElevated();
+                        var reason = smartResult?.UnavailableReason
+                                     ?? (elevated
+                                         ? "SMART data not exposed by this VPU's storage stack"
+                                         : "SMART query requires administrator privileges");
                         SmartStatus = "Unavailable";
                         SmartHealthSummary = "Unavailable";
-                        SmartSeverity = "neutral";
-                        AddLog("SMART", "Cannot query (admin required)", "Gray");
+                        SmartSeverity = "warn";
+                        AddLog("SMART", reason, "Warn");
+                        var rec = elevated
+                            ? "The drive failure prediction signal is not exposed by this VPU's storage stack. " + reason
+                            : reason + ". Relaunch Pulse as Administrator to read SMART data.";
+                        Findings.Add(Pulse.WPF.Models.Finding.Create(
+                            "Warning",
+                            "SMART data unavailable - drive failure prediction cannot be verified",
+                            rec,
+                            "Disk"));
                     }
                     else if (smart.Value)
                     {

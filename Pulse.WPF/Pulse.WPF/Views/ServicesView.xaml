@@ -55,9 +55,13 @@
                     </Button>
                 </StackPanel>
                 <StackPanel>
-                    <TextBlock Text="VPU Processes &amp; Services" Style="{StaticResource PageTitle}"
+                    <!-- U4 fix: page title now matches the sidebar label
+                         ("Pixellot Services") so a tech doesn't see two
+                         different names for the same panel within 200 ms of
+                         clicking. -->
+                    <TextBlock Text="Pixellot Services" Style="{StaticResource PageTitle}"
                                TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="Pixellot process health and restartable Windows service checks"
+                    <TextBlock Text="VPU process health and restartable Windows service checks"
                                Style="{StaticResource PageSubtitle}"
                                TextTrimming="CharacterEllipsis" MaxWidth="640" />
                 </StackPanel>

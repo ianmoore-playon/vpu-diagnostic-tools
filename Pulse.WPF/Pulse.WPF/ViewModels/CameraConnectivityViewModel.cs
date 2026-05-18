@@ -340,13 +340,19 @@ namespace Pulse.WPF.ViewModels
                             ipShown  = !string.IsNullOrEmpty(st.LastRemoteIp)  ? st.LastRemoteIp  : "—";
                             macShown = !string.IsNullOrEmpty(st.LastRemoteMac) ? st.LastRemoteMac : "—";
                         }
-                        else if (is100M)
+                        else if (is100M && (roles?.Count ?? 0) > 0)
                         {
                             // v0.6.9: link up at 100 Mbps with no ARP yet — on
                             // a Pixellot VPU this is almost certainly the OCR
                             // / Scoreboard camera. Main cameras negotiate 1
                             // Gbps; only the OCR runs at 100 Mbps. Skip the
                             // "Identifying device…" spinner and call it OCR.
+                            //
+                            // D6 fix: only infer when cameras.cfg has been
+                            // loaded with entries — same guard as the
+                            // ARP-resolved branch below. Without that guard
+                            // a stale-ARP main camera that renegotiated to
+                            // 100 Mbps would be silently labeled OCR Green.
                             primary   = "OCR / Scoreboard";
                             secondary = "Inferred from 100 Mbps speed";
                             info.IsOcr = true;        // silences degraded-speed warning
@@ -398,7 +404,7 @@ namespace Pulse.WPF.ViewModels
                         statusBrush = StatusHelpers.Brush("GreenBrush");
                         ledBrush    = StatusHelpers.Brush("GreenBrush");
                     }
-                    else if (is100M && info.Source == DeviceIdentitySource.OuiVendor)
+                    else if (is100M && info.Source == DeviceIdentitySource.OuiVendor && (roles?.Count ?? 0) > 0)
                     {
                         // v0.6.9: ARP resolved to a Pixellot-OUI vendor but
                         // no cameras.cfg entry. At 100 Mbps this is almost
@@ -406,6 +412,16 @@ namespace Pulse.WPF.ViewModels
                         // Gbps). Promote the inference rather than rendering
                         // the misleading "Pixellot - Unknown role" yellow
                         // degraded state.
+                        //
+                        // D6 fix: only infer when cameras.cfg actually has
+                        // entries (the IP is in OuiVendor *because* cfg was
+                        // loaded and didn't include this IP). If cfg is
+                        // empty/missing, the inference is a guess and could
+                        // silently re-classify a real main camera that
+                        // renegotiated to 100 Mbps as OCR — masking a cable
+                        // fault as "Healthy OCR". When cfg is empty we fall
+                        // through to the next branch which renders Yellow
+                        // "Linked · 100 Mbps (expected 1 Gbps)".
                         primary = "OCR / Scoreboard";
                         secondary = "Inferred from 100 Mbps speed";
                         ipShown = snap.RemoteIp; macShown = snap.RemoteMac;
@@ -948,7 +964,21 @@ namespace Pulse.WPF.ViewModels
             // Only update the baseline when we have a credible speed reading
             // — a transient 0 from a polling glitch must not erase a valid
             // 1 Gbps history.
-            if (snap.LinkSpeedBps > 0) _prevSpeedByMac[snap.LocalMac] = snap.LinkSpeedBps;
+            if (snap.LinkSpeedBps > 0)
+            {
+                _prevSpeedByMac[snap.LocalMac] = snap.LinkSpeedBps;
+                return;
+            }
+            // D8 fix: a confirmed physical disconnect (IsUp=false AND no
+            // remote MAC visible to ARP — i.e. the cable is actually out,
+            // not just a transient polling glitch) should clear the speed
+            // baseline. Otherwise a port that legitimately drops to 0 keeps
+            // an old 1 Gbps baseline forever, and on reconnect with a 100 Mbps
+            // OCR camera DidSpeedRegress fires a spurious Critical.
+            if (!snap.IsUp && string.IsNullOrEmpty(snap.RemoteMac))
+            {
+                _prevSpeedByMac.Remove(snap.LocalMac);
+            }
         }
 
         private static int CountMissingConfiguredCameras(Dictionary<string, string> roles,

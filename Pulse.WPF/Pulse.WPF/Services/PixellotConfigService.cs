@@ -14,9 +14,14 @@ namespace Pulse.WPF.Services
     /// </summary>
     public class PixellotConfigService : IPixellotConfigService
     {
-        // The agent log line "working directory: C:\Pixellot\Data\configuration"
-        // is the canonical location across all VPUs we've checked.
-        private const string ConfigDir = @"C:\Pixellot\Data\configuration";
+        // The agent log line "working directory: <Pixellot>\Data\configuration"
+        // is the canonical location. R13 fix: resolve the Pixellot install
+        // root at runtime instead of hardcoding C:\ — VPUs with Pixellot on
+        // D:\ used to silently get a missing config directory and the Camera
+        // panel would render every port as "Unknown device" with no signal
+        // that the cfg path was wrong.
+        private static string ConfigDir =>
+            Pulse.WPF.Helpers.PixellotInstallPath.Combine("Data", "configuration");
 
         /// <inheritdoc />
         public string CamerasCfgPath => Path.Combine(ConfigDir, "cameras.cfg");
@@ -210,11 +215,26 @@ namespace Pulse.WPF.Services
 
                 // KEY, type, value  — split into max 3 parts so values containing
                 // commas don't get truncated.
+                //
+                // D10 fix: also accept 2-column rows (KEY,VALUE without the
+                // type column). Previously these were silently dropped, which
+                // meant a camera section with malformed UID/IP rows could
+                // leave roles[ip] unwritten and the Camera VM would render
+                // "Unknown device" for the port + fire the unknown-remote
+                // recommendation. Now: 3+ cols -> parts[2] as value; exactly
+                // 2 cols -> parts[1] as value.
                 var parts = line.Split(new[] { ',' }, 3);
                 if (parts.Length >= 3)
                 {
                     var key = parts[0].Trim();
                     var val = parts[2].Trim().Trim('"');
+                    if (!string.IsNullOrEmpty(key))
+                        result[section][key] = val;
+                }
+                else if (parts.Length == 2)
+                {
+                    var key = parts[0].Trim();
+                    var val = parts[1].Trim().Trim('"');
                     if (!string.IsNullOrEmpty(key))
                         result[section][key] = val;
                 }

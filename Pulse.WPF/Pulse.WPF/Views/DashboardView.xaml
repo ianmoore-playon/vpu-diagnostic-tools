@@ -66,9 +66,26 @@
                     <md:PackIcon DockPanel.Dock="Right" Kind="ChevronRight"
                                  Width="14" Height="14" VerticalAlignment="Center"
                                  Foreground="{StaticResource SubtleForegroundBrush}" Margin="12,0,0,0" />
-                    <TextBlock Text="{Binding Title}"
-                               Foreground="{StaticResource ForegroundBrush}"
-                               FontSize="{StaticResource FontSize.Body}" TextTrimming="CharacterEllipsis" />
+                    <!-- U2 fix: prefix the row with the panel that emitted
+                         the finding (e.g. "[Network]  ..."). Previously the
+                         row showed only Title, so a tech reading "Smart
+                         attribute over threshold" had no clue which panel
+                         owned the issue. Source / TargetNav was already
+                         being populated by the building VMs. -->
+                    <TextBlock VerticalAlignment="Center">
+                        <Run Text="["
+                             Foreground="{StaticResource SubtleForegroundBrush}"
+                             FontSize="{StaticResource FontSize.Body}" />
+                        <Run Text="{Binding Source}"
+                             Foreground="{StaticResource MutedForegroundBrush}"
+                             FontSize="{StaticResource FontSize.Body}" />
+                        <Run Text="]  "
+                             Foreground="{StaticResource SubtleForegroundBrush}"
+                             FontSize="{StaticResource FontSize.Body}" />
+                        <Run Text="{Binding Title}"
+                             Foreground="{StaticResource ForegroundBrush}"
+                             FontSize="{StaticResource FontSize.Body}" />
+                    </TextBlock>
                 </DockPanel>
             </Button>
         </DataTemplate>
@@ -317,34 +334,25 @@
 
                     <StackPanel Grid.Column="0">
                         <TextBlock Text="COMMAND CENTER" Style="{StaticResource CardCaption}" />
-                        <DockPanel LastChildFill="True">
-                            <Border DockPanel.Dock="Right"
-                                    Style="{StaticResource StatusChip}"
-                                    Background="{Binding StatusBg}"
-                                    Margin="12,0,0,0"
-                                    VerticalAlignment="Top">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Ellipse Width="9" Height="9" Fill="{Binding StatusColor}" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding StatusLabel}"
-                                               FontWeight="SemiBold"
-                                               Foreground="{Binding StatusColor}"
-                                               Margin="{StaticResource Spacing.InlineLeft}"
-                                               VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Border>
-                            <StackPanel>
-                                <TextBlock Text="{Binding StatusLabel}"
-                                           FontFamily="Segoe UI Semibold"
-                                           FontSize="32"
-                                           Foreground="{Binding StatusColor}"
-                                           TextTrimming="CharacterEllipsis" />
-                                <TextBlock Text="{Binding VpuLabel}"
-                                           Foreground="{StaticResource MutedForegroundBrush}"
-                                           FontSize="{StaticResource FontSize.Heading}"
-                                           Margin="0,2,0,0"
-                                           TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
-                        </DockPanel>
+                        <!-- U3 fix: the page-header already renders a
+                             StatusChip with StatusLabel. The inner
+                             Command-Center version below was a duplicate
+                             pill (third copy of the same word in the same
+                             viewport — header pill + hero text + inner pill).
+                             Dropped the inner Border; the 32-pt hero text
+                             still communicates the overall state. -->
+                        <StackPanel>
+                            <TextBlock Text="{Binding StatusLabel}"
+                                       FontFamily="Segoe UI Semibold"
+                                       FontSize="32"
+                                       Foreground="{Binding StatusColor}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding VpuLabel}"
+                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                       FontSize="{StaticResource FontSize.Heading}"
+                                       Margin="0,2,0,0"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
 
                         <Border Background="{Binding BaselineSummaryBg}"
                                 BorderBrush="{Binding BaselineSummaryColor}"

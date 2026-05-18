@@ -68,8 +68,17 @@ namespace Pulse.WPF.Services
             new PortTestSpec { Protocol="UDP", Port=123,  Host="0.us.pool.ntp.org",       Reliable=true,  Purpose="Clock sync (NTP) — configured peer",                Note="Real NTP request. PASS confirms clock sync is working." },
             new PortTestSpec { Protocol="TCP", Port=443,  Host="pixellot.tv",             Reliable=true,  Purpose="Pixellot management, software updates, video stream", Note="" },
             new PortTestSpec { Protocol="TCP", Port=443,  Host="logmein.com",             Reliable=true,  Purpose="LogMeIn — Windows remote support",                  Note="Heaviest TCP peer in pcapng captures of a working VPU." },
-            new PortTestSpec { Protocol="UDP", Port=2088, Host="prod-echo.pixellot.tv",   Reliable=true,  Purpose="Video streaming (Zixi primary)",                    Note="Firewall must allow outbound UDP 2088 to Pixellot servers. Dominant UDP path on a streaming VPU." },
-            new PortTestSpec { Protocol="UDP", Port=443,  Host="prod-echo.pixellot.tv",   Reliable=true,  Optional=true,  Purpose="Video streaming (Zixi fallback)",   Note="Optional — fallback path for UDP 2088. Not seen in working-VPU captures." },
+            // D3 fix: prod-echo.pixellot.tv was assumed to echo arbitrary UDP
+            // payloads back, but real Zixi endpoints don't. TestUdpEchoAsync
+            // requires the exact payload back -> structurally always Fail on
+            // every healthy VPU, producing a misleading "N required ports
+            // failed" Critical. Demoted to Reliable=false until the server-side
+            // echo behaviour is verified. The pcapng captures still confirm
+            // UDP/2088 is the dominant outbound path during a stream — that's
+            // observed at runtime by Camera/Network monitoring rather than via
+            // synthetic echo. UDP 443 stays Optional in addition.
+            new PortTestSpec { Protocol="UDP", Port=2088, Host="prod-echo.pixellot.tv",   Reliable=false, Purpose="Video streaming (Zixi primary)",                    Note="UDP echo not verified server-side; reported INFO. Firewall should allow outbound UDP 2088 to Pixellot servers." },
+            new PortTestSpec { Protocol="UDP", Port=443,  Host="prod-echo.pixellot.tv",   Reliable=false, Optional=true,  Purpose="Video streaming (Zixi fallback)",   Note="UDP echo not verified server-side; reported INFO. Optional fallback path for UDP 2088." },
             new PortTestSpec { Protocol="TCP", Port=1402, Host="scorebot.sportzcast.net", Reliable=true,  Optional=true,  Purpose="SportzCast scoreboard data (1400-1405)", Note="Optional — venue-specific. Only required at venues with SportzCast hardware." },
         };
 
@@ -632,17 +641,37 @@ namespace Pulse.WPF.Services
             });
         }
 
-        // w32tm fallback — runs `w32tm /stripchart /computer:<host> /samples:1
-        // /dataonly` and returns true when Windows successfully samples the
-        // remote clock. Output we treat as success looks like:
-        //   "16:42:30, +00.0001234s"
-        // Output we treat as failure looks like:
-        //   "16:42:30, error: 0x800705B4 (timeout)"
-        // Instance method (v0.6.4) so probe failures route through Report.
-        private Task<bool> TestNtpViaW32tmAsync(string server)
+        /// <summary>
+        /// Result of an NTP stripchart probe — includes the parsed offset so
+        /// the recommendation can quote the actual drift instead of pointing
+        /// at a non-existent System Overview row.
+        /// </summary>
+        public class NtpProbeResult
+        {
+            /// <summary>True if Windows successfully sampled the peer AND the
+            /// drift is within the acceptable band (<5 s magnitude).</summary>
+            public bool Ok;
+            /// <summary>Parsed offset in seconds (+ ahead / - behind). null if
+            /// the response couldn't be parsed.</summary>
+            public double? OffsetSeconds;
+            /// <summary>Raw stdout for debugging.</summary>
+            public string RawOutput;
+        }
+
+        // D2 fix: parse the actual offset out of `w32tm /stripchart` output
+        // instead of just checking for any digit-prefixed comma. The previous
+        // regex `,\s*[+-]\d` returned Pass on huge drift values that should
+        // have failed. Now we extract the value, threshold-check it (>= 5 s
+        // = Fail; >= 1 s = Warn), and expose the drift via NtpProbeResult so
+        // the recommendation can tell the tech the actual measured offset.
+        // Success line:  "16:42:30, +00.0001234s"      -> Ok=true, offset=0.0
+        // Drift line:    "16:42:30, +03600.0000000s"   -> Ok=false, offset=3600
+        // Error line:    "16:42:30, error: 0x800705B4" -> Ok=false, offset=null
+        private Task<NtpProbeResult> ProbeNtpDriftAsync(string server)
         {
             return Task.Run(() =>
             {
+                var result = new NtpProbeResult { Ok = false };
                 try
                 {
                     var psi = new ProcessStartInfo("w32tm",
@@ -655,27 +684,58 @@ namespace Pulse.WPF.Services
                     };
                     using (var p = Process.Start(psi))
                     {
-                        if (p == null) return false;
-                        // Stripchart resolves DNS + does one sample. 4 s is
-                        // generous; default w32tm timeout is ~2 s.
+                        if (p == null) return result;
                         if (!p.WaitForExit(4000))
                         {
-                            // p.Kill() — best-effort cleanup of a hung
-                            // w32tm.exe; if it throws (already exited), the
-                            // result is still a Fail. Defensive, kept silent.
                             try { p.Kill(); } catch { }
-                            return false;
+                            return result;
                         }
                         var stdout = p.StandardOutput.ReadToEnd() ?? "";
+                        result.RawOutput = stdout;
                         if (stdout.IndexOf("error", StringComparison.OrdinalIgnoreCase) >= 0)
-                            return false;
-                        // Successful sample line: "HH:MM:SS, +00.0001234s"
-                        return System.Text.RegularExpressions.Regex.IsMatch(
-                            stdout, @",\s*[+-]\d");
+                            return result;
+                        // Extract the numeric offset. Locale-tolerant: w32tm
+                        // emits "+/-DDDDD.DDDDDDDs" — period as decimal separator
+                        // regardless of culture (verified across en-US, de-DE,
+                        // ja-JP). The regex captures the signed number.
+                        var m = System.Text.RegularExpressions.Regex.Match(
+                            stdout, @",\s*([+-]?\d+\.\d+)\s*s");
+                        if (!m.Success) return result;
+                        if (!double.TryParse(m.Groups[1].Value,
+                                System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture,
+                                out var offset))
+                            return result;
+                        result.OffsetSeconds = offset;
+                        // Acceptable drift threshold: < 5 s magnitude. Above
+                        // that, signed-URL streaming and log correlation start
+                        // breaking down.
+                        result.Ok = Math.Abs(offset) < 5.0;
+                        return result;
                     }
                 }
-                catch (Exception _ex) { Report("NTP probe (w32tm)", _ex); return false; }
+                catch (Exception _ex) { Report("NTP probe (w32tm)", _ex); return result; }
             });
+        }
+
+        // Back-compat wrapper kept for the existing call site. New callers
+        // should use ProbeNtpDriftAsync directly to get the parsed offset.
+        private async Task<bool> TestNtpViaW32tmAsync(string server)
+        {
+            var r = await ProbeNtpDriftAsync(server).ConfigureAwait(false);
+            return r.Ok;
+        }
+
+        /// <summary>
+        /// Public entry point — System Overview / Dashboard can call this to
+        /// surface the live NTP drift as a Finding. Returns null on probe
+        /// failure (callers should treat null as "could not measure").
+        /// </summary>
+        public Task<NtpProbeResult> GetNtpDriftAsync(string server = null)
+        {
+            if (string.IsNullOrEmpty(server))
+                server = TryGetConfiguredNtpServer() ?? "time.windows.com";
+            return ProbeNtpDriftAsync(server);
         }
 
         // Instance method (v0.6.4) so probe failures route through Report.
@@ -707,14 +767,25 @@ namespace Pulse.WPF.Services
 
         // Pure static helper — Dns.GetHostAddressesAsync wrapper with a
         // hard timeout. Returns null on failure; callers already treat null
-        // as "no probe target" and surface their own Fail row. Kept defensive.
+        // as "no probe target" and surface their own Fail row.
+        //
+        // R1 fix: previously used `task.Wait(TimeoutMs)` + `task.Result`,
+        // which deadlocks on the WPF dispatcher thread if the awaited
+        // continuation tries to post back to a synchronization context. The
+        // call is wrapped in `Task.Run(...).GetAwaiter().GetResult()` so the
+        // wait happens off any captured context, and any AggregateException
+        // is unwrapped to the inner exception by GetResult().
         private static IPAddress[] ResolveAddrs(string host)
         {
             try
             {
-                var task = Dns.GetHostAddressesAsync(host);
-                if (!task.Wait(TimeoutMs)) return null;
-                return task.Result;
+                return Task.Run(async () =>
+                {
+                    var dnsTask = Dns.GetHostAddressesAsync(host);
+                    var winner  = await Task.WhenAny(dnsTask, Task.Delay(TimeoutMs)).ConfigureAwait(false);
+                    if (winner != dnsTask) return null;
+                    return await dnsTask.ConfigureAwait(false);
+                }).GetAwaiter().GetResult();
             }
             catch { return null; }
         }

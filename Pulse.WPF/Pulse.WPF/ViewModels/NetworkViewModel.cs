@@ -375,10 +375,6 @@ namespace Pulse.WPF.ViewModels
                 {
                     if (p == null || p.Status != "Fail") continue;
                     var purpose = string.IsNullOrEmpty(p.Purpose) ? "purpose unknown" : p.Purpose;
-                    // NTP probe (UDP/123) failing is a special case — it's
-                    // usually surfaced by the System Overview panel as a
-                    // clock-skew finding too, so wire a direct cross-tab
-                    // navigation action onto the recommendation row.
                     var isNtp = p.Port == 123 &&
                                 string.Equals(p.Protocol, "UDP", System.StringComparison.OrdinalIgnoreCase);
                     NetworkRecommendation rec;
@@ -395,21 +391,18 @@ namespace Pulse.WPF.ViewModels
                     }
                     else
                     {
+                        // D2 fix: NTP recommendation no longer points the tech
+                        // at a "live clock-skew value" in System Overview that
+                        // doesn't exist. The drift measurement now lives in
+                        // NetworkService.GetNtpDriftAsync — when System Overview
+                        // adopts it the cross-reference can be re-added.
                         rec = NetworkRecommendation.Create(
                             "Critical",
                             isNtp ? "NTP time sync failed"
                                   : $"{p.Protocol} {p.Port} blocked",
                             isNtp
-                                ? $"NTP time sync to {p.Host} failed (UDP/123). Without a clock peer the VPU's system time will drift, breaking signed-URL streaming and log-correlation. Check the System Overview panel for the live clock-skew value, and ensure outbound UDP/123 to {p.Host} is allowed."
+                                ? $"NTP time sync to {p.Host} failed (UDP/123). Without a clock peer the VPU's system time will drift, which breaks signed-URL streaming and log correlation. Ensure outbound UDP/123 to {p.Host} is allowed by the venue firewall."
                                 : $"{p.Protocol}/{p.Port} ({purpose}) is blocked. Ensure outbound {p.Protocol} {p.Port} to {p.Host} is allowed by the venue firewall, content-filter, and VLAN policy.");
-                    }
-                    if (isNtp)
-                    {
-                        rec.ActionLabel = "Open System Overview";
-                        rec.ActionCommand = new RelayCommand(() =>
-                        {
-                            try { Pulse.WPF.App.NavigateToTab("SystemOverview"); } catch { }
-                        });
                     }
                     built.Add(rec);
                 }

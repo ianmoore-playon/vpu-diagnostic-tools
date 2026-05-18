@@ -70,11 +70,14 @@ namespace Pulse.WPF.Services
 
         public LastRunSummary GetLastRunSummary()
         {
+            // R13 fix: discover the Pixellot install root rather than
+            // hardcoding C:\Pixellot — a VPU installed on D:\ used to lose
+            // historical reports entirely.
             var candidates = new List<string>
             {
                 Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) + @"\PulseReports",
                 Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) + @"\Pulse",
-                @"C:\Pixellot\Pulse",
+                Pulse.WPF.Helpers.PixellotInstallPath.Combine("Pulse"),
             };
 
             FileInfo latest = null;
@@ -200,12 +203,16 @@ namespace Pulse.WPF.Services
         {
             // Mirrors the Camera Connectivity engine: look in known Pixellot log
             // dirs for the newest agent_*.log, scan for vpuName + presentedProductType.
+            // R13 fix: discover the Pixellot install root via
+            // PixellotInstallPath so D:\Pixellot installs pick up their own
+            // agent log directory.
+            var pix = Pulse.WPF.Helpers.PixellotInstallPath.Root;
             var roots = new[]
             {
-                @"C:\Pixellot\Data\Log",
-                @"C:\Pixellot\Logs",
-                @"C:\Pixellot\Pulse",
-                @"C:\ProgramData\Pixellot\Log",
+                System.IO.Path.Combine(pix, "Data", "Log"),
+                System.IO.Path.Combine(pix, "Logs"),
+                System.IO.Path.Combine(pix, "Pulse"),
+                @"C:\ProgramData\Pixellot\Log",  // ProgramData is install-root-independent; left as-is
             };
             FileInfo newest = null;
             foreach (var root in roots)
@@ -515,15 +522,33 @@ namespace Pulse.WPF.Services
             // Internet reachability — a quick ping to a stable host. The full
             // Network panel runs the proper TCP/UDP/DNS suite; here we just
             // need a true/false for the dashboard tile.
-            try
+            //
+            // D4 fix: previously a single synchronous Ping.Send("8.8.8.8")
+            // with no retry. Lossy uplinks with one dropped ICMP produced a
+            // "No internet connection" Critical banner. Now: try 8.8.8.8 twice,
+            // fall through to 1.1.1.1 (matches the PowerShell tool's pattern).
+            snap.InternetReachable = false;
+            foreach (var host in new[] { "8.8.8.8", "1.1.1.1" })
             {
-                using (var p = new Ping())
+                if (snap.InternetReachable) break;
+                for (int attempt = 0; attempt < 2; attempt++)
                 {
-                    var reply = p.Send("8.8.8.8", 1500);
-                    snap.InternetReachable = reply != null && reply.Status == IPStatus.Success;
+                    try
+                    {
+                        using (var p = new Ping())
+                        {
+                            var reply = p.Send(host, 1500);
+                            if (reply != null && reply.Status == IPStatus.Success)
+                            {
+                                snap.InternetReachable = true;
+                                break;
+                            }
+                        }
+                    }
+                    catch { /* try next attempt / host */ }
+                    if (attempt == 0) System.Threading.Thread.Sleep(300);
                 }
             }
-            catch { snap.InternetReachable = false; }
         }
 
         // -- Pixellot services snapshot -----------------------------------------

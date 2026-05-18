@@ -17,7 +17,11 @@ namespace Pulse.WPF.Helpers
     /// </summary>
     public sealed class GraphicsManagerSportzcastLogFeed : IDisposable
     {
-        public const string DefaultLogDirectory = @"C:\Pixellot\Data\Log";
+        // R13 fix: discover the Pixellot install root at first access so a
+        // VPU with Pixellot on D:\ doesn't silently get an empty log feed.
+        // PixellotInstallPath caches; this property is cheap on every read.
+        public static string DefaultLogDirectory =>
+            Pulse.WPF.Helpers.PixellotInstallPath.Combine("Data", "Log");
 
         private const int InitialTailBytes = 512 * 1024;
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
@@ -88,19 +92,60 @@ namespace Pulse.WPF.Helpers
 
         private async Task RunLoopAsync(CancellationToken ct)
         {
+            // R17 fix: GraphicsManager on older Pixellot versions opens its log
+            // with FileShare.None. Without backoff, every 1-second poll would
+            // throw IOException, call PublishStatus, and flood the log with
+            // identical "couldn't read" lines. Track consecutive failures and
+            // exponentially back off (1s, 2s, 4s, ..., capped at 30s). Reset
+            // on success.
+            int consecutiveIoFailures = 0;
+            const int MaxBackoffSeconds = 30;
             while (!ct.IsCancellationRequested)
             {
                 try
                 {
                     PollOnce();
+                    consecutiveIoFailures = 0;
+                }
+                catch (IOException ex)
+                {
+                    consecutiveIoFailures++;
+                    // Only publish the status on the *first* failure of a
+                    // streak so we don't spam the live log every second.
+                    if (consecutiveIoFailures == 1)
+                    {
+                        PublishStatus($"GraphicsManager log locked or unreadable: {ex.Message}", CurrentLogPath);
+                        SetConnected(false);
+                    }
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    consecutiveIoFailures++;
+                    if (consecutiveIoFailures == 1)
+                    {
+                        PublishStatus($"GraphicsManager log access denied: {ex.Message}", CurrentLogPath);
+                        SetConnected(false);
+                    }
                 }
                 catch (Exception ex)
                 {
                     PublishStatus($"GraphicsManager log read failed: {ex.Message}", CurrentLogPath);
                     SetConnected(false);
+                    consecutiveIoFailures = 0;  // unknown failure - don't extend the IO backoff
                 }
 
-                try { await Task.Delay(PollInterval, ct).ConfigureAwait(false); }
+                TimeSpan delay;
+                if (consecutiveIoFailures > 0)
+                {
+                    int backoffShift = Math.Min(consecutiveIoFailures - 1, 5);
+                    int backoffSeconds = Math.Min(MaxBackoffSeconds, (int)PollInterval.TotalSeconds << backoffShift);
+                    delay = TimeSpan.FromSeconds(backoffSeconds);
+                }
+                else
+                {
+                    delay = PollInterval;
+                }
+                try { await Task.Delay(delay, ct).ConfigureAwait(false); }
                 catch (OperationCanceledException) { return; }
             }
         }

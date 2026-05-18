@@ -95,9 +95,21 @@ namespace Pulse.WPF.Helpers
                 {
                     File.AppendAllText(TodayPath, line + Environment.NewLine, Encoding.UTF8);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Disk full, file locked by AV, profile read-only — eat it.
+                    // R7 fix: disk full, file locked by AV, profile read-only —
+                    // we still can't propagate the failure to the user (the
+                    // log is itself how we'd report it). But emit a
+                    // Debug.WriteLine so the failure shows up in a debugger
+                    // / DebugView trace rather than being completely
+                    // invisible. Lost-line accounting is still implicit (no
+                    // partial-write protection beyond AppendAllText's
+                    // own); a future improvement is a persistent
+                    // StreamWriter with FileShare.ReadWrite|Delete, but
+                    // that needs window-close disposal wiring that's not
+                    // in scope here.
+                    System.Diagnostics.Debug.WriteLine(
+                        $"AppLogFile: lost line on append - {ex.GetType().Name}: {ex.Message}");
                 }
             }
         }

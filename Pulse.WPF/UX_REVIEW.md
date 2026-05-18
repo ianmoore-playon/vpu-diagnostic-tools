@@ -988,3 +988,55 @@ Batched ten small fixes from the v0.6.4 field test on VPU2. Each is a minimal-di
 - `grep -rn "Network Configuration" Pulse.WPF/Pulse.WPF/ --include="*.xaml"` — clean (only `*.cs` comments retain the phrase).
 - `grep -rn "LAST DIAGNOSTIC RUN\|Last Diagnostic Run" Pulse.WPF/Pulse.WPF/Views/` — clean (XAML rendering removed; VM + report text retain the dormant section).
 - Out of scope for v0.6.5 (deferred to v0.6.6): Pixellot Services empty-on-load investigation; Settings / About sidebar entry implementations; Dashboard temperature dial + thresholds redesign; Hardware → System Overview merge (v0.7); panel refactor onto reusable controls (v0.7).
+
+## v0.6.19 — four-reviewer batch (diagnostic logic + reliability + UX)
+
+Addresses 22 findings from a four-agent review (UX / Diagnostic Logic / C# .NET Reliability / QA). The agents were re-run against the WPF surface after `main` was switched from the PowerShell tool to the WPF line.
+
+### Trust-killer fixes (Diagnostic Logic)
+
+1. **D1/R16 — SMART unavailable no longer reads as Healthy.** `DiskHealthService.GetSmartStatus()` returns a `SmartResult` that distinguishes "queried successfully" from "couldn't query". `DiskHealthViewModel.RefreshAsync` now surfaces a Warning Finding ("SMART data unavailable — drive failure prediction cannot be verified") with a reason that distinguishes "elevation required" from "VPU's storage stack doesn't expose this". `DiskHealthService.IsRunningElevated()` reports admin state.
+2. **D2/D12 — NTP probe parses the actual offset.** `NetworkService.ProbeNtpDriftAsync` extracts the signed offset from `w32tm /stripchart` output and threshold-checks (<5 s magnitude). Replaces the prior `,\s*[+-]\d` regex which passed on huge drift values. New public `NetworkService.GetNtpDriftAsync` exposes the parsed value. `NetworkViewModel`'s NTP recommendation no longer points the tech at a non-existent "live clock-skew value" in System Overview.
+3. **D3 — UDP echo demoted to Reliable=false.** UDP/2088 and UDP/443 to `prod-echo.pixellot.tv` were structurally always-Fail because the server doesn't echo arbitrary payloads. Demoted to Reliable=false. Stops producing "N required ports failed" Critical on every healthy VPU.
+4. **D4 — Dashboard internet check retries.** `DashboardService.CollectNetworkConfig` now tries 8.8.8.8 twice and falls through to 1.1.1.1 with 2 tries each, instead of a single ICMP echo.
+5. **D5 — LogMeIn/KeepAgentUp demoted to Warn.** `ServicesService.RequiredCore` now carries a per-process `MissingSeverity`. Agent and Coordinator remain Fail (stream-affecting); LogMeIn (remote support) and KeepAgentUp (watchdog) are Warn.
+6. **D6 — OCR-from-speed inference no longer hides cable faults.** The v0.6.9 inference (any Pixellot-OUI port at 100 Mbps with vendor-only ARP → relabel as OCR Green) is now gated on `roles?.Count > 0` — cameras.cfg must have actually loaded with entries. Without that guard a real main camera that renegotiated to 100 Mbps with a missing cameras.cfg entry was silently re-classified as OCR.
+7. **D7 — Disk thresholds dual-tier per role.** Recording/Storage drives now warn at 50 GB free / fail at 20 GB free (absolute), regardless of percent-used. The old percent-only rule waited until a 4 TB drive was 99.6 % full before warning.
+8. **D8 — Speed baseline resets on confirmed disconnect.** `UpdateSpeedBaseline` clears the per-MAC baseline when `IsUp=false` AND no remote MAC — a real physical disconnect. Prevents spurious "Live cable failure" Critical when a 1 Gbps port is unplugged and replaced with a 100 Mbps OCR.
+9. **D9 — Disk event filter narrowed.** `DiskHealthService.CountDiskErrorEvents48h` now requires the provider be in the known-disk list; the ID list is no longer an `||` shortcut that overcounted generic IDs 7/11 from non-disk providers.
+10. **D10 — PixellotConfigService accepts 2-column rows.** A malformed `KEY,VALUE` line (no `type` field) no longer drops silently; the value is taken from `parts[1]`.
+11. **D11 — Uptime threshold + Finding.** `SystemOverviewService` warns at >180 days instead of >30 days (VPUs run 24/7) and emits an explicit Warn row instead of just a yellow card with no message.
+12. **D14 — ScoreConnect WebSocket idle timeout.** `PumpReceiveAsync` enforces a 60 s per-receive idle timeout. Half-open TCPs that never emit a close frame are detected within a minute and the outer loop reconnects, instead of keeping `IsConnected=true` indefinitely with stale data.
+
+### Reliability fixes
+
+13. **R1 — `Dns.GetHostAddressesAsync().Wait()` deadlock risk removed.** `NetworkService.ResolveAddrs` now uses `Task.Run + Task.WhenAny + Task.Delay` and `.GetAwaiter().GetResult()` so any captured synchronization context is avoided.
+14. **R2 — `Process[]` and `ServiceController[]` disposal.** `ServicesService` was leaking ~5 kernel handles per refresh × multi-second polling, headed for "Not enough quota" within 24 h. Both arrays are now disposed via try/finally.
+15. **R3/R12 — `CameraNicMonitor.PollAsync` is wrapped in a `SafePollAsync` guard.** Any exception in PruneAll / the foreach / the Tick invoke is caught and the timer keeps running. Previously a throw from any later step propagated out of the `async void OnTimerTick` as an unhandled exception → app crash.
+16. **R4 — `ScoreConnectLiveClient._ws` lock.** Field reads/writes from the run-loop thread and `StopAsync` are now synchronised under `_gate`. Stops `StopAsync` racing a half-initialised `ClientWebSocket`.
+17. **R7 — `AppLogFile` lost-line debug trace.** Failed `AppendAllText` writes now emit a `Debug.WriteLine` with the exception type + message so DebugView traces show the loss instead of being completely invisible.
+18. **R8 — `ScoreConnectService.TryGetOneAsync` narrowed catches.** `catch (Exception)` replaced with `IOException`, `SocketException`, `TaskCanceledException`, `ThreadInterruptedException` — so `OutOfMemoryException` / `ThreadAbortException` are no longer swallowed under tight retry on a fanless VPU.
+19. **R9 — `AppSettings.SetScoreConnectUrl` atomic write.** Settings now go through tmp + `File.Replace` so a crash mid-write doesn't truncate `settings.json` and lose the saved ScoreConnect URL (mirrors `BaselineStateService`).
+20. **R11 — `EventViewerService` migrated to `EventLogReader`.** `EventLog.Entries[i]` is O(N) per indexer call on .NET Framework — walking 50k+ rows on a long-uptime Server 2019 box was painful. New code uses `EventLogReader` with `ReverseDirection = true` and an XPath time+level filter so the server prunes before sending rows. `DiskHealthService.CountDiskErrorEvents48h` already used this pattern.
+21. **R13 — `PixellotInstallPath` helper.** New singleton resolves the Pixellot install root (registry → env var → filesystem candidate scan) with lifetime caching. `GraphicsManagerSportzcastLogFeed.DefaultLogDirectory`, `PixellotConfigService.ConfigDir`, `DashboardService.GetLastRunSummary` candidates, and `DashboardService.ParseVpuLabelFromAgentLogs` roots all moved off hardcoded `C:\Pixellot\...`. D:\ installs now resolve correctly.
+22. **R17 — `GraphicsManagerSportzcastLogFeed` IOException backoff.** Consecutive `IOException` / `UnauthorizedAccessException` reads of the log file now back off exponentially (1, 2, 4, 8, 16, 30 s capped) instead of flooding the live log every second when GraphicsManager has the file locked with `FileShare.None`.
+
+### UX fixes
+
+23. **U1 — ScoreConnect Home/Away `FallbackValue=0` removed.** The 40-pt bold "0" rendered exactly like a real game stuck at 0-0 when no LiveScoreData was attached. Now `Visibility="{Binding LiveScoreData, Converter={StaticResource NullToVis}}"` collapses the score TextBlocks when there's no live feed. New `NullToVisibilityConverter` registered as `NullToVis` in `App.xaml`.
+24. **U2 — Dashboard Top Findings carry a `[Source]` prefix.** Findings rows previously rendered only `Title`, so "Smart attribute over threshold" gave the tech no clue which panel owned the issue. Row now reads `[Source]  Title` via `<Run>` elements.
+25. **U3 — Dashboard Command-Center duplicate pill removed.** The page header already renders a StatusChip with StatusLabel; the inner Command-Center version was a third copy of the same word in the same viewport. The 32-pt hero text still communicates state.
+26. **U4 — Services panel title aligns with sidebar.** Sidebar says "Pixellot Services"; the PageTitle now matches (was "VPU Processes & Services").
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.6.18 → 0.6.19.
+- New file: `Pulse.WPF/Pulse.WPF/Helpers/PixellotInstallPath.cs`.
+- New converter: `NullToVisibilityConverter` in `Pulse.WPF/Pulse.WPF/Helpers/Converters.cs` and registered as `NullToVis` in `App.xaml`.
+- Back-compat shim `SmartPredictsFailure()` retained on `IDiskHealthService` (calls the new `GetSmartStatus()` internally).
+
+### Out of scope for v0.6.19 (deferred)
+
+- **R5 silent-catch migration**: ~80+ `catch { }` blocks still in flight. `Try.Run` exists but is referenced zero times outside the helper itself. Mechanical but invasive — needs a per-function audit so newly-surfaced errors don't flood the live log.
+- **U5 STYLE_GUIDE§5 shared-control adoption**: hand-rolled StatusPill + SectionHeader copies across 9 panels. Belongs in a chrome consolidation pass.
+- **R6 silent dispatcher-invoke catches** in 6 ViewModels. Belongs with R5.

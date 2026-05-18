@@ -14,13 +14,17 @@ namespace Pulse.WPF.Services
     /// </summary>
     public class ServicesService : IServicesService
     {
-        // Required core processes — failure here is Critical.
-        private static readonly (string Proc, string Label)[] RequiredCore =
+        // Required core processes. D5 fix: severity is now per-process, not
+        // uniformly Critical. Agent and Coordinator are stream-affecting -> Fail.
+        // KeepAgentUp is a watchdog and LogMeIn is remote support; neither
+        // affects streaming/recording, so they're demoted to Warn. This stops
+        // the panel from screaming Critical when LogMeIn happens to be down.
+        private static readonly (string Proc, string Label, string MissingSeverity)[] RequiredCore =
         {
-            ("Agent",       "Agent.exe"),
-            ("KeepAgentUp", "KeepAgentUp.exe"),
-            ("Coordinator", "Coordinator.exe"),
-            ("LogMeIn",     "LogMeIn.exe"),
+            ("Agent",       "Agent.exe",       "Fail"),
+            ("Coordinator", "Coordinator.exe", "Fail"),
+            ("KeepAgentUp", "KeepAgentUp.exe", "Warn"),
+            ("LogMeIn",     "LogMeIn.exe",     "Warn"),
         };
 
         public List<ServiceStatusRow> GetServiceStatuses()
@@ -29,11 +33,11 @@ namespace Pulse.WPF.Services
 
             foreach (var item in RequiredCore)
             {
-                rows.Add(BuildProcessRow(item.Proc, item.Label, requireRunning: true));
+                rows.Add(BuildProcessRow(item.Proc, item.Label, requireRunning: true, missingSeverity: item.MissingSeverity));
             }
 
             // VPU.exe — informational; not running is normal when cameras are idle.
-            rows.Add(BuildProcessRow("VPU", "VPU.exe", requireRunning: false));
+            rows.Add(BuildProcessRow("VPU", "VPU.exe", requireRunning: false, missingSeverity: "Gray"));
 
             // Scoreconnect — both service & process detection.
             rows.Add(BuildScoreconnectRow());
@@ -41,11 +45,16 @@ namespace Pulse.WPF.Services
             return rows;
         }
 
-        private static ServiceStatusRow BuildProcessRow(string procName, string label, bool requireRunning)
+        // R2 fix: Process objects from GetProcessesByName own kernel handles
+        // and were never disposed. ~5 handles leaked per refresh; over a 24-h
+        // baseline run that's >100k leaked handles. Now wrapped in
+        // try/finally so every Process returned is disposed before return.
+        private static ServiceStatusRow BuildProcessRow(string procName, string label, bool requireRunning, string missingSeverity = "Fail")
         {
+            Process[] procs = null;
             try
             {
-                var procs = Process.GetProcessesByName(procName);
+                procs = Process.GetProcessesByName(procName);
                 if (procs.Length > 0)
                 {
                     var pids = string.Join(", ", procs.Select(p => p.Id.ToString()));
@@ -84,7 +93,7 @@ namespace Pulse.WPF.Services
                     RestartUnavailableReason = "Restart unavailable for process rows",
                     Status = "Stopped",
                     Detail = "Required process not running",
-                    Severity = "Fail",
+                    Severity = missingSeverity,
                 };
             }
             catch (Exception ex)
@@ -101,12 +110,18 @@ namespace Pulse.WPF.Services
                     Severity = "Warn",
                 };
             }
+            finally
+            {
+                if (procs != null)
+                    foreach (var p in procs) { try { p.Dispose(); } catch { } }
+            }
         }
 
         private static ServiceStatusRow BuildScoreconnectRow()
         {
             ServiceController[] services = null;
             Process[] procs = null;
+            Process[] allProcs = null;   // R2 fix: capture the full enumerate so we dispose every Process, not just the Scoreconnect-named ones
             try { services = ServiceController.GetServices()
                 .Where(s => s.ServiceName.StartsWith("Scoreconnect", StringComparison.OrdinalIgnoreCase) ||
                             (s.DisplayName != null && s.DisplayName.StartsWith("Scoreconnect", StringComparison.OrdinalIgnoreCase)))
@@ -115,12 +130,32 @@ namespace Pulse.WPF.Services
 
             try
             {
-                procs = Process.GetProcesses()
+                allProcs = Process.GetProcesses();
+                procs = allProcs
                     .Where(p => SafeStartsWith(p.ProcessName, "Scoreconnect"))
                     .ToArray();
             }
             catch { procs = new Process[0]; }
+            // ServiceController objects also wrap an unmanaged handle. They
+            // were never disposed either; schedule them for disposal at end.
+            try
+            {
+                // Wrap the whole row-build in try/finally so the disposal
+                // happens regardless of which return branch fires below.
+                return BuildScoreconnectRowCore(services, procs);
+            }
+            finally
+            {
+                if (services != null)
+                    foreach (var s in services) { try { s.Dispose(); } catch { } }
+                if (allProcs != null)
+                    foreach (var p in allProcs) { try { p.Dispose(); } catch { } }
+                // procs is a subset of allProcs — already disposed above.
+            }
+        }
 
+        private static ServiceStatusRow BuildScoreconnectRowCore(ServiceController[] services, Process[] procs)
+        {
             if ((services == null || services.Length == 0) && (procs == null || procs.Length == 0))
             {
                 return new ServiceStatusRow

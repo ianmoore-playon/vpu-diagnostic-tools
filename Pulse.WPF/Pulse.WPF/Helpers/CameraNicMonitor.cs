@@ -186,15 +186,41 @@ namespace Pulse.WPF.Helpers
         {
             _timer.Start();
             // Kick an immediate poll so the UI isn't empty for the first second.
-            _ = PollAsync();
+            // R12 fix: catch any exception from the initial poll. Previously a
+            // fire-and-forget Task swallowed exceptions in PollAsync's later
+            // steps (anything after the GetCameraPortsAsync catch). An
+            // unhandled exception here would have propagated to the
+            // TaskScheduler.UnobservedTaskException event and the app would
+            // crash on next GC.
+            _ = SafePollAsync();
         }
 
         public void Stop() => _timer.Stop();
 
+        // R3 fix: async void with an unguarded body. Anything in PollAsync
+        // after the GetCameraPortsAsync catch (PruneAll, the foreach, the
+        // Tick?.Invoke) was unprotected. A throw from RemoteDeviceResolver or
+        // anything else inside PollAsync would propagate out of OnTimerTick
+        // as an unhandled exception on the UI thread — instant crash. The
+        // wrapper below catches anything to ensure the timer keeps running.
         private async void OnTimerTick(object sender, EventArgs e)
         {
             if (_ticksToSkip > 0) { _ticksToSkip--; return; }
-            await PollAsync().ConfigureAwait(true);
+            await SafePollAsync().ConfigureAwait(true);
+        }
+
+        private async Task SafePollAsync()
+        {
+            try { await PollAsync().ConfigureAwait(true); }
+            catch (Exception ex)
+            {
+                // Don't crash the monitor on a one-off poll exception.
+                System.Diagnostics.Debug.WriteLine($"CameraNicMonitor.PollAsync threw: {ex}");
+                // Treat it like the documented backoff so a flapping
+                // GetCameraPortsAsync doesn't burn the UI thread.
+                _consecutiveFailures = Math.Min(_consecutiveFailures + 1, 10);
+                _ticksToSkip = Math.Min(MaxTicksToSkip, 1 << Math.Min(5, Math.Max(0, _consecutiveFailures - 1)));
+            }
         }
 
         private async Task PollAsync()
@@ -210,7 +236,7 @@ namespace Pulse.WPF.Helpers
             {
                 _consecutiveFailures++;
                 // Exponential backoff: 1, 2, 4, 8, 16, 30, 30 ...
-                _ticksToSkip = Math.Min(MaxTicksToSkip, 1 << Math.Min(5, _consecutiveFailures - 1));
+                _ticksToSkip = Math.Min(MaxTicksToSkip, 1 << Math.Min(5, Math.Max(0, _consecutiveFailures - 1)));
                 return; // Never terminate the timer.
             }
 

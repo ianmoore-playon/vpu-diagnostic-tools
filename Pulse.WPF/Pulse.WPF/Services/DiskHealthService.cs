@@ -91,9 +91,18 @@ namespace Pulse.WPF.Services
                             role = totalGb > 200 ? "Storage" : "Data";
 
                         // Threshold -----------------------------------------
+                        // D7 fix: dual-tier. The old "freeGb < 5 OR pctUsed > 97"
+                        // rule waited until a 4 TB recording drive was 99.6 %
+                        // full before warning (15 GB on 4 TB = 0.4 %). For
+                        // Recording/Storage roles we use larger absolute floors;
+                        // the OS drive keeps the tighter ones because its
+                        // total is small.
+                        bool isRecording = role == "Recording / Storage" || role == "Storage";
+                        double absFailGb = isRecording ? 20 : 5;
+                        double absWarnGb = isRecording ? 50 : 15;
                         string sev;
-                        if (freeGb < 5 || pctUsed > 97) sev = "Fail";
-                        else if (freeGb < 15 || pctUsed > 90) sev = "Warn";
+                        if (freeGb < absFailGb || pctUsed > 97) sev = "Fail";
+                        else if (freeGb < absWarnGb || pctUsed > 90) sev = "Warn";
                         else sev = "Pass";
 
                         // Pre-format the human-readable Free / Total strings
@@ -246,26 +255,94 @@ namespace Pulse.WPF.Services
 
         // ---------------- SMART ---------------------------------------------
 
-        public bool? SmartPredictsFailure()
+        /// <summary>
+        /// Result of a SMART query — distinguishes "queried successfully" from
+        /// "couldn't query" (so the UI can surface a Warning instead of falsely
+        /// reporting Healthy). D1/R16 fix.
+        /// </summary>
+        public class SmartResult
         {
+            /// <summary>True if a SMART query was actually executed.</summary>
+            public bool Queried;
+            /// <summary>Only meaningful when Queried==true.</summary>
+            public bool PredictsFailure;
+            /// <summary>When Queried==false, why not (admin required / class missing / other).</summary>
+            public string UnavailableReason;
+        }
+
+        public SmartResult GetSmartStatus()
+        {
+            var result = new SmartResult { Queried = false };
             try
             {
                 using (var s = new ManagementObjectSearcher(
                     @"\\.\root\wmi", "SELECT * FROM MSStorageDriver_FailurePredictStatus"))
                 {
+                    int rowCount = 0;
                     foreach (ManagementObject o in s.Get())
                     {
+                        rowCount++;
                         var pf = o["PredictFailure"];
-                        if (pf is bool b && b) return true;
+                        if (pf is bool b && b)
+                        {
+                            result.Queried = true;
+                            result.PredictsFailure = true;
+                            return result;
+                        }
                     }
+                    if (rowCount == 0)
+                    {
+                        // Class exists but returned no rows — typically means
+                        // the WMI provider is missing or the disks don't
+                        // surface SMART (virtualised storage, unusual drivers).
+                        result.UnavailableReason = "SMART data not exposed by this VPU's storage stack";
+                        return result;
+                    }
+                    result.Queried = true;
+                    result.PredictsFailure = false;
+                    return result;
                 }
-                return false;
             }
-            catch
+            catch (UnauthorizedAccessException)
             {
-                // root\wmi often requires admin / some VPU images don't expose it.
-                return null;
+                result.UnavailableReason = "SMART query requires administrator privileges";
             }
+            catch (ManagementException mex)
+            {
+                result.UnavailableReason = $"WMI/SMART query refused: {mex.Message}";
+            }
+            catch (Exception ex)
+            {
+                result.UnavailableReason = $"SMART query failed: {ex.Message}";
+            }
+            return result;
+        }
+
+        // Back-compat shim for callers that still want the bool? interface.
+        public bool? SmartPredictsFailure()
+        {
+            var r = GetSmartStatus();
+            if (!r.Queried) return null;
+            return r.PredictsFailure;
+        }
+
+        /// <summary>
+        /// True if the current process is running as a member of the local
+        /// Administrators group. Used to qualify "SMART unavailable" findings
+        /// — when unelevated, the recommendation says "re-run as Administrator"
+        /// instead of "VPU image lacks the WMI class".
+        /// </summary>
+        public static bool IsRunningElevated()
+        {
+            try
+            {
+                using (var id = System.Security.Principal.WindowsIdentity.GetCurrent())
+                {
+                    var principal = new System.Security.Principal.WindowsPrincipal(id);
+                    return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+                }
+            }
+            catch { return false; }
         }
 
         // ---------------- Disk error events --------------------------------
@@ -293,8 +370,17 @@ namespace Pulse.WPF.Services
                     {
                         try
                         {
-                            if (providers.Contains(rec.ProviderName ?? "") || ids.Contains(rec.Id))
-                                count++;
+                            // D9 fix: tighten the filter from OR to AND. Previously
+                            // `providers.Contains || ids.Contains` overcounted —
+                            // ID 7 is a common Service Control Manager warning,
+                            // ID 11 is generic; matching any of those from any
+                            // provider produced a false-Critical "N disk-related
+                            // errors". Now both must match (or the provider
+                            // alone, since some Pixellot-relevant providers
+                            // emit a wider ID set that's hard to enumerate).
+                            var providerMatch = providers.Contains(rec.ProviderName ?? "");
+                            if (providerMatch) count++;
+                            else if (ids.Contains(rec.Id) && providerMatch) count++;
                         }
                         catch { }
                         finally { rec.Dispose(); }

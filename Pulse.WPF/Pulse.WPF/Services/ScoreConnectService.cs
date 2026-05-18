@@ -618,7 +618,24 @@ namespace Pulse.WPF.Services
                 {
                     return (false, null, ex.Message);
                 }
-                catch (Exception ex)
+                // R8 fix: narrow the catch. The previous broad
+                // `catch (Exception)` swallowed ThreadAbortException /
+                // OutOfMemoryException — under tight retry on a fanless VPU
+                // this could mask OOM and keep looping. Only swallow the
+                // exceptions we actually expect from a localhost HTTP probe.
+                catch (System.IO.IOException ex)
+                {
+                    return (false, null, ex.Message);
+                }
+                catch (System.Net.Sockets.SocketException ex)
+                {
+                    return (false, null, ex.Message);
+                }
+                catch (TaskCanceledException ex)
+                {
+                    return (false, null, ex.Message);
+                }
+                catch (System.Threading.ThreadInterruptedException ex)
                 {
                     return (false, null, ex.Message);
                 }

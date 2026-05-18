@@ -103,4 +103,19 @@ namespace Pulse.WPF.Helpers
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
             => Binding.DoNothing;
     }
+
+    /// <summary>
+    /// null -> Collapsed, otherwise Visible. U1 fix: ScoreConnect Home/Away
+    /// score TextBlocks gate on LiveScoreData being non-null so an
+    /// unconfigured ScoreConnect doesn't render a misleading 40-pt
+    /// "0 - 0" that looks like a real stuck game.
+    /// </summary>
+    public class NullToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+            => value == null ? Visibility.Collapsed : Visibility.Visible;
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => Binding.DoNothing;
+    }
 }

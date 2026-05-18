@@ -56,12 +56,29 @@ namespace Pulse.WPF.Helpers
                 // ScoreConnect URL won't contain control characters.
                 var escaped = ScoreConnectUrl.Replace("\\", "\\\\").Replace("\"", "\\\"");
                 var payload = "{\n  \"scoreConnectUrl\": \"" + escaped + "\"\n}\n";
-                File.WriteAllText(SettingsPath, payload, Encoding.UTF8);
+                // R9 fix: atomic write via tmp + Move. A crash mid-write (or
+                // a full disk with a partial flush) previously left a
+                // truncated settings.json — Load() swallowed the parse error
+                // and silently fell back to defaults, evaporating the user's
+                // saved URL. Pattern mirrors BaselineStateService.cs.
+                var tmp = SettingsPath + ".tmp";
+                File.WriteAllText(tmp, payload, Encoding.UTF8);
+                if (File.Exists(SettingsPath))
+                {
+                    File.Replace(tmp, SettingsPath, null);
+                }
+                else
+                {
+                    File.Move(tmp, SettingsPath);
+                }
                 if (changed) RaiseScoreConnectUrlChanged();
                 return true;
             }
             catch
             {
+                // Best-effort cleanup of the tmp file so we don't leave stray
+                // artifacts beside settings.json.
+                try { File.Delete(SettingsPath + ".tmp"); } catch { }
                 if (changed) RaiseScoreConnectUrlChanged();
                 return false;
             }
