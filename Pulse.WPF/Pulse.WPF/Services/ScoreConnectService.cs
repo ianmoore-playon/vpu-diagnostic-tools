@@ -623,15 +623,13 @@ namespace Pulse.WPF.Services
                 // OutOfMemoryException — under tight retry on a fanless VPU
                 // this could mask OOM and keep looping. Only swallow the
                 // exceptions we actually expect from a localhost HTTP probe.
+                // (TaskCanceledException is already covered by the
+                // OperationCanceledException catch above — it's a subclass.)
                 catch (System.IO.IOException ex)
                 {
                     return (false, null, ex.Message);
                 }
                 catch (System.Net.Sockets.SocketException ex)
-                {
-                    return (false, null, ex.Message);
-                }
-                catch (TaskCanceledException ex)
                 {
                     return (false, null, ex.Message);
                 }
