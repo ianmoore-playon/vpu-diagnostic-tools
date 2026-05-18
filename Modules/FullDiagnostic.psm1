@@ -13,7 +13,7 @@ $fdModuleDefs = @(
     @{ Name="Network Configuration"; Icon=0xE701; NavBtn={$navNetConfig}; RunFn={Start-NetDiagnostic};        CompleteFn={$sync.NetComplete};     RunningFn={$sync.NetRunning};     CardKeys=@("NetInternet","NetPorts","NetDomains") }
     @{ Name="Camera Connectivity";   Icon=0xE722; NavBtn={$navCamera};    RunFn={Start-CameraConnDiagnostic}; CompleteFn={$sync.Complete};        RunningFn={$sync.Running};        CardKeys=@("SmartSpeed","PingCHU","ChuDetect","PoEBudget") }
     @{ Name="Pixellot Services";     Icon=0xE9F5; NavBtn={$navServices};  RunFn={Start-SvcDiagnostic};        CompleteFn={$sync.SvcComplete};     RunningFn={$sync.SvcRunning};     CardKeys=@("SvcStatus") }
-    @{ Name="VPU Hardware";          Icon=0xE7E8; NavBtn={$navPoE};       RunFn={Start-HwDiagnostic};         CompleteFn={$sync.HwComplete};      RunningFn={$sync.HwRunning};      CardKeys=@("HwGpu","HwMonitor","HwMmk") }
+    @{ Name="Hardware & Peripherals";Icon=0xE7E8; NavBtn={$navPoE};       RunFn={Start-HwDiagnostic};         CompleteFn={$sync.HwComplete};      RunningFn={$sync.HwRunning};      CardKeys=@("HwGpu","HwMonitor","HwMmk") }
     @{ Name="Disk & System Health";  Icon=0xEDA2; NavBtn={$navDisk};      RunFn={Start-DiskDiagnostic};       CompleteFn={$sync.DiskComplete};    RunningFn={$sync.DiskRunning};    CardKeys=@("DiskStatus") }
     @{ Name="Event Viewer";          Icon=0xE7BA; NavBtn={$navEvents};    RunFn={Start-EvtDiagnostic};        CompleteFn={$sync.EvtComplete};     RunningFn={$sync.EvtRunning};     CardKeys=@("EvtStatus") }
 )
@@ -24,6 +24,10 @@ $script:fdRerunIndices = @()
 # --- Status helpers -----------------------------------------------------------
 function Get-WorstCardStatus {
     param([string[]]$Keys)
+    # Priority: fail > warn > ok > neutral. "neutral" = card was never populated
+    # (runspace exception, missing module, cancellation). The caller must
+    # distinguish "neutral" from "ok" in the rollup — collapsing them produces a
+    # false-Pass (D1 from the diagnostic-logic review).
     $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
     $worst = "neutral"
     foreach ($k in $Keys) {
@@ -35,7 +39,9 @@ function Get-WorstCardStatus {
         # functions called from background runspaces don't reliably propagate (#60).
         $s = $sync["_ncs_$k"]
         if (-not $s -and $sync.Cards.ContainsKey($k)) { $s = $sync.Cards[$k].Status }
-        if ($s -and $pri.ContainsKey($s) -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
+        # Defensive against empty-string status (D21): explicitly treat as neutral.
+        if ($s -in @("", $null)) { continue }
+        if ($pri.ContainsKey($s) -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
     }
     return $worst
 }
@@ -55,6 +61,9 @@ function Get-ModuleSummaryText {
 # Per-module human-readable summary (replaces raw card-value concatenation).
 function Get-FdModuleSummary {
     param([int]$Idx, [string]$Worst)
+    # D11 fix: don't ever claim the module succeeded ("All cameras online ...")
+    # when worst is neutral. Caller still shows the muted Unknown dot.
+    if ($Worst -eq "neutral") { return "Check did not complete" }
     switch ($Idx) {
         0 { # System Overview
             $v = if ($sync.Cards.ContainsKey("SysInfo")) { $sync.Cards["SysInfo"].Value } else { "" }
@@ -88,7 +97,7 @@ function Get-FdModuleSummary {
             if ($v -eq "None found") { return "No Pixellot services detected on this VPU" }
             if ($v -and $v -ne "--") { return $v } else { return "Service check complete" }
         }
-        4 { # VPU Hardware
+        4 { # Hardware & Peripherals
             return Get-ModuleSummaryText @("HwGpu","HwMonitor","HwMmk")
         }
         5 { # Disk & System Health
@@ -105,9 +114,14 @@ function Get-FdModuleSummary {
     return Get-ModuleSummaryText $fdModuleDefs[$Idx].CardKeys
 }
 
-# Per-module next-step recommendation (shown only for Warning / Critical).
+# Per-module next-step recommendation (shown only for Warning / Critical / Unknown).
 function Get-FdActionText {
     param([int]$Idx, [string]$Worst)
+    if ($Worst -eq "neutral") {
+        # D1 fix: a module that completed without populating any card is treated
+        # as Unknown, not Healthy. Tell the tech to look at the owning panel.
+        return "Check did not complete - open the module's panel and run it manually"
+    }
     if ($Worst -notin @("fail","warn")) { return "" }
     switch ($Idx) {
         0 { return "Verify hardware meets minimum VPU specifications" }
@@ -359,11 +373,13 @@ $script:fdSpinChars     = @('|','/','-','\')
 $timerFullDiag.Add_Tick({
     $script:fdSpinIdx = ($script:fdSpinIdx + 1) % 4
     $spin      = $script:fdSpinChars[$script:fdSpinIdx]
-    $allDone   = $true
-    $critCount = 0
-    $warnCount = 0
-    $critNames = @()
-    $warnNames = @()
+    $allDone      = $true
+    $critCount    = 0
+    $warnCount    = 0
+    $unknownCount = 0
+    $critNames    = @()
+    $warnNames    = @()
+    $unknownNames = @()
 
     for ($i = 0; $i -lt $fdModuleDefs.Count; $i++) {
         $mod      = $fdModuleDefs[$i]
@@ -375,8 +391,9 @@ $timerFullDiag.Add_Tick({
         if ($script:fdRerunIndices.Count -gt 0 -and $i -notin $script:fdRerunIndices) {
             # Include its prior result in the overall count, then skip it.
             $w = $row.LastWorst
-            if ($w -eq "fail") { $critCount++; $critNames += $mod.Name }
-            elseif ($w -eq "warn") { $warnCount++; $warnNames += $mod.Name }
+            if ($w -eq "fail")        { $critCount++;    $critNames    += $mod.Name }
+            elseif ($w -eq "warn")    { $warnCount++;    $warnNames    += $mod.Name }
+            elseif ($w -eq "neutral") { $unknownCount++; $unknownNames += $mod.Name }
             continue
         }
 
@@ -395,13 +412,16 @@ $timerFullDiag.Add_Tick({
         $worst         = Get-WorstCardStatus $mod.CardKeys
         $row.LastWorst = $worst
 
-        if ($worst -eq "fail") { $critCount++; $critNames += $mod.Name }
-        elseif ($worst -eq "warn") { $warnCount++; $warnNames += $mod.Name }
+        if     ($worst -eq "fail")    { $critCount++;    $critNames    += $mod.Name }
+        elseif ($worst -eq "warn")    { $warnCount++;    $warnNames    += $mod.Name }
+        elseif ($worst -eq "neutral") { $unknownCount++; $unknownNames += $mod.Name }
 
         # Paint the row only once (ViewBtn.Enabled flips false -> true as the guard).
         if (-not $row.ViewBtn.Enabled) {
-            $dotColor  = switch ($worst) { "fail"{$ColRed} "warn"{$ColYellow} "ok"{$ColGreen} default{$ColMuted} }
-            $severityT = switch ($worst) { "fail"{"Critical"} "warn"{"Warning"} "ok"{"Healthy"} default{"Healthy"} }
+            # D1 fix: neutral now paints as Unknown (muted dot, "Check did not complete"),
+            # not as Healthy. The default branch is intentionally NOT green any more.
+            $dotColor  = switch ($worst) { "fail"{$ColRed}      "warn"{$ColYellow} "ok"{$ColGreen} default{$ColMuted} }
+            $severityT = switch ($worst) { "fail"{"Critical"}   "warn"{"Warning"}  "ok"{"Healthy"} default{"Unknown"} }
 
             $row.Dot.BackColor       = $dotColor
             $row.StatusLbl.Text      = $severityT
@@ -410,15 +430,20 @@ $timerFullDiag.Add_Tick({
             $row.ValueLbl.Text       = Get-FdModuleSummary $i $worst
             $row.ValueLbl.ForeColor  = if ($worst -in @("fail","warn")) { $ColText } else { $ColMuted }
 
-            # Suggested action - shown only for Warning / Critical
+            # Suggested action - shown for Warning / Critical / Unknown
             $action = Get-FdActionText $i $worst
             if ($action) {
                 $row.ActionLbl.Text      = $action
-                $row.ActionLbl.ForeColor = if ($worst -eq "fail") { $ColRed } else { $ColYellow }
+                $row.ActionLbl.ForeColor = switch ($worst) {
+                    "fail"    { $ColRed }
+                    "warn"    { $ColYellow }
+                    "neutral" { $ColMuted }
+                    default   { $ColYellow }
+                }
                 $row.ActionLbl.Visible   = $true
             }
 
-            # Background tint for issue rows
+            # Background tint for issue rows (no tint for unknown - keep card neutral)
             if ($worst -eq "fail") {
                 $row.Panel.BackColor = $ColFailBg
             } elseif ($worst -eq "warn") {
@@ -426,7 +451,7 @@ $timerFullDiag.Add_Tick({
             }
 
             # Accent the View button for anything that needs attention
-            if ($worst -in @("fail","warn")) {
+            if ($worst -in @("fail","warn","neutral")) {
                 $row.ViewBtn.BackColor = $ColAccent
                 $row.ViewBtn.ForeColor = [System.Drawing.Color]::White
             }
@@ -454,15 +479,35 @@ $timerFullDiag.Add_Tick({
         $parts = @()
         if ($critCount -gt 0) { $parts += "$critCount critical" }
         if ($warnCount -gt 0) { $parts += "$warnCount warning$(if($warnCount -ne 1){'s'})" }
+        if ($unknownCount -gt 0) { $parts += "$unknownCount unknown" }
         $lblFdBannerText.Text      = ($parts -join ", ") + " detected - review highlighted modules below"
         $lblFdBannerText.ForeColor = $ColRed
 
         # Detail line: module names + severity
         $nameList = @()
-        $nameList += $critNames | ForEach-Object { "$_ (Critical)" }
-        $nameList += $warnNames | ForEach-Object { "$_ (Warning)" }
+        $nameList += $critNames    | ForEach-Object { "$_ (Critical)" }
+        $nameList += $warnNames    | ForEach-Object { "$_ (Warning)" }
+        $nameList += $unknownNames | ForEach-Object { "$_ (Unknown)" }
         $lblFdBannerDetail.Text      = $nameList -join "   |   "
         $lblFdBannerDetail.ForeColor = [System.Drawing.Color]::FromArgb(210, 140, 140)
+
+    } elseif ($unknownCount -gt 0) {
+        # --- Some checks didn't run (D1 fix) ---
+        # Distinct from both "all clear" and "issues found". Prevents the
+        # false-Pass where every module crashed silently and the banner
+        # claimed "All N checks passed - this VPU appears healthy."
+        $pnlFdBanner.BackColor = $ColWarnBg
+
+        $lblFdBannerIcon.Text      = [char]0xE7BA   # info/help
+        $lblFdBannerIcon.ForeColor = $ColYellow
+
+        $okCount = $fdModuleDefs.Count - $unknownCount
+        $lblFdBannerText.Text      = "$unknownCount of $($fdModuleDefs.Count) checks did not complete - cannot confirm VPU health"
+        $lblFdBannerText.ForeColor = $ColYellow
+
+        $names = ($unknownNames | ForEach-Object { "$_ (Unknown)" }) -join "   |   "
+        $lblFdBannerDetail.Text      = "$okCount passed | Open the affected panels and re-run manually. Details: $names"
+        $lblFdBannerDetail.ForeColor = [System.Drawing.Color]::FromArgb(220, 200, 130)
 
     } else {
         # --- All clear banner ---

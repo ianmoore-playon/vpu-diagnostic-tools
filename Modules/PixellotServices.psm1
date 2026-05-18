@@ -14,6 +14,31 @@ $SvcScript = {
 
     $critFail = 0; $warnCount = 0
 
+    # D6 fix: Pixellot-installed pre-gate. On a non-VPU Windows box (developer
+    # laptop, support tech's machine, demo VM) the required-process check
+    # produces "4 required processes not running" Critical + a misleading
+    # "Restart the missing process(es) or reboot the VPU" recommendation.
+    # Detect the Pixellot install before declaring any process Critical.
+    $sync.SvcStep = "Detecting Pixellot install..."
+    $pixellotInstalled = $false
+    $pixellotIndicators = @(
+        "HKLM:\SOFTWARE\Pixellot",
+        "HKLM:\SOFTWARE\WOW6432Node\Pixellot",
+        "C:\Pixellot",
+        "C:\Pixellot\Agent",
+        "C:\Pixellot\Coordinator"
+    )
+    foreach ($ind in $pixellotIndicators) {
+        if (Test-Path $ind -ErrorAction SilentlyContinue) { $pixellotInstalled = $true; break }
+    }
+    if (-not $pixellotInstalled) {
+        # Last-resort heuristic: a recent Pixellot service entry counts.
+        try {
+            $svc = Get-Service | Where-Object { $_.Name -like "Pixellot*" -or $_.Name -like "Scoreconnect*" }
+            if ($svc) { $pixellotInstalled = $true }
+        } catch { }
+    }
+
     # ── Core Pixellot Processes ───────────────────────────────────────────────
     $sync.SvcStep = "Checking core Pixellot processes..."
     Svc-Section "Core Pixellot Processes"
@@ -32,6 +57,11 @@ $SvcScript = {
             $pidStr = ($procs | ForEach-Object { $_.Id }) -join ", "
             Svc-Log $r.Label "Running  (PID $pidStr)" "Pass"
             $sync.Cards[$r.CardKey] = @{ Value = "Running"; Status = "ok" }
+        } elseif (-not $pixellotInstalled) {
+            # D6 fix: degrade missing process to neutral / Not Installed instead
+            # of Critical, so a non-VPU box doesn't masquerade as a broken VPU.
+            Svc-Log $r.Label "Not installed on this machine" "Gray"
+            $sync.Cards[$r.CardKey] = @{ Value = "Not installed"; Status = "neutral" }
         } else {
             Svc-Log $r.Label "NOT running" "Fail"
             $sync.Cards[$r.CardKey] = @{ Value = "Not running"; Status = "fail" }
@@ -90,7 +120,13 @@ $SvcScript = {
     }
 
     # ── Overall summary card (used by hub tile) ───────────────────────────────
-    if ($critFail -gt 0) {
+    if (-not $pixellotInstalled) {
+        # D6 fix: distinct status for non-VPU machine. Suppresses the
+        # "Restart the missing process(es) or reboot the VPU" recommendation
+        # cascade in FullDiagnostic and lets the home banner say "Unknown"
+        # rather than "Critical" for a developer / support laptop.
+        $sync.Cards["SvcStatus"] = @{ Value="Pixellot not detected on this machine"; Status="neutral" }
+    } elseif ($critFail -gt 0) {
         $noun = if ($critFail -eq 1) { "process" } else { "processes" }
         $sync.Cards["SvcStatus"] = @{ Value="$critFail required $noun not running"; Status="fail" }
     } elseif ($warnCount -gt 0) {

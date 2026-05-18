@@ -5,13 +5,31 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.53-beta"
+$ScriptVersion = "1.0.54-beta"
 
 # ---------- Self-elevation ---------------------------------------------------
+# R4 fix: if the tech cancels the UAC prompt, surface a clear message in a
+# blocking console window before exit. Previously the parent silently exited
+# and the tech saw no indication of why nothing happened.
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     $elevArgs = "-NoProfile -ExecutionPolicy Bypass"
     if ($PSCommandPath) {
-        Start-Process PowerShell -Verb RunAs -ArgumentList "$elevArgs -File `"$PSCommandPath`""
+        try {
+            Start-Process PowerShell -Verb RunAs -ArgumentList "$elevArgs -File `"$PSCommandPath`"" -ErrorAction Stop
+        } catch {
+            # ErrorAction Stop turns UAC cancellation into a terminating error.
+            # Show a console message and pause so the tech sees it.
+            Add-Type -AssemblyName System.Windows.Forms
+            [System.Windows.Forms.MessageBox]::Show(
+                "Pulse needs to run as Administrator. The UAC prompt was cancelled.`n`nRight-click Pulse.bat and choose 'Run as administrator', then click Yes at the UAC prompt.",
+                "Pulse - Administrator Required",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        }
+    } else {
+        # Direct ps1 invocation without $PSCommandPath (e.g. piped through stdin).
+        Write-Host "ERROR: Pulse must be launched via Pulse.bat to ensure proper elevation." -ForegroundColor Red
+        Read-Host "Press Enter to exit"
     }
     exit
 }
@@ -488,19 +506,25 @@ function New-SectionHeader {
         [int]$Y = 24
     )
     $lblTitle = New-Object System.Windows.Forms.Label
-    $lblTitle.Text      = $Title
-    $lblTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 16)
-    $lblTitle.ForeColor = $ColText
-    $lblTitle.Location  = New-Object System.Drawing.Point(28, $Y)
-    $lblTitle.Size      = New-Object System.Drawing.Size(900, 30)
+    $lblTitle.Text        = $Title
+    $lblTitle.Font        = New-Object System.Drawing.Font("Segoe UI Semibold", 16)
+    $lblTitle.ForeColor   = $ColText
+    $lblTitle.Location    = New-Object System.Drawing.Point(28, $Y)
+    $lblTitle.Size        = New-Object System.Drawing.Size(900, 30)
+    # Section/home-tile titles often contain "&" (e.g. "Hardware & Peripherals").
+    # WinForms Label.UseMnemonic defaults to $true, which swallows "&" and applies
+    # an Alt-key accelerator hint to the next char. Disable so titles render
+    # literally. v1.0.45 fixed this on home tiles but not on section headers.
+    $lblTitle.UseMnemonic = $false
     $Parent.Controls.Add($lblTitle)
 
     $lblSub = New-Object System.Windows.Forms.Label
-    $lblSub.Text      = $Subtitle
-    $lblSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
-    $lblSub.ForeColor = $ColMuted
-    $lblSub.Location  = New-Object System.Drawing.Point(28, ($Y + 32))
-    $lblSub.Size      = New-Object System.Drawing.Size(900, 20)
+    $lblSub.Text        = $Subtitle
+    $lblSub.Font        = New-Object System.Drawing.Font("Segoe UI", 9)
+    $lblSub.ForeColor   = $ColMuted
+    $lblSub.Location    = New-Object System.Drawing.Point(28, ($Y + 32))
+    $lblSub.Size        = New-Object System.Drawing.Size(900, 20)
+    $lblSub.UseMnemonic = $false
     $Parent.Controls.Add($lblSub)
 
     # "Overall Status" pill on the right — neutral by default; caller updates via Set-SectionPill.
@@ -1285,12 +1309,12 @@ $rose       = [System.Drawing.Color]::FromArgb(248, 113, 113)
 $indigo     = [System.Drawing.Color]::FromArgb(129, 140, 248)
 
 $hubCardDefs = @(
-    @{ Nav="navSysInfo";    Title="System Overview";        Desc="Hardware specs, OS version, uptime, and Pixellot software versions"; Icon=0xE80F; Color=$tealBlue;   R=0; C=0 }
+    @{ Nav="navSysInfo";    Title="System Information";     Desc="Hardware specs, OS version, uptime, and Pixellot software versions"; Icon=0xE80F; Color=$tealBlue;   R=0; C=0 }
     @{ Nav="navNetConfig";  Title="Network Configuration";  Desc="IP, DNS, firewall, and connectivity tests for required ports";       Icon=0xE701; Color=$accentBlue; R=0; C=1 }
     @{ Nav="navCamera";     Title="Camera Connectivity";    Desc="Cameras, NICs, link status, and the Fault Isolator wizard";          Icon=0xE722; Color=$cyan;       R=0; C=2 }
     @{ Nav="navServices";   Title="Pixellot Services";      Desc="Pixellot agent, encoder, watchdog, and remote service status";       Icon=0xE9F5; Color=$violet;     R=0; C=3 }
     @{ Nav="navPoE";        Title="Hardware & Peripherals"; Desc="GPU, monitor, input devices, PoE budget, and NIC link uptime";       Icon=0xE7E8; Color=$emerald;    R=1; C=0 }
-    @{ Nav="navDisk";       Title="System & Disk Health";   Desc="Free space, SMART health, and disk-related event log errors";        Icon=0xEDA2; Color=$amber;      R=1; C=1 }
+    @{ Nav="navDisk";       Title="Disk & System Health";   Desc="Free space, SMART health, and disk-related event log errors";        Icon=0xEDA2; Color=$amber;      R=1; C=1 }
     @{ Nav="navEvents";     Title="Event Viewer";           Desc="Recent OS errors filtered to VPU-relevant providers";                Icon=0xE7BA; Color=$rose;       R=1; C=2 }
     @{ Nav="navReports";    Title="Reports";                Desc="View, copy, and export saved diagnostic reports";                    Icon=0xE7C3; Color=$indigo;     R=1; C=3 }
 )
@@ -1532,7 +1556,14 @@ $DiagScript = {
             $s = Get-AdapterSpeedMbps -AdapterName $AdapterName
             if ($s -gt $peak) { $peak = $s }
             if ($peak -ge 1000) { break }
-            Start-Sleep -Milliseconds $IntervalMs
+            # R10 fix: break Start-Sleep into short slices so Cancel takes
+            # effect inside the window instead of waiting up to $IntervalMs ms.
+            $slept = 0
+            while ($slept -lt $IntervalMs) {
+                if ($sync.Cancelled) { break }
+                Start-Sleep -Milliseconds 100
+                $slept += 100
+            }
         }
         return $peak
     }
@@ -1560,20 +1591,23 @@ $DiagScript = {
     }
 
     function Test-TcpPort {
-        param([string]$IP, [int]$Port, [int]$TimeoutMs = 2000)
-        $tcp = $null
-        try {
-            $tcp = New-Object System.Net.Sockets.TcpClient
-            $c   = $tcp.BeginConnect($IP, $Port, $null, $null)
-            $ok  = $c.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
-            # Without the inner try/catch, an EndConnect failure (host unreachable, RST)
-            # bubbles to the outer catch and the function returns $false correctly — but
-            # without it AsyncWaitHandle returning $true on a refused connection caused
-            # closed ports to be reported as open. Mirrors NetworkDiagnostics.psm1.
-            if ($ok) { try { $tcp.EndConnect($c) } catch { $ok = $false } }
-            return $ok
-        } catch { return $false }
-        finally { if ($tcp) { try { $tcp.Close() } catch { } } }
+        # D17 fix: timeout up from 2000ms to 3000ms + 2 retries. A single dropped
+        # SYN under load on RTSP/554 used to flag the camera as Critical.
+        param([string]$IP, [int]$Port, [int]$TimeoutMs = 3000, [int]$Retries = 2)
+        for ($attempt = 0; $attempt -le $Retries; $attempt++) {
+            $tcp = $null
+            try {
+                $tcp = New-Object System.Net.Sockets.TcpClient
+                $c   = $tcp.BeginConnect($IP, $Port, $null, $null)
+                $ok  = $c.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
+                if ($ok) { try { $tcp.EndConnect($c) } catch { $ok = $false } }
+                if ($ok) { return $true }
+            } catch { }
+            finally { if ($tcp) { try { $tcp.Close() } catch { } } }
+            if ($attempt -lt $Retries -and -not $sync.Cancelled) { Start-Sleep -Milliseconds 300 }
+            if ($sync.Cancelled) { return $false }
+        }
+        return $false
     }
 
     # -- Init ------------------------------------------------------------------
@@ -1806,7 +1840,12 @@ $DiagScript = {
                         Add-Summary $nm "1 Gbps  (forced OK)" "Pass"
                     } else {
                         $nsLabel = if ($newSpd -eq 0) { "Disconnected" } else { "$newSpd Mbps" }
-                        Add-Log ("  [FAIL]  Still not 1 Gbps after forcing (current: {0}). Physical layer issue." -f $nsLabel) "Fail"
+                        # D4 fix: soften the wording. Most common cause is cable
+                        # or termination, but the camera revision (some are 100 Mbps-
+                        # only) or a switch admin-locked port can produce the same
+                        # symptom. Don't bias the truck-roll toward a cable swap.
+                        Add-Log ("  [FAIL]  Still not 1 Gbps after forcing (current: {0})." -f $nsLabel) "Fail"
+                        Add-Log "          Likely cable or termination - also verify the camera revision supports gigabit and the switch port is not locked to 100M." "Warn"
                         Add-Log "          Resetting to Auto Negotiation..." "Warn"
                         Set-AdapterSpeedDuplex -AdapterName $nm -Val "0" | Out-Null
                         Restart-NetAdapter -Name $nm -Confirm:$false -ErrorAction SilentlyContinue
@@ -1816,7 +1855,7 @@ $DiagScript = {
                         $portResults += [PSCustomObject]@{ Name=$nm; Speed=$spd; Result="FAIL"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
                         $anyFail = $true
                         Set-Card $nm "100 Mbps" "fail"
-                        Add-Summary $nm "DEGRADED  cable fault" "Fail"
+                        Add-Summary $nm "DEGRADED  - check cable / camera revision / switch port" "Fail"
                     }
                 } else {
                     Add-Log "  [FAIL]  Could not apply SpeedDuplex setting." "Fail"
@@ -1855,26 +1894,45 @@ $DiagScript = {
     Add-Log "-- Intel SmartSpeed Event Log (last $EventLogHours hours) --" "Cyan"
     Add-Log ""
     if ($chuEvents.Count -gt 0) {
-        $dCnt = ($chuEvents | Where-Object { $_.Id -eq 40 }).Count
-        $wCnt = ($chuEvents | Where-Object { $_.Id -eq 27 }).Count
-        $ssLevel = if ($dCnt -gt 0) { "Fail" } else { "Warn" }
-        Add-Log ("  [WARN] {0} downgrade(s) and {1} link warning(s) on CHU ports in the last {2}h." -f $dCnt, $wCnt, $EventLogHours) $ssLevel
+        # D9 fix: split by recency. A single transient downgrade weeks ago that
+        # auto-recovered shouldn't paint the whole module Critical at every run.
+        # Recent (last 4h) ID 40 = fail; older ID 40 = warn with historical note.
+        $recentCutoff   = (Get-Date).AddHours(-4)
+        $recentDgrade   = ($chuEvents | Where-Object { $_.Id -eq 40 -and $_.TimeCreated -ge $recentCutoff }).Count
+        $olderDgrade    = ($chuEvents | Where-Object { $_.Id -eq 40 -and $_.TimeCreated -lt $recentCutoff }).Count
+        $dCnt           = $recentDgrade + $olderDgrade
+        $wCnt           = ($chuEvents | Where-Object { $_.Id -eq 27 }).Count
+        $ssLevel        = if ($recentDgrade -gt 0) { "Fail" } else { "Warn" }
+        $msg = if ($recentDgrade -gt 0) {
+                   "$recentDgrade recent downgrade(s) within the last 4h ($olderDgrade older, $wCnt link warning(s))"
+               } else {
+                   "$olderDgrade historical downgrade(s) (none in last 4h) + $wCnt link warning(s) in ${EventLogHours}h"
+               }
+        Add-Log "  [$($ssLevel.ToUpper())] $msg" $ssLevel
         Add-Log ""
         foreach ($evt in ($chuEvents | Sort-Object @{Expression='TimeCreated';Descending=$true} | Select-Object -First 10)) {
             $an = Get-EventAdapterName -Evt $evt -KnownDescs $knownDescs
             $shortName = if ($an -match '#(\d+)') { "CHU NIC #$($Matches[1])" } else { $an }
             $label = switch ($evt.Id) { 40 {"SmartSpeed Downgrade"} 33 {"Link at 100 Mbps"} 27 {"Link Warning"} default {"Event $($evt.Id)"} }
-            Add-Log ("  {0}  {1}  ID {2} - {3}" -f $evt.TimeCreated.ToString("HH:mm:ss"), $shortName, $evt.Id, $label) "Warn"
+            $age   = if ($evt.TimeCreated -ge $recentCutoff) { "" } else { "  (historical)" }
+            Add-Log ("  {0}  {1}  ID {2} - {3}{4}" -f $evt.TimeCreated.ToString("MM/dd HH:mm:ss"), $shortName, $evt.Id, $label, $age) "Warn"
         }
         Add-Log ""
-        if ($dCnt -gt 0) {
-            Add-Log "  -> Physical layer limitation confirmed. Likely cause: faulty cable or bad termination." "Info"
+        if ($recentDgrade -gt 0) {
+            Add-Log "  -> Recent physical-layer events. Likely cause: faulty cable, bad termination, or 100M-only camera. Inspect the affected port." "Info"
+        } elseif ($olderDgrade -gt 0) {
+            Add-Log "  -> Historical only. Monitor; no action required unless the events recur." "Info"
         }
-        $sync.StepsDone["SmartSpeed"] = if ($dCnt -gt 0) { "fail" } else { "pass" }
-        $ssSummary = if ($dCnt -gt 0) { "$dCnt downgrade(s) in ${EventLogHours}h" } else { "$wCnt warning(s), 0 downgrades" }
+        $sync.StepsDone["SmartSpeed"] = if ($recentDgrade -gt 0) { "fail" } else { "pass" }
+        $ssSummary = if ($recentDgrade -gt 0) { "$recentDgrade recent downgrade(s)" }
+                     elseif ($olderDgrade -gt 0) { "$olderDgrade historical downgrade(s)" }
+                     else { "$wCnt warning(s), 0 downgrades" }
         Add-Summary "SmartSpeed Events" $ssSummary $ssLevel
-        $ssCardVal    = if ($dCnt -gt 0) { "$dCnt events" } elseif ($wCnt -gt 0) { "$wCnt warnings" } else { "None" }
-        $ssCardStatus = if ($dCnt -gt 0) { "fail" } elseif ($wCnt -gt 0) { "warn" } else { "ok" }
+        $ssCardVal    = if ($recentDgrade -gt 0) { "$recentDgrade recent" }
+                        elseif ($olderDgrade -gt 0) { "$olderDgrade historical" }
+                        elseif ($wCnt -gt 0) { "$wCnt warnings" }
+                        else { "None" }
+        $ssCardStatus = if ($recentDgrade -gt 0) { "fail" } elseif ($olderDgrade -gt 0 -or $wCnt -gt 0) { "warn" } else { "ok" }
         Set-Card "SmartSpeed" $ssCardVal $ssCardStatus
     } else {
         Add-Log "  [PASS] No SmartSpeed downgrade events on CHU ports." "Pass"
@@ -1922,16 +1980,23 @@ $DiagScript = {
             if ($PixCameraRoles -and $PixCameraRoles.ContainsKey($nb.IPAddress)) {
                 $roleLabel = [string]$PixCameraRoles[$nb.IPAddress]
             }
-            $isPixellot = ($nb.LinkLayerAddress -like "$OcrMacOui-*")
+            # $OcrMacOui is the OCR-specific Pixellot OUI ("00-D0-89"). When the
+            # ARP entry matches it, the device is authoritatively an OCR camera
+            # regardless of current link state — D3 fix. Previously a stale ARP
+            # entry on a flapped OCR could be relabeled "Main Camera (probable)"
+            # and then escalate as a false Critical when the ping failed.
+            $isOcrByMac = ($nb.LinkLayerAddress -like "$OcrMacOui-*")
             $is100M = ($linkSpeed -match '^\s*100\s*Mbps')
             $is1G   = ($linkSpeed -match '\b\d+\s*Gbps\b' -or $linkSpeed -match '^\s*1000\s*Mbps')
-            $label = if ($roleLabel)         { $roleLabel } `
-                     elseif ($isPixellot -and $is100M) { "OCR Camera" } `
-                     elseif ($isPixellot -and $is1G)   { "Main Camera (probable)" } `
-                     elseif ($isPixellot)              { "Pixellot Camera" } `
-                     else                              { "Unknown device" }
+            $label = if ($roleLabel)                       { $roleLabel } `
+                     elseif ($isOcrByMac -and $is100M)     { "OCR Camera" } `
+                     elseif ($isOcrByMac -and $is1G)       { "OCR Camera (unexpected gigabit link)" } `
+                     elseif ($isOcrByMac)                  { "OCR Camera (link down)" } `
+                     elseif ($is1G)                        { "Main Camera (probable)" } `
+                     else                                  { "Unknown device" }
             $isOcr = ($roleLabel -and $roleLabel -match 'OCR|Scoreboard') -or
-                     ($label -eq 'OCR Camera')
+                     ($label -like 'OCR Camera*') -or
+                     $isOcrByMac
             $discoveredCameras += [PSCustomObject]@{
                 IP       = $nb.IPAddress
                 MAC      = $nb.LinkLayerAddress
@@ -1974,7 +2039,15 @@ $DiagScript = {
             if ($sync.Cancelled) { break }
             $sync.CurrentStep = "Pinging $($cam.IP)..."
             Add-Log ("  {0,-18} {1}  (MAC: {2})" -f $cam.IP, $cam.Label, $cam.MAC) "Info"
-            $pingOk = Test-Connection -ComputerName $cam.IP -Count 2 -Quiet -ErrorAction SilentlyContinue
+            # D7 fix: debounce momentary packet loss with up to 3 rounds.
+            # 2 ICMP per round; one full second between rounds.
+            $pingOk = $false
+            for ($pingTry = 1; $pingTry -le 3; $pingTry++) {
+                if ($sync.Cancelled) { break }
+                $pingOk = Test-Connection -ComputerName $cam.IP -Count 2 -Quiet -ErrorAction SilentlyContinue
+                if ($pingOk) { break }
+                if ($pingTry -lt 3) { Start-Sleep -Seconds 1 }
+            }
             $rtspOk = $false
 
             if ($pingOk) {
@@ -2138,11 +2211,19 @@ $DiagScript = {
         Add-Log "  [INFO] PoE power management not supported on this NIC model (GIE64 / 82574L)." "Gray"
         Add-Summary "PoE Budget" "N/A (GIE64)" "Gray"
         Set-Card "PoEBudget" "N/A" "neutral"
+        $sync.StepsDone["PoePower"] = "pass"   # N/A by design on this NIC family
     } elseif ($PoeDllPath -and ([System.Management.Automation.PSTypeName]'AdlinkPoE').Type) {
+        # R9 fix: track register success separately so SmartPoE_Release_Card runs
+        # in a `finally` even when an inner call (Voltage/Current/Budget) throws.
+        # The AdlinkPoE DLL is prone to AccessViolation on certain platforms;
+        # leaking the card handle eventually exhausts the register slot.
+        $poeStepStatus = "warn"   # D16 default: warn unless we explicitly succeed
+        $cardNum       = [uint16]0
+        $regOk         = $false
         try {
-            $cardNum = [uint16]0
-            $regRet  = [AdlinkPoE]::SmartPoE_Register_Card($cardNum)
+            $regRet = [AdlinkPoE]::SmartPoE_Register_Card($cardNum)
             if ($regRet -eq 0) {
+                $regOk             = $true
                 $sync.PoeAvailable = $true
 
                 $consumed  = [double]0.0; $remaining = [double]0.0
@@ -2157,6 +2238,7 @@ $DiagScript = {
                 Add-Log ("  NIC Temp     : {0:F1} ?C" -f $temp) "Info"
                 Add-Log ""
 
+                $poeOnCount = 0
                 for ($port = 0; $port -lt 4; $port++) {
                     if ($sync.Cancelled) { break }
                     $pLabel   = "P$($port + 1)"
@@ -2165,30 +2247,40 @@ $DiagScript = {
                     [void][AdlinkPoE]::SmartPoE_Get_PSEPortVoltage($cardNum, $portNum, [ref]$voltage)
                     [void][AdlinkPoE]::SmartPoE_Get_PSEPortCurrent($cardNum, $portNum, [ref]$current)
                     $watts    = $voltage * $current
-                    $stateStr = if ($voltage -gt 1.0) { "PoE ON" } else { "PoE OFF" }
-                    $portLvl  = if ($voltage -gt 1.0) { "Pass" } else { "Gray" }
+                    $isPoeOn  = ($voltage -gt 1.0)
+                    if ($isPoeOn) { $poeOnCount++ }
+                    $stateStr = if ($isPoeOn) { "PoE ON" } else { "PoE OFF" }
+                    $portLvl  = if ($isPoeOn) { "Pass" } else { "Gray" }
                     Add-Log    ("  {0,-5} : {1:F2} V  {2:F3} A  {3:F1} W  [{4}]" -f $pLabel, $voltage, $current, $watts, $stateStr) $portLvl
                     Add-Summary "PoE $pLabel" ("{0:F1} W  ({1})" -f $watts, $stateStr) $portLvl
-                    $sync.PoePortData.Add(@{ Port=$pLabel; Voltage=$voltage; Current=$current; Watts=$watts; PoeOn=($voltage -gt 1.0) }) | Out-Null
+                    $sync.PoePortData.Add(@{ Port=$pLabel; Voltage=$voltage; Current=$current; Watts=$watts; PoeOn=$isPoeOn }) | Out-Null
                 }
                 $sync.PoeConsumed = $consumed; $sync.PoeTotal = $total; $sync.PoeTemp = $temp
                 Add-Log ""
 
-                $sync.PoeBudgetLow = ($total -gt 0) -and ($total -lt 55)
+                # D8 fix: 55 W was below the 4xPoE+ spec floor (4 * 25.5 W = 102 W).
+                # The "check Molex" advice only makes sense when the card is supposed
+                # to be carrying 3+ PoE+ ports. For 1-2 active PoE ports, a smaller
+                # budget is normal. Scale the threshold to the number of PoE-on
+                # ports; cite the spec in the log.
+                $expectedBudget = $poeOnCount * 25.5
+                $sync.PoeBudgetLow = ($total -gt 0) -and ($poeOnCount -ge 3) -and ($total -lt $expectedBudget)
                 if ($sync.PoeBudgetLow) {
-                    Add-Log ("  [WARN]  Total power budget {0:F1} W is below the 55 W minimum." -f $total) "Fail"
+                    Add-Log ("  [WARN]  Total power budget {0:F1} W is below the expected {1:F1} W for {2} PoE-on ports (IEEE 802.3at 25.5 W/port)." -f $total, $expectedBudget, $poeOnCount) "Fail"
                     Add-Log "          The Molex power connector on the PoE NIC may be disconnected." "Fail"
                     Add-Summary "PoE Budget" ("{0:F0} W  LOW" -f $total) "Fail"
                     Set-Card "PoEBudget" ("{0:F0} W" -f $total) "fail"
+                    $poeStepStatus = "fail"
                 } else {
-                    Add-Log ("  [PASS]  Total power budget {0:F1} W - adequate." -f $total) "Pass"
+                    Add-Log ("  [PASS]  Total power budget {0:F1} W - adequate for {1} active PoE port(s)." -f $total, $poeOnCount) "Pass"
                     Add-Summary "PoE Budget" ("{0:F0} W  OK" -f $total) "Pass"
                     Set-Card "PoEBudget" ("{0:F0} W" -f $total) "ok"
+                    $poeStepStatus = "pass"
                 }
-                [void][AdlinkPoE]::SmartPoE_Release_Card($cardNum)
             } else {
                 Add-Log "  [INFO] SmartPoE_Register_Card returned $regRet - PoE card not detected on this system." "Gray"
                 Add-Summary "PoE Budget" "Card not found" "Gray"
+                $poeStepStatus = "warn"
             }
         } catch {
             $poeErrType = $_.Exception.GetType().Name
@@ -2200,13 +2292,20 @@ $DiagScript = {
             }
             Add-Summary "PoE Budget" $poeErrType "Warn"
             Set-Card "PoEBudget" "Error" "warn"
+            $poeStepStatus = "warn"
+        } finally {
+            # R9 fix: always release the card handle if registration succeeded,
+            # even when an inner call threw. Prevents handle leaks across runs.
+            if ($regOk) { try { [void][AdlinkPoE]::SmartPoE_Release_Card($cardNum) } catch { } }
         }
+        # D16 fix: reflect the real outcome here instead of hard-coding "pass".
+        $sync.StepsDone["PoePower"] = $poeStepStatus
     } else {
         Add-Log "  [INFO] SmartPoE.dll not found - PoE monitoring not available on this system." "Gray"
         Add-Summary "PoE Budget" "N/A" "Gray"
         Set-Card "PoEBudget" "N/A" "neutral"
+        $sync.StepsDone["PoePower"] = "pass"   # N/A path: nothing to fail
     }
-    $sync.StepsDone["PoePower"] = "pass"
     Add-Log ""
 
     # -- Build Next Steps ------------------------------------------------------
@@ -2386,7 +2485,10 @@ $lblNicCardHdr.Anchor    = $AnchorTR
 $pnlCamToolbar.Controls.Add($lblNicCardHdr)
 
 $lblNicCardVal = New-Object System.Windows.Forms.Label
-$lblNicCardVal.Text      = "Detecting..."
+# U-polish: was "Detecting..." which stuck forever if the WMI/NIC scan
+# threw during Form_Load. Render an em-dash so an unreached update path
+# doesn't look like an in-progress operation.
+$lblNicCardVal.Text      = "--"
 $lblNicCardVal.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $lblNicCardVal.ForeColor = $ColText
 $lblNicCardVal.BackColor = [System.Drawing.Color]::Transparent
@@ -4228,10 +4330,14 @@ $PortTests = @(
     [PSCustomObject]@{ Protocol="TCP"; Port=53;   ProbeHost="8.8.8.8";               Reliable=$true;  Purpose="DNS";                                      Note="" },
     [PSCustomObject]@{ Protocol="UDP"; Port=123;  ProbeHost="0.us.pool.ntp.org";      Reliable=$true;  Purpose="Clock synchronization (NTP)";              Note="Real NTP request. PASS confirms clock sync is working." },
     [PSCustomObject]@{ Protocol="TCP"; Port=443;  ProbeHost="pixellot.tv";            Reliable=$true;  Purpose="System ops, remote mgmt, video stream";    Note="" },
-    [PSCustomObject]@{ Protocol="UDP"; Port=443;  ProbeHost="prod-echo.pixellot.tv";  Reliable=$true;  Purpose="Video streaming - Zixi fallback on 443";   Note="Firewall must allow outbound UDP 443 to Pixellot servers." },
+    # D2 fix: UDP echo to prod-echo.pixellot.tv requires the *server* to echo
+    # the exact payload back. Unconfirmed server-side; if the host is rate-
+    # limited or behind an ACL, every healthy VPU shows FAIL. Demoted to
+    # Reliable=$false until echo behavior is verified server-side.
+    [PSCustomObject]@{ Protocol="UDP"; Port=443;  ProbeHost="prod-echo.pixellot.tv";  Reliable=$false; Purpose="Video streaming - Zixi fallback on 443";   Note="UDP echo not yet verified server-side; INFO only. Firewall should allow outbound UDP 443 to Pixellot." },
     [PSCustomObject]@{ Protocol="TCP"; Port=1402; ProbeHost="scorebot.sportzcast.net"; Reliable=$true;  Purpose="SportzCast data transmission (1400-1405)";  Note="Firewall must allow outbound TCP 1400-1405 to SportzCast servers." },
     [PSCustomObject]@{ Protocol="TCP"; Port=1935; ProbeHost="scorebot.sportzcast.net"; Reliable=$true;  Purpose="SportzCast remote management";              Note="Firewall must allow outbound TCP 1935 to SportzCast servers." },
-    [PSCustomObject]@{ Protocol="UDP"; Port=2088; ProbeHost="prod-echo.pixellot.tv";  Reliable=$true;  Purpose="Video streaming - Zixi primary";           Note="Firewall must allow outbound UDP 2088 to Pixellot servers." },
+    [PSCustomObject]@{ Protocol="UDP"; Port=2088; ProbeHost="prod-echo.pixellot.tv";  Reliable=$false; Purpose="Video streaming - Zixi primary";           Note="UDP echo not yet verified server-side; INFO only. Firewall should allow outbound UDP 2088 to Pixellot." },
     [PSCustomObject]@{ Protocol="TCP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$true;  Purpose="Graphics and watermark generation";        Note="Firewall must allow outbound TCP 5672 to Singular. Blocking this port prevents scoreboards and watermarks from appearing on stream." },
     [PSCustomObject]@{ Protocol="UDP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$false; Purpose="Graphics and watermark generation";        Note="UDP returns no response on working VPUs. See domain test." }
 )
@@ -4357,10 +4463,20 @@ $NetScript = {
     # -- Internet check --------------------------------------------------------
     $sync.NetStep = "Checking internet connectivity..."
     Net-Section "Connectivity"
+    # D7 fix: ping each target twice before declaring unreachable. Momentary
+    # packet loss on a congested venue uplink used to false-fail this check.
+    # NOTE: $host is a PS reserved variable (the session host) — use a renamed
+    # loop variable (same lesson as v1.0.44 fix).
     $pingOk = $false
-    try { $r = (New-Object System.Net.NetworkInformation.Ping).Send("8.8.8.8", $NetTimeoutMs); $pingOk = ($r.Status -eq "Success") } catch { }
-    if (-not $pingOk) {
-        try { $r = (New-Object System.Net.NetworkInformation.Ping).Send("1.1.1.1", $NetTimeoutMs); $pingOk = ($r.Status -eq "Success") } catch { }
+    foreach ($pingTarget in @("8.8.8.8", "1.1.1.1")) {
+        if ($pingOk -or $sync.NetCancelled) { break }
+        for ($pingAttempt = 0; $pingAttempt -lt 2; $pingAttempt++) {
+            try {
+                $r = (New-Object System.Net.NetworkInformation.Ping).Send($pingTarget, $NetTimeoutMs)
+                if ($r.Status -eq "Success") { $pingOk = $true; break }
+            } catch { }
+            if ($pingAttempt -eq 0) { Start-Sleep -Milliseconds 500 }
+        }
     }
     if ($pingOk) {
         Net-Log "Internet" "Reachable" "Pass"
@@ -4403,7 +4519,7 @@ $NetScript = {
     $portPass = 0; $portFail = 0; $portInfo = 0
     foreach ($pt in $PortTests) {
         if ($sync.NetCancelled) { break }
-        $sync.NetStep = "Testing $($pt.Protocol) $($pt.Port) ? $($pt.ProbeHost)..."
+        $sync.NetStep = "Testing $($pt.Protocol) $($pt.Port) -> $($pt.ProbeHost)..."
         $label = "$($pt.Protocol) $($pt.Port)"
         if (-not $pt.Reliable) {
             Net-Log $label "INFO - $($pt.Purpose)" "Gray"
@@ -4790,7 +4906,18 @@ function Update-NetSideCards {
             } catch { }
             $ntpServerStr = if ($ntpConfigured) { $ntpConfigured } else { "—" }
             $ntpLiveStr   = if ($ntpLive)       { $ntpLive }       else { "Not queried" }
-            $liveColor    = if ($ntpLive -match "Local CMOS|^$") { $ColYellow } else { $ColGreen }
+            # R15 fix: don't pattern-match on the English literal "Local CMOS" —
+            # on non-EN-US Windows this returns a localised string and the check
+            # falsely greens a desynced clock. Heuristic: if the live source is
+            # not blank, doesn't contain a dot (servers always do — "time.windows.com",
+            # "0.pool.ntp.org" — but "Local CMOS Clock"/"Hardware Clock" don't),
+            # and isn't an IP, treat as un-synced. Also flag the well-known
+            # un-synced strings (English + localised stubs) defensively.
+            $unSyncedHints = @('Local CMOS','CMOS Clock','Free-running','Local','Lokale','Locale','本地','ローカル')
+            $localOnly = ($ntpLive -match "^$") -or
+                         (-not ($ntpLive -match '\.')) -or
+                         ($unSyncedHints | Where-Object { $ntpLive -like "*$_*" }).Count -gt 0
+            $liveColor    = if ($localOnly) { $ColYellow } else { $ColGreen }
             Add-NetKV $ibody $rowY "NTP Server:" $ntpServerStr $ColText | Out-Null; $rowY += 22
             Add-NetKV $ibody $rowY "NTP Source:" $ntpLiveStr   $liveColor | Out-Null
         } else {
@@ -5105,7 +5232,7 @@ $pnlHelp.Controls.Add($rtbHelp)
 
 $helpSections = @(
     @{ H="What this tool does"; B="Pulse (Pixellot Unified Live System Evaluator) is an all-in-one diagnostic tool for Pixellot VPU systems. It checks camera NIC link speeds and SmartSpeed events, pings cameras, analyses the Pixellot application log, verifies network connectivity, inspects running services, reads disk health, and scans the OS event log. Run it on-site or remotely to quickly identify what is causing a problem on a VPU." }
-    @{ H="Home - running a full diagnostic"; B="From the Home screen, click the Run Full Diagnostic button (top-right of the header) and wait about 60-90 seconds. Each module row updates live as checks complete. When all seven modules finish, a banner shows either all clear or a count of issues with module names.`n`nUse the View button on any highlighted row to jump directly to that module's detail panel. Use Re-run Failed Only to quickly re-check only the modules that had issues." }
+    @{ H="Home - running a full diagnostic"; B="From the Home screen, click the Run Full Diagnostic button on the bottom action bar and wait about 60-90 seconds. Each module row updates live as checks complete. When all seven modules finish, a banner shows either all clear or a count of issues with module names.`n`nUse the View button on any highlighted row to jump directly to that module's detail panel. Use Re-run Failed Only to quickly re-check only the modules that had issues." }
     @{ H="Camera tab"; B="Shows link speed for each Intel camera NIC port (P1, P2, ...). Green = 1 Gbps healthy. Red = 100 Mbps degraded (physical fault). Grey = no cable connected.`n`nThe SmartSpeed card counts Intel Event ID 40 - these events fire only when the NIC tried gigabit but the physical medium could not sustain it. A non-zero SmartSpeed count is definitive evidence of a cable or NIC fault, not a camera issue. Zero events on a 100 Mbps port means the device is 100-Mbps-only (OCR camera - no action needed).`n`nThe Ping and CHU Detection cards tell you whether the camera is reachable on the network and responding to RTSP." }
     @{ H="Network tab"; B="Tests ports and domains required by Pixellot using real protocol probes (DNS, NTP, TCP). Reliable tests show PASS or FAIL. Unreliable tests (dynamic stream servers) show INFO - these servers do not respond to raw probes and should be verified via the domain test instead.`n`nIf any test fails, check the uplink adapter, router, and firewall. Ensure Pixellot ports are not blocked." }
     @{ H="Services tab"; B="Shows whether core Pixellot processes are running: Agent, KeepAgentUp, Coordinator, LogMeIn, VPU, and Scoreconnect. VPU.exe not running is normal when no cameras are actively streaming - this is not a fault.`n`nIf Agent, KeepAgentUp, or Coordinator are missing, reboot the VPU or manually restart the processes. Check Windows Services (services.msc) if they do not come back." }
@@ -5435,6 +5562,31 @@ $SvcScript = {
 
     $critFail = 0; $warnCount = 0
 
+    # D6 fix: Pixellot-installed pre-gate. On a non-VPU Windows box (developer
+    # laptop, support tech's machine, demo VM) the required-process check
+    # produces "4 required processes not running" Critical + a misleading
+    # "Restart the missing process(es) or reboot the VPU" recommendation.
+    # Detect the Pixellot install before declaring any process Critical.
+    $sync.SvcStep = "Detecting Pixellot install..."
+    $pixellotInstalled = $false
+    $pixellotIndicators = @(
+        "HKLM:\SOFTWARE\Pixellot",
+        "HKLM:\SOFTWARE\WOW6432Node\Pixellot",
+        "C:\Pixellot",
+        "C:\Pixellot\Agent",
+        "C:\Pixellot\Coordinator"
+    )
+    foreach ($ind in $pixellotIndicators) {
+        if (Test-Path $ind -ErrorAction SilentlyContinue) { $pixellotInstalled = $true; break }
+    }
+    if (-not $pixellotInstalled) {
+        # Last-resort heuristic: a recent Pixellot service entry counts.
+        try {
+            $svc = Get-Service | Where-Object { $_.Name -like "Pixellot*" -or $_.Name -like "Scoreconnect*" }
+            if ($svc) { $pixellotInstalled = $true }
+        } catch { }
+    }
+
     # ── Core Pixellot Processes ───────────────────────────────────────────────
     $sync.SvcStep = "Checking core Pixellot processes..."
     Svc-Section "Core Pixellot Processes"
@@ -5453,6 +5605,11 @@ $SvcScript = {
             $pidStr = ($procs | ForEach-Object { $_.Id }) -join ", "
             Svc-Log $r.Label "Running  (PID $pidStr)" "Pass"
             $sync.Cards[$r.CardKey] = @{ Value = "Running"; Status = "ok" }
+        } elseif (-not $pixellotInstalled) {
+            # D6 fix: degrade missing process to neutral / Not Installed instead
+            # of Critical, so a non-VPU box doesn't masquerade as a broken VPU.
+            Svc-Log $r.Label "Not installed on this machine" "Gray"
+            $sync.Cards[$r.CardKey] = @{ Value = "Not installed"; Status = "neutral" }
         } else {
             Svc-Log $r.Label "NOT running" "Fail"
             $sync.Cards[$r.CardKey] = @{ Value = "Not running"; Status = "fail" }
@@ -5511,7 +5668,13 @@ $SvcScript = {
     }
 
     # ── Overall summary card (used by hub tile) ───────────────────────────────
-    if ($critFail -gt 0) {
+    if (-not $pixellotInstalled) {
+        # D6 fix: distinct status for non-VPU machine. Suppresses the
+        # "Restart the missing process(es) or reboot the VPU" recommendation
+        # cascade in FullDiagnostic and lets the home banner say "Unknown"
+        # rather than "Critical" for a developer / support laptop.
+        $sync.Cards["SvcStatus"] = @{ Value="Pixellot not detected on this machine"; Status="neutral" }
+    } elseif ($critFail -gt 0) {
         $noun = if ($critFail -eq 1) { "process" } else { "processes" }
         $sync.Cards["SvcStatus"] = @{ Value="$critFail required $noun not running"; Status="fail" }
     } elseif ($warnCount -gt 0) {
@@ -5720,20 +5883,38 @@ $DiskScript = {
     Disk-Section "Physical Drives"
 
     # Try Storage module for MediaType & HealthStatus (PS 5.1+, Storage cmdlets)
-    $pdHealth = @{}
+    # R6 fix: track whether the Storage module is actually available so we can
+    # surface "SMART data unavailable" instead of silently reporting all-healthy
+    # on a Server Core / locked-down LTSC where Get-PhysicalDisk is missing or
+    # the root\wmi namespace is gone.
+    $pdHealth         = @{}
+    $smartDataMissing = $false
+    $smartReason      = ""
     try {
-        @(Get-PhysicalDisk -ErrorAction Stop) | ForEach-Object {
-            $pdHealth[$_.FriendlyName] = $_
+        if (-not (Get-Command Get-PhysicalDisk -ErrorAction SilentlyContinue)) {
+            $smartDataMissing = $true
+            $smartReason      = "Storage module not available"
+        } else {
+            @(Get-PhysicalDisk -ErrorAction Stop) | ForEach-Object {
+                $pdHealth[$_.FriendlyName] = $_
+            }
         }
-    } catch {}
+    } catch {
+        $smartDataMissing = $true
+        $smartReason      = "Get-PhysicalDisk failed: $($_.Exception.Message)"
+    }
 
     # SMART failure prediction - build per-disk-index hashtable so attribution is correct on multi-disk systems
     $smartFails = @{}
     try {
-        @(Get-WmiObject -Namespace root\wmi -Class MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue) |
-            Where-Object { $_.PredictFailure } |
+        $msPredict = @(Get-WmiObject -Namespace root\wmi -Class MSStorageDriver_FailurePredictStatus -ErrorAction Stop)
+        $msPredict | Where-Object { $_.PredictFailure } |
             ForEach-Object { if ($_.InstanceName -match '(\d+)') { $smartFails[[string]$Matches[1]] = $true } }
-    } catch {}
+    } catch {
+        # Most common: not running elevated, or root\wmi namespace blocked.
+        $smartDataMissing = $true
+        if (-not $smartReason) { $smartReason = "MSStorageDriver_FailurePredictStatus unavailable (admin or root\wmi access required)" }
+    }
 
     $physDisks = @(Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | Sort-Object Index)
     foreach ($phys in $physDisks) {
@@ -5815,11 +5996,18 @@ $DiskScript = {
         }
         if (-not $roles) { $roles += if ($totalGB -gt 200) { "Storage" } else { "Data" } }
         $roleLabel = " [$($roles -join ' / ')]"
+        $isRecording = ($roles -contains "Recording / Storage")
 
-        # Thresholds: absolute free space + percentage (tighter % catches large drives)
+        # Thresholds: absolute free space + percentage. D20 fix: tighter absolute
+        # floors for recording volumes, since 15 GB on a 4 TB drive is 0.4 % —
+        # the 90 % rule used to wait until the drive was 99.6 % full before
+        # firing a Warning. Recording / Storage gets 50 GB warn / 20 GB fail
+        # regardless of percentage; OS Drive keeps the old 15/5 GB floors.
+        $absFailGB = if ($isRecording) { 20 } else { 5 }
+        $absWarnGB = if ($isRecording) { 50 } else { 15 }
         $lvl = "Pass"
-        if ($freeGB -lt 5  -or $usedPct -gt 97) { $lvl = "Fail" }
-        elseif ($freeGB -lt 15 -or $usedPct -gt 90) { $lvl = "Warn" }
+        if ($freeGB -lt $absFailGB -or $usedPct -gt 97) { $lvl = "Fail" }
+        elseif ($freeGB -lt $absWarnGB -or $usedPct -gt 90) { $lvl = "Warn" }
 
         if ($lvl -eq "Fail" -and $overallWorst -ne "fail")            { $overallWorst = "fail" }
         elseif ($lvl -eq "Warn" -and $overallWorst -notin @("fail","warn")) { $overallWorst = "warn" }
@@ -5860,8 +6048,18 @@ $DiskScript = {
         @{ Path="C:\Users";                     Label="User Profiles (total)"; Warn=10GB; Crit=30GB }
     )
 
+    # R17 fix: aggregate timeout. A C: with millions of small log files under
+    # C:\Pixellot\Data\Log used to stall the entire runspace for minutes here.
+    # Stop scanning further paths if we've already spent 30 s in total.
+    $pixScanStart    = Get-Date
+    $pixScanBudgetMs = 30000
     foreach ($pp in $pixPaths) {
         if ($sync.DiskCancelled) { $sync.DiskRunning=$false; $sync.DiskComplete=$true; return }
+        $elapsedMs = ((Get-Date) - $pixScanStart).TotalMilliseconds
+        if ($elapsedMs -ge $pixScanBudgetMs) {
+            Disk-Log $pp.Label "Skipped - scan budget exceeded (this and later paths)" "Warn"
+            continue
+        }
         if (-not (Test-Path $pp.Path -ErrorAction SilentlyContinue)) {
             Disk-Log $pp.Label "Path not found" "Gray"
             continue
@@ -5951,15 +6149,28 @@ $DiskScript = {
     # 50 (delayed write failed), 153 (IO failure warning)
     $diskEvtIds = @(7, 11, 51, 52, 55, 50, 57, 140, 153)
 
-    $diskEvents = @()
+    $diskEvents     = @()
+    $diskEvtReadOk  = $true
+    $diskEvtReadErr = ""
     try {
         $diskEvents = @(Get-WinEvent -FilterHashtable @{ LogName='System'; Level=@(1,2,3); StartTime=$since } -ErrorAction Stop |
             Where-Object {
                 ($diskEvtSources -contains $_.ProviderName) -or ($diskEvtIds -contains $_.Id)
             } | Select-Object -First 20)
-    } catch {}
+    } catch {
+        # D5 fix: previously this catch was empty, leaving $diskEvents = @() and
+        # the downstream `if ($diskEvents.Count -eq 0)` branch printed
+        # "No disk-related errors in the last 48 hours" with status Pass —
+        # silently identical to a clean log even when the event log was
+        # corrupt, full, or the source filter was rejected.
+        $diskEvtReadOk  = $false
+        $diskEvtReadErr = $_.Exception.Message -replace "[\r\n]+"," "
+    }
 
-    if ($diskEvents.Count -eq 0) {
+    if (-not $diskEvtReadOk) {
+        Disk-Log "Disk events" "Event log unreadable: $diskEvtReadErr" "Warn"
+        if ($overallWorst -notin @("fail","warn")) { $overallWorst = "warn" }
+    } elseif ($diskEvents.Count -eq 0) {
         Disk-Log "Disk events" "No disk-related errors in the last 48 hours" "Pass"
     } else {
         $errCount  = ($diskEvents | Where-Object { $_.Level -in @(1,2) }).Count
@@ -5986,24 +6197,39 @@ $DiskScript = {
     $diskStatusVal = switch ($overallWorst) { "fail"{"Issues detected"} "warn"{"Warnings found"} default{"Healthy"} }
     $sync.Cards["DiskStatus"] = @{ Value=$diskStatusVal; Status=$overallWorst }
 
-    # SMART summary card (#8) — counts unhealthy/predict-failure drives among physical disks
-    $smartVal = if ($smartTotal -eq 0) { "No disks detected" } `
-                elseif ($smartFailCount -eq 0) { "All $smartTotal healthy" } `
-                else { "$smartFailCount of $smartTotal unhealthy" }
-    $smartStatus = if ($smartTotal -eq 0) { "neutral" } `
-                   elseif ($smartFailCount -eq 0) { "ok" } `
-                   else { "fail" }
+    # SMART summary card (#8) — counts unhealthy/predict-failure drives among physical disks.
+    # R6 fix: surface "data unavailable" instead of silently green when admin or
+    # the Storage module / root\wmi namespace aren't accessible.
+    if ($smartTotal -eq 0) {
+        $smartVal    = "No disks detected"
+        $smartStatus = "neutral"
+    } elseif ($smartDataMissing -and $smartFailCount -eq 0) {
+        $smartVal    = "SMART data unavailable"
+        $smartStatus = "warn"
+        Disk-Log "SMART data" $smartReason "Warn"
+    } elseif ($smartFailCount -eq 0) {
+        $smartVal    = "All $smartTotal healthy"
+        $smartStatus = "ok"
+    } else {
+        $smartVal    = "$smartFailCount of $smartTotal unhealthy"
+        $smartStatus = "fail"
+    }
     $sync.Cards["DiskSmart"] = @{ Value=$smartVal; Status=$smartStatus }
 
     # Disk errors card (#9) — count from the disk-related event log scan above
     $diskErrCount = ($diskEvents | Where-Object { $_.Level -in @(1,2) }).Count
     $diskWarnCount = ($diskEvents | Where-Object { $_.Level -eq 3 }).Count
-    $errVal = if ($diskErrCount -eq 0 -and $diskWarnCount -eq 0) { "Clean (48 h)" } `
-              elseif ($diskErrCount -gt 0) { "$diskErrCount error(s)" } `
-              else { "$diskWarnCount warning(s)" }
-    $errStatus = if ($diskErrCount -gt 0) { "fail" } `
-                 elseif ($diskWarnCount -gt 0) { "warn" } `
-                 else { "ok" }
+    if (-not $diskEvtReadOk) {
+        $errVal    = "Log unreadable"
+        $errStatus = "warn"
+    } else {
+        $errVal = if ($diskErrCount -eq 0 -and $diskWarnCount -eq 0) { "Clean (48 h)" } `
+                  elseif ($diskErrCount -gt 0) { "$diskErrCount error(s)" } `
+                  else { "$diskWarnCount warning(s)" }
+        $errStatus = if ($diskErrCount -gt 0) { "fail" } `
+                     elseif ($diskWarnCount -gt 0) { "warn" } `
+                     else { "ok" }
+    }
     $sync.Cards["DiskErrors"] = @{ Value=$errVal; Status=$errStatus }
 
     $sync.DiskStep = "Complete"; $sync.DiskRunning=$false; $sync.DiskComplete=$true
@@ -6073,7 +6299,7 @@ $pnlDisk.BackColor = $ColBg; $pnlDisk.Visible = $false; $pnlDisk.Anchor = $Ancho
 $form.Controls.Add($pnlDisk)
 # v1.0.43 redesign — section header + cards row + log/summary split + action bar
 $diskHeader = New-SectionHeader -Parent $pnlDisk `
-    -Title    "System & Disk Health" `
+    -Title    "Disk & System Health" `
     -Subtitle "Physical drive health, free space, Pixellot storage paths, and disk-related event log errors."
 
 $diskVolumes = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Sort-Object DeviceID)
@@ -6210,6 +6436,10 @@ $EvtScript = {
     $totalErrors = 0; $totalWarns = 0
     # Per-category error/warn tallies for the card label
     $catTotals = @{ Disk = 0; Driver = 0; Service = 0; App = 0; Network = 0; Other = 0 }
+    # D15 fix: track whether any log read actually failed, so the card surfaces
+    # "Log unreadable" instead of falsely-clean.
+    $evtReadFailed = $false
+    $evtReadErr    = ""
 
     foreach ($logName in @("System","Application")) {
         if ($sync.EvtCancelled) { break }
@@ -6247,8 +6477,23 @@ $EvtScript = {
                     Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  [$cat] $($ev.ProviderName)" $msg "Warn"
                 }
             }
-        } catch { Evt-Log $logName "Error reading event log" "Warn" }
+        } catch {
+            $evtReadFailed = $true
+            $evtReadErr    = $_.Exception.Message -replace "[\r\n]+"," "
+            Evt-Log $logName "Error reading event log: $evtReadErr" "Warn"
+        }
     }
+
+    # D14 fix: severity should weight by event category, not raw count.
+    # A single benign DistributedCOM 10016 used to flag the whole module Critical.
+    # New rules:
+    #   - Disk / Driver errors are hardware-relevant → Critical (fail)
+    #   - Service / Network errors → Warning
+    #   - App / Other errors alone → Warning (not Critical)
+    #   - Read-failure on any log → Warning, with explicit message
+    $hardwareErrCount = $catTotals["Disk"] + $catTotals["Driver"]
+    $servicishCount   = $catTotals["Service"] + $catTotals["Network"]
+    $appishCount      = $catTotals["App"] + $catTotals["Other"]
 
     # Build a category breakdown for the card label — only show non-zero categories,
     # ordered by severity-of-implication (Disk → Driver → Service → Network → App → Other)
@@ -6257,17 +6502,22 @@ $EvtScript = {
     foreach ($c in $catOrder) {
         if ($catTotals[$c] -gt 0) { $catParts += "$($catTotals[$c]) $($c.ToLower())" }
     }
-    $cardValue = if ($totalErrors -gt 0) {
-        if ($catParts.Count -gt 0) { ($catParts -join " / ") } else { "$totalErrors errors" }
-    } elseif ($totalWarns -gt 0) {
-        "$totalWarns warns"
+    if ($evtReadFailed -and $totalErrors -eq 0 -and $totalWarns -eq 0) {
+        $cardValue  = "Log unreadable"
+        $cardStatus = "warn"
+    } elseif ($hardwareErrCount -gt 0) {
+        $cardValue  = if ($catParts.Count -gt 0) { ($catParts -join " / ") } else { "$totalErrors errors" }
+        $cardStatus = "fail"
+    } elseif ($servicishCount -gt 0 -or $appishCount -gt 0 -or $totalWarns -gt 0) {
+        $cardValue  = if ($catParts.Count -gt 0) { ($catParts -join " / ") }
+                      elseif ($totalErrors -gt 0) { "$totalErrors errors" }
+                      else { "$totalWarns warns" }
+        $cardStatus = "warn"
     } else {
-        "Clean"
+        $cardValue  = "Clean"
+        $cardStatus = "ok"
     }
-    $sync.Cards["EvtStatus"] = @{
-        Value  = $cardValue
-        Status = if($totalErrors -gt 0){"fail"}elseif($totalWarns -gt 0){"warn"}else{"ok"}
-    }
+    $sync.Cards["EvtStatus"] = @{ Value = $cardValue; Status = $cardStatus }
     $sync.EvtStep = "Complete"; $sync.EvtRunning=$false; $sync.EvtComplete=$true
 }
 
@@ -6452,7 +6702,11 @@ $SysInfoScript = {
         # Cards (#5): OS edition (short) + uptime
         $osShort = ($os.Caption -replace '^Microsoft\s+','' -replace 'Windows\s+','Win ')
         $sync.Cards["SiOs"]     = @{ Value = "$osShort  ($($os.BuildNumber))"; Status="ok" }
-        $sync.Cards["SiUptime"] = @{ Value = $upStr; Status = if ($up.TotalDays -gt 30) { "warn" } else { "ok" } }
+        # D10 fix: VPUs are designed to run 24/7. A 31-day uptime is not a
+        # problem and produced yellow noise that eroded trust in real warnings.
+        # Bumped to 180 days so the warn only fires when the box is genuinely
+        # well overdue for a reboot.
+        $sync.Cards["SiUptime"] = @{ Value = $upStr; Status = if ($up.TotalDays -gt 180) { "warn" } else { "ok" } }
     } catch { Si-Log "OS" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -6484,9 +6738,46 @@ $SysInfoScript = {
             }
         }
 
-        # Suspicious-default warning: UTC is rarely the right choice for a deployed VPU
+        # D12 fix: actually measure NTP drift instead of just reporting that
+        # W32Time is running. Uses `w32tm /stripchart` for a single sample.
+        # The "PhaseOffset" line in /query /status is the in-memory drift the
+        # service is tracking; we parse it locale-tolerantly.
+        try {
+            $w32out = (& w32tm /query /status /verbose 2>$null) -join "`n"
+            if ($w32out) {
+                # PhaseOffset line looks like:
+                #   Phase Offset: -0.0010289s
+                # Localisations also use "Décalage de phase" etc.; key on any line
+                # that ends with "...s" preceded by a colon-and-number block.
+                $offsetSec = $null
+                foreach ($line in ($w32out -split "`n")) {
+                    if ($line -match ':\s*(-?\d+\.\d+)s\s*$' -and $line -match '[Pp]hase|[Oo]ffset|décal|位相|位') {
+                        $offsetSec = [double]$Matches[1]; break
+                    }
+                }
+                # Fallback: any line with the right "...s" shape (best-effort).
+                if (-not $offsetSec) {
+                    foreach ($line in ($w32out -split "`n")) {
+                        if ($line -match 'Offset.*?(-?\d+\.\d+)s') { $offsetSec = [double]$Matches[1]; break }
+                    }
+                }
+                if ($offsetSec -ne $null) {
+                    $absMs = [math]::Abs($offsetSec * 1000)
+                    $driftStr = if ($absMs -lt 1)    { "{0:F3} ms" -f $absMs }
+                                elseif ($absMs -lt 1000) { "{0:F0} ms" -f $absMs }
+                                else                 { "{0:F1} s" -f ($absMs / 1000) }
+                    # Thresholds: < 1 s OK, 1-5 s Warn, > 5 s Fail
+                    $driftLvl = if ($absMs -lt 1000) { "Info" } elseif ($absMs -lt 5000) { "Warn" } else { "Fail" }
+                    Si-Log "Clock Drift" "$driftStr  (W32Time phase offset)" $driftLvl
+                }
+            }
+        } catch { }
+
+        # D19 fix: UTC is sometimes the right choice (overseas deployments,
+        # cloud-relayed VPUs). Demoted from Warn to Info — flag it but don't
+        # paint a Warning that pulls the whole module severity up.
         if ($tz.StandardName -match "^UTC$" -or $tz.Caption -match "^\(UTC\)\s*Coordinated") {
-            Si-Log "Timezone Check" "System is set to UTC — confirm this matches the venue's local timezone" "Warn"
+            Si-Log "Timezone Check" "System is set to UTC — confirm this matches the venue's local timezone" "Info"
         }
     } catch { Si-Log "Time & Locale" "Query failed" "Warn" }
 
@@ -6536,9 +6827,24 @@ $SysInfoScript = {
         if ($cpus.Count -gt 0) {
             $fdCpuShort = $cpus[0].Name.Trim() -replace 'Intel\(R\) Core\(TM\) ','Core ' -replace '\(R\)|\(TM\)','' -replace '\s+@\s.*','' -replace '\s+',' '
         }
-        # Card (#5)
+        # D13 fix: measure CPU utilization. Previously the tool had no CPU%
+        # signal anywhere — a pegged-at-100% VPU reported Healthy. Use
+        # Win32_PerfFormattedData_PerfOS_Processor which gives a snapshot %
+        # without the 1-second sampling delay of Get-Counter.
+        $cpuPct      = $null
+        $cpuPctStatus = "neutral"
+        try {
+            $procPerf = Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter "Name='_Total'" -ErrorAction Stop
+            if ($procPerf) {
+                $cpuPct = [int]$procPerf.PercentProcessorTime
+                Si-Log "CPU Usage" "$cpuPct % (snapshot, _Total)" "Info"
+                $cpuPctStatus = if ($cpuPct -ge 95) { "fail" } elseif ($cpuPct -ge 80) { "warn" } else { "ok" }
+            }
+        } catch { Si-Log "CPU Usage" "Query failed (perf counters unavailable)" "Warn" }
+        # Card (#5) — model first, append usage tier if measured
         $cpuCardVal = if ($fdCpuShort.Length -gt 32) { $fdCpuShort.Substring(0,29) + "..." } else { $fdCpuShort }
-        $sync.Cards["SiCpu"] = @{ Value = $cpuCardVal; Status="neutral" }
+        if ($cpuPct -ne $null) { $cpuCardVal = "$cpuCardVal  ($cpuPct %)" }
+        $sync.Cards["SiCpu"] = @{ Value = $cpuCardVal; Status = $cpuPctStatus }
     } catch { Si-Log "CPU" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -6553,8 +6859,19 @@ $SysInfoScript = {
         $fdRamFreeGB = [double]$os2.FreePhysicalMemory / 1048576.0
         Si-Log "Total RAM"  ("{0:F1} GB" -f ([double]$os2.TotalVisibleMemorySize / 1048576.0))     "Info"
         Si-Log "Available"  ("{0:F1} GB" -f $fdRamFreeGB)                                          "Info"
-        # Card (#5): total + free
-        $sync.Cards["SiRam"] = @{ Value = ("{0} GB total / {1:F1} GB free" -f $fdRamGB, $fdRamFreeGB); Status="ok" }
+        # D13 fix: actually compute memory pressure. SiRam used to hardcode
+        # Status="ok" regardless of free RAM — a memory-pressured VPU showed
+        # Healthy. Warn at <10% free, Fail at <5% free.
+        $ramFreePct = if ($os2.TotalVisibleMemorySize -gt 0) {
+            [int](100 * [double]$os2.FreePhysicalMemory / [double]$os2.TotalVisibleMemorySize)
+        } else { 100 }
+        Si-Log "Free RAM"   "$ramFreePct %" "Info"
+        $ramStatus = if ($ramFreePct -lt 5) { "fail" } elseif ($ramFreePct -lt 10) { "warn" } else { "ok" }
+        # Card (#5): total + free + pct, status reflects pressure
+        $sync.Cards["SiRam"] = @{
+            Value  = ("{0} GB total / {1:F1} GB free  ({2}%)" -f $fdRamGB, $fdRamFreeGB, $ramFreePct)
+            Status = $ramStatus
+        }
         $slots = @(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue)
         $n = 1
         foreach ($s in $slots) {
@@ -6891,7 +7208,7 @@ $fdModuleDefs = @(
     @{ Name="Network Configuration"; Icon=0xE701; NavBtn={$navNetConfig}; RunFn={Start-NetDiagnostic};        CompleteFn={$sync.NetComplete};     RunningFn={$sync.NetRunning};     CardKeys=@("NetInternet","NetPorts","NetDomains") }
     @{ Name="Camera Connectivity";   Icon=0xE722; NavBtn={$navCamera};    RunFn={Start-CameraConnDiagnostic}; CompleteFn={$sync.Complete};        RunningFn={$sync.Running};        CardKeys=@("SmartSpeed","PingCHU","ChuDetect","PoEBudget") }
     @{ Name="Pixellot Services";     Icon=0xE9F5; NavBtn={$navServices};  RunFn={Start-SvcDiagnostic};        CompleteFn={$sync.SvcComplete};     RunningFn={$sync.SvcRunning};     CardKeys=@("SvcStatus") }
-    @{ Name="VPU Hardware";          Icon=0xE7E8; NavBtn={$navPoE};       RunFn={Start-HwDiagnostic};         CompleteFn={$sync.HwComplete};      RunningFn={$sync.HwRunning};      CardKeys=@("HwGpu","HwMonitor","HwMmk") }
+    @{ Name="Hardware & Peripherals";Icon=0xE7E8; NavBtn={$navPoE};       RunFn={Start-HwDiagnostic};         CompleteFn={$sync.HwComplete};      RunningFn={$sync.HwRunning};      CardKeys=@("HwGpu","HwMonitor","HwMmk") }
     @{ Name="Disk & System Health";  Icon=0xEDA2; NavBtn={$navDisk};      RunFn={Start-DiskDiagnostic};       CompleteFn={$sync.DiskComplete};    RunningFn={$sync.DiskRunning};    CardKeys=@("DiskStatus") }
     @{ Name="Event Viewer";          Icon=0xE7BA; NavBtn={$navEvents};    RunFn={Start-EvtDiagnostic};        CompleteFn={$sync.EvtComplete};     RunningFn={$sync.EvtRunning};     CardKeys=@("EvtStatus") }
 )
@@ -6902,6 +7219,10 @@ $script:fdRerunIndices = @()
 # --- Status helpers -----------------------------------------------------------
 function Get-WorstCardStatus {
     param([string[]]$Keys)
+    # Priority: fail > warn > ok > neutral. "neutral" = card was never populated
+    # (runspace exception, missing module, cancellation). The caller must
+    # distinguish "neutral" from "ok" in the rollup — collapsing them produces a
+    # false-Pass (D1 from the diagnostic-logic review).
     $pri = @{ fail=3; warn=2; ok=1; neutral=0 }
     $worst = "neutral"
     foreach ($k in $Keys) {
@@ -6913,7 +7234,9 @@ function Get-WorstCardStatus {
         # functions called from background runspaces don't reliably propagate (#60).
         $s = $sync["_ncs_$k"]
         if (-not $s -and $sync.Cards.ContainsKey($k)) { $s = $sync.Cards[$k].Status }
-        if ($s -and $pri.ContainsKey($s) -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
+        # Defensive against empty-string status (D21): explicitly treat as neutral.
+        if ($s -in @("", $null)) { continue }
+        if ($pri.ContainsKey($s) -and $pri[$s] -gt $pri[$worst]) { $worst = $s }
     }
     return $worst
 }
@@ -6933,6 +7256,9 @@ function Get-ModuleSummaryText {
 # Per-module human-readable summary (replaces raw card-value concatenation).
 function Get-FdModuleSummary {
     param([int]$Idx, [string]$Worst)
+    # D11 fix: don't ever claim the module succeeded ("All cameras online ...")
+    # when worst is neutral. Caller still shows the muted Unknown dot.
+    if ($Worst -eq "neutral") { return "Check did not complete" }
     switch ($Idx) {
         0 { # System Overview
             $v = if ($sync.Cards.ContainsKey("SysInfo")) { $sync.Cards["SysInfo"].Value } else { "" }
@@ -6966,7 +7292,7 @@ function Get-FdModuleSummary {
             if ($v -eq "None found") { return "No Pixellot services detected on this VPU" }
             if ($v -and $v -ne "--") { return $v } else { return "Service check complete" }
         }
-        4 { # VPU Hardware
+        4 { # Hardware & Peripherals
             return Get-ModuleSummaryText @("HwGpu","HwMonitor","HwMmk")
         }
         5 { # Disk & System Health
@@ -6983,9 +7309,14 @@ function Get-FdModuleSummary {
     return Get-ModuleSummaryText $fdModuleDefs[$Idx].CardKeys
 }
 
-# Per-module next-step recommendation (shown only for Warning / Critical).
+# Per-module next-step recommendation (shown only for Warning / Critical / Unknown).
 function Get-FdActionText {
     param([int]$Idx, [string]$Worst)
+    if ($Worst -eq "neutral") {
+        # D1 fix: a module that completed without populating any card is treated
+        # as Unknown, not Healthy. Tell the tech to look at the owning panel.
+        return "Check did not complete - open the module's panel and run it manually"
+    }
     if ($Worst -notin @("fail","warn")) { return "" }
     switch ($Idx) {
         0 { return "Verify hardware meets minimum VPU specifications" }
@@ -7237,11 +7568,13 @@ $script:fdSpinChars     = @('|','/','-','\')
 $timerFullDiag.Add_Tick({
     $script:fdSpinIdx = ($script:fdSpinIdx + 1) % 4
     $spin      = $script:fdSpinChars[$script:fdSpinIdx]
-    $allDone   = $true
-    $critCount = 0
-    $warnCount = 0
-    $critNames = @()
-    $warnNames = @()
+    $allDone      = $true
+    $critCount    = 0
+    $warnCount    = 0
+    $unknownCount = 0
+    $critNames    = @()
+    $warnNames    = @()
+    $unknownNames = @()
 
     for ($i = 0; $i -lt $fdModuleDefs.Count; $i++) {
         $mod      = $fdModuleDefs[$i]
@@ -7253,8 +7586,9 @@ $timerFullDiag.Add_Tick({
         if ($script:fdRerunIndices.Count -gt 0 -and $i -notin $script:fdRerunIndices) {
             # Include its prior result in the overall count, then skip it.
             $w = $row.LastWorst
-            if ($w -eq "fail") { $critCount++; $critNames += $mod.Name }
-            elseif ($w -eq "warn") { $warnCount++; $warnNames += $mod.Name }
+            if ($w -eq "fail")        { $critCount++;    $critNames    += $mod.Name }
+            elseif ($w -eq "warn")    { $warnCount++;    $warnNames    += $mod.Name }
+            elseif ($w -eq "neutral") { $unknownCount++; $unknownNames += $mod.Name }
             continue
         }
 
@@ -7273,13 +7607,16 @@ $timerFullDiag.Add_Tick({
         $worst         = Get-WorstCardStatus $mod.CardKeys
         $row.LastWorst = $worst
 
-        if ($worst -eq "fail") { $critCount++; $critNames += $mod.Name }
-        elseif ($worst -eq "warn") { $warnCount++; $warnNames += $mod.Name }
+        if     ($worst -eq "fail")    { $critCount++;    $critNames    += $mod.Name }
+        elseif ($worst -eq "warn")    { $warnCount++;    $warnNames    += $mod.Name }
+        elseif ($worst -eq "neutral") { $unknownCount++; $unknownNames += $mod.Name }
 
         # Paint the row only once (ViewBtn.Enabled flips false -> true as the guard).
         if (-not $row.ViewBtn.Enabled) {
-            $dotColor  = switch ($worst) { "fail"{$ColRed} "warn"{$ColYellow} "ok"{$ColGreen} default{$ColMuted} }
-            $severityT = switch ($worst) { "fail"{"Critical"} "warn"{"Warning"} "ok"{"Healthy"} default{"Healthy"} }
+            # D1 fix: neutral now paints as Unknown (muted dot, "Check did not complete"),
+            # not as Healthy. The default branch is intentionally NOT green any more.
+            $dotColor  = switch ($worst) { "fail"{$ColRed}      "warn"{$ColYellow} "ok"{$ColGreen} default{$ColMuted} }
+            $severityT = switch ($worst) { "fail"{"Critical"}   "warn"{"Warning"}  "ok"{"Healthy"} default{"Unknown"} }
 
             $row.Dot.BackColor       = $dotColor
             $row.StatusLbl.Text      = $severityT
@@ -7288,15 +7625,20 @@ $timerFullDiag.Add_Tick({
             $row.ValueLbl.Text       = Get-FdModuleSummary $i $worst
             $row.ValueLbl.ForeColor  = if ($worst -in @("fail","warn")) { $ColText } else { $ColMuted }
 
-            # Suggested action - shown only for Warning / Critical
+            # Suggested action - shown for Warning / Critical / Unknown
             $action = Get-FdActionText $i $worst
             if ($action) {
                 $row.ActionLbl.Text      = $action
-                $row.ActionLbl.ForeColor = if ($worst -eq "fail") { $ColRed } else { $ColYellow }
+                $row.ActionLbl.ForeColor = switch ($worst) {
+                    "fail"    { $ColRed }
+                    "warn"    { $ColYellow }
+                    "neutral" { $ColMuted }
+                    default   { $ColYellow }
+                }
                 $row.ActionLbl.Visible   = $true
             }
 
-            # Background tint for issue rows
+            # Background tint for issue rows (no tint for unknown - keep card neutral)
             if ($worst -eq "fail") {
                 $row.Panel.BackColor = $ColFailBg
             } elseif ($worst -eq "warn") {
@@ -7304,7 +7646,7 @@ $timerFullDiag.Add_Tick({
             }
 
             # Accent the View button for anything that needs attention
-            if ($worst -in @("fail","warn")) {
+            if ($worst -in @("fail","warn","neutral")) {
                 $row.ViewBtn.BackColor = $ColAccent
                 $row.ViewBtn.ForeColor = [System.Drawing.Color]::White
             }
@@ -7332,15 +7674,35 @@ $timerFullDiag.Add_Tick({
         $parts = @()
         if ($critCount -gt 0) { $parts += "$critCount critical" }
         if ($warnCount -gt 0) { $parts += "$warnCount warning$(if($warnCount -ne 1){'s'})" }
+        if ($unknownCount -gt 0) { $parts += "$unknownCount unknown" }
         $lblFdBannerText.Text      = ($parts -join ", ") + " detected - review highlighted modules below"
         $lblFdBannerText.ForeColor = $ColRed
 
         # Detail line: module names + severity
         $nameList = @()
-        $nameList += $critNames | ForEach-Object { "$_ (Critical)" }
-        $nameList += $warnNames | ForEach-Object { "$_ (Warning)" }
+        $nameList += $critNames    | ForEach-Object { "$_ (Critical)" }
+        $nameList += $warnNames    | ForEach-Object { "$_ (Warning)" }
+        $nameList += $unknownNames | ForEach-Object { "$_ (Unknown)" }
         $lblFdBannerDetail.Text      = $nameList -join "   |   "
         $lblFdBannerDetail.ForeColor = [System.Drawing.Color]::FromArgb(210, 140, 140)
+
+    } elseif ($unknownCount -gt 0) {
+        # --- Some checks didn't run (D1 fix) ---
+        # Distinct from both "all clear" and "issues found". Prevents the
+        # false-Pass where every module crashed silently and the banner
+        # claimed "All N checks passed - this VPU appears healthy."
+        $pnlFdBanner.BackColor = $ColWarnBg
+
+        $lblFdBannerIcon.Text      = [char]0xE7BA   # info/help
+        $lblFdBannerIcon.ForeColor = $ColYellow
+
+        $okCount = $fdModuleDefs.Count - $unknownCount
+        $lblFdBannerText.Text      = "$unknownCount of $($fdModuleDefs.Count) checks did not complete - cannot confirm VPU health"
+        $lblFdBannerText.ForeColor = $ColYellow
+
+        $names = ($unknownNames | ForEach-Object { "$_ (Unknown)" }) -join "   |   "
+        $lblFdBannerDetail.Text      = "$okCount passed | Open the affected panels and re-run manually. Details: $names"
+        $lblFdBannerDetail.ForeColor = [System.Drawing.Color]::FromArgb(220, 200, 130)
 
     } else {
         # --- All clear banner ---
@@ -7514,8 +7876,26 @@ $btnSetTheme.Add_Click({
     $newTheme = if ($VpuTheme -eq "dark") { "light" } else { "dark" }
     try { [System.IO.File]::WriteAllText($SettingsPath, "{`"Theme`":`"$newTheme`"}") } catch { }
     $runScript = if ($PSCommandPath -and (Test-Path $PSCommandPath)) { $PSCommandPath } else { Join-Path $PSScriptRoot "Run.ps1" }
-    Start-Process "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$runScript`""
-    $form.Close()
+    # R14 fix: launch with -Verb RunAs so the child inherits an elevated token
+    # cleanly. Previously the orphaned child re-prompted UAC and raced the
+    # parent's Close(), which sometimes left the parent window handle unclosed
+    # while the child waited at the UAC prompt. Wait for the new process to be
+    # at least spawned before closing the parent.
+    try {
+        $p = Start-Process "powershell.exe" -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$runScript`"" -PassThru -ErrorAction Stop
+        # Give the new process ~250ms to take the foreground before we close.
+        if ($p) { Start-Sleep -Milliseconds 250 }
+        $form.Close()
+    } catch {
+        # UAC cancelled — keep the parent open so the theme change isn't applied
+        # without a running Pulse. Surface the theme preference still being saved
+        # so the next manual launch picks it up.
+        [System.Windows.Forms.MessageBox]::Show(
+            "Theme preference saved. UAC prompt was cancelled, so Pulse was not restarted. The new theme will apply the next time you launch Pulse.",
+            "Theme switch",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+    }
 })
 
 # Reports — output directory shortcut
@@ -7664,9 +8044,9 @@ $toastModuleMeta = @{
     Complete        = @{ Name="Camera Connectivity";    AllClearKey="AllClear";    CardKeys=@() }
     NetComplete     = @{ Name="Network Configuration";  AllClearKey="NetAllClear"; CardKeys=@() }
     SvcComplete     = @{ Name="Pixellot Services";      AllClearKey=$null;         CardKeys=@("SvcStatus") }
-    DiskComplete    = @{ Name="Disk Health";            AllClearKey=$null;         CardKeys=@("DiskStatus","MemStatus") }
-    EvtComplete     = @{ Name="Event Logs";             AllClearKey=$null;         CardKeys=@("EvtStatus") }
-    HwComplete      = @{ Name="VPU Hardware";           AllClearKey=$null;         CardKeys=@("HwGpu","HwMonitor","HwMmk") }
+    DiskComplete    = @{ Name="Disk & System Health";   AllClearKey=$null;         CardKeys=@("DiskStatus","MemStatus") }
+    EvtComplete     = @{ Name="Event Viewer";           AllClearKey=$null;         CardKeys=@("EvtStatus") }
+    HwComplete      = @{ Name="Hardware & Peripherals"; AllClearKey=$null;         CardKeys=@("HwGpu","HwMonitor","HwMmk") }
     SysInfoComplete = @{ Name="System Information";     AllClearKey=$null;         CardKeys=@() }
 }
 
@@ -7720,21 +8100,21 @@ $timerToast.Add_Tick({
                     if ($isOk -and -not $isWarn) { $detail = "All ports and domains reachable" }
                     else {
                         $pf = [int]$sync.NetPortFail; $df = [int]$sync.NetDomainFail
-                        $detail = "$pf port / $df domain failure(s) — open Network tab to inspect"
+                        $detail = "$pf port / $df domain failure(s) — open Network Configuration to inspect"
                     }
                 }
                 "SvcComplete" {
-                    $detail = if ($isOk) { "All required services running" } else { "Service issues — open Services tab to inspect" }
+                    $detail = if ($isOk) { "All required services running" } else { "Service issues — open Pixellot Services to inspect" }
                 }
                 "DiskComplete" {
-                    $detail = if ($isOk) { "All drives healthy" } else { "Disk issues — open Disks tab to inspect" }
+                    $detail = if ($isOk) { "All drives healthy" } else { "Disk issues — open Disk & System Health to inspect" }
                 }
                 "EvtComplete" {
                     $ev = $sync.Cards["EvtStatus"].Value
-                    $detail = if ($isOk) { "$ev — no recent OS errors" } else { "$ev — open Event Logs tab to inspect" }
+                    $detail = if ($isOk) { "$ev — no recent OS errors" } else { "$ev — open Event Viewer to inspect" }
                 }
                 "HwComplete" {
-                    $detail = if ($isOk) { "GPU, monitor, and peripherals OK" } else { "Hardware issues — open Hardware tab to inspect" }
+                    $detail = if ($isOk) { "GPU, monitor, and peripherals OK" } else { "Hardware issues — open Hardware & Peripherals to inspect" }
                 }
                 "SysInfoComplete" {
                     $detail = "System inventory collected"

@@ -72,7 +72,56 @@ if (-not $src) {
     Write-Host '   ERROR: Could not find extracted folder.' -ForegroundColor Red
     exit 1
 }
-if (Test-Path $inst) { Remove-Item $inst -Recurse -Force }
-Move-Item $src.FullName $inst
+
+# R18 fix: atomic install swap. Previously the install dir was wiped *before*
+# the new content moved in, so any failure mid-move bricked the install.
+# New flow:
+#   1. Validate the staged folder contains the entry points we expect.
+#   2. Rename the existing install to <inst>.bak.<pid>.
+#   3. Move the staged folder into place.
+#   4. On success, delete the .bak. On failure, restore it.
+$requiredEntryPoints = @('Pulse.ps1','Build.ps1','Modules')
+$missing = @()
+foreach ($e in $requiredEntryPoints) {
+    if (-not (Test-Path (Join-Path $src.FullName $e))) { $missing += $e }
+}
+if ($missing.Count -gt 0) {
+    Write-Host ('   ERROR: Staged folder is missing expected entries: {0}. Aborting before any change to {1}.' -f ($missing -join ', '), $inst) -ForegroundColor Red
+    Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $zip -ErrorAction SilentlyContinue
+    exit 1
+}
+
+$backup = "$inst.bak.$PID"
+if (Test-Path $inst) {
+    try {
+        Rename-Item -Path $inst -NewName (Split-Path $backup -Leaf) -ErrorAction Stop
+    } catch {
+        Write-Host "   ERROR: Could not rename current install to backup: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "   This usually means Pulse is still running. Close it and re-run." -ForegroundColor Yellow
+        Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item $zip -ErrorAction SilentlyContinue
+        exit 1
+    }
+}
+try {
+    Move-Item $src.FullName $inst -ErrorAction Stop
+} catch {
+    # Move failed - restore the backup so the box isn't left without an install.
+    Write-Host "   ERROR: Move into $inst failed: $($_.Exception.Message)" -ForegroundColor Red
+    if (Test-Path $backup) {
+        try {
+            Rename-Item -Path $backup -NewName (Split-Path $inst -Leaf) -ErrorAction Stop
+            Write-Host "   Previous install restored from backup." -ForegroundColor Yellow
+        } catch {
+            Write-Host "   ERROR: Backup restore failed - manual recovery may be required at $backup" -ForegroundColor Red
+        }
+    }
+    Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $zip -ErrorAction SilentlyContinue
+    exit 1
+}
+# Success — clean up backup + staging.
+if (Test-Path $backup) { Remove-Item $backup -Recurse -Force -ErrorAction SilentlyContinue }
 Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $zip -ErrorAction SilentlyContinue

@@ -31,6 +31,10 @@ $EvtScript = {
     $totalErrors = 0; $totalWarns = 0
     # Per-category error/warn tallies for the card label
     $catTotals = @{ Disk = 0; Driver = 0; Service = 0; App = 0; Network = 0; Other = 0 }
+    # D15 fix: track whether any log read actually failed, so the card surfaces
+    # "Log unreadable" instead of falsely-clean.
+    $evtReadFailed = $false
+    $evtReadErr    = ""
 
     foreach ($logName in @("System","Application")) {
         if ($sync.EvtCancelled) { break }
@@ -68,8 +72,23 @@ $EvtScript = {
                     Evt-Log "$($ev.TimeCreated.ToString('MM/dd HH:mm'))  [$cat] $($ev.ProviderName)" $msg "Warn"
                 }
             }
-        } catch { Evt-Log $logName "Error reading event log" "Warn" }
+        } catch {
+            $evtReadFailed = $true
+            $evtReadErr    = $_.Exception.Message -replace "[\r\n]+"," "
+            Evt-Log $logName "Error reading event log: $evtReadErr" "Warn"
+        }
     }
+
+    # D14 fix: severity should weight by event category, not raw count.
+    # A single benign DistributedCOM 10016 used to flag the whole module Critical.
+    # New rules:
+    #   - Disk / Driver errors are hardware-relevant → Critical (fail)
+    #   - Service / Network errors → Warning
+    #   - App / Other errors alone → Warning (not Critical)
+    #   - Read-failure on any log → Warning, with explicit message
+    $hardwareErrCount = $catTotals["Disk"] + $catTotals["Driver"]
+    $servicishCount   = $catTotals["Service"] + $catTotals["Network"]
+    $appishCount      = $catTotals["App"] + $catTotals["Other"]
 
     # Build a category breakdown for the card label — only show non-zero categories,
     # ordered by severity-of-implication (Disk → Driver → Service → Network → App → Other)
@@ -78,17 +97,22 @@ $EvtScript = {
     foreach ($c in $catOrder) {
         if ($catTotals[$c] -gt 0) { $catParts += "$($catTotals[$c]) $($c.ToLower())" }
     }
-    $cardValue = if ($totalErrors -gt 0) {
-        if ($catParts.Count -gt 0) { ($catParts -join " / ") } else { "$totalErrors errors" }
-    } elseif ($totalWarns -gt 0) {
-        "$totalWarns warns"
+    if ($evtReadFailed -and $totalErrors -eq 0 -and $totalWarns -eq 0) {
+        $cardValue  = "Log unreadable"
+        $cardStatus = "warn"
+    } elseif ($hardwareErrCount -gt 0) {
+        $cardValue  = if ($catParts.Count -gt 0) { ($catParts -join " / ") } else { "$totalErrors errors" }
+        $cardStatus = "fail"
+    } elseif ($servicishCount -gt 0 -or $appishCount -gt 0 -or $totalWarns -gt 0) {
+        $cardValue  = if ($catParts.Count -gt 0) { ($catParts -join " / ") }
+                      elseif ($totalErrors -gt 0) { "$totalErrors errors" }
+                      else { "$totalWarns warns" }
+        $cardStatus = "warn"
     } else {
-        "Clean"
+        $cardValue  = "Clean"
+        $cardStatus = "ok"
     }
-    $sync.Cards["EvtStatus"] = @{
-        Value  = $cardValue
-        Status = if($totalErrors -gt 0){"fail"}elseif($totalWarns -gt 0){"warn"}else{"ok"}
-    }
+    $sync.Cards["EvtStatus"] = @{ Value = $cardValue; Status = $cardStatus }
     $sync.EvtStep = "Complete"; $sync.EvtRunning=$false; $sync.EvtComplete=$true
 }
 

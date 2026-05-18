@@ -30,20 +30,38 @@ $DiskScript = {
     Disk-Section "Physical Drives"
 
     # Try Storage module for MediaType & HealthStatus (PS 5.1+, Storage cmdlets)
-    $pdHealth = @{}
+    # R6 fix: track whether the Storage module is actually available so we can
+    # surface "SMART data unavailable" instead of silently reporting all-healthy
+    # on a Server Core / locked-down LTSC where Get-PhysicalDisk is missing or
+    # the root\wmi namespace is gone.
+    $pdHealth         = @{}
+    $smartDataMissing = $false
+    $smartReason      = ""
     try {
-        @(Get-PhysicalDisk -ErrorAction Stop) | ForEach-Object {
-            $pdHealth[$_.FriendlyName] = $_
+        if (-not (Get-Command Get-PhysicalDisk -ErrorAction SilentlyContinue)) {
+            $smartDataMissing = $true
+            $smartReason      = "Storage module not available"
+        } else {
+            @(Get-PhysicalDisk -ErrorAction Stop) | ForEach-Object {
+                $pdHealth[$_.FriendlyName] = $_
+            }
         }
-    } catch {}
+    } catch {
+        $smartDataMissing = $true
+        $smartReason      = "Get-PhysicalDisk failed: $($_.Exception.Message)"
+    }
 
     # SMART failure prediction - build per-disk-index hashtable so attribution is correct on multi-disk systems
     $smartFails = @{}
     try {
-        @(Get-WmiObject -Namespace root\wmi -Class MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue) |
-            Where-Object { $_.PredictFailure } |
+        $msPredict = @(Get-WmiObject -Namespace root\wmi -Class MSStorageDriver_FailurePredictStatus -ErrorAction Stop)
+        $msPredict | Where-Object { $_.PredictFailure } |
             ForEach-Object { if ($_.InstanceName -match '(\d+)') { $smartFails[[string]$Matches[1]] = $true } }
-    } catch {}
+    } catch {
+        # Most common: not running elevated, or root\wmi namespace blocked.
+        $smartDataMissing = $true
+        if (-not $smartReason) { $smartReason = "MSStorageDriver_FailurePredictStatus unavailable (admin or root\wmi access required)" }
+    }
 
     $physDisks = @(Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | Sort-Object Index)
     foreach ($phys in $physDisks) {
@@ -125,11 +143,18 @@ $DiskScript = {
         }
         if (-not $roles) { $roles += if ($totalGB -gt 200) { "Storage" } else { "Data" } }
         $roleLabel = " [$($roles -join ' / ')]"
+        $isRecording = ($roles -contains "Recording / Storage")
 
-        # Thresholds: absolute free space + percentage (tighter % catches large drives)
+        # Thresholds: absolute free space + percentage. D20 fix: tighter absolute
+        # floors for recording volumes, since 15 GB on a 4 TB drive is 0.4 % —
+        # the 90 % rule used to wait until the drive was 99.6 % full before
+        # firing a Warning. Recording / Storage gets 50 GB warn / 20 GB fail
+        # regardless of percentage; OS Drive keeps the old 15/5 GB floors.
+        $absFailGB = if ($isRecording) { 20 } else { 5 }
+        $absWarnGB = if ($isRecording) { 50 } else { 15 }
         $lvl = "Pass"
-        if ($freeGB -lt 5  -or $usedPct -gt 97) { $lvl = "Fail" }
-        elseif ($freeGB -lt 15 -or $usedPct -gt 90) { $lvl = "Warn" }
+        if ($freeGB -lt $absFailGB -or $usedPct -gt 97) { $lvl = "Fail" }
+        elseif ($freeGB -lt $absWarnGB -or $usedPct -gt 90) { $lvl = "Warn" }
 
         if ($lvl -eq "Fail" -and $overallWorst -ne "fail")            { $overallWorst = "fail" }
         elseif ($lvl -eq "Warn" -and $overallWorst -notin @("fail","warn")) { $overallWorst = "warn" }
@@ -170,8 +195,18 @@ $DiskScript = {
         @{ Path="C:\Users";                     Label="User Profiles (total)"; Warn=10GB; Crit=30GB }
     )
 
+    # R17 fix: aggregate timeout. A C: with millions of small log files under
+    # C:\Pixellot\Data\Log used to stall the entire runspace for minutes here.
+    # Stop scanning further paths if we've already spent 30 s in total.
+    $pixScanStart    = Get-Date
+    $pixScanBudgetMs = 30000
     foreach ($pp in $pixPaths) {
         if ($sync.DiskCancelled) { $sync.DiskRunning=$false; $sync.DiskComplete=$true; return }
+        $elapsedMs = ((Get-Date) - $pixScanStart).TotalMilliseconds
+        if ($elapsedMs -ge $pixScanBudgetMs) {
+            Disk-Log $pp.Label "Skipped - scan budget exceeded (this and later paths)" "Warn"
+            continue
+        }
         if (-not (Test-Path $pp.Path -ErrorAction SilentlyContinue)) {
             Disk-Log $pp.Label "Path not found" "Gray"
             continue
@@ -261,15 +296,28 @@ $DiskScript = {
     # 50 (delayed write failed), 153 (IO failure warning)
     $diskEvtIds = @(7, 11, 51, 52, 55, 50, 57, 140, 153)
 
-    $diskEvents = @()
+    $diskEvents     = @()
+    $diskEvtReadOk  = $true
+    $diskEvtReadErr = ""
     try {
         $diskEvents = @(Get-WinEvent -FilterHashtable @{ LogName='System'; Level=@(1,2,3); StartTime=$since } -ErrorAction Stop |
             Where-Object {
                 ($diskEvtSources -contains $_.ProviderName) -or ($diskEvtIds -contains $_.Id)
             } | Select-Object -First 20)
-    } catch {}
+    } catch {
+        # D5 fix: previously this catch was empty, leaving $diskEvents = @() and
+        # the downstream `if ($diskEvents.Count -eq 0)` branch printed
+        # "No disk-related errors in the last 48 hours" with status Pass —
+        # silently identical to a clean log even when the event log was
+        # corrupt, full, or the source filter was rejected.
+        $diskEvtReadOk  = $false
+        $diskEvtReadErr = $_.Exception.Message -replace "[\r\n]+"," "
+    }
 
-    if ($diskEvents.Count -eq 0) {
+    if (-not $diskEvtReadOk) {
+        Disk-Log "Disk events" "Event log unreadable: $diskEvtReadErr" "Warn"
+        if ($overallWorst -notin @("fail","warn")) { $overallWorst = "warn" }
+    } elseif ($diskEvents.Count -eq 0) {
         Disk-Log "Disk events" "No disk-related errors in the last 48 hours" "Pass"
     } else {
         $errCount  = ($diskEvents | Where-Object { $_.Level -in @(1,2) }).Count
@@ -296,24 +344,39 @@ $DiskScript = {
     $diskStatusVal = switch ($overallWorst) { "fail"{"Issues detected"} "warn"{"Warnings found"} default{"Healthy"} }
     $sync.Cards["DiskStatus"] = @{ Value=$diskStatusVal; Status=$overallWorst }
 
-    # SMART summary card (#8) — counts unhealthy/predict-failure drives among physical disks
-    $smartVal = if ($smartTotal -eq 0) { "No disks detected" } `
-                elseif ($smartFailCount -eq 0) { "All $smartTotal healthy" } `
-                else { "$smartFailCount of $smartTotal unhealthy" }
-    $smartStatus = if ($smartTotal -eq 0) { "neutral" } `
-                   elseif ($smartFailCount -eq 0) { "ok" } `
-                   else { "fail" }
+    # SMART summary card (#8) — counts unhealthy/predict-failure drives among physical disks.
+    # R6 fix: surface "data unavailable" instead of silently green when admin or
+    # the Storage module / root\wmi namespace aren't accessible.
+    if ($smartTotal -eq 0) {
+        $smartVal    = "No disks detected"
+        $smartStatus = "neutral"
+    } elseif ($smartDataMissing -and $smartFailCount -eq 0) {
+        $smartVal    = "SMART data unavailable"
+        $smartStatus = "warn"
+        Disk-Log "SMART data" $smartReason "Warn"
+    } elseif ($smartFailCount -eq 0) {
+        $smartVal    = "All $smartTotal healthy"
+        $smartStatus = "ok"
+    } else {
+        $smartVal    = "$smartFailCount of $smartTotal unhealthy"
+        $smartStatus = "fail"
+    }
     $sync.Cards["DiskSmart"] = @{ Value=$smartVal; Status=$smartStatus }
 
     # Disk errors card (#9) — count from the disk-related event log scan above
     $diskErrCount = ($diskEvents | Where-Object { $_.Level -in @(1,2) }).Count
     $diskWarnCount = ($diskEvents | Where-Object { $_.Level -eq 3 }).Count
-    $errVal = if ($diskErrCount -eq 0 -and $diskWarnCount -eq 0) { "Clean (48 h)" } `
-              elseif ($diskErrCount -gt 0) { "$diskErrCount error(s)" } `
-              else { "$diskWarnCount warning(s)" }
-    $errStatus = if ($diskErrCount -gt 0) { "fail" } `
-                 elseif ($diskWarnCount -gt 0) { "warn" } `
-                 else { "ok" }
+    if (-not $diskEvtReadOk) {
+        $errVal    = "Log unreadable"
+        $errStatus = "warn"
+    } else {
+        $errVal = if ($diskErrCount -eq 0 -and $diskWarnCount -eq 0) { "Clean (48 h)" } `
+                  elseif ($diskErrCount -gt 0) { "$diskErrCount error(s)" } `
+                  else { "$diskWarnCount warning(s)" }
+        $errStatus = if ($diskErrCount -gt 0) { "fail" } `
+                     elseif ($diskWarnCount -gt 0) { "warn" } `
+                     else { "ok" }
+    }
     $sync.Cards["DiskErrors"] = @{ Value=$errVal; Status=$errStatus }
 
     $sync.DiskStep = "Complete"; $sync.DiskRunning=$false; $sync.DiskComplete=$true
@@ -383,7 +446,7 @@ $pnlDisk.BackColor = $ColBg; $pnlDisk.Visible = $false; $pnlDisk.Anchor = $Ancho
 $form.Controls.Add($pnlDisk)
 # v1.0.43 redesign — section header + cards row + log/summary split + action bar
 $diskHeader = New-SectionHeader -Parent $pnlDisk `
-    -Title    "System & Disk Health" `
+    -Title    "Disk & System Health" `
     -Subtitle "Physical drive health, free space, Pixellot storage paths, and disk-related event log errors."
 
 $diskVolumes = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Sort-Object DeviceID)

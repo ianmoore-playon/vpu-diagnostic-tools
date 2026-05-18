@@ -11,6 +11,68 @@ Version format: `MAJOR.MINOR.PATCH[-PRERELEASE]`
 
 ---
 
+## [1.0.54-beta] - 2026-05-18
+
+Reviewer batch — addresses every finding from the UX / Diagnostic Logic /
+PowerShell Reliability / QA reviews.
+
+### Fixed
+
+#### Trust-killer fixes (false Pass / false Critical)
+
+- **D1 - Full Diagnostic: false Pass when modules don't run.** `Get-WorstCardStatus` no longer collapses `neutral` to "Healthy" — `FullDiagnostic.psm1` now tracks a distinct `unknownCount` and paints a yellow "N of 7 checks did not complete" banner instead of green "All N checks passed". Each row with worst=neutral renders as "Unknown" with muted dot + "Check did not complete - open the module's panel and run it manually" action text. `Get-FdModuleSummary` returns "Check did not complete" for neutral worst instead of falling through to "All cameras online and responding normally" (D11). `Get-WorstCardStatus` is also defensive against empty-string status survival (D21).
+- **D2 - Network: UDP echo false Critical.** UDP 443 + UDP 2088 to `prod-echo.pixellot.tv` demoted to `Reliable=$false` until server-side echo behavior is verified. Healthy VPUs no longer flag these as FAIL.
+- **D3 - Camera Connectivity: unlinked OCR false Critical.** When the ARP entry matches the OCR-specific OUI prefix `00-D0-89`, the camera is authoritatively OCR regardless of link state. Previously a stale ARP on a flapped OCR cable could relabel to "Main Camera (probable)" and then fail the main-camera ping.
+- **D4 - Cable-fault wording softened.** "Physical layer issue. DEGRADED cable fault." replaced with "Likely cable or termination - also verify the camera revision supports gigabit and the switch port is not locked to 100M". Stops biasing the truck-roll toward an unnecessary cable swap.
+- **D5 - DiskHealth: silent event-log read failure.** A `Get-WinEvent` exception used to leave `$diskEvents = @()` and the panel reported "No disk-related errors in the last 48 hours" with green check. Now surfaces "Event log unreadable" with the actual exception message, and the DiskErrors card reflects the warn state.
+- **D6 - PixellotServices: false Critical on non-VPU machine.** Adds a Pixellot-install pre-gate (checks `HKLM:\SOFTWARE\Pixellot`, `C:\Pixellot\*`, and any `Pixellot*` / `Scoreconnect*` service). On a developer / support laptop, the panel now reports "Pixellot not detected on this machine" (neutral) instead of "4 required processes not running" Critical with a "Restart the missing process(es)" recommendation.
+
+#### Threshold + measurement tuning
+
+- **D7 - Ping debounce on Network internet check and Camera connectivity ping.** Both retry up to 3 rounds with 0.5-1s gap. Momentary venue-uplink loss no longer paints Critical.
+- **D8 - PoE budget threshold.** Scaled to the IEEE 802.3at 25.5 W/port floor times the number of currently PoE-on ports, with the "check Molex" advice only firing when there are ≥3 PoE-on ports. A 2-camera VPU with 50 W total no longer false-alarms.
+- **D9 - SmartSpeed recency split.** Recent (last 4 h) ID 40 events stay Fail; older events demote to Warn with "(historical)" annotation. A single auto-recovered downgrade weeks ago no longer paints the module Critical forever.
+- **D10 - Uptime threshold.** Bumped warn from > 30 days to > 180 days. VPUs are designed to run 24/7.
+- **D12 - NTP drift measured.** New "Clock Drift" line in System Information from `w32tm /query /status /verbose` PhaseOffset, with locale-tolerant parsing. <1 s OK, 1-5 s Warn, >5 s Fail.
+- **D13 - CPU + memory utilization measured.** `SiRam` no longer hardcoded ok — driven by free-RAM % (Warn <10%, Fail <5%). `SiCpu` includes a snapshot CPU% from `Win32_PerfFormattedData_PerfOS_Processor` (Warn ≥80%, Fail ≥95%).
+- **D14 - EventLogs severity by category.** Single benign DistributedCOM 10016 no longer flags the module Critical. Disk / Driver errors → Critical; Service / Network / App errors → Warning.
+- **D15 - EventLogs read-failure surface.** `Get-WinEvent` exception now sets `evtReadFailed` and the card reflects "Log unreadable" warn instead of silently green.
+- **D16 - PoE StepsDone gate.** `$sync.StepsDone["PoePower"]` reflects the real PoE outcome instead of unconditionally `"pass"`.
+- **D17 - Test-TcpPort retry.** RTSP/554 probe upgraded from a single 2000 ms attempt to 3000 ms × 3 tries with 300 ms backoff.
+- **D19 - UTC timezone severity demoted.** UTC is sometimes correct (overseas deployments) — flag as Info, not Warn.
+- **D20 - Absolute-GB disk floors per role.** Recording / Storage drives now warn at 50 GB / fail at 20 GB regardless of percent-used. The old % rule waited until a 4 TB drive was 99.6% full before warning.
+
+#### UX / naming drift / labels
+
+- **U1 - Home tile mis-navigation.** Tile labeled "System Overview" navigated to System Information panel. Renamed tile to "System Information" to match the destination panel + sidebar.
+- **U2 - Section-header `&` mnemonic swallowed.** `New-SectionHeader` now sets `UseMnemonic=$false` on title + subtitle. "Hardware & Peripherals" / "Disk & System Health" now render with the literal ampersand. v1.0.45 fixed this on home tiles; the section-header pattern from v1.0.43 was missed.
+- **U3 - Naming drift across surfaces.** Disk panel section header renamed "System & Disk Health" → "Disk & System Health" to match the sidebar nav + Home tile + FullDiagnostic row. Hardware panel name canonicalised on "Hardware & Peripherals" everywhere (toast meta + FullDiagnostic + tile + section header).
+- **U4 - Toast meta references nonexistent tabs.** "open Hardware tab" / "open Disks tab" / "open Network tab" / etc. replaced with the real sidebar labels ("open Hardware & Peripherals to inspect", "open Disk & System Health to inspect", etc.).
+- **Help text - stale top-right button reference.** The "Home - running a full diagnostic" copy now says "click the Run Full Diagnostic button on the bottom action bar" — the button moved out of the header in v1.0.42.
+- **"Detecting..." stuck placeholder.** Detected NIC card initial text changed from "Detecting..." (which looked like an in-progress operation forever on WMI-failed boxes) to "--".
+- **Network step text.** Literal `?` placeholder ("Testing TCP 443 ? pixellot.tv") replaced with `->`.
+
+#### Reliability
+
+- **R4 - UAC cancel messaging.** Self-elevation in Pulse.ps1 now wraps `Start-Process -Verb RunAs` in try/catch and shows a friendly MessageBox if the tech cancels the UAC prompt, instead of silently exiting.
+- **R6 - SMART data unavailable surfaced.** When `Get-PhysicalDisk` is missing (Server Core / stripped LTSC) or `MSStorageDriver_FailurePredictStatus` is blocked (unelevated / root\wmi unavailable), the SMART card shows "SMART data unavailable" warn instead of silently reporting "All N healthy".
+- **R9 - SmartPoE_Release_Card in `finally`.** Card handle now released even when an inner AdlinkPoE call throws AccessViolation. Prevents handle leaks across runs.
+- **R10 - Cancel-aware sleep loops.** `Get-AdapterPeakSpeedMbps` and `Test-TcpPort` break `Start-Sleep` into 100-300 ms slices that check `$sync.Cancelled`. Cancel during a 30 s renegotiate wait now takes effect within ~250 ms.
+- **R14 - Theme-switch UAC race.** `btnSetTheme` launches the new process with `-Verb RunAs` for a clean elevation token and brief settle before closing the parent. UAC cancellation no longer leaves the parent half-closed; a friendly modal explains the theme will apply next launch.
+- **R15 - `w32tm` locale-tolerant parsing.** NTP source detection no longer relies on the English literal "Local CMOS Clock". New heuristic uses presence of a dot (server names contain them, the stub strings don't) plus a multilingual hint list.
+- **R17 - Pixellot path scan aggregate budget.** 30 s total budget for the Pixellot storage path scan in DiskHealth. C: with millions of small log files no longer stalls the runspace; later paths report "Skipped - scan budget exceeded".
+- **R18 - Atomic install swap.** `Pulse.bat` + `Download.ps1` now validate the staged folder (`Pulse.ps1`, `Build.ps1`, `Modules` must exist) and rename the existing install to `.bak.<pid>` before moving the new content in. On any failure the backup is restored. A failed first download no longer bricks the VPU's existing install.
+
+### Added
+
+- **QA_CHECKLIST.md** - the full smoke + per-panel deep-test plan from the QA reviewer, including a paste-into-ticket result template. Every test case cites which agent finding it covers.
+
+### Notes
+
+- The 77 silent `catch { }` blocks across Run.ps1 (R5) were not fully migrated in this pass. The highest-impact ones — SMART data acquisition, disk event log read, services pre-gate — were converted to surface the failure mode. The rest will be migrated incrementally; setting `$ErrorActionPreference = 'Stop'` globally was deferred as too disruptive without a per-function audit.
+
+---
+
 ## [1.0.53-beta] - 2026-05-18
 
 ### Changed

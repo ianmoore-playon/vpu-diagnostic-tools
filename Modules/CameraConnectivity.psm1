@@ -54,7 +54,14 @@ $DiagScript = {
             $s = Get-AdapterSpeedMbps -AdapterName $AdapterName
             if ($s -gt $peak) { $peak = $s }
             if ($peak -ge 1000) { break }
-            Start-Sleep -Milliseconds $IntervalMs
+            # R10 fix: break Start-Sleep into short slices so Cancel takes
+            # effect inside the window instead of waiting up to $IntervalMs ms.
+            $slept = 0
+            while ($slept -lt $IntervalMs) {
+                if ($sync.Cancelled) { break }
+                Start-Sleep -Milliseconds 100
+                $slept += 100
+            }
         }
         return $peak
     }
@@ -82,20 +89,23 @@ $DiagScript = {
     }
 
     function Test-TcpPort {
-        param([string]$IP, [int]$Port, [int]$TimeoutMs = 2000)
-        $tcp = $null
-        try {
-            $tcp = New-Object System.Net.Sockets.TcpClient
-            $c   = $tcp.BeginConnect($IP, $Port, $null, $null)
-            $ok  = $c.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
-            # Without the inner try/catch, an EndConnect failure (host unreachable, RST)
-            # bubbles to the outer catch and the function returns $false correctly — but
-            # without it AsyncWaitHandle returning $true on a refused connection caused
-            # closed ports to be reported as open. Mirrors NetworkDiagnostics.psm1.
-            if ($ok) { try { $tcp.EndConnect($c) } catch { $ok = $false } }
-            return $ok
-        } catch { return $false }
-        finally { if ($tcp) { try { $tcp.Close() } catch { } } }
+        # D17 fix: timeout up from 2000ms to 3000ms + 2 retries. A single dropped
+        # SYN under load on RTSP/554 used to flag the camera as Critical.
+        param([string]$IP, [int]$Port, [int]$TimeoutMs = 3000, [int]$Retries = 2)
+        for ($attempt = 0; $attempt -le $Retries; $attempt++) {
+            $tcp = $null
+            try {
+                $tcp = New-Object System.Net.Sockets.TcpClient
+                $c   = $tcp.BeginConnect($IP, $Port, $null, $null)
+                $ok  = $c.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
+                if ($ok) { try { $tcp.EndConnect($c) } catch { $ok = $false } }
+                if ($ok) { return $true }
+            } catch { }
+            finally { if ($tcp) { try { $tcp.Close() } catch { } } }
+            if ($attempt -lt $Retries -and -not $sync.Cancelled) { Start-Sleep -Milliseconds 300 }
+            if ($sync.Cancelled) { return $false }
+        }
+        return $false
     }
 
     # -- Init ------------------------------------------------------------------
@@ -328,7 +338,12 @@ $DiagScript = {
                         Add-Summary $nm "1 Gbps  (forced OK)" "Pass"
                     } else {
                         $nsLabel = if ($newSpd -eq 0) { "Disconnected" } else { "$newSpd Mbps" }
-                        Add-Log ("  [FAIL]  Still not 1 Gbps after forcing (current: {0}). Physical layer issue." -f $nsLabel) "Fail"
+                        # D4 fix: soften the wording. Most common cause is cable
+                        # or termination, but the camera revision (some are 100 Mbps-
+                        # only) or a switch admin-locked port can produce the same
+                        # symptom. Don't bias the truck-roll toward a cable swap.
+                        Add-Log ("  [FAIL]  Still not 1 Gbps after forcing (current: {0})." -f $nsLabel) "Fail"
+                        Add-Log "          Likely cable or termination - also verify the camera revision supports gigabit and the switch port is not locked to 100M." "Warn"
                         Add-Log "          Resetting to Auto Negotiation..." "Warn"
                         Set-AdapterSpeedDuplex -AdapterName $nm -Val "0" | Out-Null
                         Restart-NetAdapter -Name $nm -Confirm:$false -ErrorAction SilentlyContinue
@@ -338,7 +353,7 @@ $DiagScript = {
                         $portResults += [PSCustomObject]@{ Name=$nm; Speed=$spd; Result="FAIL"; Blinking=$blinking; Desc=$nic.InterfaceDescription }
                         $anyFail = $true
                         Set-Card $nm "100 Mbps" "fail"
-                        Add-Summary $nm "DEGRADED  cable fault" "Fail"
+                        Add-Summary $nm "DEGRADED  - check cable / camera revision / switch port" "Fail"
                     }
                 } else {
                     Add-Log "  [FAIL]  Could not apply SpeedDuplex setting." "Fail"
@@ -377,26 +392,45 @@ $DiagScript = {
     Add-Log "-- Intel SmartSpeed Event Log (last $EventLogHours hours) --" "Cyan"
     Add-Log ""
     if ($chuEvents.Count -gt 0) {
-        $dCnt = ($chuEvents | Where-Object { $_.Id -eq 40 }).Count
-        $wCnt = ($chuEvents | Where-Object { $_.Id -eq 27 }).Count
-        $ssLevel = if ($dCnt -gt 0) { "Fail" } else { "Warn" }
-        Add-Log ("  [WARN] {0} downgrade(s) and {1} link warning(s) on CHU ports in the last {2}h." -f $dCnt, $wCnt, $EventLogHours) $ssLevel
+        # D9 fix: split by recency. A single transient downgrade weeks ago that
+        # auto-recovered shouldn't paint the whole module Critical at every run.
+        # Recent (last 4h) ID 40 = fail; older ID 40 = warn with historical note.
+        $recentCutoff   = (Get-Date).AddHours(-4)
+        $recentDgrade   = ($chuEvents | Where-Object { $_.Id -eq 40 -and $_.TimeCreated -ge $recentCutoff }).Count
+        $olderDgrade    = ($chuEvents | Where-Object { $_.Id -eq 40 -and $_.TimeCreated -lt $recentCutoff }).Count
+        $dCnt           = $recentDgrade + $olderDgrade
+        $wCnt           = ($chuEvents | Where-Object { $_.Id -eq 27 }).Count
+        $ssLevel        = if ($recentDgrade -gt 0) { "Fail" } else { "Warn" }
+        $msg = if ($recentDgrade -gt 0) {
+                   "$recentDgrade recent downgrade(s) within the last 4h ($olderDgrade older, $wCnt link warning(s))"
+               } else {
+                   "$olderDgrade historical downgrade(s) (none in last 4h) + $wCnt link warning(s) in ${EventLogHours}h"
+               }
+        Add-Log "  [$($ssLevel.ToUpper())] $msg" $ssLevel
         Add-Log ""
         foreach ($evt in ($chuEvents | Sort-Object @{Expression='TimeCreated';Descending=$true} | Select-Object -First 10)) {
             $an = Get-EventAdapterName -Evt $evt -KnownDescs $knownDescs
             $shortName = if ($an -match '#(\d+)') { "CHU NIC #$($Matches[1])" } else { $an }
             $label = switch ($evt.Id) { 40 {"SmartSpeed Downgrade"} 33 {"Link at 100 Mbps"} 27 {"Link Warning"} default {"Event $($evt.Id)"} }
-            Add-Log ("  {0}  {1}  ID {2} - {3}" -f $evt.TimeCreated.ToString("HH:mm:ss"), $shortName, $evt.Id, $label) "Warn"
+            $age   = if ($evt.TimeCreated -ge $recentCutoff) { "" } else { "  (historical)" }
+            Add-Log ("  {0}  {1}  ID {2} - {3}{4}" -f $evt.TimeCreated.ToString("MM/dd HH:mm:ss"), $shortName, $evt.Id, $label, $age) "Warn"
         }
         Add-Log ""
-        if ($dCnt -gt 0) {
-            Add-Log "  -> Physical layer limitation confirmed. Likely cause: faulty cable or bad termination." "Info"
+        if ($recentDgrade -gt 0) {
+            Add-Log "  -> Recent physical-layer events. Likely cause: faulty cable, bad termination, or 100M-only camera. Inspect the affected port." "Info"
+        } elseif ($olderDgrade -gt 0) {
+            Add-Log "  -> Historical only. Monitor; no action required unless the events recur." "Info"
         }
-        $sync.StepsDone["SmartSpeed"] = if ($dCnt -gt 0) { "fail" } else { "pass" }
-        $ssSummary = if ($dCnt -gt 0) { "$dCnt downgrade(s) in ${EventLogHours}h" } else { "$wCnt warning(s), 0 downgrades" }
+        $sync.StepsDone["SmartSpeed"] = if ($recentDgrade -gt 0) { "fail" } else { "pass" }
+        $ssSummary = if ($recentDgrade -gt 0) { "$recentDgrade recent downgrade(s)" }
+                     elseif ($olderDgrade -gt 0) { "$olderDgrade historical downgrade(s)" }
+                     else { "$wCnt warning(s), 0 downgrades" }
         Add-Summary "SmartSpeed Events" $ssSummary $ssLevel
-        $ssCardVal    = if ($dCnt -gt 0) { "$dCnt events" } elseif ($wCnt -gt 0) { "$wCnt warnings" } else { "None" }
-        $ssCardStatus = if ($dCnt -gt 0) { "fail" } elseif ($wCnt -gt 0) { "warn" } else { "ok" }
+        $ssCardVal    = if ($recentDgrade -gt 0) { "$recentDgrade recent" }
+                        elseif ($olderDgrade -gt 0) { "$olderDgrade historical" }
+                        elseif ($wCnt -gt 0) { "$wCnt warnings" }
+                        else { "None" }
+        $ssCardStatus = if ($recentDgrade -gt 0) { "fail" } elseif ($olderDgrade -gt 0 -or $wCnt -gt 0) { "warn" } else { "ok" }
         Set-Card "SmartSpeed" $ssCardVal $ssCardStatus
     } else {
         Add-Log "  [PASS] No SmartSpeed downgrade events on CHU ports." "Pass"
@@ -444,16 +478,23 @@ $DiagScript = {
             if ($PixCameraRoles -and $PixCameraRoles.ContainsKey($nb.IPAddress)) {
                 $roleLabel = [string]$PixCameraRoles[$nb.IPAddress]
             }
-            $isPixellot = ($nb.LinkLayerAddress -like "$OcrMacOui-*")
+            # $OcrMacOui is the OCR-specific Pixellot OUI ("00-D0-89"). When the
+            # ARP entry matches it, the device is authoritatively an OCR camera
+            # regardless of current link state — D3 fix. Previously a stale ARP
+            # entry on a flapped OCR could be relabeled "Main Camera (probable)"
+            # and then escalate as a false Critical when the ping failed.
+            $isOcrByMac = ($nb.LinkLayerAddress -like "$OcrMacOui-*")
             $is100M = ($linkSpeed -match '^\s*100\s*Mbps')
             $is1G   = ($linkSpeed -match '\b\d+\s*Gbps\b' -or $linkSpeed -match '^\s*1000\s*Mbps')
-            $label = if ($roleLabel)         { $roleLabel } `
-                     elseif ($isPixellot -and $is100M) { "OCR Camera" } `
-                     elseif ($isPixellot -and $is1G)   { "Main Camera (probable)" } `
-                     elseif ($isPixellot)              { "Pixellot Camera" } `
-                     else                              { "Unknown device" }
+            $label = if ($roleLabel)                       { $roleLabel } `
+                     elseif ($isOcrByMac -and $is100M)     { "OCR Camera" } `
+                     elseif ($isOcrByMac -and $is1G)       { "OCR Camera (unexpected gigabit link)" } `
+                     elseif ($isOcrByMac)                  { "OCR Camera (link down)" } `
+                     elseif ($is1G)                        { "Main Camera (probable)" } `
+                     else                                  { "Unknown device" }
             $isOcr = ($roleLabel -and $roleLabel -match 'OCR|Scoreboard') -or
-                     ($label -eq 'OCR Camera')
+                     ($label -like 'OCR Camera*') -or
+                     $isOcrByMac
             $discoveredCameras += [PSCustomObject]@{
                 IP       = $nb.IPAddress
                 MAC      = $nb.LinkLayerAddress
@@ -496,7 +537,15 @@ $DiagScript = {
             if ($sync.Cancelled) { break }
             $sync.CurrentStep = "Pinging $($cam.IP)..."
             Add-Log ("  {0,-18} {1}  (MAC: {2})" -f $cam.IP, $cam.Label, $cam.MAC) "Info"
-            $pingOk = Test-Connection -ComputerName $cam.IP -Count 2 -Quiet -ErrorAction SilentlyContinue
+            # D7 fix: debounce momentary packet loss with up to 3 rounds.
+            # 2 ICMP per round; one full second between rounds.
+            $pingOk = $false
+            for ($pingTry = 1; $pingTry -le 3; $pingTry++) {
+                if ($sync.Cancelled) { break }
+                $pingOk = Test-Connection -ComputerName $cam.IP -Count 2 -Quiet -ErrorAction SilentlyContinue
+                if ($pingOk) { break }
+                if ($pingTry -lt 3) { Start-Sleep -Seconds 1 }
+            }
             $rtspOk = $false
 
             if ($pingOk) {
@@ -660,11 +709,19 @@ $DiagScript = {
         Add-Log "  [INFO] PoE power management not supported on this NIC model (GIE64 / 82574L)." "Gray"
         Add-Summary "PoE Budget" "N/A (GIE64)" "Gray"
         Set-Card "PoEBudget" "N/A" "neutral"
+        $sync.StepsDone["PoePower"] = "pass"   # N/A by design on this NIC family
     } elseif ($PoeDllPath -and ([System.Management.Automation.PSTypeName]'AdlinkPoE').Type) {
+        # R9 fix: track register success separately so SmartPoE_Release_Card runs
+        # in a `finally` even when an inner call (Voltage/Current/Budget) throws.
+        # The AdlinkPoE DLL is prone to AccessViolation on certain platforms;
+        # leaking the card handle eventually exhausts the register slot.
+        $poeStepStatus = "warn"   # D16 default: warn unless we explicitly succeed
+        $cardNum       = [uint16]0
+        $regOk         = $false
         try {
-            $cardNum = [uint16]0
-            $regRet  = [AdlinkPoE]::SmartPoE_Register_Card($cardNum)
+            $regRet = [AdlinkPoE]::SmartPoE_Register_Card($cardNum)
             if ($regRet -eq 0) {
+                $regOk             = $true
                 $sync.PoeAvailable = $true
 
                 $consumed  = [double]0.0; $remaining = [double]0.0
@@ -679,6 +736,7 @@ $DiagScript = {
                 Add-Log ("  NIC Temp     : {0:F1} ?C" -f $temp) "Info"
                 Add-Log ""
 
+                $poeOnCount = 0
                 for ($port = 0; $port -lt 4; $port++) {
                     if ($sync.Cancelled) { break }
                     $pLabel   = "P$($port + 1)"
@@ -687,30 +745,40 @@ $DiagScript = {
                     [void][AdlinkPoE]::SmartPoE_Get_PSEPortVoltage($cardNum, $portNum, [ref]$voltage)
                     [void][AdlinkPoE]::SmartPoE_Get_PSEPortCurrent($cardNum, $portNum, [ref]$current)
                     $watts    = $voltage * $current
-                    $stateStr = if ($voltage -gt 1.0) { "PoE ON" } else { "PoE OFF" }
-                    $portLvl  = if ($voltage -gt 1.0) { "Pass" } else { "Gray" }
+                    $isPoeOn  = ($voltage -gt 1.0)
+                    if ($isPoeOn) { $poeOnCount++ }
+                    $stateStr = if ($isPoeOn) { "PoE ON" } else { "PoE OFF" }
+                    $portLvl  = if ($isPoeOn) { "Pass" } else { "Gray" }
                     Add-Log    ("  {0,-5} : {1:F2} V  {2:F3} A  {3:F1} W  [{4}]" -f $pLabel, $voltage, $current, $watts, $stateStr) $portLvl
                     Add-Summary "PoE $pLabel" ("{0:F1} W  ({1})" -f $watts, $stateStr) $portLvl
-                    $sync.PoePortData.Add(@{ Port=$pLabel; Voltage=$voltage; Current=$current; Watts=$watts; PoeOn=($voltage -gt 1.0) }) | Out-Null
+                    $sync.PoePortData.Add(@{ Port=$pLabel; Voltage=$voltage; Current=$current; Watts=$watts; PoeOn=$isPoeOn }) | Out-Null
                 }
                 $sync.PoeConsumed = $consumed; $sync.PoeTotal = $total; $sync.PoeTemp = $temp
                 Add-Log ""
 
-                $sync.PoeBudgetLow = ($total -gt 0) -and ($total -lt 55)
+                # D8 fix: 55 W was below the 4xPoE+ spec floor (4 * 25.5 W = 102 W).
+                # The "check Molex" advice only makes sense when the card is supposed
+                # to be carrying 3+ PoE+ ports. For 1-2 active PoE ports, a smaller
+                # budget is normal. Scale the threshold to the number of PoE-on
+                # ports; cite the spec in the log.
+                $expectedBudget = $poeOnCount * 25.5
+                $sync.PoeBudgetLow = ($total -gt 0) -and ($poeOnCount -ge 3) -and ($total -lt $expectedBudget)
                 if ($sync.PoeBudgetLow) {
-                    Add-Log ("  [WARN]  Total power budget {0:F1} W is below the 55 W minimum." -f $total) "Fail"
+                    Add-Log ("  [WARN]  Total power budget {0:F1} W is below the expected {1:F1} W for {2} PoE-on ports (IEEE 802.3at 25.5 W/port)." -f $total, $expectedBudget, $poeOnCount) "Fail"
                     Add-Log "          The Molex power connector on the PoE NIC may be disconnected." "Fail"
                     Add-Summary "PoE Budget" ("{0:F0} W  LOW" -f $total) "Fail"
                     Set-Card "PoEBudget" ("{0:F0} W" -f $total) "fail"
+                    $poeStepStatus = "fail"
                 } else {
-                    Add-Log ("  [PASS]  Total power budget {0:F1} W - adequate." -f $total) "Pass"
+                    Add-Log ("  [PASS]  Total power budget {0:F1} W - adequate for {1} active PoE port(s)." -f $total, $poeOnCount) "Pass"
                     Add-Summary "PoE Budget" ("{0:F0} W  OK" -f $total) "Pass"
                     Set-Card "PoEBudget" ("{0:F0} W" -f $total) "ok"
+                    $poeStepStatus = "pass"
                 }
-                [void][AdlinkPoE]::SmartPoE_Release_Card($cardNum)
             } else {
                 Add-Log "  [INFO] SmartPoE_Register_Card returned $regRet - PoE card not detected on this system." "Gray"
                 Add-Summary "PoE Budget" "Card not found" "Gray"
+                $poeStepStatus = "warn"
             }
         } catch {
             $poeErrType = $_.Exception.GetType().Name
@@ -722,13 +790,20 @@ $DiagScript = {
             }
             Add-Summary "PoE Budget" $poeErrType "Warn"
             Set-Card "PoEBudget" "Error" "warn"
+            $poeStepStatus = "warn"
+        } finally {
+            # R9 fix: always release the card handle if registration succeeded,
+            # even when an inner call threw. Prevents handle leaks across runs.
+            if ($regOk) { try { [void][AdlinkPoE]::SmartPoE_Release_Card($cardNum) } catch { } }
         }
+        # D16 fix: reflect the real outcome here instead of hard-coding "pass".
+        $sync.StepsDone["PoePower"] = $poeStepStatus
     } else {
         Add-Log "  [INFO] SmartPoE.dll not found - PoE monitoring not available on this system." "Gray"
         Add-Summary "PoE Budget" "N/A" "Gray"
         Set-Card "PoEBudget" "N/A" "neutral"
+        $sync.StepsDone["PoePower"] = "pass"   # N/A path: nothing to fail
     }
-    $sync.StepsDone["PoePower"] = "pass"
     Add-Log ""
 
     # -- Build Next Steps ------------------------------------------------------
@@ -908,7 +983,10 @@ $lblNicCardHdr.Anchor    = $AnchorTR
 $pnlCamToolbar.Controls.Add($lblNicCardHdr)
 
 $lblNicCardVal = New-Object System.Windows.Forms.Label
-$lblNicCardVal.Text      = "Detecting..."
+# U-polish: was "Detecting..." which stuck forever if the WMI/NIC scan
+# threw during Form_Load. Render an em-dash so an unreached update path
+# doesn't look like an in-progress operation.
+$lblNicCardVal.Text      = "--"
 $lblNicCardVal.Font      = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $lblNicCardVal.ForeColor = $ColText
 $lblNicCardVal.BackColor = [System.Drawing.Color]::Transparent

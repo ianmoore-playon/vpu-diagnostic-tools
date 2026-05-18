@@ -91,7 +91,11 @@ if "!NeedDownload!"=="1" (
         PowerShell -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\vpu-dl.ps1"
     ) else (
         echo    Downloading...
-        PowerShell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; $z='%TEMP%\vpu-diag.zip'; $s='%TEMP%\vpu-diag-stage'; if(Test-Path $s){Remove-Item $s -Recurse -Force}; Invoke-WebRequest 'https://github.com/ianmoore-playon/vpu-diagnostic-tools/archive/refs/heads/main.zip' -OutFile $z; Expand-Archive $z $s -Force; $r=Join-Path $s 'vpu-diagnostic-tools-main'; if(Test-Path '%InstallDir%'){Remove-Item '%InstallDir%' -Recurse -Force}; Move-Item $r '%InstallDir%'; Remove-Item $s -Recurse -Force -EA SilentlyContinue; Remove-Item $z -EA SilentlyContinue"
+        :: R18 fix: atomic install swap. Validate the staged tree contains the
+        :: expected entry points BEFORE removing the existing install. If anything
+        :: fails (download, expand, missing entries), the existing install is left
+        :: intact instead of being wiped before the new content lands.
+        PowerShell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; $z='%TEMP%\vpu-diag.zip'; $s='%TEMP%\vpu-diag-stage'; if(Test-Path $s){Remove-Item $s -Recurse -Force}; Invoke-WebRequest 'https://github.com/ianmoore-playon/vpu-diagnostic-tools/archive/refs/heads/main.zip' -OutFile $z; if (-not (Test-Path $z) -or (Get-Item $z).Length -lt 100000) { Write-Error 'Download incomplete'; exit 1 }; Expand-Archive $z $s -Force; $r=Join-Path $s 'vpu-diagnostic-tools-main'; foreach ($e in @('Pulse.ps1','Build.ps1','Modules')) { if (-not (Test-Path (Join-Path $r $e))) { Write-Error \"Staged folder missing $e\"; exit 1 } }; $bak='%InstallDir%.bak.'+$PID; if(Test-Path '%InstallDir%'){ Rename-Item '%InstallDir%' (Split-Path $bak -Leaf) -EA Stop }; try { Move-Item $r '%InstallDir%' -EA Stop } catch { if (Test-Path $bak) { Rename-Item $bak (Split-Path '%InstallDir%' -Leaf) -EA SilentlyContinue }; Write-Error 'Move into install dir failed'; exit 1 }; if (Test-Path $bak) { Remove-Item $bak -Recurse -Force -EA SilentlyContinue }; Remove-Item $s -Recurse -Force -EA SilentlyContinue; Remove-Item $z -EA SilentlyContinue"
     )
     set DL_ERR=!ERRORLEVEL!
     del "%TEMP%\vpu-dl.ps1" >nul 2>&1

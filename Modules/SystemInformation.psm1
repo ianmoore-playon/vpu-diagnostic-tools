@@ -45,7 +45,11 @@ $SysInfoScript = {
         # Cards (#5): OS edition (short) + uptime
         $osShort = ($os.Caption -replace '^Microsoft\s+','' -replace 'Windows\s+','Win ')
         $sync.Cards["SiOs"]     = @{ Value = "$osShort  ($($os.BuildNumber))"; Status="ok" }
-        $sync.Cards["SiUptime"] = @{ Value = $upStr; Status = if ($up.TotalDays -gt 30) { "warn" } else { "ok" } }
+        # D10 fix: VPUs are designed to run 24/7. A 31-day uptime is not a
+        # problem and produced yellow noise that eroded trust in real warnings.
+        # Bumped to 180 days so the warn only fires when the box is genuinely
+        # well overdue for a reboot.
+        $sync.Cards["SiUptime"] = @{ Value = $upStr; Status = if ($up.TotalDays -gt 180) { "warn" } else { "ok" } }
     } catch { Si-Log "OS" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -77,9 +81,46 @@ $SysInfoScript = {
             }
         }
 
-        # Suspicious-default warning: UTC is rarely the right choice for a deployed VPU
+        # D12 fix: actually measure NTP drift instead of just reporting that
+        # W32Time is running. Uses `w32tm /stripchart` for a single sample.
+        # The "PhaseOffset" line in /query /status is the in-memory drift the
+        # service is tracking; we parse it locale-tolerantly.
+        try {
+            $w32out = (& w32tm /query /status /verbose 2>$null) -join "`n"
+            if ($w32out) {
+                # PhaseOffset line looks like:
+                #   Phase Offset: -0.0010289s
+                # Localisations also use "Décalage de phase" etc.; key on any line
+                # that ends with "...s" preceded by a colon-and-number block.
+                $offsetSec = $null
+                foreach ($line in ($w32out -split "`n")) {
+                    if ($line -match ':\s*(-?\d+\.\d+)s\s*$' -and $line -match '[Pp]hase|[Oo]ffset|décal|位相|位') {
+                        $offsetSec = [double]$Matches[1]; break
+                    }
+                }
+                # Fallback: any line with the right "...s" shape (best-effort).
+                if (-not $offsetSec) {
+                    foreach ($line in ($w32out -split "`n")) {
+                        if ($line -match 'Offset.*?(-?\d+\.\d+)s') { $offsetSec = [double]$Matches[1]; break }
+                    }
+                }
+                if ($offsetSec -ne $null) {
+                    $absMs = [math]::Abs($offsetSec * 1000)
+                    $driftStr = if ($absMs -lt 1)    { "{0:F3} ms" -f $absMs }
+                                elseif ($absMs -lt 1000) { "{0:F0} ms" -f $absMs }
+                                else                 { "{0:F1} s" -f ($absMs / 1000) }
+                    # Thresholds: < 1 s OK, 1-5 s Warn, > 5 s Fail
+                    $driftLvl = if ($absMs -lt 1000) { "Info" } elseif ($absMs -lt 5000) { "Warn" } else { "Fail" }
+                    Si-Log "Clock Drift" "$driftStr  (W32Time phase offset)" $driftLvl
+                }
+            }
+        } catch { }
+
+        # D19 fix: UTC is sometimes the right choice (overseas deployments,
+        # cloud-relayed VPUs). Demoted from Warn to Info — flag it but don't
+        # paint a Warning that pulls the whole module severity up.
         if ($tz.StandardName -match "^UTC$" -or $tz.Caption -match "^\(UTC\)\s*Coordinated") {
-            Si-Log "Timezone Check" "System is set to UTC — confirm this matches the venue's local timezone" "Warn"
+            Si-Log "Timezone Check" "System is set to UTC — confirm this matches the venue's local timezone" "Info"
         }
     } catch { Si-Log "Time & Locale" "Query failed" "Warn" }
 
@@ -129,9 +170,24 @@ $SysInfoScript = {
         if ($cpus.Count -gt 0) {
             $fdCpuShort = $cpus[0].Name.Trim() -replace 'Intel\(R\) Core\(TM\) ','Core ' -replace '\(R\)|\(TM\)','' -replace '\s+@\s.*','' -replace '\s+',' '
         }
-        # Card (#5)
+        # D13 fix: measure CPU utilization. Previously the tool had no CPU%
+        # signal anywhere — a pegged-at-100% VPU reported Healthy. Use
+        # Win32_PerfFormattedData_PerfOS_Processor which gives a snapshot %
+        # without the 1-second sampling delay of Get-Counter.
+        $cpuPct      = $null
+        $cpuPctStatus = "neutral"
+        try {
+            $procPerf = Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter "Name='_Total'" -ErrorAction Stop
+            if ($procPerf) {
+                $cpuPct = [int]$procPerf.PercentProcessorTime
+                Si-Log "CPU Usage" "$cpuPct % (snapshot, _Total)" "Info"
+                $cpuPctStatus = if ($cpuPct -ge 95) { "fail" } elseif ($cpuPct -ge 80) { "warn" } else { "ok" }
+            }
+        } catch { Si-Log "CPU Usage" "Query failed (perf counters unavailable)" "Warn" }
+        # Card (#5) — model first, append usage tier if measured
         $cpuCardVal = if ($fdCpuShort.Length -gt 32) { $fdCpuShort.Substring(0,29) + "..." } else { $fdCpuShort }
-        $sync.Cards["SiCpu"] = @{ Value = $cpuCardVal; Status="neutral" }
+        if ($cpuPct -ne $null) { $cpuCardVal = "$cpuCardVal  ($cpuPct %)" }
+        $sync.Cards["SiCpu"] = @{ Value = $cpuCardVal; Status = $cpuPctStatus }
     } catch { Si-Log "CPU" "Query failed" "Warn" }
 
     if ($sync.SysInfoCancelled) { $sync.SysInfoRunning=$false; $sync.SysInfoComplete=$true; return }
@@ -146,8 +202,19 @@ $SysInfoScript = {
         $fdRamFreeGB = [double]$os2.FreePhysicalMemory / 1048576.0
         Si-Log "Total RAM"  ("{0:F1} GB" -f ([double]$os2.TotalVisibleMemorySize / 1048576.0))     "Info"
         Si-Log "Available"  ("{0:F1} GB" -f $fdRamFreeGB)                                          "Info"
-        # Card (#5): total + free
-        $sync.Cards["SiRam"] = @{ Value = ("{0} GB total / {1:F1} GB free" -f $fdRamGB, $fdRamFreeGB); Status="ok" }
+        # D13 fix: actually compute memory pressure. SiRam used to hardcode
+        # Status="ok" regardless of free RAM — a memory-pressured VPU showed
+        # Healthy. Warn at <10% free, Fail at <5% free.
+        $ramFreePct = if ($os2.TotalVisibleMemorySize -gt 0) {
+            [int](100 * [double]$os2.FreePhysicalMemory / [double]$os2.TotalVisibleMemorySize)
+        } else { 100 }
+        Si-Log "Free RAM"   "$ramFreePct %" "Info"
+        $ramStatus = if ($ramFreePct -lt 5) { "fail" } elseif ($ramFreePct -lt 10) { "warn" } else { "ok" }
+        # Card (#5): total + free + pct, status reflects pressure
+        $sync.Cards["SiRam"] = @{
+            Value  = ("{0} GB total / {1:F1} GB free  ({2}%)" -f $fdRamGB, $fdRamFreeGB, $ramFreePct)
+            Status = $ramStatus
+        }
         $slots = @(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue)
         $n = 1
         foreach ($s in $slots) {

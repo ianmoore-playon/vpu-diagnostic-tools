@@ -298,19 +298,25 @@ function New-SectionHeader {
         [int]$Y = 24
     )
     $lblTitle = New-Object System.Windows.Forms.Label
-    $lblTitle.Text      = $Title
-    $lblTitle.Font      = New-Object System.Drawing.Font("Segoe UI Semibold", 16)
-    $lblTitle.ForeColor = $ColText
-    $lblTitle.Location  = New-Object System.Drawing.Point(28, $Y)
-    $lblTitle.Size      = New-Object System.Drawing.Size(900, 30)
+    $lblTitle.Text        = $Title
+    $lblTitle.Font        = New-Object System.Drawing.Font("Segoe UI Semibold", 16)
+    $lblTitle.ForeColor   = $ColText
+    $lblTitle.Location    = New-Object System.Drawing.Point(28, $Y)
+    $lblTitle.Size        = New-Object System.Drawing.Size(900, 30)
+    # Section/home-tile titles often contain "&" (e.g. "Hardware & Peripherals").
+    # WinForms Label.UseMnemonic defaults to $true, which swallows "&" and applies
+    # an Alt-key accelerator hint to the next char. Disable so titles render
+    # literally. v1.0.45 fixed this on home tiles but not on section headers.
+    $lblTitle.UseMnemonic = $false
     $Parent.Controls.Add($lblTitle)
 
     $lblSub = New-Object System.Windows.Forms.Label
-    $lblSub.Text      = $Subtitle
-    $lblSub.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
-    $lblSub.ForeColor = $ColMuted
-    $lblSub.Location  = New-Object System.Drawing.Point(28, ($Y + 32))
-    $lblSub.Size      = New-Object System.Drawing.Size(900, 20)
+    $lblSub.Text        = $Subtitle
+    $lblSub.Font        = New-Object System.Drawing.Font("Segoe UI", 9)
+    $lblSub.ForeColor   = $ColMuted
+    $lblSub.Location    = New-Object System.Drawing.Point(28, ($Y + 32))
+    $lblSub.Size        = New-Object System.Drawing.Size(900, 20)
+    $lblSub.UseMnemonic = $false
     $Parent.Controls.Add($lblSub)
 
     # "Overall Status" pill on the right — neutral by default; caller updates via Set-SectionPill.

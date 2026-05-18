@@ -5,13 +5,31 @@
 #  HOW TO RUN: double-click "Pulse.bat"  (handles elevation automatically)
 # =============================================================================
 
-$ScriptVersion = "1.0.53-beta"
+$ScriptVersion = "1.0.54-beta"
 
 # ---------- Self-elevation ---------------------------------------------------
+# R4 fix: if the tech cancels the UAC prompt, surface a clear message in a
+# blocking console window before exit. Previously the parent silently exited
+# and the tech saw no indication of why nothing happened.
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     $elevArgs = "-NoProfile -ExecutionPolicy Bypass"
     if ($PSCommandPath) {
-        Start-Process PowerShell -Verb RunAs -ArgumentList "$elevArgs -File `"$PSCommandPath`""
+        try {
+            Start-Process PowerShell -Verb RunAs -ArgumentList "$elevArgs -File `"$PSCommandPath`"" -ErrorAction Stop
+        } catch {
+            # ErrorAction Stop turns UAC cancellation into a terminating error.
+            # Show a console message and pause so the tech sees it.
+            Add-Type -AssemblyName System.Windows.Forms
+            [System.Windows.Forms.MessageBox]::Show(
+                "Pulse needs to run as Administrator. The UAC prompt was cancelled.`n`nRight-click Pulse.bat and choose 'Run as administrator', then click Yes at the UAC prompt.",
+                "Pulse - Administrator Required",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        }
+    } else {
+        # Direct ps1 invocation without $PSCommandPath (e.g. piped through stdin).
+        Write-Host "ERROR: Pulse must be launched via Pulse.bat to ensure proper elevation." -ForegroundColor Red
+        Read-Host "Press Enter to exit"
     }
     exit
 }
@@ -686,8 +704,26 @@ $btnSetTheme.Add_Click({
     $newTheme = if ($VpuTheme -eq "dark") { "light" } else { "dark" }
     try { [System.IO.File]::WriteAllText($SettingsPath, "{`"Theme`":`"$newTheme`"}") } catch { }
     $runScript = if ($PSCommandPath -and (Test-Path $PSCommandPath)) { $PSCommandPath } else { Join-Path $PSScriptRoot "Run.ps1" }
-    Start-Process "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$runScript`""
-    $form.Close()
+    # R14 fix: launch with -Verb RunAs so the child inherits an elevated token
+    # cleanly. Previously the orphaned child re-prompted UAC and raced the
+    # parent's Close(), which sometimes left the parent window handle unclosed
+    # while the child waited at the UAC prompt. Wait for the new process to be
+    # at least spawned before closing the parent.
+    try {
+        $p = Start-Process "powershell.exe" -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$runScript`"" -PassThru -ErrorAction Stop
+        # Give the new process ~250ms to take the foreground before we close.
+        if ($p) { Start-Sleep -Milliseconds 250 }
+        $form.Close()
+    } catch {
+        # UAC cancelled — keep the parent open so the theme change isn't applied
+        # without a running Pulse. Surface the theme preference still being saved
+        # so the next manual launch picks it up.
+        [System.Windows.Forms.MessageBox]::Show(
+            "Theme preference saved. UAC prompt was cancelled, so Pulse was not restarted. The new theme will apply the next time you launch Pulse.",
+            "Theme switch",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+    }
 })
 
 # Reports — output directory shortcut
@@ -836,9 +872,9 @@ $toastModuleMeta = @{
     Complete        = @{ Name="Camera Connectivity";    AllClearKey="AllClear";    CardKeys=@() }
     NetComplete     = @{ Name="Network Configuration";  AllClearKey="NetAllClear"; CardKeys=@() }
     SvcComplete     = @{ Name="Pixellot Services";      AllClearKey=$null;         CardKeys=@("SvcStatus") }
-    DiskComplete    = @{ Name="Disk Health";            AllClearKey=$null;         CardKeys=@("DiskStatus","MemStatus") }
-    EvtComplete     = @{ Name="Event Logs";             AllClearKey=$null;         CardKeys=@("EvtStatus") }
-    HwComplete      = @{ Name="VPU Hardware";           AllClearKey=$null;         CardKeys=@("HwGpu","HwMonitor","HwMmk") }
+    DiskComplete    = @{ Name="Disk & System Health";   AllClearKey=$null;         CardKeys=@("DiskStatus","MemStatus") }
+    EvtComplete     = @{ Name="Event Viewer";           AllClearKey=$null;         CardKeys=@("EvtStatus") }
+    HwComplete      = @{ Name="Hardware & Peripherals"; AllClearKey=$null;         CardKeys=@("HwGpu","HwMonitor","HwMmk") }
     SysInfoComplete = @{ Name="System Information";     AllClearKey=$null;         CardKeys=@() }
 }
 
@@ -892,21 +928,21 @@ $timerToast.Add_Tick({
                     if ($isOk -and -not $isWarn) { $detail = "All ports and domains reachable" }
                     else {
                         $pf = [int]$sync.NetPortFail; $df = [int]$sync.NetDomainFail
-                        $detail = "$pf port / $df domain failure(s) — open Network tab to inspect"
+                        $detail = "$pf port / $df domain failure(s) — open Network Configuration to inspect"
                     }
                 }
                 "SvcComplete" {
-                    $detail = if ($isOk) { "All required services running" } else { "Service issues — open Services tab to inspect" }
+                    $detail = if ($isOk) { "All required services running" } else { "Service issues — open Pixellot Services to inspect" }
                 }
                 "DiskComplete" {
-                    $detail = if ($isOk) { "All drives healthy" } else { "Disk issues — open Disks tab to inspect" }
+                    $detail = if ($isOk) { "All drives healthy" } else { "Disk issues — open Disk & System Health to inspect" }
                 }
                 "EvtComplete" {
                     $ev = $sync.Cards["EvtStatus"].Value
-                    $detail = if ($isOk) { "$ev — no recent OS errors" } else { "$ev — open Event Logs tab to inspect" }
+                    $detail = if ($isOk) { "$ev — no recent OS errors" } else { "$ev — open Event Viewer to inspect" }
                 }
                 "HwComplete" {
-                    $detail = if ($isOk) { "GPU, monitor, and peripherals OK" } else { "Hardware issues — open Hardware tab to inspect" }
+                    $detail = if ($isOk) { "GPU, monitor, and peripherals OK" } else { "Hardware issues — open Hardware & Peripherals to inspect" }
                 }
                 "SysInfoComplete" {
                     $detail = "System inventory collected"

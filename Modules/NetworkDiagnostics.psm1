@@ -10,10 +10,14 @@ $PortTests = @(
     [PSCustomObject]@{ Protocol="TCP"; Port=53;   ProbeHost="8.8.8.8";               Reliable=$true;  Purpose="DNS";                                      Note="" },
     [PSCustomObject]@{ Protocol="UDP"; Port=123;  ProbeHost="0.us.pool.ntp.org";      Reliable=$true;  Purpose="Clock synchronization (NTP)";              Note="Real NTP request. PASS confirms clock sync is working." },
     [PSCustomObject]@{ Protocol="TCP"; Port=443;  ProbeHost="pixellot.tv";            Reliable=$true;  Purpose="System ops, remote mgmt, video stream";    Note="" },
-    [PSCustomObject]@{ Protocol="UDP"; Port=443;  ProbeHost="prod-echo.pixellot.tv";  Reliable=$true;  Purpose="Video streaming - Zixi fallback on 443";   Note="Firewall must allow outbound UDP 443 to Pixellot servers." },
+    # D2 fix: UDP echo to prod-echo.pixellot.tv requires the *server* to echo
+    # the exact payload back. Unconfirmed server-side; if the host is rate-
+    # limited or behind an ACL, every healthy VPU shows FAIL. Demoted to
+    # Reliable=$false until echo behavior is verified server-side.
+    [PSCustomObject]@{ Protocol="UDP"; Port=443;  ProbeHost="prod-echo.pixellot.tv";  Reliable=$false; Purpose="Video streaming - Zixi fallback on 443";   Note="UDP echo not yet verified server-side; INFO only. Firewall should allow outbound UDP 443 to Pixellot." },
     [PSCustomObject]@{ Protocol="TCP"; Port=1402; ProbeHost="scorebot.sportzcast.net"; Reliable=$true;  Purpose="SportzCast data transmission (1400-1405)";  Note="Firewall must allow outbound TCP 1400-1405 to SportzCast servers." },
     [PSCustomObject]@{ Protocol="TCP"; Port=1935; ProbeHost="scorebot.sportzcast.net"; Reliable=$true;  Purpose="SportzCast remote management";              Note="Firewall must allow outbound TCP 1935 to SportzCast servers." },
-    [PSCustomObject]@{ Protocol="UDP"; Port=2088; ProbeHost="prod-echo.pixellot.tv";  Reliable=$true;  Purpose="Video streaming - Zixi primary";           Note="Firewall must allow outbound UDP 2088 to Pixellot servers." },
+    [PSCustomObject]@{ Protocol="UDP"; Port=2088; ProbeHost="prod-echo.pixellot.tv";  Reliable=$false; Purpose="Video streaming - Zixi primary";           Note="UDP echo not yet verified server-side; INFO only. Firewall should allow outbound UDP 2088 to Pixellot." },
     [PSCustomObject]@{ Protocol="TCP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$true;  Purpose="Graphics and watermark generation";        Note="Firewall must allow outbound TCP 5672 to Singular. Blocking this port prevents scoreboards and watermarks from appearing on stream." },
     [PSCustomObject]@{ Protocol="UDP"; Port=5672; ProbeHost="app.singular.live";      Reliable=$false; Purpose="Graphics and watermark generation";        Note="UDP returns no response on working VPUs. See domain test." }
 )
@@ -139,10 +143,20 @@ $NetScript = {
     # -- Internet check --------------------------------------------------------
     $sync.NetStep = "Checking internet connectivity..."
     Net-Section "Connectivity"
+    # D7 fix: ping each target twice before declaring unreachable. Momentary
+    # packet loss on a congested venue uplink used to false-fail this check.
+    # NOTE: $host is a PS reserved variable (the session host) — use a renamed
+    # loop variable (same lesson as v1.0.44 fix).
     $pingOk = $false
-    try { $r = (New-Object System.Net.NetworkInformation.Ping).Send("8.8.8.8", $NetTimeoutMs); $pingOk = ($r.Status -eq "Success") } catch { }
-    if (-not $pingOk) {
-        try { $r = (New-Object System.Net.NetworkInformation.Ping).Send("1.1.1.1", $NetTimeoutMs); $pingOk = ($r.Status -eq "Success") } catch { }
+    foreach ($pingTarget in @("8.8.8.8", "1.1.1.1")) {
+        if ($pingOk -or $sync.NetCancelled) { break }
+        for ($pingAttempt = 0; $pingAttempt -lt 2; $pingAttempt++) {
+            try {
+                $r = (New-Object System.Net.NetworkInformation.Ping).Send($pingTarget, $NetTimeoutMs)
+                if ($r.Status -eq "Success") { $pingOk = $true; break }
+            } catch { }
+            if ($pingAttempt -eq 0) { Start-Sleep -Milliseconds 500 }
+        }
     }
     if ($pingOk) {
         Net-Log "Internet" "Reachable" "Pass"
@@ -185,7 +199,7 @@ $NetScript = {
     $portPass = 0; $portFail = 0; $portInfo = 0
     foreach ($pt in $PortTests) {
         if ($sync.NetCancelled) { break }
-        $sync.NetStep = "Testing $($pt.Protocol) $($pt.Port) ? $($pt.ProbeHost)..."
+        $sync.NetStep = "Testing $($pt.Protocol) $($pt.Port) -> $($pt.ProbeHost)..."
         $label = "$($pt.Protocol) $($pt.Port)"
         if (-not $pt.Reliable) {
             Net-Log $label "INFO - $($pt.Purpose)" "Gray"
@@ -572,7 +586,18 @@ function Update-NetSideCards {
             } catch { }
             $ntpServerStr = if ($ntpConfigured) { $ntpConfigured } else { "—" }
             $ntpLiveStr   = if ($ntpLive)       { $ntpLive }       else { "Not queried" }
-            $liveColor    = if ($ntpLive -match "Local CMOS|^$") { $ColYellow } else { $ColGreen }
+            # R15 fix: don't pattern-match on the English literal "Local CMOS" —
+            # on non-EN-US Windows this returns a localised string and the check
+            # falsely greens a desynced clock. Heuristic: if the live source is
+            # not blank, doesn't contain a dot (servers always do — "time.windows.com",
+            # "0.pool.ntp.org" — but "Local CMOS Clock"/"Hardware Clock" don't),
+            # and isn't an IP, treat as un-synced. Also flag the well-known
+            # un-synced strings (English + localised stubs) defensively.
+            $unSyncedHints = @('Local CMOS','CMOS Clock','Free-running','Local','Lokale','Locale','本地','ローカル')
+            $localOnly = ($ntpLive -match "^$") -or
+                         (-not ($ntpLive -match '\.')) -or
+                         ($unSyncedHints | Where-Object { $ntpLive -like "*$_*" }).Count -gt 0
+            $liveColor    = if ($localOnly) { $ColYellow } else { $ColGreen }
             Add-NetKV $ibody $rowY "NTP Server:" $ntpServerStr $ColText | Out-Null; $rowY += 22
             Add-NetKV $ibody $rowY "NTP Source:" $ntpLiveStr   $liveColor | Out-Null
         } else {
