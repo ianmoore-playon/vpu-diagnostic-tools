@@ -1133,3 +1133,18 @@ Phase A explicitly does **not** add the sport-aware DataTemplates — those come
 
 - `Pulse.WPF.csproj` Version bumped 0.6.22 → 0.7.0-beta (first pre-release minor — the redesign warrants the bump even though Phase A is invisible).
 - New files: `Models/ScoreboardSport.cs`, `Models/SportScoreboardState.cs`, `Helpers/SportzcastFrameMapper.cs`, `Helpers/SportDetector.cs`, `Helpers/SportzcastFrameCapture.cs`, `ViewModels/LiveScoreboardViewModel.cs`.
+
+## v0.7.1-beta — SMART unavailable demoted from Warning to Info
+
+Field feedback: when Pulse is launched without elevation, the SMART card surfaces as a Warning Finding. That's misleading — it's not a Warning, it's a notice that the tool needs admin to read SMART data. Demote the Finding from Warning to Info, drop the card-pill severity from `warn` to `neutral` (so the page-level pill doesn't paint yellow over a non-actionable privilege gap), and front-load the actionable hint:
+
+- Title (unelevated): **"Relaunch Pulse as Administrator to check SMART data"**
+- Recommendation: "Pulse is running without elevation. Close Pulse and re-launch from Pulse.WPF.bat (right-click → Run as administrator) to enable drive failure prediction. Other disk health checks are unaffected."
+
+When SMART is genuinely missing on an elevated VPU (Server Core, virtualised storage), the Finding stays Info and the title becomes "SMART data not available on this VPU" with a note that the rest of disk health is unaffected.
+
+Log-row level dropped from `Warn` to `Gray` for the same reason.
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.7.0-beta → 0.7.1-beta.

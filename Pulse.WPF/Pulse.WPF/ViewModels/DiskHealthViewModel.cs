@@ -139,25 +139,44 @@ namespace Pulse.WPF.ViewModels
                     AddLog("", "SMART & Errors", "Section");
                     if (smart == null)
                     {
-                        // D1/R16 fix: an unavailable SMART query should NOT
-                        // render Healthy. Surface as Warning with an explicit
-                        // reason that distinguishes "elevation required" from
-                        // "the box's WMI doesn't expose this".
+                        // v0.7.0-beta field feedback: SMART unavailable when
+                        // Pulse runs unelevated isn't a real Warning — it's a
+                        // notice that the tool needs admin to read the data.
+                        // Demote the Finding from Warning to Info and pull
+                        // the elevation hint to the top of the message so
+                        // it's the first thing the tech reads.
+                        //
+                        // When the VPU's storage stack genuinely doesn't
+                        // expose SMART (Server Core, virtualised storage),
+                        // the message still surfaces the underlying reason
+                        // but stays Info-level — there's nothing the tech
+                        // can do about it.
                         var elevated = Pulse.WPF.Services.DiskHealthService.IsRunningElevated();
                         var reason = smartResult?.UnavailableReason
                                      ?? (elevated
                                          ? "SMART data not exposed by this VPU's storage stack"
                                          : "SMART query requires administrator privileges");
                         SmartStatus = "Unavailable";
-                        SmartHealthSummary = "Unavailable";
-                        SmartSeverity = "warn";
-                        AddLog("SMART", reason, "Warn");
-                        var rec = elevated
-                            ? "The drive failure prediction signal is not exposed by this VPU's storage stack. " + reason
-                            : reason + ". Relaunch Pulse as Administrator to read SMART data.";
+                        SmartHealthSummary = elevated ? "Unavailable" : "Requires admin";
+                        // Card severity drops to "neutral" so the panel pill
+                        // doesn't paint a yellow Warning over a non-actionable
+                        // privilege gap.
+                        SmartSeverity = "neutral";
+                        AddLog("SMART", reason, "Gray");
+                        string title, rec;
+                        if (elevated)
+                        {
+                            title = "SMART data not available on this VPU";
+                            rec   = reason + ". Drive failure prediction can't be checked, but the rest of disk health (free space, error events) is unaffected.";
+                        }
+                        else
+                        {
+                            title = "Relaunch Pulse as Administrator to check SMART data";
+                            rec   = "Pulse is running without elevation. Close Pulse and re-launch from Pulse.WPF.bat (right-click -> Run as administrator) to enable drive failure prediction. Other disk health checks are unaffected.";
+                        }
                         Findings.Add(Pulse.WPF.Models.Finding.Create(
-                            "Warning",
-                            "SMART data unavailable - drive failure prediction cannot be verified",
+                            "Info",
+                            title,
                             rec,
                             "Disk"));
                     }
