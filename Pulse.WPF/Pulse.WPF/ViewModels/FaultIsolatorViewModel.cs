@@ -531,9 +531,15 @@ namespace Pulse.WPF.ViewModels
         //     NIC hardware is implicitly trusted (we picked a known-good port).
         // Verdict: LikelyCamera. The tech knows to replace the camera if/when
         // a spare becomes available.
-        public async Task InferCameraConclusionWithoutSwapAsync()
+        // No async/await — the work is purely synchronous (history insert,
+        // ShowResult assignment, Conclude wiring). Returning Task.CompletedTask
+        // keeps the AsyncCommand's Func<Task> signature happy without the
+        // ceremony of `async Task` + dummy `await` at the end. The earlier
+        // shape (async Task with a trailing `await Task.CompletedTask`) was
+        // both unnecessary and a likely v0.8.6-beta build break.
+        public Task InferCameraConclusionWithoutSwapAsync()
         {
-            if (Phase != FaultIsolatorPhase.AwaitingCameraTest) return;
+            if (Phase != FaultIsolatorPhase.AwaitingCameraTest) return Task.CompletedTask;
             ActionButtonEnabled = false;
             try
             {
@@ -555,7 +561,7 @@ namespace Pulse.WPF.ViewModels
             {
                 ActionButtonEnabled = true;
             }
-            await System.Threading.Tasks.Task.CompletedTask.ConfigureAwait(true);
+            return Task.CompletedTask;
         }
 
         private void Conclude(FaultConclusion conclusion, string title, string instruction)
