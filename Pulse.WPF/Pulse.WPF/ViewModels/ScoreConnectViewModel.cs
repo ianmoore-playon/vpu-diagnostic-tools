@@ -77,6 +77,13 @@ namespace Pulse.WPF.ViewModels
             private set => Set(ref _botStatus, value);
         }
 
+        // v0.7.0-beta — sport-aware Live Scoreboard companion VM.
+        // Phase A: no visible UI change. The existing LiveScoreData binding
+        // still drives the Live Scoreboard card; Scoreboard exposes the
+        // sport-typed state objects so Phase B's per-sport DataTemplates
+        // can adopt it without touching the existing rendering path.
+        public LiveScoreboardViewModel Scoreboard { get; } = new LiveScoreboardViewModel();
+
         private ScoreConnectLiveScoreData _liveScoreData = new ScoreConnectLiveScoreData();
         public ScoreConnectLiveScoreData LiveScoreData
         {
@@ -817,6 +824,18 @@ namespace Pulse.WPF.ViewModels
                     foreach (var kv in cfg.ExtendedFields)
                         ConfigurationExtraRows.Add(new KeyValueRow { Key = kv.Key, Value = kv.Value });
                 }
+                // v0.7.0-beta — push the active sport into the Scoreboard VM
+                // so the per-sport state object is selected correctly the
+                // first time a live frame arrives. SportDetector's Source 1
+                // (configuration name) handles common spellings; Source 2
+                // (SBCODE) covers the case where the API returns only IDs.
+                try
+                {
+                    Scoreboard.UpdateFromConfiguration(
+                        cfg?.Sport,
+                        cfg?.VendorSportId);
+                }
+                catch { /* keep configuration update non-fatal */ }
             });
         }
 
@@ -994,6 +1013,21 @@ namespace Pulse.WPF.ViewModels
                 }
                 data.LastUpdatedAt = ParsedLogTimestampLocal(parsed) ?? DateTime.Now;
                 LiveScoreData = data;
+
+                // v0.7.0-beta — also push into the sport-aware Scoreboard VM.
+                // SportzcastFrameMapper is tolerant of name variation; running
+                // it alongside the legacy ApplyIfPresent keeps both binding
+                // surfaces fresh while Phase B is still pending.
+                if (parsed != null)
+                {
+                    try { Scoreboard.ApplyFrame(parsed); }
+                    catch (Exception ex)
+                    {
+                        AddLog("Scoreboard",
+                            $"Frame mapper threw: {ex.GetType().Name}: {ex.Message}",
+                            "Warn");
+                    }
+                }
             });
         }
 
@@ -1089,6 +1123,10 @@ namespace Pulse.WPF.ViewModels
             {
                 bool wasConnected = LiveConnected;
                 LiveConnected = connected;
+
+                // v0.7.0-beta — propagate to the sport-aware Scoreboard VM.
+                if (connected) Scoreboard.OnFeedConnected();
+                else           Scoreboard.OnFeedDisconnected();
 
                 if (wasConnected && !connected)
                 {

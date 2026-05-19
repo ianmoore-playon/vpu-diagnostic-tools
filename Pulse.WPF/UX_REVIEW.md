@@ -1103,3 +1103,33 @@ When no ScoreLink matches, the detector now also publishes every USB-serial cand
 
 - `Pulse.WPF.csproj` Version bumped 0.6.21 → 0.6.22.
 - `Pulse.WPF/SCOREBOARD_REDESIGN_PLAN.md` open-question section closed out with the product decisions (ESPN data look, show last-known on stale, render but inactive on non-VPU hosts, capture mode always on, sport list to be confirmed).
+
+## v0.7.0-beta — Scoreboard redesign Phase A (foundation + capture, no visible UI change)
+
+Phase A of the [Scoreboard Redesign Plan](SCOREBOARD_REDESIGN_PLAN.md). Backend only; the existing Live Scoreboard card binding (`LiveScoreData`) stays in place so v0.7.0-beta ships with no visible regression. The sport-aware pipeline is wired alongside it.
+
+Six new files:
+
+- **`Models/ScoreboardSport.cs`** — 7-sport enum (Basketball / Football / Baseball / Soccer / Hockey / Volleyball / Unknown). Baseball covers Softball, Hockey covers Lacrosse; the rest fall to Generic.
+- **`Models/SportScoreboardState.cs`** — abstract base + 7 concrete observable POCOs. Each carries the fields a real venue scoreboard renders for that sport (football: down/distance/yard-line/possession/play-clock; baseball: inning/half/balls/strikes/outs/hits/errors; basketball: shot-clock/fouls/bonus/timeouts/possession; etc.). String-typed fields so locale-format drift can't bite the bindings.
+- **`Helpers/SportzcastFrameMapper.cs`** — translates a Sportzcast frame dictionary into the per-sport state. Tolerates name variation (camelCase / snake_case / PascalCase) by trying a small set of common spellings per field. Initial spelling lists are the v0.7.0-beta seed — the always-on capture below grows them empirically.
+- **`Helpers/SportDetector.cs`** — three-source detection: configuration sport name → SBCODE lookup via SportzcastDataDirReader → live-frame field-signature inspection. Returns Unknown when all three fail.
+- **`Helpers/SportzcastFrameCapture.cs`** — always-on schema writer at `%LOCALAPPDATA%\Pulse.WPF\State\sportzcast-frame-schema.json`. Records every unique field name seen per sport, plus up to 8 sample values per field for type inference. 1-minute flush debounce keeps disk traffic minimal; redacts `team` / `name` / `player` / `school` field values so the file is safe to share. Atomic write via tmp + Move so a crash mid-write doesn't corrupt the schema.
+- **`ViewModels/LiveScoreboardViewModel.cs`** — composes the pipeline. Exposes `Sport`, the active typed state object, and `IsLive` / `IsStale` / `LiveStatusLabel` for the (Phase B) UI. Stale handling per the plan: feed disconnects keep the last-known state visible with a stale banner; the state is hard-reset only after the feed has been gone &gt; 30 s. Also exposes a `Tick()` method for a 1 Hz UI timer so the stale banner re-evaluates.
+
+Wired into `ScoreConnectViewModel`:
+- New `Scoreboard` property of type `LiveScoreboardViewModel`. Populated on configuration update (`ApplyConfiguration` calls `Scoreboard.UpdateFromConfiguration(cfg.Sport, cfg.VendorSportId)`) and on every live frame (`OnLiveMessageReceived` calls `Scoreboard.ApplyFrame(parsed)` alongside the legacy `LiveScoreData` projection).
+- Feed connect/disconnect events propagate via `Scoreboard.OnFeedConnected/OnFeedDisconnected`.
+
+Phase A explicitly does **not** add the sport-aware DataTemplates — those come in Phase B (one ship per sport). After v0.7.0-beta lands on a real venue, the captured schema file is what informs the Phase B mapper updates.
+
+### What to watch for during the v0.7.0-beta field test
+
+- `%LOCALAPPDATA%\Pulse.WPF\State\sportzcast-frame-schema.json` should appear and grow over the course of a live event.
+- The Live Scoreboard card on the panel should keep working exactly as in v0.6.22 (no visible regression).
+- No exceptions in the Live Log labelled `Scoreboard` (the mapper logs `Frame mapper threw: ...` for any per-frame failure).
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.6.22 → 0.7.0-beta (first pre-release minor — the redesign warrants the bump even though Phase A is invisible).
+- New files: `Models/ScoreboardSport.cs`, `Models/SportScoreboardState.cs`, `Helpers/SportzcastFrameMapper.cs`, `Helpers/SportDetector.cs`, `Helpers/SportzcastFrameCapture.cs`, `ViewModels/LiveScoreboardViewModel.cs`.
