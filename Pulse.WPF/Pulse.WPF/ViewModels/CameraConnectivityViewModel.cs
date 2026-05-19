@@ -1369,7 +1369,36 @@ namespace Pulse.WPF.ViewModels
                 // Defensive: any failure must still resume the monitor or the
                 // live panel will sit frozen.
                 try { _monitor?.Resume(); } catch { }
-                AddLog("FaultIsolator", $"Failed to open wizard: {ex.Message}", "Warn");
+
+                // v0.8.3-beta: surface the FULL exception chain so a XAML
+                // resource-resolution failure tells us which resource key is
+                // actually missing instead of just "something StaticResource
+                // failed". The Live Log gets the chain compressed onto one
+                // line; the rolling AppLogFile gets line numbers / full
+                // stack so we can pinpoint the XAML position.
+                var chain = new System.Text.StringBuilder();
+                var current = ex;
+                int depth = 0;
+                while (current != null && depth < 6)
+                {
+                    if (chain.Length > 0) chain.Append("  ->  ");
+                    chain.Append(current.GetType().Name).Append(": ").Append(current.Message);
+                    // XamlParseException exposes line info that pinpoints the
+                    // exact element / attribute that fails.
+                    if (current is System.Windows.Markup.XamlParseException xpe)
+                    {
+                        chain.Append($" (line {xpe.LineNumber}, pos {xpe.LinePosition})");
+                    }
+                    current = current.InnerException;
+                    depth++;
+                }
+                AddLog("FaultIsolator", $"Failed to open wizard: {chain}", "Warn");
+                try
+                {
+                    AppLogFile.Instance.WriteLine("FaultIsolator", "Warn",
+                        $"Open-wizard failure:\n{ex}");
+                }
+                catch { /* logger must not crash the host */ }
             }
         }
 
