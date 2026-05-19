@@ -177,7 +177,15 @@ namespace Pulse.WPF.Helpers
         public CameraNicMonitor(INetworkAdapterService net)
         {
             _net = net ?? throw new ArgumentNullException(nameof(net));
-            _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            // v0.8.9-beta: poll cadence dropped 1 s -> 500 ms for closer-to-
+            // real-time link / IP / MAC reaction. Field tech feedback: cable
+            // swaps were taking ~1-2 s to reflect on the tile. The underlying
+            // reads (NetworkInterface.GetAllNetworkInterfaces + ARP table
+            // queries) are kernel-cached IPHLPAPI calls, not real WMI, so
+            // doubling the rate has negligible CPU impact on a 4-port NIC.
+            // Time-window thresholds (FlapWindow, ErrorWindow,
+            // TransitionDebounce) stay in TimeSpan so they're unaffected.
+            _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
             _timer.Tick += OnTimerTick;
         }
 

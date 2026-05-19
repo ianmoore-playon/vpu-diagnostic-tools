@@ -375,7 +375,9 @@ namespace Pulse.WPF.ViewModels
                             ipShown  = !string.IsNullOrEmpty(st.LastRemoteIp)  ? st.LastRemoteIp  : "—";
                             macShown = !string.IsNullOrEmpty(st.LastRemoteMac) ? st.LastRemoteMac : "—";
                         }
-                        else if (is100M && (roles?.Count ?? 0) > 0)
+                        else if (is100M && (roles?.Count ?? 0) > 0
+                                 && st.LinkUpSince.HasValue
+                                 && (utcNow - st.LinkUpSince.Value) >= TimeSpan.FromSeconds(5))
                         {
                             // v0.6.9: link up at 100 Mbps with no ARP yet — on
                             // a Pixellot VPU this is almost certainly the OCR
@@ -388,6 +390,18 @@ namespace Pulse.WPF.ViewModels
                             // ARP-resolved branch below. Without that guard
                             // a stale-ARP main camera that renegotiated to
                             // 100 Mbps would be silently labeled OCR Green.
+                            //
+                            // v0.8.9-beta: 5-second grace period guard.
+                            // Field tech reported a faulty cable forcing a
+                            // Main Camera to negotiate at 100 Mbps - the
+                            // tile briefly mis-labeled it as OCR before
+                            // ARP resolved. Real OCR cameras never ARP, so
+                            // we still want the inference to fire eventually
+                            // (otherwise OCRs stay stuck in "Identifying
+                            // device..."); we just hold it back until ARP
+                            // has had a fair shot first. 5 s comfortably
+                            // covers normal ARP resolution (typically 1-3 s
+                            // after first traffic).
                             primary   = "OCR / Scoreboard";
                             secondary = "Inferred from 100 Mbps speed";
                             info.IsOcr = true;        // silences degraded-speed warning
