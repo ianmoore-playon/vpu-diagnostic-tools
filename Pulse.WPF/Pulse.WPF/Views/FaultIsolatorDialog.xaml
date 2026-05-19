@@ -3,13 +3,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
         xmlns:vm="clr-namespace:Pulse.WPF.ViewModels"
+        xmlns:controls="clr-namespace:Pulse.WPF.Controls"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         d:DataContext="{d:DesignInstance Type=vm:FaultIsolatorViewModel}"
         mc:Ignorable="d"
         Title="Camera Fault Isolator"
-        Background="#0F1623"
-        Foreground="#E6EDF7"
+        Background="{StaticResource AppBgBrush}"
+        Foreground="{StaticResource ForegroundBrush}"
         FontFamily="Segoe UI"
         FontSize="13"
         Width="780" Height="680"
@@ -19,39 +20,16 @@
         ShowInTaskbar="False">
 
     <!--
-        v0.8.4-beta hotfix: v0.8.3-beta diagnostic logging revealed the
-        underlying exception was ArgumentNullException on Setter.Property
-        - which means the failure is in an APPLIED style, not in any
-        literal Setter in this XAML (we have none). The culprit is one
-        of the referenced StaticResource styles failing to apply at
-        Window construction time.
-
-        This release drops:
-        - Style="{StaticResource PulseDialogWindow}" on the Window -
-          inlining Background/Foreground/etc directly.
-        - controls:SeverityChip references - replaced with an inline
-          Border+TextBlock that does the chip rendering without the
-          custom UserControl's Loaded-handler brush resolution.
-        - Style references to Card, SectionTitle, MutedLabel - inlined
-          directly on each element using only hard-coded colours that
-          we know exist (no StaticResource references on this dialog's
-          surfaces except brush keys which are validated to exist).
-
-        If THIS version opens, we narrow the culprit. If it still
-        fails, the failure is in MD implicit styles applied via
-        TargetType=ComboBox etc. Either way, v0.8.3-beta diagnostic
-        logging will tell us the next layer of detail.
-
-        Colours used inline (matches Themes/Colors.xaml hex values):
-          AppBg            #0F1623
-          CardBg           #1A2233
-          BorderCol        #2B3548
-          Foreground       #E6EDF7
-          MutedForeground  #8A94A6
-          Green            #4ADE80
-          Yellow           #F59E0B (warn chip)
-          Red              #EF4444 (fail chip)
-          Info             #3B82F6 (info chip)
+        v0.8.5-beta bisection: v0.8.4-beta proved the dialog opens when
+        ALL referenced StaticResource styles are stripped. This release
+        re-adds every style EXCEPT Style="{StaticResource
+        PulseDialogWindow}" on the Window. If it opens, PulseDialogWindow
+        is the confirmed culprit and we keep it off this dialog. If it
+        fails, the culprit is one of the body styles (Card / SectionTitle
+        / MutedLabel / MaterialDesignRaisedButton / SeverityChip).
+        Window-level Background / Foreground / Font are still using
+        StaticResource brushes (matching the rest of the app); only the
+        composite PulseDialogWindow style is held out.
     -->
 
     <Grid>
@@ -66,12 +44,9 @@
         <Border Grid.Row="0" Padding="24,18,24,8">
             <StackPanel>
                 <TextBlock Text="Camera Fault Isolator"
-                           FontFamily="Segoe UI Semibold" FontSize="22"
-                           Foreground="#E6EDF7" />
-                <TextBlock TextWrapping="Wrap"
-                           FontSize="13"
-                           Foreground="#8A94A6"
-                           Margin="0,4,0,0"
+                           Style="{StaticResource PageTitle}" />
+                <TextBlock Style="{StaticResource PageSubtitle}"
+                           TextWrapping="Wrap"
                            Text="Walk through a 4-phase swap test to pin a degraded port on a NIC, cable, or camera. The live monitor pauses while this wizard is open." />
             </StackPanel>
         </Border>
@@ -79,61 +54,75 @@
         <!-- =================== Step dots =================== -->
         <Border Grid.Row="1" Padding="24,4,24,12">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                <!-- Step 1 -->
                 <Grid Width="14" Height="14" Margin="0,0,8,0">
                     <Ellipse Width="14" Height="14"
                              Fill="Transparent"
-                             Stroke="#8A94A6" StrokeThickness="1" />
+                             Stroke="{StaticResource MutedForegroundBrush}"
+                             StrokeThickness="1" />
                     <Ellipse Width="14" Height="14"
-                             Fill="#4ADE80" Stroke="#4ADE80" StrokeThickness="1"
+                             Fill="{StaticResource GreenBrush}"
+                             Stroke="{StaticResource GreenBrush}"
+                             StrokeThickness="1"
                              Visibility="{Binding StepDot1, Converter={StaticResource BoolToVis}}" />
                 </Grid>
                 <Rectangle Width="32" Height="1" Margin="0,0,8,0"
-                           Fill="#2B3548" VerticalAlignment="Center" />
+                           Fill="{StaticResource BorderColBrush}"
+                           VerticalAlignment="Center" />
 
-                <!-- Step 2 -->
                 <Grid Width="14" Height="14" Margin="0,0,8,0">
                     <Ellipse Width="14" Height="14"
                              Fill="Transparent"
-                             Stroke="#8A94A6" StrokeThickness="1" />
+                             Stroke="{StaticResource MutedForegroundBrush}"
+                             StrokeThickness="1" />
                     <Ellipse Width="14" Height="14"
-                             Fill="#4ADE80" Stroke="#4ADE80" StrokeThickness="1"
+                             Fill="{StaticResource GreenBrush}"
+                             Stroke="{StaticResource GreenBrush}"
+                             StrokeThickness="1"
                              Visibility="{Binding StepDot2, Converter={StaticResource BoolToVis}}" />
                 </Grid>
                 <Rectangle Width="32" Height="1" Margin="0,0,8,0"
-                           Fill="#2B3548" VerticalAlignment="Center" />
+                           Fill="{StaticResource BorderColBrush}"
+                           VerticalAlignment="Center" />
 
-                <!-- Step 3 -->
                 <Grid Width="14" Height="14" Margin="0,0,8,0">
                     <Ellipse Width="14" Height="14"
                              Fill="Transparent"
-                             Stroke="#8A94A6" StrokeThickness="1" />
+                             Stroke="{StaticResource MutedForegroundBrush}"
+                             StrokeThickness="1" />
                     <Ellipse Width="14" Height="14"
-                             Fill="#4ADE80" Stroke="#4ADE80" StrokeThickness="1"
+                             Fill="{StaticResource GreenBrush}"
+                             Stroke="{StaticResource GreenBrush}"
+                             StrokeThickness="1"
                              Visibility="{Binding StepDot3, Converter={StaticResource BoolToVis}}" />
                 </Grid>
                 <Rectangle Width="32" Height="1" Margin="0,0,8,0"
-                           Fill="#2B3548" VerticalAlignment="Center" />
+                           Fill="{StaticResource BorderColBrush}"
+                           VerticalAlignment="Center" />
 
-                <!-- Step 4 -->
                 <Grid Width="14" Height="14" Margin="0,0,8,0">
                     <Ellipse Width="14" Height="14"
                              Fill="Transparent"
-                             Stroke="#8A94A6" StrokeThickness="1" />
+                             Stroke="{StaticResource MutedForegroundBrush}"
+                             StrokeThickness="1" />
                     <Ellipse Width="14" Height="14"
-                             Fill="#4ADE80" Stroke="#4ADE80" StrokeThickness="1"
+                             Fill="{StaticResource GreenBrush}"
+                             Stroke="{StaticResource GreenBrush}"
+                             StrokeThickness="1"
                              Visibility="{Binding StepDot4, Converter={StaticResource BoolToVis}}" />
                 </Grid>
                 <Rectangle Width="32" Height="1" Margin="0,0,8,0"
-                           Fill="#2B3548" VerticalAlignment="Center" />
+                           Fill="{StaticResource BorderColBrush}"
+                           VerticalAlignment="Center" />
 
-                <!-- Step 5 -->
                 <Grid Width="14" Height="14" Margin="0,0,8,0">
                     <Ellipse Width="14" Height="14"
                              Fill="Transparent"
-                             Stroke="#8A94A6" StrokeThickness="1" />
+                             Stroke="{StaticResource MutedForegroundBrush}"
+                             StrokeThickness="1" />
                     <Ellipse Width="14" Height="14"
-                             Fill="#4ADE80" Stroke="#4ADE80" StrokeThickness="1"
+                             Fill="{StaticResource GreenBrush}"
+                             Stroke="{StaticResource GreenBrush}"
+                             StrokeThickness="1"
                              Visibility="{Binding StepDot5, Converter={StaticResource BoolToVis}}" />
                 </Grid>
             </StackPanel>
@@ -144,26 +133,21 @@
             <StackPanel>
 
                 <!-- Phase title + instruction -->
-                <Border Background="#1A2233" BorderBrush="#2B3548"
-                        BorderThickness="1" CornerRadius="6"
-                        Padding="16" Margin="0,0,0,12">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
                     <StackPanel>
                         <TextBlock Text="{Binding PhaseTitle}"
-                                   FontFamily="Segoe UI Semibold" FontSize="14"
-                                   Foreground="#E6EDF7"
+                                   Style="{StaticResource SectionTitle}"
                                    TextWrapping="Wrap"
                                    Margin="0,0,0,6" />
                         <TextBlock Text="{Binding PhaseInstruction}"
                                    TextWrapping="Wrap"
-                                   Foreground="#E6EDF7"
+                                   Foreground="{StaticResource ForegroundBrush}"
                                    FontSize="13" />
                     </StackPanel>
                 </Border>
 
                 <!-- Port selectors -->
-                <Border Background="#1A2233" BorderBrush="#2B3548"
-                        BorderThickness="1" CornerRadius="6"
-                        Padding="16" Margin="0,0,0,12">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -172,8 +156,7 @@
 
                         <StackPanel Grid.Column="0" Margin="0,0,12,0">
                             <TextBlock Text="Suspect port"
-                                       FontSize="11"
-                                       Foreground="#8A94A6"
+                                       Style="{StaticResource MutedLabel}"
                                        Margin="0,0,0,4" />
                             <ComboBox ItemsSource="{Binding SuspectPortChoices}"
                                       SelectedItem="{Binding SelectedSuspectPort}"
@@ -184,8 +167,7 @@
 
                         <StackPanel Grid.Column="1" Margin="12,0,0,0">
                             <TextBlock Text="Test port (known-good)"
-                                       FontSize="11"
-                                       Foreground="#8A94A6"
+                                       Style="{StaticResource MutedLabel}"
                                        Margin="0,0,0,4" />
                             <ComboBox ItemsSource="{Binding TestPortChoices}"
                                       SelectedItem="{Binding SelectedTestPort}"
@@ -197,42 +179,34 @@
                 </Border>
 
                 <!-- Latest result -->
-                <Border Background="#1A2233" BorderBrush="#2B3548"
-                        BorderThickness="1" CornerRadius="6"
-                        Padding="16" Margin="0,0,0,12"
+                <Border Style="{StaticResource Card}"
+                        Margin="0,0,0,12"
                         Visibility="{Binding ResultText, Converter={StaticResource StringToVis}, FallbackValue=Collapsed}">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <TextBlock Text="LATEST RESULT"
-                                       FontSize="11" Foreground="#8A94A6" />
-                            <Border Background="#3B82F6" CornerRadius="4"
-                                    Padding="8,2" Margin="12,0,0,0"
-                                    VerticalAlignment="Center">
-                                <TextBlock Text="{Binding ResultSeverityLabel, FallbackValue=INFO}"
-                                           Foreground="White"
-                                           FontWeight="SemiBold" FontSize="11" />
-                            </Border>
+                            <TextBlock Text="LATEST RESULT" Style="{StaticResource MutedLabel}" />
+                            <controls:SeverityChip Text="{Binding ResultSeverityLabel, FallbackValue=INFO}"
+                                                   Severity="{Binding ResultSeverity, FallbackValue=info}"
+                                                   Margin="12,0,0,0"
+                                                   VerticalAlignment="Center" />
                         </StackPanel>
                         <TextBlock Text="{Binding ResultText}"
                                    TextWrapping="Wrap"
-                                   Foreground="#E6EDF7"
+                                   Foreground="{StaticResource ForegroundBrush}"
                                    FontSize="13" />
                     </StackPanel>
                 </Border>
 
                 <!-- History -->
-                <Border Background="#1A2233" BorderBrush="#2B3548"
-                        BorderThickness="1" CornerRadius="6"
-                        Padding="16" Margin="0,0,0,12"
+                <Border Style="{StaticResource Card}"
+                        Margin="0,0,0,12"
                         Visibility="{Binding History.Count, Converter={StaticResource CountToVis}}">
                     <StackPanel>
-                        <TextBlock Text="Phase history"
-                                   FontFamily="Segoe UI Semibold" FontSize="14"
-                                   Foreground="#E6EDF7" Margin="0,0,0,8" />
+                        <TextBlock Text="Phase history" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
                         <ItemsControl ItemsSource="{Binding History}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border BorderBrush="#2B3548"
+                                    <Border BorderBrush="{StaticResource BorderColBrush}"
                                             BorderThickness="0,0,0,1"
                                             Padding="0,6,0,8">
                                         <Grid>
@@ -250,29 +224,25 @@
                                                        Text="{Binding TimestampLabel}"
                                                        FontFamily="Cascadia Mono, Consolas"
                                                        FontSize="11"
-                                                       Foreground="#8A94A6" />
-                                            <Border Grid.Row="0" Grid.Column="1"
-                                                    Background="#3B82F6" CornerRadius="4"
-                                                    Padding="6,1" HorizontalAlignment="Left">
-                                                <TextBlock Text="{Binding SeverityLabel}"
-                                                           Foreground="White"
-                                                           FontWeight="SemiBold" FontSize="10" />
-                                            </Border>
+                                                       Foreground="{StaticResource MutedForegroundBrush}" />
+                                            <controls:SeverityChip Grid.Row="0" Grid.Column="1"
+                                                                   Text="{Binding SeverityLabel}"
+                                                                   Severity="{Binding Severity}" />
                                             <TextBlock Grid.Row="0" Grid.Column="2"
                                                        Text="{Binding PhaseName}"
                                                        FontWeight="SemiBold"
                                                        FontSize="12"
-                                                       Foreground="#E6EDF7" />
+                                                       Foreground="{StaticResource ForegroundBrush}" />
                                             <TextBlock Grid.Row="1" Grid.Column="2"
                                                        Text="{Binding Configuration}"
                                                        FontSize="11"
-                                                       Foreground="#8A94A6"
+                                                       Foreground="{StaticResource MutedForegroundBrush}"
                                                        TextWrapping="Wrap"
                                                        Margin="0,2,0,0" />
                                             <TextBlock Grid.Row="2" Grid.Column="2"
                                                        Text="{Binding Verdict}"
                                                        FontSize="11"
-                                                       Foreground="#E6EDF7"
+                                                       Foreground="{StaticResource ForegroundBrush}"
                                                        TextWrapping="Wrap"
                                                        Margin="0,2,0,0" />
                                         </Grid>
@@ -287,22 +257,25 @@
         </ScrollViewer>
 
         <!-- =================== Footer =================== -->
-        <Border Grid.Row="3" Background="#1A2233"
-                BorderBrush="#2B3548"
+        <Border Grid.Row="3" Background="{StaticResource CardBgBrush}"
+                BorderBrush="{StaticResource BorderColBrush}"
                 BorderThickness="0,1,0,0"
                 Padding="24,12,24,16">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button Content="Start Over"
                             Command="{Binding StartOverCommand}"
+                            Style="{StaticResource MaterialDesignOutlinedButton}"
                             MinWidth="120" MinHeight="40" />
                     <Button Content="Cancel"
                             Command="{Binding CancelCommand}"
+                            Style="{StaticResource MaterialDesignOutlinedButton}"
                             MinWidth="120" MinHeight="40"
                             Margin="12,0,0,0"
                             IsCancel="True" />
                     <Button Content="{Binding ActionButtonLabel}"
                             Command="{Binding ActionCommand}"
+                            Style="{StaticResource MaterialDesignRaisedButton}"
                             MinWidth="180" MinHeight="40"
                             Margin="12,0,0,0"
                             IsDefault="True" />
