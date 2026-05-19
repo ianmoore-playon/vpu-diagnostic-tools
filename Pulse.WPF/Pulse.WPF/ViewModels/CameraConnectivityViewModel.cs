@@ -915,17 +915,20 @@ namespace Pulse.WPF.ViewModels
                 //
                 // v0.8.14-beta: dropped the `info.IsConfigured` gate. Field
                 // tech reported the Dashboard saying "All Clear" while the
-                // Camera Connectivity tab showed a 10 Mbps damaged-pin port
-                // - cameras.cfg didn't list that port's camera, so
-                // info.IsConfigured=false suppressed the Critical row. Any
-                // non-OCR sub-1G link is a real fault regardless of whether
-                // cfg knows about the device; the page-pill rollup at line
-                // ~625 already worked this way (the v0.6.9 ungate). Same
-                // reasoning applies here.
+                // Camera Connectivity tab showed a 10 Mbps damaged-pin port.
+                //
+                // v0.8.15-beta: now also gated on !IsLikelyOcr. Without this,
+                // a port that's correctly identified as OCR via the
+                // inference (100 Mbps + cfg loaded + grace passed) gets a
+                // false Critical here because BuildRecommendations re-runs
+                // Resolve and doesn't know about the local info.IsOcr
+                // mutation OnMonitorTick applied. IsLikelyOcr centralizes
+                // the same heuristic and both call sites agree.
+                bool likelyOcr = IsLikelyOcr(snap, info, st, roles);
                 bool isLinkDegraded = snap.IsUp
                                       && snap.LinkSpeedBps > 0
                                       && snap.LinkSpeedBps < 1_000_000_000UL
-                                      && !info.IsOcr;
+                                      && !likelyOcr;
                 if (isLinkDegraded)
                 {
                     string actualSpeed = is100M ? "100 Mbps" : FormatSpeed(snap.LinkSpeedBps);
@@ -941,35 +944,28 @@ namespace Pulse.WPF.ViewModels
                         $"Reseat or replace the cable on Port {portNum}. Expected 1 Gbps for {deviceRef}, currently negotiated {actualSpeed}."));
                 }
 
-                // Cable + no link — v0.5.2 §3 hold-off.
-                // The *tile* StatusLine shows "Cable, no link" immediately
-                // (that's just state display). The *recommendation* waits 30
-                // s before firing, because Windows often reports cabled-no-
-                // link transiently when a cable is being yanked — we don't
-                // want to advise a cable swap for a normal unplug event.
+                // v0.8.15-beta: dropped the legacy "Cabled, no link" Warning
+                // row entirely.
                 //
-                // v0.6.5: also gate on the port having a *configured* role.
-                // A dark port whose cameras.cfg entry doesn't exist is not a
-                // problem — only flag jacks the VPU expects something on. The
-                // role lookup uses st.LastRemoteIp (captured on a prior tick
-                // when the device was online) so the gate survives a current
-                // ARP loss. Same signal the no-cable-on-configured-port row
-                // below uses.
+                // Field tech feedback: a port with no cable plugged in
+                // should NOT generate a Warning. The legacy gate (snap.IsUp
+                // == false && snap.RemoteMac != "") relied on stale ARP
+                // entries persisting ~30 s after a cable pull to
+                // distinguish "cabled but no negotiation" from "no cable
+                // at all". The v0.8.6-beta binary cable-state pass already
+                // gave up on that distinction at the tile level - keeping
+                // it here produced contradictory output (tile said "No
+                // cable", Recommendations said "Cabled, no link").
+                //
+                // The "Configured camera not detected" Warning below still
+                // covers the real signal: a port that USED to carry a
+                // configured device and now doesn't. For an unconfigured
+                // port with no cable, silence is the right answer; the
+                // tech can run the Fault Isolator if they expect
+                // something there.
                 bool portIsConfigured = info.IsConfigured
                     || (!string.IsNullOrEmpty(st.LastRemoteIp)
                         && roles != null && roles.ContainsKey(st.LastRemoteIp));
-
-                if (!snap.IsUp
-                    && !string.IsNullOrEmpty(snap.RemoteMac)
-                    && portIsConfigured
-                    && st.CabledNoLinkSince.HasValue
-                    && (DateTime.UtcNow - st.CabledNoLinkSince.Value) >= TimeSpan.FromSeconds(30))
-                {
-                    rows.Add(NetworkRecommendation.Create(
-                        "Warning",
-                        $"Cabled, no link on Port {portNum}",
-                        $"Switch sees a cable but no negotiation on Port {portNum}. Try a different cable, then a different jack."));
-                }
 
                 // No cable on a configured port.
                 // We can only know "configured" via an OS-detected RemoteIp from
@@ -1185,6 +1181,56 @@ namespace Pulse.WPF.ViewModels
                 && snap.LinkSpeedBps >= 100_000_000UL
                 && snap.LinkSpeedBps < 1_000_000_000UL
                 && snap.IsUp;
+        }
+
+        /// <summary>
+        /// v0.8.15-beta: centralized "is this port likely an OCR camera"
+        /// inference. Two consumers need the same answer:
+        ///   - OnMonitorTick (tile rendering): decides whether to paint
+        ///     the 100 Mbps state green ("OCR") or yellow (degraded)
+        ///   - BuildRecommendations: decides whether to fire the Critical
+        ///     "Cable or jack fault" row for a sub-1G link
+        ///
+        /// Without a shared helper, the two diverged in v0.8.14-beta:
+        /// the tile inference mutated a local info.IsOcr=true, but the
+        /// recommendations engine re-ran Resolve and got info.IsOcr=false,
+        /// firing a false Critical on every inferred-OCR port.
+        ///
+        /// Rules: any one of these makes the port "likely OCR":
+        ///   1. info.IsOcr is already set (resolver matched cfg/role).
+        ///   2. Link up at 100 Mbps, no ARP yet, cameras.cfg loaded, AND
+        ///      the link has been up for at least 5 s (post-grace).
+        ///   3. ARP resolved to a Pixellot OUI vendor (no cfg match)
+        ///      AND 100 Mbps + cfg loaded.
+        /// </summary>
+        private static bool IsLikelyOcr(
+            CameraNicSnapshot snap,
+            RemoteDeviceInfo info,
+            PortState st,
+            Dictionary<string, string> roles)
+        {
+            if (info != null && info.IsOcr) return true;
+
+            bool is100M = snap != null
+                          && snap.IsUp
+                          && snap.LinkSpeedBps >= 100_000_000UL
+                          && snap.LinkSpeedBps < 1_000_000_000UL;
+            if (!is100M) return false;
+
+            bool cfgLoaded = (roles?.Count ?? 0) > 0;
+            if (!cfgLoaded) return false;
+
+            // Branch A: no ARP, link up, past 5 s grace
+            bool noArp = string.IsNullOrEmpty(snap.RemoteMac);
+            bool gracePassed = st != null
+                               && st.LinkUpSince.HasValue
+                               && (DateTime.UtcNow - st.LinkUpSince.Value) >= TimeSpan.FromSeconds(5);
+            if (noArp && gracePassed) return true;
+
+            // Branch B: ARP resolved to Pixellot OUI but no cfg entry
+            if (info != null && info.Source == DeviceIdentitySource.OuiVendor) return true;
+
+            return false;
         }
 
         private void UpdateSpeedBaseline(CameraNicSnapshot snap)
