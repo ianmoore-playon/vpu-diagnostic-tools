@@ -59,6 +59,19 @@ namespace Pulse.WPF.ViewModels
         private Brush _primaryColor;
         public Brush PrimaryColor { get => _primaryColor; set => Set(ref _primaryColor, value); }
 
+        // ---- Status icon kind (v0.8.12-beta) ----
+        // Material Design Icon name driving the prominent at-a-glance
+        // status glyph in the tile header. Set by the host VM alongside
+        // StatusColor in OnMonitorTick. Three values map to three states:
+        //   * "CheckCircle"        — good (1 Gbps or OCR-100 Mbps expected)
+        //   * "AlertCircle"        — degraded / fault / flapping / errors
+        //   * "HelpCircleOutline"  — no link / no cable
+        // The icon's Foreground binds to StatusColor so colour and shape
+        // stay in lockstep. Field tech ask: a clear glyph is more
+        // scannable than a small coloured dot.
+        private string _statusIconKind = "HelpCircleOutline";
+        public string StatusIconKind { get => _statusIconKind; set => Set(ref _statusIconKind, value); }
+
         // ---- Status line (the speed / link / flap state) ----
         // StatusLine is the new tile binding; StatusText kept for legacy.
         private string _statusLine = "No cable";

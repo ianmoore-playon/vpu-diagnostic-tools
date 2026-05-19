@@ -35,6 +35,20 @@ namespace Pulse.WPF.Helpers
         // raw responsive state binding is unaffected; only the flap counter
         // and the VM's per-port history feed read from this debounced source.
         public List<DateTime> LinkTransitions { get; } = new List<DateTime>();
+
+        // ---- Sub-debounce flap detection (v0.8.12-beta) ----
+        // Timestamps of "pending" transitions that got dropped by the
+        // debounce because the raw state flipped back within the window
+        // (i.e. raw == PreviousIsUp before the hold-off expired). These
+        // are normally NIC negotiation settling noise — but a damaged
+        // NIC pin produces the same shape of signal and was being
+        // silently filtered. Counted alongside LinkTransitions by
+        // FlapCountInWindow so fast flaps surface as flapping just like
+        // slow ones. Field test on an 82574L with a damaged pin: this
+        // list filled up at ~5-10/sec while LinkTransitions stayed empty,
+        // confirming the gap.
+        public List<DateTime> NoiseFlaps { get; } = new List<DateTime>();
+
         // The last *committed* (debounced-stable) IsUp value. The VM reads
         // this for its Recent activity entries.
         public bool? PreviousIsUp { get; set; }
@@ -88,9 +102,18 @@ namespace Pulse.WPF.Helpers
         {
             // Count transitions in [now - window, now]. Caller is responsible
             // for pruning periodically; we simply count.
+            //
+            // v0.8.12-beta: includes both committed LinkTransitions and
+            // sub-debounce NoiseFlaps so a damaged-pin NIC causing fast
+            // (< TransitionDebounce) flapping surfaces as flapping. Slow
+            // flaps land in LinkTransitions, fast flaps in NoiseFlaps -
+            // both are real flap signals and both count toward the
+            // threshold.
             var threshold = now - window;
             int n = 0;
             foreach (var t in LinkTransitions)
+                if (t >= threshold) n++;
+            foreach (var t in NoiseFlaps)
                 if (t >= threshold) n++;
             return n;
         }
@@ -309,7 +332,19 @@ namespace Pulse.WPF.Helpers
                 else if (currentIsUp == st.PreviousIsUp.Value)
                 {
                     // Raw state matches the committed state — any pending
-                    // change was negotiation noise; drop it.
+                    // change was either negotiation noise OR a sub-debounce
+                    // flap from a damaged NIC. We can't tell them apart at
+                    // this single moment, so record the drop as a "noise
+                    // flap" timestamp. FlapCountInWindow now sums these in
+                    // alongside LinkTransitions; a few drops in a minute is
+                    // benign settling, but a damaged-pin port produces
+                    // dozens per minute and trips the flap threshold.
+                    //
+                    // v0.8.12-beta: was previously throwing the timestamp
+                    // away entirely - rapid flaps from a damaged pin went
+                    // unflagged.
+                    if (st.PendingIsUp.HasValue)
+                        st.NoiseFlaps.Add(now);
                     st.PendingIsUp = null;
                     st.PendingSince = null;
                 }
@@ -403,6 +438,20 @@ namespace Pulse.WPF.Helpers
                 }
                 if (writeIdx < st.LinkTransitions.Count)
                     st.LinkTransitions.RemoveRange(writeIdx, st.LinkTransitions.Count - writeIdx);
+
+                // v0.8.12-beta: same prune pass for the new NoiseFlaps list
+                // so a damaged-pin port doesn't accumulate unbounded
+                // sub-debounce flap timestamps over hours of runtime.
+                int nfWriteIdx = 0;
+                for (int i = 0; i < st.NoiseFlaps.Count; i++)
+                {
+                    if (st.NoiseFlaps[i] >= flapThreshold)
+                    {
+                        st.NoiseFlaps[nfWriteIdx++] = st.NoiseFlaps[i];
+                    }
+                }
+                if (nfWriteIdx < st.NoiseFlaps.Count)
+                    st.NoiseFlaps.RemoveRange(nfWriteIdx, st.NoiseFlaps.Count - nfWriteIdx);
 
                 // Drop error samples older than the error window.
                 int wIdx = 0;

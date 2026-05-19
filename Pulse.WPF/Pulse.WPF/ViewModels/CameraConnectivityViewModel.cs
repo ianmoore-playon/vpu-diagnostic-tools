@@ -317,6 +317,11 @@ namespace Pulse.WPF.ViewModels
                     bool isFlapping = flaps >= _monitor.FlapTransitionsThreshold;
 
                     string statusLine; Brush statusBrush; Brush ledBrush;
+                    // v0.8.12-beta: status icon kind (Material Design Icon
+                    // name) drives the prominent tile-header glyph. Default
+                    // to no-link grey; each branch below sets it alongside
+                    // statusBrush so colour + shape stay in lockstep.
+                    string statusIconKind = "HelpCircleOutline";
                     bool is1G   = snap.LinkSpeedBps >= 1_000_000_000UL;
                     bool is100M = snap.LinkSpeedBps >= 100_000_000UL && snap.LinkSpeedBps < 1_000_000_000UL;
 
@@ -422,12 +427,14 @@ namespace Pulse.WPF.ViewModels
                             statusLine  = "Linked · 1 Gbps";
                             statusBrush = StatusHelpers.Brush("GreenBrush");
                             ledBrush    = StatusHelpers.Brush("GreenBrush");
+                            statusIconKind = "CheckCircle";
                         }
                         else if (is100M && info.IsOcr)
                         {
                             statusLine  = "Linked · 100 Mbps · OCR (inferred)";
                             statusBrush = StatusHelpers.Brush("GreenBrush");
                             ledBrush    = StatusHelpers.Brush("GreenBrush");
+                            statusIconKind = "CheckCircle";
                         }
                         else
                         {
@@ -444,6 +451,7 @@ namespace Pulse.WPF.ViewModels
                                 : "Linked · " + FormatSpeed(snap.LinkSpeedBps) + " (expected 1 Gbps)";
                             statusBrush = StatusHelpers.Brush("YellowBrush");
                             ledBrush    = StatusHelpers.Brush("YellowBrush");
+                            statusIconKind = "AlertCircle";
                         }
                     }
                     else if (is1G)
@@ -453,6 +461,7 @@ namespace Pulse.WPF.ViewModels
                         statusLine = "Linked · 1 Gbps";
                         statusBrush = StatusHelpers.Brush("GreenBrush");
                         ledBrush    = StatusHelpers.Brush("GreenBrush");
+                        statusIconKind = "CheckCircle";
                     }
                     else if (is100M && info.IsOcr)
                     {
@@ -461,6 +470,7 @@ namespace Pulse.WPF.ViewModels
                         statusLine = "Linked · 100 Mbps · OCR (expected)";
                         statusBrush = StatusHelpers.Brush("GreenBrush");
                         ledBrush    = StatusHelpers.Brush("GreenBrush");
+                        statusIconKind = "CheckCircle";
                     }
                     else if (is100M && info.Source == DeviceIdentitySource.OuiVendor && (roles?.Count ?? 0) > 0)
                     {
@@ -486,6 +496,7 @@ namespace Pulse.WPF.ViewModels
                         statusLine = "Linked · 100 Mbps · OCR (inferred)";
                         statusBrush = StatusHelpers.Brush("GreenBrush");
                         ledBrush    = StatusHelpers.Brush("GreenBrush");
+                        statusIconKind = "CheckCircle";
                         info.IsOcr = true; // so the warning roll-up below doesn't fire
                         info.Source = DeviceIdentitySource.PixellotConfig; // IsConfigured derives from Source — drives the accent colouring
                     }
@@ -496,6 +507,7 @@ namespace Pulse.WPF.ViewModels
                         statusLine = "Linked · 100 Mbps (expected 1 Gbps)";
                         statusBrush = StatusHelpers.Brush("YellowBrush");
                         ledBrush    = StatusHelpers.Brush("YellowBrush");
+                        statusIconKind = "AlertCircle";
                     }
                     else
                     {
@@ -510,6 +522,7 @@ namespace Pulse.WPF.ViewModels
                         statusLine = "Linked · " + FormatSpeed(snap.LinkSpeedBps) + " (expected 1 Gbps)";
                         statusBrush = StatusHelpers.Brush("YellowBrush");
                         ledBrush    = StatusHelpers.Brush("YellowBrush");
+                        statusIconKind = "AlertCircle";
                     }
 
                     if (isFlapping)
@@ -519,6 +532,7 @@ namespace Pulse.WPF.ViewModels
                         statusLine += $"  ·  ↯ Flapping ×{flaps}/60s";
                         statusBrush = StatusHelpers.Brush("YellowBrush");
                         ledBrush    = StatusHelpers.Brush("YellowBrush");
+                        statusIconKind = "AlertCircle";
                         port.IsPulsing = true;
                     }
                     else
@@ -552,6 +566,7 @@ namespace Pulse.WPF.ViewModels
                     port.StatusText   = statusLine; // legacy
                     port.StatusColor  = statusBrush;
                     port.LinkLedBrush = ledBrush;
+                    port.StatusIconKind = statusIconKind;
                     // v0.5.2 §2: stale-tile dimming dropped.
                     port.IsStale      = false;
                     port.TileOpacity  = 1.0;
@@ -724,6 +739,7 @@ namespace Pulse.WPF.ViewModels
             port.StatusText    = "No cable";
             port.StatusColor   = StatusHelpers.Brush("MutedForegroundBrush");
             port.LinkLedBrush  = StatusHelpers.Brush("SubtleForegroundBrush");
+            port.StatusIconKind = "HelpCircleOutline";
             port.Ip = "—"; port.Mac = "—";
             port.ErrorLine = "";
             port.ErrorColor = StatusHelpers.Brush("MutedForegroundBrush");
