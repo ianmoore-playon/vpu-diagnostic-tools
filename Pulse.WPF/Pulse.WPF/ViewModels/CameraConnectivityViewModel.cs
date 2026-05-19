@@ -431,9 +431,18 @@ namespace Pulse.WPF.ViewModels
                         }
                         else
                         {
-                            statusLine  = is100M ? "Linked · 100 Mbps"
-                                                 : "Linked · " + FormatSpeed(snap.LinkSpeedBps);
-                            statusBrush = StatusHelpers.Brush("GreenBrush");
+                            // v0.8.11-beta: degraded-link branch (no ARP yet,
+                            // not 1G, not OCR-inferred). Was rendering green
+                            // status text against a yellow LED - inconsistent
+                            // and field tech reported it as misleading on a
+                            // damaged-pin 10 Mbps fault. Per the new rule:
+                            // any non-1G non-OCR-100M link is a fault. Yellow
+                            // status text + "(expected 1 Gbps)" suffix so the
+                            // tile copy itself says fault.
+                            statusLine = is100M
+                                ? "Linked · 100 Mbps (expected 1 Gbps)"
+                                : "Linked · " + FormatSpeed(snap.LinkSpeedBps) + " (expected 1 Gbps)";
+                            statusBrush = StatusHelpers.Brush("YellowBrush");
                             ledBrush    = StatusHelpers.Brush("YellowBrush");
                         }
                     }
@@ -490,10 +499,16 @@ namespace Pulse.WPF.ViewModels
                     }
                     else
                     {
+                        // v0.8.11-beta: ARP resolved, link up, but speed is
+                        // neither 1G nor 100M (so e.g. 10 Mbps from a damaged
+                        // NIC pin). Was rendering AccentBrush (blue) text on
+                        // a yellow LED - inconsistent. Any non-1G non-OCR-
+                        // 100M link is a fault: yellow text + "(expected
+                        // 1 Gbps)" suffix so the tile copy says fault.
                         primary = info.PrimaryLabel; secondary = info.SecondaryLabel;
                         ipShown = snap.RemoteIp; macShown = snap.RemoteMac;
-                        statusLine = "Linked · " + FormatSpeed(snap.LinkSpeedBps);
-                        statusBrush = StatusHelpers.Brush("AccentBrush");
+                        statusLine = "Linked · " + FormatSpeed(snap.LinkSpeedBps) + " (expected 1 Gbps)";
+                        statusBrush = StatusHelpers.Brush("YellowBrush");
                         ledBrush    = StatusHelpers.Brush("YellowBrush");
                     }
 
@@ -580,7 +595,17 @@ namespace Pulse.WPF.ViewModels
                     // OCR-from-speed inference above sets info.IsOcr = true
                     // for Pixellot-OUI ports at 100 Mbps, so OCR cameras
                     // don't trip this.
-                    if (snap.IsUp && is100M && !info.IsOcr) warnings++;
+                    //
+                    // v0.8.11-beta: expanded from is100M to "any sub-1G
+                    // non-OCR link". Field tech damaged a NIC pin and the
+                    // port negotiated at 10 Mbps - the previous is100M-only
+                    // condition missed it, producing a false "All Clear"
+                    // page-level pill on a clearly faulty port.
+                    bool isSubGigDegraded = snap.IsUp
+                                            && snap.LinkSpeedBps > 0
+                                            && snap.LinkSpeedBps < 1_000_000_000UL
+                                            && !info.IsOcr;
+                    if (isSubGigDegraded) warnings++;
                     if (errorsRising) warnings++;
                     if (isFlapping)   warnings++;
                     // v0.6.5: only contribute severity for ports the VPU is
@@ -790,13 +815,25 @@ namespace Pulse.WPF.ViewModels
                         $"Link dropped from 1 Gbps to 100 Mbps mid-session. Replace the cable on Port {portNum}; the previous one is failing under load."));
                 }
 
-                // Linked-degraded: configured Main camera at 100 Mbps.
-                if (snap.IsUp && is100M && info.IsConfigured && !info.IsOcr)
+                // Linked-degraded: configured Main camera at ANY sub-1G speed.
+                //
+                // v0.8.11-beta: was previously gated on `is100M` only - missed
+                // a damaged-pin NIC field-flagged as negotiating 10 Mbps.
+                // Field tech rule: any non-1G non-OCR link is a fault, not
+                // just exactly 100 Mbps. Expanded to cover the full sub-1G
+                // range (10 / 100 / anything else).
+                bool isLinkDegraded = snap.IsUp
+                                      && snap.LinkSpeedBps > 0
+                                      && snap.LinkSpeedBps < 1_000_000_000UL
+                                      && info.IsConfigured
+                                      && !info.IsOcr;
+                if (isLinkDegraded)
                 {
+                    string actualSpeed = is100M ? "100 Mbps" : FormatSpeed(snap.LinkSpeedBps);
                     rows.Add(NetworkRecommendation.Create(
                         "Critical",
                         $"Cable or jack fault on Port {portNum}",
-                        $"Reseat or replace the cable on Port {portNum}. Expected 1 Gbps for {info.PrimaryLabel}, currently negotiated 100 Mbps."));
+                        $"Reseat or replace the cable on Port {portNum}. Expected 1 Gbps for {info.PrimaryLabel}, currently negotiated {actualSpeed}."));
                 }
 
                 // Cable + no link — v0.5.2 §3 hold-off.
