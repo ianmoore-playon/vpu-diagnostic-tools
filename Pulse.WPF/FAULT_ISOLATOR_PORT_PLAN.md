@@ -282,12 +282,116 @@ Estimated ~700 LOC total; one focused ship.
 
 All four answers unblock implementation.
 
+## Diagnostic-agent review — corrections (2026-05-19)
+
+The plan was reviewed end-to-end against the legacy state machine
+plus the current WPF Camera Connectivity surface. Material corrections
+folded in here:
+
+### Phase naming
+
+`FaultIsolatorPhase` enum renamed to clarify intent:
+`PickPort`, `AwaitingNicPortTest`, `AwaitingCableTest`,
+`AwaitingCameraTest`, `Concluded`. The previous `Baseline` name
+implied "running baseline now" when in fact it meant "baseline done,
+awaiting Phase 2 action".
+
+### Conclusion wording — match legacy verbatim
+
+* **CONCLUSION — FAULTY NIC PORT**
+* **CONCLUSION — FAULTY CABLE**
+* **CONCLUSION — FAULTY CAMERA (CHU)**
+* **CONCLUSION — NIC / HARDWARE FAULT**
+
+### State flow corrections
+
+* **No `BaselineHealthy` conclusion.** Phase 1 reading 1 Gbps stays in
+  `PickPort` phase; only the action-button text changes to "Recheck
+  Port" and the heading reads "BASELINE — PORT HEALTHY". No
+  `Save-GuideSession` write here.
+* **Phase 1 no-link branch.** Speed reads 0 (cable out or camera
+  powered off) gets its own verdict: "No link detected. Verify the
+  camera is powered on and the cable is seated firmly." Distinct
+  from the "degraded" path.
+* **Pre-check has no acknowledged-state.** Legacy's MessageBox
+  Cancel just exits the click handler; if the tech tries again, the
+  pre-check runs again. Plan no longer invents an "acknowledged" flag.
+* **History severity values: Pass / Info / Fail only.** Legacy never
+  emits `Warn` rows.
+* **Phase-4 NIC-hardware verdict severity = Fail** (not Info).
+* **Polling semantics: peak-hold.** Each phase reads link speed via a
+  poll loop, not a single sample. 12 s budget for live phase reads
+  (1 Hz polling, short-circuit on 1 Gbps); 4 s budget for the
+  Phase-2 test-port pre-check. Mirrors legacy `Get-GuideLinkSpeed`.
+
+### Speed-read source
+
+Reuse the existing `INetworkAdapterService.GetCameraPortsAsync()` —
+returns the full per-port list with `LinkSpeedBps`. No new service
+method needed; the wizard filters by `LocalMac` instead.
+
+### Port keying
+
+The live monitor (`CameraNicMonitor`) keys ports by `LocalMac`, not
+the Windows adapter name. `PortChoice` exposes both: `LocalMac` is
+the stable key the wizard reads against; `AdapterName` is the
+display string. The entry-button "first degraded port" pre-selection
+reads `LinkSpeedBps < 1 Gbps && IsUp` from the underlying
+`PortState` snapshot, NOT from `PortViewModel.StatusLine` (which
+would skip 100 Mbps Pixellot-OUI ports relabelled by the OCR-from-
+speed inference).
+
+### OCR ports in the suspect dropdown — INCLUDE with annotation
+
+Decision: keep OCR-labelled ports in the suspect-port dropdown,
+suffixed with "(OCR — 100 Mbps is expected)". Rationale: there are
+field cases where an OCR's cable does need swap-testing. Excluding
+them would make those cases harder to triage.
+
+### Live-monitor coexistence — pause while modal open
+
+While the Fault Isolator dialog is open, the dialog calls
+`CameraNicMonitor.Pause()` (new method) on entry and `Resume()` on
+exit. This avoids:
+
+* 2-s transition-debounce lag between the wizard's reads and the
+  live panel's reads
+* `DidSpeedRegress` firing spurious Critical recommendations mid-
+  wizard when the tech moves a camera between ports
+* Stale role labels on the live panel during the Phase-4 camera swap
+  (also naturally hidden behind the modal)
+
+### Exit action — kick `SaveSnapshotCommand` on conclusion
+
+Decision: when the wizard reaches `Concluded`, the dialog closes and
+the parent VM fires `SaveSnapshotCommand` (writes a per-panel
+snapshot to the Reports directory) so the final state is captured
+for ticket attachment. The legacy `$btnRun.PerformClick()` has no
+WPF equivalent — there's no "Run" button (the live monitor is the
+diagnostic), so this is the closest moral equivalent.
+
+### Side bugs flagged for fold-in
+
+The reviewer surfaced three Camera Connectivity bugs that touch
+state the wizard reads. Folding them in to this ship:
+
+1. **D8 baseline-clear is incomplete** —
+   `CameraConnectivityViewModel.UpdateSpeedBaseline` clears the
+   per-MAC speed baseline only when `IsUp=false` AND `RemoteMac` is
+   empty. The cabled-no-link case (cable plugged, camera off) leaves
+   a stale 1 Gbps baseline cached; when an OCR camera at 100 Mbps
+   is then attached, `DidSpeedRegress` fires a false "Live cable
+   failure" Critical. Extend the clear to any confirmed `IsUp=false`
+   regardless of `RemoteMac`.
+2. **OCR inference flickers** Yellow → Green on the first 1-2 ticks
+   while `roles` is being lazily populated. Cosmetic; documented for
+   a future patch.
+3. **`PortState.LinkTransitions` unbounded** between prunes — needs
+   a `.Capacity` ceiling. Low impact; documented for a future patch.
+
 ## Next decision
 
-If the plan reads right, the first concrete step is implementation —
-this is a single-ship effort. Estimated 1-2 days of focused work to
-v0.8.0-beta on the test VPU.
-
-If you want adjustments before implementation — different layout,
-dropped phases, different conclusion behaviour — say so here and
-I'll revise before any code lands.
+All open questions resolved. Implementation proceeds as v0.8.0-beta
+single ship. Estimated ~700-900 LOC (700 plan baseline + ~150 LOC
+for the monitor Pause/Resume + PortViewModel additions + the D8
+fix). See commit history for the actual landed change.

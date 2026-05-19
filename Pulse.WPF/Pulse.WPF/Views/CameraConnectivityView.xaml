@@ -103,6 +103,19 @@
                             <TextBlock Text="Save Snapshot" Margin="6,0,0,0" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
+                    <!-- v0.8.0-beta: Fault Isolator wizard launcher. Always
+                         enabled - the tech can run the 4-phase swap test on
+                         demand whether or not the live monitor has surfaced a
+                         degraded port. -->
+                    <Button Command="{Binding OpenFaultIsolatorCommand}"
+                            Style="{StaticResource TopBarOutlinedButton}"
+                            AutomationProperties.Name="Open the Camera Fault Isolator wizard"
+                            ToolTip="Run a 4-phase swap test to pin a degraded port on a NIC, cable, or camera.">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="HammerWrench" Width="16" Height="16" VerticalAlignment="Center" />
+                            <TextBlock Text="Fault Isolator" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
                 <StackPanel>
                     <TextBlock Text="Camera Connectivity" Style="{StaticResource PageTitle}"

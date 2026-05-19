@@ -197,6 +197,30 @@ namespace Pulse.WPF.Helpers
 
         public void Stop() => _timer.Stop();
 
+        // v0.8.0-beta: Pause / Resume for the Fault Isolator wizard. While
+        // the wizard is open the monitor's 2-s transition debounce + flap
+        // detection + DidSpeedRegress would fight the wizard's own per-port
+        // poll loop and emit spurious Critical recommendations whenever the
+        // tech moves a cable between ports. Distinct from Stop because the
+        // monitor lifecycle (subscriptions, internal state) is preserved
+        // across the pause — Resume() picks up where Pause() left off.
+        private bool _paused;
+        public bool IsPaused => _paused;
+        public void Pause()
+        {
+            _paused = true;
+            _timer.Stop();
+        }
+        public void Resume()
+        {
+            if (!_paused) return;
+            _paused = false;
+            _timer.Start();
+            // Kick an immediate poll so the live panel doesn't lag a full
+            // second after the wizard closes.
+            _ = SafePollAsync();
+        }
+
         // R3 fix: async void with an unguarded body. Anything in PollAsync
         // after the GetCameraPortsAsync catch (PruneAll, the foreach, the
         // Tick?.Invoke) was unprotected. A throw from RemoteDeviceResolver or

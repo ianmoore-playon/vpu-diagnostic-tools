@@ -83,6 +83,32 @@ namespace Pulse.WPF.ViewModels
         private string _localMac = "";
         public string LocalMac { get => _localMac; set => Set(ref _localMac, value); }
 
+        // v0.8.0-beta — added for the Fault Isolator wizard's port-selection
+        // logic. AdapterName mirrors the Windows adapter name from the live
+        // snapshot (e.g. "Ethernet 3") so the wizard can populate dropdowns
+        // with a stable display label; LocalMac stays the keying primitive.
+        // LinkSpeedBps + IsUp + IsOcr give the wizard a raw signal for
+        // "first degraded port" pre-selection, bypassing the StatusLine
+        // label which the OCR-from-speed inference re-paints Green.
+        private string _adapterName = "";
+        public string AdapterName { get => _adapterName; set => Set(ref _adapterName, value); }
+
+        private ulong _linkSpeedBps;
+        public ulong LinkSpeedBps { get => _linkSpeedBps; set => Set(ref _linkSpeedBps, value); }
+
+        private bool _isUp;
+        public bool IsUp { get => _isUp; set => Set(ref _isUp, value); }
+
+        private bool _isOcr;
+        public bool IsOcr { get => _isOcr; set => Set(ref _isOcr, value); }
+
+        /// <summary>
+        /// Raw "this port is below gigabit while it's actually carrying a
+        /// link" signal — bypasses the OCR-from-speed inference. Used by
+        /// the Fault Isolator's entry-button pre-selection.
+        /// </summary>
+        public bool IsDegraded => IsUp && LinkSpeedBps > 0 && LinkSpeedBps < 1_000_000_000UL;
+
         // ---- Errors row ----
         // ErrorLine is the new tile binding (e.g. "0 errors" / "12 errors ↑").
         // ErrorColor flips to YellowBrush when errors are rising.

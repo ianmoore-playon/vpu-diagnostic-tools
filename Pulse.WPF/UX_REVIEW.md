@@ -1148,3 +1148,45 @@ Log-row level dropped from `Warn` to `Gray` for the same reason.
 ### Bookkeeping
 
 - `Pulse.WPF.csproj` Version bumped 0.7.0-beta → 0.7.1-beta.
+
+## v0.8.0-beta — Camera Fault Isolator wizard (4-phase swap test, modal)
+
+Port of the legacy PowerShell Camera Fault Isolator into the WPF host as a modal wizard. The Camera Connectivity panel stays a passive monitor; the wizard runs as its own dialog so the per-port poll loop doesn't fight the live 1Hz monitor.
+
+Reference: [FAULT_ISOLATOR_PORT_PLAN.md](FAULT_ISOLATOR_PORT_PLAN.md) and the diagnostic agent review that locked the open questions before implementation. State machine, conclusion wording, and severity vocabulary mirror the legacy source of truth at `legacy-powershell:Modules/CameraConnectivity.psm1` (lines ~2660-2810).
+
+### What's new
+
+- **`Views/FaultIsolatorDialog.xaml` + `.xaml.cs`** — modal Window, 780x680, owned by MainWindow. 5 step-dots → phase title + instruction card → port-selector card (suspect / test) → latest-result card (severity-coloured chip) → scrollable phase-history card → 3-button footer (Start Over / Cancel / phase-aware action).
+- **`ViewModels/FaultIsolatorViewModel.cs`** — full state machine. Five phases (`PickPort` → `AwaitingNicPortTest` → `AwaitingCableTest` → `AwaitingCameraTest` → `Concluded`) with verdict copy verbatim from the legacy script. Polls peak link speed via `INetworkAdapterService.GetCameraPortsAsync` — 12 s window for live-phase checks (short-circuits on 1 Gbps), 4 s window for the Phase-2 test-port pre-check (an already-degraded test port invalidates the run, surfaces a Fail result, and offers re-pick). The `Concluded` phase's "Run Full Diagnostic" button closes the dialog so the tech lands back on the live panel.
+- **`Models/FaultIsolatorTypes.cs`** — `FaultIsolatorPhase` + `FaultConclusion` enums, `FaultIsolatorHistoryRow` for the in-dialog phase log + the on-disk report rows, `PortChoice` as the dropdown row binding (LocalMac is the stable key; DisplayLabel is "Adapter — speed [· OCR (100 Mbps is expected) | · FAULT]"). Per the v0.8.0-beta decision: **OCR ports stay in the dropdown** with the suffix — the legacy isolator has historically needed cable troubleshooting on OCR cameras too.
+
+### Wiring on the Camera Connectivity panel
+
+- New top-bar button **Fault Isolator** (`HammerWrench` icon) alongside Save Snapshot. Always enabled — the tech can launch the wizard on demand whether or not the live monitor has surfaced a degraded port.
+- Click handler in `CameraConnectivityViewModel.OpenFaultIsolator`:
+  1. Pauses the live `CameraNicMonitor` so its 2 s transition debounce + flap detection + `DidSpeedRegress` don't fight the wizard's own poll loops.
+  2. Seeds the dialog from the live `PortViewModel` list; pre-selects the first `IsDegraded` port (linked, < 1 Gbps) so the tech doesn't have to find it manually.
+  3. Shows the dialog modal to `MainWindow`.
+  4. On close: resumes the monitor, fires `SaveSnapshotCommand` if a verdict was reached (so the live panel state is bundled alongside the wizard report), and **always** writes the wizard's own per-run report (`<host>-FaultIsolator-yyyyMMdd-HHmmss.txt`) so the phase history lands in the Reports directory even if the tech bails early. Any failure path forces `_monitor.Resume()` so the live panel never sits frozen.
+
+### Supporting refactors
+
+- **`Helpers/CameraNicMonitor.cs`** gains `Pause()` / `Resume()` (distinct from `Stop()` — internal subscriptions + state are preserved across the pause). Resume kicks an immediate poll so the live panel doesn't lag a full second after the wizard closes.
+- **`ViewModels/PortViewModel.cs`** gains four new properties forwarded from each snapshot: `AdapterName`, `LinkSpeedBps`, `IsUp`, `IsOcr`, and a derived `IsDegraded` (`IsUp && 0 < LinkSpeedBps < 1 Gbps`). Bypasses the OCR-from-speed inference that re-paints `StatusLine` green so the wizard's pre-selection has a raw signal.
+- **`ViewModels/CameraConnectivityViewModel.cs`** D8 baseline-clear extended: a confirmed physical disconnect (`IsUp=false`, debounced) clears `_prevSpeedByMac` regardless of `RemoteMac`. The prior shape leaked baselines through brief no-cable-but-cached-MAC windows.
+
+### What to watch for during the v0.8.0-beta field test
+
+- The Fault Isolator button is always visible on the Camera Connectivity top bar.
+- Opening the wizard with a degraded port present pre-selects that port in the Suspect dropdown.
+- Live monitor goes silent for the duration of the wizard (no Live Log noise about flaps / regressions caused by cable moves between ports).
+- Phase history accumulates in the dialog's scrollable card; each row carries timestamp + severity chip + config string + speed reading + verdict.
+- On Cancel / Close: monitor resumes within one tick and the wizard report lands in the Reports directory.
+- On a verdict: `Save Snapshot` toast confirms the parent Camera Connectivity snapshot fired alongside the wizard report.
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.7.1-beta → 0.8.0-beta (new functional surface — modal wizard).
+- New files: `Models/FaultIsolatorTypes.cs`, `ViewModels/FaultIsolatorViewModel.cs`, `Views/FaultIsolatorDialog.xaml`, `Views/FaultIsolatorDialog.xaml.cs`, `Pulse.WPF/FAULT_ISOLATOR_PORT_PLAN.md`.
+- Modified: `Helpers/CameraNicMonitor.cs` (Pause/Resume), `ViewModels/PortViewModel.cs` (AdapterName/LinkSpeedBps/IsUp/IsOcr/IsDegraded), `ViewModels/CameraConnectivityViewModel.cs` (D8 baseline-clear fix + OpenFaultIsolator wiring), `Views/CameraConnectivityView.xaml` (top-bar Fault Isolator button).

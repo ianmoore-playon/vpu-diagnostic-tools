@@ -1,0 +1,301 @@
+<Window x:Class="Pulse.WPF.Views.FaultIsolatorDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:vm="clr-namespace:Pulse.WPF.ViewModels"
+        xmlns:controls="clr-namespace:Pulse.WPF.Controls"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        d:DataContext="{d:DesignInstance Type=vm:FaultIsolatorViewModel}"
+        mc:Ignorable="d"
+        Title="Camera Fault Isolator"
+        Style="{StaticResource PulseDialogWindow}"
+        Width="780" Height="680"
+        MinWidth="640" MinHeight="560"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+    <Window.Resources>
+        <!-- Step-dot helpers. Active dots are filled green; un-reached
+             dots fall back to a muted outline so the tech always knows
+             how far through the wizard they are without reading text. -->
+        <Style x:Key="StepDotActive" TargetType="Ellipse">
+            <Setter Property="Width"  Value="14" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="Fill"   Value="{StaticResource GreenBrush}" />
+            <Setter Property="Stroke" Value="{StaticResource GreenBrush}" />
+            <Setter Property="StrokeThickness" Value="1" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+        <Style x:Key="StepDotInactive" TargetType="Ellipse">
+            <Setter Property="Width"  Value="14" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="Fill"   Value="Transparent" />
+            <Setter Property="Stroke" Value="{StaticResource MutedForegroundBrush}" />
+            <Setter Property="StrokeThickness" Value="1" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+
+        <Style x:Key="StepDotConnector" TargetType="Rectangle">
+            <Setter Property="Width"  Value="32" />
+            <Setter Property="Height" Value="1" />
+            <Setter Property="Fill"   Value="{StaticResource BorderColBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+
+        <Style x:Key="PhaseHeadline" TargetType="TextBlock" BasedOn="{StaticResource SectionTitle}">
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+        <Style x:Key="PhaseBody" TargetType="TextBlock">
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground"   Value="{StaticResource ForegroundBrush}" />
+            <Setter Property="FontSize"     Value="13" />
+            <Setter Property="LineHeight"   Value="20" />
+        </Style>
+        <Style x:Key="DropdownLabel" TargetType="TextBlock" BasedOn="{StaticResource MutedLabel}">
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Background="{StaticResource AppBgBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- =================== Header =================== -->
+        <Border Grid.Row="0" Padding="24,18,24,8">
+            <StackPanel>
+                <TextBlock Text="Camera Fault Isolator"
+                           Style="{StaticResource PageTitle}" />
+                <TextBlock Style="{StaticResource PageSubtitle}"
+                           TextWrapping="Wrap"
+                           Text="Walk through a 4-phase swap test to pin a degraded port on a NIC, cable, or camera. The live monitor pauses while this wizard is open." />
+            </StackPanel>
+        </Border>
+
+        <!-- =================== Step dots =================== -->
+        <Border Grid.Row="1" Padding="24,4,24,12">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                <Ellipse>
+                    <Ellipse.Style>
+                        <Style TargetType="Ellipse" BasedOn="{StaticResource StepDotInactive}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding StepDot1}" Value="True">
+                                    <Setter Property="Fill"   Value="{StaticResource GreenBrush}" />
+                                    <Setter Property="Stroke" Value="{StaticResource GreenBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Ellipse.Style>
+                </Ellipse>
+                <Rectangle Style="{StaticResource StepDotConnector}" />
+                <Ellipse>
+                    <Ellipse.Style>
+                        <Style TargetType="Ellipse" BasedOn="{StaticResource StepDotInactive}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding StepDot2}" Value="True">
+                                    <Setter Property="Fill"   Value="{StaticResource GreenBrush}" />
+                                    <Setter Property="Stroke" Value="{StaticResource GreenBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Ellipse.Style>
+                </Ellipse>
+                <Rectangle Style="{StaticResource StepDotConnector}" />
+                <Ellipse>
+                    <Ellipse.Style>
+                        <Style TargetType="Ellipse" BasedOn="{StaticResource StepDotInactive}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding StepDot3}" Value="True">
+                                    <Setter Property="Fill"   Value="{StaticResource GreenBrush}" />
+                                    <Setter Property="Stroke" Value="{StaticResource GreenBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Ellipse.Style>
+                </Ellipse>
+                <Rectangle Style="{StaticResource StepDotConnector}" />
+                <Ellipse>
+                    <Ellipse.Style>
+                        <Style TargetType="Ellipse" BasedOn="{StaticResource StepDotInactive}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding StepDot4}" Value="True">
+                                    <Setter Property="Fill"   Value="{StaticResource GreenBrush}" />
+                                    <Setter Property="Stroke" Value="{StaticResource GreenBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Ellipse.Style>
+                </Ellipse>
+                <Rectangle Style="{StaticResource StepDotConnector}" />
+                <Ellipse>
+                    <Ellipse.Style>
+                        <Style TargetType="Ellipse" BasedOn="{StaticResource StepDotInactive}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding StepDot5}" Value="True">
+                                    <Setter Property="Fill"   Value="{StaticResource GreenBrush}" />
+                                    <Setter Property="Stroke" Value="{StaticResource GreenBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Ellipse.Style>
+                </Ellipse>
+            </StackPanel>
+        </Border>
+
+        <!-- =================== Body =================== -->
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="24,0,24,8">
+            <StackPanel>
+
+                <!-- Phase title + instruction -->
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="{Binding PhaseTitle}" Style="{StaticResource PhaseHeadline}" />
+                        <TextBlock Text="{Binding PhaseInstruction}" Style="{StaticResource PhaseBody}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Port selectors (suspect always visible; test only visible in phase 2+) -->
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,12,0">
+                            <TextBlock Text="Suspect port" Style="{StaticResource DropdownLabel}" />
+                            <ComboBox ItemsSource="{Binding SuspectPortChoices}"
+                                      SelectedItem="{Binding SelectedSuspectPort}"
+                                      DisplayMemberPath="DisplayLabel"
+                                      IsEnabled="{Binding IsPickingSuspectPort}"
+                                      MinHeight="36" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="0" Grid.Column="1" Margin="12,0,0,0">
+                            <TextBlock Text="Test port (known-good)" Style="{StaticResource DropdownLabel}" />
+                            <ComboBox ItemsSource="{Binding TestPortChoices}"
+                                      SelectedItem="{Binding SelectedTestPort}"
+                                      DisplayMemberPath="DisplayLabel"
+                                      IsEnabled="{Binding IsPickingTestPort}"
+                                      MinHeight="36" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Latest result -->
+                <Border Style="{StaticResource Card}"
+                        Margin="0,0,0,12"
+                        Visibility="{Binding ResultText, Converter={StaticResource StringToVis}, FallbackValue=Collapsed}">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="LATEST RESULT" Style="{StaticResource MutedLabel}" />
+                            <controls:SeverityChip Text="{Binding ResultSeverityLabel, FallbackValue=INFO}"
+                                                   Severity="{Binding ResultSeverity, FallbackValue=info}"
+                                                   Margin="12,0,0,0"
+                                                   VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding ResultText}"
+                                   Style="{StaticResource PhaseBody}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- History -->
+                <Border Style="{StaticResource Card}"
+                        Margin="0,0,0,12"
+                        Visibility="{Binding History.Count, Converter={StaticResource CountToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="Phase history" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                        <ItemsControl ItemsSource="{Binding History}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{StaticResource BorderColBrush}"
+                                            BorderThickness="0,0,0,1"
+                                            Padding="0,6,0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="72" />
+                                                <ColumnDefinition Width="68" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                                       Text="{Binding TimestampLabel}"
+                                                       FontFamily="Cascadia Mono, Consolas"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource MutedForegroundBrush}" />
+                                            <controls:SeverityChip Grid.Row="0" Grid.Column="1"
+                                                                   Text="{Binding SeverityLabel}"
+                                                                   Severity="{Binding Severity}" />
+                                            <TextBlock Grid.Row="0" Grid.Column="2"
+                                                       Text="{Binding PhaseName}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource ForegroundBrush}" />
+                                            <TextBlock Grid.Row="1" Grid.Column="2"
+                                                       Text="{Binding Configuration}"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,2,0,0" />
+                                            <TextBlock Grid.Row="2" Grid.Column="2"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource ForegroundBrush}"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,2,0,0">
+                                                <Run Text="Speed: " Foreground="{StaticResource MutedForegroundBrush}" />
+                                                <Run Text="{Binding SpeedReading}" />
+                                                <Run Text="  -  " Foreground="{StaticResource MutedForegroundBrush}" />
+                                                <Run Text="{Binding Verdict}" />
+                                            </TextBlock>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- =================== Footer =================== -->
+        <Border Grid.Row="3" Background="{StaticResource CardBgBrush}"
+                BorderBrush="{StaticResource BorderColBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="24,12,24,16">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="Start Over"
+                            Command="{Binding StartOverCommand}"
+                            Style="{StaticResource MaterialDesignOutlinedButton}"
+                            MinWidth="120" MinHeight="40" />
+                    <Button Content="Cancel"
+                            Command="{Binding CancelCommand}"
+                            Style="{StaticResource MaterialDesignOutlinedButton}"
+                            MinWidth="120" MinHeight="40"
+                            Margin="12,0,0,0"
+                            IsCancel="True" />
+                    <Button Content="{Binding ActionButtonLabel}"
+                            Command="{Binding ActionCommand}"
+                            Style="{StaticResource MaterialDesignRaisedButton}"
+                            MinWidth="180" MinHeight="40"
+                            Margin="12,0,0,0"
+                            IsDefault="True" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

@@ -111,6 +111,13 @@ namespace Pulse.WPF.ViewModels
         public ICommand OpenCamerasCfgCommand             { get; }
         public ICommand SaveSnapshotCommand               { get; }
 
+        // v0.8.0-beta: launches the Fault Isolator modal wizard (4-phase
+        // swap test). Always visible regardless of Recommendation state so
+        // the tech can run it on demand without waiting for the live
+        // monitor to confirm a degraded port. The command pauses the
+        // monitor for the duration of the wizard (see OpenFaultIsolator).
+        public ICommand OpenFaultIsolatorCommand          { get; }
+
         public CameraConnectivityViewModel(INetworkAdapterService net, IPixellotConfigService cfg)
         {
             _net = net;
@@ -201,6 +208,12 @@ namespace Pulse.WPF.ViewModels
                 }
                 catch { /* never throw from the command path */ }
             });
+
+            // v0.8.0-beta: Fault Isolator entry point. Always enabled so the
+            // tech can launch the wizard whether or not the live monitor has
+            // flagged a degraded port. The command itself handles the
+            // pause / show-modal / resume / report-write lifecycle.
+            OpenFaultIsolatorCommand = new RelayCommand(OpenFaultIsolator);
 
             // 1 s monitor — the prior agent locked this. Auto-start.
             _monitor = new CameraNicMonitor(_net);
@@ -471,6 +484,13 @@ namespace Pulse.WPF.ViewModels
                     // Local MAC is always available from the snapshot; the
                     // Adapter Details dialog uses it to resolve the adapter.
                     port.LocalMac = snap.LocalMac ?? "";
+                    // v0.8.0-beta: forward raw snap fields so the Fault
+                    // Isolator can read undecorated port state without going
+                    // through the OCR-relabelled StatusLine.
+                    port.AdapterName  = snap.Name ?? "";
+                    port.LinkSpeedBps = snap.LinkSpeedBps;
+                    port.IsUp         = snap.IsUp;
+                    port.IsOcr        = info?.IsOcr ?? false;
                     port.PrimaryLabel = primary;
                     port.SecondaryLabel = secondary;
                     port.PrimaryColor = info.IsConfigured
@@ -969,13 +989,19 @@ namespace Pulse.WPF.ViewModels
                 _prevSpeedByMac[snap.LocalMac] = snap.LinkSpeedBps;
                 return;
             }
-            // D8 fix: a confirmed physical disconnect (IsUp=false AND no
-            // remote MAC visible to ARP — i.e. the cable is actually out,
-            // not just a transient polling glitch) should clear the speed
-            // baseline. Otherwise a port that legitimately drops to 0 keeps
-            // an old 1 Gbps baseline forever, and on reconnect with a 100 Mbps
-            // OCR camera DidSpeedRegress fires a spurious Critical.
-            if (!snap.IsUp && string.IsNullOrEmpty(snap.RemoteMac))
+            // D8 fix (extended in v0.8.0-beta after the Fault Isolator
+            // review): a confirmed physical disconnect (IsUp=false, debounced
+            // by the monitor) should clear the speed baseline regardless of
+            // whether ARP still has a cached RemoteMac. The original D8 fix
+            // only cleared on the no-RemoteMac branch (cable physically out)
+            // and missed the "cable plugged in but camera powered off" case
+            // — that left a stale 1 Gbps baseline cached, so when an OCR
+            // camera at 100 Mbps later attached to the same port,
+            // DidSpeedRegress fired a false "Live cable failure" Critical.
+            // The IsUp flag is already debounced by CameraNicMonitor's
+            // TransitionDebounce window, so it protects against transient
+            // polling glitches without needing the RemoteMac gate.
+            if (!snap.IsUp)
             {
                 _prevSpeedByMac.Remove(snap.LocalMac);
             }
@@ -1240,6 +1266,110 @@ namespace Pulse.WPF.ViewModels
             catch (Exception ex)
             {
                 AddLog("AdapterDetails", $"Failed to open adapter details: {ex.Message}", "Warn");
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // v0.8.0-beta: Fault Isolator wizard entry point.
+        //
+        // Lifecycle (matches FAULT_ISOLATOR_PORT_PLAN.md):
+        //   1. Pause the 1Hz live monitor so its 2-s transition debounce +
+        //      flap detection + DidSpeedRegress don't fight the wizard's own
+        //      per-port poll loop.
+        //   2. Seed the dialog VM from the live PortViewModel list. If a
+        //      port is already degraded (>= 100 M, < 1 G, IsUp), pre-select it.
+        //   3. Show the dialog modal to MainWindow. ShowDialog() blocks here
+        //      until the user dismisses (Cancel / Close) the wizard.
+        //   4. Resume the monitor.
+        //   5. If the wizard concluded with a verdict, fire the existing
+        //      SaveSnapshotCommand so the parent panel state is captured
+        //      alongside the wizard's own report (written below).
+        //   6. Always write the wizard's run as its own report file
+        //      (`<host>-FaultIsolator-yyyyMMdd-HHmmss.txt`) so the
+        //      verdict + phase history land in the Reports directory even
+        //      if the tech bails before a conclusion. Mirrors the legacy
+        //      tool's per-run report behaviour.
+        // ------------------------------------------------------------------
+        private void OpenFaultIsolator()
+        {
+            try
+            {
+                _monitor?.Pause();
+
+                var preselect = Ports.FirstOrDefault(p => p.IsDegraded)?.LocalMac;
+
+                var dialogVm = new FaultIsolatorViewModel(
+                    _net,
+                    onConcluded: _ => { /* SaveSnapshot fires below after the dialog returns */ },
+                    requestRunFullDiagnostic: () =>
+                    {
+                        // Exit action on the Concluded screen — just close
+                        // the modal so the tech is back on the live panel.
+                        // (No "run all panels" command exists yet; once it
+                        // does, swap this for a panel-VM invocation.)
+                    });
+                dialogVm.SeedFromPorts(Ports, preselect);
+
+                var dialog = new Views.FaultIsolatorDialog(dialogVm);
+                if (Application.Current?.MainWindow != null
+                    && !ReferenceEquals(Application.Current.MainWindow, dialog))
+                {
+                    dialog.Owner = Application.Current.MainWindow;
+                }
+
+                AddLog("FaultIsolator",
+                    preselect != null
+                        ? $"Opening wizard — pre-selected degraded port {preselect}."
+                        : "Opening wizard.",
+                    "Info");
+
+                dialog.ShowDialog();
+
+                // ---- After the modal closes ----
+                _monitor?.Resume();
+
+                bool concluded = dialogVm.Conclusion != FaultConclusion.None;
+                if (concluded)
+                {
+                    AddLog("FaultIsolator",
+                        $"Conclusion: {dialogVm.Conclusion}. Capturing snapshot.",
+                        "Info");
+                    // Fire the existing SaveSnapshot command so the live
+                    // panel state is bundled alongside the wizard report.
+                    try { SaveSnapshotCommand?.Execute(null); } catch { }
+                }
+                else
+                {
+                    AddLog("FaultIsolator", "Wizard closed without a verdict.", "Info");
+                }
+
+                // Always write the wizard's own per-run report — verdict or
+                // not — so the tech has the phase history to attach to a
+                // ticket regardless of how they exited.
+                try
+                {
+                    var path = _reportWriter.Save("FaultIsolator", dialogVm.BuildReportText());
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        var fileName = System.IO.Path.GetFileName(path);
+                        AppLogFile.Instance.WriteLine("FaultIsolator", "Info",
+                            $"Wizard report saved: {path}");
+                        AddLog("FaultIsolator", $"Report saved: {fileName}", "Pass");
+                        SnapshotStatus = $"Fault Isolator report saved: {fileName}";
+                        ScheduleClearSnapshotStatus();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AddLog("FaultIsolator", $"Failed to save report: {ex.Message}", "Warn");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Defensive: any failure must still resume the monitor or the
+                // live panel will sit frozen.
+                try { _monitor?.Resume(); } catch { }
+                AddLog("FaultIsolator", $"Failed to open wizard: {ex.Message}", "Warn");
             }
         }
 
