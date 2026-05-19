@@ -964,20 +964,40 @@ namespace Pulse.WPF.ViewModels
 
                 // v0.8.16-beta: Intel SmartSpeed downgrade fired in the last
                 // hour for this adapter. Event ID 40 from e1iexpress (or
-                // sibling drivers) is the driver itself reporting that the
-                // cable can't sustain the negotiated gigabit speed. This is
-                // a stronger signal than our debounced live polling - the
-                // driver sees it at the hardware level. Surface as Critical
-                // with an explicit reference to the event log so the tech
-                // can verify in the Event Viewer tab.
+                // sibling drivers) reports that the link couldn't sustain
+                // gigabit at the hardware level - stronger evidence than
+                // our debounced live polling.
+                //
+                // v0.8.18-beta: title + body softened. The driver only
+                // tells us "the link can't sustain gigabit" - it doesn't
+                // know whether the cable, port, or CHU is at fault. So we
+                // describe the symptom and direct the tech to Fault
+                // Isolator to narrow down.
+                //
+                // Also demote to Info when the port has no current cable
+                // (snap.IsUp == false). Field tech feedback: after moving
+                // a faulty cable to a known-good port, the original port's
+                // historical events stayed in the log and Pulse kept
+                // surfacing a Critical for an empty jack - misleading,
+                // since the system was operational without it.
                 if (!string.IsNullOrEmpty(snap.LocalMac)
                     && _smartSpeedDowngradeByMac.TryGetValue(snap.LocalMac, out var hadDowngrade)
                     && hadDowngrade)
                 {
-                    rows.Add(NetworkRecommendation.Create(
-                        "Critical",
-                        $"Cable fault confirmed by driver on Port {portNum}",
-                        $"Intel SmartSpeed downgraded the link speed in the last hour (Event 40 in System log). The driver itself is reporting the cable can't sustain gigabit. Replace the cable on Port {portNum}; see Event Viewer tab for the full event sequence."));
+                    if (snap.IsUp)
+                    {
+                        rows.Add(NetworkRecommendation.Create(
+                            "Critical",
+                            $"Link fault detected by driver on Port {portNum}",
+                            $"Intel SmartSpeed downgraded the link speed in the last hour (Event 40 in System log). The driver detected the link can't sustain gigabit - the cause could be the cable, the NIC port, or the camera. Run the Fault Isolator from the top bar to narrow it down. See the Event Viewer tab for the full event sequence."));
+                    }
+                    else
+                    {
+                        rows.Add(NetworkRecommendation.Create(
+                            "Info",
+                            $"Historical link fault on Port {portNum}",
+                            $"Port {portNum} had link-speed downgrade events in the last hour, but no cable is currently plugged in. If you've moved the cable to another port and the system is operational, no action needed. See the Event Viewer tab for the event sequence."));
+                    }
                 }
 
                 // Linked-degraded: Main camera at ANY sub-1G speed.
@@ -1370,10 +1390,17 @@ namespace Pulse.WPF.ViewModels
                         port.RecentDriverEvents = "";
                         continue;
                     }
-                    // e.g. "3 driver events (last hour)"
+                    // v0.8.18-beta: append "(historical)" when the port has
+                    // no current cable. Field tech feedback: after moving a
+                    // faulty cable to a known-good port, the original port's
+                    // event count stayed at "257 driver events (last hour)"
+                    // which read as a current ongoing fault. Now reads as
+                    // "257 driver events (historical)" so the tech sees it
+                    // as past context, not a fresh problem.
+                    string suffix = port.IsUp ? "(last hour)" : "(historical)";
                     port.RecentDriverEvents = count == 1
-                        ? "1 driver event (last hour)"
-                        : $"{count} driver events (last hour)";
+                        ? $"1 driver event {suffix}"
+                        : $"{count} driver events {suffix}";
                 }
             }
             finally
