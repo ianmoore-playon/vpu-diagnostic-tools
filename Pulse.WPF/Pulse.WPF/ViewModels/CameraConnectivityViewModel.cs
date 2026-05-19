@@ -419,6 +419,46 @@ namespace Pulse.WPF.ViewModels
                             secondary = "Inferred from 100 Mbps speed";
                             info.IsOcr = true;        // silences degraded-speed warning
                             info.Source = DeviceIdentitySource.PixellotConfig; // IsConfigured is derived from Source; this drives the accent colouring
+
+                            // v0.8.14-beta: OCR cameras don't ARP, so the
+                            // tile's IP / MAC rows would stay "—" forever
+                            // without help. Look up the configured OCR /
+                            // Scoreboard entry from cameras.cfg and use its
+                            // IP + MAC as the displayed values. Field tech
+                            // ask: "if the tool can see a link, it should
+                            // be able to see that data too and populate
+                            // that space".
+                            string ocrCfgIp = null;
+                            if (roles != null)
+                            {
+                                foreach (var kv in roles)
+                                {
+                                    if (!string.IsNullOrEmpty(kv.Value) &&
+                                        (kv.Value.IndexOf("OCR", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         kv.Value.IndexOf("Scoreboard", StringComparison.OrdinalIgnoreCase) >= 0))
+                                    {
+                                        ocrCfgIp = kv.Key;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!string.IsNullOrEmpty(ocrCfgIp)) ipShown = ocrCfgIp;
+
+                            string ocrCfgMac = null;
+                            if (rolesByMac != null)
+                            {
+                                foreach (var kv in rolesByMac)
+                                {
+                                    if (!string.IsNullOrEmpty(kv.Value) &&
+                                        (kv.Value.IndexOf("OCR", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         kv.Value.IndexOf("Scoreboard", StringComparison.OrdinalIgnoreCase) >= 0))
+                                    {
+                                        ocrCfgMac = kv.Key;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!string.IsNullOrEmpty(ocrCfgMac)) macShown = ocrCfgMac;
                         }
                         else
                         {
@@ -454,12 +494,40 @@ namespace Pulse.WPF.ViewModels
                             // any non-1G non-OCR-100M link is a fault. Yellow
                             // status text + "(expected 1 Gbps)" suffix so the
                             // tile copy itself says fault.
-                            statusLine = is100M
-                                ? "Linked · 100 Mbps (expected 1 Gbps)"
-                                : "Linked · " + FormatSpeed(snap.LinkSpeedBps) + " (expected 1 Gbps)";
-                            statusBrush = StatusHelpers.Brush("YellowBrush");
-                            ledBrush    = StatusHelpers.Brush("YellowBrush");
-                            statusIconKind = "AlertCircle";
+                            //
+                            // v0.8.14-beta: special-case the OCR-inference
+                            // grace period. For the first 5 s after a 100 Mbps
+                            // link comes up with no ARP, we don't yet know
+                            // whether it's OCR (which IS 100 Mbps by design)
+                            // or a degraded Main Camera. Falling through to
+                            // yellow degraded for those 5 s confused field
+                            // techs - a real OCR camera flashed "fault" for
+                            // 5 s before correcting to green. New rule:
+                            // during the grace window, render a NEUTRAL
+                            // "Identifying..." state. After the window,
+                            // either OCR inference fires (above) -> green,
+                            // or this branch -> yellow as before.
+                            bool inOcrGracePeriod = is100M
+                                && (roles?.Count ?? 0) > 0
+                                && st.LinkUpSince.HasValue
+                                && (utcNow - st.LinkUpSince.Value) < TimeSpan.FromSeconds(5);
+
+                            if (inOcrGracePeriod)
+                            {
+                                statusLine = "Linked · 100 Mbps · Identifying...";
+                                statusBrush = StatusHelpers.Brush("MutedForegroundBrush");
+                                ledBrush    = StatusHelpers.Brush("MutedForegroundBrush");
+                                statusIconKind = "ProgressClock";
+                            }
+                            else
+                            {
+                                statusLine = is100M
+                                    ? "Linked · 100 Mbps (expected 1 Gbps)"
+                                    : "Linked · " + FormatSpeed(snap.LinkSpeedBps) + " (expected 1 Gbps)";
+                                statusBrush = StatusHelpers.Brush("YellowBrush");
+                                ledBrush    = StatusHelpers.Brush("YellowBrush");
+                                statusIconKind = "AlertCircle";
+                            }
                         }
                     }
                     else if (is1G)
@@ -839,25 +907,38 @@ namespace Pulse.WPF.ViewModels
                         $"Link dropped from 1 Gbps to 100 Mbps mid-session. Replace the cable on Port {portNum}; the previous one is failing under load."));
                 }
 
-                // Linked-degraded: configured Main camera at ANY sub-1G speed.
+                // Linked-degraded: Main camera at ANY sub-1G speed.
                 //
                 // v0.8.11-beta: was previously gated on `is100M` only - missed
                 // a damaged-pin NIC field-flagged as negotiating 10 Mbps.
-                // Field tech rule: any non-1G non-OCR link is a fault, not
-                // just exactly 100 Mbps. Expanded to cover the full sub-1G
-                // range (10 / 100 / anything else).
+                // Expanded to cover the full sub-1G range.
+                //
+                // v0.8.14-beta: dropped the `info.IsConfigured` gate. Field
+                // tech reported the Dashboard saying "All Clear" while the
+                // Camera Connectivity tab showed a 10 Mbps damaged-pin port
+                // - cameras.cfg didn't list that port's camera, so
+                // info.IsConfigured=false suppressed the Critical row. Any
+                // non-OCR sub-1G link is a real fault regardless of whether
+                // cfg knows about the device; the page-pill rollup at line
+                // ~625 already worked this way (the v0.6.9 ungate). Same
+                // reasoning applies here.
                 bool isLinkDegraded = snap.IsUp
                                       && snap.LinkSpeedBps > 0
                                       && snap.LinkSpeedBps < 1_000_000_000UL
-                                      && info.IsConfigured
                                       && !info.IsOcr;
                 if (isLinkDegraded)
                 {
                     string actualSpeed = is100M ? "100 Mbps" : FormatSpeed(snap.LinkSpeedBps);
+                    // Use info.PrimaryLabel when we have an identified
+                    // device, otherwise reference the port number for
+                    // unconfigured ports.
+                    string deviceRef = info.IsConfigured && !string.IsNullOrEmpty(info.PrimaryLabel)
+                        ? info.PrimaryLabel
+                        : $"Port {portNum}";
                     rows.Add(NetworkRecommendation.Create(
                         "Critical",
                         $"Cable or jack fault on Port {portNum}",
-                        $"Reseat or replace the cable on Port {portNum}. Expected 1 Gbps for {info.PrimaryLabel}, currently negotiated {actualSpeed}."));
+                        $"Reseat or replace the cable on Port {portNum}. Expected 1 Gbps for {deviceRef}, currently negotiated {actualSpeed}."));
                 }
 
                 // Cable + no link — v0.5.2 §3 hold-off.

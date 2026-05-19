@@ -1277,7 +1277,11 @@ namespace Pulse.WPF.ViewModels
             string status; Brush colour;
             if (!s.IsUp) { status = "Down"; colour = StatusHelpers.Brush("MutedForegroundBrush"); }
             else if (s.LinkSpeedBps >= 1_000_000_000UL) { status = "Linked"; colour = StatusHelpers.Brush("GreenBrush"); }
-            else { status = "Sub-gigabit"; colour = StatusHelpers.Brush("YellowBrush"); }
+            // v0.8.14-beta: status label "Error" instead of "Sub-gigabit" per
+            // field tech feedback ("Sub-gigabit" was too jargon-y; field
+            // techs read it as a speed class, not as a fault). Any non-1G
+            // sub-1G link on a camera-NIC port is genuinely an error state.
+            else { status = "Error"; colour = StatusHelpers.Brush("YellowBrush"); }
             return new NicPortRow
             {
                 PortNumber = n,
