@@ -365,17 +365,27 @@ namespace Pulse.WPF.ViewModels
             }
             ActionButtonEnabled = false;
 
-            // Pre-check: test port must itself be at least nominally healthy
-            // (>= 1 Gbps with no link OR a normal-speed link) before the
-            // cable+camera move. A pre-degraded test port invalidates the test.
-            ActionButtonLabel = "Pre-checking port...";
-            int preSpeed = await PollPeakLinkSpeedMbpsAsync(test.LocalMac, PreCheckPollSeconds).ConfigureAwait(true);
-            if (preSpeed > 0 && preSpeed < 1000)
+            // v0.8.10-beta: pre-degraded check uses the dropdown's CACHED
+            // pre-swap state (captured at SeedFromPorts time when the dialog
+            // opened) instead of a live poll. The prior live-poll approach
+            // had a timing bug: the user moves the cable+camera to the test
+            // port BEFORE clicking Check Now (per the instruction), so the
+            // poll always saw the post-swap state. A no-link test port that
+            // now reads 100 Mbps (because the faulty cable arrived on it)
+            // was falsely flagged as "pre-degraded".
+            //
+            // The PortChoice.LinkSpeedBps captured at SeedFromPorts() is the
+            // correct pre-swap value. The live monitor is paused while the
+            // wizard is open, so the cached value cannot drift. This now
+            // genuinely catches the "tech picked a test port that was
+            // ITSELF already degraded before the swap" case.
+            int preSpeedMbps = (int)(test.LinkSpeedBps / 1_000_000UL);
+            if (preSpeedMbps > 0 && preSpeedMbps < 1000)
             {
                 ActionButtonEnabled = true;
                 ActionButtonLabel = "Check Now";
-                ShowResult($"Pre-check: {test.AdapterName} is already at {preSpeed} Mbps.",
-                    $"{test.AdapterName} is already degraded before you moved anything. Phase 2 results will be unreliable - the test needs a known-good port. Pick a different test port from the dropdown, or click Start Over.",
+                ShowResult($"Pre-check: {test.AdapterName} was at {preSpeedMbps} Mbps BEFORE the swap.",
+                    $"{test.AdapterName} was already degraded before you moved anything. Phase 2 results will be unreliable - the test needs a known-good port. Pick a different test port from the dropdown, or click Start Over.",
                     "Fail");
                 return;
             }
