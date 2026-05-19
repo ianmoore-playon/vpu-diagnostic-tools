@@ -98,17 +98,16 @@ namespace Pulse.WPF.Helpers
         // the VM uses (now - LastResolveAt) for the "stale Ns" subscript.
         public DateTime? LastResolveAt { get; set; }
 
+        /// <summary>
+        /// Combined transition count (committed + sub-debounce) over the
+        /// window. Used for the tile's "↯ Flapping ×N/60s" display so the
+        /// number the tech sees reflects everything we observed, not just
+        /// committed transitions. Detection itself uses
+        /// <see cref="IsFlappingPattern"/> which differentiates the two
+        /// signal classes to avoid false positives on a single yank+replug.
+        /// </summary>
         public int FlapCountInWindow(TimeSpan window, DateTime now)
         {
-            // Count transitions in [now - window, now]. Caller is responsible
-            // for pruning periodically; we simply count.
-            //
-            // v0.8.12-beta: includes both committed LinkTransitions and
-            // sub-debounce NoiseFlaps so a damaged-pin NIC causing fast
-            // (< TransitionDebounce) flapping surfaces as flapping. Slow
-            // flaps land in LinkTransitions, fast flaps in NoiseFlaps -
-            // both are real flap signals and both count toward the
-            // threshold.
             var threshold = now - window;
             int n = 0;
             foreach (var t in LinkTransitions)
@@ -116,6 +115,67 @@ namespace Pulse.WPF.Helpers
             foreach (var t in NoiseFlaps)
                 if (t >= threshold) n++;
             return n;
+        }
+
+        /// <summary>
+        /// Committed-transition count only (each entry crossed the 2 s
+        /// debounce, meaning the new state held for >= 2 s). Excludes
+        /// sub-debounce NoiseFlaps. A single yank-replug produces exactly
+        /// 2 committed transitions; sustained slow flapping produces 3+
+        /// in a minute.
+        /// </summary>
+        public int LinkTransitionCountInWindow(TimeSpan window, DateTime now)
+        {
+            var threshold = now - window;
+            int n = 0;
+            foreach (var t in LinkTransitions)
+                if (t >= threshold) n++;
+            return n;
+        }
+
+        /// <summary>
+        /// Sub-debounce flap count only (raw IsUp toggles that flipped
+        /// back inside the 2 s hold-off). I210 NIC settling produces a
+        /// brief burst of 3-4 noise events when a link comes up; a damaged
+        /// NIC pin produces sustained noise (8+ events in 30 s). The
+        /// threshold (8 in 30 s in <see cref="IsFlappingPattern"/>) is set
+        /// to be well clear of normal settling.
+        /// </summary>
+        public int NoiseFlapCountInWindow(TimeSpan window, DateTime now)
+        {
+            var threshold = now - window;
+            int n = 0;
+            foreach (var t in NoiseFlaps)
+                if (t >= threshold) n++;
+            return n;
+        }
+
+        /// <summary>
+        /// v0.8.13-beta: differentiates real flapping from a single
+        /// physical plug cycle. Returns true if EITHER:
+        ///   - Committed transitions >= 3 in 60 s window (sustained slow
+        ///     flap; a single yank-replug is only 2 transitions and
+        ///     doesn't trip this), OR
+        ///   - Noise transitions >= 8 in 30 s window (rapid sub-debounce
+        ///     hardware bounce; NIC settling produces ~3-4 events at
+        ///     most, this threshold is well clear).
+        ///
+        /// False-positive sanity check across common workflows:
+        ///   - Tech yanks + replugs once     -> 2 LinkTransitions + 0-4
+        ///                                       NoiseFlaps. NEITHER rule
+        ///                                       fires. ✓
+        ///   - Damaged pin, slow flap        -> 4-6 LinkTransitions/60 s.
+        ///                                       Rule 1 fires. ✓
+        ///   - Damaged pin, fast flap        -> 10-30 NoiseFlaps/30 s.
+        ///                                       Rule 2 fires. ✓
+        ///   - NIC plug-in settling          -> 3-4 NoiseFlaps in 5 s.
+        ///                                       Rule 2 needs 8.       ✓
+        /// </summary>
+        public bool IsFlappingPattern(TimeSpan flapWindow, DateTime now)
+        {
+            if (LinkTransitionCountInWindow(flapWindow, now) >= 3) return true;
+            if (NoiseFlapCountInWindow(TimeSpan.FromSeconds(30), now) >= 8) return true;
+            return false;
         }
 
         public bool ErrorsRising(TimeSpan window, DateTime now)

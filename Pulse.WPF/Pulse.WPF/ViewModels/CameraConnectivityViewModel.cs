@@ -313,8 +313,16 @@ namespace Pulse.WPF.ViewModels
                     port.ErrorsColor = port.ErrorColor;
 
                     // ---- Status line + colour + LED brush ----
+                    // v0.8.13-beta: detection uses the smarter
+                    // IsFlappingPattern (committed-transitions >= 3 in 60s
+                    // OR noise-flaps >= 8 in 30s) instead of the raw
+                    // combined count. False-positive proof against single
+                    // yank-replug (2 committed + a few noise events on
+                    // plug-in settling). The displayed count below still
+                    // uses the combined total so "↯ Flapping ×N/60s"
+                    // surfaces everything observed.
                     int flaps = st.FlapCountInWindow(_monitor.FlapWindow, utcNow);
-                    bool isFlapping = flaps >= _monitor.FlapTransitionsThreshold;
+                    bool isFlapping = st.IsFlappingPattern(_monitor.FlapWindow, utcNow);
 
                     string statusLine; Brush statusBrush; Brush ledBrush;
                     // v0.8.12-beta: status icon kind (Material Design Icon
@@ -901,8 +909,12 @@ namespace Pulse.WPF.ViewModels
                 // transitions) during a cable-yank does NOT trigger this —
                 // genuine flapping needs at least one further toggle inside
                 // the window. No hold-off needed.
+                // v0.8.13-beta: BuildRecommendations also uses the new
+                // pattern check (committed >= 3 or noise >= 8) instead of
+                // the combined count. Keeps the Warning row honest about
+                // a SUSTAINED flap vs a single physical plug cycle.
                 int flaps = st.FlapCountInWindow(_monitor.FlapWindow, DateTime.UtcNow);
-                if (flaps >= _monitor.FlapTransitionsThreshold)
+                if (st.IsFlappingPattern(_monitor.FlapWindow, DateTime.UtcNow))
                 {
                     rows.Add(NetworkRecommendation.Create(
                         "Warning",

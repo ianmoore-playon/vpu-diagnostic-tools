@@ -1,18 +1,19 @@
 <!--
     JackVisual — one RJ45 jack rendering for the Camera Connectivity NIC card
     diagram. Bind to a PortViewModel: the LED dot picks up LinkLedBrush, the
-    "1"/"2" badge picks up Name (last token). Pure visual, no logic.
+    "Port N" badge picks up Name. Pure visual, no logic.
+
+    v0.8.13-beta: scaled up (28x22 -> 52x42 outline) so the diagram strip
+    actually fills the card and is scannable at desk-monitor distance. Badge
+    font + LED also scaled.
 
     Geometry:
-        ┌──────────────┐   ← 28 × 22 jack outline (rounded, 1px border)
-        │  ▔▔  ▔▔      │   ← two thin spring-tab hint rectangles
-        │              │
-        │      ●       │   ← 8 × 8 LED ellipse (LinkLedBrush)
-        └──────┬───────┘
-               │           ← connector line down to tile (3 px stub here;
-               │             the long line lives in NicCardDiagram so it
-               │             can extend to the tile row).
-              [N]          ← port-number text under the jack
+        ┌────────────────────────┐   ← 52 × 42 jack outline (rounded, 1px border)
+        │  ▔▔▔▔      ▔▔▔▔        │   ← two thin spring-tab hint rectangles
+        │                        │
+        │           ●            │   ← 14 × 14 LED ellipse (LinkLedBrush)
+        └────────────────────────┘
+                [ Port N ]            ← port-number badge under the jack
 -->
 <UserControl x:Class="Pulse.WPF.Controls.JackVisual"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -26,8 +27,8 @@
     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top">
 
         <!-- RJ45 outline -->
-        <Border Width="28" Height="22"
-                CornerRadius="2"
+        <Border Width="52" Height="42"
+                CornerRadius="3"
                 Background="{DynamicResource CardBgRaisedBrush}"
                 BorderBrush="{DynamicResource BorderColStrongBrush}"
                 BorderThickness="1"
@@ -35,16 +36,16 @@
                 ToolTip="{Binding StatusLine}">
             <Grid>
                 <!-- Spring-tab hint: two thin lines near the top -->
-                <Rectangle Width="6" Height="2"
+                <Rectangle Width="12" Height="3"
                            Fill="{DynamicResource BorderColStrongBrush}"
                            HorizontalAlignment="Left"
                            VerticalAlignment="Top"
-                           Margin="5,2,0,0" />
-                <Rectangle Width="6" Height="2"
+                           Margin="8,4,0,0" />
+                <Rectangle Width="12" Height="3"
                            Fill="{DynamicResource BorderColStrongBrush}"
                            HorizontalAlignment="Right"
                            VerticalAlignment="Top"
-                           Margin="0,2,5,0" />
+                           Margin="0,4,8,0" />
 
                 <!-- LED. Fill binds to PortViewModel.LinkLedBrush; while the
                      VM hasn't computed it yet the Ellipse renders transparent
@@ -52,24 +53,24 @@
                      inside a Binding's FallbackValue is invalid in inline
                      markup-extension syntax — that exact pattern was the
                      XamlParseException that froze the whole tab in v0.4.6). -->
-                <Ellipse Width="8" Height="8"
+                <Ellipse Width="14" Height="14"
                          Fill="{Binding LinkLedBrush}"
                          HorizontalAlignment="Center"
                          VerticalAlignment="Bottom"
-                         Margin="0,0,0,3" />
+                         Margin="0,0,0,6" />
             </Grid>
         </Border>
 
         <!-- Port-number badge -->
-        <Border Margin="0,4,0,0"
+        <Border Margin="0,8,0,0"
                 CornerRadius="6"
-                Padding="6,1"
+                Padding="10,2"
                 HorizontalAlignment="Center"
                 Background="{DynamicResource SurfaceBgBrush}"
                 BorderBrush="{DynamicResource BorderColBrush}"
                 BorderThickness="1">
-            <TextBlock Text="{Binding PortNumberLabel, ElementName=Root, FallbackValue='1'}"
-                       FontSize="10"
+            <TextBlock Text="{Binding PortNumberLabel, ElementName=Root, FallbackValue='Port 1'}"
+                       FontSize="12"
                        FontFamily="Segoe UI Semibold"
                        Foreground="{DynamicResource MutedForegroundBrush}"
                        HorizontalAlignment="Center" />
