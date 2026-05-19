@@ -72,6 +72,16 @@ namespace Pulse.WPF.ViewModels
         private string _statusIconKind = "HelpCircleOutline";
         public string StatusIconKind { get => _statusIconKind; set => Set(ref _statusIconKind, value); }
 
+        // ---- Recent driver events from System log (v0.8.16-beta) ----
+        // Pre-formatted line like "3 driver events in last hour" when the
+        // Intel / Realtek / NDIS driver has logged link-state events for
+        // this port's adapter description recently. Empty string suppresses
+        // the line in the tile. Updated by CameraConnectivityViewModel on a
+        // separate 30 s timer (event-log queries are expensive relative to
+        // the 500 ms monitor poll cadence).
+        private string _recentDriverEvents = "";
+        public string RecentDriverEvents { get => _recentDriverEvents; set => Set(ref _recentDriverEvents, value); }
+
         // ---- Status line (the speed / link / flap state) ----
         // StatusLine is the new tile binding; StatusText kept for legacy.
         private string _statusLine = "No cable";

@@ -303,6 +303,20 @@
                                                    Margin="0,8,0,0"
                                                    TextWrapping="Wrap" />
 
+                                        <!-- v0.8.16-beta: supplemental
+                                             driver-event count from System
+                                             log. Auto-hides when empty.
+                                             Tooltip mentions the Event
+                                             Viewer tab so the tech knows
+                                             where to drill down. -->
+                                        <TextBlock Text="{Binding RecentDriverEvents}"
+                                                   Foreground="{StaticResource MutedForegroundBrush}"
+                                                   FontSize="11"
+                                                   Margin="0,4,0,0"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="See the Event Viewer tab for full event details."
+                                                   Visibility="{Binding RecentDriverEvents, Converter={StaticResource StringToVis}}" />
+
                                         <!-- IP / MAC mono pair -->
                                         <Grid Margin="0,8,0,0">
                                             <Grid.ColumnDefinitions>

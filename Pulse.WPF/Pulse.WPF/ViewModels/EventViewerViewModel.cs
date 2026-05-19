@@ -105,6 +105,15 @@ namespace Pulse.WPF.ViewModels
             "Tcpip",
             "e1iexpress",
             "e1dexpress",
+            // v0.8.16-beta: e1cexpress + rt640x64 + Microsoft-Windows-NDIS
+            // round out NIC driver coverage. e1cexpress is Intel's 82574L /
+            // similar chipsets; rt640x64 is the Realtek family; NDIS is the
+            // vendor-agnostic backstop. Field-flagged after a tech reported
+            // e1iexpress events on an 82574L weren't surfacing under all
+            // workloads.
+            "e1cexpress",
+            "rt640x64",
+            "Microsoft-Windows-NDIS",
             "Dhcp-Client",
         };
 

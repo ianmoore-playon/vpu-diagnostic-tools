@@ -156,7 +156,13 @@ namespace Pulse.WPF.ViewModels
             Dashboard = new DashboardViewModel(dashboard);
             SystemOverview = new SystemOverviewViewModel(specs, hw);
             Network = new NetworkViewModel(net);
-            Camera = new CameraConnectivityViewModel(netAdapters, cfg);
+            // v0.8.16-beta: Camera Connectivity now pulls NIC driver events
+            // from the System log on a slow secondary timer for per-port
+            // fault correlation (Intel SmartSpeed downgrades, link
+            // disconnects, etc.). The event service is optional - the
+            // panel functions normally without it but skips the supplemental
+            // event-log signal.
+            Camera = new CameraConnectivityViewModel(netAdapters, cfg, events);
             ScoreConnect = new ScoreConnectViewModel(scoreConnect);
             Services = new ServicesViewModel(svcs);
             DiskHealth = new DiskHealthViewModel(disk);

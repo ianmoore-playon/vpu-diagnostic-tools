@@ -35,6 +35,34 @@ namespace Pulse.WPF.ViewModels
         private readonly IPixellotConfigService _cfg;
         private readonly CameraNicMonitor _monitor;
 
+        // v0.8.16-beta: NIC driver events from the System event log are a
+        // strong supplemental fault signal. Intel's e1iexpress (and other
+        // NIC drivers) log the exact flap pattern - Event 40 "SmartSpeed
+        // downgrade", Event 33 "link established at X Mbps", Event 27
+        // "Network link is disconnected" - giving us per-driver telemetry
+        // that's more reliable than our debounced polling for "is this
+        // port misbehaving". Polled on a separate timer (30 s) because
+        // EventLogReader is expensive relative to the 500 ms monitor poll.
+        private readonly IEventViewerService _events;
+        private System.Windows.Threading.DispatcherTimer _eventPollTimer;
+        private bool _eventPollRunning;
+
+        // v0.8.16-beta: per-port event analysis. Keyed by local MAC so a
+        // PortViewModel can be looked up across both the live monitor and
+        // the slow event poll. _descriptionByMac is updated by OnMonitorTick
+        // (snap.Description is the long adapter name like "Intel(R) 82574L
+        // Gigabit Network Connection #15" which Windows events include as
+        // the first line of Message - that's the matching key). The other
+        // two dictionaries are updated by PollNicDriverEventsAsync and read
+        // by BuildRecommendations to surface a Critical row when Intel's
+        // SmartSpeed downgrade event fired in the last hour.
+        private readonly Dictionary<string, string> _descriptionByMac =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, int> _eventCountByMac =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, bool> _smartSpeedDowngradeByMac =
+            new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
         // Tracks the previous snapshot speed so we can detect mid-session
         // 1G -> 100M regression. Keyed by local MAC.
         private readonly Dictionary<string, ulong> _prevSpeedByMac =
@@ -137,10 +165,14 @@ namespace Pulse.WPF.ViewModels
         // monitor for the duration of the wizard (see OpenFaultIsolator).
         public ICommand OpenFaultIsolatorCommand          { get; }
 
-        public CameraConnectivityViewModel(INetworkAdapterService net, IPixellotConfigService cfg)
+        public CameraConnectivityViewModel(
+            INetworkAdapterService net,
+            IPixellotConfigService cfg,
+            IEventViewerService events = null)
         {
             _net = net;
             _cfg = cfg;
+            _events = events;
 
             _statusColor = StatusHelpers.Brush("MutedForegroundBrush");
             _statusBg    = StatusHelpers.Brush("BorderColBrush");
@@ -243,6 +275,23 @@ namespace Pulse.WPF.ViewModels
             _monitor = new CameraNicMonitor(_net);
             _monitor.Tick += OnMonitorTick;
             _monitor.Start();
+
+            // v0.8.16-beta: secondary 30 s poll for NIC driver events.
+            // EventLogReader is expensive (it walks the System log), so
+            // we run it on its own slow cadence rather than every monitor
+            // tick. Optional - if IEventViewerService isn't wired the
+            // tile just doesn't show driver-event counts.
+            if (_events != null)
+            {
+                _eventPollTimer = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromSeconds(30),
+                };
+                _eventPollTimer.Tick += async (_, __) => await PollNicDriverEventsAsync().ConfigureAwait(true);
+                _eventPollTimer.Start();
+                // Fire one immediate poll so the tile has data on first paint.
+                _ = PollNicDriverEventsAsync();
+            }
 
             AddLog("Monitor", "Live camera-NIC monitor started (1 s poll).", "Section");
         }
@@ -625,6 +674,11 @@ namespace Pulse.WPF.ViewModels
                     // Local MAC is always available from the snapshot; the
                     // Adapter Details dialog uses it to resolve the adapter.
                     port.LocalMac = snap.LocalMac ?? "";
+                    // v0.8.16-beta: cache the long adapter description per
+                    // MAC for the event-log correlation (events include
+                    // the description as the first line of Message).
+                    if (!string.IsNullOrEmpty(snap.LocalMac) && !string.IsNullOrEmpty(snap.Description))
+                        _descriptionByMac[snap.LocalMac] = snap.Description;
                     // v0.8.0-beta: forward raw snap fields so the Fault
                     // Isolator can read undecorated port state without going
                     // through the OCR-relabelled StatusLine.
@@ -907,6 +961,24 @@ namespace Pulse.WPF.ViewModels
                         $"Link dropped from 1 Gbps to 100 Mbps mid-session. Replace the cable on Port {portNum}; the previous one is failing under load."));
                 }
 
+                // v0.8.16-beta: Intel SmartSpeed downgrade fired in the last
+                // hour for this adapter. Event ID 40 from e1iexpress (or
+                // sibling drivers) is the driver itself reporting that the
+                // cable can't sustain the negotiated gigabit speed. This is
+                // a stronger signal than our debounced live polling - the
+                // driver sees it at the hardware level. Surface as Critical
+                // with an explicit reference to the event log so the tech
+                // can verify in the Event Viewer tab.
+                if (!string.IsNullOrEmpty(snap.LocalMac)
+                    && _smartSpeedDowngradeByMac.TryGetValue(snap.LocalMac, out var hadDowngrade)
+                    && hadDowngrade)
+                {
+                    rows.Add(NetworkRecommendation.Create(
+                        "Critical",
+                        $"Cable fault confirmed by driver on Port {portNum}",
+                        $"Intel SmartSpeed downgraded the link speed in the last hour (Event 40 in System log). The driver itself is reporting the cable can't sustain gigabit. Replace the cable on Port {portNum}; see Event Viewer tab for the full event sequence."));
+                }
+
                 // Linked-degraded: Main camera at ANY sub-1G speed.
                 //
                 // v0.8.11-beta: was previously gated on `is100M` only - missed
@@ -1181,6 +1253,132 @@ namespace Pulse.WPF.ViewModels
                 && snap.LinkSpeedBps >= 100_000_000UL
                 && snap.LinkSpeedBps < 1_000_000_000UL
                 && snap.IsUp;
+        }
+
+        // v0.8.16-beta: NIC driver source prefixes we look up in the
+        // System event log. Intel produces e1iexpress / e1dexpress /
+        // e1cexpress for different chipset families (82574L on the
+        // 4-port PCIe cards is e1iexpress). Realtek is rt640x64 on
+        // x64. NDIS is the vendor-agnostic backstop. Match is a
+        // case-insensitive StartsWith over the event Source.
+        private static readonly string[] NicEventSources =
+        {
+            "e1iexpress",
+            "e1dexpress",
+            "e1cexpress",
+            "rt640x64",
+            "Microsoft-Windows-NDIS",
+        };
+
+        // Information level included alongside Error/Warning so we
+        // catch Event 33 "Network link has been established at X
+        // Mbps" - it completes the flap cycle the user reported
+        // (40 SmartSpeed -> 33 link at 100 Mbps -> 27 disconnected).
+        private static readonly string[] NicEventLevels =
+        {
+            "Error",
+            "Warning",
+            "Information",
+        };
+
+        /// <summary>
+        /// v0.8.16-beta: per-port driver-event poll. Queries the System
+        /// event log for NIC driver entries in the last hour, matches each
+        /// event's Message to a port via the cached long adapter
+        /// description, and updates the tile + Recommendations engine
+        /// state. Runs on a separate 30 s DispatcherTimer because
+        /// EventLogReader is expensive relative to the 500 ms monitor
+        /// poll - the trade is acceptable for supplemental signal.
+        ///
+        /// Surfaces:
+        ///   - PortViewModel.RecentDriverEvents (display string on the tile)
+        ///   - _eventCountByMac (used by BuildRecommendations)
+        ///   - _smartSpeedDowngradeByMac (Event 40 specifically; fires a
+        ///     Critical "cable fault confirmed by driver" recommendation)
+        /// </summary>
+        private async Task PollNicDriverEventsAsync()
+        {
+            if (_eventPollRunning || _events == null) return;
+            _eventPollRunning = true;
+            try
+            {
+                List<WindowsEventEntry> entries;
+                try
+                {
+                    entries = await _events.GetRecentAsync(1, NicEventSources, NicEventLevels)
+                                            .ConfigureAwait(true);
+                }
+                catch
+                {
+                    return; // never let an event-log read crash the live monitor
+                }
+                if (entries == null) return;
+
+                // Build a fresh per-MAC count this cycle. Old entries from
+                // ports that no longer have events get reset to 0.
+                var newCounts   = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var newDowngrad = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                var newMostRecent = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+                // Iterate ports + match each event's Message to the port's
+                // cached description. Description is the first line of the
+                // event message; using IndexOf with OrdinalIgnoreCase keeps
+                // this fast on net48 (string.Contains(string, comparison) is
+                // .NET Core 2.1+).
+                foreach (var kv in _descriptionByMac)
+                {
+                    var mac  = kv.Key;
+                    var desc = kv.Value;
+                    if (string.IsNullOrEmpty(desc)) continue;
+
+                    int count = 0;
+                    bool sawDowngrade = false;
+                    DateTime mostRecent = DateTime.MinValue;
+
+                    foreach (var ev in entries)
+                    {
+                        if (string.IsNullOrEmpty(ev?.Message)) continue;
+                        if (ev.Message.IndexOf(desc, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        count++;
+                        if (ev.TimeGenerated > mostRecent) mostRecent = ev.TimeGenerated;
+                        // Intel Event 40 = "SmartSpeed has downgraded the
+                        // link speed". Driver-level confirmation that the
+                        // cable can't sustain gigabit. Strong fault signal.
+                        if (ev.EventId == 40) sawDowngrade = true;
+                    }
+
+                    newCounts[mac]   = count;
+                    newDowngrad[mac] = sawDowngrade;
+                    if (count > 0) newMostRecent[mac] = mostRecent;
+                }
+
+                // Atomically swap the per-MAC state. Reads happen on the UI
+                // thread inside OnMonitorTick / BuildRecommendations so this
+                // is safe under the DispatcherTimer model.
+                _eventCountByMac.Clear();
+                foreach (var kv in newCounts) _eventCountByMac[kv.Key] = kv.Value;
+                _smartSpeedDowngradeByMac.Clear();
+                foreach (var kv in newDowngrad) _smartSpeedDowngradeByMac[kv.Key] = kv.Value;
+
+                // Push the display string into each port's view-model.
+                foreach (var port in Ports)
+                {
+                    if (string.IsNullOrEmpty(port.LocalMac)) continue;
+                    if (!_eventCountByMac.TryGetValue(port.LocalMac, out var count) || count == 0)
+                    {
+                        port.RecentDriverEvents = "";
+                        continue;
+                    }
+                    // e.g. "3 driver events (last hour)"
+                    port.RecentDriverEvents = count == 1
+                        ? "1 driver event (last hour)"
+                        : $"{count} driver events (last hour)";
+                }
+            }
+            finally
+            {
+                _eventPollRunning = false;
+            }
         }
 
         /// <summary>
