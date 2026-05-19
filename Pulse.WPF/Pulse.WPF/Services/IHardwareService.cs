@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Pulse.WPF.Models;
 
@@ -23,5 +24,13 @@ namespace Pulse.WPF.Services
         bool PoeTelemetryAvailable { get; }
         string PoeTelemetryUnavailableReason { get; }
         PoeBudgetReading GetPoeBudget();
+
+        /// <summary>
+        /// v0.8.1-beta: formerly-silent WMI catches now route through here so
+        /// the host VM can surface "GPU query failed", "Monitor enumeration
+        /// failed", etc. into the Live Log + rolling AppLogFile. Mirrors
+        /// <see cref="INetworkService.OnSilentError"/>.
+        /// </summary>
+        event Action<string, Exception> OnSilentError;
     }
 }

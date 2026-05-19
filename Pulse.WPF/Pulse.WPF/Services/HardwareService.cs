@@ -13,6 +13,18 @@ namespace Pulse.WPF.Services
     /// </summary>
     public class HardwareService : IHardwareService
     {
+        /// <summary>
+        /// v0.8.1-beta: formerly-silent catches now route through here so the
+        /// host VM (SystemOverviewViewModel) can surface "GPU query failed",
+        /// "Monitor enumeration failed", etc. into the Live Log + rolling
+        /// AppLogFile. Mirrors <see cref="NetworkService.OnSilentError"/>.
+        /// Optional - if no handler is wired, fall back to the legacy silent
+        /// behaviour so unit tests and any non-host caller stay quiet.
+        /// </summary>
+        public event Action<string, Exception> OnSilentError;
+
+        private void Report(string section, Exception ex) => OnSilentError?.Invoke(section, ex);
+
         // Lazy-init so a missing SmartPoE.dll doesn't fault during DI / unit
         // tests. System Overview only needs the service at refresh time.
         private static readonly System.Lazy<IPoeTelemetryService> _poe =
@@ -46,7 +58,7 @@ namespace Pulse.WPF.Services
                     return (discrete.Count > 0 ? discrete[0] : names[0]);
                 }
             }
-            catch { return "Query failed"; }
+            catch (Exception ex) { Report("GPU query", ex); return "Query failed"; }
         }
 
         public int GetMonitorCount()
@@ -70,7 +82,7 @@ namespace Pulse.WPF.Services
                     return s2.Get().Count;
                 }
             }
-            catch { return 0; }
+            catch (Exception ex) { Report("Monitor enumeration", ex); return 0; }
         }
 
         public bool HasMouse()
@@ -80,7 +92,7 @@ namespace Pulse.WPF.Services
                 using (var s = new ManagementObjectSearcher("SELECT * FROM Win32_PointingDevice"))
                     return s.Get().Count > 0;
             }
-            catch { return false; }
+            catch (Exception ex) { Report("PointingDevice enumeration", ex); return false; }
         }
 
         public bool HasKeyboard()
@@ -90,16 +102,18 @@ namespace Pulse.WPF.Services
                 using (var s = new ManagementObjectSearcher("SELECT * FROM Win32_Keyboard"))
                     return s.Get().Count > 0;
             }
-            catch { return false; }
+            catch (Exception ex) { Report("Keyboard enumeration", ex); return false; }
         }
 
         // PoE telemetry, real port (v0.5.0). Returns an empty list when the
         // SmartPoE.dll driver bundle isn't installed; System Overview picks
-        // up the empty state via PoeTelemetryAvailable / Reason.
+        // up the empty state via PoeTelemetryAvailable / Reason. A throw here
+        // (driver loaded but per-port read failed) now surfaces — the empty-
+        // state path is taken via _poe.Value.IsAvailable, not via exception.
         public List<PoePortReading> GetPoePortReadings()
         {
             try { return _poe.Value.GetPortReadings(); }
-            catch { return new List<PoePortReading>(); }
+            catch (Exception ex) { Report("PoE port readings", ex); return new List<PoePortReading>(); }
         }
     }
 }

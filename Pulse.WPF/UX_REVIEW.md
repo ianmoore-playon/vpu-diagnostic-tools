@@ -1190,3 +1190,31 @@ Reference: [FAULT_ISOLATOR_PORT_PLAN.md](FAULT_ISOLATOR_PORT_PLAN.md) and the di
 - `Pulse.WPF.csproj` Version bumped 0.7.1-beta → 0.8.0-beta (new functional surface — modal wizard).
 - New files: `Models/FaultIsolatorTypes.cs`, `ViewModels/FaultIsolatorViewModel.cs`, `Views/FaultIsolatorDialog.xaml`, `Views/FaultIsolatorDialog.xaml.cs`, `Pulse.WPF/FAULT_ISOLATOR_PORT_PLAN.md`.
 - Modified: `Helpers/CameraNicMonitor.cs` (Pause/Resume), `ViewModels/PortViewModel.cs` (AdapterName/LinkSpeedBps/IsUp/IsOcr/IsDegraded), `ViewModels/CameraConnectivityViewModel.cs` (D8 baseline-clear fix + OpenFaultIsolator wiring), `Views/CameraConnectivityView.xaml` (top-bar Fault Isolator button).
+
+## v0.8.1-beta — silent-catch migration (HardwareService + SystemOverviewService)
+
+v1.0.0-beta polish pass #1 — close the "what's in the Live Log?" gap before internal testers see the tool. When a tester hits an issue and we ask "what failed", we now have an answer instead of silence.
+
+Audit of the original v1 plan's "21 silent catches in NetworkService.cs" found that file was already 95% migrated by v0.6.4 (24 of 28 catches already routed through `OnSilentError`). The real beta-blocker was that `HardwareService.cs` and `SystemOverviewService.cs` had **zero** error reporting — every WMI failure was swallowed.
+
+### What changed
+
+- **`Services/HardwareService.cs`** — added `event Action<string, Exception> OnSilentError` + `Report` helper. Migrated all 5 silent catches (GPU query / Monitor enumeration / PointingDevice / Keyboard / PoE port readings) to route exception details through the event while preserving the legacy sentinel-return behaviour.
+- **`Services/IHardwareService.cs`** — added the `OnSilentError` event to the interface so consumers don't need to cast to the concrete type.
+- **`Services/SystemOverviewService.cs`** — added `static event Action<string, Exception> OnSilentError` + `Report` helper (static because most `Collect*` methods are static and migrating them all to instance was out of scope for this polish pass). Migrated 18 catches across:
+  - Pixellot software registry, OS query, Time zone, NTP server registry, .NET runtimes, Last Windows update, System (Win32_ComputerSystem), BIOS, System enclosure, CPU, Memory totals, Memory slot total, GPU, Display count, Physical disks (MSFT_PhysicalDisk), Storage (Win32_DiskDrive), Logical disks, Storage card aggregation, Signed driver query, NIC connection status, NICs, Installed software, ToDate helper.
+  - Each catch keeps its existing user-facing behaviour (Warn row / sentinel string / silent skip). The migration only adds exception reporting on top, never replaces a Warn row with silence.
+  - Remaining intentional silent catches are now documented in-line: the per-field CPU reads inside the Win32_Processor loop (Family / Stepping / ProcessorId / Virtualization / L2 / L3 caches) and the `partOfDomain` boolean coerce. These run thousands of times per refresh on a multi-CPU host; reporting them would flood the log without adding diagnostic signal.
+- **`Services/NetworkService.cs`** — added an explanatory comment to the one remaining undocumented silent catch (per-NIC `GetIPv4Properties` read), confirming it's intentional skip-the-NIC behaviour.
+- **`ViewModels/SystemOverviewViewModel.cs`** — wired both new reporters into `AppLogFile.Instance.WriteLine("Hardware", ...)` and `AppLogFile.Instance.WriteLine("SystemOverview", ...)` so every formerly-silent WMI failure lands in the rolling daily log. The panel doesn't have a Live Log expander of its own (the inventory list is the surface); the rolling log is the right sink — matches how Dashboard / Network already route their `OnSilentError` callbacks.
+
+### What to watch for during the v0.8.1-beta field test
+
+- Run the System Overview panel on a machine missing optional WMI providers (e.g. a non-admin run, or a stripped-down Windows Server Core). The user-visible behaviour should be **unchanged** — same "Not reported" / Warn rows / sentinel values.
+- `Pulse-<date>.log` should now show `Hardware: Warn: GPU query: ManagementException: Provider load failure` (etc.) for any failure that previously hid.
+- No new exceptions / no behavioural regressions on a healthy VPU — the migration is exception-detail-only, no logic changes.
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.8.0-beta → 0.8.1-beta.
+- Modified: `Services/HardwareService.cs`, `Services/IHardwareService.cs`, `Services/SystemOverviewService.cs`, `Services/NetworkService.cs` (one documentation comment), `ViewModels/SystemOverviewViewModel.cs`.

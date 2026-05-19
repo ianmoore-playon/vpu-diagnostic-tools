@@ -169,6 +169,39 @@ namespace Pulse.WPF.ViewModels
                 return (a.DisplayName != null && a.DisplayName.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0)
                     || (a.Publisher   != null && a.Publisher.IndexOf(t,   StringComparison.OrdinalIgnoreCase) >= 0);
             };
+
+            // v0.8.1-beta: surface formerly-silent WMI catches from both
+            // services into the rolling AppLogFile. System Overview doesn't
+            // have a panel-level Live Log of its own (its inventory list IS
+            // the surface) so the rolling daily log is the right sink —
+            // matches the route DashboardViewModel and NetworkViewModel use
+            // when their services emit OnSilentError.
+            if (_hardware != null)
+            {
+                _hardware.OnSilentError += (section, ex) =>
+                {
+                    try
+                    {
+                        AppLogFile.Instance.WriteLine("Hardware", "Warn",
+                            $"{section}: {ex?.GetType().Name}: {ex?.Message}");
+                    }
+                    catch { /* a logger failure must not crash the host */ }
+                };
+            }
+            // SystemOverviewService.OnSilentError is static so it only
+            // needs hooking once per process. Subscribing in the VM ctor
+            // is safe: the VM lifetime matches the panel which matches
+            // the process. The += never adds duplicates because the VM
+            // is constructed exactly once in MainViewModel.
+            SystemOverviewService.OnSilentError += (section, ex) =>
+            {
+                try
+                {
+                    AppLogFile.Instance.WriteLine("SystemOverview", "Warn",
+                        $"{section}: {ex?.GetType().Name}: {ex?.Message}");
+                }
+                catch { /* a logger failure must not crash the host */ }
+            };
         }
 
         public Task RefreshAsync()

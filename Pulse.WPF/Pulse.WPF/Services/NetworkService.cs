@@ -136,6 +136,11 @@ namespace Pulse.WPF.Services
                     catch { continue; }
 
                     int ifIdx;
+                    // Per-NIC GetIPv4Properties() can throw on IPv6-only or
+                    // transient NICs. ifIdx=0 is the sentinel "no IPv4 index";
+                    // it triggers the `continue` below so the NIC is skipped.
+                    // Intentionally silent — logging per-NIC would flood the
+                    // panel on hosts with virtual / VPN adapters.
                     try { ifIdx = props.GetIPv4Properties()?.Index ?? 0; }
                     catch { ifIdx = 0; }
                     if (ifIdx != internetIfIndex) continue;

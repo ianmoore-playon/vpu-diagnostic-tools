@@ -26,6 +26,28 @@ namespace Pulse.WPF.Services
     {
         private const string NotReported = "Not reported";
 
+        /// <summary>
+        /// v0.8.1-beta: formerly-silent catches now route through here so the
+        /// host VM (SystemOverviewViewModel) can surface failures into the
+        /// Live Log + rolling AppLogFile. Mirrors
+        /// <see cref="NetworkService.OnSilentError"/>.
+        ///
+        /// Static rather than instance because most Collect* helpers are
+        /// static (kept that way to avoid a sweeping signature change in
+        /// this v1.0.0-beta polish pass). The host wires this once at
+        /// construction time; for a long-lived VM that effectively lives
+        /// the lifetime of the process this is a no-op tradeoff vs. an
+        /// instance event. Optional - the catches still fall back to their
+        /// graceful "Not reported" / sentinel behaviour when no handler
+        /// is wired (unit tests, alt callers).
+        /// </summary>
+        public static event Action<string, Exception> OnSilentError;
+
+        private static void Report(string section, Exception ex)
+        {
+            try { OnSilentError?.Invoke(section, ex); } catch { /* never throw from a reporter */ }
+        }
+
         public SystemOverviewSnapshot Collect()
         {
             var snap = new SystemOverviewSnapshot();
@@ -69,8 +91,9 @@ namespace Pulse.WPF.Services
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Report("Pixellot software registry", ex);
                 rows.Add(Warn("Pixellot", @"Registry key not found (HKLM:\SOFTWARE\Pixellot)"));
             }
 
@@ -107,7 +130,7 @@ namespace Pulse.WPF.Services
                 card.InstallDate = installDate ?? NotReported;
                 if (installDate != null) rows.Add(Info("Install Date", installDate));
             }
-            catch { /* install date is best-effort */ }
+            catch (Exception ex) { Report("Pixellot install date", ex); /* install date is best-effort */ }
         }
 
         // ---- Operating System (Win32_OperatingSystem) --------------------------
@@ -174,8 +197,9 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Report("OS (Win32_OperatingSystem)", ex);
                 rows.Add(Warn("OS", "Query failed"));
             }
         }
@@ -197,7 +221,7 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch { /* skip */ }
+            catch (Exception ex) { Report("Time zone (Win32_TimeZone)", ex); }
 
             try
             {
@@ -209,7 +233,7 @@ namespace Pulse.WPF.Services
                     rows.Add(Info("NTP Server", os.NtpServer));
                 }
             }
-            catch { os.NtpServer = NotReported; rows.Add(Info("NTP Server", NotReported)); }
+            catch (Exception ex) { Report("NTP server (W32Time registry)", ex); os.NtpServer = NotReported; rows.Add(Info("NTP Server", NotReported)); }
         }
 
         // ---- .NET runtimes + last cumulative update ----------------------------
@@ -243,7 +267,7 @@ namespace Pulse.WPF.Services
                     }
                 }
             }
-            catch { os.DotNetRuntimes = NotReported; }
+            catch (Exception ex) { Report(".NET runtimes (registry)", ex); os.DotNetRuntimes = NotReported; }
 
             // Last cumulative KB.
             try
@@ -268,7 +292,7 @@ namespace Pulse.WPF.Services
                     ? $"{newestKb} ({newest.Value:yyyy-MM-dd})"
                     : NotReported;
             }
-            catch { os.LastUpdate = NotReported; }
+            catch (Exception ex) { Report("Last update (Win32_QuickFixEngineering)", ex); os.LastUpdate = NotReported; }
         }
 
         // ---- System (Win32_ComputerSystem + Win32_BIOS + SystemEnclosure) ------
@@ -293,6 +317,8 @@ namespace Pulse.WPF.Services
                     rows.Add(Info("Model",        id.Model));
 
                     var partOfDomain = false;
+                    // Per-field defensive read — Convert.ToBoolean(null) throws.
+                    // Intentionally silent; the field defaults to false (Workgroup).
                     try { partOfDomain = Convert.ToBoolean(o["PartOfDomain"]); } catch { }
                     var domain    = (o["Domain"] as string)   ?? "";
                     var workgroup = (o["Workgroup"] as string) ?? "";
@@ -305,7 +331,7 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch { rows.Add(Warn("System", "Query failed")); }
+            catch (Exception ex) { Report("System (Win32_ComputerSystem)", ex); rows.Add(Warn("System", "Query failed")); }
 
             try
             {
@@ -332,7 +358,7 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch { /* BIOS unavailable */ }
+            catch (Exception ex) { Report("BIOS (Win32_BIOS)", ex); /* BIOS unavailable */ }
 
             // Asset tag + chassis type from Win32_SystemEnclosure.
             try
@@ -356,7 +382,7 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch { /* enclosure unavailable */ }
+            catch (Exception ex) { Report("System enclosure (Win32_SystemEnclosure)", ex); /* enclosure unavailable */ }
 
             string modelCard;
             if (!string.IsNullOrEmpty(mfr) && !string.IsNullOrEmpty(model)) modelCard = $"{mfr}  {model}";
@@ -448,7 +474,13 @@ namespace Pulse.WPF.Services
                         rows.Add(Info("Socket", socket));
                     }
 
-                    // Family / stepping / processor ID.
+                    // Family / stepping / processor ID + cache sizes.
+                    // Each field is wrapped in its own try/catch so a missing
+                    // WMI property doesn't cancel the rest of the CPU read.
+                    // Intentionally silent — these are optional enrichment
+                    // fields, not diagnostic signal; reporting them would
+                    // flood the Live Log on machines that don't expose all
+                    // Win32_Processor properties.
                     try
                     {
                         var fam = o["Family"];
@@ -493,7 +525,7 @@ namespace Pulse.WPF.Services
                     }
                 }
             }
-            catch { rows.Add(Warn("CPU", "Query failed")); }
+            catch (Exception ex) { Report("CPU (Win32_Processor)", ex); rows.Add(Warn("CPU", "Query failed")); }
 
             cards.CpuTitle  = cardVal.Length > 32 ? cardVal.Substring(0, 29) + "..." : cardVal;
             cards.CpuStatus = "neutral";
@@ -523,7 +555,7 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch { rows.Add(Warn("Memory", "Query failed")); }
+            catch (Exception ex) { Report("Memory totals (Win32_OperatingSystem)", ex); rows.Add(Warn("Memory", "Query failed")); }
 
             // Slot total from Win32_PhysicalMemoryArray.
             try
@@ -536,7 +568,7 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch { /* skip */ }
+            catch (Exception ex) { Report("Memory slot total (Win32_PhysicalMemoryArray)", ex); /* skip */ }
 
             try
             {
@@ -580,7 +612,7 @@ namespace Pulse.WPF.Services
                     mem.SlotsUsed = mem.Slots.Count.ToString();
                 }
             }
-            catch { /* slot enumeration failed */ }
+            catch (Exception ex) { Report("Memory slot enumeration (Win32_PhysicalMemoryArray)", ex); /* slot enumeration failed */ }
         }
 
         // ---- Graphics (Win32_VideoController, prefer discrete) -----------------
@@ -638,7 +670,7 @@ namespace Pulse.WPF.Services
                     }
                 }
             }
-            catch { rows.Add(Warn("GPU", "Query failed")); }
+            catch (Exception ex) { Report("GPU (Win32_VideoController)", ex); rows.Add(Warn("GPU", "Query failed")); }
 
             // Display output count.
             try
@@ -652,7 +684,7 @@ namespace Pulse.WPF.Services
                 }
                 gfx.DisplayCount = displays > 0 ? displays.ToString() : NotReported;
             }
-            catch { gfx.DisplayCount = NotReported; }
+            catch (Exception ex) { Report("Display count (Win32_DesktopMonitor)", ex); gfx.DisplayCount = NotReported; }
         }
 
         // ---- Storage (physical disks + every logical volume) -------------------
@@ -679,7 +711,7 @@ namespace Pulse.WPF.Services
                         byPnp[serial] = (BusTypeName(bt), MediaTypeName(mt), fw);
                 }
             }
-            catch { /* MSFT_PhysicalDisk may be unavailable */ }
+            catch (Exception ex) { Report("Physical disks (MSFT_PhysicalDisk)", ex); /* MSFT_PhysicalDisk may be unavailable */ }
 
             try
             {
@@ -730,7 +762,7 @@ namespace Pulse.WPF.Services
                     }
                 }
             }
-            catch { rows.Add(Warn("Storage", "Query failed")); }
+            catch (Exception ex) { Report("Storage (Win32_DiskDrive)", ex); rows.Add(Warn("Storage", "Query failed")); }
 
             // Every logical volume — not just the system drive.
             try
@@ -760,7 +792,7 @@ namespace Pulse.WPF.Services
                     });
                 }
             }
-            catch { /* logical-disk query failed */ }
+            catch (Exception ex) { Report("Logical disks (Win32_LogicalDisk)", ex); /* logical-disk query failed */ }
 
             // System-drive card.
             try
@@ -781,7 +813,7 @@ namespace Pulse.WPF.Services
                     break;
                 }
             }
-            catch { /* leave card placeholder */ }
+            catch (Exception ex) { Report("Storage card aggregation", ex); /* leave card placeholder */ }
         }
 
         private static string BusTypeName(int code)
@@ -849,7 +881,7 @@ namespace Pulse.WPF.Services
                         driverByPnp[did] = (ver, dt.HasValue ? dt.Value.ToString("yyyy-MM-dd") : "");
                     }
                 }
-                catch { /* signed-driver query may be unavailable */ }
+                catch (Exception ex) { Report("Signed driver query (Win32_PnPSignedDriver)", ex); /* signed-driver query may be unavailable */ }
 
                 foreach (var nic in nics.OrderBy(n => Convert.ToInt32(n["Index"] ?? 0)))
                 {
@@ -868,7 +900,7 @@ namespace Pulse.WPF.Services
 
                     int connStatus;
                     try { connStatus = Convert.ToInt32(nic["NetConnectionStatus"] ?? -1); }
-                    catch { connStatus = -1; }
+                    catch (Exception ex) { Report("NIC connection status (NetConnectionStatus)", ex); connStatus = -1; }
                     string connStr = connStatus == 2 ? "Connected"
                                   : connStatus == 7 ? "Media disconnected"
                                   :                    "Not connected";
@@ -897,7 +929,7 @@ namespace Pulse.WPF.Services
                     if (!string.IsNullOrEmpty(driverDate)) rows.Add(Gray("  Driver Date", driverDate));
                 }
             }
-            catch { rows.Add(Warn("NICs", "Query failed")); }
+            catch (Exception ex) { Report("NICs (Win32_NetworkAdapter)", ex); rows.Add(Warn("NICs", "Query failed")); }
         }
 
         // ---- Installed Software (registry uninstall keys) ---------------------
@@ -990,7 +1022,7 @@ namespace Pulse.WPF.Services
                         rows.Add(Warn($"  {a.DisplayName}", $"{a.Publisher} — confirm this is intentional"));
                 }
             }
-            catch { rows.Add(Warn("Installed Software", "Scan failed")); }
+            catch (Exception ex) { Report("Installed software (Uninstall registry)", ex); rows.Add(Warn("Installed Software", "Scan failed")); }
         }
 
         // ---- Row helpers ------------------------------------------------------
@@ -1018,7 +1050,7 @@ namespace Pulse.WPF.Services
                 var s = cimValue.ToString();
                 return ManagementDateTimeConverter.ToDateTime(s);
             }
-            catch { return null; }
+            catch (Exception ex) { Report("Helper conversion (ToDate)", ex); return null; }
         }
     }
 }
