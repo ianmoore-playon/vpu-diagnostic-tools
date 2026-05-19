@@ -1218,3 +1218,34 @@ Audit of the original v1 plan's "21 silent catches in NetworkService.cs" found t
 
 - `Pulse.WPF.csproj` Version bumped 0.8.0-beta → 0.8.1-beta.
 - Modified: `Services/HardwareService.cs`, `Services/IHardwareService.cs`, `Services/SystemOverviewService.cs`, `Services/NetworkService.cs` (one documentation comment), `ViewModels/SystemOverviewViewModel.cs`.
+
+## v0.8.2-beta — Fault Isolator dialog hotfix (XAML resource resolution)
+
+Field test of v0.8.0-beta on the test VPU revealed the Fault Isolator dialog refused to open. The Live Log surfaced the exception (which is itself a win — the existing `OpenFaultIsolator` try/catch path worked correctly):
+
+> `FaultIsolator | Failed to open wizard: Set property System.Windows.Setter.Property threw an exception. Provide value on System.Windows.StaticResourceExtension threw an exception.`
+
+This is a known WPF failure mode: inline `Style.Triggers/DataTrigger/Setter` blocks inside a modal `Window`'s content tree can race the resource-dictionary resolution chain when the Setter's value uses a `{StaticResource ...}` reference that lives in `Application.Resources` (via MergedDictionaries). The Setter is evaluated *before* the dialog's resource scope walks up to `Application.Resources`, and the lookup throws.
+
+The prior dialog had **five** such inline DataTrigger Styles (one per step-dot) — each one using `BasedOn="{StaticResource StepDotInactive}"` + per-trigger `<Setter Property="Fill" Value="{StaticResource GreenBrush}" />`. Any one of them tripping the race fails the whole `InitializeComponent` call and the dialog never constructs.
+
+### Fix
+
+Rewrote `Views/FaultIsolatorDialog.xaml` to remove all local Style definitions and avoid inline style triggers entirely:
+
+- **Dropped `Window.Resources`** completely. The dialog now only consumes styles + brushes from `Application.Resources` (Colors.xaml + Styles.xaml) — same surface every other view uses.
+- **Step dots rewritten** as two stacked Ellipses per step inside a `Grid`. The outer (always visible) is the muted-outline inactive state. The inner (Fill=GreenBrush) toggles via `Visibility="{Binding StepDotN, Converter={StaticResource BoolToVis}}"`. Same pattern the rest of the codebase uses for show/hide on a bool — well-trodden, no triggers, no inline styles.
+- **Phase title / instruction / body / dropdown label** styling inlined directly on each `TextBlock` (using only `Style="{StaticResource SectionTitle}"` / `MutedLabel` from Styles.xaml + inline `Margin`, `TextWrapping`, `FontSize`, `Foreground` properties). No new resource keys.
+- **History DataTemplate `<Run>` elements removed.** Those have data-context inheritance quirks (Run is a `Freezable`-derived inline, not a `DependencyObject` in the normal DataContext chain); replaced with a clean `TextBlock` showing the Verdict directly. Cosmetic regression — the prior "Speed: X — Y" inline composition becomes two lines (Configuration row already shows the speed-relevant config string).
+
+### What to watch for during the v0.8.2-beta field test
+
+- Fault Isolator button on Camera Connectivity top bar — click should open the dialog immediately (no Live Log error).
+- Step dots: only the first dot is filled green when PickPort is active; subsequent dots fill as you progress through phases.
+- The rest of the flow (port selectors, latest result chip, history rows) should be unchanged from the design.
+- Verdict in history rows now sits on its own row instead of inline-composed with "Speed:" — accept as cosmetic for v1 beta; can refine post-feedback.
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.8.1-beta → 0.8.2-beta.
+- Modified: `Views/FaultIsolatorDialog.xaml` (full rewrite, smaller and simpler).
