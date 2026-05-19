@@ -1084,3 +1084,22 @@ Continuing from v0.6.20 (live-feed flapping, vendor-write PUT/POST). Four field 
 - `Pulse.WPF.csproj` Version bumped 0.6.20 → 0.6.21.
 - New file: `Pulse.WPF/Pulse.WPF/Helpers/ScoreLinkDetector.cs`.
 - `SportzcastDataDirReader` gains a `scoreboardcodes` bucket + `MergeScoreboardCodes` parser.
+
+## v0.6.22 — ScoreLink detector reads bus-reported description (correct property)
+
+Field-test of v0.6.21 surfaced the ScoreLink Device card reading "not connected" on a VPU that does have a ScoreLink attached via its USB-to-UART adapter. Root cause: v0.6.21 matched on `Win32_PnPEntity.Caption` / `Name` / `Description`, which are the **driver's** INF-supplied friendly name (e.g. "USB Serial Port (COM4)"), not the **bus-reported** device description. The bus-reported value — set by the USB device itself via its descriptor strings, which IS where "MCP2221 USB-I2C/UART Combo" and "ScoreLinkII" live — is stored in a separate PnP property.
+
+`ScoreLinkDetector.ReadBusReportedDescription` now reads the registry-backed property store at:
+
+```
+HKLM\SYSTEM\CurrentControlSet\Enum\<PnpDeviceId>\Properties\{a45c254e-df1c-4efd-8020-67d146a850e0}\0004
+```
+
+That GUID is `DEVPKEY_Device_BusReportedDeviceDesc`. Caption / Name / Description stay as a secondary match path for older Windows builds that may not populate the property.
+
+When no ScoreLink matches, the detector now also publishes every USB-serial candidate (any `USB\` PnP entity with a COM-port number anywhere in its strings) to the result. The ScoreConnect ViewModel dumps them to the Live Log so a tech can see exactly what's visible on the box — useful when the bus-reported description on a particular VPU's hardware uses different wording than the canonical spec.
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.6.21 → 0.6.22.
+- `Pulse.WPF/SCOREBOARD_REDESIGN_PLAN.md` open-question section closed out with the product decisions (ESPN data look, show last-known on stale, render but inactive on non-VPU hosts, capture mode always on, sport list to be confirmed).

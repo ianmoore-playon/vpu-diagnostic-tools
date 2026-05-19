@@ -608,11 +608,15 @@ namespace Pulse.WPF.ViewModels
             AddLog("Vendors", $"{vendors.Count} known", "Info");
             AddLog("Devices", $"{devices.Count} known", "Info");
 
-            // v0.6.21: detect a currently-plugged ScoreLink box via Win32_PnPEntity.
-            // The old "Available Serial Ports" panel showed every COM device
-            // Windows enumerated (including stale Bluetooth pairings) which
-            // wasn't useful for triage. This one-bit answer goes through the
-            // live PnP tree so only currently-attached devices count.
+            // v0.6.21 / v0.6.22: detect a currently-plugged ScoreLink box.
+            // Matches the bus-reported device description ("MCP2221 USB-I2C/
+            // UART Combo" or "ScoreLinkII") via the registry-backed PnP
+            // property store — Win32_PnPEntity's Caption/Name/Description
+            // carry the driver friendly name, not the bus-reported value.
+            // On a miss, the candidate pool of USB-serial devices is dumped
+            // to the live log so the tech can see what's actually visible
+            // and report back the correct description string if a real
+            // ScoreLink isn't being recognised.
             try
             {
                 var sl = await Task.Run(Pulse.WPF.Helpers.ScoreLinkDetector.Detect).ConfigureAwait(false);
@@ -625,11 +629,31 @@ namespace Pulse.WPF.ViewModels
                 if (sl.IsConnected)
                 {
                     var pStr = string.IsNullOrEmpty(sl.PortName) ? "no COM port" : sl.PortName;
-                    AddLog("ScoreLink", $"{sl.Model} connected ({pStr})", "Pass");
+                    var matched = string.IsNullOrEmpty(sl.MatchedDescription)
+                        ? sl.Model
+                        : $"{sl.Model} - matched on \"{sl.MatchedDescription}\"";
+                    AddLog("ScoreLink", $"{matched} connected ({pStr})", "Pass");
+                }
+                else if (sl.AllUsbSerialCandidates.Count == 0)
+                {
+                    AddLog("ScoreLink", "Not connected (no USB-serial devices visible)", "Info");
                 }
                 else
                 {
-                    AddLog("ScoreLink", "Not connected", "Info");
+                    AddLog("ScoreLink",
+                        $"No match - {sl.AllUsbSerialCandidates.Count} USB-serial device(s) visible:",
+                        "Info");
+                    foreach (var c in sl.AllUsbSerialCandidates)
+                    {
+                        // One log line per device with everything we know,
+                        // so the tech can spot the actual string we should
+                        // be matching on.
+                        var bus = string.IsNullOrEmpty(c.BusReportedDescription) ? "(no bus desc)" : c.BusReportedDescription;
+                        var cap = string.IsNullOrEmpty(c.Caption)                ? "(no caption)" : c.Caption;
+                        AddLog($"ScoreLink {c.PortName}",
+                            $"bus=\"{bus}\"  caption=\"{cap}\"",
+                            "Info");
+                    }
                 }
             }
             catch (Exception ex)

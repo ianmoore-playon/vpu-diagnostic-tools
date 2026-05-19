@@ -319,33 +319,33 @@ Each phase ships independently and is field-testable on its own.
 
 ---
 
-## Open questions for product decision
+## Open questions — decided 2026-05-19
 
-1. **Visual style: real-scoreboard look vs ESPN-ticker look?** Real LED
-   look reads well from far away but feels old-school in an admin
-   dashboard. ESPN look reads as data, not as a venue display. I'd
-   lean ESPN — the panel is a diagnostic surface, not a broadcast
-   element. Confirm.
-2. **Stale-frame handling — show or blank?** When the feed disconnects
-   mid-game, do we (a) leave the last-known scoreboard up with a
-   "stale: last frame N min ago" banner, or (b) blank to "Live feed
-   disconnected"? I'd lean (a) — the tech wants to know what the last
-   live state was. Confirm.
-3. **Should the scoreboard render at all on a dev machine / non-VPU
-   host?** Today the panel shows "OFFLINE" empty. We could hide the
-   entire Live Scoreboard card when the live feed has never been seen
-   on this host. Confirm.
-4. **Frame-capture mode default — opt-in or always-on?** Always-on
-   captures more data faster (better Phase 2 mapping coverage) but
-   writes to disk every frame. Opt-in keeps the disk quiet. I'd lean
-   opt-in via Settings, default off, with a clear "enable during
-   field test" prompt the first time the user lands on a sport we
-   haven't yet mapped. Confirm.
-5. **Sport-list authority — what's the canonical sport enum?** I
-   listed seven sports above. Sportzcast supports many more (cricket,
-   handball, water polo, etc.). I'd freeze the enum at the seven
-   above for v0.7 and only widen if a venue field-tests one of the
-   others. Confirm.
+1. **Visual style: ESPN-ticker data look.** Scores / clock as bold
+   sans-serif, not faux-LED. The panel reads as a diagnostic surface,
+   not a venue display.
+2. **Stale-frame handling: keep last-known.** When the feed
+   disconnects mid-game, the scoreboard stays populated with the
+   last-known state plus a "Stale — last frame N min ago" banner.
+   Frames reset only on (a) sport change, (b) > 30 s without any
+   frame after the staleness banner has been showing for > 10 min.
+3. **Non-VPU hosts: render but inactive.** The scoreboard card
+   stays visible on a dev machine / support laptop, in an inactive
+   state (greyed labels, dashes for values, "Live feed offline"
+   pill). No hiding — the panel is a known landmark.
+4. **Frame-capture mode: always on.** Writes the unique-field-names
+   summary to disk continuously. Small daily file (~20 KB),
+   single-process file lock, no per-frame fsync. Field data
+   collection happens passively without an opt-in step.
+5. **Sport list freeze for v0.7: open.** Confirm with the
+   product owner which sports actually matter at the NFHS venues
+   in scope. My proposal: Basketball / Football / Baseball /
+   Softball / Soccer / Hockey / Volleyball / Lacrosse (8 sports
+   covering ~95% of NFHS broadcast events). Wrestling, Track &
+   Field, and the rest fall to the generic Home / Away / Period /
+   Clock layout until a venue requests them.
+
+The Phase A foundation is unblocked by these answers.
 
 ---
 
