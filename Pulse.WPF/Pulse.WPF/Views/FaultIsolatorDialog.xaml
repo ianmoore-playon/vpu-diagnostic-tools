@@ -273,6 +273,18 @@
                             MinWidth="120" MinHeight="40"
                             Margin="12,0,0,0"
                             IsCancel="True" />
+                    <!-- v0.8.6-beta: "No spare CHU" path on Phase 4. Visible
+                         only while Phase == AwaitingCameraTest (gated by
+                         CanInferCameraConclusion). Field tech feedback:
+                         spare cameras (CHUs) are rare; without one, the
+                         tech needs an exit that produces a useful verdict
+                         instead of being stuck. -->
+                    <Button Content="No spare CHU — infer"
+                            Command="{Binding InferCameraConclusionCommand}"
+                            Style="{StaticResource MaterialDesignOutlinedButton}"
+                            MinWidth="180" MinHeight="40"
+                            Margin="12,0,0,0"
+                            Visibility="{Binding CanInferCameraConclusion, Converter={StaticResource BoolToVis}}" />
                     <Button Content="{Binding ActionButtonLabel}"
                             Command="{Binding ActionCommand}"
                             Style="{StaticResource MaterialDesignRaisedButton}"

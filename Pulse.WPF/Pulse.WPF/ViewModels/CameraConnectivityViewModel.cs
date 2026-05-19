@@ -68,6 +68,25 @@ namespace Pulse.WPF.ViewModels
 
         // ----- Public bindings -----
         public ObservableCollection<PortViewModel>          Ports           { get; } = new ObservableCollection<PortViewModel>();
+
+        /// <summary>
+        /// v0.8.6-beta: Ports in physical-jack visual order (Port 4 → 3 → 2 → 1).
+        ///
+        /// The chassis's RJ45 jacks are laid out right-to-left as Port 4 |
+        /// Port 3 | Port 2 | Port 1. The NIC card diagram + the tile strip
+        /// underneath bind to this collection so the on-screen layout
+        /// mirrors what the tech sees on the physical card. The vertical
+        /// LED strip in the diagram also binds to this collection so its
+        /// top-to-bottom LEDs read Port 4, Port 3, Port 2, Port 1.
+        ///
+        /// The same PortViewModel instances appear in both Ports and
+        /// PortsByPhysical — only the iteration order differs. Property
+        /// changes on a port (LinkLedBrush, StatusLine, etc.) propagate to
+        /// both views without extra plumbing.
+        ///
+        /// Kept in sync with Ports inside <see cref="EnsurePortCount"/>.
+        /// </summary>
+        public ObservableCollection<PortViewModel> PortsByPhysical { get; } = new ObservableCollection<PortViewModel>();
         // Composed via PanelLogger (v0.5.0) — shared with the four other panels.
         public PanelLogger Logger { get; } = new PanelLogger("Camera");
         // v0.5.5: Camera is a live monitor, so it doesn't auto-write a report
@@ -142,6 +161,11 @@ namespace Pulse.WPF.ViewModels
                     ErrorColor = StatusHelpers.Brush("MutedForegroundBrush"),
                 });
             }
+            // v0.8.6-beta: seed PortsByPhysical in reverse order so the
+            // diagram + tile row render correctly even before the first
+            // monitor tick.
+            for (int i = Ports.Count - 1; i >= 0; i--)
+                PortsByPhysical.Add(Ports[i]);
 
             OpenAdapterSettingsCommand = new RelayCommand(() => SafeStart("ncpa.cpl"));
 
@@ -299,23 +323,21 @@ namespace Pulse.WPF.ViewModels
                     string primary; string secondary;
                     string ipShown = "—"; string macShown = "—";
 
-                    if (!snap.IsUp && string.IsNullOrEmpty(snap.RemoteMac))
+                    if (!snap.IsUp)
                     {
-                        // Row 1: No cable.
+                        // v0.8.6-beta: binary cable state. IsUp is the only
+                        // signal that matters. The prior "Cable, no link"
+                        // yellow state was triggered by a stale RemoteMac
+                        // (ARP entries persist ~30 s after a cable pull) and
+                        // was confusing in field testing — a tile would show
+                        // "Cable, no link" with a yellow LED on a port the
+                        // tech had just unplugged. Drop that branch; treat
+                        // IsUp=false as "No cable" regardless of stale ARP.
                         primary = "No cable";
                         secondary = "";
                         statusLine = "No cable";
                         statusBrush = StatusHelpers.Brush("MutedForegroundBrush");
                         ledBrush    = StatusHelpers.Brush("SubtleForegroundBrush");
-                    }
-                    else if (!snap.IsUp)
-                    {
-                        // Row 2: cabled, no link.
-                        primary = "Waiting for link";
-                        secondary = "";
-                        statusLine = "Cable, no link";
-                        statusBrush = StatusHelpers.Brush("YellowBrush");
-                        ledBrush    = StatusHelpers.Brush("YellowBrush");
                     }
                     else if (!hasRealRemote)
                     {
@@ -684,6 +706,34 @@ namespace Pulse.WPF.ViewModels
             // Re-name in case anything wandered.
             for (int i = 0; i < Ports.Count; i++)
                 Ports[i].Name = $"Port {i + 1}";
+
+            // v0.8.6-beta: rebuild PortsByPhysical (reverse order). Same
+            // instances - just the iteration order differs. Per-port state
+            // changes propagate via the PortViewModel's own
+            // INotifyPropertyChanged; we only rebuild this collection when
+            // Ports' shape changes.
+            if (PortsByPhysical.Count != Ports.Count ||
+                !ArePhysicalAndLogicalReversed())
+            {
+                PortsByPhysical.Clear();
+                for (int i = Ports.Count - 1; i >= 0; i--)
+                    PortsByPhysical.Add(Ports[i]);
+            }
+        }
+
+        // v0.8.6-beta helper: cheap check that PortsByPhysical is in the
+        // expected reverse-of-Ports order before we tear it down. Avoids a
+        // Clear+rebuild on every tick.
+        private bool ArePhysicalAndLogicalReversed()
+        {
+            if (PortsByPhysical.Count != Ports.Count) return false;
+            for (int i = 0; i < Ports.Count; i++)
+            {
+                if (!ReferenceEquals(PortsByPhysical[i], Ports[Ports.Count - 1 - i]))
+                    return false;
+            }
+            return true;
+        }
         }
 
         // -------------------------------------------------------------------
@@ -1111,16 +1161,12 @@ namespace Pulse.WPF.ViewModels
                 if (d.TotalMinutes >= 1) return $"Linked {(int)d.TotalMinutes}m {d.Seconds:00}s";
                 return $"Linked {(int)d.TotalSeconds}s";
             }
-            // Down — show last-seen if we have one in the retention window.
-            if (st.LastRemoteAt.HasValue)
-            {
-                var ago = DateTime.UtcNow - st.LastRemoteAt.Value;
-                var label = !string.IsNullOrEmpty(st.LastRemoteLabel) ? st.LastRemoteLabel
-                          : !string.IsNullOrEmpty(st.LastRemoteIp)    ? st.LastRemoteIp
-                          : "device";
-                if (ago.TotalMinutes < 1) return $"Last: {label}, just now";
-                return $"Last: {label}, {(int)ago.TotalMinutes} min ago";
-            }
+            // v0.8.6-beta: when there's no link, return empty. The previous
+            // "Last: <device>, X min ago" hint was misleading once cable
+            // state went binary — a tile showing "No cable" alongside
+            // "Last: 169.254.16.50, just now" reads as ambiguous activity.
+            // Field tech feedback: if there's a link, show it. If not, do
+            // not show anything.
             return "";
         }
 

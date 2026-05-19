@@ -8,10 +8,23 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Adapter details"
-        Style="{StaticResource PulseDialogWindow}"
+        Background="{StaticResource AppBgBrush}"
+        Foreground="{StaticResource ForegroundBrush}"
+        FontFamily="Segoe UI"
+        FontSize="13"
+        ResizeMode="CanResize"
+        MinWidth="520" MinHeight="420"
         Width="720" Height="720"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
+    <!--
+        v0.8.6-beta: dropped Style="{StaticResource PulseDialogWindow}".
+        v0.8.5-beta proved PulseDialogWindow trips an ArgumentNullException
+        on Setter.Property when applied to modal Windows in this project.
+        Inlining the equivalent Window-level properties directly (matches
+        FaultIsolatorDialog's same fix). Root cause TBD post-v1; for now
+        the workaround keeps both modal dialogs functional.
+    -->
     <Window.Resources>
         <!-- Dialog-local helpers. Two-column key/value row with a fixed
              label width so every section lines up. -->

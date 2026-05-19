@@ -54,6 +54,12 @@ namespace Pulse.WPF.ViewModels
             ActionCommand    = new AsyncCommand(RunActionAsync, () => ActionButtonEnabled);
             StartOverCommand = new RelayCommand(Reset);
             CancelCommand    = new RelayCommand(() => RequestClose?.Invoke());
+            // v0.8.6-beta: "No spare CHU" path on Phase 4. Visibility on the
+            // dialog is gated by CanInferCameraConclusion which is true only
+            // while Phase == AwaitingCameraTest.
+            InferCameraConclusionCommand = new AsyncCommand(
+                InferCameraConclusionWithoutSwapAsync,
+                () => CanInferCameraConclusion && ActionButtonEnabled);
 
             Reset();
         }
@@ -78,6 +84,9 @@ namespace Pulse.WPF.ViewModels
                     OnPropertyChanged(nameof(StepDot3));
                     OnPropertyChanged(nameof(StepDot4));
                     OnPropertyChanged(nameof(StepDot5));
+                    // v0.8.6-beta: gates the "No spare CHU - infer" button.
+                    OnPropertyChanged(nameof(CanInferCameraConclusion));
+                    System.Windows.Input.CommandManager.InvalidateRequerySuggested();
                 }
             }
         }
@@ -86,7 +95,14 @@ namespace Pulse.WPF.ViewModels
         public FaultConclusion Conclusion
         {
             get => _conclusion;
-            private set => Set(ref _conclusion, value);
+            private set
+            {
+                if (Set(ref _conclusion, value))
+                {
+                    OnPropertyChanged(nameof(CanInferCameraConclusion));
+                    System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+                }
+            }
         }
 
         private string _phaseTitle = "";
@@ -162,6 +178,16 @@ namespace Pulse.WPF.ViewModels
         public ICommand ActionCommand    { get; }
         public ICommand StartOverCommand { get; }
         public ICommand CancelCommand    { get; }
+        public ICommand InferCameraConclusionCommand { get; }
+
+        /// <summary>
+        /// v0.8.6-beta: true only while the wizard is sitting on Phase 4
+        /// (AwaitingCameraTest). Binds the "No spare CHU - infer" button's
+        /// Visibility so it only appears when the tech can actually use it.
+        /// </summary>
+        public bool CanInferCameraConclusion =>
+            Phase == FaultIsolatorPhase.AwaitingCameraTest &&
+            Conclusion == FaultConclusion.None;
 
         // -- Population from the parent VM --------------------------------
 
@@ -205,8 +231,15 @@ namespace Pulse.WPF.ViewModels
             if (p.IsOcr)       suffix = " · OCR (100 Mbps is expected)";
             else if (p.IsDegraded) suffix = " · FAULT";
 
-            var name = string.IsNullOrEmpty(p.AdapterName) ? p.Name : p.AdapterName;
-            if (string.IsNullOrEmpty(name)) name = $"Port {p.Name}";
+            // v0.8.6-beta: prefer the physical "Port N" label (set by the
+            // host VM when laying out the tile row) over the Windows-assigned
+            // adapter name ("Ethernet 24" etc). Field tech feedback: techs
+            // can map "Port 3" to the chassis instantly; "Ethernet 26"
+            // requires them to look at Pulse and then mental-map. AdapterName
+            // is preserved as the secondary fallback.
+            var name = !string.IsNullOrEmpty(p.Name) ? p.Name
+                     : !string.IsNullOrEmpty(p.AdapterName) ? p.AdapterName
+                     : "Port ?";
 
             return new PortChoice
             {
@@ -363,6 +396,21 @@ namespace Pulse.WPF.ViewModels
                 return;
             }
 
+            // v0.8.6-beta: no-link branch. A speed=0 reading after a swap is
+            // ambiguous (cable might be unseated, camera might have lost
+            // power, link still negotiating > 12 s) and must not produce a
+            // verdict. Stay on the same phase and ask the tech to verify
+            // the physical connection, then click Check Now again.
+            if (speed <= 0)
+            {
+                var nolinkVerdict = "No link detected - test inconclusive.";
+                AddHistory("Phase 2 - NIC Port Test", config, speedLabel, nolinkVerdict, "Info");
+                PhaseInstruction = $"No link on {test.AdapterName}. Verify the cable is fully seated on the test port and the camera is powered on, then click Check Now to re-measure. The link can take up to ~15 s to renegotiate after a swap.";
+                ShowResult("Phase 2: No link - test inconclusive.", PhaseInstruction, "Info");
+                // Stay in AwaitingNicPortTest; do not advance.
+                return;
+            }
+
             // Fault stayed with the cable+camera — continue to Phase 3.
             var carryVerdict = "Fault stayed with the cable / camera. The original NIC port is not the source.";
             AddHistory("Phase 2 - NIC Port Test", config, speedLabel, carryVerdict, "Info");
@@ -398,13 +446,30 @@ namespace Pulse.WPF.ViewModels
                 return;
             }
 
+            // v0.8.6-beta: no-link branch (mirrors Phase 2). A speed=0 after
+            // the cable swap is inconclusive - cable might be unseated, the
+            // camera might have lost power during the swap. Stay on Phase 3
+            // and let the tech retry. This was field-flagged as misleading
+            // before the fix: a no-link reading falsely produced "fault
+            // stayed with the camera" when the new cable just wasn't fully
+            // seated.
+            if (speed <= 0)
+            {
+                var nolinkVerdict = "No link detected - test inconclusive.";
+                AddHistory("Phase 3 - Cable Test", config, speedLabel, nolinkVerdict, "Info");
+                PhaseInstruction = $"No link on {test.AdapterName}. Verify the new cable is fully seated on both ends and the camera is powered on, then click Check Now to re-measure.";
+                ShowResult("Phase 3: No link - test inconclusive.", PhaseInstruction, "Info");
+                // Stay in AwaitingCableTest; do not advance.
+                return;
+            }
+
             var carryVerdict = "Fault stayed with the camera. The original cable is not the source.";
             AddHistory("Phase 3 - Cable Test", config, speedLabel, carryVerdict, "Info");
             ShowResult($"Phase 3: {speedLabel} - Fault is not the cable.", carryVerdict, "Info");
 
             Phase = FaultIsolatorPhase.AwaitingCameraTest;
             PhaseTitle = "PHASE 4 - DOES THE FAULT FOLLOW THE CAMERA?";
-            PhaseInstruction = $"Stay on {test.AdapterName} with the new cable. Connect a known-good camera. Then click Check Now.";
+            PhaseInstruction = $"Stay on {test.AdapterName} with the new cable. Connect a known-good camera, then click Check Now. If you don't have a spare camera, click \"No spare CHU - infer\" to conclude based on what we've already ruled out.";
             ActionButtonLabel = "Check Now";
         }
 
@@ -432,11 +497,65 @@ namespace Pulse.WPF.ViewModels
                 return;
             }
 
+            // v0.8.6-beta: no-link on Phase 4 stays inconclusive too. Even
+            // though Phase 4 fail normally drops into NIC hardware, a
+            // speed=0 reading is more likely a swap-process issue than a
+            // genuine NIC hardware fault (NIC hardware usually still
+            // negotiates *something*). Stay on phase and let the tech retry.
+            if (speed <= 0)
+            {
+                var nolinkVerdict = "No link detected - test inconclusive.";
+                AddHistory("Phase 4 - Camera Test", config, speedLabel, nolinkVerdict, "Info");
+                PhaseInstruction = $"No link on {test.AdapterName}. Verify the known-good camera is connected and powered on, then click Check Now to re-measure.";
+                ShowResult("Phase 4: No link - test inconclusive.", PhaseInstruction, "Info");
+                // Stay in AwaitingCameraTest; do not advance.
+                return;
+            }
+
             var verdictFail = "Fault persists with known-good cable and camera. The fault is likely in the NIC hardware or the VPU motherboard.";
             AddHistory("Phase 4 - Camera Test", config, speedLabel, verdictFail, "Fail");
             ShowResult($"Phase 4: {speedLabel} - Fault persists with known-good equipment.", verdictFail, "Fail");
             Conclude(FaultConclusion.NicHardware, "CONCLUSION - NIC / HARDWARE FAULT",
                 $"Known-good cable and camera still fail on {test.AdapterName}. This indicates a fault in the NIC hardware or the VPU motherboard. Run the full diagnostic from the Camera Connectivity panel and escalate to hardware repair.");
+        }
+
+        // v0.8.6-beta: "No spare CHU" inference. Field tech feedback - spare
+        // cameras (CHUs) are rare in the field. If a tech has reached Phase 4
+        // without a replacement camera, we can still produce a useful verdict
+        // from what we've already ruled out:
+        //   - Phase 2 cleared the original NIC port (cable+camera moved, fault
+        //     followed).
+        //   - Phase 3 cleared the original cable (known-good cable, fault
+        //     stayed).
+        //   - The only remaining suspect is the camera (CHU). The test port's
+        //     NIC hardware is implicitly trusted (we picked a known-good port).
+        // Verdict: LikelyCamera. The tech knows to replace the camera if/when
+        // a spare becomes available.
+        public async Task InferCameraConclusionWithoutSwapAsync()
+        {
+            if (Phase != FaultIsolatorPhase.AwaitingCameraTest) return;
+            ActionButtonEnabled = false;
+            try
+            {
+                var test = SelectedTestPort;
+                var config = test != null
+                    ? $"Port: {test.AdapterName}  |  Cable: (NEW)  |  Camera: (no spare available)"
+                    : "Camera test skipped - no spare CHU available.";
+
+                AddHistory("Phase 4 - SKIPPED", config, "—",
+                    "No spare CHU available. Conclusion inferred from Phase 2 and Phase 3 outcomes.",
+                    "Info");
+                ShowResult("Phase 4 skipped - inferred conclusion.",
+                    "Phase 2 cleared the original NIC port; Phase 3 cleared the original cable. The remaining suspect is the camera (CHU).",
+                    "Info");
+                Conclude(FaultConclusion.LikelyCamera, "LIKELY CAMERA (CHU) FAULT - UNVERIFIED",
+                    "Cable replacement did not restore the link, and the original NIC port has already been cleared (Phase 2). The remaining suspect is the camera (CHU). Replace the camera unit when a known-good spare is available; if the link still fails with a known-good camera, the issue is likely NIC hardware and a full diagnostic + escalation is warranted. Capture a snapshot now for the ticket.");
+            }
+            finally
+            {
+                ActionButtonEnabled = true;
+            }
+            await System.Threading.Tasks.Task.CompletedTask.ConfigureAwait(true);
         }
 
         private void Conclude(FaultConclusion conclusion, string title, string instruction)
@@ -532,7 +651,12 @@ namespace Pulse.WPF.ViewModels
             sb.AppendLine($"Generated:    {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine($"Suspect port: {SelectedSuspectPort?.AdapterName ?? "(unset)"}");
             sb.AppendLine($"Test port:    {SelectedTestPort?.AdapterName    ?? "(unset)"}");
-            sb.AppendLine($"Conclusion:   {Conclusion}");
+            // v0.8.6-beta: spell out the LikelyCamera caveat in plain English
+            // so the ticket reader doesn't have to know the enum vocabulary.
+            string conclusionLabel = Conclusion == FaultConclusion.LikelyCamera
+                ? "LikelyCamera (UNVERIFIED - Phase 4 skipped, no spare CHU)"
+                : Conclusion.ToString();
+            sb.AppendLine($"Conclusion:   {conclusionLabel}");
             sb.AppendLine();
             sb.AppendLine("Verdict");
             sb.AppendLine(new string('-', 48));

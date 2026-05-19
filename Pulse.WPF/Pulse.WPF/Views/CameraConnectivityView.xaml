@@ -203,17 +203,18 @@
                     <!-- v0.4.6: NIC card diagram sits inside the *same* Card so
                          its 4-column UniformGrid lines up exactly with the
                          tile UniformGrid below. Each jack's LED reads the
-                         corresponding PortViewModel.LinkLedBrush. -->
-                    <controls:NicCardDiagram Ports="{Binding Ports}"
+                         corresponding PortViewModel.LinkLedBrush.
+                         v0.8.6-beta: binds to PortsByPhysical so the visual
+                         order (Port 4 ← Port 3 ← Port 2 ← Port 1, left to
+                         right) matches the physical chassis. -->
+                    <controls:NicCardDiagram Ports="{Binding PortsByPhysical}"
                                              AutomationProperties.Name="Camera NIC card schematic" />
 
-                    <!-- v0.6.5: orientation caption. Ports are ordered by MAC
-                         ascending (NetworkAdapterService.GetCameraPortsAsync)
-                         which doesn't always match the physical jack order
-                         from a given side of the chassis. Field tech reported
-                         a tile↔jack confusion on VPU2; wording stays
-                         agnostic about which way you're facing the box. -->
-                    <TextBlock Text="Logical port order (lowest MAC first). May not match physical jack order from the front of the chassis."
+                    <!-- v0.8.6-beta: orientation caption updated to reflect
+                         the new physical-order rendering. Tile order now
+                         matches the chassis silkscreen: Port 4 on the left,
+                         Port 1 on the right. -->
+                    <TextBlock Text="Port order matches the physical chassis: Port 4 (left) — Port 3 — Port 2 — Port 1 (right)."
                                Foreground="{StaticResource MutedForegroundBrush}"
                                FontSize="11"
                                TextWrapping="Wrap"
@@ -221,8 +222,10 @@
 
                     <!-- Fixed 4 * grid: every tile is always visible. ItemsControl
                          is replaced by a hand-rolled 4-column Grid because the
-                         binding count is locked to 4 and we never want to wrap. -->
-                    <ItemsControl ItemsSource="{Binding Ports}">
+                         binding count is locked to 4 and we never want to wrap.
+                         v0.8.6-beta: binds to PortsByPhysical to keep tile
+                         order aligned with the NicCardDiagram jacks. -->
+                    <ItemsControl ItemsSource="{Binding PortsByPhysical}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <UniformGrid Rows="1" Columns="4" />

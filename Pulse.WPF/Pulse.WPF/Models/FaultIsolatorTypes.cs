@@ -44,6 +44,11 @@ namespace Pulse.WPF.Models
         Cable        = 2,   // Phase 3: fault followed the original cable
         Camera       = 3,   // Phase 4: fault followed the original camera (CHU)
         NicHardware  = 4,   // Phase 4: known-good cable + camera still fails
+        LikelyCamera = 5,   // v0.8.6-beta: Phase 4 SKIPPED because no spare
+                            // CHU was available. Inferred from Phase 2+3
+                            // outcomes (NIC port + original cable both
+                            // cleared). Distinct from Camera so the report
+                            // can note the verdict is unverified.
     }
 
     /// <summary>One row in the wizard's per-run history list / report file.</summary>

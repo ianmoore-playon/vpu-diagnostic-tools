@@ -1,20 +1,28 @@
 <!--
     NicCardDiagram — schematic of the camera-NIC card sitting above the
-    4-tile UniformGrid in the Camera Connectivity panel. Renders the four
-    RJ45 jacks plus a connector line down to the top of the tile row.
-    Bind Ports="{Binding Ports}" with an ObservableCollection<PortViewModel>
-    from CameraConnectivityViewModel.
+    4-tile UniformGrid in the Camera Connectivity panel.
 
-    Layout (all 4 columns share UniformGrid Columns=4 with the tile row
-    underneath, so vertical alignment between jack and tile is automatic):
+    v0.8.6-beta: refactored to match the physical chassis silkscreen.
+    The bound Ports collection is expected to be in physical order
+    (Port 4 ← 3 ← 2 ← 1, left to right) — the host VM produces this
+    via PortsByPhysical, mirroring the visual layout of the real card:
 
-         ░░       ░░       ░░       ░░       ← jacks (JackVisual)
-         [1]      [2]      [3]      [4]
-          │        │        │        │       ← connector lines (Path)
-       ────────────────────────────────      ← bottom edge of card body
+         ░░       ░░       ░░       ░░    │ ●  P4  ← vertical LED strip
+        [P4]     [P3]     [P2]     [P1]   │ ●  P3
+         │        │        │        │     │ ●  P2
+         │        │        │        │     │ ●  P1
 
-    The control is intentionally pure layout with no behaviour — port state
-    bubbles in via PortViewModel.LinkLedBrush etc.
+    The vertical LED strip on the right is a redundant indicator of the
+    same per-port link state (drives the same LinkLedBrush as the per-
+    jack LEDs). Matches the physical card's vertical status-light strip
+    so techs can map "Pulse says Port 2 LED is yellow" to "the second
+    LED from the bottom is yellow on the actual card."
+
+    Bind Ports="{Binding PortsByPhysical}" with an
+    ObservableCollection<PortViewModel> from CameraConnectivityViewModel.
+
+    The control is intentionally pure layout with no behaviour — port
+    state bubbles in via PortViewModel.LinkLedBrush etc.
 -->
 <UserControl x:Class="Pulse.WPF.Controls.NicCardDiagram"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -31,63 +39,105 @@
             BorderThickness="1"
             Padding="12,10,12,8"
             Margin="0,0,0,12">
-        <StackPanel>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-            <!-- Row 1: the four jacks -->
-            <ItemsControl ItemsSource="{Binding Ports, ElementName=Root}"
-                          AlternationCount="4">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <UniformGrid Rows="1" Columns="4" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <controls:JackVisual
-                            PortNumberLabel="{Binding (ItemsControl.AlternationIndex),
-                                                      RelativeSource={RelativeSource AncestorType={x:Type ContentPresenter}},
-                                                      Converter={StaticResource AlternationIndexToOrdinal},
-                                                      FallbackValue=1}" />
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <!-- Left column: 4 horizontal jacks + connector lines -->
+            <StackPanel Grid.Column="0">
 
-            <!-- Row 2: connector lines drawn one per column.
-                 We use four narrow Border columns each with a 1-px-wide
-                 vertical Line so they line up with the four UniformGrid
-                 cells in the tile row beneath. The line itself is short
-                 (~12 px) — the visual continuity comes from the tiles
-                 sitting directly under this card. -->
-            <UniformGrid Rows="1" Columns="4" Margin="0,4,0,0">
-                <Path Stroke="{DynamicResource BorderColStrongBrush}"
-                      StrokeThickness="1"
-                      HorizontalAlignment="Center">
-                    <Path.Data>
-                        <LineGeometry StartPoint="0,0" EndPoint="0,12" />
-                    </Path.Data>
-                </Path>
-                <Path Stroke="{DynamicResource BorderColStrongBrush}"
-                      StrokeThickness="1"
-                      HorizontalAlignment="Center">
-                    <Path.Data>
-                        <LineGeometry StartPoint="0,0" EndPoint="0,12" />
-                    </Path.Data>
-                </Path>
-                <Path Stroke="{DynamicResource BorderColStrongBrush}"
-                      StrokeThickness="1"
-                      HorizontalAlignment="Center">
-                    <Path.Data>
-                        <LineGeometry StartPoint="0,0" EndPoint="0,12" />
-                    </Path.Data>
-                </Path>
-                <Path Stroke="{DynamicResource BorderColStrongBrush}"
-                      StrokeThickness="1"
-                      HorizontalAlignment="Center">
-                    <Path.Data>
-                        <LineGeometry StartPoint="0,0" EndPoint="0,12" />
-                    </Path.Data>
-                </Path>
-            </UniformGrid>
-        </StackPanel>
+                <!-- Row 1: the four jacks -->
+                <ItemsControl ItemsSource="{Binding Ports, ElementName=Root}"
+                              AlternationCount="4">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Rows="1" Columns="4" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- v0.8.6-beta: jack badge reads the
+                                 PortViewModel.Name directly (e.g. "Port 4")
+                                 so each jack is labeled by its physical
+                                 number regardless of UniformGrid index.
+                                 PortNumberLabel is a string property on
+                                 JackVisual. -->
+                            <controls:JackVisual PortNumberLabel="{Binding Name}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Row 2: connector lines drawn one per column. -->
+                <UniformGrid Rows="1" Columns="4" Margin="0,4,0,0">
+                    <Path Stroke="{DynamicResource BorderColStrongBrush}"
+                          StrokeThickness="1"
+                          HorizontalAlignment="Center">
+                        <Path.Data>
+                            <LineGeometry StartPoint="0,0" EndPoint="0,12" />
+                        </Path.Data>
+                    </Path>
+                    <Path Stroke="{DynamicResource BorderColStrongBrush}"
+                          StrokeThickness="1"
+                          HorizontalAlignment="Center">
+                        <Path.Data>
+                            <LineGeometry StartPoint="0,0" EndPoint="0,12" />
+                        </Path.Data>
+                    </Path>
+                    <Path Stroke="{DynamicResource BorderColStrongBrush}"
+                          StrokeThickness="1"
+                          HorizontalAlignment="Center">
+                        <Path.Data>
+                            <LineGeometry StartPoint="0,0" EndPoint="0,12" />
+                        </Path.Data>
+                    </Path>
+                    <Path Stroke="{DynamicResource BorderColStrongBrush}"
+                          StrokeThickness="1"
+                          HorizontalAlignment="Center">
+                        <Path.Data>
+                            <LineGeometry StartPoint="0,0" EndPoint="0,12" />
+                        </Path.Data>
+                    </Path>
+                </UniformGrid>
+            </StackPanel>
+
+            <!-- Right column: vertical status-light strip (v0.8.6-beta).
+                 Mirrors the physical card's vertical LED indicator strip.
+                 Top → bottom = Port 4 → 3 → 2 → 1, matching the
+                 PortsByPhysical iteration order. Each LED reads the
+                 same LinkLedBrush as its corresponding jack so they're
+                 always in sync. -->
+            <Border Grid.Column="1"
+                    Background="{DynamicResource CardBgBrush}"
+                    BorderBrush="{DynamicResource BorderColBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="8,8"
+                    Margin="14,0,0,0"
+                    VerticalAlignment="Center">
+                <ItemsControl ItemsSource="{Binding Ports, ElementName=Root}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Vertical" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,3,0,3">
+                                <Ellipse Width="10" Height="10"
+                                         Fill="{Binding LinkLedBrush}"
+                                         VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Name}"
+                                           Margin="8,0,0,0"
+                                           FontSize="10"
+                                           Foreground="{DynamicResource MutedForegroundBrush}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+        </Grid>
     </Border>
 </UserControl>

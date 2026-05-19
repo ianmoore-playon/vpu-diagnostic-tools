@@ -1249,3 +1249,63 @@ Rewrote `Views/FaultIsolatorDialog.xaml` to remove all local Style definitions a
 
 - `Pulse.WPF.csproj` Version bumped 0.8.1-beta → 0.8.2-beta.
 - Modified: `Views/FaultIsolatorDialog.xaml` (full rewrite, smaller and simpler).
+
+## v0.8.3-beta — Fault Isolator: log full exception chain on open failure
+
+Diagnostic improvement (no UI change). v0.8.2-beta still threw `Set property 'System.Windows.Setter.Property' threw an exception` in field testing — the prior catch handler only logged `ex.Message` (outermost wrapper), throwing away the actual root cause. v0.8.3-beta walks the InnerException chain up to 6 levels deep, logs each level inline ("Outer → Inner → Root"), appends `(line N, pos M)` for any `XamlParseException` in the chain, and dumps `ex.ToString()` (full stack) to the rolling AppLogFile. Next failed click identifies the actual missing resource.
+
+## v0.8.4-beta — Fault Isolator: narrow XAML failure by stripping styles
+
+v0.8.3-beta diagnostic revealed the root cause: `XamlParseException → ArgumentNullException: Value cannot be null. Parameter name: property` with `(line 0, pos 0)` — meaning a Setter in an *applied* style had its `Property` resolve to null at runtime. v0.8.2-beta had zero literal `<Setter>` elements of our own, so the culprit was one of the referenced StaticResource styles. v0.8.4-beta stripped every style reference from the dialog (PulseDialogWindow, Card, SectionTitle, MutedLabel, MaterialDesignRaisedButton, MaterialDesignOutlinedButton, controls:SeverityChip) and inlined raw hex Window properties to confirm minimum-viable open works. **Dialog opened.** Confirmed bisection target.
+
+## v0.8.5-beta — Fault Isolator: bisect by re-adding all styles except PulseDialogWindow
+
+Field test of v0.8.5-beta confirmed: with every style re-added except `Style="{StaticResource PulseDialogWindow}"` on the Window, the dialog opens cleanly. Window-level `Background`/`Foreground`/`FontFamily` stay as direct `{StaticResource}` references; only the composite `PulseDialogWindow` style is held out. The Card/SectionTitle/MutedLabel/PageTitle/PageSubtitle/MaterialDesignRaisedButton/MaterialDesignOutlinedButton/SeverityChip references all work fine — `PulseDialogWindow` is confirmed culprit. Root cause TBD post-v1; workaround in place.
+
+## v0.8.6-beta — Field-testing feedback pass (8 changes)
+
+Bundled v1.0.0-beta polish ship from a single field-validation session. Each item addresses a specific tech-reported issue or product gap caught during v0.8.4–v0.8.5 testing.
+
+### XAML modal dialog fixes
+
+- **`Views/AdapterDetailsDialog.xaml`** — dropped `Style="{StaticResource PulseDialogWindow}"` (same fix shape as `FaultIsolatorDialog`). The dialog was failing silently with the same `ArgumentNullException` on every per-port click; tech only discovered it during this session. Window-level Background/Foreground/Font properties inlined as `{StaticResource}` brushes. Same fix in two places; root-cause investigation queued for post-v1.
+
+### Cable state → binary
+
+- **`ViewModels/CameraConnectivityViewModel.cs` `OnMonitorTick`** — collapsed the two `if !IsUp` branches (No cable + Cable-no-link) into one. The yellow "Cable, no link" state was triggered by stale ARP entries that persist ~30 s after a cable pull, producing a misleading yellow-LED tile on a port the tech had just unplugged. New rule: `IsUp=false → "No cable"` regardless of stale RemoteMac.
+- **`ComputeDurationLine`** — returns empty when `!IsUp`. The prior "Last: 169.254.16.51, just now" hint read as ambiguous activity once cable state went binary; field tech feedback: if there's a link show it, if not don't show anything.
+
+### Fault Isolator wizard fixes
+
+- **Phase 2 / 3 / 4 no-link handling** (`DoNicPortCheckAsync`, `DoCableCheckAsync`, `DoCameraCheckAsync`) — added `speed <= 0` branch to each. A `speed=0` reading after a swap is genuinely inconclusive (cable not fully seated, camera lost power during swap, link still negotiating > 12 s) and was being misclassified as "fault stayed with X". Now stays on the same phase, writes an Info history entry, updates the instruction to "verify connection and click Check Now again". No false verdicts.
+- **`Models/FaultIsolatorTypes.cs`** — added `FaultConclusion.LikelyCamera` distinct from verified `Camera`. Used when Phase 4 is skipped because no spare CHU is available.
+- **No-spare-CHU inference path** — added `InferCameraConclusionWithoutSwapAsync` + `InferCameraConclusionCommand` + `CanInferCameraConclusion` property. Visible only while `Phase == AwaitingCameraTest`. Field tech feedback: spare cameras (CHUs) are rare; without one, the tech needs an exit that produces a useful verdict instead of being stuck. When invoked: writes a `Phase 4 - SKIPPED` history entry, concludes `LikelyCamera` with copy explaining the verdict is inferred from Phase 2+3 outcomes. Footer adds a fourth button "No spare CHU — infer" gated by visibility binding.
+- **`Views/FaultIsolatorDialog.xaml`** — added the new footer button.
+- **Fault Isolator dropdown labels** (`BuildChoice`) — prefer `p.Name` ("Port 1") over `p.AdapterName` ("Ethernet 24"). Dropdowns + history rows + report file all pick up the physical port label automatically. Adapter name kept as the fallback when `Name` is empty.
+- **`BuildReportText`** — spells out the `LikelyCamera` caveat in plain English: `"LikelyCamera (UNVERIFIED - Phase 4 skipped, no spare CHU)"`. Ticket readers don't have to know the enum vocabulary.
+
+### NIC card diagram → physical layout
+
+- **`PortsByPhysical`** collection on `CameraConnectivityViewModel` — same `PortViewModel` instances as `Ports` but in reverse iteration order (Port 4 → 3 → 2 → 1). Maintained in sync with `Ports` inside `EnsurePortCount` via an `ArePhysicalAndLogicalReversed` cheap-equality check; seeded in the constructor so placeholders render correctly before the first poll resolves.
+- **`Controls/NicCardDiagram.xaml`** — restructured into a 2-column Grid. Left column is the existing 4-jack UniformGrid + connector lines. Right column is a new vertical LED strip with 4 stacked Ellipses bound to `LinkLedBrush` plus a `Name` label, mirroring the physical chassis's vertical status-light strip. Each jack's badge now reads `PortViewModel.Name` directly (instead of `AlternationIndex`-derived ordinal) so labels stay correct under any iteration order.
+- **`Views/CameraConnectivityView.xaml`** — `NicCardDiagram.Ports` + tile-row `ItemsControl.ItemsSource` both bind to `PortsByPhysical`. Orientation caption updated: "Port order matches the physical chassis: Port 4 (left) — Port 3 — Port 2 — Port 1 (right)."
+
+### Live Log dedup
+
+- **`Helpers/PanelLogger.cs`** — consecutive identical (Label, Result, Level) entries within a 5 s window are collapsed onto the previous row with a "(×N)" suffix on the Result. Click-spamming a broken button no longer floods the Live Log with 5 identical lines. The on-disk `AppLogFile` is NOT deduped — every occurrence is captured with its own timestamp for forensic analysis.
+
+### What to watch for during the v0.8.6-beta field test
+
+- AdapterDetailsDialog opens when clicking individual ports (no XAML error in Live Log).
+- Unplug a port → tile flips to "No cable" within a few seconds, no yellow "Cable, no link" intermediate state. Replug → "Linked Xs" + device info appears.
+- Fault Isolator: dropdowns read "Port 1 — 100 Mbps · FAULT" etc. (Not "Ethernet 24".)
+- Fault Isolator no-link branches: swap a cable mid-test then click Check Now too quickly — should see "No link — test inconclusive" rather than a false verdict, with a retry prompt.
+- Phase 4 with no spare camera: "No spare CHU — infer" button appears; clicking it produces a `LIKELY CAMERA (CHU) FAULT — UNVERIFIED` conclusion + report.
+- NIC card diagram: physical layout (Port 4 left, Port 1 right) + vertical LED strip on the right with 4 LEDs top-to-bottom = Port 4 → 1.
+- **Verify physical-to-logical mapping**: unplug "Port 1" per Pulse — confirm the *rightmost* physical jack loses its LED. If wrong direction, flip the `PortsByPhysical` seed order.
+- Live Log: click a broken button 5× rapidly — should see one entry with "(×5)" suffix instead of five separate lines.
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.8.5-beta → 0.8.6-beta.
+- Modified: `Views/AdapterDetailsDialog.xaml`, `Views/FaultIsolatorDialog.xaml`, `Views/CameraConnectivityView.xaml`, `Controls/NicCardDiagram.xaml`, `ViewModels/CameraConnectivityViewModel.cs`, `ViewModels/FaultIsolatorViewModel.cs`, `Models/FaultIsolatorTypes.cs`, `Helpers/PanelLogger.cs`.
