@@ -734,7 +734,6 @@ namespace Pulse.WPF.ViewModels
             }
             return true;
         }
-        }
 
         // -------------------------------------------------------------------
         // Recommendations engine — one row per failure mode.
