@@ -264,29 +264,23 @@ Estimated ~700 LOC total; one focused ship.
   Start button. Matches the legacy behaviour where the wizard would
   no-op silently.
 
-## Open questions
+## Open questions — decided 2026-05-19
 
-1. **History persistence — per session or per run?** Legacy saves on
-   each conclusion to the per-run report. The WPF port can either:
-   (a) write a `FaultIsolator-YYYYMMDD-HHMMSS.txt` to the Reports
-   directory like other panels, or (b) extend the existing Camera
-   Connectivity report with a "Fault Isolation" section when the
-   wizard was run during that session. I lean (a) — separate file,
-   easy to attach to a ticket. Confirm.
-2. **Dialog modality — modal to MainWindow or modal to the Camera
-   Connectivity panel?** Modal to MainWindow blocks the whole shell;
-   modal to the panel only blocks Camera Connectivity. The legacy
-   tool was modal to the whole shell. I lean MainWindow modality
-   for the same reason: the tech is focused on the wizard. Confirm.
-3. **Conclusion action default — Run Full Diagnostic or Close?**
-   Legacy auto-clicks "Run Full Diagnostic" on the conclusion phase.
-   The WPF port can either preserve that or make Close the primary
-   and Run Full Diagnostic a secondary. I lean preserve. Confirm.
-4. **Where does the "Open Fault Isolator" button live?** Camera
-   Connectivity panel has a Recommendations card today; I'd add a
-   primary button there with an explicit MaterialIcon (Stethoscope
-   / NetworkOff). Visible always, even when no port is flagged
-   FAIL — the tech may want to dry-run the wizard. Confirm.
+1. **History persistence: separate file.** Each wizard run writes
+   `FaultIsolator-YYYYMMDD-HHMMSS.txt` to the existing Reports
+   directory. Easy to attach to a ticket; shows up alongside the
+   other per-panel reports in the Reports panel.
+2. **Dialog modality: modal to MainWindow.** Whole-shell modality so
+   the tech is fully focused on the wizard while it's running.
+3. **Conclusion default action: preserve.** "Run Full Diagnostic"
+   stays as the primary action button on the conclusion phase
+   (matches the legacy behaviour). Cancel still available.
+4. **Entry button: always visible.** The "Open Fault Isolator →"
+   button on the Camera Connectivity Recommendations card stays
+   enabled even when no port is flagged FAIL — techs can dry-run
+   the wizard.
+
+All four answers unblock implementation.
 
 ## Next decision
 
