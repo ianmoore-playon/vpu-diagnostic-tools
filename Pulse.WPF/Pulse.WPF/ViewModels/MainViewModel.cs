@@ -135,6 +135,12 @@ namespace Pulse.WPF.ViewModels
             IServicesService svcs = new ServicesService();
             IDiskHealthService disk = new DiskHealthService();
             IEventViewerService events = new EventViewerService();
+            // v0.8.19-beta: positive OCR identification via Dynacolor CGI
+            // (pattern from Logan Teffertiller's ocr-tester repo). Probes
+            // a candidate IP and reads the camera MAC from the response,
+            // forcing ARP population as a side effect. Replaces the
+            // OCR-from-speed inference at the Layer 1 level.
+            IOcrProbeService ocrProbe = new OcrProbeService();
             IReportsService reports = new ReportsService();
             _reportsService = reports;
             _supportBundleService = new SupportBundleService(reports.ReportsDirectory);
@@ -156,13 +162,14 @@ namespace Pulse.WPF.ViewModels
             Dashboard = new DashboardViewModel(dashboard);
             SystemOverview = new SystemOverviewViewModel(specs, hw);
             Network = new NetworkViewModel(net);
-            // v0.8.16-beta: Camera Connectivity now pulls NIC driver events
-            // from the System log on a slow secondary timer for per-port
-            // fault correlation (Intel SmartSpeed downgrades, link
-            // disconnects, etc.). The event service is optional - the
-            // panel functions normally without it but skips the supplemental
-            // event-log signal.
-            Camera = new CameraConnectivityViewModel(netAdapters, cfg, events);
+            // v0.8.16-beta: Camera Connectivity pulls NIC driver events from
+            // the System log on a slow timer (Intel SmartSpeed downgrades
+            // etc.) for fault correlation. v0.8.19-beta: also takes an
+            // IOcrProbeService to positively identify OCR cameras via the
+            // Dynacolor CGI instead of inferring from speed alone. Both
+            // services are optional - if either is null the panel
+            // gracefully degrades.
+            Camera = new CameraConnectivityViewModel(netAdapters, cfg, events, ocrProbe);
             ScoreConnect = new ScoreConnectViewModel(scoreConnect);
             Services = new ServicesViewModel(svcs);
             DiskHealth = new DiskHealthViewModel(disk);

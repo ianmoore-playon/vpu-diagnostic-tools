@@ -48,6 +48,41 @@ namespace Pulse.WPF.ViewModels
         private System.Windows.Threading.DispatcherTimer _eventPollTimer;
         private bool _eventPollRunning;
 
+        // v0.8.19-beta: positive OCR identification via Dynacolor CGI probe.
+        // Replaces the speed-inference heuristic (Layer 2/3 in IsLikelyOcr)
+        // with an authoritative answer from the camera itself: a single
+        // HTTP GET to the OCR's CGI returns the camera MAC, AND the act
+        // of probing populates Windows' ARP table as a side effect so the
+        // existing monitor pipeline picks it up on the next 500 ms tick.
+        //
+        // _confirmedOcrByMac caches the result of a successful probe so
+        // IsLikelyOcr can short-circuit the 5 s grace period for ports
+        // we've already identified as OCR. Keyed by the camera's MAC (from
+        // the probe response) - we cross-check against ARP-resolved
+        // RemoteMac on the next tick to determine which port it's on.
+        //
+        // _lastProbeAt rate-limits probes per IP to once every 10 s so a
+        // port stuck in "no ARP" doesn't spam the network with HTTP
+        // requests every tick.
+        private readonly IOcrProbeService _ocrProbe;
+        private readonly Dictionary<string, DateTime> _lastProbeAtByIp =
+            new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _confirmedOcrMacs =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly TimeSpan OcrProbeInterval = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan OcrProbeTimeout  = TimeSpan.FromSeconds(2);
+
+        // Pixellot ships OCR cameras with these two default link-local
+        // IPs out of the box. The ocr-tester reference tool uses them as
+        // probe targets when the user hasn't supplied a custom IP. Pulse
+        // adds them to the cfg-derived list so a brand-new venue (cfg not
+        // yet populated) can still positively identify the OCR.
+        private static readonly string[] DefaultOcrIps =
+        {
+            "169.254.16.52",
+            "169.254.16.60",
+        };
+
         // v0.8.16-beta: per-port event analysis. Keyed by local MAC so a
         // PortViewModel can be looked up across both the live monitor and
         // the slow event poll. _descriptionByMac is updated by OnMonitorTick
@@ -169,11 +204,13 @@ namespace Pulse.WPF.ViewModels
         public CameraConnectivityViewModel(
             INetworkAdapterService net,
             IPixellotConfigService cfg,
-            IEventViewerService events = null)
+            IEventViewerService events = null,
+            IOcrProbeService ocrProbe = null)
         {
             _net = net;
             _cfg = cfg;
             _events = events;
+            _ocrProbe = ocrProbe;
 
             _statusColor = StatusHelpers.Brush("MutedForegroundBrush");
             _statusBg    = StatusHelpers.Brush("BorderColBrush");
@@ -598,6 +635,28 @@ namespace Pulse.WPF.ViewModels
                         ledBrush    = StatusHelpers.Brush("GreenBrush");
                         statusIconKind = "CheckCircle";
                     }
+                    else if (is100M
+                             && !string.IsNullOrEmpty(snap.RemoteMac)
+                             && _confirmedOcrMacs.Contains(snap.RemoteMac))
+                    {
+                        // v0.8.19-beta: positive CGI probe identified this
+                        // MAC as an OCR. Distinct from the OuiVendor
+                        // inference branch below - this fires even when
+                        // the OUI doesn't match Pixellot (third-party OCR
+                        // SKU, or a Pixellot OCR with a non-standard MAC).
+                        // The camera itself answered "yes, I'm an OCR" via
+                        // the Dynacolor CGI - we trust that over any
+                        // heuristic.
+                        primary = "OCR / Scoreboard";
+                        secondary = "Confirmed via CGI probe";
+                        ipShown = snap.RemoteIp; macShown = snap.RemoteMac;
+                        statusLine = "Linked · 100 Mbps · OCR (confirmed)";
+                        statusBrush = StatusHelpers.Brush("GreenBrush");
+                        ledBrush    = StatusHelpers.Brush("GreenBrush");
+                        statusIconKind = "CheckCircle";
+                        info.IsOcr = true;
+                        info.Source = DeviceIdentitySource.PixellotConfig;
+                    }
                     else if (is100M && info.Source == DeviceIdentitySource.OuiVendor && (roles?.Count ?? 0) > 0)
                     {
                         // v0.6.9: ARP resolved to a Pixellot-OUI vendor but
@@ -776,6 +835,12 @@ namespace Pulse.WPF.ViewModels
                 // sees a stable "previous tick" value next time around.
                 foreach (var st in states)
                     if (st.Snapshot != null) UpdateSpeedBaseline(st.Snapshot);
+
+                // v0.8.19-beta: schedule positive OCR identification probes
+                // when needed. Async, fire-and-forget - results land in
+                // ARP for the next tick to pick up via the existing
+                // monitor -> resolver pipeline.
+                ScheduleOcrProbesIfNeeded(states, roles);
             }
             catch (Exception ex)
             {
@@ -1410,6 +1475,109 @@ namespace Pulse.WPF.ViewModels
         }
 
         /// <summary>
+        /// v0.8.19-beta: schedule HTTP CGI probes for candidate OCR IPs
+        /// when at least one port might be an OCR. Fire-and-forget - the
+        /// probes run in background; on success the camera's MAC lands
+        /// in <see cref="_confirmedOcrMacs"/> AND Windows' ARP table gets
+        /// populated as a side effect (which the next monitor tick picks
+        /// up via the existing resolver pipeline).
+        ///
+        /// "When at least one port might be OCR" = any port currently up
+        /// at 100 Mbps with no ARP yet. If every port is either at 1 Gbps
+        /// (definitely not OCR), confirmed via ARP, or down, there's
+        /// nothing to probe and we skip the whole pass.
+        ///
+        /// Per-IP rate limit (10 s) keeps us from spamming the camera
+        /// CGI on every tick while waiting for ARP to populate.
+        /// </summary>
+        private void ScheduleOcrProbesIfNeeded(
+            List<PortState> states,
+            Dictionary<string, string> roles)
+        {
+            if (_ocrProbe == null) return;
+
+            // Cheap check: do we have any port that might be an OCR right
+            // now? If not, no probe scheduling needed this tick.
+            bool needsProbe = false;
+            foreach (var st in states)
+            {
+                var snap = st.Snapshot;
+                if (snap == null) continue;
+                bool is100M = snap.IsUp
+                              && snap.LinkSpeedBps >= 100_000_000UL
+                              && snap.LinkSpeedBps < 1_000_000_000UL;
+                bool noArp = string.IsNullOrEmpty(snap.RemoteMac);
+                if (is100M && noArp) { needsProbe = true; break; }
+            }
+            if (!needsProbe) return;
+
+            // Build the candidate IP list: cameras.cfg OCR/Scoreboard
+            // entries first (more likely to match a given venue's actual
+            // OCR), then the Pixellot defaults as a fallback for venues
+            // where cfg hasn't been populated yet.
+            var candidateIps = new List<string>();
+            if (roles != null)
+            {
+                foreach (var kv in roles)
+                {
+                    if (string.IsNullOrEmpty(kv.Key) || string.IsNullOrEmpty(kv.Value)) continue;
+                    if (kv.Value.IndexOf("OCR", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        kv.Value.IndexOf("Scoreboard", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        if (!candidateIps.Contains(kv.Key)) candidateIps.Add(kv.Key);
+                    }
+                }
+            }
+            foreach (var def in DefaultOcrIps)
+                if (!candidateIps.Contains(def)) candidateIps.Add(def);
+
+            if (candidateIps.Count == 0) return;
+
+            var now = DateTime.UtcNow;
+            foreach (var ip in candidateIps)
+            {
+                if (_lastProbeAtByIp.TryGetValue(ip, out var lastAt)
+                    && (now - lastAt) < OcrProbeInterval)
+                {
+                    continue; // rate-limit
+                }
+                _lastProbeAtByIp[ip] = now;
+
+                // Fire-and-forget. Captured `ip` is a string, immutable.
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var result = await _ocrProbe.ProbeAsync(ip, OcrProbeTimeout).ConfigureAwait(false);
+                        if (result.IsOcr && !string.IsNullOrEmpty(result.Mac))
+                        {
+                            // Marshal back to the UI thread for the
+                            // _confirmedOcrMacs update + the Live Log
+                            // entry. Both surfaces are read by the next
+                            // OnMonitorTick on the UI thread.
+                            var app = Application.Current;
+                            if (app != null)
+                            {
+                                app.Dispatcher.Invoke(() =>
+                                {
+                                    _confirmedOcrMacs.Add(result.Mac);
+                                    AddLog("OcrProbe",
+                                        $"Identified OCR at {ip} (MAC {result.Mac}, {(int)result.Elapsed.TotalMilliseconds} ms)",
+                                        "Info");
+                                });
+                            }
+                        }
+                        // Failures are silent by design - most candidate IPs
+                        // won't have an OCR on them, so logging every miss
+                        // would flood the Live Log. The successful match
+                        // is the signal worth surfacing.
+                    }
+                    catch { /* never throw from fire-and-forget */ }
+                });
+            }
+        }
+
+        /// <summary>
         /// v0.8.15-beta: centralized "is this port likely an OCR camera"
         /// inference. Two consumers need the same answer:
         ///   - OnMonitorTick (tile rendering): decides whether to paint
@@ -1429,12 +1597,25 @@ namespace Pulse.WPF.ViewModels
         ///   3. ARP resolved to a Pixellot OUI vendor (no cfg match)
         ///      AND 100 Mbps + cfg loaded.
         /// </summary>
-        private static bool IsLikelyOcr(
+        private bool IsLikelyOcr(
             CameraNicSnapshot snap,
             RemoteDeviceInfo info,
             PortState st,
             Dictionary<string, string> roles)
         {
+            // v0.8.19-beta: positive probe wins. The Dynacolor CGI probe
+            // got a parseable MAC back from this IP - the camera told us
+            // it's an OCR. No need to consult speed / cfg / grace period
+            // when we have a positive ID. Also handles the edge case
+            // where an OCR has a non-Pixellot MAC (the OuiVendor branch
+            // below would miss it).
+            if (snap != null
+                && !string.IsNullOrEmpty(snap.RemoteMac)
+                && _confirmedOcrMacs.Contains(snap.RemoteMac))
+            {
+                return true;
+            }
+
             if (info != null && info.IsOcr) return true;
 
             bool is100M = snap != null
