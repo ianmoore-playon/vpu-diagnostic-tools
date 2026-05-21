@@ -97,13 +97,16 @@ jobs:
           DEST="run_pulse_web.bat"
           CONTENT=$(base64 -w0 "$FILE")
           EXISTING_SHA=$(gh api "repos/${PUBLIC_REPO}/contents/${DEST}" --jq '.sha' 2>/dev/null || echo "")
+          TMPFILE=$(mktemp)
           if [ -n "$EXISTING_SHA" ]; then
-            echo "{\"message\":\"Update ${DEST} from source repo\",\"content\":\"${CONTENT}\",\"sha\":\"${EXISTING_SHA}\"}" | \
-              gh api "repos/${PUBLIC_REPO}/contents/${DEST}" -X PUT --input -
+            jq -n --arg msg "Update ${DEST} from source repo" --arg c "$CONTENT" --arg sha "$EXISTING_SHA" \
+              '{message: $msg, content: $c, sha: $sha}' > "$TMPFILE"
           else
-            echo "{\"message\":\"Add ${DEST} from source repo\",\"content\":\"${CONTENT}\"}" | \
-              gh api "repos/${PUBLIC_REPO}/contents/${DEST}" -X PUT --input -
+            jq -n --arg msg "Add ${DEST} from source repo" --arg c "$CONTENT" \
+              '{message: $msg, content: $c}' > "$TMPFILE"
           fi
+          gh api "repos/${PUBLIC_REPO}/contents/${DEST}" -X PUT --input "$TMPFILE"
+          rm -f "$TMPFILE"
           echo "Synced ${DEST} to ${PUBLIC_REPO}"
 
       # ── Beta pre-release (beta channel, web-beta-v* tags) ──────────────
@@ -155,13 +158,16 @@ jobs:
           DEST="run_pulse_web_beta.bat"
           CONTENT=$(base64 -w0 "$FILE")
           EXISTING_SHA=$(gh api "repos/${PUBLIC_REPO}/contents/${DEST}" --jq '.sha' 2>/dev/null || echo "")
+          TMPFILE=$(mktemp)
           if [ -n "$EXISTING_SHA" ]; then
-            echo "{\"message\":\"Update ${DEST} from source repo\",\"content\":\"${CONTENT}\",\"sha\":\"${EXISTING_SHA}\"}" | \
-              gh api "repos/${PUBLIC_REPO}/contents/${DEST}" -X PUT --input -
+            jq -n --arg msg "Update ${DEST} from source repo" --arg c "$CONTENT" --arg sha "$EXISTING_SHA" \
+              '{message: $msg, content: $c, sha: $sha}' > "$TMPFILE"
           else
-            echo "{\"message\":\"Add ${DEST} from source repo\",\"content\":\"${CONTENT}\"}" | \
-              gh api "repos/${PUBLIC_REPO}/contents/${DEST}" -X PUT --input -
+            jq -n --arg msg "Add ${DEST} from source repo" --arg c "$CONTENT" \
+              '{message: $msg, content: $c}' > "$TMPFILE"
           fi
+          gh api "repos/${PUBLIC_REPO}/contents/${DEST}" -X PUT --input "$TMPFILE"
+          rm -f "$TMPFILE"
           echo "Synced ${DEST} to ${PUBLIC_REPO}"
 
       # ── Dev pre-release (dev channel, web-dev-v* tags) ─────────────────
@@ -213,11 +219,14 @@ jobs:
           DEST="run_pulse_web_dev.bat"
           CONTENT=$(base64 -w0 "$FILE")
           EXISTING_SHA=$(gh api "repos/${PUBLIC_REPO}/contents/${DEST}" --jq '.sha' 2>/dev/null || echo "")
+          TMPFILE=$(mktemp)
           if [ -n "$EXISTING_SHA" ]; then
-            echo "{\"message\":\"Update ${DEST} from source repo\",\"content\":\"${CONTENT}\",\"sha\":\"${EXISTING_SHA}\"}" | \
-              gh api "repos/${PUBLIC_REPO}/contents/${DEST}" -X PUT --input -
+            jq -n --arg msg "Update ${DEST} from source repo" --arg c "$CONTENT" --arg sha "$EXISTING_SHA" \
+              '{message: $msg, content: $c, sha: $sha}' > "$TMPFILE"
           else
-            echo "{\"message\":\"Add ${DEST} from source repo\",\"content\":\"${CONTENT}\"}" | \
-              gh api "repos/${PUBLIC_REPO}/contents/${DEST}" -X PUT --input -
+            jq -n --arg msg "Add ${DEST} from source repo" --arg c "$CONTENT" \
+              '{message: $msg, content: $c}' > "$TMPFILE"
           fi
+          gh api "repos/${PUBLIC_REPO}/contents/${DEST}" -X PUT --input "$TMPFILE"
+          rm -f "$TMPFILE"
           echo "Synced ${DEST} to ${PUBLIC_REPO}"
