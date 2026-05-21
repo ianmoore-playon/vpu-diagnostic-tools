@@ -1,22 +1,22 @@
-# Build Pulse.WPF on a Windows runner whenever the wpf-pilot branch
-# changes (or on manual trigger), and publish a downloadable zip + a
-# convenience launcher .bat as the artifacts of every run. Tagged
-# pushes (e.g. wpf-pilot-v0.1.0) also produce a real GitHub release
-# so a tech can download from a stable URL.
+# Build Pulse.WPF on a Windows runner.
+#
+# Branch channels:
+#   beta  — integration branch; feature branches merge here first.
+#           Artifacts are named Pulse.WPF-beta-*. Tags beta-v* create
+#           a pre-release mirrored to pulse-releases.
+#   main  — stable production branch. Artifacts are named Pulse.WPF-*.
+#           Tags wpf-pilot-v* create a production release mirrored to
+#           pulse-releases.
 
-name: Build Pulse.WPF pilot
+name: Build Pulse.WPF
 
-# After wpf-pilot was fast-forward-merged into dev (2026-05-06), the WPF
-# build is the active development line. Trigger on dev / main pushes when
-# Pulse.WPF/ files change, plus the existing wpf-pilot-v* tags so the
-# public release flow keeps working unchanged.
 on:
   push:
-    branches: [ "dev", "main" ]
+    branches: [ "beta", "main" ]
     paths:
       - "Pulse.WPF/**"
       - ".github/workflows/wpf-pilot-build.yml"
-    tags:     [ "wpf-pilot-v*" ]
+    tags: [ "wpf-pilot-v*", "beta-v*" ]
   workflow_dispatch:
 
 permissions:
@@ -52,10 +52,13 @@ jobs:
       - name: Stage the runnable folder
         shell: pwsh
         run: |
-          # Pull short SHA for the artifact filename
+          # Determine channel: beta branch/tags get a "beta" prefix; main is clean.
+          $ref = "${{ github.ref }}"
+          $isBeta = $ref -eq "refs/heads/beta" -or $ref.StartsWith("refs/tags/beta-v")
+          $channel = if ($isBeta) { "Pulse.WPF-beta" } else { "Pulse.WPF" }
           $sha = "${{ github.sha }}".Substring(0,7)
           $stamp = (Get-Date).ToString("yyyyMMdd-HHmm")
-          $name = "Pulse.WPF-pilot-$stamp-$sha"
+          $name = "$channel-$stamp-$sha"
           Write-Host "Bundle name: $name"
           New-Item -ItemType Directory -Force "release" | Out-Null
           Copy-Item -Recurse publish "release/$name"
@@ -77,15 +80,17 @@ jobs:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.ARTIFACT_ZIP }}
 
-      - name: Publish release on tag push (private source repo)
+      # ── Production release (main channel, wpf-pilot-v* tags) ────────────────
+      - name: Publish production release (source repo)
         if: startsWith(github.ref, 'refs/tags/wpf-pilot-v')
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ARTIFACT_ZIP }}
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
+          prerelease: false
           body: |
-            Pulse.WPF pilot build.
+            Pulse.WPF production build.
 
             **Internal source-repo release.** The public-facing copy is mirrored
             to ianmoore-playon/pulse-releases automatically — that's where
@@ -95,12 +100,7 @@ jobs:
             - `Pulse.WPF.bat` (static, lives at the root of pulse-releases) — auto-updates every launch
             - or the one-liner: `irm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1 | iex`
 
-      # Mirror the same artifact (zip only) to the PUBLIC ianmoore-playon/pulse-releases
-      # repo so non-GitHub-users can download Pulse.WPF without needing access to
-      # this private source repo. The static Pulse.WPF.bat that lives at the root of
-      # pulse-releases is the only supported launcher — it calls install.ps1 ->
-      # /releases/latest on every double-click, so VPUs auto-update.
-      - name: Mirror release to public pulse-releases repo
+      - name: Mirror production release to pulse-releases
         if: startsWith(github.ref, 'refs/tags/wpf-pilot-v')
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
@@ -108,12 +108,44 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           $publicRepo = "ianmoore-playon/pulse-releases"
-          # Delete any existing release with the same tag (idempotent re-runs).
           gh release delete $tag --repo $publicRepo --yes --cleanup-tag 2>$null
           gh release create $tag `
             --repo $publicRepo `
             --target main `
             --title "Pulse.WPF $tag" `
-            --notes "Pulse.WPF pilot build.`n`n**Install on a VPU**`n`nDrop ``Pulse.WPF.bat`` on the VPU desktop and double-click — it auto-updates every launch.`n`nOr the one-liner:`n``````powershell`nirm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1 | iex`n```````n`nRequires .NET Framework 4.8 (pre-installed on every VPU)." `
+            --notes "Pulse.WPF production build.`n`n**Install on a VPU**`n`nDrop ``Pulse.WPF.bat`` on the VPU desktop and double-click — it auto-updates every launch.`n`nOr the one-liner:`n``````powershell`nirm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1 | iex`n```````n`nRequires .NET Framework 4.8 (pre-installed on every VPU)." `
             ${{ env.ARTIFACT_ZIP }}
-          Write-Host "Mirrored release $tag to $publicRepo"
+          Write-Host "Mirrored production release $tag to $publicRepo"
+
+      # ── Beta pre-release (beta channel, beta-v* tags) ────────────────────────
+      - name: Publish beta pre-release (source repo)
+        if: startsWith(github.ref, 'refs/tags/beta-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARTIFACT_ZIP }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          prerelease: true
+          body: |
+            Pulse.WPF beta build — not yet promoted to main.
+
+            **Internal source-repo pre-release.** Mirrored to pulse-releases
+            as a pre-release asset for testing.
+
+      - name: Mirror beta pre-release to pulse-releases
+        if: startsWith(github.ref, 'refs/tags/beta-v')
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $publicRepo = "ianmoore-playon/pulse-releases"
+          gh release delete $tag --repo $publicRepo --yes --cleanup-tag 2>$null
+          gh release create $tag `
+            --repo $publicRepo `
+            --target main `
+            --prerelease `
+            --title "Pulse.WPF $tag (beta)" `
+            --notes "Pulse.WPF beta build — not yet promoted to main.`n`nFor testing only. Use the production release for VPU installs." `
+            ${{ env.ARTIFACT_ZIP }}
+          Write-Host "Mirrored beta pre-release $tag to $publicRepo"
