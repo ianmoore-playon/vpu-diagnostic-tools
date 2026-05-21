@@ -117,6 +117,29 @@ jobs:
             ${{ env.ARTIFACT_ZIP }}
           Write-Host "Mirrored production release $tag to $publicRepo"
 
+      - name: Sync install scripts to pulse-releases
+        if: startsWith(github.ref, 'refs/tags/wpf-pilot-v') || startsWith(github.ref, 'refs/tags/beta-v')
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
+        shell: pwsh
+        run: |
+          $publicRepo = "ianmoore-playon/pulse-releases"
+          foreach ($script in @("install.ps1", "install-beta.ps1")) {
+            $local = Get-Content "runners/$script" -Raw
+            $existing = $null
+            try {
+              $existing = gh api "repos/$publicRepo/contents/$script" --jq '.sha' 2>$null
+            } catch {}
+            $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($local))
+            $body = @{ message = "Update $script from source repo"; content = $encoded }
+            if ($existing) { $body.sha = $existing }
+            $tmpFile = [System.IO.Path]::GetTempFileName()
+            $body | ConvertTo-Json -Compress | Set-Content $tmpFile -Encoding utf8
+            gh api "repos/$publicRepo/contents/$script" -X PUT --input $tmpFile
+            Remove-Item $tmpFile
+            Write-Host "Synced $script to $publicRepo"
+          }
+
       # ── Beta pre-release (beta channel, beta-v* tags) ────────────────────────
       - name: Publish beta pre-release (source repo)
         if: startsWith(github.ref, 'refs/tags/beta-v')
@@ -146,6 +169,6 @@ jobs:
             --target main `
             --prerelease `
             --title "Pulse.WPF $tag (beta)" `
-            --notes "Pulse.WPF beta build — not yet promoted to main.`n`nFor testing only. Use the production release for VPU installs." `
+            --notes "Pulse.WPF beta build — not yet promoted to main.`n`n**Install on a VPU (beta channel)**`n`nDrop ``Pulse.WPF-beta.bat`` on the VPU desktop and double-click.`n`nOr the one-liner:`n``````powershell`nirm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install-beta.ps1 | iex`n```````n`nRequires .NET Framework 4.8 (pre-installed on every VPU)." `
             ${{ env.ARTIFACT_ZIP }}
           Write-Host "Mirrored beta pre-release $tag to $publicRepo"
