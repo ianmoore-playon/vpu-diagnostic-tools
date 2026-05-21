@@ -2052,6 +2052,26 @@ namespace Pulse.WPF.ViewModels
                 vm.SeedFromPorts(Ports, preselect);
                 vm.RequestClose += CloseFaultIsolator;
 
+                // v0.8.23-beta: Start Over (and any other Reset call) asks
+                // the host to re-snapshot the live Ports. Lets the tech
+                // move cables around between baseline + start-over and
+                // have the dropdown labels (speed + FAULT/OCR suffix)
+                // reflect the new arrangement instead of the stale
+                // wizard-open snapshot.
+                vm.RequestReseed += () =>
+                {
+                    try
+                    {
+                        var reseedPreselect = Ports.FirstOrDefault(p => p.IsDegraded)?.LocalMac;
+                        vm.SeedFromPorts(Ports, reseedPreselect);
+                        AddLog("FaultIsolator", "Re-seeded dropdowns from live ports.", "Info");
+                    }
+                    catch (Exception ex)
+                    {
+                        AddLog("FaultIsolator", $"Re-seed failed: {ex.Message}", "Warn");
+                    }
+                };
+
                 AddLog("FaultIsolator",
                     preselect != null
                         ? $"Opened — pre-selected degraded port {preselect}."

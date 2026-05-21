@@ -70,6 +70,16 @@ namespace Pulse.WPF.ViewModels
         /// <summary>Raised when the dialog should close (Cancel button).</summary>
         public event Action RequestClose;
 
+        /// <summary>
+        /// v0.8.23-beta: raised when the host should re-seed the suspect /
+        /// test port dropdowns from the current live PortViewModel state.
+        /// Fired by Reset() so Start Over picks up cable moves the tech
+        /// made between opening the wizard and clicking Start Over.
+        /// CameraConnectivityViewModel subscribes when it creates the VM
+        /// and responds by calling SeedFromPorts(Ports, preselect).
+        /// </summary>
+        public event Action RequestReseed;
+
         // -- Bindable state -----------------------------------------------
 
         private FaultIsolatorPhase _phase;
@@ -282,6 +292,19 @@ namespace Pulse.WPF.ViewModels
             PhaseInstruction = "Select the NIC port that is showing degraded speed (100 Mbps) and click Start Baseline.";
             ActionButtonLabel = "Start Baseline";
             ActionButtonEnabled = true;
+
+            // v0.8.23-beta: drop stale dropdown selections + ask the host
+            // for a fresh port snapshot. The current PortChoice references
+            // are about to become orphans (their LocalMac strings still
+            // identify ports, but their cached speed / FAULT / OCR labels
+            // were captured at wizard-open time and don't reflect cable
+            // moves the tech made since). Nulling out SelectedSuspectPort
+            // also forces the Set<T> setter to fire when SeedFromPorts
+            // re-picks a row, which rebuilds TestPortChoices via the
+            // SelectedSuspectPort cascade.
+            SelectedSuspectPort = null;
+            SelectedTestPort = null;
+            RequestReseed?.Invoke();
         }
 
         private async Task RunActionAsync()

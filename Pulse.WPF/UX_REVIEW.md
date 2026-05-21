@@ -1336,3 +1336,32 @@ Field tech reported: open Camera Connectivity, the Fault Isolator dropdowns sit 
 
 - `Pulse.WPF.csproj` Version bumped 0.8.21-beta → 0.8.22-beta.
 - Modified: `Views/CameraConnectivityView.xaml`, `ViewModels/CameraConnectivityViewModel.cs`.
+
+## v0.8.23-beta — Fault Isolator: Start Over re-snapshots live ports
+
+Field test of v0.8.22-beta surfaced a stale-data bug. Workflow that broke it:
+
+1. Open the Fault Isolator.
+2. Move cables around physically (e.g. swap CHU from Port 1 → Port 2 to test a port theory).
+3. Click **Start Over**.
+4. Dropdown still shows the original wizard-open labels — "Port 1 — 100 Mbps · FAULT" even though Port 1 is now `no cable`, and "Port 2 — 100 Mbps · OCR" even though Port 2 now hosts a main camera at 100 Mbps.
+
+Root cause: `SeedFromPorts` was only called once at wizard-open time. The `PortChoice` rows captured the per-port speed + FAULT/OCR suffix at that moment and never refreshed. Start Over reset the wizard's phase state but kept the cached dropdown.
+
+### Fix
+
+New `RequestReseed` event on `FaultIsolatorViewModel`, fired from `Reset()` (which is what `StartOverCommand` calls). `CameraConnectivityViewModel.OpenFaultIsolator` subscribes when it creates the VM and responds by re-reading the live `Ports` collection and calling `SeedFromPorts(Ports, preselect)`. Mirrors the existing `RequestClose` host-callback pattern. The same hook gives any future "refresh dropdowns" trigger one place to plug into.
+
+`Reset()` also now nulls `SelectedSuspectPort` + `SelectedTestPort` before invoking the event. Without this, the old `PortChoice` references would survive the re-seed (their LocalMacs still match new rows in the rebuilt list) and the `Set<T>` setter on `SelectedSuspectPort` would short-circuit on equality — leaving `TestPortChoices` populated with stale rows because `RebuildTestPortChoices` only fires on a real selection change.
+
+### What to watch for during the v0.8.23-beta field test
+
+- Open Fault Isolator → dropdowns show current port state.
+- Move a cable from Port 1 to Port 2 → tile strip updates within a poll tick.
+- Click **Start Over** → dropdowns now show "Port 1 — no link" + "Port 2 — 100 Mbps · FAULT" (or whatever matches the new physical state), not the pre-move snapshot.
+- Live Log emits `FaultIsolator: Re-seeded dropdowns from live ports.` each time Start Over fires.
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.8.22-beta → 0.8.23-beta.
+- Modified: `ViewModels/FaultIsolatorViewModel.cs`, `ViewModels/CameraConnectivityViewModel.cs`.
