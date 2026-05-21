@@ -14,7 +14,7 @@ set "PUBLIC_REPO=ianmoore-playon/pulse-releases"
 set "ZIPFILE=%TEMP%\pulse-web-dl.zip"
 set "EXTRACT=%TEMP%\pulse-web-extract"
 
-:: -- Install Chrome if missing ----------------------------------------
+:: ── Install Chrome if missing ────────────────────────────────
 reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe" >nul 2>&1
 if %errorlevel% NEQ 0 (
     echo  [INFO] Chrome not found — installing...
@@ -28,7 +28,7 @@ if %errorlevel% NEQ 0 (
 )
 echo.
 
-:: -- Try release download first ----------------------------------------
+:: ── Try release download first ──────────────────────────────
 echo  [INFO] Checking for latest Pulse Web release...
 set "ASSET_URL="
 for /f "usebackq delims=" %%U in (`
@@ -57,7 +57,7 @@ if not defined ASSET_URL (
     set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/web-convert.zip"
 )
 
-:: -- Download ----------------------------------------------------------
+:: ── Download ────────────────────────────────────────────────
 echo  [INFO] URL: %ASSET_URL%
 echo  [INFO] Downloading latest Pulse Web...
 curl.exe -L --progress-bar -o "%ZIPFILE%" "%ASSET_URL%"
@@ -81,7 +81,7 @@ exit /b 1
 
 :dl_ok
 
-:: -- Extract -----------------------------------------------------------
+:: ── Extract ─────────────────────────────────────────────────
 echo  [INFO] Extracting to %EXTRACT%...
 if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -123,7 +123,7 @@ if not defined SRC (
     exit /b 1
 )
 
-:: -- Copy to install dir (preserves app\python\ and settings) ---------
+:: ── Copy to install dir (preserves app\python\ and settings) ─
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 xcopy "%SRC%\*" "%INSTALL_DIR%\" /s /e /y /q >nul
 if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
@@ -131,7 +131,7 @@ if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
 echo  [INFO] Updated to latest version.
 echo.
 
-:: -- Launch ------------------------------------------------------------
+:: ── Launch ───────────────────────────────────────────────────
 :launch
 if not exist "%INSTALL_DIR%\run.bat" (
     echo  [ERROR] Pulse Web not found at %INSTALL_DIR%
