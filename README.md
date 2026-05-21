@@ -44,21 +44,24 @@ Requires Windows 10+ and .NET Framework 4.8 (both pre-installed on every VPU).
 ## Pulse Web
 
 A self-contained, browser-based diagnostic tool. No Node.js, npm, or .NET
-required — just double-click `run.bat` and it bootstraps everything.
+required — just double-click and it bootstraps everything.
 
-### Run on a VPU
+### Install on a VPU
 
-Download or clone the repo, then double-click **`Pulse.Web/run.bat`**.
+Download [`runners/run_pulse_web.bat`](https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/main/runners/run_pulse_web.bat)
+to the VPU desktop and double-click. The launcher pulls the latest
+`web-v*` release from GitHub, extracts it to `%LOCALAPPDATA%\PulseWeb`,
+and runs the app. Subsequent double-clicks auto-update to the latest
+release.
 
-On first launch, the script:
+On first launch, the embedded `run.bat`:
 1. Downloads embedded Python 3.12.8 from python.org
 2. Installs pip and dependencies (FastAPI, Uvicorn)
 3. Starts the server at **http://localhost:8765**
 4. Opens the browser automatically
 
-Subsequent launches skip the setup and start in seconds.
-
-Alternatively, use the launcher: **`runners/run_pulse_web.bat`**
+Subsequent launches skip the Python setup and start in seconds.
+Falls back to a cached version if the VPU is offline.
 
 ### How it works
 
