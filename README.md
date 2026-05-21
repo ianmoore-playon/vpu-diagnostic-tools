@@ -1,15 +1,15 @@
 # Pulse — Pixellot VPU Diagnostic Tool
 
-A WPF diagnostic tool for Pixellot VPU field support. Covers camera-NIC and
+Diagnostic tools for Pixellot VPU field support. Covers camera-NIC and
 cable health, network connectivity, Pixellot services, system overview
 hardware/peripherals, disk health, the Windows event log, and a Reports panel
 with support bundles — all live, with plain-language next-step guidance and
 per-panel Recommended Actions.
 
-The active development line is **`Pulse.WPF/`** — a C# / WPF .NET Framework
-4.8 project. There is no longer a separate PowerShell / WinForms tool;
-the original `Pulse.ps1` + `Modules/*.psm1` tool was retired and removed in
-v0.5.3. Earlier history is preserved in git (`v1.0.0` → `v1.0.52` tags).
+There are two variants:
+
+- **`Pulse.WPF/`** — C# / WPF .NET Framework 4.8 desktop app (the original)
+- **`Pulse.Web/`** — Lightweight web-based version (Python + vanilla JS, no install required)
 
 ## Install on a VPU
 
@@ -41,77 +41,86 @@ Requires Windows 10+ and .NET Framework 4.8 (both pre-installed on every VPU).
 
 ---
 
-## Release Process
+## Pulse Web
 
-### Branches
+A self-contained, browser-based diagnostic tool. No Node.js, npm, or .NET
+required — just double-click `run.bat` and it bootstraps everything.
 
-Code flows through three branches, each with its own release channel:
+### Run on a VPU
 
-| Branch | Purpose | Merges to |
-|--------|---------|-----------|
-| `dev` | Active development and internal testing | `beta` |
-| `beta` | Integration testing before production | `main` |
-| `main` | Stable production releases | — |
+Download or clone the repo, then double-click **`Pulse.Web/run.bat`**.
 
-Pushing to any of these branches triggers a CI build that uploads a
-workflow artifact. To create a downloadable release, push a tag.
+On first launch, the script:
+1. Downloads embedded Python 3.12.8 from python.org
+2. Installs pip and dependencies (FastAPI, Uvicorn)
+3. Starts the server at **http://localhost:8765**
+4. Opens the browser automatically
 
-### Release Tags
+Subsequent launches skip the setup and start in seconds.
 
-Tags trigger releases that are mirrored to
-[`ianmoore-playon/pulse-releases`](https://github.com/ianmoore-playon/pulse-releases)
-for field download.
+Alternatively, use the launcher: **`runners/run_pulse_web.bat`**
 
-| App | Dev | Beta | Production |
-|-----|-----|------|------------|
-| Pulse.WPF | `dev-v*` | `beta-v*` | `wpf-pilot-v*` |
-| Pulse.Web | `web-dev-v*` | `web-beta-v*` | `web-v*` |
+### How it works
 
-Dev and beta tags create **pre-releases**. Production tags create
-**full releases**.
-
-Example — cutting a dev release for both apps:
-
-```bash
-git checkout dev
-git tag dev-v0.9.0
-git tag web-dev-v0.1.0
-git push origin dev-v0.9.0 web-dev-v0.1.0
+```
+Pulse.Web/
+├── run.bat                 — Windows launcher (bootstraps Python)
+├── app/
+│   ├── main.py             — FastAPI server (REST + WebSocket)
+│   ├── powershell.py       — async PowerShell subprocess runner
+│   ├── requirements.txt    — fastapi, uvicorn
+│   └── static/
+│       ├── index.html      — SPA shell (Tailwind CSS via CDN)
+│       ├── app.js          — client-side router, 12 page renderers
+│       └── style.css       — dark theme styles
+└── scripts/                — 16 PowerShell data-collection scripts
+    ├── Get-SystemIdentity.ps1
+    ├── Get-Hardware.ps1
+    ├── Get-Performance.ps1
+    ├── Get-NetworkConfig.ps1
+    ├── Get-NicAdapters.ps1
+    ├── Get-Services.ps1
+    ├── Get-DiskHealth.ps1
+    ├── Get-EventLogs.ps1
+    ├── Get-ScoreConnectStatus.ps1
+    ├── Get-PixellotConfig.ps1
+    ├── Get-InstalledSoftware.ps1
+    ├── Get-Temperature.ps1
+    ├── Test-NetworkDomains.ps1
+    ├── Test-NetworkPorts.ps1
+    ├── Test-NtpDrift.ps1
+    └── Restart-Service.ps1
 ```
 
-### Launchers
+The backend runs PowerShell scripts to collect WMI/CIM data and returns
+JSON over REST. The frontend is a vanilla JS single-page app with hash
+routing — no build step, no bundler.
 
-Each channel has its own launcher that auto-updates from the
-corresponding release channel on every run.
+### Pages
 
-| App | Dev | Beta | Production |
-|-----|-----|------|------------|
-| Pulse.WPF | `run_pulse_dev.bat` | `run_pulse_beta.bat` | `run_pulse.bat` |
-| Pulse.Web | `run_pulse_web_dev.bat` | `run_pulse_web_beta.bat` | `run_pulse_web.bat` |
+| Page | Description |
+|------|-------------|
+| Dashboard | Live CPU/Memory/Disk/Temp gauges, identity, findings |
+| System Overview | OS, CPU, RAM, GPU, disk drives, installed software |
+| Network | IP config, internet reachability, DNS, port tests, NTP |
+| Cameras | Camera-facing NIC ports, Pixellot OUI detection, ARP |
+| Services | Pixellot service status with restart controls |
+| Disk Health | Logical/physical disks, events, Pixellot directory sizes |
+| Event Viewer | Filterable Windows event log (hours, severity) |
+| Reports | Full diagnostic JSON export |
+| ScoreConnect | Local ScoreConnect API probe |
+| Fault Isolator | Sequential 6-step guided troubleshooting wizard |
+| Settings | ScoreConnect URL, poll interval |
+| About | Version and technology info |
 
-Launchers live in `runners/` and are synced to `pulse-releases` on
-each tag push. Each channel installs to its own directory
-(`%LOCALAPPDATA%\Pulse.WPF`, `Pulse.WPF-beta`, `Pulse.WPF-dev`, etc.)
-so multiple channels can coexist on the same VPU.
+### Requirements
 
-### CI Workflows
-
-- **`.github/workflows/wpf-pilot-build.yml`** — Builds Pulse.WPF on
-  `windows-latest`. Triggers on pushes to `dev`/`beta`/`main` (when
-  `Pulse.WPF/` changes) and on WPF release tags.
-- **`.github/workflows/web-build.yml`** — Packages Pulse.Web (no build
-  step, just zips the tree). Triggers on web release tags.
-
-Both workflows upload a zip as a workflow artifact on every run. When
-triggered by a tag, they also create a GitHub release and mirror it to
-`pulse-releases`.
-
-### Promoting a Release
-
-1. Merge `dev` → `beta`, push a beta tag to test.
-2. Merge `beta` → `main`, push a production tag to ship.
+- Windows 10+ (for PowerShell + WMI)
+- Internet connection on first run (to download Python)
 
 ---
+
+## Pulse WPF (Desktop)
 
 ## Develop
 
@@ -141,10 +150,9 @@ Build (requires .NET 8 SDK; the SDK builds the net48 target):
 dotnet build Pulse.WPF/Pulse.WPF/Pulse.WPF.csproj -c Release
 ```
 
-Or rely on GitHub Actions — every push to `dev`, `beta`, or `main` runs
-the Windows build and uploads the runnable zip as a workflow artifact.
-See [Release Process](#release-process) above for tag conventions and
-promotion flow.
+Or rely on GitHub Actions — every push to `dev` runs the Windows build
+and uploads the runnable zip as a workflow artifact. Every `wpf-pilot-v*`
+tag push publishes a real release and mirrors it to `pulse-releases`.
 
 See `Pulse.WPF/README.md`, `Pulse.WPF/STYLE_GUIDE.md`, and
 `Pulse.WPF/UX_REVIEW.md` for the architecture, design tokens, and
