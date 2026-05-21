@@ -164,6 +164,24 @@ namespace Pulse.WPF.ViewModels
         public ObservableCollection<Finding>                Findings        { get; } = new ObservableCollection<Finding>();
         public ObservableCollection<NetworkRecommendation>  Recommendations { get; } = new ObservableCollection<NetworkRecommendation>();
 
+        /// <summary>
+        /// v0.8.22-beta: header text for the merged Findings + Recommended
+        /// Actions card. Returns "1 finding needs attention" / "2 findings
+        /// need attention" / "" (empty when no recommendations to surface).
+        /// Updated whenever Recommendations changes shape via the
+        /// CollectionChanged subscription in the constructor.
+        /// </summary>
+        private string _findingsHeader = "";
+        public string FindingsHeader { get => _findingsHeader; private set => Set(ref _findingsHeader, value); }
+
+        private void RebuildFindingsHeader()
+        {
+            int n = Recommendations.Count;
+            FindingsHeader = n == 0 ? ""
+                : n == 1 ? "1 finding needs attention"
+                : $"{n} findings need attention";
+        }
+
         // ----- Section header status pill -----
         private string _statusLabel = "Watching ports…";
         public string StatusLabel { get => _statusLabel; set => Set(ref _statusLabel, value); }
@@ -233,6 +251,14 @@ namespace Pulse.WPF.ViewModels
 
             _statusColor = StatusHelpers.Brush("MutedForegroundBrush");
             _statusBg    = StatusHelpers.Brush("BorderColBrush");
+
+            // v0.8.22-beta: keep the merged Findings + Recommendations card
+            // header in lockstep with the row count. ApplyDelta mutates rows
+            // in-place + adds/removes the tail, so CollectionChanged fires on
+            // every real change. RebuildFindingsHeader is a no-op string set,
+            // so this is cheap even on a no-change tick (Set<T> short-circuits
+            // when the value is equal).
+            Recommendations.CollectionChanged += (_, __) => RebuildFindingsHeader();
 
             // Always render 4 placeholder tiles so the diagram strip is full
             // even before the first poll resolves.
@@ -860,6 +886,21 @@ namespace Pulse.WPF.ViewModels
                 // ARP for the next tick to pick up via the existing
                 // monitor -> resolver pipeline.
                 ScheduleOcrProbesIfNeeded(states, roles);
+
+                // v0.8.22-beta: dropdown population lag fix. When the tab
+                // opens with the Fault Isolator already active (or the tech
+                // opens the wizard before the first monitor poll resolves),
+                // the placeholder Ports have empty LocalMac strings and
+                // SeedFromPorts skips every row, leaving both dropdowns
+                // empty for the first ~500 ms. Re-seed once the Ports
+                // collection has real LocalMacs.
+                if (FaultIsolator != null
+                    && FaultIsolator.SuspectPortChoices.Count == 0
+                    && Ports.Any(p => !string.IsNullOrEmpty(p.LocalMac)))
+                {
+                    var preselect = Ports.FirstOrDefault(p => p.IsDegraded)?.LocalMac;
+                    try { FaultIsolator.SeedFromPorts(Ports, preselect); } catch { }
+                }
             }
             catch (Exception ex)
             {
@@ -1207,9 +1248,20 @@ namespace Pulse.WPF.ViewModels
             // match exists — we just don't alert on the mismatch.
             _ = missingFromPorts; // intentionally unused now; signature kept
 
-            // Wire the cross-tab buttons. Network is the most useful for any
-            // link-degraded / no-link row; cameras.cfg is the right jump for
-            // role-mismatch and missing-cfg rows.
+            // Wire the inline action buttons. Only cameras.cfg /
+            // missing-config rows get an action button - the cfg file is
+            // the actual fix surface for those. Cable / Link / flap / port
+            // rows used to get a "Go to Network" or "Start Fault Isolator"
+            // button; both have been dropped:
+            //   - "Go to Network" was a cross-tab jump that ended up
+            //     duplicating diagnostic surfaces.
+            //   - "Start Fault Isolator" became redundant when the Fault
+            //     Isolator went inline on this same panel (v0.8.21-beta);
+            //     the wizard is always one click away in the top bar.
+            // Leaving the row to act as pure information; the tech reads
+            // the verdict, then either inspects the Fault Isolator card
+            // directly above or clicks the top-bar Fault Isolator button
+            // to run the swap test.
             foreach (var r in rows)
             {
                 if (r.Title.IndexOf("cameras.cfg", StringComparison.OrdinalIgnoreCase) >= 0
@@ -1220,15 +1272,10 @@ namespace Pulse.WPF.ViewModels
                     r.ActionLabel = "Open cameras.cfg";
                     r.ActionCommand = OpenCamerasCfgCommand;
                 }
-                else if (r.Title.IndexOf("flap", StringComparison.OrdinalIgnoreCase) >= 0
-                         || r.Title.IndexOf("Cable", StringComparison.OrdinalIgnoreCase) >= 0
-                         || r.Title.IndexOf("dark", StringComparison.OrdinalIgnoreCase) >= 0
-                         || r.Title.IndexOf("Live cable", StringComparison.OrdinalIgnoreCase) >= 0
-                         || r.Title.IndexOf("errors", StringComparison.OrdinalIgnoreCase) >= 0
-                         || r.Title.IndexOf("Cabled", StringComparison.OrdinalIgnoreCase) >= 0)
+                else
                 {
-                    r.ActionLabel = "Go to Network";
-                    r.ActionCommand = GoToNetworkCommand;
+                    r.ActionLabel = null;
+                    r.ActionCommand = null;
                 }
             }
 

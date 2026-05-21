@@ -41,11 +41,10 @@
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />   <!-- 0: Section header + actions -->
-                <RowDefinition Height="Auto" />   <!-- 1: Findings banner -->
-                <RowDefinition Height="Auto" />   <!-- 2: Recommended Actions -->
-                <RowDefinition Height="Auto" />   <!-- 3: NIC diagram strip (4 tiles) -->
-                <RowDefinition Height="Auto" />   <!-- 4: Inline Fault Isolator (v0.8.21-beta) -->
-                <RowDefinition Height="Auto" />   <!-- 5: Live Log expander -->
+                <RowDefinition Height="Auto" />   <!-- 1: Findings + Recommended Actions (merged v0.8.22-beta) -->
+                <RowDefinition Height="Auto" />   <!-- 2: NIC diagram strip (4 tiles) -->
+                <RowDefinition Height="Auto" />   <!-- 3: Inline Fault Isolator -->
+                <RowDefinition Height="Auto" />   <!-- 4: Live Log expander -->
             </Grid.RowDefinitions>
 
             <!-- ====== Section header (v0.5.4 top-bar buttons) ======
@@ -127,14 +126,18 @@
                 </StackPanel>
             </DockPanel>
 
-            <!-- ====== Findings banner — auto-collapses when empty ====== -->
-            <controls:FindingsBanner Grid.Row="1"
-                                     Margin="0,0,0,16"
-                                     Findings="{Binding Findings}"
-                                     AutomationProperties.Name="Findings summary" />
+            <!-- ====== Findings + Recommended Actions (merged in v0.8.22-beta) ======
+                 Single notification card that combines the page-level
+                 "X findings need attention" framing (severity-coloured header)
+                 with the inline action buttons from the legacy Recommended
+                 Actions card. The old standalone FindingsBanner was visually
+                 redundant with the Recommendations list - the two surfaces
+                 showed the same rows with slightly different copy. Now one
+                 card, one place to look. Auto-collapses when there are no
+                 recommendations to surface.
 
-            <!-- ====== Recommended Actions (auto-collapse) ====== -->
-            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,16"
+                 The header pluralisation + count come from the VM. -->
+            <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,0,0,16"
                     Visibility="{Binding Recommendations.Count, Converter={StaticResource CountToVis}}">
                 <StackPanel>
                     <DockPanel Margin="0,0,0,12">
@@ -142,8 +145,10 @@
                                      Width="20" Height="20"
                                      Foreground="{StaticResource YellowBrush}"
                                      VerticalAlignment="Center" />
-                        <TextBlock Text="Recommended Actions" Style="{StaticResource SectionTitle}"
-                                   Margin="10,0,0,0" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding FindingsHeader}"
+                                   Style="{StaticResource SectionTitle}"
+                                   Margin="10,0,0,0"
+                                   VerticalAlignment="Center" />
                     </DockPanel>
                     <ItemsControl ItemsSource="{Binding Recommendations}">
                         <ItemsControl.ItemTemplate>
@@ -189,7 +194,7 @@
             </Border>
 
             <!-- ====== NIC diagram strip — always shows all 4 tiles ====== -->
-            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,16">
+            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,16">
                 <StackPanel>
                     <DockPanel Margin="0,0,0,12">
                         <md:PackIcon DockPanel.Dock="Left" Kind="LanConnect"
@@ -434,7 +439,7 @@
                  Lives at Row 4 (between the tile strip and Live Log) so
                  the tech can see the live tile strip above while running
                  the wizard, and the Live Log below records every step. -->
-            <Border Grid.Row="4"
+            <Border Grid.Row="3"
                     Style="{StaticResource Card}"
                     Margin="0,0,0,16"
                     Visibility="{Binding IsFaultIsolatorOpen, Converter={StaticResource BoolToVis}}"
@@ -659,7 +664,7 @@
             </Border>
 
             <!-- ====== Live Log (collapsed expander) ====== -->
-            <Expander Grid.Row="5" Header="Live Log" Margin="0,0,0,16"
+            <Expander Grid.Row="4" Header="Live Log" Margin="0,0,0,16"
                       Foreground="{StaticResource MutedForegroundBrush}">
                 <Border Style="{StaticResource Card}" Margin="0,8,0,0">
                     <Border BorderBrush="{StaticResource BorderColBrush}" BorderThickness="0,1,0,0"

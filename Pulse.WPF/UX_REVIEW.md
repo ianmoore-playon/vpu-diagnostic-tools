@@ -1309,3 +1309,30 @@ Bundled v1.0.0-beta polish ship from a single field-validation session. Each ite
 
 - `Pulse.WPF.csproj` Version bumped 0.8.5-beta → 0.8.6-beta.
 - Modified: `Views/AdapterDetailsDialog.xaml`, `Views/FaultIsolatorDialog.xaml`, `Views/CameraConnectivityView.xaml`, `Controls/NicCardDiagram.xaml`, `ViewModels/CameraConnectivityViewModel.cs`, `ViewModels/FaultIsolatorViewModel.cs`, `Models/FaultIsolatorTypes.cs`, `Helpers/PanelLogger.cs`.
+
+## v0.8.22-beta — Camera Connectivity polish (merged notification card + dropdown lag fix)
+
+Three small Camera Connectivity changes flowing out of the v0.8.21-beta inline-Fault-Isolator pivot. Each closes a loose end from the modal → inline conversion.
+
+### Merged Findings + Recommended Actions into one card
+
+The page used to show two near-duplicate surfaces stacked on top of each other: a top-level `FindingsBanner` ("X findings need attention") and a `Recommended Actions` card listing the same rows with slightly different copy and inline action buttons. Tech feedback: confusing, two places to look. Now one card carries both the severity-coloured header *and* the per-row action buttons. Header text is built in the VM (`FindingsHeader` — "1 finding needs attention" / "N findings need attention") and updated via `Recommendations.CollectionChanged`, so it stays in lockstep with the row count even when the multiset-hash short-circuit makes a tick a no-op. Card auto-collapses when `Recommendations.Count == 0`.
+
+### Removed "Start Fault Isolator" action button from recommendations
+
+The button was meaningful when the isolator opened in its own window. Now that the wizard lives inline at the bottom of the same tab (v0.8.21-beta), the top-bar "Fault Isolator" button is one click away and a row-level "Start Fault Isolator" action is redundant. Only configuration-related rows (missing `cameras.cfg`, missing configured cameras) still surface an action button — those drive a file-open or a navigation that's not redundant with anything else on the page.
+
+### Dropdown population lag fix
+
+Field tech reported: open Camera Connectivity, the Fault Isolator dropdowns sit empty for a couple of seconds, then populate suddenly. Root cause: the `CameraNicMonitor` is a 500 ms poll. The constructor seeds four placeholder `PortViewModel` rows with empty `LocalMac` strings so the tile strip renders something on first paint. If the wizard opens before the first poll resolves (or auto-opens via a recommendation flow), `SeedFromPorts` skips every placeholder row (the `IsNullOrEmpty(LocalMac)` filter) and the dropdowns are empty until the user clicks elsewhere. Fix: at the tail of `OnMonitorTick`, after the `Ports` collection has been updated with real LocalMacs, re-seed the wizard if it's open and `SuspectPortChoices.Count == 0`. Idempotent — once seeded, the condition is false on every subsequent tick.
+
+### What to watch for during the v0.8.22-beta field test
+
+- Open Camera Connectivity with a configured VPU. The "X findings need attention" header should appear once (above the inline action cards) — no separate banner above it.
+- Click "Fault Isolator" from the top bar. The dropdowns should populate within a poll tick (≤1 s), not after a multi-second delay.
+- The "Start Fault Isolator" action button should no longer appear on cable / link / flap recommendation rows.
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.8.21-beta → 0.8.22-beta.
+- Modified: `Views/CameraConnectivityView.xaml`, `ViewModels/CameraConnectivityViewModel.cs`.
