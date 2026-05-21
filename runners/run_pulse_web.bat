@@ -54,7 +54,7 @@ if not defined ASSET_URL (
 
 if not defined ASSET_URL (
     echo  [WARN] No releases found — falling back to branch zip.
-    set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/main.zip"
+    set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/web-convert.zip"
 )
 
 :: -- Download ----------------------------------------------------------
