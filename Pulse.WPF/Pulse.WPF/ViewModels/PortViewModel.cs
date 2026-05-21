@@ -125,6 +125,17 @@ namespace Pulse.WPF.ViewModels
         private bool _isOcr;
         public bool IsOcr { get => _isOcr; set => Set(ref _isOcr, value); }
 
+        // v0.8.25-beta: per-port LocalIp + IsDhcpEnabled forwarded from
+        // CameraNicSnapshot so the recommendations engine can assert the
+        // Pixellot deployment convention (static IP, Port N -> .10(N-1)
+        // NIC IP / .50+(N-1) CHU IP). Not bound by the tile XAML - these
+        // are diagnostic-only fields read by BuildRecommendations.
+        private string _localIp = "";
+        public string LocalIp { get => _localIp; set => Set(ref _localIp, value); }
+
+        private bool _isDhcpEnabled;
+        public bool IsDhcpEnabled { get => _isDhcpEnabled; set => Set(ref _isDhcpEnabled, value); }
+
         /// <summary>
         /// Raw "this port is below gigabit while it's actually carrying a
         /// link" signal — bypasses the OCR-from-speed inference. Used by

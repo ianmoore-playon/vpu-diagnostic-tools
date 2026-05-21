@@ -69,6 +69,12 @@ namespace Pulse.WPF.ViewModels
             new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _confirmedOcrMacs =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // v0.8.25-beta: generic "this MAC was reached via the Dynacolor
+        // CGI" bucket. Populated by both OCR + main-camera probe hits.
+        // Currently only used for Live Log diagnostics and report output;
+        // a future revision could surface it as a tile badge ("CGI ✓").
+        private readonly HashSet<string> _cgiConfirmedMacs =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly TimeSpan OcrProbeInterval = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan OcrProbeTimeout  = TimeSpan.FromSeconds(2);
 
@@ -81,6 +87,36 @@ namespace Pulse.WPF.ViewModels
         {
             "169.254.16.52",
             "169.254.16.60",
+        };
+
+        // v0.8.25-beta: Pixellot's canonical static-IP convention for the
+        // camera-NIC ports. Surfaces as Warning recommendations when a
+        // VPU is deployed off-spec.
+        //
+        //   Port 1: NIC 169.254.16.100 / CHU 169.254.16.50 (Main camera 1)
+        //   Port 2: NIC 169.254.16.101 / CHU 169.254.16.51 (Main camera 2)
+        //   Port 3: NIC 169.254.16.102 / CHU 169.254.16.52 (OCR)
+        //   Port 4: NIC 169.254.16.103 / CHU 169.254.16.53 (Additional angle)
+        //
+        // The cadence is portNum-indexed (1-based). NIC = 99 + portNum,
+        // CHU = 49 + portNum. Encoded as helpers so the recommendation
+        // copy can quote the expected IP back to the tech.
+        private static string ExpectedNicIp(int portNum) => $"169.254.16.{99 + portNum}";
+        private static string ExpectedChuIp(int portNum) => $"169.254.16.{49 + portNum}";
+
+        // v0.8.25-beta: main camera IPs added to the CGI probe candidate
+        // list per user request. Same Dynacolor /cgi-bin/admin/param.cgi
+        // endpoint, same Admin:1234 auth - main cameras respond on the
+        // same admin interface as the OCR.
+        //   .50 = Main camera 1, .51 = Main camera 2, .53 = additional angle
+        // Probe success at one of these IPs is logged but does NOT flag
+        // the MAC as OCR (that's reserved for DefaultOcrIps + cfg-derived
+        // OCR IPs).
+        private static readonly string[] DefaultMainCameraIps =
+        {
+            "169.254.16.50",
+            "169.254.16.51",
+            "169.254.16.53",
         };
 
         // v0.8.16-beta: per-port event analysis. Keyed by local MAC so a
@@ -791,6 +827,9 @@ namespace Pulse.WPF.ViewModels
                     port.LinkSpeedBps = snap.LinkSpeedBps;
                     port.IsUp         = snap.IsUp;
                     port.IsOcr        = info?.IsOcr ?? false;
+                    // v0.8.25-beta: forward deployment-convention signals.
+                    port.LocalIp        = snap.LocalIp ?? "";
+                    port.IsDhcpEnabled  = snap.IsDhcpEnabled;
                     port.PrimaryLabel = primary;
                     port.SecondaryLabel = secondary;
                     port.PrimaryColor = info.IsConfigured
@@ -1246,6 +1285,64 @@ namespace Pulse.WPF.ViewModels
                         $"Unknown {label} device on Port {portNum}",
                         "Verify cameras.cfg or unplug the unintended device."));
                 }
+
+                // v0.8.25-beta: deployment-convention checks. Three rows
+                // assert that the camera NIC is configured per the Pixellot
+                // standard:
+                //   - DHCP must be off (static IP only).
+                //   - NIC IP must be 169.254.16.(99+N).
+                //   - CHU IP must be 169.254.16.(49+N), when a camera is
+                //     actually plugged in.
+                //
+                // All three are Warning severity per user spec. None of
+                // them blocks the page-level status from going Critical
+                // for the actual cable/link/speed faults above - they're
+                // just additional surfaces so the tech can verify the
+                // VPU was deployed correctly.
+
+                // DHCP check - fires on every port regardless of cable
+                // state. DHCP-on-an-empty-port is still a misconfig the
+                // tech needs to fix before a camera is added.
+                if (snap.IsDhcpEnabled)
+                {
+                    rows.Add(NetworkRecommendation.Create(
+                        "Warning",
+                        $"Port {portNum} NIC is set to DHCP",
+                        $"Pixellot camera NICs must use a static IP. Disable DHCP on this adapter and set the NIC IP to {ExpectedNicIp(portNum)}."));
+                }
+
+                // NIC IP cadence check - fires when the adapter has an
+                // IP but it doesn't match the Port N -> .10(N-1) convention.
+                // An empty LocalIp is handled by the DHCP-without-lease
+                // / static-IP-missing path the tech sees elsewhere, so
+                // we don't double-fire on that case.
+                if (!string.IsNullOrEmpty(snap.LocalIp))
+                {
+                    var expectedNic = ExpectedNicIp(portNum);
+                    if (!string.Equals(snap.LocalIp, expectedNic, StringComparison.OrdinalIgnoreCase))
+                    {
+                        rows.Add(NetworkRecommendation.Create(
+                            "Warning",
+                            $"Port {portNum} NIC IP off-convention",
+                            $"NIC IP is {snap.LocalIp}; expected {expectedNic} per the Pixellot deployment cadence. Update the adapter's static IPv4 address."));
+                    }
+                }
+
+                // CHU IP cadence check - only fires when a camera is
+                // actually plugged in (snap.RemoteIp non-empty). An empty
+                // remote means the port is dark / no cable, which the
+                // upstream cable/link checks already cover.
+                if (!string.IsNullOrEmpty(snap.RemoteIp))
+                {
+                    var expectedChu = ExpectedChuIp(portNum);
+                    if (!string.Equals(snap.RemoteIp, expectedChu, StringComparison.OrdinalIgnoreCase))
+                    {
+                        rows.Add(NetworkRecommendation.Create(
+                            "Warning",
+                            $"Port {portNum} camera IP off-convention",
+                            $"Camera IP is {snap.RemoteIp}; expected {expectedChu} per the Pixellot deployment cadence. Reconfigure the camera head's static IP."));
+                    }
+                }
             }
 
             // v0.5.2 §4: the "Configured cameras missing" recommendation +
@@ -1279,6 +1376,17 @@ namespace Pulse.WPF.ViewModels
                 {
                     r.ActionLabel = "Open cameras.cfg";
                     r.ActionCommand = OpenCamerasCfgCommand;
+                }
+                else if (r.Title.IndexOf("set to DHCP", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    // v0.8.25-beta: only the DHCP row gets a fix shortcut.
+                    // ncpa.cpl drops the tech onto the Network Connections
+                    // applet where they can right-click the adapter ->
+                    // Properties -> IPv4 -> "Use the following IP address".
+                    // The NIC/CHU IP off-convention rows stay diagnostic-only
+                    // (no programmatic fix path) per user spec.
+                    r.ActionLabel = "Open Adapter Settings";
+                    r.ActionCommand = OpenAdapterSettingsCommand;
                 }
                 else
                 {
@@ -1549,17 +1657,26 @@ namespace Pulse.WPF.ViewModels
         }
 
         /// <summary>
-        /// v0.8.19-beta: schedule HTTP CGI probes for candidate OCR IPs
-        /// when at least one port might be an OCR. Fire-and-forget - the
-        /// probes run in background; on success the camera's MAC lands
-        /// in <see cref="_confirmedOcrMacs"/> AND Windows' ARP table gets
-        /// populated as a side effect (which the next monitor tick picks
-        /// up via the existing resolver pipeline).
+        /// v0.8.19-beta: schedule HTTP CGI probes for candidate camera IPs
+        /// when at least one port is up but unconfirmed via ARP.
+        /// Fire-and-forget — the probes run in background; on success the
+        /// camera's MAC lands in <see cref="_confirmedOcrMacs"/> (OCR
+        /// probes only) AND Windows' ARP table gets populated as a side
+        /// effect (which the next monitor tick picks up via the existing
+        /// resolver pipeline).
         ///
-        /// "When at least one port might be OCR" = any port currently up
-        /// at 100 Mbps with no ARP yet. If every port is either at 1 Gbps
-        /// (definitely not OCR), confirmed via ARP, or down, there's
-        /// nothing to probe and we skip the whole pass.
+        /// v0.8.25-beta: the probe coverage is extended to main camera
+        /// IPs (.50 / .51 / .53). Same Dynacolor /cgi-bin/admin/param.cgi
+        /// endpoint, same Admin:1234 auth — Pixellot main cameras
+        /// respond on the same admin interface. Success at a main camera
+        /// IP is logged ("Identified main camera at ...") and lands the
+        /// MAC in <see cref="_cgiConfirmedMacs"/>, but does NOT mark the
+        /// MAC as OCR (which would mis-classify the camera in the
+        /// resolver-driven IsOcr inference).
+        ///
+        /// "Needs probe" = any port currently up with no ARP yet,
+        /// regardless of speed. If every up port is already ARP-confirmed
+        /// or down, there's nothing to discover and we skip the pass.
         ///
         /// Per-IP rate limit (10 s) keeps us from spamming the camera
         /// CGI on every tick while waiting for ARP to populate.
@@ -1570,26 +1687,29 @@ namespace Pulse.WPF.ViewModels
         {
             if (_ocrProbe == null) return;
 
-            // Cheap check: do we have any port that might be an OCR right
-            // now? If not, no probe scheduling needed this tick.
+            // Cheap check: do we have any port that's linked but ARP
+            // hasn't resolved? If not, no probe scheduling needed this
+            // tick - every linked camera is already accounted for.
             bool needsProbe = false;
             foreach (var st in states)
             {
                 var snap = st.Snapshot;
                 if (snap == null) continue;
-                bool is100M = snap.IsUp
-                              && snap.LinkSpeedBps >= 100_000_000UL
-                              && snap.LinkSpeedBps < 1_000_000_000UL;
-                bool noArp = string.IsNullOrEmpty(snap.RemoteMac);
-                if (is100M && noArp) { needsProbe = true; break; }
+                if (snap.IsUp && string.IsNullOrEmpty(snap.RemoteMac))
+                {
+                    needsProbe = true;
+                    break;
+                }
             }
             if (!needsProbe) return;
 
-            // Build the candidate IP list: cameras.cfg OCR/Scoreboard
-            // entries first (more likely to match a given venue's actual
-            // OCR), then the Pixellot defaults as a fallback for venues
-            // where cfg hasn't been populated yet.
-            var candidateIps = new List<string>();
+            // Build two candidate IP lists tagged with their expected
+            // role. Cameras.cfg OCR/Scoreboard entries first (most likely
+            // to match a given venue's actual OCR), then the Pixellot
+            // defaults as a fallback. Main camera IPs are tagged with
+            // isOcrTarget=false so a successful probe doesn't pollute
+            // _confirmedOcrMacs.
+            var candidateIps = new List<(string Ip, bool IsOcrTarget)>();
             if (roles != null)
             {
                 foreach (var kv in roles)
@@ -1598,17 +1718,22 @@ namespace Pulse.WPF.ViewModels
                     if (kv.Value.IndexOf("OCR", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         kv.Value.IndexOf("Scoreboard", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        if (!candidateIps.Contains(kv.Key)) candidateIps.Add(kv.Key);
+                        if (!candidateIps.Exists(c => c.Ip == kv.Key))
+                            candidateIps.Add((kv.Key, true));
                     }
                 }
             }
             foreach (var def in DefaultOcrIps)
-                if (!candidateIps.Contains(def)) candidateIps.Add(def);
+                if (!candidateIps.Exists(c => c.Ip == def))
+                    candidateIps.Add((def, true));
+            foreach (var def in DefaultMainCameraIps)
+                if (!candidateIps.Exists(c => c.Ip == def))
+                    candidateIps.Add((def, false));
 
             if (candidateIps.Count == 0) return;
 
             var now = DateTime.UtcNow;
-            foreach (var ip in candidateIps)
+            foreach (var (ip, isOcrTarget) in candidateIps)
             {
                 if (_lastProbeAtByIp.TryGetValue(ip, out var lastAt)
                     && (now - lastAt) < OcrProbeInterval)
@@ -1617,12 +1742,18 @@ namespace Pulse.WPF.ViewModels
                 }
                 _lastProbeAtByIp[ip] = now;
 
+                // Capture loop locals into the closure - C# 9 still
+                // closes over the loop variable by reference even with
+                // tuple deconstruction, so we re-bind explicitly here.
+                var probeIp = ip;
+                var probeIsOcr = isOcrTarget;
+
                 // Fire-and-forget. Captured `ip` is a string, immutable.
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        var result = await _ocrProbe.ProbeAsync(ip, OcrProbeTimeout).ConfigureAwait(false);
+                        var result = await _ocrProbe.ProbeAsync(probeIp, OcrProbeTimeout).ConfigureAwait(false);
                         if (result.IsOcr && !string.IsNullOrEmpty(result.Mac))
                         {
                             // Marshal back to the UI thread for the
@@ -1634,17 +1765,37 @@ namespace Pulse.WPF.ViewModels
                             {
                                 app.Dispatcher.Invoke(() =>
                                 {
-                                    _confirmedOcrMacs.Add(result.Mac);
-                                    AddLog("OcrProbe",
-                                        $"Identified OCR at {ip} (MAC {result.Mac}, {(int)result.Elapsed.TotalMilliseconds} ms)",
-                                        "Info");
+                                    // Always track CGI-responsive MACs
+                                    // (generic "this camera is reachable
+                                    // via admin").
+                                    _cgiConfirmedMacs.Add(result.Mac);
+
+                                    if (probeIsOcr)
+                                    {
+                                        _confirmedOcrMacs.Add(result.Mac);
+                                        AddLog("OcrProbe",
+                                            $"Identified OCR at {probeIp} (MAC {result.Mac}, {(int)result.Elapsed.TotalMilliseconds} ms)",
+                                            "Info");
+                                    }
+                                    else
+                                    {
+                                        // v0.8.25-beta: positive ID for a
+                                        // main camera. Doesn't change the
+                                        // resolver-driven IsOcr flag, just
+                                        // gives the tech confirmation in
+                                        // the Live Log that the main
+                                        // camera's admin interface is up.
+                                        AddLog("CgiProbe",
+                                            $"Identified main camera at {probeIp} (MAC {result.Mac}, {(int)result.Elapsed.TotalMilliseconds} ms)",
+                                            "Info");
+                                    }
                                 });
                             }
                         }
                         // Failures are silent by design - most candidate IPs
-                        // won't have an OCR on them, so logging every miss
-                        // would flood the Live Log. The successful match
-                        // is the signal worth surfacing.
+                        // won't have a camera on them at any given moment,
+                        // so logging every miss would flood the Live Log.
+                        // The successful match is the signal worth surfacing.
                     }
                     catch { /* never throw from fire-and-forget */ }
                 });

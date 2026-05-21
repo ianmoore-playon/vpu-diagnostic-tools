@@ -1398,3 +1398,53 @@ New `FaultIsolatorViewModel.RefreshFromPorts(IEnumerable<PortViewModel>, string 
 
 - `Pulse.WPF.csproj` Version bumped 0.8.23-beta → 0.8.24-beta.
 - Modified: `ViewModels/FaultIsolatorViewModel.cs`, `ViewModels/CameraConnectivityViewModel.cs`.
+
+## v0.8.25-beta — Deployment-convention checks + main-camera CGI probe
+
+Three new Camera Connectivity surfaces driven by the deployment-standard requirements:
+
+1. Camera NICs must use a **static IP** (DHCP off).
+2. Per-port NIC IP must follow `169.254.16.(99+N)` — Port 1 = `.100`, Port 2 = `.101`, Port 3 = `.102`, Port 4 = `.103`.
+3. Per-port CHU IP must follow `169.254.16.(49+N)` — Port 1 = `.50` (Main 1), Port 2 = `.51` (Main 2), Port 3 = `.52` (OCR), Port 4 = `.53` (Additional angle / double-play camera).
+
+Plus a parallel extension of the existing Dynacolor CGI probe to cover the main camera IPs so techs get positive identification of all 4 cameras, not just OCR.
+
+### Snapshot extension
+
+`CameraNicSnapshot` (the per-port live-monitor row) now carries `LocalIp` + `IsDhcpEnabled`. Previously these were only available via the slower `GetAdapterDetails(localMac)` path used by the Adapter Details dialog. `NetworkAdapterService.GetCameraPortsAsync()` populates them at the same cost as the existing reads — `props.GetIPv4Properties()?.IsDhcpEnabled` + the first IPv4 `UnicastAddress`.
+
+`PortViewModel` mirrors both fields so `BuildRecommendations` reads off the same surface the tile rendering uses.
+
+### Three new BuildRecommendations rows
+
+All three Warning severity, fire per-port inside the existing loop:
+
+- **`Port N NIC is set to DHCP`** — fires whenever `snap.IsDhcpEnabled == true`, irrespective of cable state (DHCP-on-empty-port is still a misconfig to fix). Inline action button: **Open Adapter Settings** (deep-links to `ncpa.cpl`).
+- **`Port N NIC IP off-convention`** — fires when `LocalIp` is non-empty but doesn't equal `169.254.16.(99+N)`. Quotes the actual + expected IP in the body. Diagnostic only.
+- **`Port N camera IP off-convention`** — fires when `RemoteIp` is non-empty (camera plugged in) but doesn't equal `169.254.16.(49+N)`. Empty-port doesn't fire (the existing cable / link checks cover that case). Diagnostic only.
+
+The DHCP row is the only one with an inline action button; the IP-cadence rows are read-only per spec (no programmatic fix path — the tech edits each adapter's IPv4 properties manually).
+
+### CGI probe extended to main cameras
+
+New `DefaultMainCameraIps = ["169.254.16.50", "169.254.16.51", "169.254.16.53"]` (Main 1, Main 2, additional angle). Probed alongside the OCR IPs by `ScheduleOcrProbesIfNeeded`. The trigger condition is relaxed from `100 Mbps + no ARP` to `any speed + no ARP` so main cameras (typically 1 Gbps) at the moment ARP hasn't resolved get probed too.
+
+Success handler differentiates by an `isOcrTarget` flag stamped per candidate IP:
+
+- **OCR target hit** → `_confirmedOcrMacs.Add(mac)` (same as before, drives the resolver IsOcr inference) + `_cgiConfirmedMacs.Add(mac)` + Live Log `Identified OCR at ... (MAC ..., Nms)`.
+- **Main camera target hit** → `_cgiConfirmedMacs.Add(mac)` only + Live Log `Identified main camera at ... (MAC ..., Nms)`. Crucially does NOT pollute `_confirmedOcrMacs` (which would mis-classify the main camera as an OCR in subsequent tile rendering).
+
+`_cgiConfirmedMacs` is a generic "this MAC was reached via Dynacolor admin CGI" bucket; currently only logged but it's the right hook for a future tile badge ("CGI ✓") or report enrichment.
+
+### What to watch for during the v0.8.25-beta field test
+
+- On a correctly-deployed VPU: no new Warning rows in the Recommendations card. The DHCP / NIC IP / CHU IP checks all pass.
+- On a misconfigured VPU: the Warning card should list the specific port + expected IP. Open Adapter Settings on the DHCP row drops you onto `ncpa.cpl`.
+- Live Log should emit `OcrProbe: Identified OCR at 169.254.16.52 ...` and `CgiProbe: Identified main camera at 169.254.16.50 ...` (and `.51`, `.53` if those cameras are present) within a few ticks of opening the tab.
+- Main cameras should NOT be re-classified as OCR (their tiles stay Green / `Main Camera N`, not Accent / OCR).
+- DHCP-enabled on a port with no cable should still surface the Warning (deployment misconfig matters even before a camera is plugged in).
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.8.24-beta → 0.8.25-beta.
+- Modified: `Services/INetworkAdapterService.cs`, `Services/NetworkAdapterService.cs`, `ViewModels/PortViewModel.cs`, `ViewModels/CameraConnectivityViewModel.cs`.

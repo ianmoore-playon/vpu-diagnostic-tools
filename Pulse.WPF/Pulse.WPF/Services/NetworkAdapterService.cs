@@ -310,14 +310,33 @@ namespace Pulse.WPF.Services
                 // was being returned as a "remote" on every port that listed
                 // it in its ARP table.
                 var localIps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                string primaryLocalIp = "";
                 try
                 {
                     foreach (var ua in props.UnicastAddresses)
                     {
-                        if (ua?.Address != null) localIps.Add(ua.Address.ToString());
+                        if (ua?.Address == null) continue;
+                        localIps.Add(ua.Address.ToString());
+                        // v0.8.25-beta: capture the first IPv4 link-local /
+                        // private address as the canonical "this NIC's IP"
+                        // for the deployment-convention checks. Skip IPv6
+                        // (out of scope) and 0.0.0.0 fallback.
+                        if (primaryLocalIp.Length == 0
+                            && ua.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+                            && !ua.Address.Equals(System.Net.IPAddress.Any))
+                        {
+                            primaryLocalIp = ua.Address.ToString();
+                        }
                     }
                 }
                 catch { /* ignore — empty set means we just skip the filter. */ }
+
+                // v0.8.25-beta: DHCP state per NIC. GetIPv4Properties throws
+                // on NICs without IPv4 enabled, so wrap defensively. Default
+                // to false (== static) when we can't tell, since static is
+                // the expected state and we don't want spurious warnings.
+                bool isDhcp = false;
+                try { isDhcp = props.GetIPv4Properties()?.IsDhcpEnabled ?? false; } catch { }
 
                 string remoteIp = null, remoteMac = null;
                 if (arp.TryGetValue(ifIndex, out var entries))
@@ -351,6 +370,8 @@ namespace Pulse.WPF.Services
                     ErrorCount   = stats != null ? (stats.IncomingPacketsWithErrors + stats.OutgoingPacketsWithErrors) : 0,
                     RemoteIp     = remoteIp,   // null when no real neighbour — VM treats null as "no neighbour".
                     RemoteMac    = remoteMac,
+                    LocalIp        = primaryLocalIp,
+                    IsDhcpEnabled  = isDhcp,
                 });
             }
 

@@ -71,6 +71,16 @@ namespace Pulse.WPF.Services
         public long   ErrorCount { get; set; }            // OutboundPacketsWithErrors + ReceivedPacketsWithErrors
         public string RemoteIp { get; set; }              // ARP-discovered camera IP (link-local)
         public string RemoteMac { get; set; }             // ARP-discovered camera MAC
+
+        // v0.8.25-beta: surfaced per-tick so the recommendations engine can
+        // assert deployment conventions:
+        //   - Camera NICs must be set to static IP (DHCP off).
+        //   - Each Port N's local IP must follow 169.254.16.(99+N).
+        // Previously only the Adapter Details dialog read these via
+        // GetAdapterDetails (slow WMI/registry path); now they're folded
+        // into the live snapshot at the same cost as the existing reads.
+        public string LocalIp        { get; set; }        // first IPv4 unicast on this NIC; "" if none
+        public bool   IsDhcpEnabled  { get; set; }        // true = DHCP, false = static IP
     }
 
     public interface INetworkAdapterService
