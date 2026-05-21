@@ -44,7 +44,8 @@
                 <RowDefinition Height="Auto" />   <!-- 1: Findings banner -->
                 <RowDefinition Height="Auto" />   <!-- 2: Recommended Actions -->
                 <RowDefinition Height="Auto" />   <!-- 3: NIC diagram strip (4 tiles) -->
-                <RowDefinition Height="Auto" />   <!-- 4: Live Log expander -->
+                <RowDefinition Height="Auto" />   <!-- 4: Inline Fault Isolator (v0.8.21-beta) -->
+                <RowDefinition Height="Auto" />   <!-- 5: Live Log expander -->
             </Grid.RowDefinitions>
 
             <!-- ====== Section header (v0.5.4 top-bar buttons) ======
@@ -427,8 +428,238 @@
                 </StackPanel>
             </Border>
 
+            <!-- ====== Inline Fault Isolator (v0.8.21-beta) ======
+                 Visible only when CameraConnectivityViewModel.FaultIsolator
+                 is non-null. The top-bar "Fault Isolator" button toggles it.
+                 Lives at Row 4 (between the tile strip and Live Log) so
+                 the tech can see the live tile strip above while running
+                 the wizard, and the Live Log below records every step. -->
+            <Border Grid.Row="4"
+                    Style="{StaticResource Card}"
+                    Margin="0,0,0,16"
+                    Visibility="{Binding IsFaultIsolatorOpen, Converter={StaticResource BoolToVis}}"
+                    DataContext="{Binding FaultIsolator}">
+                <StackPanel>
+                    <!-- Header strip with title + Close button -->
+                    <DockPanel Margin="0,0,0,12">
+                        <Button DockPanel.Dock="Right"
+                                Command="{Binding CancelCommand}"
+                                Style="{StaticResource MaterialDesignIconButton}"
+                                ToolTip="Close the Fault Isolator">
+                            <md:PackIcon Kind="Close" Width="20" Height="20" />
+                        </Button>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <md:PackIcon Kind="HammerWrench" Width="20" Height="20"
+                                         Foreground="{StaticResource AccentBrush}"
+                                         VerticalAlignment="Center" />
+                            <TextBlock Text="Camera Fault Isolator"
+                                       Style="{StaticResource SectionTitle}"
+                                       Margin="10,0,0,0"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </DockPanel>
+                    <TextBlock Text="Walk through a 4-phase swap test to pin a degraded port on a NIC, cable, or camera. Live monitor keeps running in the background."
+                               Foreground="{StaticResource MutedForegroundBrush}"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               Margin="0,-4,0,12" />
+
+                    <!-- Step dots (5 across) -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,16">
+                        <Grid Width="14" Height="14" Margin="0,0,8,0">
+                            <Ellipse Width="14" Height="14" Fill="Transparent"
+                                     Stroke="{StaticResource MutedForegroundBrush}" StrokeThickness="1" />
+                            <Ellipse Width="14" Height="14"
+                                     Fill="{StaticResource GreenBrush}"
+                                     Stroke="{StaticResource GreenBrush}" StrokeThickness="1"
+                                     Visibility="{Binding StepDot1, Converter={StaticResource BoolToVis}}" />
+                        </Grid>
+                        <Rectangle Width="32" Height="1" Margin="0,0,8,0"
+                                   Fill="{StaticResource BorderColBrush}" VerticalAlignment="Center" />
+                        <Grid Width="14" Height="14" Margin="0,0,8,0">
+                            <Ellipse Width="14" Height="14" Fill="Transparent"
+                                     Stroke="{StaticResource MutedForegroundBrush}" StrokeThickness="1" />
+                            <Ellipse Width="14" Height="14"
+                                     Fill="{StaticResource GreenBrush}"
+                                     Stroke="{StaticResource GreenBrush}" StrokeThickness="1"
+                                     Visibility="{Binding StepDot2, Converter={StaticResource BoolToVis}}" />
+                        </Grid>
+                        <Rectangle Width="32" Height="1" Margin="0,0,8,0"
+                                   Fill="{StaticResource BorderColBrush}" VerticalAlignment="Center" />
+                        <Grid Width="14" Height="14" Margin="0,0,8,0">
+                            <Ellipse Width="14" Height="14" Fill="Transparent"
+                                     Stroke="{StaticResource MutedForegroundBrush}" StrokeThickness="1" />
+                            <Ellipse Width="14" Height="14"
+                                     Fill="{StaticResource GreenBrush}"
+                                     Stroke="{StaticResource GreenBrush}" StrokeThickness="1"
+                                     Visibility="{Binding StepDot3, Converter={StaticResource BoolToVis}}" />
+                        </Grid>
+                        <Rectangle Width="32" Height="1" Margin="0,0,8,0"
+                                   Fill="{StaticResource BorderColBrush}" VerticalAlignment="Center" />
+                        <Grid Width="14" Height="14" Margin="0,0,8,0">
+                            <Ellipse Width="14" Height="14" Fill="Transparent"
+                                     Stroke="{StaticResource MutedForegroundBrush}" StrokeThickness="1" />
+                            <Ellipse Width="14" Height="14"
+                                     Fill="{StaticResource GreenBrush}"
+                                     Stroke="{StaticResource GreenBrush}" StrokeThickness="1"
+                                     Visibility="{Binding StepDot4, Converter={StaticResource BoolToVis}}" />
+                        </Grid>
+                        <Rectangle Width="32" Height="1" Margin="0,0,8,0"
+                                   Fill="{StaticResource BorderColBrush}" VerticalAlignment="Center" />
+                        <Grid Width="14" Height="14">
+                            <Ellipse Width="14" Height="14" Fill="Transparent"
+                                     Stroke="{StaticResource MutedForegroundBrush}" StrokeThickness="1" />
+                            <Ellipse Width="14" Height="14"
+                                     Fill="{StaticResource GreenBrush}"
+                                     Stroke="{StaticResource GreenBrush}" StrokeThickness="1"
+                                     Visibility="{Binding StepDot5, Converter={StaticResource BoolToVis}}" />
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Phase title + instruction -->
+                    <TextBlock Text="{Binding PhaseTitle}"
+                               Style="{StaticResource SectionTitle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,6" />
+                    <TextBlock Text="{Binding PhaseInstruction}"
+                               TextWrapping="Wrap"
+                               Foreground="{StaticResource ForegroundBrush}"
+                               FontSize="13"
+                               Margin="0,0,0,16" />
+
+                    <!-- Port selectors (suspect + test) -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                            <TextBlock Text="Suspect port"
+                                       Style="{StaticResource MutedLabel}"
+                                       Margin="0,0,0,4" />
+                            <ComboBox ItemsSource="{Binding SuspectPortChoices}"
+                                      SelectedItem="{Binding SelectedSuspectPort}"
+                                      DisplayMemberPath="DisplayLabel"
+                                      IsEnabled="{Binding IsPickingSuspectPort}"
+                                      MinHeight="36" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                            <TextBlock Text="Test port (known-good)"
+                                       Style="{StaticResource MutedLabel}"
+                                       Margin="0,0,0,4" />
+                            <ComboBox ItemsSource="{Binding TestPortChoices}"
+                                      SelectedItem="{Binding SelectedTestPort}"
+                                      DisplayMemberPath="DisplayLabel"
+                                      IsEnabled="{Binding IsPickingTestPort}"
+                                      MinHeight="36" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Latest result (visible when present) -->
+                    <Border Background="{StaticResource SurfaceBgBrush}"
+                            BorderBrush="{StaticResource BorderColBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="12"
+                            Margin="0,0,0,16"
+                            Visibility="{Binding ResultText, Converter={StaticResource StringToVis}, FallbackValue=Collapsed}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="LATEST RESULT" Style="{StaticResource MutedLabel}" />
+                                <controls:SeverityChip Text="{Binding ResultSeverityLabel, FallbackValue=INFO}"
+                                                       Severity="{Binding ResultSeverity, FallbackValue=info}"
+                                                       Margin="12,0,0,0"
+                                                       VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding ResultText}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource ForegroundBrush}"
+                                       FontSize="13" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Phase history (visible when there are rows) -->
+                    <StackPanel Margin="0,0,0,16"
+                                Visibility="{Binding History.Count, Converter={StaticResource CountToVis}}">
+                        <TextBlock Text="Phase history" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                        <ItemsControl ItemsSource="{Binding History}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{StaticResource BorderColBrush}"
+                                            BorderThickness="0,0,0,1"
+                                            Padding="0,6,0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="72" />
+                                                <ColumnDefinition Width="68" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                                       Text="{Binding TimestampLabel}"
+                                                       FontFamily="Cascadia Mono, Consolas"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource MutedForegroundBrush}" />
+                                            <controls:SeverityChip Grid.Row="0" Grid.Column="1"
+                                                                   Text="{Binding SeverityLabel}"
+                                                                   Severity="{Binding Severity}" />
+                                            <TextBlock Grid.Row="0" Grid.Column="2"
+                                                       Text="{Binding PhaseName}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource ForegroundBrush}" />
+                                            <TextBlock Grid.Row="1" Grid.Column="2"
+                                                       Text="{Binding Configuration}"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource MutedForegroundBrush}"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,2,0,0" />
+                                            <TextBlock Grid.Row="2" Grid.Column="2"
+                                                       Text="{Binding Verdict}"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource ForegroundBrush}"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,2,0,0" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Footer action row -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Start Over"
+                                Command="{Binding StartOverCommand}"
+                                Style="{StaticResource MaterialDesignOutlinedButton}"
+                                MinWidth="120" MinHeight="40" />
+                        <Button Content="Cancel"
+                                Command="{Binding CancelCommand}"
+                                Style="{StaticResource MaterialDesignOutlinedButton}"
+                                MinWidth="120" MinHeight="40"
+                                Margin="12,0,0,0" />
+                        <Button Content="No spare CHU — infer"
+                                Command="{Binding InferCameraConclusionCommand}"
+                                Style="{StaticResource MaterialDesignOutlinedButton}"
+                                MinWidth="180" MinHeight="40"
+                                Margin="12,0,0,0"
+                                Visibility="{Binding CanInferCameraConclusion, Converter={StaticResource BoolToVis}}" />
+                        <Button Content="{Binding ActionButtonLabel}"
+                                Command="{Binding ActionCommand}"
+                                Style="{StaticResource MaterialDesignRaisedButton}"
+                                MinWidth="180" MinHeight="40"
+                                Margin="12,0,0,0"
+                                IsDefault="True" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- ====== Live Log (collapsed expander) ====== -->
-            <Expander Grid.Row="4" Header="Live Log" Margin="0,0,0,16"
+            <Expander Grid.Row="5" Header="Live Log" Margin="0,0,0,16"
                       Foreground="{StaticResource MutedForegroundBrush}">
                 <Border Style="{StaticResource Card}" Margin="0,8,0,0">
                     <Border BorderBrush="{StaticResource BorderColBrush}" BorderThickness="0,1,0,0"

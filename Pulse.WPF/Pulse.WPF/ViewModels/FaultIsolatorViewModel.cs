@@ -28,9 +28,12 @@ namespace Pulse.WPF.ViewModels
     public class FaultIsolatorViewModel : ObservableObject
     {
         // Poll budgets mirror legacy Get-GuideLinkSpeed.
-        // Live-phase checks run up to 12 s peak-hold and short-circuit on 1 Gbps;
-        // the Phase-2 test-port pre-check is capped at 4 s.
-        private const int LivePhasePollSeconds = 12;
+        // v0.8.21-beta: live-phase window extended 12 -> 20 s. Field tech
+        // reported inconclusive results when slow auto-negotiation hadn't
+        // settled inside the 12-s window. 20 s comfortably covers stable
+        // negotiation even on damaged-cable / damaged-pin scenarios where
+        // the link bounces before locking. Still short-circuits on 1 Gbps.
+        private const int LivePhasePollSeconds = 20;
         private const int PreCheckPollSeconds  = 4;
         private const int PollIntervalMs       = 1_000;
 
@@ -621,13 +624,23 @@ namespace Pulse.WPF.ViewModels
         /// Polls the per-port link speed up to <paramref name="windowSeconds"/>
         /// seconds, returning the peak observed Mbps. Short-circuits as soon
         /// as the port reaches 1 Gbps. Mirrors legacy Get-GuideLinkSpeed.
+        ///
+        /// v0.8.21-beta: updates <see cref="ActionButtonLabel"/> every second
+        /// with "Checking... Xs / Ys" so the tech sees the test is actively
+        /// running instead of a static "Checking..." label that feels stuck.
+        /// Updates marshal to the UI thread via Set(); CommandManager.
+        /// InvalidateRequerySuggested handles command re-querying.
         /// </summary>
         private async Task<int> PollPeakLinkSpeedMbpsAsync(string localMac, int windowSeconds)
         {
             int peak = 0;
-            var deadline = DateTime.UtcNow.AddSeconds(windowSeconds);
+            var start = DateTime.UtcNow;
+            var deadline = start.AddSeconds(windowSeconds);
             while (DateTime.UtcNow < deadline)
             {
+                int elapsedSec = (int)(DateTime.UtcNow - start).TotalSeconds;
+                ActionButtonLabel = $"Checking... {elapsedSec}s / {windowSeconds}s";
+
                 int sample = await ReadPortLinkSpeedMbpsAsync(localMac).ConfigureAwait(false);
                 if (sample > peak) peak = sample;
                 if (peak >= 1000) return peak;

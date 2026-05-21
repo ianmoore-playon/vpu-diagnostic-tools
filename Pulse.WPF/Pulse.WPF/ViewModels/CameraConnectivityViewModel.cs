@@ -194,12 +194,31 @@ namespace Pulse.WPF.ViewModels
         public ICommand OpenCamerasCfgCommand             { get; }
         public ICommand SaveSnapshotCommand               { get; }
 
-        // v0.8.0-beta: launches the Fault Isolator modal wizard (4-phase
-        // swap test). Always visible regardless of Recommendation state so
-        // the tech can run it on demand without waiting for the live
-        // monitor to confirm a degraded port. The command pauses the
-        // monitor for the duration of the wizard (see OpenFaultIsolator).
+        // v0.8.0-beta: opens the Fault Isolator (4-phase swap test).
+        // v0.8.21-beta: now inline on this same panel rather than a modal
+        // Window. The button toggles FaultIsolator on/off; the wizard
+        // renders in a new section below the tile strip. Live tile updates
+        // continue while the wizard is running so the tech can see the
+        // background panel state.
         public ICommand OpenFaultIsolatorCommand          { get; }
+
+        /// <summary>
+        /// v0.8.21-beta: inline Fault Isolator VM. Non-null while the
+        /// wizard is active; null otherwise. The Camera Connectivity view
+        /// renders a Fault Isolator card when this is non-null and binds
+        /// directly to the VM.
+        /// </summary>
+        private FaultIsolatorViewModel _faultIsolator;
+        public FaultIsolatorViewModel FaultIsolator
+        {
+            get => _faultIsolator;
+            private set
+            {
+                if (Set(ref _faultIsolator, value))
+                    OnPropertyChanged(nameof(IsFaultIsolatorOpen));
+            }
+        }
+        public bool IsFaultIsolatorOpen => _faultIsolator != null;
 
         public CameraConnectivityViewModel(
             INetworkAdapterService net,
@@ -1948,65 +1967,102 @@ namespace Pulse.WPF.ViewModels
         //      if the tech bails before a conclusion. Mirrors the legacy
         //      tool's per-run report behaviour.
         // ------------------------------------------------------------------
+        // v0.8.21-beta: inline Fault Isolator. The button toggles - first
+        // click opens (creates the VM, binds it to FaultIsolator); second
+        // click (or the wizard's own Cancel / Concluded -> Run Full
+        // Diagnostic) closes (writes the report, fires SaveSnapshot if
+        // there's a verdict, clears FaultIsolator).
+        //
+        // The live CameraNicMonitor keeps running throughout - no more
+        // empty tile strip while the wizard is open. The
+        // v0.8.13-beta false-positive-proof flap detection absorbs the
+        // transitions a tech generates by physically moving cables during
+        // the swap test (2 committed transitions per yank-replug, well
+        // under the >=3-in-60s threshold).
         private void OpenFaultIsolator()
         {
             try
             {
-                _monitor?.Pause();
+                // Toggle: clicking when already open closes the wizard
+                // (treats it like a Cancel). Lets the same top-bar button
+                // serve as the open/close affordance.
+                if (FaultIsolator != null)
+                {
+                    CloseFaultIsolator(); // user-initiated close = no verdict
+                    return;
+                }
 
                 var preselect = Ports.FirstOrDefault(p => p.IsDegraded)?.LocalMac;
 
-                var dialogVm = new FaultIsolatorViewModel(
+                var vm = new FaultIsolatorViewModel(
                     _net,
-                    onConcluded: _ => { /* SaveSnapshot fires below after the dialog returns */ },
+                    onConcluded: _ => { /* SaveSnapshot fires in CloseFaultIsolator after the wizard signals close */ },
                     requestRunFullDiagnostic: () =>
                     {
-                        // Exit action on the Concluded screen — just close
-                        // the modal so the tech is back on the live panel.
-                        // (No "run all panels" command exists yet; once it
-                        // does, swap this for a panel-VM invocation.)
+                        // Concluded-phase exit action: close the wizard so
+                        // the tech lands back on the live panel.
                     });
-                dialogVm.SeedFromPorts(Ports, preselect);
-
-                var dialog = new Views.FaultIsolatorDialog(dialogVm);
-                if (Application.Current?.MainWindow != null
-                    && !ReferenceEquals(Application.Current.MainWindow, dialog))
-                {
-                    dialog.Owner = Application.Current.MainWindow;
-                }
+                vm.SeedFromPorts(Ports, preselect);
+                vm.RequestClose += CloseFaultIsolator;
 
                 AddLog("FaultIsolator",
                     preselect != null
-                        ? $"Opening wizard — pre-selected degraded port {preselect}."
-                        : "Opening wizard.",
+                        ? $"Opened — pre-selected degraded port {preselect}."
+                        : "Opened.",
                     "Info");
 
-                dialog.ShowDialog();
+                FaultIsolator = vm;
+            }
+            catch (Exception ex)
+            {
+                AddLog("FaultIsolator", $"Failed to open wizard: {ex.Message}", "Warn");
+                try { AppLogFile.Instance.WriteLine("FaultIsolator", "Warn",
+                    $"Open-wizard failure:\n{ex}"); } catch { }
+            }
+        }
 
-                // ---- After the modal closes ----
-                _monitor?.Resume();
+        /// <summary>
+        /// Tears down the inline Fault Isolator. Captures the conclusion
+        /// before clearing, fires SaveSnapshotCommand on a verdict so the
+        /// live panel state is bundled with the wizard's own report, and
+        /// always writes the per-run report regardless of how the user
+        /// exited. Same lifecycle as the legacy modal path - just driven
+        /// by the wizard's RequestClose event instead of dialog.ShowDialog
+        /// returning.
+        /// </summary>
+        private void CloseFaultIsolator()
+        {
+            var vm = FaultIsolator;
+            if (vm == null) return;
+            try { vm.RequestClose -= CloseFaultIsolator; } catch { }
 
-                bool concluded = dialogVm.Conclusion != FaultConclusion.None;
-                if (concluded)
-                {
-                    AddLog("FaultIsolator",
-                        $"Conclusion: {dialogVm.Conclusion}. Capturing snapshot.",
-                        "Info");
-                    // Fire the existing SaveSnapshot command so the live
-                    // panel state is bundled alongside the wizard report.
-                    try { SaveSnapshotCommand?.Execute(null); } catch { }
-                }
-                else
-                {
-                    AddLog("FaultIsolator", "Wizard closed without a verdict.", "Info");
-                }
+            bool concluded = vm.Conclusion != FaultConclusion.None;
+            string reportText;
+            try { reportText = vm.BuildReportText(); }
+            catch { reportText = ""; }
 
-                // Always write the wizard's own per-run report — verdict or
-                // not — so the tech has the phase history to attach to a
-                // ticket regardless of how they exited.
+            // Drop the binding first so the inline card collapses
+            // immediately - users get visual feedback before the
+            // SaveSnapshot side effects complete.
+            FaultIsolator = null;
+
+            if (concluded)
+            {
+                AddLog("FaultIsolator",
+                    $"Conclusion: {vm.Conclusion}. Capturing snapshot.",
+                    "Info");
+                try { SaveSnapshotCommand?.Execute(null); } catch { }
+            }
+            else
+            {
+                AddLog("FaultIsolator", "Closed without a verdict.", "Info");
+            }
+
+            if (!string.IsNullOrEmpty(reportText))
+            {
                 try
                 {
-                    var path = _reportWriter.Save("FaultIsolator", dialogVm.BuildReportText());
+                    var path = _reportWriter.Save("FaultIsolator", reportText);
                     if (!string.IsNullOrEmpty(path))
                     {
                         var fileName = System.IO.Path.GetFileName(path);
@@ -2021,42 +2077,6 @@ namespace Pulse.WPF.ViewModels
                 {
                     AddLog("FaultIsolator", $"Failed to save report: {ex.Message}", "Warn");
                 }
-            }
-            catch (Exception ex)
-            {
-                // Defensive: any failure must still resume the monitor or the
-                // live panel will sit frozen.
-                try { _monitor?.Resume(); } catch { }
-
-                // v0.8.3-beta: surface the FULL exception chain so a XAML
-                // resource-resolution failure tells us which resource key is
-                // actually missing instead of just "something StaticResource
-                // failed". The Live Log gets the chain compressed onto one
-                // line; the rolling AppLogFile gets line numbers / full
-                // stack so we can pinpoint the XAML position.
-                var chain = new System.Text.StringBuilder();
-                var current = ex;
-                int depth = 0;
-                while (current != null && depth < 6)
-                {
-                    if (chain.Length > 0) chain.Append("  ->  ");
-                    chain.Append(current.GetType().Name).Append(": ").Append(current.Message);
-                    // XamlParseException exposes line info that pinpoints the
-                    // exact element / attribute that fails.
-                    if (current is System.Windows.Markup.XamlParseException xpe)
-                    {
-                        chain.Append($" (line {xpe.LineNumber}, pos {xpe.LinePosition})");
-                    }
-                    current = current.InnerException;
-                    depth++;
-                }
-                AddLog("FaultIsolator", $"Failed to open wizard: {chain}", "Warn");
-                try
-                {
-                    AppLogFile.Instance.WriteLine("FaultIsolator", "Warn",
-                        $"Open-wizard failure:\n{ex}");
-                }
-                catch { /* logger must not crash the host */ }
             }
         }
 
