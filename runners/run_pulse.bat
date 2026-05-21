@@ -15,5 +15,11 @@ if '%errorlevel%' NEQ '0' (
     exit /b 0
 
 :runpulse
+echo Installing Chrome...
+powershell -Command "Invoke-WebRequest -Uri 'https://dl.google.com/chrome/install/latest/chrome_installer.exe' -OutFile '%TEMP%\chrome_installer.exe'"
+echo Installing Chrome
+start /wait "" "%TEMP%\chrome_installer.exe" /silent /install
+echo Deleting Chrome installer
+del "%TEMP%\chrome_installer.exe"
 echo Downloading Pulse now...
 powershell -Command "irm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1 | iex"
