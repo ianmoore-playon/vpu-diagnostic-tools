@@ -1365,3 +1365,36 @@ New `RequestReseed` event on `FaultIsolatorViewModel`, fired from `Reset()` (whi
 
 - `Pulse.WPF.csproj` Version bumped 0.8.22-beta → 0.8.23-beta.
 - Modified: `ViewModels/FaultIsolatorViewModel.cs`, `ViewModels/CameraConnectivityViewModel.cs`.
+
+## v0.8.24-beta — Fault Isolator: self-healing dropdown refresh
+
+Field test of v0.8.23-beta surfaced a separate failure mode: opening the wizard fresh with **empty dropdowns** that never populated, even with the v0.8.22 OnMonitorTick fallback in place. Root cause uncertain — likely a transient state where the initial `SeedFromPorts` produced a populated collection (Count > 0) so the v0.8.22 `Count == 0` predicate never re-fired, but the collection's contents diverged from what the live `Ports` actually held. v0.8.23's Start Over re-seed needs explicit user action and didn't help.
+
+### Fix — `RefreshFromPorts` runs every tick
+
+New `FaultIsolatorViewModel.RefreshFromPorts(IEnumerable<PortViewModel>, string preselectLocalMac = null)` method:
+
+- Builds a canonical signature: `LocalMac|DisplayLabel` per row, in positional order.
+- Compares against the current `SuspectPortChoices`. If signatures match, returns early — no mutation, no `CollectionChanged` event, no ComboBox visual-tree rebuild.
+- If signatures diverge, captures the current `SelectedSuspectPort.LocalMac` + `SelectedTestPort.LocalMac`, re-seeds via the existing `SeedFromPorts` path, then re-anchors `SelectedTestPort` by LocalMac. `SeedFromPorts`'s own selection cascade handles `SelectedSuspectPort`.
+
+`CameraConnectivityViewModel.OnMonitorTick` now calls `FaultIsolator.RefreshFromPorts(Ports)` unconditionally on every tick when the wizard is open (no preselect on the per-tick path — that's reserved for initial open). Cost: one List<string> + one positional comparison per tick when the port state is stable (which is the common case). Negligible.
+
+### Net effect
+
+- Bullet-proof against any opening state — broken dropdowns repair themselves within ≤500 ms.
+- Cable moves while wizard is open now reflect in the dropdown labels live (no need to click Start Over).
+- The tech's explicit pick survives port-state churn — selection is re-anchored by LocalMac across refreshes.
+- v0.8.22's conditional re-seed is removed (superseded). v0.8.23's Start Over re-seed stays (still useful as the explicit "reset the wizard" path).
+
+### What to watch for during the v0.8.24-beta field test
+
+- Open the Fault Isolator on a fresh tab load — dropdowns should populate within 1 tick.
+- Pick a suspect port, then physically move a cable on a *different* port → the dropdown labels should update (the FAULT/OCR suffix changes) but your pick stays selected.
+- Pick a suspect port, then physically move *that* cable → your pick stays on the same LocalMac; the row's label updates to reflect the new physical state.
+- No visible flicker or selection jumps on stable ticks (the hash-diff short-circuit should make the common case a no-op).
+
+### Bookkeeping
+
+- `Pulse.WPF.csproj` Version bumped 0.8.23-beta → 0.8.24-beta.
+- Modified: `ViewModels/FaultIsolatorViewModel.cs`, `ViewModels/CameraConnectivityViewModel.cs`.

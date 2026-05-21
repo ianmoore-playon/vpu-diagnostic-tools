@@ -232,6 +232,86 @@ namespace Pulse.WPF.ViewModels
                 SelectedSuspectPort = SuspectPortChoices[0];
         }
 
+        /// <summary>
+        /// v0.8.24-beta: drop-in replacement for the wizard-open SeedFromPorts
+        /// path, designed to be called on every monitor tick while the
+        /// wizard is open. Diffs the (LocalMac, DisplayLabel) tuple set
+        /// against the current SuspectPortChoices; if unchanged, returns
+        /// without mutating the collection (so the ComboBox doesn't rebuild
+        /// its visual tree on no-change ticks). If changed, preserves the
+        /// current SelectedSuspectPort by LocalMac across the re-seed so
+        /// the tech's pick survives port-state updates and cable moves.
+        ///
+        /// Why this exists: field tech reported the wizard opening with
+        /// empty dropdowns and no obvious recovery path. The v0.8.22 OnTick
+        /// re-seed only fired when SuspectPortChoices.Count == 0; if the
+        /// dropdown was somehow populated with stale rows it would never
+        /// refresh. v0.8.23's Start Over re-seed required user action.
+        /// This makes the dropdowns self-healing — any broken state gets
+        /// repaired by the next 500 ms monitor tick.
+        /// </summary>
+        public void RefreshFromPorts(IEnumerable<PortViewModel> ports, string preselectLocalMac = null)
+        {
+            if (ports == null) return;
+
+            // Build the canonical signature for the new port set. Order
+            // matters - the host hands us Ports in a stable order (Port 1
+            // through Port 4), so positional comparison catches re-orderings
+            // too.
+            var newSignature = new List<string>();
+            foreach (var p in ports)
+            {
+                if (string.IsNullOrEmpty(p.LocalMac)) continue;
+                var choice = BuildChoice(p);
+                newSignature.Add(choice.LocalMac + "|" + choice.DisplayLabel);
+            }
+
+            // Compare against the current collection's signature. If they
+            // match, no UI mutation is needed - the dropdown already
+            // reflects the live port state. This short-circuits the common
+            // case (no port-state change between ticks) so we don't churn
+            // ObservableCollection events at 2 Hz.
+            if (newSignature.Count == SuspectPortChoices.Count)
+            {
+                bool same = true;
+                for (int i = 0; i < newSignature.Count; i++)
+                {
+                    var existing = SuspectPortChoices[i];
+                    if (!string.Equals(newSignature[i],
+                                       existing.LocalMac + "|" + existing.DisplayLabel,
+                                       StringComparison.OrdinalIgnoreCase))
+                    {
+                        same = false;
+                        break;
+                    }
+                }
+                if (same) return;
+            }
+
+            // Set has changed. Capture the current selection's LocalMac so
+            // we can re-anchor after the rebuild - WPF's ComboBox.SelectedItem
+            // breaks when its referent leaves ItemsSource, so we have to
+            // resolve the equivalent new PortChoice by LocalMac.
+            var keepSuspectMac = SelectedSuspectPort?.LocalMac;
+            var keepTestMac    = SelectedTestPort?.LocalMac;
+
+            // Reuse the existing seed path. preselectLocalMac wins if the
+            // host passed one (e.g. a freshly degraded port); otherwise we
+            // restore the user's prior selection.
+            SeedFromPorts(ports, preselectLocalMac ?? keepSuspectMac);
+
+            // Re-anchor SelectedTestPort to the matching LocalMac. The
+            // SelectedSuspectPort setter already rebuilt TestPortChoices
+            // inside SeedFromPorts via the property cascade, so we just
+            // pick the equivalent row out of the new list.
+            if (!string.IsNullOrEmpty(keepTestMac))
+            {
+                var match = TestPortChoices.FirstOrDefault(c =>
+                    string.Equals(c.LocalMac, keepTestMac, StringComparison.OrdinalIgnoreCase));
+                if (match != null) SelectedTestPort = match;
+            }
+        }
+
         private static PortChoice BuildChoice(PortViewModel p)
         {
             string speed;

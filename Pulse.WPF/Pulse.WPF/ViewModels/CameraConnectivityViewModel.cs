@@ -887,19 +887,27 @@ namespace Pulse.WPF.ViewModels
                 // monitor -> resolver pipeline.
                 ScheduleOcrProbesIfNeeded(states, roles);
 
-                // v0.8.22-beta: dropdown population lag fix. When the tab
-                // opens with the Fault Isolator already active (or the tech
-                // opens the wizard before the first monitor poll resolves),
-                // the placeholder Ports have empty LocalMac strings and
-                // SeedFromPorts skips every row, leaving both dropdowns
-                // empty for the first ~500 ms. Re-seed once the Ports
-                // collection has real LocalMacs.
-                if (FaultIsolator != null
-                    && FaultIsolator.SuspectPortChoices.Count == 0
-                    && Ports.Any(p => !string.IsNullOrEmpty(p.LocalMac)))
+                // v0.8.24-beta: keep the Fault Isolator dropdowns
+                // continuously in sync with live Ports. RefreshFromPorts
+                // hash-diffs the (LocalMac, DisplayLabel) tuple set and
+                // returns early on no-change ticks, so this is cheap to
+                // run unconditionally at 2 Hz. Bullet-proof against any
+                // weird state the wizard could open in - dropdowns
+                // self-heal on the next monitor tick.
+                //
+                // No preselect on the per-tick refresh: SeedFromPorts treats
+                // preselect as authoritative and would override the tech's
+                // explicit pick on every tick. RefreshFromPorts internally
+                // preserves the current SelectedSuspectPort by LocalMac, so
+                // the user's choice survives port-state churn.
+                //
+                // Supersedes the v0.8.22 conditional re-seed (only on
+                // Count == 0) and complements v0.8.23's Start Over
+                // re-seed - both are still valid call paths but neither
+                // is the only line of defence now.
+                if (FaultIsolator != null)
                 {
-                    var preselect = Ports.FirstOrDefault(p => p.IsDegraded)?.LocalMac;
-                    try { FaultIsolator.SeedFromPorts(Ports, preselect); } catch { }
+                    try { FaultIsolator.RefreshFromPorts(Ports); } catch { }
                 }
             }
             catch (Exception ex)
