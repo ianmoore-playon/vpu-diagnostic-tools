@@ -620,6 +620,53 @@ namespace Pulse.WPF.Services
             return PostAsync($"{V1Cfg}/set-scoreconnect-configuration", json);
         }
 
+        // ---- v0.8.20-beta: mid-game tech write actions ----
+        // All three are swagger-confirmed PUTs on /api/configuration. The
+        // PUT-first-with-POST-fallback pattern matches the v0.6.20 select-
+        // vendor-sport / select-vendor-configuration fix: current
+        // ScoreConnect III rejects POST with 405; older builds accepted
+        // POST. WriteAsync handles both paths transparently.
+
+        /// <inheritdoc />
+        public Task<bool> SwapTeamNamesAsync()
+        {
+            // Mid-game fix when the scoreboard text shows home / away
+            // names reversed (e.g. wrong panel assignment at game start).
+            // No body — the action is "swap whatever the current state is".
+            return WriteAsync(
+                HttpMethod.Put,
+                $"{V1Cfg}/swap-team-names",
+                body: null,
+                allowPostFallback: true);
+        }
+
+        /// <inheritdoc />
+        public Task<bool> SwapTeamDataAsync()
+        {
+            // Full-state swap: names + scores + fouls + timeouts + every
+            // per-team field. Used when the operator realises the entire
+            // home/away assignment is wrong (not just the labels).
+            return WriteAsync(
+                HttpMethod.Put,
+                $"{V1Cfg}/swap-team-data",
+                body: null,
+                allowPostFallback: true);
+        }
+
+        /// <inheritdoc />
+        public Task<bool> DiscoverDevicesAsync()
+        {
+            // Forces ScoreConnect III to re-scan for ScoreLink / ScoreBOT
+            // devices on the configured serial ports + USB enumeration.
+            // Useful after the tech plugs in a new ScoreLink mid-event
+            // without restarting the service.
+            return WriteAsync(
+                HttpMethod.Put,
+                $"{V1Cfg}/discover-devices",
+                body: null,
+                allowPostFallback: true);
+        }
+
         // ---------- Internals: HTTP plumbing ----------
 
         // Async GET with a per-call timeout (HttpClient.Timeout is per-instance,

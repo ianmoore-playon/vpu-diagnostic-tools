@@ -66,6 +66,32 @@ namespace Pulse.WPF.Services
         Task<bool> SetScoreConnectConfigurationAsync(
             string vendorId, string vendorSportId, string configurationId);
 
+        // ---- v0.8.20-beta: mid-game tech actions (swagger-confirmed PUTs) ----
+
+        /// <summary>
+        /// Swap home / away team NAMES on the active configuration. Mid-game
+        /// fix when the scoreboard text shows the teams reversed. Maps to
+        /// <c>PUT /api/configuration/swap-team-names</c>. PUT-first with
+        /// POST fallback for compatibility with older installs.
+        /// </summary>
+        Task<bool> SwapTeamNamesAsync();
+
+        /// <summary>
+        /// Swap home / away team DATA on the active configuration — names,
+        /// scores, fouls, timeouts, all per-team state. Heavier than
+        /// <see cref="SwapTeamNamesAsync"/>; use when the scoreboard data
+        /// got cross-wired mid-stream. Maps to
+        /// <c>PUT /api/configuration/swap-team-data</c>.
+        /// </summary>
+        Task<bool> SwapTeamDataAsync();
+
+        /// <summary>
+        /// Trigger ScoreConnect III's device-discovery scan to pick up
+        /// newly connected ScoreLink / ScoreBOT devices without restarting
+        /// the service. Maps to <c>PUT /api/configuration/discover-devices</c>.
+        /// </summary>
+        Task<bool> DiscoverDevicesAsync();
+
         // ---- Settings surface ----
 
         /// <summary>Current base URL the service is probing. This reflects

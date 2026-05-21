@@ -217,6 +217,15 @@ namespace Pulse.WPF.ViewModels
         public ICommand EditConfigurationCommand { get; protected set; }
         public ICommand EditDecoderCommand { get; protected set; }
 
+        // v0.8.20-beta: mid-game tech actions. Each one is a single PUT
+        // against ScoreConnect III with a Yes/No confirm gate. Confirm
+        // copy is shaped around the field-tech moment of clicking these:
+        // "I'm in the middle of a live game and the scoreboard looks
+        // wrong / a new ScoreLink just got plugged in."
+        public ICommand SwapTeamNamesCommand { get; protected set; }
+        public ICommand SwapTeamDataCommand  { get; protected set; }
+        public ICommand DiscoverDevicesCommand { get; protected set; }
+
         public ScoreConnectViewModel(IScoreConnectService svc)
         {
             _svc = svc ?? throw new ArgumentNullException(nameof(svc));
@@ -235,6 +244,12 @@ namespace Pulse.WPF.ViewModels
             EditSportCommand         = new AsyncCommand(EditSportAsync);
             EditConfigurationCommand = new AsyncCommand(EditConfigurationAsync);
             EditDecoderCommand       = new AsyncCommand(EditDecoderAsync);
+
+            // v0.8.20-beta: mid-game tech actions wired to the
+            // swagger-confirmed PUT endpoints.
+            SwapTeamNamesCommand   = new AsyncCommand(SwapTeamNamesAsync);
+            SwapTeamDataCommand    = new AsyncCommand(SwapTeamDataAsync);
+            DiscoverDevicesCommand = new AsyncCommand(DiscoverDevicesAsync);
         }
 
         private void OnScoreConnectUrlChanged(string url)
@@ -510,6 +525,81 @@ namespace Pulse.WPF.ViewModels
                 return match?.Id;
             }
             catch { return null; }
+        }
+
+        // ---------- v0.8.20-beta: mid-game tech actions ----------
+
+        /// <summary>
+        /// Swap the home / away team NAMES on the active configuration.
+        /// Confirms via a MessageBox first because mis-clicking this mid-
+        /// stream would put the scoreboard in the wrong state for viewers.
+        /// </summary>
+        private async Task SwapTeamNamesAsync()
+        {
+            if (!ConfirmAction(
+                "Swap team names?",
+                "This will swap the HOME and AWAY team NAMES on the active scoreboard configuration. " +
+                "Use this if the team names are showing reversed mid-stream. " +
+                "Scores and other team data will NOT change.")) return;
+
+            var ok = await _svc.SwapTeamNamesAsync().ConfigureAwait(false);
+            await ReportWriteResultAsync("Team names", "swapped", ok).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Swap home / away team DATA — full state, including names,
+        /// scores, fouls, timeouts, possession, etc. Heavier than
+        /// <see cref="SwapTeamNamesAsync"/>; use when the entire team
+        /// assignment is wrong, not just the labels.
+        /// </summary>
+        private async Task SwapTeamDataAsync()
+        {
+            if (!ConfirmAction(
+                "Swap team data?",
+                "This will swap ALL home / away data on the active configuration — names, scores, fouls, timeouts, and any sport-specific per-team state. " +
+                "Use this only if the entire home / away assignment is wrong (not just the names). " +
+                "There is no automatic undo; if you click this in error, click it again to swap back.")) return;
+
+            var ok = await _svc.SwapTeamDataAsync().ConfigureAwait(false);
+            await ReportWriteResultAsync("Team data", "swapped", ok).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Force ScoreConnect III to re-scan for ScoreLink / ScoreBOT
+        /// devices. No state mutation — safe to click whenever a device
+        /// was just plugged in.
+        /// </summary>
+        private async Task DiscoverDevicesAsync()
+        {
+            // No confirm dialog — this is a safe, idempotent scan with
+            // no game-state impact. Field tech can click it freely.
+            var ok = await _svc.DiscoverDevicesAsync().ConfigureAwait(false);
+            await ReportWriteResultAsync("Device discovery", "triggered", ok).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Yes/No confirm helper for the team-swap actions. Returns true
+        /// only when the tech clicked Yes; false on No or any dispatcher
+        /// failure (defensive — don't accidentally fire the swap).
+        /// </summary>
+        private bool ConfirmAction(string title, string message)
+        {
+            bool result = false;
+            try
+            {
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    var answer = System.Windows.MessageBox.Show(
+                        message,
+                        title,
+                        System.Windows.MessageBoxButton.YesNo,
+                        System.Windows.MessageBoxImage.Question,
+                        System.Windows.MessageBoxResult.No);
+                    result = (answer == System.Windows.MessageBoxResult.Yes);
+                });
+            }
+            catch { /* default false */ }
+            return result;
         }
 
         private async Task ReportWriteResultAsync(string what, string value, bool ok)
