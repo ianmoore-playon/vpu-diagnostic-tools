@@ -13,22 +13,29 @@ v0.5.3. Earlier history is preserved in git (`v1.0.0` → `v1.0.52` tags).
 
 ## Install on a VPU
 
-The supported install path is the public release feed at
-[`ianmoore-playon/pulse-releases`](https://github.com/ianmoore-playon/pulse-releases).
-Two equivalent options:
+The supported install path runs the installer from
+[`ianmoore-playon/pulse-releases`](https://github.com/ianmoore-playon/pulse-releases)
+with admin elevation so the build lands in `Program Files`.
 
-**Option 1 — drag-and-drop launcher (recommended for field use)**
+**Option 1 — elevated launcher (recommended for field use)**
 
-Download [`Pulse.WPF.bat`](https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/Pulse.WPF.bat)
-to the VPU desktop and double-click. The launcher pulls the latest tagged
-release, extracts to `%LOCALAPPDATA%\Pulse.WPF`, and runs `Pulse.WPF.exe`.
-Subsequent double-clicks auto-update to the latest tag.
+Download [`runners/run_pulse.bat`](https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/main/runners/run_pulse.bat)
+to the VPU desktop and double-click. The launcher requests UAC
+elevation, then pulls the latest tagged release and runs
+`install.ps1` in an admin context so Pulse can install system-wide
+under `Program Files`. Subsequent double-clicks auto-update to the
+latest tag.
 
-**Option 2 — PowerShell one-liner**
+**Option 2 — elevated PowerShell one-liner**
+
+Open an **Administrator** PowerShell and run:
 
 ```powershell
 irm 'https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1' | iex
 ```
+
+Same installer the launcher uses — the only difference is you provide
+the admin shell yourself instead of letting the bat trigger UAC.
 
 Requires Windows 10+ and .NET Framework 4.8 (both pre-installed on every VPU).
 
