@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pulse Web | VPU Diagnostics</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        pulse: {
+                            bg: '#0f1117',
+                            sidebar: '#161822',
+                            card: '#1c1f2e',
+                            border: '#2a2d3e',
+                            accent: '#3b82f6',
+                            text: '#e2e8f0',
+                            muted: '#94a3b8',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark h-full bg-pulse-bg text-pulse-text overflow-hidden">
+    <div id="app" class="flex h-full">
+        <nav id="sidebar" class="w-56 bg-pulse-sidebar border-r border-pulse-border flex flex-col flex-shrink-0">
+            <div class="p-4 border-b border-pulse-border">
+                <h1 class="text-lg font-bold text-white tracking-tight">Pulse Web</h1>
+                <p class="text-xs text-pulse-muted mt-0.5">VPU Diagnostic Tools</p>
+            </div>
+            <div class="flex-1 overflow-y-auto py-2" id="nav-links"></div>
+            <div class="p-3 border-t border-pulse-border text-xs text-pulse-muted">
+                v0.9.0-beta
+            </div>
+        </nav>
+        <main id="content" class="flex-1 overflow-y-auto p-6">
+            <div class="max-w-6xl mx-auto" id="page"></div>
+        </main>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>

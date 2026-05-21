@@ -3,9 +3,9 @@
   "configurations": [
     {
       "name": "pulse-web",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["server/index.js"],
-      "port": 5173,
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["app/main.py"],
+      "port": 8765,
       "cwd": "Pulse.Web"
     }
   ]
