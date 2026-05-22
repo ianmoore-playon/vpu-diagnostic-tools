@@ -116,10 +116,24 @@ routing — no build step, no bundler.
 | Settings | ScoreConnect URL, poll interval |
 | About | Version and technology info |
 
+### Run on macOS (demo mode)
+
+On non-Windows systems, Pulse Web runs in demo mode with synthetic data
+(PowerShell scripts are stubbed out). Useful for UI development and testing.
+
+```bash
+brew install python3
+pip3 install fastapi 'uvicorn[standard]'
+cd Pulse.Web/app
+python3 main.py
+```
+
+Then open **http://localhost:8765** in your browser.
+
 ### Requirements
 
-- Windows 10+ (for PowerShell + WMI)
-- Internet connection on first run (to download Python)
+- **VPU (production):** Windows 10+ (for PowerShell + WMI), internet on first run
+- **macOS/Linux (dev):** Python 3.10+, pip
 
 ---
 

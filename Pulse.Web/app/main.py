@@ -14,7 +14,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from powershell import run_ps
+from powershell import run_ps, LOG_BUFFER, DEMO_MODE
 
 SETTINGS_PATH = _os.path.join(_os.path.dirname(_app_dir), "pulse-settings.json")
 _static_dir = _os.path.join(_app_dir, "static")
@@ -211,23 +211,10 @@ def _enrich_ports(nics: dict) -> list:
     return ports
 
 
-# ─── Routes ───────────────────────────────────────────────────
+# ─── Data-building helpers (shared by per-page and preload) ──
 
 
-@app.get("/")
-async def serve_index():
-    return FileResponse(_os.path.join(_static_dir, "index.html"))
-
-
-@app.get("/api/dashboard")
-async def api_dashboard():
-    identity, performance, services, nics = await asyncio.gather(
-        run_ps("Get-SystemIdentity.ps1"),
-        run_ps("Get-Performance.ps1"),
-        run_ps("Get-Services.ps1"),
-        run_ps("Get-NicAdapters.ps1"),
-    )
-
+def _build_dashboard(identity, performance, services, nics):
     flat_identity = {}
     if identity and not identity.get("error"):
         flat_identity = {
@@ -252,6 +239,103 @@ async def api_dashboard():
     }
 
 
+def _build_network(config, domains, ports, ntp):
+    net = {}
+    if config and not config.get("error"):
+        net = {
+            "adapters": config.get("adapters", []),
+            "ipConfig": config.get("ipConfigurations", []),
+            "uplinkAdapter": config.get("uplinkAdapter"),
+            "internetReachable": config.get("internet", {}).get("reachable", False),
+            "testedHost": config.get("internet", {}).get("testedHost"),
+            "ntpSource": config.get("ntpSource"),
+        }
+
+    return {"config": net, "domains": domains, "ports": ports, "ntp": ntp}
+
+
+# ─── Routes ───────────────────────────────────────────────────
+
+
+@app.get("/")
+async def serve_index():
+    return FileResponse(_os.path.join(_static_dir, "index.html"))
+
+
+@app.get("/api/preload")
+async def api_preload():
+    """Run ALL diagnostic scripts once in parallel and return per-page data."""
+    (
+        identity,
+        hardware,
+        performance,
+        network_config,
+        nics,
+        services,
+        disk_health,
+        event_logs,
+        scoreconnect,
+        pixellot_config,
+        installed_sw,
+        domains,
+        ports,
+        ntp,
+    ) = await asyncio.gather(
+        run_ps("Get-SystemIdentity.ps1"),
+        run_ps("Get-Hardware.ps1"),
+        run_ps("Get-Performance.ps1"),
+        run_ps("Get-NetworkConfig.ps1"),
+        run_ps("Get-NicAdapters.ps1"),
+        run_ps("Get-Services.ps1"),
+        run_ps("Get-DiskHealth.ps1"),
+        run_ps("Get-EventLogs.ps1"),
+        run_ps("Get-ScoreConnectStatus.ps1"),
+        run_ps("Get-PixellotConfig.ps1"),
+        run_ps("Get-InstalledSoftware.ps1"),
+        run_ps("Test-NetworkDomains.ps1"),
+        run_ps("Test-NetworkPorts.ps1"),
+        run_ps("Test-NtpDrift.ps1"),
+    )
+
+    return {
+        "dashboard": _build_dashboard(identity, performance, services, nics),
+        "system": {
+            "identity": identity,
+            "hardware": hardware,
+            "software": installed_sw,
+        },
+        "network": _build_network(network_config, domains, ports, ntp),
+        "cameras": {
+            "ports": _enrich_ports(nics),
+            "pixellotConfig": pixellot_config,
+        },
+        "services": services,
+        "disk-health": disk_health,
+        "events": event_logs,
+        "scoreconnect": scoreconnect,
+        "settings": load_settings(),
+        "_logs": list(LOG_BUFFER),
+    }
+
+
+@app.get("/api/logs")
+async def api_logs(since: int = Query(default=0)):
+    """Return recent script execution logs. `since` is an index offset."""
+    logs = list(LOG_BUFFER)
+    return {"demoMode": DEMO_MODE, "logs": logs[since:], "total": len(logs)}
+
+
+@app.get("/api/dashboard")
+async def api_dashboard():
+    identity, performance, services, nics = await asyncio.gather(
+        run_ps("Get-SystemIdentity.ps1"),
+        run_ps("Get-Performance.ps1"),
+        run_ps("Get-Services.ps1"),
+        run_ps("Get-NicAdapters.ps1"),
+    )
+    return _build_dashboard(identity, performance, services, nics)
+
+
 @app.get("/api/system")
 async def api_system():
     identity, hardware, software = await asyncio.gather(
@@ -270,19 +354,7 @@ async def api_network():
         run_ps("Test-NetworkPorts.ps1"),
         run_ps("Test-NtpDrift.ps1"),
     )
-
-    net = {}
-    if config and not config.get("error"):
-        net = {
-            "adapters": config.get("adapters", []),
-            "ipConfig": config.get("ipConfigurations", []),
-            "uplinkAdapter": config.get("uplinkAdapter"),
-            "internetReachable": config.get("internet", {}).get("reachable", False),
-            "testedHost": config.get("internet", {}).get("testedHost"),
-            "ntpSource": config.get("ntpSource"),
-        }
-
-    return {"config": net, "domains": domains, "ports": ports, "ntp": ntp}
+    return _build_network(config, domains, ports, ntp)
 
 
 @app.get("/api/cameras")
@@ -383,17 +455,23 @@ async def ws_endpoint(ws: WebSocket):
     try:
         settings = load_settings()
         interval = max(settings.get("pollIntervalMs", 3000), 1000) / 1000
+        last_log_idx = len(LOG_BUFFER)
 
         while True:
             perf, nics = await asyncio.gather(
                 run_ps("Get-Performance.ps1", timeout=10),
                 run_ps("Get-NicAdapters.ps1", timeout=10),
             )
+            all_logs = list(LOG_BUFFER)
+            new_logs = all_logs[last_log_idx:]
+            last_log_idx = len(all_logs)
+
             await ws.send_json(
                 {
                     "type": "metrics",
                     "performance": perf,
                     "ports": _enrich_ports(nics),
+                    "logs": new_logs,
                 }
             )
             await asyncio.sleep(interval)
@@ -408,4 +486,5 @@ async def ws_endpoint(ws: WebSocket):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8765, reload=False)
+    port = int(_os.environ.get("PORT", 8765))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

@@ -44,3 +44,7 @@ Both mirror releases to the public `ianmoore-playon/pulse-releases` repo via `PU
 - `Pulse.Web/app/static/` — Frontend SPA (vanilla JS, hash routing)
 - `Pulse.WPF/Pulse.WPF/Views/` — XAML panels
 - `Pulse.WPF/Pulse.WPF/Services/` — WMI, registry, network probes
+
+## MCP Tools
+
+Claude in Chrome is **not enabled** for this org. Do not attempt to use browser automation MCP tools (`mcp__Claude_in_Chrome__*`). Use `mcp__Claude_Preview__*` for UI previewing instead. Preferably ask the user if they are running local dev server first, then proceed with running local servier if they are not running it already.
