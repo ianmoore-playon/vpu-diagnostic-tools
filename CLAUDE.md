@@ -30,6 +30,34 @@ Dev and beta tags create pre-releases. Production tags create full releases.
 
 Launchers in `runners/` are per-channel (`run_pulse.bat`, `run_pulse_beta.bat`, `run_pulse_dev.bat`, and web equivalents). Each installs to its own `%LOCALAPPDATA%` directory so channels coexist on a VPU.
 
+### Pulse.Web Versioning
+
+Pulse.Web uses semver (`MAJOR.MINOR.PATCH`) with a three-channel pipeline. Dev stays roughly two versions ahead of main, and beta stays one version ahead.
+
+| Channel | Version format | `VERSION` file | Tag example | Audience |
+|---------|---------------|----------------|-------------|----------|
+| Main | `X.Y.Z` | `X.Y.Z` | `web-v0.1.0` | Production VPUs |
+| Beta | `X.Y.Z` | `X.Y.Z` | `web-beta-v0.2.0` | Field validation |
+| Dev | `X.Y.Z-dev` | `X.Y.Z-dev` | `web-dev-v0.3.0-dev-abc1234` | Internal testing |
+
+**Version example at a point in time:**
+- Main: `0.1.0` (current stable)
+- Beta: `0.2.0` (next release, being validated)
+- Dev: `0.3.0-dev` (bleeding edge, auto-tagged with commit SHA)
+
+#### Promotion workflow
+
+1. **Dev → Beta:** Merge `dev` into `beta`. Update `Pulse.Web/VERSION` to a clean semver (e.g., `0.2.0`). Push tag `web-beta-v0.2.0`.
+2. **Beta → Main:** Merge `beta` into `main`. Push tag `web-v0.2.0` (same version that was validated in beta).
+3. **Bump dev:** After promoting, update `Pulse.Web/VERSION` on `dev` to the next version with `-dev` suffix (e.g., `0.3.0-dev`). Subsequent pushes auto-tag as `web-dev-v0.3.0-dev-{SHA}`.
+
+#### Rules
+
+- The `VERSION` file is the source of truth for the version number.
+- Dev auto-tags on every push to `dev` (via `web-auto-tag.yml`). Beta and main tags are pushed manually.
+- Version bumps are manual — decide whether to increment minor or major when starting a new dev cycle.
+- Only promote to main what was validated in beta. The beta tag version and main tag version should match for a given release.
+
 ## CI Workflows
 
 - `.github/workflows/wpf-pilot-build.yml` — Windows build, triggers on `dev`/`beta`/`main` pushes (when `Pulse.WPF/` changes) and WPF tags
