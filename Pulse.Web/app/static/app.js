@@ -67,6 +67,19 @@ let wsRetryTimer = null;
 let dataCache = {};
 let logEntries = [];
 let logPaneOpen = false;
+let fetchingKeys = new Set();
+
+const PAGE_API = {
+  dashboard: "/api/dashboard",
+  system: "/api/system",
+  network: "/api/network",
+  cameras: "/api/cameras",
+  services: "/api/services",
+  "disk-health": "/api/disk-health",
+  events: "/api/events",
+  scoreconnect: "/api/scoreconnect",
+  settings: "/api/settings",
+};
 
 // ── Router ───────────────────────────────────────────────────
 
@@ -202,35 +215,77 @@ function gauge(label, value, unit, color) {
   </div>`;
 }
 
-// ── Data Preload ────────────────────────────────────────────
+// ── Data Preload (progressive) ──────────────────────────────
 
-async function preloadAll() {
-  const data = await api("/api/preload");
+async function fetchSection(key) {
+  if (fetchingKeys.has(key) || dataCache[key]) return dataCache[key];
+  const url = PAGE_API[key];
+  if (!url) return null;
+  fetchingKeys.add(key);
+  const data = await api(url);
+  fetchingKeys.delete(key);
   if (data && !data.error) {
-    dataCache.dashboard = data.dashboard;
-    dataCache.system = data.system;
-    dataCache.network = data.network;
-    dataCache.cameras = data.cameras;
-    dataCache.services = data.services;
-    dataCache["disk-health"] = data["disk-health"];
-    dataCache.events = data.events;
-    dataCache.scoreconnect = data.scoreconnect;
-    dataCache.settings = data.settings;
-    // Ingest logs from the preload burst
-    if (data._logs) appendLogs(data._logs);
+    dataCache[key] = data;
+    if (currentPage === key) renderPage(currentPage);
+    else if (currentPage === "dashboard") renderPage("dashboard");
+  } else if (currentPage === key) {
+    renderPage(currentPage);
   }
-  return dataCache;
+  return data;
+}
+
+function preloadProgressive() {
+  Object.keys(PAGE_API).forEach((key) => fetchSection(key));
+  api("/api/version").then((data) => {
+    if (data?.version) {
+      const footer = document.querySelector(".sidebar-footer");
+      if (footer) footer.textContent = data.version;
+    }
+  });
+  api("/api/logs").then((logData) => {
+    if (logData && !logData.error) {
+      appendLogs(logData.logs || []);
+      if (logData.demoMode) {
+        document.getElementById("demo-banner")?.classList.remove("hidden");
+      }
+    }
+  });
 }
 
 async function refreshAll() {
   dataCache = {};
-  $page().innerHTML = loading("Re-running all diagnostics...");
-  await preloadAll();
+  fetchingKeys.clear();
   renderPage(currentPage);
+  preloadProgressive();
+}
+
+async function refreshSection(key) {
+  dataCache[key] = null;
+  fetchingKeys.delete(key);
+  renderPage(currentPage);
+  fetchSection(key);
+}
+
+function cancelAll() {
+  apiPost("/api/scripts/cancel-all", {});
 }
 
 function cached(key) {
   return dataCache[key] || null;
+}
+
+function sectionLoading(label) {
+  const isFetching = fetchingKeys.size > 0;
+  return `<div class="section-loading">
+    <div class="section-loading-inner">
+      <svg class="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" opacity="0.3"/>
+        <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      <span>Loading ${esc(label)}...</span>
+      ${isFetching ? `<button class="btn-cancel" onclick="cancelAll()">Cancel</button>` : ""}
+    </div>
+  </div>`;
 }
 
 // ── Logging Pane ────────────────────────────────────────────
@@ -460,10 +515,9 @@ function _renderVolumes(volumes) {
   }).join("");
 }
 
-async function renderDashboard() {
-  const dash = cached("dashboard") || (($page().innerHTML = loading()), await api("/api/dashboard"));
-  if (currentPage !== "dashboard") return;
-  dataCache.dashboard = dash;
+function renderDashboard() {
+  const dash = cached("dashboard");
+  if (!dash) { $page().innerHTML = sectionLoading("Dashboard"); fetchSection("dashboard"); return; }
   if (dash.error) { $page().innerHTML = errorBox(dash.message); return; }
 
   // Pull from all cached data sources
@@ -776,10 +830,9 @@ function _debounce(fn, ms) {
 
 // ── System Overview ──────────────────────────────────────────
 
-async function renderSystem() {
-  const data = cached("system") || (($page().innerHTML = loading()), await api("/api/system"));
-  if (currentPage !== "system") return;
-  dataCache.system = data;
+function renderSystem() {
+  const data = cached("system");
+  if (!data) { $page().innerHTML = sectionLoading("System Overview"); fetchSection("system"); return; }
 
   const id = data.identity || {};
   const hw = data.hardware || {};
@@ -934,10 +987,9 @@ async function renderSystem() {
 
 // ── Network ──────────────────────────────────────────────────
 
-async function renderNetwork() {
-  const data = cached("network") || (($page().innerHTML = loading()), await api("/api/network"));
-  if (currentPage !== "network") return;
-  dataCache.network = data;
+function renderNetwork() {
+  const data = cached("network");
+  if (!data) { $page().innerHTML = sectionLoading("Network"); fetchSection("network"); return; }
 
   const cfg = data.config || {};
   const domains = data.domains?.results || [];
@@ -1038,10 +1090,9 @@ async function renderNetwork() {
 
 // ── Cameras ──────────────────────────────────────────────────
 
-async function renderCameras() {
-  const data = cached("cameras") || (($page().innerHTML = loading()), await api("/api/cameras"));
-  if (currentPage !== "cameras") return;
-  dataCache.cameras = data;
+function renderCameras() {
+  const data = cached("cameras");
+  if (!data) { $page().innerHTML = sectionLoading("Camera Connectivity"); fetchSection("cameras"); return; }
 
   const ports = data.ports || [];
   const pixCfg = data.pixellotConfig || {};
@@ -1158,10 +1209,9 @@ function formatBytes(b) {
 
 // ── Services ─────────────────────────────────────────────────
 
-async function renderServices() {
-  const data = cached("services") || (($page().innerHTML = loading()), await api("/api/services"));
-  if (currentPage !== "services") return;
-  dataCache.services = data;
+function renderServices() {
+  const data = cached("services");
+  if (!data) { $page().innerHTML = sectionLoading("Pixellot Services"); fetchSection("services"); return; }
 
   if (data.error) { $page().innerHTML = errorBox(data.message); return; }
 
@@ -1221,10 +1271,9 @@ async function renderServices() {
 
 // ── Disk Health ──────────────────────────────────────────────
 
-async function renderDiskHealth() {
-  const data = cached("disk-health") || (($page().innerHTML = loading()), await api("/api/disk-health"));
-  if (currentPage !== "disk-health") return;
-  dataCache["disk-health"] = data;
+function renderDiskHealth() {
+  const data = cached("disk-health");
+  if (!data) { $page().innerHTML = sectionLoading("Disk & System Health"); fetchSection("disk-health"); return; }
 
   if (data.error) { $page().innerHTML = errorBox(data.message); return; }
 
@@ -1357,7 +1406,7 @@ function formatTime(iso) {
 
 // ── Event Viewer ─────────────────────────────────────────────
 
-async function renderEvents() {
+function renderEvents() {
   $page().innerHTML = `
     ${pageHeader("Event Viewer", "Filtered Windows event-log entries for disk, NIC, Pixellot, and core service sources",
       `<button class="btn-outline btn-ol-blue" id="ev-refresh">
@@ -1458,7 +1507,7 @@ async function renderEvents() {
 
 // ── Reports ──────────────────────────────────────────────────
 
-async function renderReports() {
+function renderReports() {
   $page().innerHTML = `
     ${pageHeader("Reports", "Diagnostic-run snapshots — generate and download full system reports",
       `<button class="btn-outline btn-ol-green" id="rpt-export">
@@ -1510,10 +1559,9 @@ async function renderReports() {
 
 // ── ScoreConnect ─────────────────────────────────────────────
 
-async function renderScoreConnect() {
-  const data = cached("scoreconnect") || (($page().innerHTML = loading()), await api("/api/scoreconnect"));
-  if (currentPage !== "scoreconnect") return;
-  dataCache.scoreconnect = data;
+function renderScoreConnect() {
+  const data = cached("scoreconnect");
+  if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
 
   const status = data.status || {};
   const config = data.configuration || {};
@@ -1620,7 +1668,7 @@ async function renderScoreConnect() {
 
 // ── Fault Isolator ───────────────────────────────────────────
 
-async function renderFaultIsolator() {
+function renderFaultIsolator() {
   const steps = [
     { id: "internet", label: "Internet Connectivity" },
     { id: "dns", label: "DNS Resolution" },
@@ -1787,10 +1835,9 @@ async function renderFaultIsolator() {
 
 // ── Settings ─────────────────────────────────────────────────
 
-async function renderSettings() {
-  const data = cached("settings") || (($page().innerHTML = loading()), await api("/api/settings"));
-  if (currentPage !== "settings") return;
-  dataCache.settings = data;
+function renderSettings() {
+  const data = cached("settings");
+  if (!data) { $page().innerHTML = sectionLoading("Settings"); fetchSection("settings"); return; }
 
   const scUrl = data.scoreConnectUrl || "http://localhost:5000";
   const pollMs = data.pollIntervalMs || 3000;
@@ -1927,19 +1974,9 @@ async function init() {
     if (hash !== currentPage) navigate(hash);
   });
 
-  $page().innerHTML = loading("Running initial diagnostics...");
-  await preloadAll();
-
-  try {
-    const logData = await api("/api/logs");
-    appendLogs(logData.logs || []);
-    if (logData.demoMode) {
-      document.getElementById("demo-banner")?.classList.remove("hidden");
-    }
-  } catch {}
-
   const startPage = window.location.hash.slice(1) || "dashboard";
   navigate(startPage);
+  preloadProgressive();
   connectWS();
 }
 
