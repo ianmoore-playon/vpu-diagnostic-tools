@@ -24,11 +24,22 @@ SETTINGS_PATH = _os.path.join(_web_root, "pulse-settings.json")
 
 def _read_version() -> str:
     import subprocess
+    repo_root = _os.path.dirname(_web_root)
+    try:
+        result = subprocess.run(
+            ["git", "for-each-ref", "--sort=-creatordate", "--count=1",
+             "--format=%(refname:short)",
+             "refs/tags/web-v*", "refs/tags/web-beta-v*", "refs/tags/web-dev-v*"],
+            capture_output=True, text=True, cwd=repo_root, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
     try:
         result = subprocess.run(
             ["git", "describe", "--tags", "--always"],
-            capture_output=True, text=True,
-            cwd=_os.path.dirname(_web_root), timeout=5,
+            capture_output=True, text=True, cwd=repo_root, timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
