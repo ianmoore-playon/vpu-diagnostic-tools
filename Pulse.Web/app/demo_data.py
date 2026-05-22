@@ -36,11 +36,10 @@ DEMO = {
     },
     "Get-Services.ps1": lambda **kw: {
         "services": [
-            {"name": "PixellotAgent", "displayName": "Pixellot Agent Service", "status": "Running", "startType": "Automatic"},
-            {"name": "PixellotVPU", "displayName": "Pixellot VPU Engine", "status": "Running", "startType": "Automatic"},
-            {"name": "PixellotEncoder", "displayName": "Pixellot Encoder", "status": "Running", "startType": "Automatic"},
-            {"name": "PixellotWatchdog", "displayName": "Pixellot Watchdog", "status": "Running", "startType": "Automatic"},
-            {"name": "PixellotUpdater", "displayName": "Pixellot Update Service", "status": "Running", "startType": "Automatic"},
+            {"name": "agent", "displayName": "Pixellot Agent", "status": "Running", "startType": "Automatic"},
+            {"name": "coordinator", "displayName": "Pixellot Coordinator", "status": "Running", "startType": "Automatic"},
+            {"name": "vpu", "displayName": "Pixellot VPU", "status": "Running", "startType": "Automatic"},
+            {"name": "scoreconnect", "displayName": "ScoreConnect", "status": "Running", "startType": "Automatic"},
             {"name": "LogMeIn", "displayName": "LogMeIn Remote Access", "status": "Stopped", "startType": "Manual"},
         ]
     },

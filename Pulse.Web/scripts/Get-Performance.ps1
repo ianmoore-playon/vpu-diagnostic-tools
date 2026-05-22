@@ -47,13 +47,17 @@ try {
     $tempCelsius = $null
     $tempSource  = 'unavailable'
 
-    # Try 1: MSAcpi_ThermalZoneTemperature
+    # Try 1: MSAcpi_ThermalZoneTemperature (values in tenths of Kelvin)
     try {
         $thermal = Get-CimInstance -Namespace root\WMI -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction Stop
         if ($thermal) {
-            $maxTemp = ($thermal | Measure-Object -Property CurrentTemperature -Maximum).Maximum
-            $tempCelsius = [math]::Round(($maxTemp / 10) - 273.15, 1)
-            $tempSource = 'MSAcpi_ThermalZoneTemperature'
+            $readings = $thermal | ForEach-Object {
+                [math]::Round(($_.CurrentTemperature / 10) - 273.15, 1)
+            } | Where-Object { $_ -gt 0 -and $_ -lt 110 }
+            if ($readings) {
+                $tempCelsius = ($readings | Measure-Object -Maximum).Maximum
+                $tempSource = 'MSAcpi_ThermalZoneTemperature'
+            }
         }
     }
     catch { }

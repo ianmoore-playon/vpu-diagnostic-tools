@@ -37,6 +37,7 @@ jobs:
           fi
           echo "ARTIFACT_NAME=${NAME}" >> "$GITHUB_ENV"
           echo "ARTIFACT_ZIP=${NAME}.zip" >> "$GITHUB_ENV"
+          echo "$TAG" > Pulse.Web/VERSION
           cd Pulse.Web
           zip -r "../${NAME}.zip" . -x "app/python/*" "__pycache__/*" "*.pyc"
 
