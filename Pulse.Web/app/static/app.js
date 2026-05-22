@@ -226,11 +226,8 @@ async function fetchSection(key) {
   fetchingKeys.delete(key);
   if (data && !data.error) {
     dataCache[key] = data;
-    if (currentPage === key) renderPage(currentPage);
-    else if (currentPage === "dashboard") renderPage("dashboard");
-  } else if (currentPage === key) {
-    renderPage(currentPage);
   }
+  if (currentPage === key || currentPage === "dashboard") renderPage(currentPage);
   return data;
 }
 
@@ -376,6 +373,20 @@ function updateLiveMetrics(msg) {
   _updateGaugeLive("cpu", cpu);
   _updateGaugeLive("mem", mem);
   _updateGaugeLive("disk", disk);
+
+  // Auto-refresh findings when live metrics diverge from cached snapshot
+  const dash = dataCache["dashboard"];
+  if (dash && dash.findings?.length) {
+    const hadCpuCrit = dash.findings.some((f) => f.title === "CPU Usage Critical");
+    const hadCpuWarn = dash.findings.some((f) => f.title === "CPU Usage Elevated");
+    const hadTempCrit = dash.findings.some((f) => f.title === "Temperature Critical");
+    const liveTemp = perf.temperature?.celsius;
+    const stale =
+      (hadCpuCrit && cpu != null && cpu <= 75) ||
+      (hadCpuWarn && cpu != null && cpu <= 60) ||
+      (hadTempCrit && liveTemp != null && liveTemp <= 85);
+    if (stale) refreshSection("dashboard");
+  }
 }
 
 function _updateGaugeLive(name, val) {
@@ -561,6 +572,9 @@ function renderDashboard() {
   const dns = uplinkIp?.dnsServers?.join(", ") || "—";
   const ntpSrv = netCfg.ntpSource || "—";
   const internetOk = netCfg.internetReachable;
+  const internetFetching = fetchingKeys.has("network");
+  const internetLabel = internetOk === true ? "Connected" : internetOk === false ? "Offline" : internetFetching ? "Checking" : "—";
+  const internetColor = internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "#94a3b8";
 
   // Other data
   const nicPorts = cam.ports || [];
@@ -608,7 +622,7 @@ function renderDashboard() {
           <div class="metric-box"><span class="metric-label">CPU</span><span class="metric-val" style="color:${_metricColor(cpu)}">${cpu != null ? Math.round(cpu) + "%" : "--"}</span></div>
           <div class="metric-box"><span class="metric-label">MEMORY</span><span class="metric-val" style="color:${_metricColor(mem)}">${mem != null ? Math.round(mem) + "%" : "--"}</span></div>
           <div class="metric-box"><span class="metric-label">DISK</span><span class="metric-val" style="color:${_metricColor(disk)}">${disk != null ? Math.round(disk) + "%" : "--"}</span></div>
-          <div class="metric-box"><span class="metric-label">INTERNET</span><span class="metric-val" style="color:${internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "#94a3b8"}">${internetOk === true ? "Connected" : internetOk === false ? "Offline" : "Checking"}</span></div>
+          <div class="metric-box"><span class="metric-label">INTERNET</span><span class="metric-val" style="color:${internetColor}">${internetLabel}</span></div>
         </div>
       </div>
       <div class="card findings-panel">
@@ -727,8 +741,8 @@ function renderDashboard() {
         </div>
         <div class="dash-gauge-col">
           <div class="dash-icon-tile">
-            <span style="color:${internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "#94a3b8"}">${svgIcon("globe", 26)}</span>
-            <span class="dash-tile-val" style="color:${internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "#e2e8f0"}">${internetOk === true ? "Connected" : internetOk === false ? "No connection" : "—"}</span>
+            <span style="color:${internetColor}">${svgIcon("globe", 26)}</span>
+            <span class="dash-tile-val" style="color:${internetColor}">${internetLabel === "Connected" ? "Connected" : internetLabel === "Offline" ? "No connection" : internetLabel}</span>
           </div>
           <span class="text-xs text-pulse-muted font-medium">Internet</span>
         </div>

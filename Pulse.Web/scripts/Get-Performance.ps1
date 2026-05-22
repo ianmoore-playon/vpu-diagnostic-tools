@@ -68,8 +68,11 @@ try {
             $perfThermal = Get-CimInstance Win32_PerfFormattedData_Counters_ThermalZoneInformation -ErrorAction Stop
             if ($perfThermal) {
                 $maxTemp = ($perfThermal | Measure-Object -Property Temperature -Maximum).Maximum
-                $tempCelsius = [math]::Round($maxTemp, 1)
-                $tempSource = 'Win32_PerfFormattedData_Counters_ThermalZoneInformation'
+                $converted = [math]::Round($maxTemp - 273.15, 1)
+                if ($converted -gt 0 -and $converted -lt 110) {
+                    $tempCelsius = $converted
+                    $tempSource = 'Win32_PerfFormattedData_Counters_ThermalZoneInformation'
+                }
             }
         }
         catch { }
