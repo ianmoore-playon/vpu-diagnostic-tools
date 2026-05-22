@@ -1,24 +1,72 @@
 /* Pulse Web — Vanilla JS SPA */
 
-// ── Pages ────────────────────────────────────────────────────
-const PAGES = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "system", label: "System Overview" },
-  { id: "network", label: "Network" },
-  { id: "cameras", label: "Cameras" },
-  { id: "services", label: "Services" },
-  { id: "disk-health", label: "Disk Health" },
-  { id: "events", label: "Event Viewer" },
-  { id: "reports", label: "Reports" },
-  { id: "scoreconnect", label: "ScoreConnect" },
-  { id: "fault-isolator", label: "Fault Isolator" },
-  { id: "settings", label: "Settings" },
-  { id: "about", label: "About" },
+// ── Icons (Feather-style inline SVGs) ────────────────────────
+function svgIcon(name, size) {
+  const s = size || 16;
+  const p = {
+    grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+    wifi: '<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/>',
+    camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+    monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+    cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>',
+    server: '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/>',
+    hdd: '<line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    triangle: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+    cog: '<circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>',
+    info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+    play: '<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+    refresh: '<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>',
+    check: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+    chevron: '<polyline points="9 18 15 12 9 6"/>',
+    x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+    alert: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+    heartbeat: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+    zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+    thermometer: '<path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+    database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
+  };
+  return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
+}
+
+// ── Pages & Nav Sections ─────────────────────────────────────
+const NAV_SECTIONS = [
+  { label: "TRIAGE", pages: [
+    { id: "dashboard", label: "Dashboard", icon: "grid" },
+  ]},
+  { label: "CONNECTIVITY", pages: [
+    { id: "network", label: "Network", icon: "wifi" },
+    { id: "cameras", label: "Camera Connectivity", icon: "camera" },
+    { id: "scoreconnect", label: "Score Connect", icon: "monitor" },
+  ]},
+  { label: "SYSTEM", pages: [
+    { id: "system", label: "System Overview", icon: "cpu" },
+    { id: "services", label: "Pixellot Services", icon: "server" },
+    { id: "disk-health", label: "Disk & System Health", icon: "hdd" },
+    { id: "events", label: "Event Viewer", icon: "triangle" },
+  ]},
+  { label: "EVIDENCE", pages: [
+    { id: "reports", label: "Reports", icon: "file" },
+  ]},
+  { label: "SETUP", pages: [
+    { id: "settings", label: "Settings", icon: "cog" },
+    { id: "about", label: "About", icon: "info" },
+  ]},
 ];
+const PAGES = NAV_SECTIONS.flatMap((s) => s.pages);
+// Hidden pages (accessible via hash but not in nav)
+const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Fault Isolator" }];
 
 let currentPage = "";
 let ws = null;
 let wsRetryTimer = null;
+let dataCache = {};
+let logEntries = [];
+let logPaneOpen = false;
 
 // ── Router ───────────────────────────────────────────────────
 
@@ -147,11 +195,80 @@ function gauge(label, value, unit, color) {
           stroke-linecap="round" transform="rotate(-90 50 50)" class="gauge-ring"/>
       </svg>
       <div class="absolute inset-0 flex items-center justify-center">
-        <span class="text-xl font-bold">${value != null ? esc(String(value)) : "--"}<span class="text-xs text-pulse-muted">${esc(unit || "%")}</span></span>
+        <span class="text-xl font-bold"><span class="gauge-val">${value != null ? esc(String(value)) : "--"}</span><span class="text-xs text-pulse-muted">${esc(unit || "%")}</span></span>
       </div>
     </div>
     <span class="text-xs text-pulse-muted font-medium">${esc(label)}</span>
   </div>`;
+}
+
+// ── Data Preload ────────────────────────────────────────────
+
+async function preloadAll() {
+  const data = await api("/api/preload");
+  if (data && !data.error) {
+    dataCache.dashboard = data.dashboard;
+    dataCache.system = data.system;
+    dataCache.network = data.network;
+    dataCache.cameras = data.cameras;
+    dataCache.services = data.services;
+    dataCache["disk-health"] = data["disk-health"];
+    dataCache.events = data.events;
+    dataCache.scoreconnect = data.scoreconnect;
+    dataCache.settings = data.settings;
+    // Ingest logs from the preload burst
+    if (data._logs) appendLogs(data._logs);
+  }
+  return dataCache;
+}
+
+async function refreshAll() {
+  dataCache = {};
+  $page().innerHTML = loading("Re-running all diagnostics...");
+  await preloadAll();
+  renderPage(currentPage);
+}
+
+function cached(key) {
+  return dataCache[key] || null;
+}
+
+// ── Logging Pane ────────────────────────────────────────────
+
+function renderLogPane() {
+  const pane = document.getElementById("log-pane");
+  if (!pane) return;
+  const entries = logEntries.slice(-200);
+  const body = pane.querySelector(".log-body");
+  if (!body) return;
+  body.innerHTML = entries.map((e) => {
+    const statusCls = e.status === "ok" ? "log-ok" : e.status === "timeout" ? "log-warn" : "log-err";
+    return `<div class="log-entry">
+      <span class="log-ts">${esc(e.ts?.split("T")[1] || "")}</span>
+      <span class="log-script">${esc(e.script)}</span>
+      <span class="log-dur">${e.durationMs}ms</span>
+      <span class="log-size">${e.bytes > 0 ? formatBytes(e.bytes) : ""}</span>
+      <span class="log-status ${statusCls}">${esc(e.status)}</span>
+      <span class="log-detail">${esc(e.detail)}</span>
+    </div>`;
+  }).join("");
+  body.scrollTop = body.scrollHeight;
+}
+
+function appendLogs(newLogs) {
+  if (!newLogs?.length) return;
+  logEntries.push(...newLogs);
+  if (logEntries.length > 500) logEntries = logEntries.slice(-500);
+  if (logPaneOpen) renderLogPane();
+}
+
+function toggleLogPane() {
+  logPaneOpen = !logPaneOpen;
+  const pane = document.getElementById("log-pane");
+  if (pane) {
+    pane.classList.toggle("log-pane-open", logPaneOpen);
+    if (logPaneOpen) renderLogPane();
+  }
 }
 
 // ── WebSocket ────────────────────────────────────────────────
@@ -163,7 +280,10 @@ function connectWS() {
   ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
-      if (msg.type === "metrics") updateLiveMetrics(msg);
+      if (msg.type === "metrics") {
+        updateLiveMetrics(msg);
+        appendLogs(msg.logs);
+      }
     } catch { /* ignore parse errors */ }
   };
   ws.onclose = () => {
@@ -179,16 +299,43 @@ function updateLiveMetrics(msg) {
   const cpu = perf.cpu?.usagePercent;
   const mem = perf.memory?.usedPercent;
   const disk = perf.disk?.usedPercent;
-  const temp = perf.temperature?.celsius;
 
-  const el = document.getElementById("live-gauges");
-  if (el) {
-    el.innerHTML =
-      gauge("CPU", cpu != null ? Math.round(cpu) : null, "%", "#3b82f6") +
-      gauge("Memory", mem != null ? Math.round(mem) : null, "%", "#8b5cf6") +
-      gauge("Disk", disk != null ? Math.round(disk) : null, "%", "#f59e0b") +
-      gauge("Temp", temp != null ? Math.round(temp) : null, "°C", "#ef4444");
+  // Update command center metric boxes
+  const container = document.getElementById("live-metrics");
+  if (container) {
+    const boxes = container.querySelectorAll(".metric-box");
+    function setMetric(box, val) {
+      if (!box) return;
+      const el = box.querySelector(".metric-val");
+      if (!el) return;
+      const v = val != null ? Math.round(val) : null;
+      el.textContent = v != null ? v + "%" : "--";
+      el.style.color = _metricColor(val);
+    }
+    setMetric(boxes[0], cpu);
+    setMetric(boxes[1], mem);
+    setMetric(boxes[2], disk);
   }
+
+  // Update system status gauge SVGs
+  _updateGaugeLive("cpu", cpu);
+  _updateGaugeLive("mem", mem);
+  _updateGaugeLive("disk", disk);
+}
+
+function _updateGaugeLive(name, val) {
+  const col = document.querySelector(`[data-gauge="${name}"]`);
+  if (!col) return;
+  const ring = col.querySelector(".gauge-ring");
+  const valEl = col.querySelector(".gauge-val");
+  if (ring) {
+    const pct = Math.min(Math.max(val || 0, 0), 100);
+    const r = 40;
+    const circ = 2 * Math.PI * r;
+    ring.setAttribute("stroke-dashoffset", String(circ * (1 - pct / 100)));
+    ring.setAttribute("stroke", pct > 90 ? "#ef4444" : pct > 75 ? "#eab308" : "#3b82f6");
+  }
+  if (valEl) valEl.textContent = val != null ? Math.round(val) : "--";
 }
 
 // ── Page Renderers ───────────────────────────────────────────
@@ -210,86 +357,378 @@ const pageRenderers = {
 
 // ── Dashboard ────────────────────────────────────────────────
 
-async function renderDashboard() {
-  $page().innerHTML = loading();
-  const data = await api("/api/dashboard");
-  if (currentPage !== "dashboard") return;
+function _subsystemHealth(findings) {
+  const cats = {};
+  (findings || []).forEach((f) => {
+    const k = (f.category || "").toLowerCase();
+    cats[k] = (cats[k] || 0) + 1;
+  });
+  return [
+    { id: "system", label: "System Overview", icon: "cpu",
+      health: cats.system ? "Warning" : "Healthy",
+      desc: "Hardware, OS, uptime, and Pixellot software." },
+    { id: "network", label: "Network", icon: "wifi",
+      health: cats.network ? "Warning" : "Healthy",
+      desc: "IP, DNS, firewall, and port connectivity." },
+    { id: "cameras", label: "Camera Connectivity", icon: "camera",
+      health: (cats.network || cats.camera) ? "Warning" : "Healthy",
+      desc: "NICs, link status, speed, and camera detection." },
+    { id: "services", label: "Pixellot Services", icon: "server",
+      health: cats.services ? "Warning" : "Healthy",
+      desc: "Agent, encoder, watchdog service status." },
+    { id: "disk-health", label: "Disk Health", icon: "hdd",
+      health: (cats.storage || cats.hardware) ? "Warning" : "Healthy",
+      desc: "Free space, SMART health, disk events." },
+    { id: "events", label: "Event Viewer", icon: "triangle",
+      health: "Healthy",
+      desc: "Recent OS errors from VPU providers." },
+    { id: "reports", label: "Reports", icon: "file",
+      health: "Evidence ready",
+      desc: "View and export diagnostic reports." },
+  ];
+}
 
-  if (data.error) {
-    $page().innerHTML = errorBox(data.message);
-    return;
+function _healthBadge(h) {
+  if (h === "Warning") return `<span class="health-badge health-warn">Warning</span>`;
+  if (h === "Evidence ready") return `<span class="health-badge health-info">Evidence ready</span>`;
+  return `<span class="health-badge health-ok">Healthy</span>`;
+}
+
+function _findingPageFor(cat) {
+  const map = { network: "network", camera: "cameras", services: "services", storage: "disk-health", hardware: "system", performance: "dashboard", system: "system" };
+  return map[(cat || "").toLowerCase()] || "dashboard";
+}
+
+function _metricColor(val) {
+  if (val == null) return "#94a3b8";
+  if (val > 90) return "#ef4444";
+  if (val > 75) return "#eab308";
+  return "#22c55e";
+}
+
+function _renderNicRows(ports) {
+  const rows = [];
+  const count = Math.max(4, ports.length);
+  for (let i = 0; i < count; i++) {
+    if (i < ports.length) {
+      const p = ports[i];
+      const speed = p.linkSpeedMbps
+        ? p.linkSpeedMbps >= 1000 ? (p.linkSpeedMbps / 1000) + " Gbps" : p.linkSpeedMbps + " Mbps"
+        : "—";
+      let status, cls;
+      if (!p.isUp) { status = "Down"; cls = "muted"; }
+      else if (p.isOcr) { status = "OCR"; cls = "info"; }
+      else if (p.isDegraded) { status = "Error"; cls = "warn"; }
+      else { status = "Linked"; cls = "pass"; }
+      rows.push(`<div class="dash-nic-row">
+        <span class="dash-nic-port">Port ${i + 1}</span>
+        <span class="dash-nic-name">${esc(p.name)}</span>
+        <span class="dash-nic-speed">${p.isUp ? esc(speed) : "—"}</span>
+        <span class="badge-ol badge-ol-${cls}">${esc(status)}</span>
+      </div>`);
+    } else {
+      rows.push(`<div class="dash-nic-row">
+        <span class="dash-nic-port">Port ${i + 1}</span>
+        <span class="dash-nic-name" style="color:#475569">Not detected</span>
+        <span class="dash-nic-speed">—</span>
+        <span class="badge-ol badge-ol-muted">—</span>
+      </div>`);
+    }
   }
+  return rows.join("");
+}
 
-  const id = data.identity || {};
-  const perf = data.performance || {};
-  const findings = data.findings || [];
+function _renderVolumes(volumes) {
+  if (!volumes.length) return '<div class="text-xs text-pulse-muted py-2">No storage data</div>';
+  return volumes.map((d) => {
+    const pct = d.usedPercent || 0;
+    const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
+    const role = d.deviceID === "C:" ? "OS Drive" : "Storage";
+    return `<div class="dash-vol-row">
+      <div class="dash-vol-top">
+        <div class="dash-vol-id">
+          <span class="font-semibold font-mono">${esc(d.deviceID)}</span>
+          <span class="dash-vol-badge">${esc(role)}</span>
+        </div>
+        <span class="font-semibold" style="color:${color}">${pct}%</span>
+      </div>
+      <div class="dash-vol-bottom">
+        <div class="dash-vol-bar"><div class="dash-vol-fill" style="width:${Math.min(pct, 100)}%;background:${color}"></div></div>
+        <span class="dash-vol-free">${esc(String(d.freeSpaceGB))} free of ${esc(String(d.sizeGB))} GB</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function renderDashboard() {
+  const dash = cached("dashboard") || (($page().innerHTML = loading()), await api("/api/dashboard"));
+  if (currentPage !== "dashboard") return;
+  dataCache.dashboard = dash;
+  if (dash.error) { $page().innerHTML = errorBox(dash.message); return; }
+
+  // Pull from all cached data sources
+  const net = cached("network") || {};
+  const cam = cached("cameras") || {};
+  const diskData = cached("disk-health") || {};
+  const svcData = cached("services") || {};
+  const sysData = cached("system") || {};
+
+  const id = dash.identity || {};
+  const perf = dash.performance || {};
+  const findings = dash.findings || [];
+  const svcs = (dash.services || svcData)?.services || [];
+  const hostname = id.hostname || "VPU";
+  const vpuLabel = [id.manufacturer, id.model].filter(Boolean).join(" ") || hostname;
 
   const cpu = perf.cpu?.usagePercent;
   const mem = perf.memory?.usedPercent;
   const disk = perf.disk?.usedPercent;
   const temp = perf.temperature?.celsius;
 
-  let findingsHtml = "";
-  if (findings.length) {
-    findingsHtml = findings
-      .map(
-        (f) => `<div class="sev-${esc(f.severity)} rounded px-3 py-2 mb-2">
-        <div class="font-medium text-sm">${esc(f.title)}</div>
-        <div class="text-xs mt-0.5 opacity-80">${esc(f.recommendation)}</div>
-      </div>`
-      )
-      .join("");
-    findingsHtml = `<div class="mb-6">
-      <h2 class="text-sm font-semibold text-pulse-muted uppercase tracking-wide mb-2">Findings</h2>
-      ${findingsHtml}
-    </div>`;
-  }
+  const warnCount = findings.filter((f) => f.severity === "warning").length;
+  const critCount = findings.filter((f) => f.severity === "critical").length;
+  const totalFindings = findings.length;
+  const sevLabel = critCount > 0 ? `${critCount} Critical` : warnCount > 0 ? `${warnCount} Warnings` : "All Clear";
+  const sevColor = critCount > 0 ? "critical" : warnCount > 0 ? "warn" : "ok";
+
+  const topFindings = findings.slice(0, 3);
+  const moreCount = Math.max(0, findings.length - 3);
+  const subsystems = _subsystemHealth(findings);
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+  // Network config
+  const netCfg = net.config || {};
+  const uplinkName = netCfg.uplinkAdapter?.interfaceAlias || "—";
+  const ipConfigs = netCfg.ipConfig || netCfg.ipConfigurations || [];
+  const uplinkIp = ipConfigs.find((ip) => ip.interfaceAlias === uplinkName);
+  const ipAddr = uplinkIp?.ipv4Address?.[0] || "—";
+  const gw = uplinkIp?.ipv4DefaultGateway?.[0] || netCfg.uplinkAdapter?.gateway || "—";
+  const dns = uplinkIp?.dnsServers?.join(", ") || "—";
+  const ntpSrv = netCfg.ntpSource || "—";
+  const internetOk = netCfg.internetReachable;
+
+  // Other data
+  const nicPorts = cam.ports || [];
+  const volumes = diskData.logicalDisks || [];
+  const cpuInfo = sysData.hardware?.processors?.[0];
+  const memCaption = perf.memory?.usedGB && perf.memory?.totalGB
+    ? `${perf.memory.usedGB} GB of ${perf.memory.totalGB} GB` : "";
+  const sysDisk = volumes.find((d) => d.deviceID === "C:") || volumes[0];
+  const diskCaption = sysDisk ? `${sysDisk.freeSpaceGB} GB free of ${sysDisk.sizeGB} GB` : "";
 
   $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-6">Dashboard</h2>
-    ${findingsHtml}
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2">
-        ${card(
-          "Performance",
-          `<div id="live-gauges" class="flex justify-around flex-wrap gap-4 py-2">
-            ${gauge("CPU", cpu != null ? Math.round(cpu) : null, "%", "#3b82f6")}
-            ${gauge("Memory", mem != null ? Math.round(mem) : null, "%", "#8b5cf6")}
-            ${gauge("Disk", disk != null ? Math.round(disk) : null, "%", "#f59e0b")}
-            ${gauge("Temp", temp != null ? Math.round(temp) : null, "°C", "#ef4444")}
-          </div>`
-        )}
-      </div>
+    <!-- Header -->
+    <div class="dash-header">
       <div>
-        ${card(
-          "System Identity",
-          `<div class="space-y-2 text-sm">
-            ${idRow("Hostname", id.hostname)}
-            ${idRow("Serial", id.serialNumber)}
-            ${idRow("Model", id.model)}
-            ${idRow("Manufacturer", id.manufacturer)}
-            ${idRow("OS", id.os)}
-            ${idRow("Uptime", id.uptime)}
-            ${idRow("Pixellot", id.pixellotVersion)}
-            ${idRow("Image", id.imageVersion)}
-          </div>`
-        )}
+        <h2 class="text-2xl font-bold text-white">Dashboard</h2>
+        <p class="text-sm text-pulse-muted">${esc(vpuLabel)}</p>
+      </div>
+      <div class="dash-actions">
+        <button class="btn-outline btn-ol-green" onclick="refreshAll()">
+          ${svgIcon("play", 14)} Run All Diagnostics
+        </button>
+        <button class="btn-outline btn-ol-blue" onclick="navigate('reports')">
+          ${svgIcon("download", 14)} Support Bundle
+        </button>
+        <button class="btn-outline btn-ol-blue" onclick="dataCache.dashboard=null;renderDashboard()">
+          ${svgIcon("refresh", 14)} Refresh Dashboard
+        </button>
+        <span class="dash-sev-pill dash-sev-${sevColor}">
+          <span class="dash-sev-dot"></span> ${esc(sevLabel)}
+        </span>
       </div>
     </div>
-    ${card(
-      "Services",
-      `<div class="flex flex-wrap gap-2">
-        ${(data.services?.services || [])
-          .map(
-            (s) =>
-              `<div class="flex items-center gap-2 bg-pulse-bg rounded px-3 py-1.5 text-sm">
-              <span>${esc(s.name)}</span>${statusBadge(s.status)}
-            </div>`
-          )
-          .join("")}
-      </div>`,
-      "mt-6"
-    )}
+
+    <!-- Command Center + Top Findings -->
+    <div class="dash-top-grid">
+      <div class="card command-center">
+        <h3 class="card-label">COMMAND CENTER</h3>
+        <div class="cc-severity cc-sev-${sevColor}">${esc(sevLabel)}</div>
+        <div class="text-sm text-pulse-muted mb-3">${esc(vpuLabel)}</div>
+        <div class="baseline-bar">
+          ${svgIcon("check", 14)}
+          Baseline completed ${esc(timeStr)} &bull; ${subsystems.length}/${subsystems.length} panels &bull; ${totalFindings} finding(s)
+        </div>
+        <div id="live-metrics" class="metrics-row">
+          <div class="metric-box"><span class="metric-label">CPU</span><span class="metric-val" style="color:${_metricColor(cpu)}">${cpu != null ? Math.round(cpu) + "%" : "--"}</span></div>
+          <div class="metric-box"><span class="metric-label">MEMORY</span><span class="metric-val" style="color:${_metricColor(mem)}">${mem != null ? Math.round(mem) + "%" : "--"}</span></div>
+          <div class="metric-box"><span class="metric-label">DISK</span><span class="metric-val" style="color:${_metricColor(disk)}">${disk != null ? Math.round(disk) + "%" : "--"}</span></div>
+          <div class="metric-box"><span class="metric-label">INTERNET</span><span class="metric-val" style="color:${internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "#94a3b8"}">${internetOk === true ? "Connected" : internetOk === false ? "Offline" : "Checking"}</span></div>
+        </div>
+      </div>
+      <div class="card findings-panel">
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="card-label mb-0">TOP FINDINGS</h3>
+          ${moreCount > 0 ? `<span class="text-xs text-pulse-muted">${moreCount} more below</span>` : ""}
+        </div>
+        ${topFindings.length
+          ? topFindings.map((f) => `
+            <a class="finding-item" href="#${esc(_findingPageFor(f.category))}" onclick="event.preventDefault();navigate('${esc(_findingPageFor(f.category))}')">
+              <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
+              <span class="finding-cat">[${esc(f.category)}]</span>
+              <span class="finding-title">${esc(f.title)}</span>
+              <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
+            </a>`).join("")
+          : `<div class="dash-no-findings">${svgIcon("check", 16)} <span>No active findings detected.</span></div>`
+        }
+        <h3 class="card-label mt-4 mb-2">SUBSYSTEMS</h3>
+        <div class="dash-sub-grid">
+          ${subsystems.map((s) => `
+            <a class="dash-sub-tile" href="#${esc(s.id)}" onclick="event.preventDefault();navigate('${esc(s.id)}')">
+              <div class="dash-sub-top">
+                <span class="dash-sub-icon">${svgIcon(s.icon, 14)}</span>
+                <span class="dash-sub-name">${esc(s.label)}</span>
+                ${_healthBadge(s.health)}
+              </div>
+              <p class="dash-sub-desc">${esc(s.desc)}</p>
+            </a>`).join("")}
+        </div>
+      </div>
+    </div>
+
+    ${id.isNonVpuHost ? `
+    <!-- Non-VPU Host Banner -->
+    <div class="dash-info-banner">
+      <span class="dash-banner-icon">${svgIcon("info", 20)}</span>
+      <div>
+        <div class="font-semibold text-sm">Pixellot software not detected</div>
+        <div class="text-xs text-pulse-muted mt-1">This host doesn't appear to be a Pixellot VPU — system metrics are still live, but expect blank values for VPU identity, services, and the diagnostic report.</div>
+      </div>
+    </div>` : ""}
+
+    <!-- Active Findings -->
+    ${findings.length ? `
+    <div class="card dash-findings-card">
+      <div class="af-header">
+        <span class="af-icon">${svgIcon("triangle", 18)}</span>
+        <span class="af-label">ACTIVE FINDINGS</span>
+        <span class="af-count-badge">${totalFindings} issue(s) found</span>
+      </div>
+      <div class="af-list">
+        ${findings.slice(0, 10).map((f) => `
+          <a class="finding-item" href="#${esc(_findingPageFor(f.category))}" onclick="event.preventDefault();navigate('${esc(_findingPageFor(f.category))}')">
+            <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
+            <span class="finding-cat">[${esc(f.category)}]</span>
+            <span class="finding-title">${esc(f.title)}</span>
+            <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
+          </a>`).join("")}
+        ${findings.length > 10 ? `<div class="text-xs text-pulse-muted px-3 py-2">${findings.length - 10} more findings...</div>` : ""}
+      </div>
+    </div>` : ""}
+
+    <!-- VPU Identity + Pixellot Software -->
+    <div class="dash-2col">
+      <div class="card">
+        <h3 class="card-label">VPU IDENTITY</h3>
+        <div class="text-lg font-bold text-white mb-3">${esc(vpuLabel)}</div>
+        <div class="dash-kv">
+          <span class="dash-kv-l">Model</span><span class="dash-kv-v">${esc(id.model || "—")}</span>
+          <span class="dash-kv-l">Hostname</span><span class="dash-kv-v">${esc(hostname)}</span>
+          <span class="dash-kv-l">Manufacturer</span><span class="dash-kv-v">${esc(id.manufacturer || "—")}</span>
+          <span class="dash-kv-l">Serial</span><span class="dash-kv-v">${esc(id.serialNumber || "—")}</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="card-label">PIXELLOT SOFTWARE</h3>
+        <div class="text-lg font-bold text-white">${esc(id.pixellotVersion || "—")}</div>
+        <div class="text-xs text-pulse-muted mb-3">App Version</div>
+        <div class="dash-kv">
+          <span class="dash-kv-l">Image Version</span><span class="dash-kv-v">${esc(id.imageVersion || "—")}</span>
+          <span class="dash-kv-l">OS</span><span class="dash-kv-v">${esc(id.os || "—")}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- System Status Gauges -->
+    <div class="card dash-gauges-card">
+      <h3 class="card-label">SYSTEM STATUS</h3>
+      <div class="dash-gauges-row" id="dash-gauges">
+        <div class="dash-gauge-col" data-gauge="cpu">
+          ${gauge("CPU", cpu != null ? Math.round(cpu) : null, "%")}
+          ${cpuInfo ? `<div class="dash-gauge-sub">${esc(cpuInfo.name || "")}</div><div class="dash-gauge-sub">${cpuInfo.numberOfLogicalProcessors || ""} threads</div>` : ""}
+        </div>
+        <div class="dash-gauge-col" data-gauge="mem">
+          ${gauge("Memory", mem != null ? Math.round(mem) : null, "%")}
+          <div class="dash-gauge-sub">${esc(memCaption)}</div>
+        </div>
+        <div class="dash-gauge-col" data-gauge="disk">
+          ${gauge("System Disk", disk != null ? Math.round(disk) : null, "%")}
+          <div class="dash-gauge-sub">${esc(diskCaption)}</div>
+        </div>
+        ${temp != null ? `
+        <div class="dash-gauge-col">
+          <div class="dash-icon-ring" style="--ring-color:${temp >= 78 ? "#ef4444" : temp >= 65 ? "#eab308" : "#3b82f6"}">
+            <span style="color:var(--ring-color)">${svgIcon("thermometer", 18)}</span>
+            <span class="dash-ring-val" style="color:var(--ring-color)">${Math.round(temp)}°C</span>
+          </div>
+          <span class="text-xs text-pulse-muted font-medium mt-2">Temperature</span>
+        </div>` : ""}
+        <div class="dash-gauge-col">
+          <div class="dash-icon-tile">
+            <span class="text-blue-400">${svgIcon("clock", 26)}</span>
+            <span class="dash-tile-val">${esc(id.uptime || "—")}</span>
+          </div>
+          <span class="text-xs text-pulse-muted font-medium">Uptime</span>
+        </div>
+        <div class="dash-gauge-col">
+          <div class="dash-icon-tile">
+            <span style="color:${internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "#94a3b8"}">${svgIcon("globe", 26)}</span>
+            <span class="dash-tile-val" style="color:${internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "#e2e8f0"}">${internetOk === true ? "Connected" : internetOk === false ? "No connection" : "—"}</span>
+          </div>
+          <span class="text-xs text-pulse-muted font-medium">Internet</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- NIC Ports + Network -->
+    <div class="dash-2col">
+      <div class="card">
+        <div class="dash-card-hdr">
+          <span class="dash-hdr-icon">${svgIcon("link", 16)}</span>
+          <h3 class="card-label mb-0">NIC PORTS</h3>
+        </div>
+        <div class="dash-nic-table">${_renderNicRows(nicPorts)}</div>
+      </div>
+      <div class="card">
+        <div class="dash-card-hdr">
+          <span class="dash-hdr-icon">${svgIcon("wifi", 16)}</span>
+          <h3 class="card-label mb-0">NETWORK</h3>
+        </div>
+        <div class="dash-net-kv">
+          <div class="dash-net-row"><span></span><span class="dash-kv-l">Uplink Adapter</span><span class="dash-kv-v">${esc(uplinkName)}</span></div>
+          <div class="dash-net-row"><span class="dash-net-dot" style="background:${ipAddr !== "—" ? "#22c55e" : "#475569"}"></span><span class="dash-kv-l">IP Address</span><span class="dash-kv-v font-mono">${esc(ipAddr)}</span></div>
+          <div class="dash-net-row"><span class="dash-net-dot" style="background:${gw !== "—" ? "#22c55e" : "#475569"}"></span><span class="dash-kv-l">Gateway</span><span class="dash-kv-v font-mono">${esc(gw)}</span></div>
+          <div class="dash-net-row"><span class="dash-net-dot" style="background:${dns !== "—" ? "#22c55e" : "#475569"}"></span><span class="dash-kv-l">DNS Servers</span><span class="dash-kv-v font-mono">${esc(dns)}</span></div>
+          <div class="dash-net-row"><span class="dash-net-dot" style="background:${ntpSrv !== "—" ? "#22c55e" : "#475569"}"></span><span class="dash-kv-l">NTP Server</span><span class="dash-kv-v font-mono">${esc(ntpSrv)}</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Storage + Pixellot Services -->
+    <div class="dash-2col">
+      <div class="card">
+        <div class="dash-card-hdr">
+          <span class="dash-hdr-icon">${svgIcon("database", 16)}</span>
+          <h3 class="card-label mb-0">STORAGE</h3>
+        </div>
+        ${_renderVolumes(volumes)}
+      </div>
+      <div class="card">
+        <div class="dash-card-hdr">
+          <span class="dash-hdr-icon">${svgIcon("server", 16)}</span>
+          <h3 class="card-label mb-0">PIXELLOT SERVICES</h3>
+        </div>
+        <div class="dash-svc-list">
+          ${svcs.map((s) => `
+            <div class="dash-svc-row">
+              <span class="dash-svc-name">${esc(s.displayName || s.name)}</span>
+              ${statusBadge(s.status)}
+            </div>`).join("")}
+          ${!svcs.length ? '<div class="text-xs text-pulse-muted py-2">No services data</div>' : ""}
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -297,143 +736,197 @@ function idRow(label, val) {
   return `<div class="flex justify-between"><span class="text-pulse-muted">${esc(label)}</span><span class="font-medium">${val != null ? esc(String(val)) : "--"}</span></div>`;
 }
 
+// ── Shared Page Helpers ─────────────────────────────────────
+
+function pageHeader(title, subtitle, actionsHtml) {
+  return `<div class="page-header">
+    <div>
+      <h2 class="page-title">${esc(title)}</h2>
+      ${subtitle ? `<p class="page-subtitle">${esc(subtitle)}</p>` : ""}
+    </div>
+    <div class="page-actions">${actionsHtml || ""}</div>
+  </div>`;
+}
+
+function sectionTitle(icon, text) {
+  return `<div class="section-hdr">
+    <span class="section-hdr-icon">${svgIcon(icon, 16)}</span>
+    <h3 class="section-hdr-text">${esc(text)}</h3>
+  </div>`;
+}
+
+function kvRow(label, value) {
+  return `<div class="kv-row"><span class="kv-label">${esc(label)}</span><span class="kv-value">${value != null ? esc(String(value)) : "—"}</span></div>`;
+}
+
+function kvRowHtml(label, html) {
+  return `<div class="kv-row"><span class="kv-label">${esc(label)}</span><span class="kv-value">${html}</span></div>`;
+}
+
+function severityChip(sev, text) {
+  const s = (sev || "").toLowerCase();
+  const cls = s === "critical" || s === "error" ? "sev-chip-crit" : s === "warning" ? "sev-chip-warn" : "sev-chip-ok";
+  return `<span class="sev-chip ${cls}">${esc(text || sev)}</span>`;
+}
+
+function _debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
 // ── System Overview ──────────────────────────────────────────
 
 async function renderSystem() {
-  $page().innerHTML = loading();
-  const data = await api("/api/system");
+  const data = cached("system") || (($page().innerHTML = loading()), await api("/api/system"));
   if (currentPage !== "system") return;
+  dataCache.system = data;
 
   const id = data.identity || {};
   const hw = data.hardware || {};
   const sw = data.software || {};
 
   if (data.identity?.error && data.hardware?.error) {
-    $page().innerHTML = errorBox(
-      data.identity?.message || data.hardware?.message
-    );
+    $page().innerHTML = errorBox(data.identity?.message || data.hardware?.message);
     return;
   }
 
   const os = id.operatingSystem || {};
+  const cs = id.computerSystem || {};
+  const bios = id.bios || {};
+  const pix = id.pixellot || {};
+  const procs = hw.processors || [];
+  const memory = hw.memory || [];
+  const gpus = hw.gpus || [];
+  const drives = hw.diskDrives || [];
+  const swList = sw.software || [];
 
   $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-6">System Overview</h2>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      ${card(
-        "Operating System",
-        `<div class="space-y-2 text-sm">
-          ${idRow("OS", os.caption)}
-          ${idRow("Version", os.version)}
-          ${idRow("Build", os.buildNumber)}
-          ${idRow("Architecture", os.osArchitecture)}
-          ${idRow("Timezone", id.timezone)}
-        </div>`
-      )}
-      ${card(
-        "Processors",
-        hw.processors?.length
-          ? `<table class="data-table"><thead><tr>
-              <th>Name</th><th>Cores</th><th>Threads</th><th>Clock</th>
-            </tr></thead><tbody>
-            ${hw.processors
-              .map(
-                (p) => `<tr>
-              <td>${esc(p.name)}</td>
-              <td>${p.numberOfCores || "--"}</td>
-              <td>${p.numberOfLogicalProcessors || "--"}</td>
-              <td>${p.maxClockSpeedMHz ? esc(String(p.maxClockSpeedMHz)) + " MHz" : "--"}</td>
-            </tr>`
-              )
-              .join("")}
-            </tbody></table>`
-          : '<p class="text-pulse-muted text-sm">No data</p>'
-      )}
-      ${card(
-        "Memory",
-        hw.memory?.length
-          ? `<table class="data-table"><thead><tr>
-              <th>Capacity</th><th>Speed</th><th>Type</th><th>Slot</th>
-            </tr></thead><tbody>
-            ${hw.memory
-              .map(
-                (m) => `<tr>
-              <td>${esc(String(m.capacityGB))} GB</td>
-              <td>${m.speedMHz ? esc(String(m.speedMHz)) + " MHz" : "--"}</td>
-              <td>${esc(m.memoryType)}</td>
-              <td>${esc(m.deviceLocator)}</td>
-            </tr>`
-              )
-              .join("")}
-            </tbody></table>`
-          : '<p class="text-pulse-muted text-sm">No data</p>'
-      )}
-      ${card(
-        "GPUs",
-        hw.gpus?.length
-          ? hw.gpus
-              .map(
-                (g) => `<div class="text-sm mb-2">
-              <div class="font-medium">${esc(g.name)}</div>
-              <div class="text-pulse-muted">RAM: ${g.adapterRAMMB ? esc(String(g.adapterRAMMB)) + " MB" : "N/A"} · Driver: ${esc(g.driverVersion)}</div>
-            </div>`
-              )
-              .join("")
-          : '<p class="text-pulse-muted text-sm">No data</p>'
-      )}
+    ${pageHeader("System Overview", "Hardware identity, OS, Pixellot software, and installed applications",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderSystem()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <!-- Identity + Pixellot Software -->
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("cpu", "VPU Identity")}
+        <div class="kv-grid">
+          ${kvRow("Hostname", cs.name)}
+          ${kvRow("Manufacturer", cs.manufacturer)}
+          ${kvRow("Model", cs.model)}
+          ${kvRow("Serial Number", bios.serialNumber)}
+          ${kvRow("Uptime", id.uptime?.formatted)}
+        </div>
+      </div>
+      <div class="card">
+        ${sectionTitle("server", "Pixellot Software")}
+        <div class="kv-grid">
+          ${kvRow("App Version", pix.version)}
+          ${kvRow("Image Version", pix.imageVersion)}
+        </div>
+        ${id.isNonVpuHost ? '<div class="info-chip mt-3">Not a VPU host</div>' : ""}
+      </div>
     </div>
-    ${card(
-      "Disk Drives",
-      hw.diskDrives?.length
-        ? `<table class="data-table"><thead><tr>
+
+    <!-- Processor + Memory -->
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("cpu", "Processor")}
+        ${procs.length ? procs.map(p => `
+          <div class="kv-grid">
+            ${kvRow("Name", p.name)}
+            ${kvRow("Cores", p.numberOfCores)}
+            ${kvRow("Logical Processors", p.numberOfLogicalProcessors)}
+            ${kvRow("Max Clock", p.maxClockSpeedMHz ? p.maxClockSpeedMHz + " MHz" : null)}
+          </div>
+        `).join("") : '<p class="text-pulse-muted text-sm">No processor data</p>'}
+      </div>
+      <div class="card">
+        ${sectionTitle("server", "Memory")}
+        ${memory.length ? `
+          <table class="data-table"><thead><tr>
+            <th>Capacity</th><th>Speed</th><th>Type</th><th>Slot</th>
+          </tr></thead><tbody>
+          ${memory.map(m => `<tr>
+            <td>${esc(String(m.capacityGB))} GB</td>
+            <td>${m.speedMHz ? esc(String(m.speedMHz)) + " MHz" : "—"}</td>
+            <td>${esc(m.memoryType)}</td>
+            <td>${esc(m.deviceLocator)}</td>
+          </tr>`).join("")}
+          </tbody></table>
+        ` : '<p class="text-pulse-muted text-sm">No memory data</p>'}
+      </div>
+    </div>
+
+    <!-- Graphics + Storage -->
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("monitor", "Graphics")}
+        ${gpus.length ? gpus.map(g => `
+          <div class="sub-card mb-2">
+            <div class="text-sm font-semibold text-white">${esc(g.name)}</div>
+            <div class="text-xs text-pulse-muted mt-1">RAM: ${g.adapterRAMMB ? esc(String(g.adapterRAMMB)) + " MB" : "N/A"} · Driver: ${esc(g.driverVersion)}</div>
+          </div>
+        `).join("") : '<p class="text-pulse-muted text-sm">No GPU data</p>'}
+      </div>
+      <div class="card">
+        ${sectionTitle("hdd", "Storage")}
+        ${drives.length ? `
+          <table class="data-table"><thead><tr>
             <th>Model</th><th>Size</th><th>Interface</th><th>Serial</th>
           </tr></thead><tbody>
-          ${hw.diskDrives
-            .map(
-              (d) => `<tr>
+          ${drives.map(d => `<tr>
             <td>${esc(d.model)}</td>
             <td>${esc(String(d.sizeGB))} GB</td>
             <td>${esc(d.interfaceType)}</td>
             <td class="font-mono text-xs">${esc(d.serialNumber)}</td>
-          </tr>`
-            )
-            .join("")}
-          </tbody></table>`
-        : '<p class="text-pulse-muted text-sm">No data</p>',
-      "mt-6"
-    )}
-    ${card(
-      "Installed Software (" + esc(String(sw.count || 0)) + ")",
-      sw.software?.length
-        ? `<div class="max-h-72 overflow-y-auto">
-          <input type="text" id="sw-filter" placeholder="Filter..." class="w-full mb-2 px-3 py-1.5 bg-pulse-bg border border-pulse-border rounded text-sm text-pulse-text outline-none focus:border-pulse-accent"/>
+          </tr>`).join("")}
+          </tbody></table>
+        ` : '<p class="text-pulse-muted text-sm">No drive data</p>'}
+      </div>
+    </div>
+
+    <!-- OS & Locale -->
+    <div class="card mt-4">
+      ${sectionTitle("monitor", "Operating System & Locale")}
+      <div class="kv-grid kv-grid-wide">
+        ${kvRow("OS", os.caption)}
+        ${kvRow("Version", os.version)}
+        ${kvRow("Build", os.buildNumber)}
+        ${kvRow("Architecture", os.osArchitecture)}
+        ${kvRow("Install Date", os.installDate)}
+        ${kvRow("Timezone", id.timezone)}
+        ${kvRow("Locale", id.locale)}
+      </div>
+    </div>
+
+    <!-- Software Inventory -->
+    <div class="card mt-4">
+      ${sectionTitle("server", "Software Inventory (" + swList.length + ")")}
+      ${swList.length ? `
+        <input type="text" id="sw-filter" placeholder="Filter software..." class="sw-filter-input"/>
+        <div class="sw-table-wrap">
           <table class="data-table" id="sw-table"><thead><tr>
             <th>Name</th><th>Version</th><th>Publisher</th>
           </tr></thead><tbody>
-          ${sw.software
-            .map(
-              (s) => `<tr>
+          ${swList.map(s => `<tr>
             <td>${esc(s.displayName)}</td>
-            <td>${esc(s.displayVersion)}</td>
-            <td>${esc(s.publisher)}</td>
-          </tr>`
-            )
-            .join("")}
+            <td class="font-mono text-xs">${esc(s.displayVersion)}</td>
+            <td class="text-pulse-muted">${esc(s.publisher)}</td>
+          </tr>`).join("")}
           </tbody></table>
-        </div>`
-        : '<p class="text-pulse-muted text-sm">No data</p>',
-      "mt-6"
-    )}
+        </div>
+      ` : '<p class="text-pulse-muted text-sm">No software data</p>'}
+    </div>
   `;
 
   const swFilter = document.getElementById("sw-filter");
   if (swFilter) {
     swFilter.addEventListener("input", () => {
       const q = swFilter.value.toLowerCase();
-      document.querySelectorAll("#sw-table tbody tr").forEach((tr) => {
-        tr.style.display = tr.textContent.toLowerCase().includes(q)
-          ? ""
-          : "none";
+      document.querySelectorAll("#sw-table tbody tr").forEach(tr => {
+        tr.style.display = tr.textContent.toLowerCase().includes(q) ? "" : "none";
       });
     });
   }
@@ -442,97 +935,103 @@ async function renderSystem() {
 // ── Network ──────────────────────────────────────────────────
 
 async function renderNetwork() {
-  $page().innerHTML = loading();
-  const data = await api("/api/network");
+  const data = cached("network") || (($page().innerHTML = loading()), await api("/api/network"));
   if (currentPage !== "network") return;
+  dataCache.network = data;
 
   const cfg = data.config || {};
   const domains = data.domains?.results || [];
   const ports = data.ports?.results || [];
   const ntp = data.ntp || {};
+  const ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
+
+  const tcpPorts = ports.filter(p => (p.protocol || "").toUpperCase() === "TCP");
+  const udpPorts = ports.filter(p => (p.protocol || "").toUpperCase() === "UDP");
+  const otherPorts = ports.filter(p => !["TCP","UDP"].includes((p.protocol || "").toUpperCase()));
+
+  function portCard(p) {
+    const ok = (p.status || "").toLowerCase() === "pass" || (p.status || "").toLowerCase() === "ok";
+    const cls = ok ? "port-card-pass" : "port-card-fail";
+    return `<div class="port-card ${cls}">
+      <div class="port-card-num">${esc(String(p.port))}</div>
+      <div class="port-card-name">${esc(p.purpose)}</div>
+      <div class="port-card-host">${esc(p.host)}</div>
+      ${p.optional ? '<div class="port-card-opt">Optional</div>' : ""}
+    </div>`;
+  }
 
   $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-6">Network</h2>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-      ${card(
-        "Connectivity",
-        `<div class="space-y-2 text-sm">
-          ${idRow("Internet", cfg.internetReachable ? '<span class="status-pass">Reachable</span>' : '<span class="status-fail">Unreachable</span>')}
-          ${idRow("Tested Host", cfg.testedHost)}
-          ${idRow("NTP Source", cfg.ntpSource)}
-          ${idRow("NTP Drift", ntp.offsetSeconds != null ? esc(String(ntp.offsetSeconds)) + "s" : "N/A")}
-          ${idRow("NTP Status", ntp.status ? statusBadge(ntp.status) : "--")}
-        </div>`
-      )}
-      ${card(
-        "Uplink",
-        cfg.uplinkAdapter
-          ? `<div class="space-y-2 text-sm">
-              ${idRow("Adapter", cfg.uplinkAdapter.interfaceAlias)}
-              ${idRow("Gateway", cfg.uplinkAdapter.gateway)}
-            </div>`
-          : '<p class="text-pulse-muted text-sm">No uplink detected</p>'
-      )}
+    ${pageHeader("Network", "Port connectivity, IP configuration, DNS resolution, and NTP drift",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.network=null;renderNetwork()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <!-- Port Connectivity -->
+    <div class="card">
+      ${sectionTitle("link", "Port Connectivity")}
+      ${tcpPorts.length ? `
+        <div class="port-section-label">TCP</div>
+        <div class="port-grid">${tcpPorts.map(portCard).join("")}</div>
+      ` : ""}
+      ${udpPorts.length ? `
+        <div class="port-section-label mt-4">UDP</div>
+        <div class="port-grid">${udpPorts.map(portCard).join("")}</div>
+      ` : ""}
+      ${otherPorts.length ? `
+        <div class="port-section-label mt-4">OTHER</div>
+        <div class="port-grid">${otherPorts.map(portCard).join("")}</div>
+      ` : ""}
+      ${!ports.length ? '<p class="text-pulse-muted text-sm">No port test results</p>' : ""}
     </div>
-    ${card(
-      "IP Configuration",
-      cfg.ipConfig?.length
-        ? `<table class="data-table"><thead><tr>
+
+    <!-- Internet + IP Config / Domain Resolution -->
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("globe", "Internet & Adapter")}
+        <div class="kv-grid">
+          ${kvRowHtml("Internet", cfg.internetReachable
+            ? '<span class="status-pass">Reachable</span>'
+            : '<span class="status-fail">Unreachable</span>')}
+          ${kvRow("Tested Host", cfg.testedHost)}
+          ${kvRow("Uplink Adapter", cfg.uplinkAdapter?.interfaceAlias)}
+          ${kvRow("Gateway", cfg.uplinkAdapter?.gateway)}
+          ${kvRow("NTP Source", cfg.ntpSource)}
+          ${kvRowHtml("NTP Status", ntp.status ? statusBadge(ntp.status) : "—")}
+          ${kvRow("NTP Drift", ntp.offsetSeconds != null ? ntp.offsetSeconds + "s" : "N/A")}
+        </div>
+
+        ${ipConfigs.length ? `
+          <div class="section-divider"></div>
+          <div class="subsection-label">IP CONFIGURATION</div>
+          <table class="data-table"><thead><tr>
             <th>Interface</th><th>IPv4</th><th>Gateway</th><th>DNS</th>
           </tr></thead><tbody>
-          ${cfg.ipConfig
-            .map(
-              (ip) => `<tr>
+          ${ipConfigs.map(ip => `<tr>
             <td>${esc(ip.interfaceAlias)}</td>
-            <td>${(ip.ipv4Address || []).map(esc).join(", ") || "--"}</td>
-            <td>${(ip.ipv4DefaultGateway || []).map(esc).join(", ") || "--"}</td>
-            <td class="text-xs">${(ip.dnsServers || []).flat().map(esc).join(", ") || "--"}</td>
-          </tr>`
-            )
-            .join("")}
-          </tbody></table>`
-        : '<p class="text-pulse-muted text-sm">No data</p>',
-      "mb-6"
-    )}
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      ${card(
-        "Domain Resolution",
-        domains.length
-          ? `<table class="data-table"><thead><tr>
-              <th>Domain</th><th>Resolved To</th><th>Status</th>
-            </tr></thead><tbody>
-            ${domains
-              .map(
-                (d) => `<tr>
-              <td>${esc(d.domain)}</td>
-              <td class="font-mono text-xs">${esc(d.resolvedTo) || "--"}</td>
-              <td>${statusBadge(d.status)}</td>
-            </tr>`
-              )
-              .join("")}
-            </tbody></table>`
-          : '<p class="text-pulse-muted text-sm">No data</p>'
-      )}
-      ${card(
-        "Port Connectivity",
-        ports.length
-          ? `<table class="data-table"><thead><tr>
-              <th>Service</th><th>Host</th><th>Port</th><th>Proto</th><th>Status</th>
-            </tr></thead><tbody>
-            ${ports
-              .map(
-                (p) => `<tr>
-              <td>${esc(p.purpose)}</td>
-              <td class="font-mono text-xs">${esc(p.host)}</td>
-              <td>${esc(String(p.port))}</td>
-              <td>${esc(p.protocol)}</td>
-              <td>${statusBadge(p.status)}${p.optional ? ' <span class="text-xs text-pulse-muted">(opt)</span>' : ""}</td>
-            </tr>`
-              )
-              .join("")}
-            </tbody></table>`
-          : '<p class="text-pulse-muted text-sm">No data</p>'
-      )}
+            <td class="font-mono text-xs">${(ip.ipv4Address || []).map(esc).join(", ") || "—"}</td>
+            <td class="font-mono text-xs">${(ip.ipv4DefaultGateway || []).map(esc).join(", ") || "—"}</td>
+            <td class="font-mono text-xs">${(ip.dnsServers || []).flat().map(esc).join(", ") || "—"}</td>
+          </tr>`).join("")}
+          </tbody></table>
+        ` : ""}
+      </div>
+      <div class="card">
+        ${sectionTitle("wifi", "Domain Reachability")}
+        ${domains.length ? `
+          <div class="domain-list">
+            ${domains.map(d => {
+              const ok = (d.status || "").toLowerCase() === "pass" || (d.status || "").toLowerCase() === "ok";
+              return `<div class="domain-row">
+                <span class="domain-dot" style="background:${ok ? "#22c55e" : "#ef4444"}"></span>
+                <span class="domain-name">${esc(d.domain)}</span>
+                <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
+                ${statusBadge(d.status)}
+              </div>`;
+            }).join("")}
+          </div>
+        ` : '<p class="text-pulse-muted text-sm">No DNS data</p>'}
+      </div>
     </div>
   `;
 }
@@ -540,83 +1039,112 @@ async function renderNetwork() {
 // ── Cameras ──────────────────────────────────────────────────
 
 async function renderCameras() {
-  $page().innerHTML = loading();
-  const data = await api("/api/cameras");
+  const data = cached("cameras") || (($page().innerHTML = loading()), await api("/api/cameras"));
   if (currentPage !== "cameras") return;
+  dataCache.cameras = data;
 
   const ports = data.ports || [];
   const pixCfg = data.pixellotConfig || {};
   const cfgCameras = pixCfg.cameras || [];
 
+  const portSlots = [];
+  for (let i = 0; i < Math.max(4, ports.length); i++) {
+    portSlots.push(ports[i] || null);
+  }
+
+  function portTile(port, index) {
+    if (!port) {
+      return `<div class="cam-port-tile cam-port-empty">
+        <div class="cam-port-num">Port ${index + 1}</div>
+        <div class="cam-port-status">
+          <span class="cam-dot cam-dot-muted"></span>
+          <span class="text-sm text-pulse-muted">Not detected</span>
+        </div>
+      </div>`;
+    }
+    const p = port;
+    const speed = p.linkSpeedMbps
+      ? p.linkSpeedMbps >= 1000 ? (p.linkSpeedMbps / 1000) + " Gbps" : p.linkSpeedMbps + " Mbps"
+      : "No link";
+    let statusLabel, dotCls;
+    if (!p.isUp) { statusLabel = "Down"; dotCls = "cam-dot-down"; }
+    else if (p.isOcr) { statusLabel = "OCR (100 Mbps)"; dotCls = "cam-dot-info"; }
+    else if (p.isDegraded) { statusLabel = "Degraded"; dotCls = "cam-dot-warn"; }
+    else { statusLabel = "Linked · " + speed; dotCls = "cam-dot-up"; }
+
+    const cams = p.camerasDetected || [];
+    return `<div class="cam-port-tile ${p.isUp ? "cam-port-active" : "cam-port-down"}">
+      <div class="cam-port-header">
+        <span class="cam-port-num">Port ${index + 1}</span>
+        ${p.isOcr ? '<span class="badge-ol badge-ol-info">OCR</span>' : ""}
+        ${p.isDegraded ? '<span class="badge-ol badge-ol-warn">Degraded</span>' : ""}
+      </div>
+      <div class="cam-port-name">${esc(p.name)}</div>
+      <div class="cam-port-status">
+        <span class="cam-dot ${dotCls}"></span>
+        <span class="text-sm">${esc(statusLabel)}</span>
+      </div>
+      <div class="cam-port-detail">
+        <div class="kv-mini"><span>MAC</span><span class="font-mono">${esc(p.mac)}</span></div>
+        <div class="kv-mini"><span>RX / TX</span><span>${formatBytes(p.rxBytes)} / ${formatBytes(p.txBytes)}</span></div>
+      </div>
+      ${cams.length > 0 ? `
+        <div class="cam-detected">
+          <div class="cam-detected-label">${cams.length} Pixellot camera${cams.length > 1 ? "s" : ""} detected</div>
+          ${cams.map(c => `<div class="cam-detected-entry">
+            <span class="font-mono">${esc(c.ip)}</span>
+            <span class="font-mono text-pulse-muted">${esc(c.mac)}</span>
+          </div>`).join("")}
+        </div>
+      ` : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
+    </div>`;
+  }
+
   $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-6">Camera Connectivity</h2>
-    ${
-      ports.length === 0
-        ? card("", '<p class="text-pulse-muted">No camera-facing NICs detected (Intel I210/I350/82574L/I211, Realtek).</p>')
-        : ports
-            .map(
-              (p) => `
-        <div class="card mb-4">
-          <div class="flex items-center justify-between mb-3">
-            <div>
-              <h3 class="font-semibold">${esc(p.name)}</h3>
-              <p class="text-xs text-pulse-muted">${esc(p.interfaceDescription)}</p>
-            </div>
-            <div class="flex items-center gap-2">
-              ${p.isOcr ? badge("OCR", "info") : ""}
-              ${p.isDegraded ? badge("Degraded", "warn") : ""}
-              ${statusBadge(p.status)}
-              <span class="text-xs text-pulse-muted">${p.linkSpeedMbps ? esc(String(p.linkSpeedMbps)) + " Mbps" : "No link"}</span>
-            </div>
-          </div>
-          <div class="text-xs text-pulse-muted mb-2">MAC: ${esc(p.mac)} · RX: ${formatBytes(p.rxBytes)} · TX: ${formatBytes(p.txBytes)}</div>
-          ${
-            p.camerasDetected?.length
-              ? `<div class="mt-2">
-              <p class="text-sm font-medium text-green-400 mb-1">Pixellot cameras detected:</p>
-              ${p.camerasDetected
-                .map(
-                  (c) =>
-                    `<div class="text-sm bg-pulse-bg rounded px-3 py-1.5 mb-1">IP: <span class="font-mono">${esc(c.ip)}</span> · MAC: <span class="font-mono">${esc(c.mac)}</span></div>`
-                )
-                .join("")}
-            </div>`
-              : '<p class="text-sm text-pulse-muted mt-2">No Pixellot cameras detected on this port.</p>'
-          }
-          ${
-            p.arpEntries?.length
-              ? `<details class="mt-2"><summary class="text-xs text-pulse-muted cursor-pointer">ARP entries (${esc(String(p.arpEntries.length))})</summary>
-              <div class="mt-1 max-h-32 overflow-y-auto">
-                ${p.arpEntries.map((a) => `<div class="text-xs font-mono text-pulse-muted">${esc(a.ip)} → ${esc(a.mac)}</div>`).join("")}
-              </div></details>`
-              : ""
-          }
-        </div>`
-            )
-            .join("")
-    }
-    ${
-      cfgCameras.length
-        ? card(
-            "cameras.cfg",
-            `<table class="data-table"><thead><tr>
-              <th>Section</th><th>IP</th><th>MAC</th><th>Role</th>
-            </tr></thead><tbody>
-            ${cfgCameras
-              .map(
-                (c) => `<tr>
-              <td>${esc(c.section)}</td>
-              <td class="font-mono">${esc(c.ip)}</td>
-              <td class="font-mono">${esc(c.mac)}</td>
-              <td>${esc(c.role)}</td>
-            </tr>`
-              )
-              .join("")}
-            </tbody></table>`,
-            "mt-6"
-          )
-        : ""
-    }
+    ${pageHeader("Camera Connectivity", "NIC ports, link status, speed, and Pixellot camera detection",
+      `<button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
+        ${svgIcon("zap", 14)} Fault Isolator
+      </button>
+      <button class="btn-outline btn-ol-blue" onclick="dataCache.cameras=null;renderCameras()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <div class="cam-port-grid">
+      ${portSlots.map((p, i) => portTile(p, i)).join("")}
+    </div>
+
+    ${cfgCameras.length ? `
+    <div class="card mt-4">
+      ${sectionTitle("file", "cameras.cfg")}
+      <table class="data-table"><thead><tr>
+        <th>Section</th><th>IP</th><th>MAC</th><th>Role</th>
+      </tr></thead><tbody>
+      ${cfgCameras.map(c => `<tr>
+        <td>${esc(c.section)}</td>
+        <td class="font-mono">${esc(c.ip)}</td>
+        <td class="font-mono">${esc(c.mac)}</td>
+        <td>${esc(c.role)}</td>
+      </tr>`).join("")}
+      </tbody></table>
+    </div>` : ""}
+
+    ${ports.filter(p => p.arpEntries?.length).map(p => `
+    <div class="card mt-4">
+      <details>
+        <summary class="text-sm text-pulse-muted cursor-pointer font-medium">
+          ${esc(p.name)} — ARP entries (${p.arpEntries.length})
+        </summary>
+        <div class="mt-3 max-h-48 overflow-y-auto">
+          <table class="data-table"><thead><tr><th>IP</th><th>MAC</th></tr></thead><tbody>
+          ${p.arpEntries.map(a => `<tr>
+            <td class="font-mono text-xs">${esc(a.ip)}</td>
+            <td class="font-mono text-xs">${esc(a.mac)}</td>
+          </tr>`).join("")}
+          </tbody></table>
+        </div>
+      </details>
+    </div>`).join("")}
   `;
 }
 
@@ -631,55 +1159,62 @@ function formatBytes(b) {
 // ── Services ─────────────────────────────────────────────────
 
 async function renderServices() {
-  $page().innerHTML = loading();
-  const data = await api("/api/services");
+  const data = cached("services") || (($page().innerHTML = loading()), await api("/api/services"));
   if (currentPage !== "services") return;
+  dataCache.services = data;
 
-  if (data.error) {
-    $page().innerHTML = errorBox(data.message);
-    return;
-  }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
 
   const svcs = data.services || [];
 
+  function svcTile(s) {
+    const st = (s.status || "").toLowerCase();
+    let borderCls = "svc-tile-muted";
+    if (st === "running") borderCls = "svc-tile-running";
+    else if (st === "stopped") borderCls = "svc-tile-stopped";
+    return `<div class="svc-tile ${borderCls}" data-svc="${esc(s.name)}">
+      <div class="svc-tile-top">
+        <span class="svc-tile-name">${esc(s.name)}</span>
+        ${statusBadge(s.status)}
+      </div>
+      ${s.displayName && s.displayName !== s.name ? `<div class="svc-tile-display">${esc(s.displayName)}</div>` : ""}
+      ${s.startType ? `<div class="svc-tile-start">Start: ${esc(s.startType)}</div>` : ""}
+      <div class="svc-tile-actions">
+        ${s.status !== "NotFound" ? `<button class="btn-outline btn-ol-blue svc-restart-btn" data-name="${esc(s.name)}">
+          ${svgIcon("refresh", 12)} Restart
+        </button>` : ""}
+      </div>
+    </div>`;
+  }
+
   $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-6">Services</h2>
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="svc-grid">
-      ${svcs
-        .map(
-          (s) => `
-        <div class="card" data-svc="${esc(s.name)}">
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="font-semibold text-sm">${esc(s.name)}</h3>
-            ${statusBadge(s.status)}
-          </div>
-          ${s.displayName ? `<p class="text-xs text-pulse-muted mb-2">${esc(s.displayName)}</p>` : ""}
-          ${s.startType ? `<p class="text-xs text-pulse-muted mb-3">Start: ${esc(s.startType)}</p>` : ""}
-          ${
-            s.status !== "NotFound"
-              ? `<button class="btn btn-secondary text-xs svc-restart-btn" data-name="${esc(s.name)}">Restart</button>`
-              : ""
-          }
-        </div>`
-        )
-        .join("")}
+    ${pageHeader("Pixellot Services", "Pixellot Agent, VPU encoder, and related Windows services",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.services=null;renderServices()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <div class="svc-grid" id="svc-grid">
+      ${svcs.map(svcTile).join("")}
+      ${!svcs.length ? '<p class="text-pulse-muted text-sm">No services data</p>' : ""}
     </div>
   `;
 
-  document.getElementById("svc-grid").addEventListener("click", async (e) => {
+  document.getElementById("svc-grid")?.addEventListener("click", async (e) => {
     const btn = e.target.closest(".svc-restart-btn");
     if (!btn) return;
     const name = btn.dataset.name;
     btn.disabled = true;
-    btn.textContent = "Restarting...";
+    btn.innerHTML = "Restarting...";
     const result = await apiPost("/api/services/restart", { serviceName: name });
     btn.disabled = false;
-    btn.textContent = "Restart";
+    btn.innerHTML = `${svgIcon("refresh", 12)} Restart`;
     if (result.success) {
+      dataCache.services = null;
       renderServices();
     } else {
-      btn.textContent = result.message || "Failed";
-      setTimeout(() => { btn.textContent = "Restart"; }, 3000);
+      btn.innerHTML = result.message || "Failed";
+      setTimeout(() => { btn.innerHTML = `${svgIcon("refresh", 12)} Restart`; }, 3000);
     }
   });
 }
@@ -687,107 +1222,127 @@ async function renderServices() {
 // ── Disk Health ──────────────────────────────────────────────
 
 async function renderDiskHealth() {
-  $page().innerHTML = loading();
-  const data = await api("/api/disk-health");
+  const data = cached("disk-health") || (($page().innerHTML = loading()), await api("/api/disk-health"));
   if (currentPage !== "disk-health") return;
+  dataCache["disk-health"] = data;
 
-  if (data.error) {
-    $page().innerHTML = errorBox(data.message);
-    return;
-  }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
 
   const logical = data.logicalDisks || [];
   const physical = data.physicalDisks || [];
   const events = data.diskEvents || [];
   const paths = data.pixellotPaths || [];
 
+  const allHealthy = physical.every(d => (d.healthStatus || "").toLowerCase() === "healthy");
+  const smartLabel = allHealthy ? "All Disks Healthy" : "Issue Detected";
+  const smartSev = allHealthy ? "ok" : "critical";
+
+  const errorCount = events.length;
+  const errorLabel = errorCount === 0 ? "No disk errors" : `${errorCount} event(s) in last 48h`;
+  const errorSev = errorCount > 5 ? "critical" : errorCount > 0 ? "warning" : "ok";
+
+  const osDrive = logical.find(d => d.deviceID === "C:") || logical[0];
+  const osFreeGB = osDrive?.freeSpaceGB;
+  const osLabel = osDrive ? `${osFreeGB} GB free of ${osDrive.sizeGB} GB` : "No data";
+  const osSev = osFreeGB != null && osFreeGB < 50 ? "critical" : osFreeGB != null && osFreeGB < 100 ? "warning" : "ok";
+
+  function summaryCard(icon, title, chipSev, chipText, value, desc) {
+    return `<div class="card dh-summary-card">
+      <div class="dh-summary-top">
+        <span class="dh-summary-icon">${svgIcon(icon, 18)}</span>
+        <span class="dh-summary-title">${esc(title)}</span>
+        ${severityChip(chipSev, chipText)}
+      </div>
+      <div class="dh-summary-val">${esc(value)}</div>
+      <div class="dh-summary-desc">${esc(desc)}</div>
+    </div>`;
+  }
+
   $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-6">Disk Health</h2>
-    ${card(
-      "Logical Disks",
-      logical.length
-        ? `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          ${logical
-            .map(
-              (d) => `<div class="bg-pulse-bg rounded-lg p-4">
-              <div class="flex justify-between mb-1">
-                <span class="font-semibold">${esc(d.deviceID)}</span>
-                <span class="text-sm text-pulse-muted">${esc(String(d.usedPercent))}%</span>
-              </div>
-              ${usageBar(d.usedPercent)}
-              <div class="text-xs text-pulse-muted mt-2">${esc(String(d.freeSpaceGB))} GB free of ${esc(String(d.sizeGB))} GB · ${esc(d.fileSystem)}</div>
-            </div>`
-            )
-            .join("")}
-        </div>`
-        : '<p class="text-pulse-muted text-sm">No data</p>',
-      "mb-6"
+    ${pageHeader("Disk & System Health", "SMART, free space, and the Pixellot data paths that fill up first",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache['disk-health']=null;renderDiskHealth()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
     )}
-    ${card(
-      "Physical Disks",
-      physical.length
-        ? `<table class="data-table"><thead><tr>
-            <th>Name</th><th>Type</th><th>Bus</th><th>Size</th><th>Health</th>
-          </tr></thead><tbody>
-          ${physical
-            .map(
-              (d) => `<tr>
-            <td>${esc(d.friendlyName)}</td>
-            <td>${esc(d.mediaType)}</td>
-            <td>${esc(d.busType)}</td>
-            <td>${esc(String(d.sizeGB))} GB</td>
-            <td>${statusBadge(d.healthStatus || "Unknown")}</td>
-          </tr>`
-            )
-            .join("")}
-          </tbody></table>`
-        : '<p class="text-pulse-muted text-sm">No data</p>',
-      "mb-6"
-    )}
-    ${
-      paths.length
-        ? card(
-            "Pixellot Directories",
-            `<table class="data-table"><thead><tr>
-              <th>Path</th><th>Size</th><th>Files</th>
-            </tr></thead><tbody>
-            ${paths
-              .map(
-                (p) => `<tr>
-              <td class="font-mono text-xs">${esc(p.path)}</td>
-              <td>${p.sizeGB != null ? esc(String(p.sizeGB)) + " GB" : esc(p.error)}</td>
-              <td>${p.fileCount != null ? esc(String(p.fileCount)) : "--"}</td>
-            </tr>`
-              )
-              .join("")}
-            </tbody></table>`,
-            "mb-6"
-          )
-        : ""
-    }
-    ${
-      events.length
-        ? card(
-            "Recent Disk Events (24h)",
-            `<div class="max-h-60 overflow-y-auto">
-            <table class="data-table"><thead><tr>
-              <th>Time</th><th>Level</th><th>Source</th><th>Message</th>
-            </tr></thead><tbody>
-            ${events
-              .map(
-                (e) => `<tr>
-              <td class="text-xs whitespace-nowrap">${formatTime(e.timeCreated)}</td>
-              <td>${statusBadge(e.level)}</td>
-              <td class="text-xs">${esc(e.source)}</td>
-              <td class="text-xs max-w-md truncate">${esc(e.message)}</td>
-            </tr>`
-              )
-              .join("")}
-            </tbody></table>
-          </div>`
-          )
-        : ""
-    }
+
+    <!-- 3 Summary Cards -->
+    <div class="dh-summary-row">
+      ${summaryCard("heartbeat", "SMART Health", smartSev, smartLabel, smartLabel, "Per-disk health attributes")}
+      ${summaryCard("alert", "Disk & Driver Errors", errorSev, errorLabel, errorLabel, "From the Windows Event Log (last 48 h)")}
+      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Drops below 50 GB → Critical")}
+    </div>
+
+    <!-- Volumes -->
+    <div class="card">
+      ${sectionTitle("database", "Volumes")}
+      ${logical.length ? logical.map(d => {
+        const pct = d.usedPercent || 0;
+        const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
+        const role = d.deviceID === "C:" ? "OS Drive" : "Storage";
+        const status = pct > 90 ? "Critical" : pct > 80 ? "Low" : "OK";
+        const statusColor = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#22c55e";
+        return `<div class="dh-vol-row">
+          <span class="dh-vol-drive font-mono">${esc(d.deviceID)}</span>
+          <span class="dh-vol-role">${esc(role)}</span>
+          <div class="dh-vol-bar-wrap">
+            <div class="dash-vol-bar"><div class="dash-vol-fill" style="width:${Math.min(pct, 100)}%;background:${color}"></div></div>
+          </div>
+          <span class="dh-vol-free">${esc(String(d.freeSpaceGB))} free of ${esc(String(d.sizeGB))} GB</span>
+          <span class="dh-vol-status" style="color:${statusColor}">${esc(status)}</span>
+        </div>`;
+      }).join("") : '<p class="text-pulse-muted text-sm">No volume data</p>'}
+    </div>
+
+    <!-- Pixellot Storage Paths -->
+    ${paths.length ? `
+    <div class="card mt-4">
+      ${sectionTitle("file", "Pixellot Storage Paths")}
+      <table class="data-table"><thead><tr>
+        <th>Path</th><th>Description</th><th>Size</th><th>Status</th>
+      </tr></thead><tbody>
+      ${paths.map(p => `<tr>
+        <td class="font-mono text-xs">${esc(p.path)}</td>
+        <td class="text-pulse-muted">${esc(p.description || "")}</td>
+        <td class="font-semibold">${p.sizeGB != null ? esc(String(p.sizeGB)) + " GB" : esc(p.error || "—")}</td>
+        <td>${p.status ? statusBadge(p.status) : "—"}</td>
+      </tr>`).join("")}
+      </tbody></table>
+    </div>` : ""}
+
+    <!-- Physical Disks -->
+    ${physical.length ? `
+    <div class="card mt-4">
+      ${sectionTitle("hdd", "Physical Disks")}
+      <table class="data-table"><thead><tr>
+        <th>Name</th><th>Type</th><th>Bus</th><th>Size</th><th>Health</th>
+      </tr></thead><tbody>
+      ${physical.map(d => `<tr>
+        <td>${esc(d.friendlyName)}</td>
+        <td>${esc(d.mediaType)}</td>
+        <td>${esc(d.busType)}</td>
+        <td>${esc(String(d.sizeGB))} GB</td>
+        <td>${statusBadge(d.healthStatus || "Unknown")}</td>
+      </tr>`).join("")}
+      </tbody></table>
+    </div>` : ""}
+
+    <!-- Recent Disk Events -->
+    ${events.length ? `
+    <div class="card mt-4">
+      ${sectionTitle("triangle", "Recent Disk Events")}
+      <div class="max-h-60 overflow-y-auto">
+        <table class="data-table"><thead><tr>
+          <th>Time</th><th>Level</th><th>Source</th><th>Message</th>
+        </tr></thead><tbody>
+        ${events.map(e => `<tr>
+          <td class="text-xs whitespace-nowrap">${formatTime(e.timeCreated)}</td>
+          <td>${statusBadge(e.level)}</td>
+          <td class="text-xs">${esc(e.source)}</td>
+          <td class="text-xs max-w-md truncate">${esc(e.message)}</td>
+        </tr>`).join("")}
+        </tbody></table>
+      </div>
+    </div>` : ""}
   `;
 }
 
@@ -804,67 +1359,100 @@ function formatTime(iso) {
 
 async function renderEvents() {
   $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-4">Event Viewer</h2>
-    <div class="flex items-center gap-4 mb-4">
-      <label class="text-sm text-pulse-muted">Hours:
-        <select id="ev-hours" class="ml-1 bg-pulse-card border border-pulse-border rounded px-2 py-1 text-sm text-pulse-text">
-          <option value="12">12</option>
-          <option value="24">24</option>
-          <option value="48" selected>48</option>
-          <option value="168">7 days</option>
-        </select>
-      </label>
-      <label class="text-sm text-pulse-muted">Level:
-        <select id="ev-level" class="ml-1 bg-pulse-card border border-pulse-border rounded px-2 py-1 text-sm text-pulse-text">
-          <option value="all" selected>All</option>
-          <option value="error">Error</option>
-          <option value="warning">Warning</option>
-          <option value="info">Info</option>
-        </select>
-      </label>
-      <button class="btn btn-primary text-xs" id="ev-load">Load</button>
-      <span id="ev-count" class="text-xs text-pulse-muted"></span>
+    ${pageHeader("Event Viewer", "Filtered Windows event-log entries for disk, NIC, Pixellot, and core service sources",
+      `<button class="btn-outline btn-ol-blue" id="ev-refresh">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <!-- Filter Row -->
+    <div class="card ev-filter-card">
+      <div class="ev-filter-row">
+        <div class="ev-filter-group">
+          <label class="ev-filter-label">TIME WINDOW</label>
+          <select id="ev-hours" class="ev-select">
+            <option value="12">Last 12 hours</option>
+            <option value="24">Last 24 hours</option>
+            <option value="48" selected>Last 48 hours</option>
+            <option value="168">Last 7 days</option>
+          </select>
+        </div>
+        <div class="ev-filter-group">
+          <label class="ev-filter-label">LEVELS</label>
+          <div class="ev-checks">
+            <label class="ev-check"><input type="checkbox" id="ev-error" checked> <span style="color:#ef4444">Error</span></label>
+            <label class="ev-check"><input type="checkbox" id="ev-warning" checked> <span style="color:#eab308">Warning</span></label>
+            <label class="ev-check"><input type="checkbox" id="ev-info" checked> <span style="color:#3b82f6">Information</span></label>
+          </div>
+        </div>
+        <div class="ev-filter-group ev-filter-grow">
+          <label class="ev-filter-label">SOURCE OR MESSAGE CONTAINS</label>
+          <input type="text" id="ev-source" placeholder="e.g. disk, Pixellot, WHEA" class="ev-input"/>
+        </div>
+      </div>
     </div>
-    <div id="ev-body">${loading()}</div>
+
+    <div class="card mt-4" id="ev-body">${loading()}</div>
   `;
 
   const loadEvents = async () => {
     const hours = document.getElementById("ev-hours").value;
-    const level = document.getElementById("ev-level").value;
-    document.getElementById("ev-body").innerHTML = loading();
-    const data = await api(`/api/events?hours=${encodeURIComponent(hours)}&level=${encodeURIComponent(level)}`);
+    const evBody = document.getElementById("ev-body");
+    evBody.innerHTML = loading();
+    const data = await api(`/api/events?hours=${encodeURIComponent(hours)}&level=all`);
     if (currentPage !== "events") return;
-    const entries = data.entries || [];
-    document.getElementById("ev-count").textContent = entries.length + " events";
+
+    const showError = document.getElementById("ev-error")?.checked;
+    const showWarning = document.getElementById("ev-warning")?.checked;
+    const showInfo = document.getElementById("ev-info")?.checked;
+    const sourceFilter = (document.getElementById("ev-source")?.value || "").toLowerCase();
+
+    let entries = data.entries || [];
+    entries = entries.filter(e => {
+      const lvl = (e.level || "").toLowerCase();
+      if (lvl === "error" && !showError) return false;
+      if (lvl === "warning" && !showWarning) return false;
+      if ((lvl === "information" || lvl === "info") && !showInfo) return false;
+      if (sourceFilter && !(e.source || "").toLowerCase().includes(sourceFilter) && !(e.message || "").toLowerCase().includes(sourceFilter)) return false;
+      return true;
+    });
+
     if (!entries.length) {
-      document.getElementById("ev-body").innerHTML = card(
-        "",
-        '<p class="text-pulse-muted text-sm">No events found for this filter.</p>'
-      );
+      evBody.innerHTML = '<div class="text-center py-8 text-pulse-muted">No events found for this filter.</div>';
       return;
     }
-    document.getElementById("ev-body").innerHTML = `
-      <div class="card" style="max-height:60vh;overflow:auto">
-        <table class="data-table"><thead><tr>
-          <th>Time</th><th>Level</th><th>Source</th><th>ID</th><th>Message</th>
+
+    function levelChip(level) {
+      const l = (level || "").toLowerCase();
+      if (l === "error") return '<span class="ev-level-chip ev-level-error">Error</span>';
+      if (l === "warning") return '<span class="ev-level-chip ev-level-warn">Warning</span>';
+      return '<span class="ev-level-chip ev-level-info">Information</span>';
+    }
+
+    evBody.innerHTML = `
+      <div class="ev-count">${entries.length} events</div>
+      <div class="ev-table-wrap">
+        <table class="data-table ev-table"><thead><tr>
+          <th>Timestamp</th><th>Level</th><th>Source</th><th>Event ID</th><th>Message</th>
         </tr></thead><tbody>
-        ${entries
-          .map(
-            (e) => `<tr>
-          <td class="text-xs whitespace-nowrap">${formatTime(e.timeCreated)}</td>
-          <td>${statusBadge(e.level)}</td>
+        ${entries.map(e => `<tr>
+          <td class="text-xs whitespace-nowrap font-mono">${formatTime(e.timeCreated)}</td>
+          <td>${levelChip(e.level)}</td>
           <td class="text-xs">${esc(e.source)}</td>
-          <td class="text-xs">${esc(String(e.eventId))}</td>
-          <td class="text-xs" style="max-width:400px"><div class="truncate" title="${esc(e.message)}">${esc(e.message)}</div></td>
-        </tr>`
-          )
-          .join("")}
+          <td class="text-xs font-mono">${esc(String(e.eventId || ""))}</td>
+          <td class="text-xs ev-msg-cell" title="${esc(e.message)}">${esc(e.message)}</td>
+        </tr>`).join("")}
         </tbody></table>
       </div>
     `;
   };
 
-  document.getElementById("ev-load").addEventListener("click", loadEvents);
+  document.getElementById("ev-refresh")?.addEventListener("click", loadEvents);
+  document.getElementById("ev-hours")?.addEventListener("change", loadEvents);
+  ["ev-error", "ev-warning", "ev-info"].forEach(id => {
+    document.getElementById(id)?.addEventListener("change", loadEvents);
+  });
+  document.getElementById("ev-source")?.addEventListener("input", _debounce(loadEvents, 300));
   loadEvents();
 }
 
@@ -872,21 +1460,28 @@ async function renderEvents() {
 
 async function renderReports() {
   $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-6">Reports</h2>
-    ${card(
-      "Full Diagnostic Export",
-      `<p class="text-sm text-pulse-muted mb-4">Generate a complete diagnostic report containing all system, network, and service data. This runs all data collection scripts.</p>
-      <button class="btn btn-primary" id="rpt-export">Generate Report</button>
-      <span id="rpt-status" class="ml-3 text-sm text-pulse-muted"></span>
-      <div id="rpt-result" class="mt-4"></div>`
+    ${pageHeader("Reports", "Diagnostic-run snapshots — generate and download full system reports",
+      `<button class="btn-outline btn-ol-green" id="rpt-export">
+        ${svgIcon("download", 14)} Generate Report
+      </button>
+      <button class="btn-outline btn-ol-blue" onclick="refreshAll()">
+        ${svgIcon("play", 14)} Run All Diagnostics
+      </button>`
     )}
+
+    <div class="card">
+      ${sectionTitle("file", "Full Diagnostic Export")}
+      <p class="text-sm text-pulse-muted mb-4">Generate a complete diagnostic report containing all system, network, and service data. This runs every data collection script and bundles the output into a downloadable JSON file.</p>
+      <span id="rpt-status" class="text-sm text-pulse-muted"></span>
+      <div id="rpt-result" class="mt-4"></div>
+    </div>
   `;
 
-  document.getElementById("rpt-export").addEventListener("click", async () => {
+  document.getElementById("rpt-export")?.addEventListener("click", async () => {
     const btn = document.getElementById("rpt-export");
     const status = document.getElementById("rpt-status");
     btn.disabled = true;
-    status.textContent = "Collecting data...";
+    status.textContent = "Collecting data from all scripts...";
     const data = await api("/api/reports/export");
     btn.disabled = false;
     if (data.error) {
@@ -895,82 +1490,132 @@ async function renderReports() {
     }
     status.textContent = "Report ready.";
 
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: "application/json",
-    });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const hostname = data.identity?.computerSystem?.name || "vpu";
     const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     const filename = "pulse-report-" + hostname + "-" + ts + ".json";
 
-    const resultEl = document.getElementById("rpt-result");
-    resultEl.innerHTML = "";
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.className = "btn btn-secondary inline-block";
-    link.textContent = "Download JSON";
-    resultEl.appendChild(link);
-
-    const details = document.createElement("details");
-    details.className = "mt-4";
-    const summary = document.createElement("summary");
-    summary.className = "text-sm text-pulse-muted cursor-pointer";
-    summary.textContent = "Preview data";
-    details.appendChild(summary);
-    const pre = document.createElement("pre");
-    pre.className = "mt-2 p-4 bg-pulse-bg rounded text-xs overflow-auto max-h-96 text-pulse-muted";
-    pre.textContent = JSON.stringify(data, null, 2);
-    details.appendChild(pre);
-    resultEl.appendChild(details);
+    document.getElementById("rpt-result").innerHTML = `
+      <a href="${url}" download="${esc(filename)}" class="btn-outline btn-ol-green" style="display:inline-flex;align-items:center;gap:6px">
+        ${svgIcon("download", 14)} Download ${esc(filename)}
+      </a>
+      <details class="mt-4">
+        <summary class="text-sm text-pulse-muted cursor-pointer">Preview data</summary>
+        <pre class="mt-2 p-4 bg-pulse-bg rounded text-xs overflow-auto max-h-96 text-pulse-muted">${esc(JSON.stringify(data, null, 2))}</pre>
+      </details>
+    `;
   });
 }
 
 // ── ScoreConnect ─────────────────────────────────────────────
 
 async function renderScoreConnect() {
-  $page().innerHTML = loading();
-  const data = await api("/api/scoreconnect");
+  const data = cached("scoreconnect") || (($page().innerHTML = loading()), await api("/api/scoreconnect"));
   if (currentPage !== "scoreconnect") return;
+  dataCache.scoreconnect = data;
+
+  const status = data.status || {};
+  const config = data.configuration || {};
+  const botStatus = data.botStatus || {};
+  const liveScore = data.liveScoreData || {};
+  const isDetected = data.reachable || status.isDetected;
 
   $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-6">ScoreConnect</h2>
-    ${card(
-      "Connection Status",
-      `<div class="space-y-2 text-sm">
-        ${idRow("Reachable", data.reachable ? '<span class="status-pass">Yes</span>' : '<span class="status-fail">No</span>')}
-        ${data.error ? idRow("Error", data.error) : ""}
-      </div>`
+    ${pageHeader("Score Connect", "ScoreConnect III scoreboard integration — service, configuration, and live data",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.scoreconnect=null;renderScoreConnect()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
     )}
-    ${
-      data.status
-        ? card(
-            "Status",
-            buildPreBlock(data.status),
-            "mt-6"
-          )
-        : ""
-    }
-    ${
-      data.configuration
-        ? card(
-            "Configuration",
-            buildPreBlock(data.configuration),
-            "mt-6"
-          )
-        : ""
-    }
-  `;
-}
 
-function buildPreBlock(obj) {
-  const pre = document.createElement("pre");
-  pre.className = "text-xs text-pulse-muted overflow-auto max-h-60";
-  pre.textContent = JSON.stringify(obj, null, 2);
-  const wrapper = document.createElement("div");
-  wrapper.appendChild(pre);
-  return wrapper.innerHTML;
+    <!-- Service Status + Live Scoreboard -->
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("server", "Service Status")}
+        <div class="kv-grid">
+          ${kvRowHtml("Detected", isDetected
+            ? '<span class="status-pass">Yes</span>'
+            : '<span class="status-fail">No</span>')}
+          ${kvRow("Base URL", status.baseUrl || data.baseUrl)}
+          ${kvRow("Version", status.version)}
+          ${data.error && !isDetected ? kvRowHtml("Error", `<span class="text-red-400">${esc(typeof data.error === "string" ? data.error : data.message || "Connection failed")}</span>`) : ""}
+        </div>
+      </div>
+      <div class="card">
+        ${sectionTitle("monitor", "Live Scoreboard")}
+        ${liveScore.homeTeam || liveScore.awayTeam ? `
+          <div class="sc-teams">
+            <div class="sc-team-card">
+              <div class="sc-team-label">HOME</div>
+              <div class="sc-team-name">${esc(liveScore.homeTeam || "—")}</div>
+              ${liveScore.homeScore != null ? `<div class="sc-team-score">${esc(String(liveScore.homeScore))}</div>` : ""}
+            </div>
+            <div class="sc-team-card">
+              <div class="sc-team-label">AWAY</div>
+              <div class="sc-team-name">${esc(liveScore.awayTeam || "—")}</div>
+              ${liveScore.awayScore != null ? `<div class="sc-team-score">${esc(String(liveScore.awayScore))}</div>` : ""}
+            </div>
+          </div>
+          <div class="sc-game-info">
+            <div><span class="text-pulse-muted">Period</span> <span class="font-mono">${esc(String(liveScore.period || "—"))}</span></div>
+            <div><span class="text-pulse-muted">Clock</span> <span class="font-mono">${esc(String(liveScore.clock || "—"))}</span></div>
+          </div>
+        ` : '<div class="text-sm text-pulse-muted">No live scoreboard data available</div>'}
+      </div>
+    </div>
+
+    <!-- Connected Device / Configuration -->
+    ${config.vendor || config.sport ? `
+    <div class="card mt-4">
+      ${sectionTitle("cog", "Connected Device")}
+      <div class="dash-2col" style="margin-top:0">
+        <div class="sub-card">
+          <div class="kv-grid">
+            ${kvRow("Vendor", config.vendor)}
+            ${kvRow("Sport", config.sport)}
+            ${kvRow("Configuration", config.vendorConfigurationName || config.device)}
+          </div>
+        </div>
+        <div class="sub-card">
+          <div class="kv-grid">
+            ${kvRow("Serial Port", config.serialPort)}
+            ${kvRow("Firmware", config.firmware)}
+            ${kvRow("Event Type", config.eventType)}
+          </div>
+        </div>
+      </div>
+    </div>` : ""}
+
+    <!-- Cloud BOT + ScoreLink -->
+    ${botStatus.isConnected != null ? `
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("globe", "Cloud (BOT) Status")}
+        <div class="kv-grid">
+          ${kvRowHtml("Connected", botStatus.isConnected
+            ? '<span class="status-pass">Yes</span>'
+            : '<span class="status-fail">No</span>')}
+          ${kvRow("ScoreConnect ID", botStatus.scoreConnectId)}
+          ${kvRow("BOT Server", botStatus.botServerAddress)}
+          ${botStatus.lastErrorMessage ? kvRowHtml("Last Error", `<span class="text-pulse-muted">${esc(botStatus.lastErrorMessage)}</span>`) : ""}
+        </div>
+      </div>
+      <div class="card">
+        ${sectionTitle("link", "ScoreLink Device")}
+        <div class="sc-scorelink ${data.scoreLinkConnected ? "sc-scorelink-ok" : "sc-scorelink-err"}">
+          <span class="sc-scorelink-dot"></span>
+          <span class="font-semibold">${esc(data.scoreLinkStatusLabel || (data.scoreLinkConnected ? "ScoreLink Connected" : "ScoreLink Not Detected"))}</span>
+        </div>
+      </div>
+    </div>` : ""}
+
+    <!-- Raw Data Fallback -->
+    ${!config.vendor && botStatus.isConnected == null && (data.status || data.configuration) ? `
+    <div class="card mt-4">
+      ${sectionTitle("file", "Raw Response")}
+      <pre class="text-xs text-pulse-muted overflow-auto max-h-60 p-3 bg-pulse-bg rounded">${esc(JSON.stringify(data, null, 2))}</pre>
+    </div>` : ""}
+  `;
 }
 
 // ── Fault Isolator ───────────────────────────────────────────
@@ -1143,49 +1788,78 @@ async function renderFaultIsolator() {
 // ── Settings ─────────────────────────────────────────────────
 
 async function renderSettings() {
-  $page().innerHTML = loading();
-  const data = await api("/api/settings");
+  const data = cached("settings") || (($page().innerHTML = loading()), await api("/api/settings"));
   if (currentPage !== "settings") return;
+  dataCache.settings = data;
 
-  const scUrl = esc(data.scoreConnectUrl || "http://localhost:5000");
+  const scUrl = data.scoreConnectUrl || "http://localhost:5000";
   const pollMs = data.pollIntervalMs || 3000;
 
   $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-6">Settings</h2>
-    ${card(
-      "Configuration",
-      `<div class="space-y-4 max-w-md">
-        <div>
-          <label class="block text-sm text-pulse-muted mb-1">ScoreConnect URL</label>
-          <input type="text" id="set-sc-url" value="${scUrl}" class="w-full px-3 py-2 bg-pulse-bg border border-pulse-border rounded text-sm text-pulse-text outline-none focus:border-pulse-accent"/>
-        </div>
-        <div>
-          <label class="block text-sm text-pulse-muted mb-1">Poll Interval (ms)</label>
-          <input type="number" id="set-poll" value="${pollMs}" min="1000" max="30000" step="500" class="w-full px-3 py-2 bg-pulse-bg border border-pulse-border rounded text-sm text-pulse-text outline-none focus:border-pulse-accent"/>
-          <p class="text-xs text-pulse-muted mt-1">How often live metrics refresh (1000-30000 ms)</p>
-        </div>
-        <div class="flex items-center gap-3">
-          <button class="btn btn-primary" id="set-save">Save</button>
-          <span id="set-msg" class="text-sm text-pulse-muted"></span>
-        </div>
-      </div>`
-    )}
+    ${pageHeader("Settings", "App preferences and diagnostic helpers")}
+
+    <!-- ScoreConnect III API -->
+    <div class="card">
+      ${sectionTitle("link", "ScoreConnect III API")}
+      <p class="text-sm text-pulse-muted mb-3">Base URL Pulse uses to talk to the local ScoreConnect III service. Default is http://localhost:5000.</p>
+      <input type="text" id="set-sc-url" value="${esc(scUrl)}" class="settings-input"/>
+      <div class="settings-actions">
+        <button class="btn-outline btn-ol-blue" id="set-save-url">
+          ${svgIcon("check", 14)} Save
+        </button>
+        <button class="btn-outline btn-ol-blue" id="set-reset-url">
+          ${svgIcon("refresh", 14)} Reset to default
+        </button>
+        <span id="set-url-msg" class="text-sm text-pulse-muted"></span>
+      </div>
+    </div>
+
+    <!-- Poll Interval -->
+    <div class="card mt-4">
+      ${sectionTitle("clock", "Live Metrics")}
+      <p class="text-sm text-pulse-muted mb-3">How often the WebSocket refreshes live performance metrics (1000–30000 ms).</p>
+      <input type="number" id="set-poll" value="${pollMs}" min="1000" max="30000" step="500" class="settings-input" style="max-width:200px"/>
+      <div class="settings-actions">
+        <button class="btn-outline btn-ol-blue" id="set-save-poll">
+          ${svgIcon("check", 14)} Save
+        </button>
+        <span id="set-poll-msg" class="text-sm text-pulse-muted"></span>
+      </div>
+    </div>
+
+    <!-- Diagnostics -->
+    <div class="card mt-4">
+      ${sectionTitle("zap", "Diagnostics")}
+      <p class="text-sm text-pulse-muted mb-3">Re-run all diagnostics on demand. Each script re-collects live data from the VPU.</p>
+      <button class="btn-outline btn-ol-green" onclick="refreshAll()">
+        ${svgIcon("play", 14)} Run All Diagnostics
+      </button>
+    </div>
   `;
 
-  document.getElementById("set-save").addEventListener("click", async () => {
-    const body = {
+  async function saveSettings() {
+    return apiPost("/api/settings", {
       scoreConnectUrl: document.getElementById("set-sc-url").value.trim(),
-      pollIntervalMs:
-        parseInt(document.getElementById("set-poll").value, 10) || 3000,
-    };
-    const result = await apiPost("/api/settings", body);
-    const msgEl = document.getElementById("set-msg");
+      pollIntervalMs: parseInt(document.getElementById("set-poll").value, 10) || 3000,
+    });
+  }
+
+  document.getElementById("set-save-url")?.addEventListener("click", async () => {
+    const result = await saveSettings();
+    const msgEl = document.getElementById("set-url-msg");
     msgEl.textContent = result.ok ? "Saved" : "Error saving";
-    if (result.ok) {
-      setTimeout(() => {
-        if (msgEl) msgEl.textContent = "";
-      }, 2000);
-    }
+    if (result.ok) setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 2000);
+  });
+
+  document.getElementById("set-reset-url")?.addEventListener("click", () => {
+    document.getElementById("set-sc-url").value = "http://localhost:5000";
+  });
+
+  document.getElementById("set-save-poll")?.addEventListener("click", async () => {
+    const result = await saveSettings();
+    const msgEl = document.getElementById("set-poll-msg");
+    msgEl.textContent = result.ok ? "Saved" : "Error saving";
+    if (result.ok) setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 2000);
   });
 }
 
@@ -1193,61 +1867,52 @@ async function renderSettings() {
 
 function renderAbout() {
   $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-6">About</h2>
-    ${card(
-      "",
-      `<div class="space-y-4">
-        <div>
-          <h3 class="text-lg font-bold text-white">Pulse Web</h3>
-          <p class="text-sm text-pulse-muted">VPU Diagnostic Tools — v0.9.0-beta</p>
+    <div class="about-container">
+      <div class="card about-card">
+        <div class="about-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
         </div>
-        <p class="text-sm text-pulse-muted">
-          A lightweight, self-contained diagnostic tool for Pixellot VPU systems.
-          Collects system identity, hardware, performance metrics, network configuration,
-          camera connectivity, service status, disk health, and event logs.
-        </p>
-        <div>
-          <h4 class="text-sm font-semibold text-pulse-muted uppercase tracking-wide mb-2">Technology</h4>
-          <div class="text-sm space-y-1 text-pulse-muted">
-            <div>Backend: Python (embedded) + FastAPI + Uvicorn</div>
-            <div>Frontend: Vanilla HTML/JS + Tailwind CSS</div>
-            <div>Data Collection: PowerShell + WMI/CIM</div>
+        <h2 class="about-title">Pulse</h2>
+        <p class="about-tagline">Pixellot Unified Live System Evaluator</p>
+        <div class="about-version">v0.9.0-beta · Web Edition</div>
+        <p class="about-desc">A lightweight, self-contained diagnostic tool for Pixellot VPU systems. Collects system identity, hardware, performance metrics, network configuration, camera connectivity, service status, disk health, and event logs.</p>
+        <div class="about-info">
+          <div class="kv-grid kv-grid-center">
+            ${kvRow("Backend", "Python + FastAPI + Uvicorn")}
+            ${kvRow("Frontend", "Vanilla HTML/JS + Tailwind CSS")}
+            ${kvRow("Data Collection", "PowerShell + WMI/CIM")}
           </div>
         </div>
-        <div>
-          <h4 class="text-sm font-semibold text-pulse-muted uppercase tracking-wide mb-2">Data Scripts</h4>
-          <div class="text-xs text-pulse-muted grid grid-cols-2 gap-1">
-            <div>Get-SystemIdentity</div>
-            <div>Get-Hardware</div>
-            <div>Get-Performance</div>
-            <div>Get-NetworkConfig</div>
-            <div>Get-NicAdapters</div>
-            <div>Get-Services</div>
-            <div>Get-DiskHealth</div>
-            <div>Get-EventLogs</div>
-            <div>Get-ScoreConnectStatus</div>
-            <div>Get-PixellotConfig</div>
-            <div>Get-InstalledSoftware</div>
-            <div>Get-Temperature</div>
-            <div>Test-NetworkDomains</div>
-            <div>Test-NetworkPorts</div>
-            <div>Test-NtpDrift</div>
-            <div>Restart-Service</div>
-          </div>
+        <div class="about-links">
+          <a href="https://github.com/ianmoore-playon/pulse-releases" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
+            ${svgIcon("globe", 14)} View Releases
+          </a>
+          <a href="https://github.com/ianmoore-playon/vpu-diagnostic-tools" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
+            ${svgIcon("info", 14)} Source Repo
+          </a>
         </div>
-      </div>`
-    )}
+      </div>
+    </div>
   `;
 }
 
 // ── Init ─────────────────────────────────────────────────────
 
-function init() {
+async function init() {
   const navEl = document.getElementById("nav-links");
-  navEl.innerHTML = PAGES.map(
-    (p) =>
-      `<a class="nav-item" data-page="${esc(p.id)}" href="#${esc(p.id)}">${esc(p.label)}</a>`
-  ).join("");
+  navEl.innerHTML = NAV_SECTIONS.map((section) => `
+    <div class="nav-section">
+      <div class="nav-section-header">${esc(section.label)}</div>
+      ${section.pages.map((p) =>
+        `<a class="nav-item" data-page="${esc(p.id)}" href="#${esc(p.id)}">
+          <span class="nav-icon">${svgIcon(p.icon, 16)}</span>
+          <span>${esc(p.label)}</span>
+        </a>`
+      ).join("")}
+    </div>
+  `).join("");
 
   navEl.addEventListener("click", (e) => {
     const item = e.target.closest(".nav-item");
@@ -1261,6 +1926,17 @@ function init() {
     const hash = window.location.hash.slice(1) || "dashboard";
     if (hash !== currentPage) navigate(hash);
   });
+
+  $page().innerHTML = loading("Running initial diagnostics...");
+  await preloadAll();
+
+  try {
+    const logData = await api("/api/logs");
+    appendLogs(logData.logs || []);
+    if (logData.demoMode) {
+      document.getElementById("demo-banner")?.classList.remove("hidden");
+    }
+  } catch {}
 
   const startPage = window.location.hash.slice(1) || "dashboard";
   navigate(startPage);

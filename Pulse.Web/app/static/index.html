@@ -30,18 +30,31 @@
 <body class="dark h-full bg-pulse-bg text-pulse-text overflow-hidden">
     <div id="app" class="flex h-full">
         <nav id="sidebar" class="w-56 bg-pulse-sidebar border-r border-pulse-border flex flex-col flex-shrink-0">
-            <div class="p-4 border-b border-pulse-border">
-                <h1 class="text-lg font-bold text-white tracking-tight">Pulse Web</h1>
-                <p class="text-xs text-pulse-muted mt-0.5">VPU Diagnostic Tools</p>
+            <div class="sidebar-brand">
+                <svg class="brand-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                </svg>
+                <div>
+                    <h1 class="text-base font-bold text-white tracking-tight leading-tight">Pulse Web</h1>
+                    <p class="text-[10px] text-pulse-muted leading-tight">VPU Diagnostics</p>
+                </div>
             </div>
-            <div class="flex-1 overflow-y-auto py-2" id="nav-links"></div>
-            <div class="p-3 border-t border-pulse-border text-xs text-pulse-muted">
+            <div id="demo-banner" class="demo-banner hidden">DEMO DATA</div>
+            <div class="flex-1 overflow-y-auto py-1" id="nav-links"></div>
+            <div class="sidebar-footer">
                 v0.9.0-beta
             </div>
         </nav>
         <main id="content" class="flex-1 overflow-y-auto p-6">
             <div class="max-w-6xl mx-auto" id="page"></div>
         </main>
+        <div id="log-pane" class="log-pane">
+            <div class="log-pane-header" onclick="toggleLogPane()">
+                <span>Script Log</span>
+                <span class="log-toggle-icon">&#9650;</span>
+            </div>
+            <div class="log-body"></div>
+        </div>
     </div>
     <script src="/static/app.js"></script>
 </body>
