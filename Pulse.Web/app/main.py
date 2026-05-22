@@ -163,11 +163,10 @@ def _compute_findings(identity, performance, services, nics) -> list:
             )
 
     if services and not services.get("error"):
+        critical_svcs = {"agent", "vpu"}
         for svc in services.get("services", []):
-            if svc["status"] == "Stopped" and svc["name"] in (
-                "PixellotAgent",
-                "PixellotVPU",
-            ):
+            name_lower = svc["name"].lower()
+            if svc["status"] == "Stopped" and name_lower in critical_svcs:
                 findings.append(
                     {
                         "severity": "critical",
@@ -176,10 +175,7 @@ def _compute_findings(identity, performance, services, nics) -> list:
                         "recommendation": f"Restart {svc['name']} from the Services page.",
                     }
                 )
-            elif svc["status"] == "NotFound" and svc["name"] in (
-                "PixellotAgent",
-                "PixellotVPU",
-            ):
+            elif svc["status"] == "NotFound" and name_lower in critical_svcs:
                 findings.append(
                     {
                         "severity": "warning",

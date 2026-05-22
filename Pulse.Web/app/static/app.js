@@ -1767,13 +1767,12 @@ function renderFaultIsolator() {
     await runStep("services", async () => {
       const d = await api("/api/services");
       const svcs = d.services || [];
+      const critical = ["agent", "vpu"];
       const stopped = svcs.filter(
-        (s) => s.status === "Stopped" && s.name !== "LogMeIn"
+        (s) => s.status === "Stopped" && critical.includes(s.name.toLowerCase())
       );
       const missing = svcs.filter(
-        (s) =>
-          s.status === "NotFound" &&
-          ["PixellotAgent", "PixellotVPU"].includes(s.name)
+        (s) => s.status === "NotFound" && critical.includes(s.name.toLowerCase())
       );
       if (stopped.length)
         return { status: "fail", detail: "Stopped: " + stopped.map((s) => s.name).join(", ") };

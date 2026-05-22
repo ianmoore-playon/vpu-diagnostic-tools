@@ -30,10 +30,14 @@ try {
 
         if ($test.protocol -eq 'TCP') {
             try {
-                $tncResult = Test-NetConnection -ComputerName $test.host -Port $test.port -WarningAction SilentlyContinue
-                if ($tncResult.TcpTestSucceeded) {
+                $tcp = New-Object System.Net.Sockets.TcpClient
+                $connect = $tcp.BeginConnect($test.host, $test.port, $null, $null)
+                $waited = $connect.AsyncWaitHandle.WaitOne(3000, $false)
+                if ($waited -and $tcp.Connected) {
+                    $tcp.EndConnect($connect)
                     $status = 'pass'
                 }
+                $tcp.Close()
             }
             catch {
                 $status = 'fail'

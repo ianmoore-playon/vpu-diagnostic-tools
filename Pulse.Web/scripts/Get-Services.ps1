@@ -13,10 +13,10 @@ $ErrorActionPreference = 'Stop'
 
 try {
     $serviceNames = @(
-        'PixellotAgent'
-        'PixellotCoordinator'
-        'PixellotVPU'
-        'ScoreConnect'
+        'agent'
+        'coordinator'
+        'vpu'
+        'scoreconnect'
         'LogMeIn'
     )
 
