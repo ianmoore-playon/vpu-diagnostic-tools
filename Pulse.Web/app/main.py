@@ -14,9 +14,33 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from powershell import run_ps, LOG_BUFFER, DEMO_MODE
+from powershell import (
+    run_ps, LOG_BUFFER, DEMO_MODE,
+    get_running_tasks, cancel_task, cancel_all_tasks,
+)
 
-SETTINGS_PATH = _os.path.join(_os.path.dirname(_app_dir), "pulse-settings.json")
+_web_root = _os.path.dirname(_app_dir)
+SETTINGS_PATH = _os.path.join(_web_root, "pulse-settings.json")
+
+def _read_version() -> str:
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--always"],
+            capture_output=True, text=True,
+            cwd=_os.path.dirname(_web_root), timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
+    try:
+        with open(_os.path.join(_web_root, "VERSION")) as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return "unknown"
+
+APP_VERSION = _read_version()
 _static_dir = _os.path.join(_app_dir, "static")
 
 app = FastAPI(title="Pulse Web | VPU Diagnostics")
@@ -314,8 +338,14 @@ async def api_preload():
         "events": event_logs,
         "scoreconnect": scoreconnect,
         "settings": load_settings(),
+        "_version": APP_VERSION,
         "_logs": list(LOG_BUFFER),
     }
+
+
+@app.get("/api/version")
+async def api_version():
+    return {"version": APP_VERSION}
 
 
 @app.get("/api/logs")
@@ -323,6 +353,24 @@ async def api_logs(since: int = Query(default=0)):
     """Return recent script execution logs. `since` is an index offset."""
     logs = list(LOG_BUFFER)
     return {"demoMode": DEMO_MODE, "logs": logs[since:], "total": len(logs)}
+
+
+@app.get("/api/scripts/running")
+async def api_scripts_running():
+    return {"tasks": get_running_tasks()}
+
+
+@app.post("/api/scripts/cancel")
+async def api_scripts_cancel(request: Request):
+    body = await request.json()
+    task_id = body.get("taskId", "")
+    return {"ok": cancel_task(task_id)}
+
+
+@app.post("/api/scripts/cancel-all")
+async def api_scripts_cancel_all():
+    count = cancel_all_tasks()
+    return {"ok": True, "cancelled": count}
 
 
 @app.get("/api/dashboard")

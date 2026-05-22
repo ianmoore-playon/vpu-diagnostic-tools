@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from collections import deque
 from datetime import datetime
 from typing import Optional
@@ -18,6 +19,7 @@ SCRIPTS_DIR = os.path.normpath(
 DEMO_MODE = sys.platform != "win32"
 
 LOG_BUFFER: deque[dict] = deque(maxlen=500)
+RUNNING_TASKS: dict[str, dict] = {}
 
 
 def _log(script: str, duration_ms: float, status: str, detail: str = "", size: int = 0):
@@ -33,15 +35,74 @@ def _log(script: str, duration_ms: float, status: str, detail: str = "", size: i
     return entry
 
 
+def get_running_tasks() -> list[dict]:
+    now = time.monotonic()
+    return [
+        {"id": tid, "script": t["script"], "runningSec": round(now - t["started"], 1)}
+        for tid, t in RUNNING_TASKS.items()
+    ]
+
+
+def cancel_task(task_id: str) -> bool:
+    task = RUNNING_TASKS.get(task_id)
+    if not task:
+        return False
+    handle = task.get("handle")
+    if handle:
+        try:
+            handle.kill()
+        except ProcessLookupError:
+            pass
+    cancel_evt = task.get("cancel")
+    if cancel_evt:
+        cancel_evt.set()
+    return True
+
+
+def cancel_all_tasks() -> int:
+    count = 0
+    for tid in list(RUNNING_TASKS):
+        if cancel_task(tid):
+            count += 1
+    return count
+
+
 async def run_ps(
     script_name: str, args: Optional[dict] = None, timeout: int = 30
 ) -> dict:
+    task_id = uuid.uuid4().hex[:8]
     t0 = time.monotonic()
+    cancel_evt = asyncio.Event()
+    RUNNING_TASKS[task_id] = {
+        "script": script_name,
+        "started": t0,
+        "handle": None,
+        "cancel": cancel_evt,
+    }
+
+    try:
+        return await _run_ps_inner(script_name, args, timeout, task_id, cancel_evt)
+    finally:
+        RUNNING_TASKS.pop(task_id, None)
+
+
+async def _run_ps_inner(script_name, args, timeout, task_id, cancel_evt):
+    t0 = RUNNING_TASKS[task_id]["started"]
 
     if DEMO_MODE:
         from demo_data import get_demo
 
-        await asyncio.sleep(0.05 + 0.15 * __import__("random").random())
+        try:
+            await asyncio.wait_for(
+                cancel_evt.wait(),
+                timeout=0.05 + 0.15 * __import__("random").random(),
+            )
+            ms = (time.monotonic() - t0) * 1000
+            _log(script_name, ms, "cancelled", "user cancelled")
+            return {"error": True, "message": f"Cancelled: {script_name}"}
+        except asyncio.TimeoutError:
+            pass
+
         result = get_demo(script_name, args)
         ms = (time.monotonic() - t0) * 1000
         if result is not None:
@@ -68,7 +129,26 @@ async def run_ps(
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        RUNNING_TASKS[task_id]["handle"] = proc
+
+        async def wait_cancel():
+            await cancel_evt.wait()
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+
+        cancel_task_coro = asyncio.create_task(wait_cancel())
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        finally:
+            cancel_task_coro.cancel()
+
+        if cancel_evt.is_set():
+            ms = (time.monotonic() - t0) * 1000
+            _log(script_name, ms, "cancelled", "user cancelled")
+            return {"error": True, "message": f"Cancelled: {script_name}"}
+
         ms = (time.monotonic() - t0) * 1000
         output = stdout.decode("utf-8", errors="replace").strip()
         stderr_text = stderr.decode("utf-8", errors="replace").strip()
