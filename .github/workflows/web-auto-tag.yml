@@ -1,0 +1,39 @@
+# Auto-tag Pulse.Web dev releases when changes land on the dev branch.
+#
+# Creates a web-dev-v* tag which triggers web-build.yml to package and release.
+
+name: Auto-tag Pulse.Web (dev)
+
+on:
+  push:
+    branches: [dev]
+    paths: ["Pulse.Web/**"]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Create dev tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          VERSION=$(cat Pulse.Web/VERSION | tr -d '[:space:]')
+          SHA="${COMMIT_SHA:0:7}"
+          TAG="web-dev-v${VERSION}-${SHA}"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping"
+            exit 0
+          fi
+
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Created tag: $TAG"
