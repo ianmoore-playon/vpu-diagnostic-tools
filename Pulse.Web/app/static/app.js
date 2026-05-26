@@ -266,8 +266,10 @@ function preloadProgressive() {
   });
   api("/api/version").then((data) => {
     if (data?.version) {
+      dataCache._version = data.version;
       const footer = document.querySelector(".sidebar-footer");
       if (footer) footer.textContent = data.version;
+      if (currentPage === "about") renderPage("about");
     }
   });
   api("/api/logs").then((logData) => {
@@ -389,6 +391,11 @@ function toggleLogPane() {
       else fetchServerLog();
     }
   }
+}
+
+function openServerLog() {
+  if (!logPaneOpen) toggleLogPane();
+  switchLogTab("server");
 }
 
 // ── WebSocket ────────────────────────────────────────────────
@@ -1634,7 +1641,7 @@ function renderNetwork() {
 
   function portCard(p) {
     const ok = (p.status || "").toLowerCase() === "pass";
-    const cls = ok ? "port-card-pass" : "port-card-fail";
+    const cls = ok ? "port-card-pass" : (p.optional ? "port-card-warn" : "port-card-fail");
     return `<div class="port-card ${cls}">
       <div class="port-card-num">${esc(String(p.port))}</div>
       <div class="port-card-name">${esc(p.purpose)}</div>
@@ -1899,6 +1906,7 @@ function renderCameras() {
   const ports = data.ports || [];
   const pixCfg = data.pixellotConfig || {};
   const cfgCameras = pixCfg.cameras || [];
+  const findings = data.findings || [];
 
   const portSlots = [];
   for (let i = 0; i < Math.max(4, ports.length); i++) {
@@ -1967,9 +1975,23 @@ function renderCameras() {
       </button>`
     )}
 
+    ${findings.length ? `
+    <div class="card">
+      ${sectionTitle("alert-circle", findings.length + " finding" + (findings.length !== 1 ? "s" : "") + " need attention")}
+      ${findings.map(f => `
+        <div class="cam-finding-row cam-finding-row-${esc(f.severity)}">
+          <div class="cam-finding-header">
+            <span class="cam-finding-pill cam-finding-pill-${esc(f.severity)}">${esc(f.severity.toUpperCase())}</span>
+            <span class="font-semibold text-sm">${esc(f.title)}</span>
+          </div>
+          <div class="cam-finding-body">${esc(f.body)}</div>
+        </div>`).join("")}
+    </div>` : ""}
+
     <div class="cam-port-grid">
-      ${portSlots.map((p, i) => portTile(p, i)).join("")}
+      ${portSlots.slice().reverse().map((p, ri) => portTile(p, portSlots.length - 1 - ri)).join("")}
     </div>
+    <div class="text-xs text-pulse-muted mt-2 mb-1">Port order matches physical chassis: Port ${portSlots.length} (left) → Port 1 (right).</div>
 
     ${cfgCameras.length ? `
     <div class="card mt-4">
@@ -2472,170 +2494,251 @@ function renderScoreConnect() {
   `;
 }
 
-// ── Fault Isolator ───────────────────────────────────────────
+// ── Camera Fault Isolator ────────────────────────────────────
+
+var _fi = null;
+
+function _fiReset() {
+  _fi = { step: 0, suspect: -1, test: -1, phases: [], p1pass: null, p2pass: null, p2infer: false, p3pass: null };
+}
 
 function renderFaultIsolator() {
-  const steps = [
-    { id: "internet", label: "Internet Connectivity" },
-    { id: "dns", label: "DNS Resolution" },
-    { id: "ports", label: "Port Connectivity" },
-    { id: "services", label: "Service Status" },
-    { id: "cameras", label: "Camera Detection" },
-    { id: "performance", label: "System Performance" },
-  ];
+  var cams = cached("cameras");
+  if (!cams) {
+    $page().innerHTML = sectionLoading("Camera Fault Isolator");
+    api("/api/cameras").then(function(d) { dataCache.cameras = d; renderFaultIsolator(); });
+    return;
+  }
 
-  $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-4">Fault Isolator</h2>
-    <p class="text-sm text-pulse-muted mb-6">Run a sequential diagnostic check across all subsystems.</p>
-    <button class="btn btn-primary mb-6" id="fi-start">Start Diagnosis</button>
-    <button class="btn btn-secondary mb-6 ml-2 hidden" id="fi-reset">Reset</button>
-    <div id="fi-steps">
-      ${steps.map((s) => `<div class="wizard-step" id="fi-${esc(s.id)}"><div class="flex items-center gap-3"><span class="text-sm font-medium">${esc(s.label)}</span><span id="fi-badge-${esc(s.id)}" class="text-xs text-pulse-muted">Pending</span></div><div id="fi-detail-${esc(s.id)}" class="text-xs text-pulse-muted mt-1 hidden"></div></div>`).join("")}
-    </div>
-    <div id="fi-summary" class="mt-6 hidden"></div>
-  `;
+  var ports = cams.ports || [];
+  if (!_fi) _fiReset();
 
-  document.getElementById("fi-start").addEventListener("click", async () => {
-    document.getElementById("fi-start").classList.add("hidden");
-    document.getElementById("fi-reset").classList.remove("hidden");
+  function portLabel(idx) {
+    var p = ports[idx];
+    if (!p) return "Port " + (idx + 1);
+    return "Port " + (idx + 1) + " (" + p.name + ")";
+  }
 
-    let passCount = 0;
-    let warnCount = 0;
-    let failCount = 0;
-
-    async function runStep(id, fn) {
-      const el = document.getElementById("fi-" + id);
-      const badgeEl = document.getElementById("fi-badge-" + id);
-      const detailEl = document.getElementById("fi-detail-" + id);
-      el.className = "wizard-step step-running";
-      badgeEl.textContent = "Checking...";
-      detailEl.classList.remove("hidden");
-      detailEl.textContent = "";
-
-      try {
-        const result = await fn();
-        el.className = "wizard-step step-" + result.status;
-        badgeEl.innerHTML = statusBadge(
-          result.status === "pass" ? "Pass" : result.status === "warn" ? "Warning" : "Fail"
-        );
-        detailEl.textContent = result.detail;
-        if (result.status === "pass") passCount++;
-        else if (result.status === "warn") warnCount++;
-        else failCount++;
-      } catch (e) {
-        el.className = "wizard-step step-fail";
-        badgeEl.innerHTML = statusBadge("Fail");
-        detailEl.textContent = e.message;
-        failCount++;
-      }
+  function stepDots() {
+    var html = '<div class="fi-stepper">';
+    for (var i = 0; i < 5; i++) {
+      var cls = "fi-step-dot";
+      if (i < _fi.step) cls += " fi-dot-done";
+      else if (i === _fi.step) cls += " fi-dot-active";
+      html += '<div class="' + cls + '">' + (i + 1) + "</div>";
+      if (i < 4) html += '<div class="fi-step-line' + (i < _fi.step ? " fi-line-done" : "") + '"></div>';
     }
+    return html + "</div>";
+  }
 
-    await runStep("internet", async () => {
-      const d = await api("/api/network");
-      const ok = d.config?.internetReachable;
-      return {
-        status: ok ? "pass" : "fail",
-        detail: ok
-          ? "Internet reachable via " + (d.config?.testedHost || "ping")
-          : "No internet connectivity detected",
-      };
+  function resultChip(pass, note) {
+    if (pass === null || pass === undefined) return "";
+    var cls = pass ? "fi-result-pass" : "fi-result-fail";
+    var label = pass ? "LINKED" : "NO LINK";
+    return '<div class="fi-result-row ' + cls + '">' +
+      '<span class="fi-result-chip">' + label + "</span>" +
+      '<span class="fi-result-note">' + esc(note) + "</span>" +
+      "</div>";
+  }
+
+  function historyTable() {
+    if (!_fi.phases.length) return "";
+    var rows = _fi.phases.map(function(ph) {
+      return "<tr>" +
+        '<td class="font-mono" style="font-size:0.7rem;color:#64748b">' + esc(ph.ts) + "</td>" +
+        "<td><span class=\"" + (ph.pass ? "status-pass" : "status-fail") + "\">" + (ph.pass ? "Pass" : "Fail") + "</span></td>" +
+        "<td>" + esc(ph.phase) + "</td>" +
+        '<td class="text-pulse-muted">' + esc(ph.note) + "</td>" +
+        "</tr>";
+    }).join("");
+    return '<div class="mt-4"><div class="text-sm font-semibold mb-2 text-pulse-muted">Phase history</div>' +
+      '<table class="data-table"><thead><tr><th>Time</th><th>Result</th><th>Phase</th><th>Note</th></tr></thead>' +
+      "<tbody>" + rows + "</tbody></table></div>";
+  }
+
+  function getVerdict() {
+    var p1 = _fi.p1pass, p2 = _fi.p2pass, infer = _fi.p2infer;
+    var suspect = portLabel(_fi.suspect);
+    if (p1 === null) return { type: "unknown", title: "No phases completed", body: "Complete Phase 1 to generate a verdict." };
+    if (p1 === true) {
+      if (p2 === true)  return { type: "cable",   title: "Cable Fault",     body: suspect + " linked with a replacement cable. The original cable to this port is faulty — replace it." };
+      if (p2 === false) return { type: "nic",     title: "NIC Port Fault",  body: "Camera is OK but " + suspect + " did not link even with a replacement cable. The NIC port is likely faulty — contact Pixellot support." };
+      return { type: "cable-nic", title: "Cable or NIC Fault", body: "Camera is working. The fault is on the suspect port hardware (" + suspect + "). Try replacing the cable first." };
+    }
+    if (infer)        return { type: "camera",  title: "Camera Fault (Inferred)", body: "Camera did not link on the known-good test port. The camera on " + suspect + " is likely faulty — replace or reseat it." };
+    if (p2 === true)  return { type: "camera",  title: "Camera Fault (Confirmed)", body: "Spare camera linked on the test port, confirming the original camera is faulty. Replace the camera on " + suspect + "." };
+    if (p2 === false) return { type: "unknown", title: "Inconclusive",       body: "Both cameras failed to link on the test port. The test port cable or port itself may have an issue — try a different test port or check the test cable." };
+    return { type: "camera-nic", title: "Camera Likely Faulty", body: "Camera did not link on the test port. Complete Phase 2 to confirm." };
+  }
+
+  // ── per-step HTML ─────────────────────────────────────────────
+  var inner = "";
+
+  if (_fi.step === 0) {
+    var opts = ports.map(function(p, i) {
+      var s = p.isUp ? (" · Linked " + (p.linkSpeedMbps || "?") + " Mbps") : " · Down";
+      return "<option value=\"" + i + "\">Port " + (i + 1) + " — " + p.name + esc(s) + "</option>";
+    }).join("");
+    var def = "<option value=\"-1\">— Select —</option>";
+    inner = "<div class=\"fi-phase-card\">" +
+      "<div class=\"fi-phase-title\">Setup — Select Ports</div>" +
+      "<div class=\"fi-phase-instr mb-3\">Choose the suspect port (the one with the issue) and a known-good test port. The test port should currently be linked.</div>" +
+      "<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px\">" +
+        "<div><div class=\"text-xs text-pulse-muted mb-1\">Suspect port</div>" +
+          "<select id=\"fi-suspect\" class=\"ev-select\" style=\"width:100%\">" + def + opts + "</select></div>" +
+        "<div><div class=\"text-xs text-pulse-muted mb-1\">Test port (known-good)</div>" +
+          "<select id=\"fi-test\" class=\"ev-select\" style=\"width:100%\">" + def + opts + "</select></div>" +
+      "</div>" +
+      "<button id=\"fi-begin\" class=\"btn-primary\" disabled>Begin Fault Isolation →</button>" +
+      "</div>";
+
+  } else if (_fi.step === 1) {
+    var sn = portLabel(_fi.suspect), tn = portLabel(_fi.test);
+    inner = "<div class=\"fi-phase-card\">" +
+      "<div class=\"fi-phase-title\">Phase 1 of 3 — Camera Swap</div>" +
+      "<div class=\"fi-phase-instr\">Move the camera cable from <strong>" + esc(sn) + "</strong> to <strong>" + esc(tn) + "</strong>. Leave both power cables connected. Click <em>Check</em> when the camera is fully seated on the test port.</div>" +
+      resultChip(_fi.p1pass, _fi.p1pass === true ? "Camera linked on test port — camera is OK." : _fi.p1pass === false ? "Camera did not link on test port — camera may be faulty." : "") +
+      "</div>" +
+      "<div style=\"display:flex;gap:10px;justify-content:flex-end\">" +
+        "<button id=\"fi-check1\" class=\"btn-outline btn-ol-blue\">" + svgIcon("zap", 14) + " Check</button>" +
+        (_fi.p1pass !== null ? "<button id=\"fi-next1\" class=\"btn-primary\">Next Phase →</button>" : "") +
+      "</div>";
+
+  } else if (_fi.step === 2) {
+    var sn2 = portLabel(_fi.suspect), tn2 = portLabel(_fi.test);
+    var ph2title, ph2instr;
+    if (_fi.p1pass === true) {
+      ph2title = "Phase 2 of 3 — Cable Test";
+      ph2instr = "Camera is working — it linked on <strong>" + esc(tn2) + "</strong>. Move it back to <strong>" + esc(sn2) + "</strong> using a different cable. Click <em>Check</em> when reconnected.";
+    } else {
+      ph2title = "Phase 2 of 3 — Spare Camera Test";
+      ph2instr = "Camera did not link. Plug a known-good spare camera into <strong>" + esc(tn2) + "</strong>. Click <em>Check</em>, or click <em>No Spare</em> to infer a conclusion from Phase 1.";
+    }
+    var p2note = _fi.p2infer ? "No spare camera — inferring camera fault." :
+      _fi.p2pass === true  ? "Link confirmed." :
+      _fi.p2pass === false ? "No link detected." : "";
+    var p2chipPass = _fi.p2infer ? false : _fi.p2pass;
+    var canAdvance = _fi.p2pass !== null || _fi.p2infer;
+    inner = "<div class=\"fi-phase-card\">" +
+      "<div class=\"fi-phase-title\">" + ph2title + "</div>" +
+      "<div class=\"fi-phase-instr\">" + ph2instr + "</div>" +
+      resultChip(p2chipPass, p2note) +
+      "</div>" +
+      "<div style=\"display:flex;gap:10px;justify-content:flex-end\">" +
+        (!_fi.p2infer && _fi.p1pass === false && _fi.p2pass === null
+          ? "<button id=\"fi-infer\" class=\"btn-outline btn-ol-muted\">No Spare — Infer</button>" : "") +
+        "<button id=\"fi-check2\" class=\"btn-outline btn-ol-blue\">" + svgIcon("zap", 14) + " Check</button>" +
+        (canAdvance ? "<button id=\"fi-next2\" class=\"btn-primary\">Next →</button>" : "") +
+      "</div>";
+
+  } else if (_fi.step === 3) {
+    var sn3 = portLabel(_fi.suspect), tn3 = portLabel(_fi.test);
+    var ph3title, ph3instr;
+    if (_fi.p1pass === true && _fi.p2pass === true) {
+      ph3title = "Phase 3 of 3 — Confirm and Restore";
+      ph3instr = "Cable fault confirmed. Reconnect the original camera to <strong>" + esc(sn3) + "</strong> with the replacement cable. Click <em>Verify</em> to confirm the port is healthy, or click <em>Finish</em>.";
+    } else if (_fi.p1pass === true && _fi.p2pass === false) {
+      ph3title = "Phase 3 of 3 — NIC Port Isolation";
+      ph3instr = "Camera is OK but " + esc(sn3) + " won't link even with a new cable. Try plugging the camera into a different NIC port to confirm the NIC port is faulty. Click <em>Verify</em> or <em>Finish</em>.";
+    } else if (_fi.p2infer || _fi.p2pass === true) {
+      ph3title = "Phase 3 of 3 — Camera Replacement";
+      ph3instr = "Camera fault identified. Plug the replacement camera into <strong>" + esc(sn3) + "</strong>. Click <em>Verify</em> to confirm the port comes up, or click <em>Finish</em>.";
+    } else {
+      ph3title = "Phase 3 of 3 — Additional Diagnostics";
+      ph3instr = "Both cameras failed on the test port. Check the cable on <strong>" + esc(tn3) + "</strong> or try a different test port. Click <em>Verify</em> when ready, or <em>Finish</em> to see the verdict.";
+    }
+    inner = "<div class=\"fi-phase-card\">" +
+      "<div class=\"fi-phase-title\">" + ph3title + "</div>" +
+      "<div class=\"fi-phase-instr\">" + ph3instr + "</div>" +
+      resultChip(_fi.p3pass, _fi.p3pass === true ? "Port is healthy — repair confirmed." : _fi.p3pass === false ? "Port still not linking — further investigation may be needed." : "") +
+      "</div>" +
+      "<div style=\"display:flex;gap:10px;justify-content:flex-end\">" +
+        "<button id=\"fi-check3\" class=\"btn-outline btn-ol-blue\">" + svgIcon("zap", 14) + " Verify</button>" +
+        "<button id=\"fi-finish\" class=\"btn-primary\">Finish — View Verdict →</button>" +
+      "</div>";
+
+  } else {
+    var v = getVerdict();
+    inner = "<div class=\"fi-verdict-card fi-verdict-" + esc(v.type) + "\">" +
+      "<div class=\"fi-verdict-title\">Verdict: " + esc(v.title) + "</div>" +
+      "<div class=\"fi-verdict-body\">" + esc(v.body) + "</div>" +
+      "</div>" +
+      "<div style=\"display:flex;gap:10px\">" +
+        "<button id=\"fi-startover\" class=\"btn-outline btn-ol-blue\">Start Over</button>" +
+        "<button class=\"btn-outline btn-ol-blue\" onclick=\"navigate('cameras')\">← Back to Cameras</button>" +
+      "</div>";
+  }
+
+  $page().innerHTML = pageHeader("Camera Fault Isolator",
+    "3-phase swap test to isolate a fault to NIC, cable, or camera.",
+    "<button class=\"btn-outline btn-ol-blue\" onclick=\"navigate('cameras')\">" + svgIcon("arrow-left", 14) + " Cameras</button>"
+  ) + "<div class=\"card\">" + stepDots() + inner + historyTable() + "</div>";
+
+  // ── event listeners ───────────────────────────────────────────
+  var suspectSel = document.getElementById("fi-suspect");
+  var testSel    = document.getElementById("fi-test");
+  var beginBtn   = document.getElementById("fi-begin");
+
+  if (suspectSel && testSel && beginBtn) {
+    if (_fi.suspect >= 0) suspectSel.value = String(_fi.suspect);
+    if (_fi.test    >= 0) testSel.value    = String(_fi.test);
+    function updateBegin() {
+      var s = parseInt(suspectSel.value), t = parseInt(testSel.value);
+      beginBtn.disabled = s < 0 || t < 0 || s === t;
+    }
+    suspectSel.addEventListener("change", updateBegin);
+    testSel.addEventListener("change", updateBegin);
+    updateBegin();
+    beginBtn.addEventListener("click", function() {
+      _fi.suspect = parseInt(suspectSel.value);
+      _fi.test    = parseInt(testSel.value);
+      _fi.step = 1;
+      renderFaultIsolator();
     });
+  }
 
-    await runStep("dns", async () => {
-      const d = await api("/api/network");
-      const results = d.domains?.results || [];
-      const fails = results.filter((r) => r.status === "fail");
-      if (!results.length) return { status: "fail", detail: "No DNS results" };
-      if (fails.length === 0)
-        return { status: "pass", detail: "All " + results.length + " domains resolved" };
-      if (fails.length < results.length)
-        return {
-          status: "warn",
-          detail: fails.length + " of " + results.length + " domains failed: " + fails.map((f) => f.domain).join(", "),
-        };
-      return { status: "fail", detail: "All DNS resolution failed" };
-    });
+  async function doCheck(checkFn, passKey, phaseLabel) {
+    delete dataCache.cameras;
+    var fresh;
+    try { fresh = await api("/api/cameras"); dataCache.cameras = fresh; } catch(e) { fresh = { ports: [] }; }
+    var ps = fresh.ports || [];
+    var pass = checkFn(ps);
+    _fi[passKey] = pass;
+    var note = pass ? portLabel(_fi.suspect) + " linked." : "No link detected on checked port.";
+    _fi.phases.push({ ts: new Date().toLocaleTimeString(), phase: phaseLabel, pass: pass, note: note });
+    renderFaultIsolator();
+  }
 
-    await runStep("ports", async () => {
-      const d = await api("/api/network");
-      const results = d.ports?.results || [];
-      const required = results.filter((r) => !r.optional);
-      const reqFails = required.filter((r) => r.status === "fail");
-      if (!results.length) return { status: "fail", detail: "No port test results" };
-      if (reqFails.length === 0)
-        return { status: "pass", detail: "All " + required.length + " required ports open" };
-      return {
-        status: "fail",
-        detail: reqFails.length + " required port(s) blocked: " + reqFails.map((f) => f.purpose).join(", "),
-      };
-    });
-
-    await runStep("services", async () => {
-      const d = await api("/api/services");
-      const svcs = d.services || [];
-      const critical = ["agent", "vpu"];
-      const stopped = svcs.filter(
-        (s) => s.status === "Stopped" && critical.includes(s.name.toLowerCase())
-      );
-      const missing = svcs.filter(
-        (s) => s.status === "NotFound" && critical.includes(s.name.toLowerCase())
-      );
-      if (stopped.length)
-        return { status: "fail", detail: "Stopped: " + stopped.map((s) => s.name).join(", ") };
-      if (missing.length)
-        return { status: "warn", detail: "Not installed: " + missing.map((s) => s.name).join(", ") };
-      return { status: "pass", detail: "All critical services running" };
-    });
-
-    await runStep("cameras", async () => {
-      const d = await api("/api/cameras");
-      const cPorts = d.ports || [];
-      const allCams = cPorts.flatMap((p) => p.camerasDetected || []);
-      const downPorts = cPorts.filter((p) => !p.isUp);
-      if (downPorts.length)
-        return {
-          status: "warn",
-          detail: downPorts.length + " NIC port(s) down. " + allCams.length + " camera(s) detected on other ports.",
-        };
-      if (allCams.length === 0)
-        return { status: "warn", detail: "No Pixellot cameras detected in ARP tables" };
-      return {
-        status: "pass",
-        detail: allCams.length + " Pixellot camera(s) detected across " + cPorts.filter((p) => (p.camerasDetected || []).length > 0).length + " port(s)",
-      };
-    });
-
-    await runStep("performance", async () => {
-      const d = await api("/api/dashboard");
-      const perf = d.performance || {};
-      const issues = [];
-      const cpuVal = perf.cpu?.usagePercent || 0;
-      const memVal = perf.memory?.usedPercent || 0;
-      const diskVal = perf.disk?.usedPercent || 0;
-      if (cpuVal > 90) issues.push("CPU at " + cpuVal + "%");
-      if (memVal > 90) issues.push("Memory at " + memVal + "%");
-      if (diskVal > 90) issues.push("Disk at " + diskVal + "%");
-      if (issues.length)
-        return { status: "fail", detail: issues.join("; ") };
-      return {
-        status: "pass",
-        detail: "CPU " + cpuVal + "%, Memory " + memVal + "%, Disk " + diskVal + "%",
-      };
-    });
-
-    const summaryEl = document.getElementById("fi-summary");
-    summaryEl.classList.remove("hidden");
-    const overall =
-      failCount > 0 ? "critical" : warnCount > 0 ? "warning" : "ok";
-    summaryEl.innerHTML = `<div class="sev-${esc(overall)} rounded px-4 py-3">
-      <div class="font-semibold">Diagnosis Complete</div>
-      <div class="text-sm mt-1">${passCount} passed, ${warnCount} warning(s), ${failCount} failed</div>
-    </div>`;
+  var c1 = document.getElementById("fi-check1");
+  if (c1) c1.addEventListener("click", function() {
+    doCheck(function(ps) { return !!(ps[_fi.test] && ps[_fi.test].isUp); }, "p1pass", "Phase 1 — Camera Swap");
   });
+  var n1 = document.getElementById("fi-next1");
+  if (n1) n1.addEventListener("click", function() { _fi.step = 2; renderFaultIsolator(); });
 
-  document
-    .getElementById("fi-reset")
-    .addEventListener("click", () => renderFaultIsolator());
+  var c2 = document.getElementById("fi-check2");
+  if (c2) c2.addEventListener("click", function() {
+    var idx = _fi.p1pass === true ? _fi.suspect : _fi.test;
+    doCheck(function(ps) { return !!(ps[idx] && ps[idx].isUp); }, "p2pass", "Phase 2 — " + (_fi.p1pass === true ? "Cable Test" : "Spare Camera Test"));
+  });
+  var infer = document.getElementById("fi-infer");
+  if (infer) infer.addEventListener("click", function() {
+    _fi.p2infer = true;
+    _fi.phases.push({ ts: new Date().toLocaleTimeString(), phase: "Phase 2 — Spare Camera Test", pass: false, note: "No spare — inferred camera fault." });
+    renderFaultIsolator();
+  });
+  var n2 = document.getElementById("fi-next2");
+  if (n2) n2.addEventListener("click", function() { _fi.step = 3; renderFaultIsolator(); });
+
+  var c3 = document.getElementById("fi-check3");
+  if (c3) c3.addEventListener("click", function() {
+    doCheck(function(ps) { return !!(ps[_fi.suspect] && ps[_fi.suspect].isUp); }, "p3pass", "Phase 3 — Verify");
+  });
+  var fin = document.getElementById("fi-finish");
+  if (fin) fin.addEventListener("click", function() { _fi.step = 4; renderFaultIsolator(); });
+
+  var so = document.getElementById("fi-startover");
+  if (so) so.addEventListener("click", function() { _fiReset(); renderFaultIsolator(); });
 }
 
 // ── Settings ─────────────────────────────────────────────────
@@ -2679,6 +2782,19 @@ function renderSettings() {
       </div>
     </div>
 
+    <!-- Logs & Reports -->
+    <div class="card mt-4">
+      ${sectionTitle("file", "Logs & Reports")}
+      <p class="text-sm text-pulse-muted mb-3">File paths used by Pulse on this VPU.</p>
+      <div class="kv-grid mb-3" style="max-width:640px">
+        ${kvRow("Server log", data._paths?.serverLog || "—")}
+        ${kvRow("Settings file", data._paths?.settingsFile || "—")}
+      </div>
+      <button class="btn-outline btn-ol-blue" onclick="openServerLog()">
+        ${svgIcon("file", 14)} View Server Log
+      </button>
+    </div>
+
     <!-- Diagnostics -->
     <div class="card mt-4">
       ${sectionTitle("zap", "Diagnostics")}
@@ -2718,6 +2834,11 @@ function renderSettings() {
 // ── About ────────────────────────────────────────────────────
 
 function renderAbout() {
+  const dash = cached("dashboard");
+  if (!dash) fetchSection("dashboard");
+  const id = (dash || {}).identity || {};
+  const ver = dataCache._version;
+
   $page().innerHTML = `
     <div class="about-container">
       <div class="card about-card">
@@ -2728,10 +2849,12 @@ function renderAbout() {
         </div>
         <h2 class="about-title">Pulse</h2>
         <p class="about-tagline">Pixellot Unified Live System Evaluator</p>
-        <div class="about-version">v0.9.0-beta · Web Edition</div>
+        <div class="about-version" id="about-version">${ver ? esc(ver) + " · Web Edition" : "… · Web Edition"}</div>
         <p class="about-desc">A lightweight, self-contained diagnostic tool for Pixellot VPU systems. Collects system identity, hardware, performance metrics, network configuration, camera connectivity, service status, disk health, and event logs.</p>
         <div class="about-info">
           <div class="kv-grid kv-grid-center">
+            ${kvRow("Hostname", id.hostname || "—")}
+            ${kvRow("OS", id.os || "—")}
             ${kvRow("Backend", "Python + FastAPI + Uvicorn")}
             ${kvRow("Frontend", "Vanilla HTML/JS + Tailwind CSS")}
             ${kvRow("Data Collection", "PowerShell + WMI/CIM")}
@@ -2748,6 +2871,12 @@ function renderAbout() {
       </div>
     </div>
   `;
+  if (!ver) {
+    api("/api/version").then((d) => {
+      const el = document.getElementById("about-version");
+      if (el && d?.version) el.textContent = d.version + " · Web Edition";
+    }).catch(() => {});
+  }
 }
 
 // ── Init ─────────────────────────────────────────────────────

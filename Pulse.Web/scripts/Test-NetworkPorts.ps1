@@ -22,6 +22,7 @@ try {
         @{ protocol = 'UDP'; port = 123;  host = 'prod-echo.pixellot.tv'; purpose = 'NTP';               optional = $false }
         @{ protocol = 'UDP'; port = 2088; host = 'pixellot.tv';          purpose = 'Zixi Streaming';    optional = $false }
         # Optional
+        @{ protocol = 'TCP'; port = 1935; host = 'sportzcast.net';       purpose = 'RTMP Ingest';       optional = $true }
         @{ protocol = 'TCP'; port = 1402; host = 'sportzcast.net';       purpose = 'SportzCast';        optional = $true }
     )
 

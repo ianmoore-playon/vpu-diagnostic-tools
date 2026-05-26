@@ -127,6 +127,7 @@ DEMO = {
             {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
             {"purpose": "Zixi Streaming", "host": "pixellot.tv", "port": 2088, "protocol": "UDP", "status": "pass", "optional": False},
             # Optional
+            {"purpose": "RTMP Ingest", "host": "sportzcast.net", "port": 1935, "protocol": "TCP", "status": "fail", "optional": True},
             {"purpose": "SportzCast", "host": "sportzcast.net", "port": 1402, "protocol": "TCP", "status": "fail", "optional": True},
         ]
     },
