@@ -65,9 +65,11 @@ echo  [INFO] Extracting to %EXTRACT%...
 if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "Expand-Archive -Path '%ZIPFILE%' -DestinationPath '%EXTRACT%' -Force"
+echo  [INFO] Extraction complete.
 del "%ZIPFILE%"
 
 :: Find Pulse.Web content — branch zip layout: repo-BRANCH\Pulse.Web\run.bat
+echo  [INFO] Searching for Pulse.Web in extracted files...
 set "SRC="
 if exist "%EXTRACT%\run.bat" (
     echo  [INFO] Found run.bat at extract root.
@@ -91,16 +93,20 @@ if not defined SRC (
     echo  [ERROR] Full directory listing:
     dir /b /s /ad "%EXTRACT%" 2>nul
     if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
-    pause
-    exit /b 1
+    goto :fatal
 )
+echo  [INFO] Source: %SRC%
 
 :: -- Copy to install dir (preserves app\python\ and settings) -------------
+echo  [INFO] Copying to %INSTALL_DIR%...
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 xcopy "%SRC%\*" "%INSTALL_DIR%\" /s /e /y /q >nul
 if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
+echo  [INFO] Copy complete.
 
 :: -- Stamp VERSION with branch + commit SHA --------------------------------
+echo  [INFO] Fetching commit SHA...
+set "COMMIT_SHA=unknown"
 for /f "usebackq delims=" %%S in (`
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
         "try { " ^
@@ -118,14 +124,25 @@ echo.
 :launch
 if not exist "%INSTALL_DIR%\run.bat" (
     echo  [ERROR] Pulse Web not found at %INSTALL_DIR%
-    pause
-    exit /b 1
+    goto :fatal
 )
 
-:: Branch launcher always uses visible console so bootstrap progress is shown.
-:: (launch.vbs hides the window — fine for production, bad for first-run.)
+echo  [INFO] Launching from %INSTALL_DIR%...
 cd /d "%INSTALL_DIR%"
 call run.bat
+goto :done
+
+:: -- Error handler --------------------------------------------------------
+:fatal
+echo.
+echo  ============================================
+echo   PULSE WEB FAILED — see errors above.
+echo   Press any key to close.
+echo  ============================================
+pause >nul
+exit /b 1
+
+:done
 
 :: If we get here, run.bat exited — keep window open so errors are visible
 echo.
