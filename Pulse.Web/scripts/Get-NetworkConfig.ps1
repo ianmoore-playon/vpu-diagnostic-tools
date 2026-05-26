@@ -97,10 +97,43 @@ try {
     }
     catch { }
 
+    # Uplink adapter statistics (duplex, error counters) — only if we found one
+    $uplinkStats = $null
+    if ($uplinkAdapter) {
+        try {
+            $uAdapter = Get-NetAdapter -InterfaceIndex $uplinkAdapter.interfaceIndex -ErrorAction Stop
+            $uDuplex = $null
+            try { $uDuplex = $uAdapter.FullDuplex } catch { }
+
+            $uStats = [ordered]@{
+                fullDuplex      = $uDuplex
+                rxBytes         = $null; txBytes         = $null
+                rxErrors        = 0; txErrors        = 0
+                rxPacketErrors  = 0; rxDiscards      = 0
+                txPacketErrors  = 0; txDiscards      = 0
+            }
+            try {
+                $s = Get-NetAdapterStatistics -Name $uAdapter.Name -ErrorAction Stop
+                $uStats.rxBytes        = $s.ReceivedBytes
+                $uStats.txBytes        = $s.SentBytes
+                $uStats.rxPacketErrors = $s.ReceivedUnicastPacketsWithErrors
+                $uStats.rxDiscards     = $s.ReceivedDiscards
+                $uStats.txPacketErrors = $s.OutboundPacketErrors
+                $uStats.txDiscards     = $s.OutboundDiscards
+                $uStats.rxErrors       = $uStats.rxPacketErrors + $uStats.rxDiscards
+                $uStats.txErrors       = $uStats.txPacketErrors + $uStats.txDiscards
+            }
+            catch { }
+            $uplinkStats = $uStats
+        }
+        catch { }
+    }
+
     $result = [ordered]@{
         adapters         = @($adapters)
         ipConfigurations = @($ipConfigs)
         uplinkAdapter    = $uplinkAdapter
+        uplinkStats      = $uplinkStats
         internet = [ordered]@{
             reachable = $internetReachable
             testedHost = $reachHost

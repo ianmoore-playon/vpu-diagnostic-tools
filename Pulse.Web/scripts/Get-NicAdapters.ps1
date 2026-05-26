@@ -31,20 +31,27 @@ try {
             }
         }
 
-        # Adapter statistics
-        $rxErrors = 0
-        $txErrors = 0
-        $rxBytes  = 0
-        $txBytes  = 0
+        # Duplex detection
+        $fullDuplex = $null
+        try { $fullDuplex = $adapter.FullDuplex } catch { }
+
+        # Adapter statistics — broken out for granular display
+        $rxBytes  = 0; $txBytes  = 0
+        $rxErrors = 0; $txErrors = 0
+        $rxPacketErrors = 0; $rxDiscards = 0
+        $txPacketErrors = 0; $txDiscards = 0
         try {
             $stats = Get-NetAdapterStatistics -Name $adapter.Name -ErrorAction Stop
-            $rxErrors = $stats.ReceivedUnicastPacketsWithErrors + $stats.ReceivedDiscards
-            $txErrors = $stats.OutboundPacketErrors + $stats.OutboundDiscards
-            $rxBytes  = $stats.ReceivedBytes
-            $txBytes  = $stats.SentBytes
+            $rxBytes        = $stats.ReceivedBytes
+            $txBytes        = $stats.SentBytes
+            $rxPacketErrors = $stats.ReceivedUnicastPacketsWithErrors
+            $rxDiscards     = $stats.ReceivedDiscards
+            $txPacketErrors = $stats.OutboundPacketErrors
+            $txDiscards     = $stats.OutboundDiscards
+            $rxErrors       = $rxPacketErrors + $rxDiscards
+            $txErrors       = $txPacketErrors + $txDiscards
         }
         catch {
-            # Some adapters may not support all stats
             try {
                 $stats = Get-NetAdapterStatistics -Name $adapter.Name -ErrorAction SilentlyContinue
                 if ($stats) {
@@ -75,11 +82,16 @@ try {
             mac                 = $adapter.MacAddress
             status              = $adapter.Status
             linkSpeedMbps       = $linkSpeedMbps
+            fullDuplex          = $fullDuplex
             mediaConnectionState = $adapter.MediaConnectionState
             rxBytes             = $rxBytes
             txBytes             = $txBytes
             rxErrors            = $rxErrors
             txErrors            = $txErrors
+            rxPacketErrors      = $rxPacketErrors
+            rxDiscards          = $rxDiscards
+            txPacketErrors      = $txPacketErrors
+            txDiscards          = $txDiscards
             arpEntries          = $arpEntries
         }
     }

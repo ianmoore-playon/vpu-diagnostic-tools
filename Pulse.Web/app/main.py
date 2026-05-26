@@ -308,13 +308,15 @@ def _build_network(config, domains, ports, ntp, local=None):
             "adapters": config.get("adapters", []),
             "ipConfig": config.get("ipConfigurations", []),
             "uplinkAdapter": config.get("uplinkAdapter"),
+            "uplinkStats": config.get("uplinkStats"),
             "internetReachable": config.get("internet", {}).get("reachable", False),
             "testedHost": config.get("internet", {}).get("testedHost"),
             "ntpSource": config.get("ntpSource"),
         }
 
+    # Pass local data through even on error — let frontend display the issue
     return {"config": net, "domains": domains, "ports": ports, "ntp": ntp,
-            "local": local if local and not (local or {}).get("error") else None}
+            "local": local}
 
 
 # ─── Routes ───────────────────────────────────────────────────
@@ -474,6 +476,29 @@ async def api_local_ping(count: int = 4):
     timeout = max(20, count * 3)  # ~3s per ping round
     result = await run_ps("Test-LocalNetwork.ps1", timeout=timeout,
                           args={"Count": count})
+    return result
+
+
+@app.get("/api/network/health")
+async def api_network_health():
+    return await run_ps("Get-NetworkHealth.ps1", timeout=10)
+
+
+@app.get("/api/network/capture")
+async def api_network_capture(duration: int = 30):
+    duration = max(10, min(duration, 60))
+    timeout = duration + 30  # extra headroom for pktmon stop + analysis
+    result = await run_ps("Start-NetworkCapture.ps1", timeout=timeout,
+                          args={"DurationSec": duration})
+    return result
+
+
+@app.get("/api/network/traceroute")
+async def api_traceroute(target: str = "pixellot.tv", max_hops: int = 20):
+    max_hops = max(5, min(max_hops, 30))
+    timeout = max(30, max_hops * 3)  # generous — most finish well under this
+    result = await run_ps("Test-Traceroute.ps1", timeout=timeout,
+                          args={"Target": target, "MaxHops": max_hops})
     return result
 
 
@@ -694,9 +719,10 @@ async def ws_endpoint(ws: WebSocket):
         last_log_idx = len(LOG_BUFFER)
 
         while True:
-            perf, nics = await asyncio.gather(
+            perf, nics, net_health = await asyncio.gather(
                 run_ps("Get-Performance.ps1", timeout=10),
                 run_ps("Get-NicAdapters.ps1", timeout=10),
+                run_ps("Get-NetworkHealth.ps1", timeout=10),
             )
             all_logs = list(LOG_BUFFER)
             new_logs = all_logs[last_log_idx:]
@@ -707,6 +733,7 @@ async def ws_endpoint(ws: WebSocket):
                     "type": "metrics",
                     "performance": perf,
                     "ports": _enrich_ports(nics),
+                    "networkHealth": net_health,
                     "logs": new_logs,
                 }
             )

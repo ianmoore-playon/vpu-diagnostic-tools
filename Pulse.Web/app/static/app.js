@@ -413,7 +413,15 @@ function connectWS() {
   ws.onerror = () => ws.close();
 }
 
+// Latest network health from WebSocket — shared between pages
+var _liveNetHealth = null;
+
 function updateLiveMetrics(msg) {
+  // Store network health regardless of current page
+  if (msg.networkHealth && !msg.networkHealth.error) {
+    _liveNetHealth = msg.networkHealth;
+    if (currentPage === "network") _renderLiveNetHealth(msg.networkHealth);
+  }
   if (currentPage !== "dashboard") return;
   const perf = msg.performance || {};
   const cpu = perf.cpu?.usagePercent;
@@ -1218,6 +1226,70 @@ function _updatePingControls() {
   if (spinner) spinner.style.display = _localPingState.running ? "inline-flex" : "none";
 }
 
+// Advanced diagnostics toggle
+function _toggleAdvNet() {
+  var sec = document.getElementById("net-adv-section");
+  var arrow = document.getElementById("net-adv-arrow");
+  var hint = document.getElementById("net-adv-hint");
+  if (!sec) return;
+  var open = sec.classList.toggle("net-adv-collapsed");
+  if (arrow) arrow.classList.toggle("net-adv-arrow-open", !open);
+  if (hint) hint.textContent = open ? "Click to expand" : "Click to collapse";
+}
+
+// Traceroute runner
+var _traceState = { running: false };
+async function _runTraceroute(target) {
+  if (_traceState.running) return;
+  _traceState.running = true;
+  var out = document.getElementById("net-trace-results");
+  var btn = document.getElementById("net-trace-btn");
+  if (btn) btn.disabled = true;
+  if (out) out.innerHTML = '<p class="text-pulse-muted text-sm loading-pulse">Running traceroute to ' + esc(target) + '…</p>';
+
+  try {
+    var resp = await fetch("/api/network/traceroute?target=" + encodeURIComponent(target));
+    var data = await resp.json();
+    if (data.error) {
+      if (out) out.innerHTML = '<p class="text-sm status-fail">' + esc(data.message) + '</p>';
+    } else {
+      _renderTraceroute(out, data);
+    }
+  } catch (e) {
+    if (out) out.innerHTML = '<p class="text-sm status-fail">Traceroute failed: ' + esc(String(e)) + '</p>';
+  }
+  _traceState.running = false;
+  if (btn) btn.disabled = false;
+}
+
+function _renderTraceroute(el, d) {
+  var hops = d.hops || [];
+  var reachedCls = d.reached ? "status-pass" : "status-fail";
+  var reachedLabel = d.reached ? "Reached" : "Not reached";
+  el.innerHTML =
+    '<div class="net-trace-summary">' +
+      '<span class="text-sm text-pulse-muted">Target: <span class="font-mono text-white">' + esc(d.target) + '</span></span>' +
+      '<span class="text-sm text-pulse-muted">IP: <span class="font-mono text-white">' + esc(d.targetIp || "—") + '</span></span>' +
+      '<span class="text-sm ' + reachedCls + '">' + esc(reachedLabel) + ' in ' + esc(String(d.hopCount || 0)) + ' hops</span>' +
+    '</div>' +
+    '<table class="data-table net-trace-table"><thead><tr>' +
+      '<th>#</th><th>IP Address</th><th>Hostname</th><th>RTT</th><th>Status</th>' +
+    '</tr></thead><tbody>' +
+    hops.map(function(h) {
+      var sc = h.status === "reached" ? "status-pass" : h.status === "transit" ? "" : h.status === "timeout" ? "text-pulse-muted" : "status-fail";
+      var rtt = h.rttMs != null ? h.rttMs + " ms" : "—";
+      var statusLabel = h.status === "reached" ? "Reached" : h.status === "transit" ? "OK" : h.status === "timeout" ? "* * *" : esc(h.status);
+      return '<tr class="' + sc + '">' +
+        '<td>' + esc(String(h.hop)) + '</td>' +
+        '<td class="font-mono">' + esc(h.ip || "* * *") + '</td>' +
+        '<td class="text-pulse-muted">' + esc(h.hostname || "") + '</td>' +
+        '<td class="font-mono">' + esc(rtt) + '</td>' +
+        '<td>' + esc(statusLabel) + '</td>' +
+      '</tr>';
+    }).join("") +
+    '</tbody></table>';
+}
+
 // Speed Test — fetch and display Speedtest.net result
 async function _fetchSpeedtest() {
   var input = document.getElementById("net-speed-input");
@@ -1294,6 +1366,117 @@ function _renderSpeedResult(el, d) {
     '</div>' : '<div class="net-speed-ok-msg">' + svgIcon("check", 14) + ' Bandwidth meets Pixellot minimum requirements (≥ 10 Mbps up/down)</div>');
 }
 
+// ── Live Network Health (WebSocket-driven) ──────────────────
+function _renderLiveNetHealth(h) {
+  var el = document.getElementById("net-live-body");
+  if (!el) return;
+  var tcp = h.tcp || {};
+  var conns = h.connections || [];
+
+  // Retransmission gauge color
+  var retrans = tcp.retransmitsSec || 0;
+  var retCls = retrans > 10 ? "status-fail" : retrans > 2 ? "status-warn" : "status-pass";
+
+  el.innerHTML =
+    '<div class="net-live-gauges">' +
+      _liveGauge("Retransmits/s", retrans, retCls) +
+      _liveGauge("Established", tcp.established || 0, "") +
+      _liveGauge("Failures", tcp.connFailures || 0, (tcp.connFailures || 0) > 0 ? "status-warn" : "") +
+      _liveGauge("Resets", tcp.connResets || 0, (tcp.connResets || 0) > 0 ? "status-warn" : "") +
+      _liveGauge("Segs Out/s", tcp.segsOutSec || 0, "") +
+      _liveGauge("Segs In/s", tcp.segsInSec || 0, "") +
+    '</div>' +
+    (conns.length ? '<div class="net-live-conns">' +
+      '<div class="net-live-conns-title">Active Connections (' + conns.length + ')</div>' +
+      '<table class="data-table"><thead><tr>' +
+        '<th>Remote Host</th><th>Remote Addr</th><th>Port</th><th>State</th>' +
+      '</tr></thead><tbody>' +
+      conns.map(function(c) {
+        var stCls = c.state === "Established" ? "status-pass" : c.state === "TimeWait" ? "text-pulse-muted" : "status-warn";
+        return '<tr>' +
+          '<td>' + esc(c.remoteHost || "—") + '</td>' +
+          '<td class="font-mono text-xs">' + esc(c.remoteAddr) + '</td>' +
+          '<td class="font-mono">' + esc(String(c.remotePort)) + '</td>' +
+          '<td class="' + stCls + '">' + esc(c.state) + '</td>' +
+        '</tr>';
+      }).join("") +
+      '</tbody></table>' +
+    '</div>' : '');
+}
+
+function _liveGauge(label, val, cls) {
+  return '<div class="net-live-gauge">' +
+    '<div class="net-live-gauge-val ' + (cls || '') + '">' + esc(String(val)) + '</div>' +
+    '<div class="net-live-gauge-label">' + esc(label) + '</div>' +
+  '</div>';
+}
+
+// ── Network Capture (on-demand pktmon) ──────────────────────
+var _captureState = { running: false };
+
+async function _runCapture(duration) {
+  if (_captureState.running) return;
+  _captureState.running = true;
+  var btn = document.getElementById("net-capture-btn");
+  var out = document.getElementById("net-capture-results");
+  if (btn) { btn.disabled = true; btn.innerHTML = svgIcon("refresh", 14) + ' Capturing ' + duration + 's…'; }
+  if (out) out.innerHTML = '<p class="text-pulse-muted text-sm loading-pulse">Running ' + duration + 's packet capture — analyzing TCP headers on ports 443, 1935, 80, 8443…</p>';
+
+  try {
+    var resp = await fetch("/api/network/capture?duration=" + duration);
+    var data = await resp.json();
+    if (data.error) {
+      if (out) out.innerHTML = '<p class="text-sm status-fail">' + esc(data.message) + '</p>';
+    } else {
+      _renderCapture(out, data);
+    }
+  } catch (e) {
+    if (out) out.innerHTML = '<p class="text-sm status-fail">Capture failed: ' + esc(String(e)) + '</p>';
+  }
+  _captureState.running = false;
+  if (btn) { btn.disabled = false; btn.innerHTML = svgIcon("activity", 14) + ' Capture 30s'; }
+}
+
+function _renderCapture(el, d) {
+  var findings = d.findings || [];
+  var topTalkers = d.topTalkers || [];
+
+  el.innerHTML =
+    // Summary stats
+    '<div class="net-cap-summary">' +
+      '<div class="net-cap-stat"><span class="net-cap-stat-val">' + esc(String(d.totalPackets || 0)) + '</span><span class="net-cap-stat-label">Packets</span></div>' +
+      '<div class="net-cap-stat"><span class="net-cap-stat-val ' + ((d.tcpRetransmits || 0) > 0 ? 'status-warn' : '') + '">' + esc(String(d.tcpRetransmits || 0)) + '</span><span class="net-cap-stat-label">Retransmits</span></div>' +
+      '<div class="net-cap-stat"><span class="net-cap-stat-val ' + ((d.tcpResets || 0) > 0 ? 'status-warn' : '') + '">' + esc(String(d.tcpResets || 0)) + '</span><span class="net-cap-stat-label">Resets</span></div>' +
+      '<div class="net-cap-stat"><span class="net-cap-stat-val ' + ((d.droppedPackets || 0) > 0 ? 'status-fail' : '') + '">' + esc(String(d.droppedPackets || 0)) + '</span><span class="net-cap-stat-label">Drops</span></div>' +
+      '<div class="net-cap-stat"><span class="net-cap-stat-val">' + esc(String(d.tcpSyns || 0)) + '</span><span class="net-cap-stat-label">SYN</span></div>' +
+      '<div class="net-cap-stat"><span class="net-cap-stat-val">' + esc(String(d.tcpFins || 0)) + '</span><span class="net-cap-stat-label">FIN</span></div>' +
+    '</div>' +
+    // Findings
+    (findings.length ? '<div class="net-cap-findings">' +
+      findings.map(function(f) {
+        var cls = f.severity === "critical" ? "net-rec-critical" : f.severity === "warning" ? "net-rec-warn" : f.severity === "pass" ? "net-cap-pass" : "net-rec-info";
+        var icon = f.severity === "pass" ? svgIcon("check", 14) : svgIcon("triangle", 14);
+        return '<div class="net-cap-finding ' + cls + '">' + icon + ' <strong>' + esc(f.title) + '</strong> — ' + esc(f.body) + '</div>';
+      }).join("") +
+    '</div>' : '') +
+    // Top talkers
+    (topTalkers.length ? '<div class="net-cap-talkers">' +
+      '<div class="net-cap-talkers-title">Top Endpoints by Packet Count</div>' +
+      '<table class="data-table"><thead><tr>' +
+        '<th>Host</th><th>Address</th><th>Port</th><th>Packets</th>' +
+      '</tr></thead><tbody>' +
+      topTalkers.map(function(t) {
+        return '<tr>' +
+          '<td>' + esc(t.remoteHost || "—") + '</td>' +
+          '<td class="font-mono text-xs">' + esc(t.remoteAddr) + '</td>' +
+          '<td class="font-mono">' + esc(String(t.remotePort)) + '</td>' +
+          '<td class="font-mono">' + esc(String(t.packets)) + '</td>' +
+        '</tr>';
+      }).join("") +
+      '</tbody></table>' +
+    '</div>' : '');
+}
+
 function _prefixToMask(prefix) {
   if (prefix == null) return null;
   var n = parseInt(prefix, 10);
@@ -1302,82 +1485,106 @@ function _prefixToMask(prefix) {
   return [24, 16, 8, 0].map(function(s) { return (mask >>> s) & 0xFF; }).join(".");
 }
 
-function _buildNetFindings(cfg, ports, domains, local) {
-  var findings = [];
+function _buildNetIssues(cfg, ports, domains, local) {
+  var issues = [];
   var gw = (local || {}).gateway;
   var dns = (local || {}).dns;
+
+  // ── Critical: Gateway ────────────────────────────────────
   if (gw && !gw.reachable)
-    findings.push({ severity: "critical", title: "Gateway unreachable (" + gw.target + ")", body: "Cannot ping the default gateway. Check the uplink cable and switch port." });
-  else if (gw && gw.reachable) {
-    if (gw.lossPercent > 0)
-      findings.push({ severity: "warning", title: "Gateway packet loss: " + gw.lossPercent + "%", body: "Intermittent connectivity to gateway " + gw.target + ". Check cable, switch port, or network congestion." });
-    if (gw.avgMs != null && gw.avgMs > 50)
-      findings.push({ severity: "warning", title: "High gateway latency: " + gw.avgMs + " ms", body: "Average latency to " + gw.target + " exceeds 50 ms. This may indicate network congestion or a misconfigured route." });
-  }
+    issues.push({ severity: "critical", title: "Gateway unreachable (" + gw.target + ")",
+      body: "Verify the uplink Ethernet cable is seated, the switch port is active, and the VLAN is correct. No traffic will leave the VPU until this is resolved." });
+  else if (gw && gw.reachable && (gw.lossPercent > 0 || (gw.avgMs != null && gw.avgMs > 50)))
+    issues.push({ severity: "warning", title: "Unstable gateway — " + (gw.avgMs || "?") + " ms latency, " + (gw.lossPercent || 0) + "% loss",
+      body: "Try a different switch port, replace the Ethernet cable, or check for broadcast storms on the venue network." });
+
+  // ── Warning/Info: DNS server ─────────────────────────────
   if (dns && !dns.reachable)
-    findings.push({ severity: "warning", title: "DNS server unreachable (" + dns.target + ")", body: "Cannot ping the configured DNS server. Domain resolution may fail." });
+    issues.push({ severity: "warning", title: "DNS server unreachable (" + dns.target + ")",
+      body: "Domain resolution will fail. Check DNS server address in adapter settings or try a public DNS (8.8.8.8, 1.1.1.1)." });
   else if (dns && dns.reachable) {
     if (dns.lossPercent > 0)
-      findings.push({ severity: "warning", title: "DNS packet loss: " + dns.lossPercent + "%", body: "Intermittent connectivity to DNS server " + dns.target + ". Resolution may be unreliable." });
+      issues.push({ severity: "warning", title: "DNS packet loss: " + dns.lossPercent + "% to " + dns.target,
+        body: "Resolution may be unreliable. Check cable or try a different DNS server." });
     if (dns.avgMs != null && dns.avgMs > 100)
-      findings.push({ severity: "info", title: "High DNS latency: " + dns.avgMs + " ms", body: "Average latency to " + dns.target + " exceeds 100 ms. Consider using a closer DNS server." });
+      issues.push({ severity: "info", title: "High DNS latency: " + dns.avgMs + " ms to " + dns.target,
+        body: "Consider switching to a closer DNS server (8.8.8.8 or 1.1.1.1)." });
   }
-  if (!cfg.internetReachable) {
-    findings.push({ severity: "critical", title: "VPU has no internet connection", body: "Check the uplink cable and the gateway’s WAN status." });
-    return findings;
-  }
-  var reqFail = 0, reqPass = 0, optFail = 0;
-  (ports || []).forEach(function(p) {
-    var pass = (p.status || "").toLowerCase() === "pass";
-    if (p.optional) { if (!pass) optFail++; }
-    else { if (pass) reqPass++; else reqFail++; }
-  });
-  if (reqFail > 0)
-    findings.push({ severity: "critical", title: reqFail + " of " + (reqFail + reqPass) + " required ports failed", body: "Check the firewall, router, or content-filter / VLAN policy." });
-  if (optFail > 0)
-    findings.push({ severity: "info", title: optFail + " optional port(s) failed", body: "Optional ports (SportzCast / Zixi UDP/443 fallback) aren’t required at every venue." });
-  var domFail = 0, domPass = 0;
-  (domains || []).forEach(function(d) {
-    if ((d.status || "").toLowerCase() === "pass") domPass++; else domFail++;
-  });
-  if (domFail > 0)
-    findings.push({ severity: "warning", title: domFail + " of " + (domFail + domPass) + " domains failed DNS resolution", body: "Check DNS server settings on this adapter." });
-  return findings;
-}
 
-function _buildNetRecommendations(cfg, ports, domains, local) {
-  var recs = [];
-  var gw = (local || {}).gateway;
-  var dns = (local || {}).dns;
-  if (gw && !gw.reachable)
-    recs.push({ severity: "critical", title: "Gateway unreachable", body: "Cannot reach the default gateway (" + gw.target + "). Verify the uplink Ethernet cable is seated, the switch port is active, and the VLAN is correct. No traffic will leave the VPU until this is resolved." });
-  else if (gw && gw.reachable && (gw.lossPercent > 0 || (gw.avgMs != null && gw.avgMs > 50)))
-    recs.push({ severity: "warning", title: "Unstable gateway connection", body: "Latency " + (gw.avgMs || "?") + " ms, loss " + (gw.lossPercent || 0) + "% to " + gw.target + ". Try a different switch port, replace the Ethernet cable, or check for broadcast storms / congestion on the venue network." });
-  if (dns && !dns.reachable)
-    recs.push({ severity: "warning", title: "DNS server unreachable", body: "Cannot reach DNS server " + dns.target + ". Domain resolution will fail. Check the DNS server address in the adapter settings or try a public DNS (8.8.8.8, 1.1.1.1)." });
+  // ── Critical: No internet ────────────────────────────────
   if (!cfg.internetReachable) {
-    recs.push({ severity: "critical", title: "No internet ping", body: "VPU has no internet connectivity. Verify the uplink cable and the gateway’s WAN status before further triage." });
-    return recs;
+    issues.push({ severity: "critical", title: "VPU has no internet connection",
+      body: "Verify the uplink cable and the gateway’s WAN status before further triage." });
+    // Sort and return early — no point checking ports/domains
+    issues.sort(function(a, b) { var o = { critical: 0, warning: 1, info: 2 }; return (o[a.severity] || 3) - (o[b.severity] || 3); });
+    return issues;
   }
-  (ports || []).forEach(function(p) {
-    if ((p.status || "").toLowerCase() === "pass") return;
-    var purpose = p.purpose || "purpose unknown";
-    var proto = (p.protocol || "TCP").toUpperCase();
-    var host = p.host || "remote";
-    var isNtp = p.port === 123 && proto === "UDP";
-    if (p.optional) {
-      recs.push({ severity: "info", title: proto + " " + p.port + " blocked (optional)", body: proto + "/" + p.port + " (" + purpose + ") is blocked. May not be required at this venue — only act if streaming is failing. If required, ensure outbound " + proto + " " + p.port + " to " + host + " is allowed by the venue firewall." });
-    } else if (isNtp) {
-      recs.push({ severity: "critical", title: "NTP time sync failed", body: "NTP sync to " + host + " failed (UDP/123). Without a clock peer the VPU’s time will drift, breaking signed-URL streaming and log correlation. Ensure outbound UDP/123 is allowed by the venue firewall." });
-    } else {
-      recs.push({ severity: "critical", title: proto + " " + p.port + " blocked", body: proto + "/" + p.port + " (" + purpose + ") is blocked. Ensure outbound " + proto + " " + p.port + " to " + host + " is allowed by the venue firewall, content-filter, and VLAN policy." });
-    }
-  });
-  (domains || []).forEach(function(d) {
-    if ((d.status || "").toLowerCase() === "pass") return;
-    recs.push({ severity: "warning", title: d.domain + " unreachable", body: "Domain " + d.domain + " is unreachable. Ensure it is whitelisted on the venue network (firewall, DNS allow-list, SSL inspection bypass)." });
-  });
-  return recs;
+
+  // ── Ports: required failures ─────────────────────────────
+  var reqFailed = (ports || []).filter(function(p) { return !p.optional && (p.status || "").toLowerCase() !== "pass"; });
+  var reqPass = (ports || []).filter(function(p) { return !p.optional && (p.status || "").toLowerCase() === "pass"; });
+  if (reqFailed.length > 0) {
+    var portDetails = reqFailed.map(function(p) {
+      var proto = (p.protocol || "TCP").toUpperCase();
+      if (p.port === 123 && proto === "UDP")
+        return proto + "/" + p.port + " — NTP sync failed. VPU clock will drift, breaking signed-URL streaming.";
+      return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote");
+    });
+    issues.push({ severity: "critical", title: reqFailed.length + " of " + (reqFailed.length + reqPass.length) + " required ports blocked",
+      body: "Ensure these ports are allowed by the venue firewall and VLAN policy.",
+      details: portDetails });
+  }
+
+  // ── Ports: optional failures ─────────────────────────────
+  var optFailed = (ports || []).filter(function(p) { return p.optional && (p.status || "").toLowerCase() !== "pass"; });
+  if (optFailed.length > 0) {
+    var optDetails = optFailed.map(function(p) {
+      var proto = (p.protocol || "TCP").toUpperCase();
+      return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote");
+    });
+    issues.push({ severity: "info", title: optFailed.length + " optional port(s) blocked",
+      body: "These aren’t required at every venue — only act if streaming is failing.",
+      details: optDetails });
+  }
+
+  // ── Domains: failures ────────────────────────────────────
+  var domFailed = (domains || []).filter(function(d) { return (d.status || "").toLowerCase() !== "pass"; });
+  var domTotal = (domains || []).length;
+  if (domFailed.length > 0) {
+    var domDetails = domFailed.map(function(d) {
+      return d.domain + " — ensure it is whitelisted (firewall, DNS allow-list, SSL inspection bypass)";
+    });
+    issues.push({ severity: "warning", title: domFailed.length + " of " + domTotal + " domains failed DNS resolution",
+      body: "Check DNS server settings on this adapter.",
+      details: domDetails });
+  }
+
+  // ── Domains: slow resolution ─────────────────────────────
+  var slowDns = (domains || []).filter(function(d) { return d.resolutionMs != null && d.resolutionMs > 500 && (d.status || "").toLowerCase() === "pass"; });
+  if (slowDns.length > 0) {
+    var slowDetails = slowDns.map(function(d) { return d.domain + " — " + d.resolutionMs + " ms"; });
+    issues.push({ severity: "info", title: slowDns.length + " domain(s) resolved slowly (>500 ms)",
+      body: "Slow DNS can delay connections. Consider switching to a faster DNS server.",
+      details: slowDetails });
+  }
+
+  // ── Adapter: half-duplex ─────────────────────────────────
+  var uStats = cfg.uplinkStats || {};
+  if (uStats.fullDuplex === false)
+    issues.push({ severity: "warning", title: "Uplink adapter running in half-duplex",
+      body: "Set both the VPU NIC and the switch port to auto-negotiate, or hard-set both to 1 Gbps full-duplex." });
+
+  // ── Adapter: interface errors ────────────────────────────
+  var ifaceErrors = (uStats.rxErrors || 0) + (uStats.txErrors || 0);
+  if (ifaceErrors > 0)
+    issues.push({ severity: "warning", title: ifaceErrors + " interface error(s) on uplink adapter",
+      body: "RX errors: " + (uStats.rxPacketErrors || 0) + ", RX discards: " + (uStats.rxDiscards || 0) +
+            ", TX errors: " + (uStats.txPacketErrors || 0) + ", TX discards: " + (uStats.txDiscards || 0) +
+            ". Try replacing the cable, switching ports, or updating the NIC driver." });
+
+  // Sort by severity: critical → warning → info
+  issues.sort(function(a, b) { var o = { critical: 0, warning: 1, info: 2 }; return (o[a.severity] || 3) - (o[b.severity] || 3); });
+  return issues;
 }
 
 function renderNetwork() {
@@ -1391,11 +1598,10 @@ function renderNetwork() {
   const local = data.local || {};
   const ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
 
-  const findings = _buildNetFindings(cfg, ports, domains, local);
-  const recs = _buildNetRecommendations(cfg, ports, domains, local);
+  const issues = _buildNetIssues(cfg, ports, domains, local);
 
-  const hasCrit = findings.some(function(f) { return f.severity === "critical"; });
-  const hasWarn = findings.some(function(f) { return f.severity === "warning"; });
+  const hasCrit = issues.some(function(f) { return f.severity === "critical"; });
+  const hasWarn = issues.some(function(f) { return f.severity === "warning"; });
   const sevClass = hasCrit ? "critical" : hasWarn ? "warn" : "ok";
   const sevLabel = hasCrit ? "Fail" : hasWarn ? "Warning" : "Pass";
   const statusChip = `<span class="dash-sev-pill dash-sev-${sevClass}"><span class="dash-sev-dot"></span> ${sevLabel}</span>`;
@@ -1418,6 +1624,11 @@ function renderNetwork() {
     ? String(uplinkIpCfg.dnsServers).split(",").map(function(s) { return s.trim(); }).filter(Boolean).join(", ")
     : "—";
 
+  // Uplink adapter stats (duplex, error counters)
+  const uplinkStats = cfg.uplinkStats || {};
+  const duplexLabel = uplinkStats.fullDuplex === true ? "Full Duplex" : uplinkStats.fullDuplex === false ? "Half Duplex" : null;
+  const totalErrors = (uplinkStats.rxErrors || 0) + (uplinkStats.txErrors || 0);
+
   const tcpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "TCP"; });
   const udpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "UDP"; });
 
@@ -1432,43 +1643,31 @@ function renderNetwork() {
     </div>`;
   }
 
-  const findingsBanner = findings.length ? `
-    <div class="card net-findings-banner">
+  const issuesPanel = issues.length ? `
+    <div class="card">
       <div class="af-header">
         ${svgIcon("triangle", 16)}
-        <span class="af-label">FINDINGS</span>
-        <span class="af-count-badge">${findings.length} issue${findings.length !== 1 ? "s" : ""}</span>
+        <span class="af-label">ISSUES & RECOMMENDATIONS</span>
+        <span class="af-count-badge">${issues.length} item${issues.length !== 1 ? "s" : ""}</span>
       </div>
-      <div class="net-finding-list">
-        ${findings.map(function(f) {
-          const sc = f.severity === "critical" ? "sev-chip-crit" : f.severity === "warning" ? "sev-chip-warn" : "sev-chip-ok";
-          return `<div class="net-finding-row">
-            <span class="sev-chip ${sc}">${esc(f.severity.toUpperCase())}</span>
-            <div>
-              <div class="net-finding-title">${esc(f.title)}</div>
-              <div class="net-finding-body">${esc(f.body)}</div>
-            </div>
-          </div>`;
-        }).join("")}
-      </div>
-    </div>` : "";
-
-  const recsPanel = recs.length ? `
-    <div class="card">
-      ${sectionTitle("triangle", "Recommended Actions")}
-      <div class="net-rec-list">
-        ${recs.map(function(r) {
-          const cls = r.severity === "critical" ? "net-rec-critical" : r.severity === "warning" ? "net-rec-warn" : "net-rec-info";
-          const sc = r.severity === "critical" ? "sev-chip-crit" : r.severity === "warning" ? "sev-chip-warn" : "sev-chip-ok";
-          return `<div class="net-rec-card ${cls}">
-            <div class="net-rec-header">
-              <span class="sev-chip ${sc}">${esc(r.severity.toUpperCase())}</span>
-              <div>
-                <div class="net-rec-title">${esc(r.title)}</div>
-                <div class="net-rec-body">${esc(r.body)}</div>
-              </div>
-            </div>
-          </div>`;
+      <div class="net-issues-list">
+        ${issues.map(function(item) {
+          var sc = item.severity === "critical" ? "sev-chip-crit" : item.severity === "warning" ? "sev-chip-warn" : "sev-chip-ok";
+          var borderCls = item.severity === "critical" ? "net-issue-critical" : item.severity === "warning" ? "net-issue-warn" : "net-issue-info";
+          var detailsHtml = "";
+          if (item.details && item.details.length) {
+            detailsHtml = '<ul class="net-issue-details">' +
+              item.details.map(function(d) { return '<li>' + esc(d) + '</li>'; }).join("") +
+            '</ul>';
+          }
+          return '<div class="net-issue-row ' + borderCls + '">' +
+            '<span class="sev-chip ' + sc + '">' + esc(item.severity.toUpperCase()) + '</span>' +
+            '<div class="net-issue-text">' +
+              '<div class="net-issue-title">' + esc(item.title) + '</div>' +
+              '<div class="net-issue-body">' + esc(item.body) + '</div>' +
+              detailsHtml +
+            '</div>' +
+          '</div>';
         }).join("")}
       </div>
     </div>` : "";
@@ -1480,9 +1679,7 @@ function renderNetwork() {
       </button>`
     )}
 
-    ${findingsBanner}
-
-    ${recsPanel}
+    ${issuesPanel}
 
     <!-- Port Connectivity -->
     <div class="card">
@@ -1520,31 +1717,11 @@ function renderNetwork() {
         </div>
       </div>
       <div id="net-ping-results" class="net-ping-grid">
-        ${(local.gateway || local.dns)
-          ? _pingCardHtml(local.gateway) + _pingCardHtml(local.dns)
-          : '<p class="text-pulse-muted text-sm mt-2">Select a ping count above to test local network health.</p>'}
-      </div>
-    </div>
-
-    <!-- Speed Test -->
-    <div class="card">
-      <div class="net-ping-toolbar">
-        ${sectionTitle("zap", "Speed Test")}
-        <div class="net-ping-btns">
-          <a href="https://www.speedtest.net" target="_blank" rel="noopener" class="btn-outline btn-ol-blue" style="text-decoration:none">
-            ${svgIcon("globe", 14)} Open Speedtest.net
-          </a>
-        </div>
-      </div>
-      <div id="net-speed-ui">
-        <p class="text-pulse-muted text-sm mb-3">Run a test at speedtest.net, then paste the result URL below.</p>
-        <div class="net-speed-input-row">
-          <input id="net-speed-input" type="text" class="net-speed-input" placeholder="https://www.speedtest.net/result/123456789 or result ID">
-          <button id="net-speed-fetch-btn" class="btn-outline btn-ol-blue" onclick="_fetchSpeedtest()">
-            ${svgIcon("refresh", 14)} Fetch Result
-          </button>
-        </div>
-        <div id="net-speed-results"></div>
+        ${local && local.error
+          ? '<p class="text-sm status-fail">Local network test failed: ' + esc(local.message || 'unknown error') + '</p>'
+          : (local.gateway || local.dns)
+            ? _pingCardHtml(local.gateway) + _pingCardHtml(local.dns)
+            : '<p class="text-pulse-muted text-sm mt-2">Select a ping count above to test local network health.</p>'}
       </div>
     </div>
 
@@ -1567,6 +1744,9 @@ function renderNetwork() {
             ? `<span style="color:${adapterLinkState === "Up" ? "#22c55e" : "#94a3b8"};font-weight:600">${esc(adapterLinkState)}</span>`
             : "—")}
           ${kvRow("Link speed", uplinkAdapterRow?.linkSpeed || "—")}
+          ${duplexLabel ? kvRowHtml("Duplex", duplexLabel === "Half Duplex"
+            ? '<span class="status-warn" style="font-weight:600">Half Duplex</span>'
+            : '<span style="color:#22c55e;font-weight:600">Full Duplex</span>') : ""}
           ${kvRowHtml("Internet", cfg.internetReachable
             ? '<span class="status-pass">Reachable</span>'
             : '<span class="status-fail">Unreachable</span>')}
@@ -1580,6 +1760,29 @@ function renderNetwork() {
             return '<span class="status-fail" style="font-weight:600">ERROR</span>';
           })())}
         </div>
+        ${totalErrors > 0 || (uplinkStats.rxBytes != null) ? `
+          <div class="net-iface-stats">
+            <div class="net-iface-stats-title">${svgIcon("activity", 12)} Interface Counters</div>
+            <div class="net-iface-stats-grid">
+              <div class="net-iface-stat">
+                <span class="net-iface-stat-label">RX Errors</span>
+                <span class="net-iface-stat-val ${uplinkStats.rxPacketErrors > 0 ? 'status-warn' : ''}">${uplinkStats.rxPacketErrors || 0}</span>
+              </div>
+              <div class="net-iface-stat">
+                <span class="net-iface-stat-label">RX Discards</span>
+                <span class="net-iface-stat-val ${uplinkStats.rxDiscards > 0 ? 'status-warn' : ''}">${uplinkStats.rxDiscards || 0}</span>
+              </div>
+              <div class="net-iface-stat">
+                <span class="net-iface-stat-label">TX Errors</span>
+                <span class="net-iface-stat-val ${uplinkStats.txPacketErrors > 0 ? 'status-warn' : ''}">${uplinkStats.txPacketErrors || 0}</span>
+              </div>
+              <div class="net-iface-stat">
+                <span class="net-iface-stat-label">TX Discards</span>
+                <span class="net-iface-stat-val ${uplinkStats.txDiscards > 0 ? 'status-warn' : ''}">${uplinkStats.txDiscards || 0}</span>
+              </div>
+            </div>
+            ${totalErrors > 0 ? '<div class="net-iface-stats-warn">' + svgIcon("triangle", 12) + ' Interface errors detected — check cable, switch port, or NIC driver.</div>' : ''}
+          </div>` : ""}
       </div>
       <div class="card">
         ${sectionTitle("wifi", "Domain Reachability")}
@@ -1587,10 +1790,13 @@ function renderNetwork() {
           <div class="domain-list">
             ${domains.map(function(d) {
               const ok = (d.status || "").toLowerCase() === "pass";
+              var dnsTime = d.resolutionMs != null ? d.resolutionMs + " ms" : "";
+              var dnsSlow = d.resolutionMs != null && d.resolutionMs > 200;
               return `<div class="domain-row">
                 <span class="domain-dot" style="background:${ok ? "#22c55e" : "#ef4444"}"></span>
                 <span class="domain-name">${esc(d.domain)}</span>
                 <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
+                ${dnsTime ? '<span class="domain-dns-time font-mono' + (dnsSlow ? ' status-warn' : '') + '">' + esc(dnsTime) + '</span>' : ''}
                 ${statusBadge(d.status)}
               </div>`;
             }).join("")}
@@ -1598,7 +1804,90 @@ function renderNetwork() {
         ` : '<p class="text-pulse-muted text-sm">No DNS data</p>'}
       </div>
     </div>
+
+    <!-- Advanced Diagnostics Toggle -->
+    <div class="net-adv-toggle" onclick="_toggleAdvNet()">
+      <div class="net-adv-toggle-inner">
+        <span class="net-adv-toggle-icon" id="net-adv-arrow">${svgIcon("chevron", 14)}</span>
+        <span class="net-adv-toggle-label">Advanced Diagnostics</span>
+        <span class="text-xs text-pulse-muted">Live monitoring, packet capture, traceroute, speed test</span>
+      </div>
+      <span class="net-adv-toggle-hint text-xs text-pulse-muted" id="net-adv-hint">Click to expand</span>
+    </div>
+
+    <!-- Advanced Diagnostics (collapsed by default) -->
+    <div id="net-adv-section" class="net-adv-section net-adv-collapsed">
+
+      <!-- Live Network Health (WebSocket-driven) -->
+      <div class="card">
+        <div class="net-ping-toolbar">
+          ${sectionTitle("zap", "Live Network Health")}
+          <div class="net-live-indicator">
+            <span class="net-live-dot"></span> <span class="text-xs text-pulse-muted">Live via WebSocket</span>
+          </div>
+        </div>
+        <div id="net-live-body">
+          <p class="text-pulse-muted text-sm">Waiting for live data…</p>
+        </div>
+      </div>
+
+      <!-- Network Capture -->
+      <div class="card">
+        <div class="net-ping-toolbar">
+          ${sectionTitle("shield", "Packet Capture")}
+          <div class="net-ping-btns">
+            <button id="net-capture-btn" class="btn-outline btn-ol-blue" onclick="_runCapture(30)">
+              ${svgIcon("activity", 14)} Capture 30s
+            </button>
+          </div>
+        </div>
+        <p class="text-pulse-muted text-sm">Captures TCP packet headers using Windows pktmon (ports 443, 1935, 80, 8443). Analyzes retransmissions, resets, and drops.</p>
+        <div id="net-capture-results"></div>
+      </div>
+
+      <!-- Traceroute -->
+      <div class="card">
+        <div class="net-ping-toolbar">
+          ${sectionTitle("share", "Traceroute")}
+          <div class="net-ping-btns">
+            <input id="net-trace-target" type="text" class="net-trace-input" placeholder="pixellot.tv" value="pixellot.tv">
+            <button id="net-trace-btn" class="btn-outline btn-ol-blue" onclick="_runTraceroute(document.getElementById('net-trace-target').value.trim()||'pixellot.tv')">
+              ${svgIcon("activity", 14)} Run
+            </button>
+          </div>
+        </div>
+        <div id="net-trace-results">
+          <p class="text-pulse-muted text-sm mt-2">Click Run to trace the network path to a target host.</p>
+        </div>
+      </div>
+
+      <!-- Speed Test -->
+      <div class="card">
+        <div class="net-ping-toolbar">
+          ${sectionTitle("zap", "Speed Test")}
+          <div class="net-ping-btns">
+            <a href="https://www.speedtest.net" target="_blank" rel="noopener" class="btn-outline btn-ol-blue" style="text-decoration:none">
+              ${svgIcon("globe", 14)} Open Speedtest.net
+            </a>
+          </div>
+        </div>
+        <div id="net-speed-ui">
+          <p class="text-pulse-muted text-sm mb-3">Run a test at speedtest.net, then paste the result URL below.</p>
+          <div class="net-speed-input-row">
+            <input id="net-speed-input" type="text" class="net-speed-input" placeholder="https://www.speedtest.net/result/123456789 or result ID">
+            <button id="net-speed-fetch-btn" class="btn-outline btn-ol-blue" onclick="_fetchSpeedtest()">
+              ${svgIcon("refresh", 14)} Fetch Result
+            </button>
+          </div>
+          <div id="net-speed-results"></div>
+        </div>
+      </div>
+
+    </div>
   `;
+
+  // Seed live health panel if we already have WebSocket data
+  if (_liveNetHealth) _renderLiveNetHealth(_liveNetHealth);
 }
 
 // ── Cameras ──────────────────────────────────────────────────
@@ -1651,6 +1940,10 @@ function renderCameras() {
       <div class="cam-port-detail">
         <div class="kv-mini"><span>MAC</span><span class="font-mono">${esc(p.mac)}</span></div>
         <div class="kv-mini"><span>RX / TX</span><span>${formatBytes(p.rxBytes)} / ${formatBytes(p.txBytes)}</span></div>
+        <div class="kv-mini"><span>Duplex</span><span>${p.fullDuplex === true ? "Full" : p.fullDuplex === false ? '<span class="status-warn">Half</span>' : "—"}</span></div>
+        ${(p.rxErrors || 0) + (p.txErrors || 0) > 0
+          ? '<div class="kv-mini"><span>Errors</span><span class="status-warn">RX ' + (p.rxPacketErrors || 0) + ' / TX ' + (p.txPacketErrors || 0) + ' / Discards ' + ((p.rxDiscards || 0) + (p.txDiscards || 0)) + '</span></div>'
+          : '<div class="kv-mini"><span>Errors</span><span class="status-pass">None</span></div>'}
       </div>
       ${cams.length > 0 ? `
         <div class="cam-detected">

@@ -108,6 +108,11 @@ html, body { height: 100%; margin: 0; }
     border-radius: 0.5rem;
     padding: 1.25rem;
 }
+/* Consistent spacing between stacked cards in page content */
+#page > .card + .card,
+#page > .card + .net-bottom-grid,
+#page > .net-bottom-grid + .card,
+#page > .page-header + .card { margin-top: 1.25rem; }
 
 /* ── Table ─────────────────────────────────────────────────── */
 .data-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
@@ -882,7 +887,7 @@ html, body { height: 100%; margin: 0; }
 .domain-list { display: flex; flex-direction: column; gap: 2px; }
 .domain-row {
     display: grid;
-    grid-template-columns: 18px 1fr 120px auto;
+    grid-template-columns: 18px 1fr 120px 56px auto;
     gap: 8px;
     align-items: center;
     padding: 5px 0;
@@ -1186,52 +1191,41 @@ html, body { height: 100%; margin: 0; }
 .net-proto-udp { background: #eab308; color: #1c1917; }
 
 /* Findings banner */
-.net-findings-banner { margin-top: 1rem; }
-.net-finding-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
-.net-finding-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.625rem;
-    padding: 0.5rem 0;
-    border-top: 1px solid #1e2130;
-}
-.net-finding-row:first-child { border-top: none; }
-.net-finding-title {
-    font-size: 0.825rem;
-    font-weight: 600;
-    color: #e2e8f0;
-}
-.net-finding-body {
-    font-size: 0.775rem;
-    color: #94a3b8;
-    margin-top: 2px;
-}
-
-/* Recommended Actions cards */
-.net-rec-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
-.net-rec-card {
-    border-radius: 6px;
+/* Unified issues & recommendations */
+.net-issues-list { display: flex; flex-direction: column; gap: 0; margin-top: 0.5rem; }
+.net-issue-row {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: 0 10px;
+    align-items: start;
     padding: 10px 12px;
+    border-radius: 6px;
+    margin-top: 6px;
 }
-.net-rec-critical { background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); }
-.net-rec-warn     { background: rgba(234, 179, 8, 0.08);  border: 1px solid rgba(234, 179, 8, 0.25); }
-.net-rec-info     { background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); }
-.net-rec-header {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-}
-.net-rec-title {
+.net-issue-info     { background: rgba(59, 130, 246, 0.06); border: 1px solid rgba(59, 130, 246, 0.15); }
+.net-issue-warn     { background: rgba(234, 179, 8, 0.06);  border: 1px solid rgba(234, 179, 8, 0.2); }
+.net-issue-critical { background: rgba(239, 68, 68, 0.06);  border: 1px solid rgba(239, 68, 68, 0.2); }
+.net-issue-row .sev-chip { justify-self: start; margin-top: 1px; }
+.net-issue-title {
     font-size: 0.825rem;
     font-weight: 600;
     color: #e2e8f0;
 }
-.net-rec-body {
-    font-size: 0.775rem;
+.net-issue-body {
+    font-size: 0.75rem;
     color: #94a3b8;
     line-height: 1.5;
     margin-top: 2px;
 }
+.net-issue-details {
+    margin: 6px 0 0 0;
+    padding-left: 1rem;
+    list-style: disc;
+    font-size: 0.72rem;
+    color: #64748b;
+    line-height: 1.6;
+}
+.net-issue-details li + li { margin-top: 2px; }
 
 /* Local Network Health — ping cards */
 .net-ping-grid {
@@ -1427,6 +1421,267 @@ html, body { height: 100%; margin: 0; }
     border: 1px solid rgba(34, 197, 94, 0.2);
     border-radius: 6px;
     padding: 8px 12px;
+}
+
+/* ── Live Network Health ───────────────────────────────── */
+.net-live-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.net-live-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    animation: net-live-blink 2s ease-in-out infinite;
+}
+@keyframes net-live-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+.net-live-gauges {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+@media (max-width: 900px) { .net-live-gauges { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 500px) { .net-live-gauges { grid-template-columns: repeat(2, 1fr); } }
+.net-live-gauge {
+    background: #13141f;
+    border: 1px solid #2a2d3e;
+    border-radius: 8px;
+    padding: 12px 8px;
+    text-align: center;
+}
+.net-live-gauge-val {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    line-height: 1.1;
+}
+.net-live-gauge-label {
+    font-size: 0.65rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 4px;
+}
+.net-live-conns { margin-top: 0.25rem; }
+.net-live-conns-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5rem;
+}
+
+/* ── Packet Capture ────────────────────────────────────── */
+.net-cap-summary {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+@media (max-width: 900px) { .net-cap-summary { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 500px) { .net-cap-summary { grid-template-columns: repeat(2, 1fr); } }
+.net-cap-stat {
+    background: #13141f;
+    border: 1px solid #2a2d3e;
+    border-radius: 8px;
+    padding: 12px 8px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+}
+.net-cap-stat-val {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    line-height: 1.1;
+}
+.net-cap-stat-label {
+    font-size: 0.65rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 4px;
+}
+.net-cap-findings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+.net-cap-finding {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.8rem;
+    border-radius: 6px;
+    padding: 10px 14px;
+    line-height: 1.4;
+}
+.net-cap-pass {
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.08);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+}
+.net-cap-talkers { margin-top: 0.5rem; }
+.net-cap-talkers-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5rem;
+}
+
+/* ── Traceroute ─────────────────────────────────────────── */
+.net-trace-input {
+    background: #13141f;
+    border: 1px solid #2a2d3e;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    color: #e2e8f0;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    width: 160px;
+}
+.net-trace-input:focus { border-color: #3b82f6; outline: none; }
+.net-trace-input::placeholder { color: #475569; }
+
+.net-trace-summary {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+.net-trace-table { margin-top: 0; }
+.net-trace-table td,
+.net-trace-table th { padding: 6px 12px; font-size: 0.75rem; }
+
+/* ── DNS resolution time ──────────────────────────────────── */
+.domain-dns-time {
+    font-size: 0.68rem;
+    color: #64748b;
+    min-width: 56px;
+    text-align: right;
+}
+
+/* ── Interface counters (uplink adapter) ────────────────── */
+.net-iface-stats {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #2a2d3e;
+}
+.net-iface-stats-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5rem;
+}
+.net-iface-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+}
+@media (max-width: 600px) { .net-iface-stats-grid { grid-template-columns: repeat(2, 1fr); } }
+.net-iface-stat {
+    display: flex;
+    flex-direction: column;
+    background: #13141f;
+    border: 1px solid #2a2d3e;
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+.net-iface-stat-label {
+    font-size: 0.65rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.net-iface-stat-val {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+.net-iface-stats-warn {
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: #eab308;
+    background: rgba(234, 179, 8, 0.08);
+    border: 1px solid rgba(234, 179, 8, 0.2);
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+/* ── Advanced Diagnostics Toggle ─────────────────────────── */
+.net-adv-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #131c2e;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 0.75rem 1.25rem;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    margin-top: 1.25rem;
+    user-select: none;
+}
+.net-adv-toggle:hover {
+    background: #172035;
+    border-color: #334155;
+}
+.net-adv-toggle-inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.net-adv-toggle-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.25s;
+    color: #64748b;
+}
+.net-adv-toggle-icon.net-adv-arrow-open {
+    transform: rotate(90deg);
+}
+.net-adv-toggle-label {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #e2e8f0;
+}
+.net-adv-toggle-hint {
+    white-space: nowrap;
+}
+.net-adv-section {
+    overflow: hidden;
+    transition: max-height 0.35s ease, opacity 0.25s ease;
+    max-height: 5000px;
+    opacity: 1;
+}
+.net-adv-section.net-adv-collapsed {
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+.net-adv-section > .card:first-child {
+    margin-top: 1.25rem;
 }
 
 /* ── Section Loading ─────────────────────────────────────── */
