@@ -100,6 +100,17 @@ if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 xcopy "%SRC%\*" "%INSTALL_DIR%\" /s /e /y /q >nul
 if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
 
+:: -- Stamp VERSION with branch + commit SHA --------------------------------
+for /f "usebackq delims=" %%S in (`
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "try { " ^
+        "  $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/commits/%BRANCH%' -TimeoutSec 10; " ^
+        "  $r.sha.Substring(0,7) " ^
+        "} catch { 'unknown' }"
+`) do set "COMMIT_SHA=%%S"
+echo %BRANCH%-%COMMIT_SHA%> "%INSTALL_DIR%\VERSION"
+echo  [INFO] Version: %BRANCH%-%COMMIT_SHA%
+
 echo  [INFO] Updated to latest '%BRANCH%' branch.
 echo.
 
