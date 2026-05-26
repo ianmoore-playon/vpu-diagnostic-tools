@@ -1087,6 +1087,15 @@ html, body { height: 100%; margin: 0; }
     padding: 1px 6px;
     white-space: nowrap;
 }
+.cam-model-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #a78bfa;
+    border: 1px solid rgba(167,139,250,0.25);
+    border-radius: 4px;
+    padding: 1px 6px;
+    white-space: nowrap;
+}
 
 .cam-port-grid {
     display: grid;

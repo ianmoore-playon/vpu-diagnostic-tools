@@ -53,7 +53,7 @@ DEMO = {
              "arpEntries": [{"ip": "192.168.11.100", "mac": "00:0E:53:BB:02:01"}, {"ip": "192.168.11.101", "mac": "00:0E:53:BB:02:02"}]},
             {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #3", "status": "Up", "linkSpeedMbps": 100, "fullDuplex": True, "mac": "A4:4C:C8:12:34:03",
              "rxBytes": 1028374, "txBytes": 293847, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0,
-             "arpEntries": [{"ip": "192.168.12.50", "mac": "00:30:53:CC:03:01"}]},
+             "arpEntries": [{"ip": "192.168.12.50", "mac": "00:D0:89:1B:03:01"}]},
             {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) I211 Gigabit Network Connection", "status": "Up", "linkSpeedMbps": 1000, "fullDuplex": True, "mac": "A4:4C:C8:12:34:04",
              "rxBytes": 129384756012, "txBytes": 98273640182, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0,
              "arpEntries": [{"ip": "10.0.1.1", "mac": "00:1A:2B:3C:4D:5E"}]},
@@ -201,7 +201,7 @@ DEMO = {
             {"section": "Camera3", "ip": "192.168.10.102", "mac": "00:0E:53:AA:01:03", "role": "Tactical"},
             {"section": "Camera4", "ip": "192.168.11.100", "mac": "00:0E:53:BB:02:01", "role": "Main"},
             {"section": "Camera5", "ip": "192.168.11.101", "mac": "00:0E:53:BB:02:02", "role": "Panoramic"},
-            {"section": "OCR", "ip": "192.168.12.50", "mac": "00:30:53:CC:03:01", "role": "OCR"},
+            {"section": "OCR", "ip": "192.168.12.50", "mac": "00:D0:89:1B:03:01", "role": "OCR"},
         ],
     },
     "Get-NetworkHealth.ps1": lambda **kw: {

@@ -59,7 +59,7 @@ SERVER_LOG_PATH = _os.path.join(_web_root, "pulse-server.log")
 app = FastAPI(title="Pulse Web | VPU Diagnostics")
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
-PIXELLOT_OUIS = ["00:0E:53", "00:30:53", "70:B3:D5"]
+PIXELLOT_OUIS = ["00:0E:53", "00:30:53", "70:B3:D5", "00:D0:89"]
 
 
 @app.on_event("startup")
@@ -106,22 +106,48 @@ _DEFAULT_OCR_IPS = {"169.254.16.52", "169.254.16.60"}
 _DEFAULT_MAIN_IPS = {"169.254.16.50", "169.254.16.51", "169.254.16.53"}
 
 
-def _cgi_probe_sync(ip: str, timeout: float = 2.0) -> Optional[str]:
-    """Probe a Dynacolor camera CGI endpoint for its MAC address.
-    Returns the MAC string (e.g. '00:D0:89:1B:02:DF') or None on failure.
+def _cgi_probe_sync(ip: str, timeout: float = 2.0) -> Optional[dict]:
+    """Probe a Dynacolor camera CGI endpoint for MAC address and model.
+    Returns {"mac": "...", "model": "..."} or None on failure.
     Runs in a thread — safe to call via asyncio.to_thread."""
-    url = f"http://{ip}/cgi-bin/admin/param.cgi?action=list&group=Network.eth0.MACAddress"
     creds = base64.b64encode(b"Admin:1234").decode()
-    req = urllib.request.Request(url, headers={"Authorization": f"Basic {creds}"})
+    headers = {"Authorization": f"Basic {creds}"}
+
+    # Request 1: MAC address (critical — required for identification)
+    mac_url = f"http://{ip}/cgi-bin/admin/param.cgi?action=list&group=Network.eth0.MACAddress"
+    mac = None
     try:
+        req = urllib.request.Request(mac_url, headers=headers)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8", errors="replace")
             for line in body.splitlines():
                 if "MACAddress=" in line:
-                    return line.split("=", 1)[1].strip()
+                    mac = line.split("=", 1)[1].strip()
     except Exception:
         pass
-    return None
+
+    if not mac:
+        return None
+
+    # Request 2: Camera model (best effort — Brand.ProdNbr / ProdFullName)
+    model = None
+    try:
+        brand_url = f"http://{ip}/cgi-bin/admin/param.cgi?action=list&group=Brand"
+        req = urllib.request.Request(brand_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            prod_nbr = None
+            prod_full = None
+            for line in body.splitlines():
+                if "ProdNbr=" in line:
+                    prod_nbr = line.split("=", 1)[1].strip()
+                elif "ProdFullName=" in line:
+                    prod_full = line.split("=", 1)[1].strip()
+            model = prod_full or prod_nbr
+    except Exception:
+        pass
+
+    return {"mac": mac, "model": model}
 
 
 async def _probe_camera_ip(ip, is_ocr_ip):
@@ -131,9 +157,15 @@ async def _probe_camera_ip(ip, is_ocr_ip):
     if cached and (now - cached["ts"]) < _CGI_PROBE_TTL:
         return cached
 
-    mac = await asyncio.to_thread(_cgi_probe_sync, ip)
-    if mac:
-        result = {"mac": mac.upper().replace("-", ":"), "ts": now, "is_ocr": is_ocr_ip, "ip": ip}
+    info = await asyncio.to_thread(_cgi_probe_sync, ip)
+    if info and info.get("mac"):
+        result = {
+            "mac": info["mac"].upper().replace("-", ":"),
+            "model": info.get("model"),
+            "ts": now,
+            "is_ocr": is_ocr_ip,
+            "ip": ip,
+        }
         _CGI_PROBE_CACHE[ip] = result
         return result
     return None
@@ -378,6 +410,8 @@ def _enrich_ports(
                 if probe:
                     cam_entry["cgiConfirmed"] = True
                     cam_entry["cgiMac"] = probe["mac"]
+                    if probe.get("model"):
+                        cam_entry["model"] = probe["model"]
                     if probe.get("is_ocr"):
                         cam_entry["role"] = "OCR / Scoreboard"
                         cam_entry["identitySource"] = "Confirmed via CGI probe"
@@ -397,10 +431,6 @@ def _enrich_ports(
                     cam_entry["identitySource"] = "OUI vendor match"
 
                 cameras.append(cam_entry)
-
-            # Only flag OCR if the port is actually at sub-1Gbps speed
-            if not (is_up and speed is not None and speed < 1000):
-                is_ocr = False
 
             ports.append(
                 {

@@ -1985,6 +1985,7 @@ function _camPortTile(port, index) {
           <span class="font-mono">${esc(c.ip)}</span>
           <span class="font-mono text-pulse-muted">${esc(c.mac)}</span>
           ${c.role ? '<span class="cam-role-badge">' + esc(c.role) + '</span>' : ''}
+          ${c.model ? '<span class="cam-model-label">' + esc(c.model) + '</span>' : ''}
           ${c.identitySource ? '<span class="text-xs text-pulse-muted"> · ' + esc(c.identitySource) + '</span>' : ''}
         </div>`).join("")}
       </div>
