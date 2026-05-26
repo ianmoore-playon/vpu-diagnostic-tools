@@ -1922,6 +1922,83 @@ function renderNetwork() {
 
 // ── Cameras ──────────────────────────────────────────────────
 
+var _camerasRefreshTimer = null;
+
+function _camPortTile(port, index) {
+  if (!port) {
+    return `<div class="cam-port-tile cam-port-empty">
+      <div class="cam-port-num">Port ${index + 1}</div>
+      <div class="cam-port-status">
+        <span class="cam-dot cam-dot-muted"></span>
+        <span class="text-sm text-pulse-muted">Not detected</span>
+      </div>
+    </div>`;
+  }
+  const p = port;
+  const speed = p.linkSpeedMbps
+    ? p.linkSpeedMbps >= 1000 ? (p.linkSpeedMbps / 1000) + " Gbps" : p.linkSpeedMbps + " Mbps"
+    : "No link";
+  let statusLabel, dotCls;
+  if (!p.isUp) { statusLabel = "Down"; dotCls = "cam-dot-down"; }
+  else if (p.isOcr) { statusLabel = "OCR (100 Mbps)"; dotCls = "cam-dot-info"; }
+  else if (p.isDegraded) { statusLabel = "Degraded"; dotCls = "cam-dot-warn"; }
+  else { statusLabel = "Linked · " + speed; dotCls = "cam-dot-up"; }
+
+  const cams = p.camerasDetected || [];
+  return `<div class="cam-port-tile ${p.isUp ? "cam-port-active" : "cam-port-down"}">
+    <div class="cam-port-header">
+      <span class="cam-port-num">Port ${index + 1}</span>
+      ${p.isOcr ? '<span class="badge-ol badge-ol-info">OCR</span>' : ""}
+      ${p.isDegraded ? '<span class="badge-ol badge-ol-warn">Degraded</span>' : ""}
+    </div>
+    <div class="cam-port-name">${esc(p.name)}</div>
+    <div class="cam-port-status">
+      <span class="cam-dot ${dotCls}"></span>
+      <span class="text-sm">${esc(statusLabel)}</span>
+    </div>
+    <div class="cam-port-detail">
+      <div class="kv-mini"><span>MAC</span><span class="font-mono">${esc(p.mac)}</span></div>
+      <div class="kv-mini"><span>RX / TX</span><span>${formatBytes(p.rxBytes)} / ${formatBytes(p.txBytes)}</span></div>
+      <div class="kv-mini"><span>Duplex</span><span>${p.fullDuplex === true ? "Full" : p.fullDuplex === false ? '<span class="status-warn">Half</span>' : "—"}</span></div>
+      ${(p.rxErrors || 0) + (p.txErrors || 0) > 0
+        ? '<div class="kv-mini"><span>Errors</span><span class="status-warn">RX ' + (p.rxPacketErrors || 0) + ' / TX ' + (p.txPacketErrors || 0) + ' / Discards ' + ((p.rxDiscards || 0) + (p.txDiscards || 0)) + '</span></div>'
+        : '<div class="kv-mini"><span>Errors</span><span class="status-pass">None</span></div>'}
+    </div>
+    ${cams.length > 0 ? `
+      <div class="cam-detected">
+        <div class="cam-detected-label">${cams.length} Pixellot camera${cams.length > 1 ? "s" : ""} detected</div>
+        ${cams.map(c => `<div class="cam-detected-entry">
+          <span class="font-mono">${esc(c.ip)}</span>
+          <span class="font-mono text-pulse-muted">${esc(c.mac)}</span>
+        </div>`).join("")}
+      </div>
+    ` : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
+  </div>`;
+}
+
+function _camFindingsHtml(findings) {
+  if (!findings.length) return "";
+  return `<div class="card" id="cam-findings">
+    ${sectionTitle("alert-circle", findings.length + " finding" + (findings.length !== 1 ? "s" : "") + " need attention")}
+    ${findings.map(f => `
+      <div class="cam-finding-row cam-finding-row-${esc(f.severity)}">
+        <div class="cam-finding-header">
+          <span class="cam-finding-pill cam-finding-pill-${esc(f.severity)}">${esc(f.severity.toUpperCase())}</span>
+          <span class="font-semibold text-sm">${esc(f.title)}</span>
+        </div>
+        <div class="cam-finding-body">${esc(f.body)}</div>
+      </div>`).join("")}
+  </div>`;
+}
+
+function _camPortGridHtml(ports) {
+  const portSlots = [];
+  for (let i = 0; i < Math.max(4, ports.length); i++) {
+    portSlots.push(ports[i] || null);
+  }
+  return portSlots.slice().reverse().map((p, ri) => _camPortTile(p, portSlots.length - 1 - ri)).join("");
+}
+
 function renderCameras() {
   const data = cached("cameras");
   if (!data) { $page().innerHTML = sectionLoading("Camera Connectivity"); fetchSection("cameras"); return; }
@@ -1936,83 +2013,18 @@ function renderCameras() {
     portSlots.push(ports[i] || null);
   }
 
-  function portTile(port, index) {
-    if (!port) {
-      return `<div class="cam-port-tile cam-port-empty">
-        <div class="cam-port-num">Port ${index + 1}</div>
-        <div class="cam-port-status">
-          <span class="cam-dot cam-dot-muted"></span>
-          <span class="text-sm text-pulse-muted">Not detected</span>
-        </div>
-      </div>`;
-    }
-    const p = port;
-    const speed = p.linkSpeedMbps
-      ? p.linkSpeedMbps >= 1000 ? (p.linkSpeedMbps / 1000) + " Gbps" : p.linkSpeedMbps + " Mbps"
-      : "No link";
-    let statusLabel, dotCls;
-    if (!p.isUp) { statusLabel = "Down"; dotCls = "cam-dot-down"; }
-    else if (p.isOcr) { statusLabel = "OCR (100 Mbps)"; dotCls = "cam-dot-info"; }
-    else if (p.isDegraded) { statusLabel = "Degraded"; dotCls = "cam-dot-warn"; }
-    else { statusLabel = "Linked · " + speed; dotCls = "cam-dot-up"; }
-
-    const cams = p.camerasDetected || [];
-    return `<div class="cam-port-tile ${p.isUp ? "cam-port-active" : "cam-port-down"}">
-      <div class="cam-port-header">
-        <span class="cam-port-num">Port ${index + 1}</span>
-        ${p.isOcr ? '<span class="badge-ol badge-ol-info">OCR</span>' : ""}
-        ${p.isDegraded ? '<span class="badge-ol badge-ol-warn">Degraded</span>' : ""}
-      </div>
-      <div class="cam-port-name">${esc(p.name)}</div>
-      <div class="cam-port-status">
-        <span class="cam-dot ${dotCls}"></span>
-        <span class="text-sm">${esc(statusLabel)}</span>
-      </div>
-      <div class="cam-port-detail">
-        <div class="kv-mini"><span>MAC</span><span class="font-mono">${esc(p.mac)}</span></div>
-        <div class="kv-mini"><span>RX / TX</span><span>${formatBytes(p.rxBytes)} / ${formatBytes(p.txBytes)}</span></div>
-        <div class="kv-mini"><span>Duplex</span><span>${p.fullDuplex === true ? "Full" : p.fullDuplex === false ? '<span class="status-warn">Half</span>' : "—"}</span></div>
-        ${(p.rxErrors || 0) + (p.txErrors || 0) > 0
-          ? '<div class="kv-mini"><span>Errors</span><span class="status-warn">RX ' + (p.rxPacketErrors || 0) + ' / TX ' + (p.txPacketErrors || 0) + ' / Discards ' + ((p.rxDiscards || 0) + (p.txDiscards || 0)) + '</span></div>'
-          : '<div class="kv-mini"><span>Errors</span><span class="status-pass">None</span></div>'}
-      </div>
-      ${cams.length > 0 ? `
-        <div class="cam-detected">
-          <div class="cam-detected-label">${cams.length} Pixellot camera${cams.length > 1 ? "s" : ""} detected</div>
-          ${cams.map(c => `<div class="cam-detected-entry">
-            <span class="font-mono">${esc(c.ip)}</span>
-            <span class="font-mono text-pulse-muted">${esc(c.mac)}</span>
-          </div>`).join("")}
-        </div>
-      ` : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
-    </div>`;
-  }
-
   $page().innerHTML = `
     ${pageHeader("Camera Connectivity", "NIC ports, link status, speed, and Pixellot camera detection",
-      `<button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
+      `<span id="cam-live-badge" class="cam-live-badge">LIVE</span>
+      <button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
         ${svgIcon("zap", 14)} Fault Isolator
-      </button>
-      <button class="btn-outline btn-ol-blue" onclick="dataCache.cameras=null;renderCameras()">
-        ${svgIcon("refresh", 14)} Refresh
       </button>`
     )}
 
-    ${findings.length ? `
-    <div class="card">
-      ${sectionTitle("alert-circle", findings.length + " finding" + (findings.length !== 1 ? "s" : "") + " need attention")}
-      ${findings.map(f => `
-        <div class="cam-finding-row cam-finding-row-${esc(f.severity)}">
-          <div class="cam-finding-header">
-            <span class="cam-finding-pill cam-finding-pill-${esc(f.severity)}">${esc(f.severity.toUpperCase())}</span>
-            <span class="font-semibold text-sm">${esc(f.title)}</span>
-          </div>
-          <div class="cam-finding-body">${esc(f.body)}</div>
-        </div>`).join("")}
-    </div>` : ""}
+    <div id="cam-findings-wrap">${_camFindingsHtml(findings)}</div>
 
-    <div class="cam-port-grid">
-      ${portSlots.slice().reverse().map((p, ri) => portTile(p, portSlots.length - 1 - ri)).join("")}
+    <div class="cam-port-grid" id="cam-port-grid">
+      ${_camPortGridHtml(ports)}
     </div>
     <div class="text-xs text-pulse-muted mt-2 mb-1">Port order matches physical chassis: Port ${portSlots.length} (left) → Port 1 (right).</div>
 
@@ -2048,6 +2060,26 @@ function renderCameras() {
       </details>
     </div>`).join("")}
   `;
+
+  // ── Live refresh: poll /api/cameras every 3s and update port grid + findings ──
+  if (_camerasRefreshTimer) clearInterval(_camerasRefreshTimer);
+  _camerasRefreshTimer = setInterval(function() {
+    if (currentPage !== "cameras") { clearInterval(_camerasRefreshTimer); _camerasRefreshTimer = null; return; }
+    api("/api/cameras").then(function(fresh) {
+      if (!fresh || fresh.error || currentPage !== "cameras") return;
+      dataCache.cameras = fresh;
+      var grid = document.getElementById("cam-port-grid");
+      if (grid) grid.innerHTML = _camPortGridHtml(fresh.ports || []);
+      var fw = document.getElementById("cam-findings-wrap");
+      if (fw) fw.innerHTML = _camFindingsHtml(fresh.findings || []);
+      // Pulse the live badge to show the tick happened
+      var badge = document.getElementById("cam-live-badge");
+      if (badge) {
+        badge.classList.add("cam-live-tick");
+        setTimeout(function() { badge.classList.remove("cam-live-tick"); }, 600);
+      }
+    }).catch(function() { /* network blip — skip this tick */ });
+  }, 3000);
 }
 
 function formatBytes(b) {
