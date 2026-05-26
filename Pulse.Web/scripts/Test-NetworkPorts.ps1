@@ -13,17 +13,15 @@ $ErrorActionPreference = 'Stop'
 
 try {
     $portTests = @(
-        # Required — core Pixellot services
-        @{ protocol = 'TCP'; port = 443;  host = 'pixellot.tv';          purpose = 'Pixellot Cloud';    optional = $false }
+        # Required
+        @{ protocol = 'TCP'; port = 443;  host = 'pixellot.tv';          purpose = 'Pixellot';          optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'nfhsnetwork.com';      purpose = 'NFHS Network';      optional = $false }
-        @{ protocol = 'TCP'; port = 443;  host = 'software.pixellot.tv'; purpose = 'Software Updates';  optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 's3.amazonaws.com';     purpose = 'AWS S3';            optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'service.singular.live'; purpose = 'Singular Overlay';  optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'logmein.com';          purpose = 'LogMeIn';           optional = $false }
         @{ protocol = 'UDP'; port = 123;  host = 'prod-echo.pixellot.tv'; purpose = 'NTP';               optional = $false }
         @{ protocol = 'UDP'; port = 2088; host = 'pixellot.tv';          purpose = 'Zixi Streaming';    optional = $false }
-        # Optional — SportzCast & RTMP
-        @{ protocol = 'TCP'; port = 1935; host = 'live.pixellot.tv';     purpose = 'RTMP Ingest';       optional = $true }
+        # Optional
         @{ protocol = 'TCP'; port = 1402; host = 'sportzcast.net';       purpose = 'SportzCast';        optional = $true }
     )
 

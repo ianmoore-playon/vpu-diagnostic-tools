@@ -119,16 +119,14 @@ DEMO = {
     "Test-NetworkPorts.ps1": lambda **kw: {
         "results": [
             # Required
-            {"purpose": "Pixellot Cloud", "host": "pixellot.tv", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
+            {"purpose": "Pixellot", "host": "pixellot.tv", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NFHS Network", "host": "nfhsnetwork.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
-            {"purpose": "Software Updates", "host": "software.pixellot.tv", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "AWS S3", "host": "s3.amazonaws.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "Singular Overlay", "host": "service.singular.live", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "LogMeIn", "host": "logmein.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
             {"purpose": "Zixi Streaming", "host": "pixellot.tv", "port": 2088, "protocol": "UDP", "status": "pass", "optional": False},
             # Optional
-            {"purpose": "RTMP Ingest", "host": "live.pixellot.tv", "port": 1935, "protocol": "TCP", "status": "pass", "optional": True},
             {"purpose": "SportzCast", "host": "sportzcast.net", "port": 1402, "protocol": "TCP", "status": "fail", "optional": True},
         ]
     },
