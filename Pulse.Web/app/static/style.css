@@ -1730,6 +1730,9 @@ html, body { height: 100%; margin: 0; }
 .net-adv-section > .card:first-child {
     margin-top: 1.25rem;
 }
+.net-adv-section > .card + .card {
+    margin-top: 1.25rem;
+}
 
 /* ── Section Loading ─────────────────────────────────────── */
 .section-loading {
