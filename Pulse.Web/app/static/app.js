@@ -1396,14 +1396,14 @@ function _renderLiveNetHealth(h) {
     (conns.length ? '<div class="net-live-conns">' +
       '<div class="net-live-conns-title">Active Connections (' + conns.length + ')</div>' +
       '<table class="data-table"><thead><tr>' +
-        '<th>Remote Host</th><th>Remote Addr</th><th>Port</th><th>State</th>' +
+        '<th>Remote Address</th><th>Port</th><th>Local Port</th><th>State</th>' +
       '</tr></thead><tbody>' +
       conns.map(function(c) {
         var stCls = c.state === "Established" ? "status-pass" : c.state === "TimeWait" ? "text-pulse-muted" : "status-warn";
         return '<tr>' +
-          '<td>' + esc(c.remoteHost || "—") + '</td>' +
           '<td class="font-mono text-xs">' + esc(c.remoteAddr) + '</td>' +
           '<td class="font-mono">' + esc(String(c.remotePort)) + '</td>' +
+          '<td class="font-mono text-xs text-pulse-muted">' + esc(String(c.localPort || "")) + '</td>' +
           '<td class="' + stCls + '">' + esc(c.state) + '</td>' +
         '</tr>';
       }).join("") +
@@ -2495,11 +2495,37 @@ function renderScoreConnect() {
 }
 
 // ── Camera Fault Isolator ────────────────────────────────────
+//
+// 4-phase swap test — process of elimination:
+//   Phase 1 (Baseline): measure suspect port speed.
+//   Phase 2 (NIC Port): move same cable+camera to test port. Fault follows?
+//     Pass (1 Gbps on test) → NIC Port fault.  Fail (still degraded) → Phase 3.
+//   Phase 3 (Cable): swap cable for known-good on test port. Fault follows?
+//     Pass → Cable fault.  Fail → Phase 4.
+//   Phase 4 (Camera): swap camera for known-good on test port. Fault follows?
+//     Pass → Camera fault.  Fail → NIC Hardware fault.
+//     "No spare CHU" → infer camera fault from Phase 2+3 eliminations.
+//
+// Ported from FaultIsolatorViewModel.cs (v0.8.21-beta).
 
 var _fi = null;
 
 function _fiReset() {
-  _fi = { step: 0, suspect: -1, test: -1, phases: [], p1pass: null, p2pass: null, p2infer: false, p3pass: null };
+  _fi = {
+    phase: 0,           // 0=PickPort 1=AwaitingNicPortTest 2=AwaitingCableTest 3=AwaitingCameraTest 4=Concluded
+    conclusion: "",     // NicPort | Cable | Camera | NicHardware | LikelyCamera
+    suspectIdx: -1,
+    testIdx: -1,
+    testPreSpeedMbps: null,
+    history: [],        // [{ts,phase,config,speed,verdict,severity}]
+    resultHeadline: "",
+    resultDetail: "",
+    resultSeverity: "", // pass | info | fail
+    phaseTitle: "SELECT A PORT TO BEGIN",
+    phaseInstruction: "Select the NIC port showing a degraded or missing link and click Start Baseline.",
+    actionLabel: "Start Baseline",
+    checking: false,
+  };
 }
 
 function renderFaultIsolator() {

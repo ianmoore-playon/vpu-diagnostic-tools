@@ -12,17 +12,6 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
-# Known endpoints whose connections are most relevant to Pixellot VPU health
-$knownHosts = @(
-    'pixellot',
-    'amazonaws',
-    'nfhs',
-    'singular',
-    'balena',
-    'logmein',
-    'sportzcast'
-)
-
 try {
     # ── TCP performance counters ────────────────────────────────
     $tcpRetransSec  = $null
@@ -57,42 +46,22 @@ try {
         # First invocation can fail while counter infrastructure warms up
     }
 
-    # ── Active TCP connections to known endpoints ───────────────
+    # ── Active TCP connections on service ports ───────────────
+    # No reverse DNS here — too slow for a 3s poll loop. Raw IPs only.
     $activeConns = @()
     try {
         $allTcp = Get-NetTCPConnection -State Established, TimeWait, CloseWait, SynSent -ErrorAction SilentlyContinue
         foreach ($conn in $allTcp) {
-            $remoteAddr = $conn.RemoteAddress
             $remotePort = $conn.RemotePort
-            $state      = $conn.State.ToString()
-
-            # Reverse-lookup: try to find a matching known host via cached DNS
-            $matchedHost = $null
-            try {
-                $entry = [System.Net.Dns]::GetHostEntry($remoteAddr)
-                $hostname = $entry.HostName
-                foreach ($kh in $knownHosts) {
-                    if ($hostname -match $kh) { $matchedHost = $hostname; break }
-                }
-            }
-            catch {
-                # Reverse DNS failed — check if the IP itself is interesting
-                # (e.g. known Pixellot cloud IPs would go here; skip for now)
-            }
-
-            # Only report connections to known hosts or common service ports
-            $isKnown = $null -ne $matchedHost
-            $isServicePort = $remotePort -eq 443 -or $remotePort -eq 1935 -or
-                             $remotePort -eq 80 -or $remotePort -eq 8443 -or
-                             $remotePort -eq 5000
-
-            if ($isKnown -or $isServicePort) {
+            # Only report connections on common service ports
+            if ($remotePort -eq 443 -or $remotePort -eq 1935 -or
+                $remotePort -eq 80 -or $remotePort -eq 2088 -or
+                $remotePort -eq 1402) {
                 $activeConns += [ordered]@{
                     localPort  = $conn.LocalPort
-                    remoteAddr = $remoteAddr
+                    remoteAddr = $conn.RemoteAddress
                     remotePort = $remotePort
-                    remoteHost = $matchedHost
-                    state      = $state
+                    state      = $conn.State.ToString()
                     pid        = $conn.OwningProcess
                 }
             }
