@@ -1984,6 +1984,8 @@ function _camPortTile(port, index) {
         ${cams.map(c => `<div class="cam-detected-entry">
           <span class="font-mono">${esc(c.ip)}</span>
           <span class="font-mono text-pulse-muted">${esc(c.mac)}</span>
+          ${c.role ? '<span class="cam-role-badge">' + esc(c.role) + '</span>' : ''}
+          ${c.identitySource ? '<span class="text-xs text-pulse-muted"> · ' + esc(c.identitySource) + '</span>' : ''}
         </div>`).join("")}
       </div>
     ` : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
@@ -2013,6 +2015,57 @@ function _camPortGridHtml(ports) {
   return portSlots.slice().reverse().map((p, ri) => _camPortTile(p, portSlots.length - 1 - ri)).join("");
 }
 
+function _camNicDiagramHtml(ports) {
+  const count = Math.max(4, ports.length);
+  function ledColor(p) {
+    if (!p || !p.isUp) return "nic-led-off";
+    if (p.isDegraded) return "nic-led-warn";
+    if (p.isOcr) return "nic-led-ok";
+    return "nic-led-ok";
+  }
+  function ledDotColor(p) {
+    if (!p || !p.isUp) return "#64748b";
+    if (p.isDegraded) return "#f59e0b";
+    if (p.isOcr) return "#22c55e";
+    return "#22c55e";
+  }
+  // Physical ports: reversed (highest port on left = physical chassis left)
+  var portIcons = "";
+  for (var ri = 0; ri < count; ri++) {
+    var idx = count - 1 - ri;
+    var p = ports[idx] || null;
+    var cls = ledColor(p);
+    portIcons += '<div class="nic-port-icon">' +
+      '<div class="nic-port-body">' +
+        '<div class="nic-port-slots"></div>' +
+        '<div class="nic-port-led ' + cls + '"></div>' +
+      '</div>' +
+      '<div class="nic-port-label">Port ' + (idx + 1) + '</div>' +
+    '</div>';
+  }
+  // Vertical legend on the right
+  var legend = "";
+  for (var li = count - 1; li >= 0; li--) {
+    var lp = ports[li] || null;
+    legend += '<div class="nic-legend-row">' +
+      '<span class="nic-legend-dot" style="background:' + ledDotColor(lp) + '"></span>' +
+      '<span class="nic-legend-label">Port ' + (li + 1) + '</span>' +
+    '</div>';
+  }
+  // NIC header: grab adapter description from first real port
+  var nicDesc = "";
+  for (var ni = 0; ni < ports.length; ni++) {
+    if (ports[ni] && ports[ni].interfaceDescription) { nicDesc = ports[ni].interfaceDescription; break; }
+  }
+  var nicHeader = nicDesc
+    ? '<div class="nic-diagram-header">' + svgIcon("cpu", 16) + ' ' + esc(nicDesc) + ' · ' + count + ' ports</div>'
+    : '';
+  return nicHeader + '<div class="nic-diagram-wrap">' +
+    '<div class="nic-diagram-ports">' + portIcons + '</div>' +
+    '<div class="nic-diagram-legend">' + legend + '</div>' +
+  '</div>';
+}
+
 function renderCameras() {
   const data = cached("cameras");
   if (!data) { $page().innerHTML = sectionLoading("Camera Connectivity"); fetchSection("cameras"); return; }
@@ -2036,6 +2089,8 @@ function renderCameras() {
     )}
 
     <div id="cam-findings-wrap">${_camFindingsHtml(findings)}</div>
+
+    <div class="card" id="cam-nic-diagram">${_camNicDiagramHtml(ports)}</div>
 
     <div class="cam-port-grid" id="cam-port-grid">
       ${_camPortGridHtml(ports)}
@@ -2084,6 +2139,8 @@ function renderCameras() {
       dataCache.cameras = fresh;
       var grid = document.getElementById("cam-port-grid");
       if (grid) grid.innerHTML = _camPortGridHtml(fresh.ports || []);
+      var diag = document.getElementById("cam-nic-diagram");
+      if (diag) diag.innerHTML = _camNicDiagramHtml(fresh.ports || []);
       var fw = document.getElementById("cam-findings-wrap");
       if (fw) fw.innerHTML = _camFindingsHtml(fresh.findings || []);
       // Pulse the live badge to show the tick happened

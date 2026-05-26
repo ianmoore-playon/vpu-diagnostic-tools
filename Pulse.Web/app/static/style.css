@@ -983,6 +983,111 @@ html, body { height: 100%; margin: 0; }
     background: rgba(34,197,94,0.08);
 }
 
+/* ── Physical NIC diagram ─────────────────────────────────── */
+.nic-diagram-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--c-muted, #94a3b8);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--c-border, #334155);
+    margin-bottom: 8px;
+}
+.nic-diagram-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 28px 24px;
+}
+.nic-diagram-ports {
+    display: flex;
+    gap: 48px;
+    align-items: flex-end;
+}
+.nic-port-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+.nic-port-body {
+    width: 64px;
+    height: 56px;
+    border: 2px solid var(--c-border, #334155);
+    border-radius: 6px;
+    background: var(--c-surface, #1e293b);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    position: relative;
+}
+.nic-port-slots {
+    width: 32px;
+    height: 6px;
+    border-radius: 2px;
+    background: var(--c-border, #334155);
+}
+.nic-port-led {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    transition: background 0.3s, box-shadow 0.3s;
+}
+.nic-led-ok { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+.nic-led-warn { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.5); }
+.nic-led-off { background: #64748b; }
+.nic-port-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--c-muted, #94a3b8);
+    padding: 2px 10px;
+    border: 1px solid var(--c-border, #334155);
+    border-radius: 4px;
+    background: var(--c-surface, #1e293b);
+}
+.nic-diagram-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 16px;
+    border: 1px solid var(--c-border, #334155);
+    border-radius: 8px;
+    background: var(--c-surface, #1e293b);
+}
+.nic-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.nic-legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.nic-legend-label {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--c-text, #e2e8f0);
+}
+
+/* Camera role badge in detection entries */
+.cam-role-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #60a5fa;
+    border: 1px solid rgba(96,165,250,0.3);
+    border-radius: 4px;
+    padding: 1px 6px;
+    white-space: nowrap;
+}
+
 .cam-port-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

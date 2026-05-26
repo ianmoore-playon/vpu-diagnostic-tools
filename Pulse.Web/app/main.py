@@ -82,6 +82,90 @@ def save_settings(data: dict) -> None:
         json.dump(data, f, indent=2)
 
 
+# ── CGI probe for Dynacolor cameras (OCR + main heads) ──────────────
+# Mirrors the WPF's OcrProbeService: HTTP GET to the camera's admin CGI
+# returns the camera MAC, positively identifying it. OCR and main cameras
+# share the same Dynacolor firmware and respond on the same endpoint.
+#
+# Results are cached by IP with a 30-second TTL so the 3-second live poll
+# doesn't hammer the cameras. The probe runs via asyncio.to_thread to
+# avoid blocking the event loop (no httpx dependency required).
+
+import base64
+import time
+import urllib.request
+import urllib.error
+from typing import Optional
+
+_CGI_PROBE_CACHE = {}  # ip -> {mac, ts, is_ocr}
+_CGI_PROBE_TTL = 30  # seconds
+
+# Known default OCR IPs (from WPF's DefaultOcrIps + Pixellot convention)
+_DEFAULT_OCR_IPS = {"169.254.16.52", "169.254.16.60"}
+# Known default main camera IPs
+_DEFAULT_MAIN_IPS = {"169.254.16.50", "169.254.16.51", "169.254.16.53"}
+
+
+def _cgi_probe_sync(ip: str, timeout: float = 2.0) -> Optional[str]:
+    """Probe a Dynacolor camera CGI endpoint for its MAC address.
+    Returns the MAC string (e.g. '00:D0:89:1B:02:DF') or None on failure.
+    Runs in a thread — safe to call via asyncio.to_thread."""
+    url = f"http://{ip}/cgi-bin/admin/param.cgi?action=list&group=Network.eth0.MACAddress"
+    creds = base64.b64encode(b"Admin:1234").decode()
+    req = urllib.request.Request(url, headers={"Authorization": f"Basic {creds}"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            for line in body.splitlines():
+                if "MACAddress=" in line:
+                    return line.split("=", 1)[1].strip()
+    except Exception:
+        pass
+    return None
+
+
+async def _probe_camera_ip(ip, is_ocr_ip):
+    """Probe a single camera IP, returning cached result if fresh."""
+    now = time.monotonic()
+    cached = _CGI_PROBE_CACHE.get(ip)
+    if cached and (now - cached["ts"]) < _CGI_PROBE_TTL:
+        return cached
+
+    mac = await asyncio.to_thread(_cgi_probe_sync, ip)
+    if mac:
+        result = {"mac": mac.upper().replace("-", ":"), "ts": now, "is_ocr": is_ocr_ip, "ip": ip}
+        _CGI_PROBE_CACHE[ip] = result
+        return result
+    return None
+
+
+async def _probe_all_cameras(ports, ocr_ips):
+    """Probe all camera IPs found in ARP entries across all ports.
+    Returns a dict keyed by normalized MAC -> {mac, ip, is_ocr}."""
+    all_camera_ips = set(ocr_ips)
+    all_camera_ips.update(_DEFAULT_OCR_IPS)
+    all_camera_ips.update(_DEFAULT_MAIN_IPS)
+    # Also probe any Pixellot camera IPs found in ARP
+    for port in ports:
+        for arp in port.get("arpEntries", []):
+            if _is_pixellot_mac(arp.get("mac", "")):
+                ip = arp.get("ip", "").strip()
+                if ip:
+                    all_camera_ips.add(ip)
+
+    tasks = []
+    for ip in all_camera_ips:
+        is_ocr = ip in ocr_ips or ip in _DEFAULT_OCR_IPS
+        tasks.append(_probe_camera_ip(ip, is_ocr))
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    by_mac = {}
+    for r in results:
+        if isinstance(r, dict) and r.get("mac"):
+            by_mac[r["mac"]] = r
+    return by_mac
+
+
 def _is_pixellot_mac(mac: str) -> bool:
     if not mac:
         return False
@@ -233,19 +317,10 @@ def _compute_findings(identity, performance, services, nics) -> list:
     return findings
 
 
-def _enrich_ports(nics: dict, pixellot_config: dict = None) -> list:
-    """Enrich raw NIC port data with status flags and camera detection.
-
-    OCR determination cross-references the port's ARP entries against
-    cameras.cfg roles.  A port is OCR only when a camera on it is mapped
-    to role "OCR" (or section "OCR") in the config, or its IP matches a
-    known default OCR address (169.254.16.52, 169.254.16.60).  A bare
-    speed == 100 without corroboration is treated as degraded — a faulty
-    cable can force a 1 Gbps camera to negotiate at 100 Mbps.
-    """
-    # Build a set of IPs and MACs that are known OCR from cameras.cfg.
-    ocr_ips: set[str] = {"169.254.16.52", "169.254.16.60"}
-    ocr_macs: set[str] = set()
+def _build_ocr_sets(pixellot_config=None):
+    """Return (ocr_ips, ocr_macs) from cameras.cfg + known defaults."""
+    ocr_ips = set(_DEFAULT_OCR_IPS)
+    ocr_macs = set()
     cfg_cameras = []
     if pixellot_config and not pixellot_config.get("error"):
         cfg_cameras = pixellot_config.get("cameras", [])
@@ -258,31 +333,75 @@ def _enrich_ports(nics: dict, pixellot_config: dict = None) -> list:
                 ocr_ips.add(ip)
             if mac:
                 ocr_macs.add(mac)
+    return ocr_ips, ocr_macs
+
+
+def _enrich_ports(
+    nics: dict,
+    pixellot_config: dict = None,
+    probe_results=None,
+) -> list:
+    """Enrich raw NIC port data with status flags and camera detection.
+
+    OCR determination uses a layered approach (mirrors WPF):
+      1. CGI probe results (positive ID from camera firmware)
+      2. cameras.cfg role mapping (IP/MAC cross-reference)
+      3. Known default OCR IPs (169.254.16.52, 169.254.16.60)
+    A bare speed == 100 without corroboration is treated as degraded.
+
+    probe_results: dict keyed by normalized MAC -> {mac, ip, is_ocr}
+    from _probe_all_cameras(). Optional — when absent, falls back to
+    cfg-only identification.
+    """
+    ocr_ips, ocr_macs = _build_ocr_sets(pixellot_config)
+    probe_results = probe_results or {}
 
     ports = []
     if nics and not nics.get("error"):
         for port in nics.get("ports", []):
             speed = port.get("linkSpeedMbps")
             is_up = port.get("status") == "Up"
-            cameras = [
-                arp
-                for arp in port.get("arpEntries", [])
-                if _is_pixellot_mac(arp.get("mac", ""))
-            ]
-            # OCR: check if any ARP entry on this port matches a known OCR
-            # IP or MAC.  This mirrors the WPF's positive-identification
-            # approach (CGI probe + cfg lookup) without requiring the HTTP
-            # probe — the cfg role is authoritative enough for the web UI.
+
+            # Build enriched camera list from ARP entries
+            cameras = []
             is_ocr = False
-            if is_up and speed is not None and speed < 1000:
-                for arp in port.get("arpEntries", []):
-                    arp_ip = (arp.get("ip") or "").strip()
-                    arp_mac = (
-                        (arp.get("mac") or "").strip().upper().replace("-", ":")
-                    )
-                    if arp_ip in ocr_ips or arp_mac in ocr_macs:
+            for arp in port.get("arpEntries", []):
+                arp_mac_raw = arp.get("mac", "")
+                if not _is_pixellot_mac(arp_mac_raw):
+                    continue
+                arp_ip = (arp.get("ip") or "").strip()
+                arp_mac = arp_mac_raw.strip().upper().replace("-", ":")
+
+                # Determine camera identity from probe + cfg
+                probe = probe_results.get(arp_mac)
+                cam_entry = {**arp}
+                if probe:
+                    cam_entry["cgiConfirmed"] = True
+                    cam_entry["cgiMac"] = probe["mac"]
+                    if probe.get("is_ocr"):
+                        cam_entry["role"] = "OCR / Scoreboard"
+                        cam_entry["identitySource"] = "Confirmed via CGI probe"
                         is_ocr = True
-                        break
+                    else:
+                        cam_entry["role"] = "Main Camera"
+                        cam_entry["identitySource"] = "Confirmed via CGI probe"
+                elif arp_ip in ocr_ips or arp_mac in ocr_macs:
+                    cam_entry["role"] = "OCR / Scoreboard"
+                    cam_entry["identitySource"] = "Matched cameras.cfg"
+                    is_ocr = True
+                elif arp_ip in _DEFAULT_MAIN_IPS:
+                    cam_entry["role"] = "Main Camera"
+                    cam_entry["identitySource"] = "Default IP convention"
+                else:
+                    cam_entry["role"] = None
+                    cam_entry["identitySource"] = "OUI vendor match"
+
+                cameras.append(cam_entry)
+
+            # Only flag OCR if the port is actually at sub-1Gbps speed
+            if not (is_up and speed is not None and speed < 1000):
+                is_ocr = False
+
             ports.append(
                 {
                     **port,
@@ -463,6 +582,11 @@ async def api_preload():
         run_ps("Get-AudioDevices.ps1"),
     )
 
+    # Run CGI probes for camera identification (cached 30s)
+    ocr_ips_pre, _ = _build_ocr_sets(pixellot_config)
+    raw_ports_pre = nics.get("ports", []) if nics and not nics.get("error") else []
+    probe_results_pre = await _probe_all_cameras(raw_ports_pre, ocr_ips_pre)
+
     return {
         "dashboard": _build_dashboard(identity, performance, services, nics, network_config),
         "system": {
@@ -472,7 +596,7 @@ async def api_preload():
         },
         "network": _build_network(network_config, domains, ports, ntp, local),
         "cameras": {
-            "ports": _enrich_ports(nics, pixellot_config),
+            "ports": _enrich_ports(nics, pixellot_config, probe_results_pre),
             "pixellotConfig": pixellot_config,
         },
         "services": services,
@@ -691,7 +815,11 @@ async def api_cameras():
         run_ps("Get-NicAdapters.ps1"),
         run_ps("Get-PixellotConfig.ps1"),
     )
-    ports = _enrich_ports(nics, pix_config)
+    ocr_ips, _ = _build_ocr_sets(pix_config)
+    # Run CGI probes (cached 30s) for positive camera identification
+    raw_ports = nics.get("ports", []) if nics and not nics.get("error") else []
+    probe_results = await _probe_all_cameras(raw_ports, ocr_ips)
+    ports = _enrich_ports(nics, pix_config, probe_results)
     return {
         "ports": ports,
         "pixellotConfig": pix_config,
@@ -840,6 +968,7 @@ async def ws_endpoint(ws: WebSocket):
         last_log_idx = len(LOG_BUFFER)
         # Cache pixellot config once — it's static and shouldn't slow the poll loop.
         pix_cfg = await run_ps("Get-PixellotConfig.ps1", timeout=10)
+        ws_ocr_ips, _ = _build_ocr_sets(pix_cfg)
 
         while True:
             perf, nics, net_health = await asyncio.gather(
@@ -847,6 +976,9 @@ async def ws_endpoint(ws: WebSocket):
                 run_ps("Get-NicAdapters.ps1", timeout=10),
                 run_ps("Get-NetworkHealth.ps1", timeout=10),
             )
+            # CGI probes use 30s cache — no extra network cost on each tick
+            ws_raw = nics.get("ports", []) if nics and not nics.get("error") else []
+            ws_probes = await _probe_all_cameras(ws_raw, ws_ocr_ips)
             all_logs = list(LOG_BUFFER)
             new_logs = all_logs[last_log_idx:]
             last_log_idx = len(all_logs)
@@ -855,7 +987,7 @@ async def ws_endpoint(ws: WebSocket):
                 {
                     "type": "metrics",
                     "performance": perf,
-                    "ports": _enrich_ports(nics, pix_cfg),
+                    "ports": _enrich_ports(nics, pix_cfg, ws_probes),
                     "networkHealth": net_health,
                     "logs": new_logs,
                 }
