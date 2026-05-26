@@ -630,7 +630,9 @@ function renderDashboard() {
   const svcs = (dash.services || svcData)?.services || [];
   const hostname = id.hostname || "VPU";
   const vpuName = id.vpuName;
-  const hwLabel = [id.manufacturer, id.model].filter(Boolean).join(" ") || hostname;
+  const mfr = id.manufacturer || "";
+  const model = id.model || "";
+  const hwLabel = (model.toLowerCase().startsWith(mfr.toLowerCase()) ? model : [mfr, model].filter(Boolean).join(" ")) || hostname;
 
   const cpu = perf.cpu?.usagePercent;
   const mem = perf.memory?.usedPercent;
