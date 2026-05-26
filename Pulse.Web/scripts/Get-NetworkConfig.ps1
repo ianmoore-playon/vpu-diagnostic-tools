@@ -24,14 +24,31 @@ try {
         }
     }
 
+    # Build lookup tables keyed by InterfaceIndex for DHCP status and prefix length
+    $ipIfaceMap = @{}
+    Get-NetIPInterface -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object {
+        $ipIfaceMap[$_.InterfaceIndex] = $_
+    }
+    $ipAddrMap = @{}
+    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object {
+        if (-not $ipAddrMap.ContainsKey($_.InterfaceIndex)) {
+            $ipAddrMap[$_.InterfaceIndex] = $_
+        }
+    }
+
     # IP configurations
     $ipConfigs = Get-NetIPConfiguration -ErrorAction SilentlyContinue | ForEach-Object {
+        $idx   = $_.InterfaceIndex
+        $iface = $ipIfaceMap[$idx]
+        $addr  = $ipAddrMap[$idx]
         [ordered]@{
-            interfaceAlias   = $_.InterfaceAlias
-            interfaceIndex   = $_.InterfaceIndex
-            ipv4Address      = if ($_.IPv4Address) { ($_.IPv4Address | ForEach-Object { $_.IPAddress }) } else { @() }
+            interfaceAlias     = $_.InterfaceAlias
+            interfaceIndex     = $idx
+            ipv4Address        = if ($_.IPv4Address) { ($_.IPv4Address | ForEach-Object { $_.IPAddress }) } else { @() }
             ipv4DefaultGateway = if ($_.IPv4DefaultGateway) { ($_.IPv4DefaultGateway | ForEach-Object { $_.NextHop }) } else { @() }
-            dnsServers       = if ($_.DNSServer) { ($_.DNSServer | ForEach-Object { $_.ServerAddresses }) | Select-Object -Unique } else { @() }
+            dnsServers         = if ($_.DNSServer) { ($_.DNSServer | ForEach-Object { $_.ServerAddresses }) | Select-Object -Unique } else { @() }
+            dhcpEnabled        = if ($iface) { $iface.Dhcp -eq 'Enabled' } else { $false }
+            prefixLength       = if ($addr) { [int]$addr.PrefixLength } else { $null }
         }
     }
 

@@ -652,8 +652,8 @@ function renderDashboard() {
   const uplinkName = netCfg.uplinkAdapter?.interfaceAlias || "—";
   const ipConfigs = netCfg.ipConfig || netCfg.ipConfigurations || [];
   const uplinkIp = ipConfigs.find((ip) => ip.interfaceAlias === uplinkName);
-  const ipAddr = uplinkIp?.ipv4Address?.[0] || "—";
-  const gw = uplinkIp?.ipv4DefaultGateway?.[0] || netCfg.uplinkAdapter?.gateway || "—";
+  const ipAddr = _first(uplinkIp?.ipv4Address) || "—";
+  const gw = _first(uplinkIp?.ipv4DefaultGateway) || netCfg.uplinkAdapter?.gateway || "—";
   const dnsRaw = uplinkIp?.dnsServers;
   const dns = dnsRaw ? String(dnsRaw).split(",").map(function(s) { return s.trim(); }).filter(Boolean).join(", ") : "—";
   const ntpSrv = netCfg.ntpSource || "—";
@@ -1090,6 +1090,69 @@ function renderSystem() {
 
 // ── Network ──────────────────────────────────────────────────
 
+// PS single-element arrays unwrap to bare values — safe first-element accessor
+function _first(v) { return Array.isArray(v) ? v[0] : v != null ? String(v) : null; }
+
+function _prefixToMask(prefix) {
+  if (prefix == null) return null;
+  var n = parseInt(prefix, 10);
+  if (isNaN(n) || n < 0 || n > 32) return null;
+  var mask = n === 0 ? 0 : (0xFFFFFFFF << (32 - n)) >>> 0;
+  return [24, 16, 8, 0].map(function(s) { return (mask >>> s) & 0xFF; }).join(".");
+}
+
+function _buildNetFindings(cfg, ports, domains) {
+  var findings = [];
+  if (!cfg.internetReachable) {
+    findings.push({ severity: "critical", title: "VPU has no internet connection", body: "Check the uplink cable and the gateway’s WAN status." });
+    return findings;
+  }
+  var reqFail = 0, reqPass = 0, optFail = 0;
+  (ports || []).forEach(function(p) {
+    var pass = (p.status || "").toLowerCase() === "pass";
+    if (p.optional) { if (!pass) optFail++; }
+    else { if (pass) reqPass++; else reqFail++; }
+  });
+  if (reqFail > 0)
+    findings.push({ severity: "critical", title: reqFail + " of " + (reqFail + reqPass) + " required ports failed", body: "Check the firewall, router, or content-filter / VLAN policy." });
+  if (optFail > 0)
+    findings.push({ severity: "info", title: optFail + " optional port(s) failed", body: "Optional ports (SportzCast / Zixi UDP/443 fallback) aren’t required at every venue." });
+  var domFail = 0, domPass = 0;
+  (domains || []).forEach(function(d) {
+    if ((d.status || "").toLowerCase() === "pass") domPass++; else domFail++;
+  });
+  if (domFail > 0)
+    findings.push({ severity: "warning", title: domFail + " of " + (domFail + domPass) + " domains failed DNS resolution", body: "Check DNS server settings on this adapter." });
+  return findings;
+}
+
+function _buildNetRecommendations(cfg, ports, domains) {
+  var recs = [];
+  if (!cfg.internetReachable) {
+    recs.push({ severity: "critical", title: "No internet ping", body: "VPU has no internet connectivity. Verify the uplink cable and the gateway’s WAN status before further triage." });
+    return recs;
+  }
+  (ports || []).forEach(function(p) {
+    if ((p.status || "").toLowerCase() === "pass") return;
+    var purpose = p.purpose || "purpose unknown";
+    var proto = (p.protocol || "TCP").toUpperCase();
+    var host = p.host || "remote";
+    var isNtp = p.port === 123 && proto === "UDP";
+    if (p.optional) {
+      recs.push({ severity: "info", title: proto + " " + p.port + " blocked (optional)", body: proto + "/" + p.port + " (" + purpose + ") is blocked. May not be required at this venue — only act if streaming is failing. If required, ensure outbound " + proto + " " + p.port + " to " + host + " is allowed by the venue firewall." });
+    } else if (isNtp) {
+      recs.push({ severity: "critical", title: "NTP time sync failed", body: "NTP sync to " + host + " failed (UDP/123). Without a clock peer the VPU’s time will drift, breaking signed-URL streaming and log correlation. Ensure outbound UDP/123 is allowed by the venue firewall." });
+    } else {
+      recs.push({ severity: "critical", title: proto + " " + p.port + " blocked", body: proto + "/" + p.port + " (" + purpose + ") is blocked. Ensure outbound " + proto + " " + p.port + " to " + host + " is allowed by the venue firewall, content-filter, and VLAN policy." });
+    }
+  });
+  (domains || []).forEach(function(d) {
+    if ((d.status || "").toLowerCase() === "pass") return;
+    recs.push({ severity: "warning", title: d.domain + " unreachable", body: "Domain " + d.domain + " is unreachable. Ensure it is whitelisted on the venue network (firewall, DNS allow-list, SSL inspection bypass)." });
+  });
+  return recs;
+}
+
 function renderNetwork() {
   const data = cached("network");
   if (!data) { $page().innerHTML = sectionLoading("Network"); fetchSection("network"); return; }
@@ -1100,12 +1163,38 @@ function renderNetwork() {
   const ntp = data.ntp || {};
   const ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
 
-  const tcpPorts = ports.filter(p => (p.protocol || "").toUpperCase() === "TCP");
-  const udpPorts = ports.filter(p => (p.protocol || "").toUpperCase() === "UDP");
-  const otherPorts = ports.filter(p => !["TCP","UDP"].includes((p.protocol || "").toUpperCase()));
+  const findings = _buildNetFindings(cfg, ports, domains);
+  const recs = _buildNetRecommendations(cfg, ports, domains);
+
+  const hasCrit = findings.some(function(f) { return f.severity === "critical"; });
+  const hasWarn = findings.some(function(f) { return f.severity === "warning"; });
+  const sevClass = hasCrit ? "critical" : hasWarn ? "warn" : "ok";
+  const sevLabel = hasCrit ? "Fail" : hasWarn ? "Warning" : "Pass";
+  const statusChip = `<span class="dash-sev-pill dash-sev-${sevClass}"><span class="dash-sev-dot"></span> ${sevLabel}</span>`;
+
+  // Primary adapter — join uplinkAdapter with adapters[] and ipConfig[]
+  const uplinkName = cfg.uplinkAdapter?.interfaceAlias;
+  const uplinkAdapterRow = uplinkName
+    ? (cfg.adapters || []).find(function(a) { return a.name === uplinkName; }) || null
+    : null;
+  const uplinkIpCfg = uplinkName
+    ? ipConfigs.find(function(ip) { return ip.interfaceAlias === uplinkName; }) || null
+    : null;
+  const adapterLinkState = uplinkAdapterRow
+    ? ((uplinkAdapterRow.status || "").toLowerCase() === "up" ? "Up" : uplinkAdapterRow.status || "Unknown")
+    : "—";
+  const adapterIp = _first(uplinkIpCfg?.ipv4Address) || "—";
+  const subnetMask = uplinkIpCfg ? _prefixToMask(uplinkIpCfg.prefixLength) : null;
+  const dhcpLabel = uplinkIpCfg?.dhcpEnabled === true ? "DHCP" : uplinkIpCfg?.dhcpEnabled === false ? "Static" : "—";
+  const dnsStr = uplinkIpCfg?.dnsServers
+    ? String(uplinkIpCfg.dnsServers).split(",").map(function(s) { return s.trim(); }).filter(Boolean).join(", ")
+    : "—";
+
+  const tcpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "TCP"; });
+  const udpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "UDP"; });
 
   function portCard(p) {
-    const ok = (p.status || "").toLowerCase() === "pass" || (p.status || "").toLowerCase() === "ok";
+    const ok = (p.status || "").toLowerCase() === "pass";
     const cls = ok ? "port-card-pass" : "port-card-fail";
     return `<div class="port-card ${cls}">
       <div class="port-card-num">${esc(String(p.port))}</div>
@@ -1115,68 +1204,119 @@ function renderNetwork() {
     </div>`;
   }
 
+  const findingsBanner = findings.length ? `
+    <div class="card net-findings-banner">
+      <div class="af-header">
+        ${svgIcon("triangle", 16)}
+        <span class="af-label">FINDINGS</span>
+        <span class="af-count-badge">${findings.length} issue${findings.length !== 1 ? "s" : ""}</span>
+      </div>
+      <div class="net-finding-list">
+        ${findings.map(function(f) {
+          const sc = f.severity === "critical" ? "sev-chip-crit" : f.severity === "warning" ? "sev-chip-warn" : "sev-chip-ok";
+          return `<div class="net-finding-row">
+            <span class="sev-chip ${sc}">${esc(f.severity.toUpperCase())}</span>
+            <div>
+              <div class="net-finding-title">${esc(f.title)}</div>
+              <div class="net-finding-body">${esc(f.body)}</div>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>` : "";
+
+  const recsPanel = recs.length ? `
+    <div class="card">
+      ${sectionTitle("triangle", "Recommended Actions")}
+      <div class="net-rec-list">
+        ${recs.map(function(r) {
+          const cls = r.severity === "critical" ? "net-rec-critical" : r.severity === "warning" ? "net-rec-warn" : "net-rec-info";
+          const sc = r.severity === "critical" ? "sev-chip-crit" : r.severity === "warning" ? "sev-chip-warn" : "sev-chip-ok";
+          return `<div class="net-rec-card ${cls}">
+            <div class="net-rec-header">
+              <span class="sev-chip ${sc}">${esc(r.severity.toUpperCase())}</span>
+              <span class="net-rec-title">${esc(r.title)}</span>
+            </div>
+            <div class="net-rec-body">${esc(r.body)}</div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>` : "";
+
   $page().innerHTML = `
-    ${pageHeader("Network", "Port connectivity, IP configuration, DNS resolution, and NTP drift",
-      `<button class="btn-outline btn-ol-blue" onclick="dataCache.network=null;renderNetwork()">
+    ${pageHeader("Network", "Adapters, IP, NTP, and reachability — what the box can talk to right now",
+      statusChip + `<button class="btn-outline btn-ol-blue" onclick="dataCache.network=null;renderNetwork()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
     )}
 
+    ${findingsBanner}
+
+    ${recsPanel}
+
     <!-- Port Connectivity -->
     <div class="card">
       ${sectionTitle("link", "Port Connectivity")}
-      ${tcpPorts.length ? `
-        <div class="port-section-label">TCP</div>
-        <div class="port-grid">${tcpPorts.map(portCard).join("")}</div>
-      ` : ""}
-      ${udpPorts.length ? `
-        <div class="port-section-label mt-4">UDP</div>
-        <div class="port-grid">${udpPorts.map(portCard).join("")}</div>
-      ` : ""}
-      ${otherPorts.length ? `
-        <div class="port-section-label mt-4">OTHER</div>
-        <div class="port-grid">${otherPorts.map(portCard).join("")}</div>
-      ` : ""}
-      ${!ports.length ? '<p class="text-pulse-muted text-sm">No port test results</p>' : ""}
+      <div class="net-port-cols">
+        <div class="net-sub-card">
+          <div class="net-sub-heading">TCP ports <span class="net-proto-badge net-proto-tcp">TCP</span></div>
+          ${tcpPorts.length
+            ? `<div class="port-grid">${tcpPorts.map(portCard).join("")}</div>`
+            : '<p class="text-pulse-muted text-sm mt-2">No TCP port results</p>'}
+        </div>
+        <div class="net-sub-card">
+          <div class="net-sub-heading">UDP ports <span class="net-proto-badge net-proto-udp">UDP</span></div>
+          ${udpPorts.length
+            ? `<div class="port-grid">${udpPorts.map(portCard).join("")}</div>`
+            : '<p class="text-pulse-muted text-sm mt-2">No UDP port results</p>'}
+        </div>
+      </div>
     </div>
 
-    <!-- Internet + IP Config / Domain Resolution -->
-    <div class="dash-2col">
+    <!-- Internet Adapter + IP Config | Domain Reachability -->
+    <div class="net-bottom-grid">
       <div class="card">
-        ${sectionTitle("globe", "Internet & Adapter")}
-        <div class="kv-grid">
-          ${kvRowHtml("Internet", cfg.internetReachable
-            ? '<span class="status-pass">Reachable</span>'
-            : '<span class="status-fail">Unreachable</span>')}
-          ${kvRow("Tested Host", cfg.testedHost)}
-          ${kvRow("Uplink Adapter", cfg.uplinkAdapter?.interfaceAlias)}
-          ${kvRow("Gateway", cfg.uplinkAdapter?.gateway)}
-          ${kvRow("NTP Source", cfg.ntpSource)}
-          ${kvRowHtml("NTP Status", ntp.status ? statusBadge(ntp.status) : "—")}
-          ${kvRow("NTP Drift", ntp.offsetSeconds != null ? ntp.offsetSeconds + "s" : "N/A")}
+        ${sectionTitle("globe", "Internet Adapter & IP Configuration")}
+        <div class="net-adapter-cols">
+          <div class="net-sub-card">
+            <div class="net-sub-heading">ADAPTER</div>
+            ${uplinkAdapterRow ? `
+              <div class="font-semibold text-white mb-3">${esc(uplinkAdapterRow.name)}</div>
+              <div class="net-kv">
+                ${kvRow("IP address", adapterIp)}
+                ${kvRowHtml("Link state", `<span style="color:${adapterLinkState === "Up" ? "#22c55e" : "#94a3b8"};font-weight:600">${esc(adapterLinkState)}</span>`)}
+                ${kvRow("Link speed", uplinkAdapterRow.linkSpeed || "—")}
+                ${kvRowHtml("Internet", cfg.internetReachable
+                  ? '<span class="status-pass">Reachable</span>'
+                  : '<span class="status-fail">Unreachable</span>')}
+                ${kvRow("Gateway", cfg.uplinkAdapter?.gateway || "—")}
+              </div>` : `
+              <p class="text-pulse-muted text-sm">No internet-bound adapter detected.</p>
+              ${kvRowHtml("Internet", cfg.internetReachable
+                ? '<span class="status-pass">Reachable</span>'
+                : '<span class="status-fail">Unreachable</span>')}`}
+          </div>
+          <div class="net-sub-card">
+            <div class="net-sub-heading">IP CONFIGURATION</div>
+            <div class="net-kv">
+              ${kvRow("IP address", adapterIp)}
+              ${kvRow("Assignment", dhcpLabel)}
+              ${kvRow("Subnet mask", subnetMask || "—")}
+              ${kvRow("Gateway", cfg.uplinkAdapter?.gateway || "—")}
+              ${kvRow("DNS", dnsStr)}
+              ${kvRow("NTP server", cfg.ntpSource || "—")}
+              ${kvRowHtml("NTP drift", ntp.offsetSeconds != null ? esc(ntp.offsetSeconds + "s") : "—")}
+              ${kvRowHtml("NTP status", ntp.status ? statusBadge(ntp.status) : "—")}
+            </div>
+          </div>
         </div>
-
-        ${ipConfigs.length ? `
-          <div class="section-divider"></div>
-          <div class="subsection-label">IP CONFIGURATION</div>
-          <table class="data-table"><thead><tr>
-            <th>Interface</th><th>IPv4</th><th>Gateway</th><th>DNS</th>
-          </tr></thead><tbody>
-          ${ipConfigs.map(ip => `<tr>
-            <td>${esc(ip.interfaceAlias)}</td>
-            <td class="font-mono text-xs">${(ip.ipv4Address || []).map(esc).join(", ") || "—"}</td>
-            <td class="font-mono text-xs">${(ip.ipv4DefaultGateway || []).map(esc).join(", ") || "—"}</td>
-            <td class="font-mono text-xs">${ip.dnsServers ? String(ip.dnsServers).split(",").map(function(s) { return esc(s.trim()); }).filter(Boolean).join(", ") : "—"}</td>
-          </tr>`).join("")}
-          </tbody></table>
-        ` : ""}
       </div>
       <div class="card">
         ${sectionTitle("wifi", "Domain Reachability")}
         ${domains.length ? `
           <div class="domain-list">
-            ${domains.map(d => {
-              const ok = (d.status || "").toLowerCase() === "pass" || (d.status || "").toLowerCase() === "ok";
+            ${domains.map(function(d) {
+              const ok = (d.status || "").toLowerCase() === "pass";
               return `<div class="domain-row">
                 <span class="domain-dot" style="background:${ok ? "#22c55e" : "#ef4444"}"></span>
                 <span class="domain-name">${esc(d.domain)}</span>

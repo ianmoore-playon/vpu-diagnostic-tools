@@ -1118,6 +1118,126 @@
 .about-info { margin-bottom: 1.25rem; }
 .about-links { display: flex; justify-content: center; gap: 0.75rem; }
 
+/* ── Network Panel ───────────────────────────────────────── */
+
+/* Bottom row: 2fr adapter+IP | 1fr domains */
+.net-bottom-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+@media (max-width: 1200px) { .net-bottom-grid { grid-template-columns: 1fr; } }
+
+/* Port Connectivity: TCP | UDP side-by-side sub-cards */
+.net-port-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
+@media (max-width: 700px) { .net-port-cols { grid-template-columns: 1fr; } }
+
+/* Adapter + IP Config side-by-side within the left card */
+.net-adapter-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
+@media (max-width: 1200px) { .net-adapter-cols { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 700px)  { .net-adapter-cols { grid-template-columns: 1fr; } }
+
+/* Compact kv-grid for use inside narrow sub-cards */
+.net-kv {
+    display: grid;
+    grid-template-columns: 88px 1fr;
+    gap: 5px 10px;
+}
+.net-kv .kv-row { display: contents; }
+.net-kv .kv-label { font-size: 0.72rem; color: #94a3b8; }
+.net-kv .kv-value { font-size: 0.78rem; color: #e2e8f0; word-break: break-word; min-width: 0; }
+
+/* Subtle sub-card used inside Port Connectivity and Adapter cards */
+.net-sub-card {
+    background: #13141f;
+    border: 1px solid #2a2d3e;
+    border-radius: 6px;
+    padding: 14px;
+}
+
+/* "TCP ports" / "ADAPTER" / "IP CONFIGURATION" heading inside sub-card */
+.net-sub-heading {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.625rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+/* Protocol badges (TCP / UDP) inline in sub-heading */
+.net-proto-badge {
+    padding: 1px 7px;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #fff;
+}
+.net-proto-tcp { background: #3b82f6; }
+.net-proto-udp { background: #eab308; color: #1c1917; }
+
+/* Findings banner */
+.net-findings-banner { margin-top: 1rem; }
+.net-finding-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+.net-finding-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    padding: 0.5rem 0;
+    border-top: 1px solid #1e2130;
+}
+.net-finding-row:first-child { border-top: none; }
+.net-finding-title {
+    font-size: 0.825rem;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+.net-finding-body {
+    font-size: 0.775rem;
+    color: #94a3b8;
+    margin-top: 2px;
+}
+
+/* Recommended Actions cards */
+.net-rec-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+.net-rec-card {
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+.net-rec-critical { background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); }
+.net-rec-warn     { background: rgba(234, 179, 8, 0.08);  border: 1px solid rgba(234, 179, 8, 0.25); }
+.net-rec-info     { background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); }
+.net-rec-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.375rem;
+}
+.net-rec-title {
+    font-size: 0.825rem;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+.net-rec-body {
+    font-size: 0.775rem;
+    color: #94a3b8;
+    line-height: 1.5;
+}
+
 /* ── Section Loading ─────────────────────────────────────── */
 .section-loading {
     display: flex;

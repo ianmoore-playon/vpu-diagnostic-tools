@@ -82,12 +82,17 @@ DEMO = {
         ],
     },
     "Get-NetworkConfig.ps1": lambda **kw: {
-        "adapters": [],
+        "adapters": [
+            {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #4", "status": "Up", "macAddress": "A0-36-9F-11-22-33", "linkSpeed": "1 Gbps", "interfaceIndex": 4},
+            {"name": "Ethernet 1", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection", "status": "Up", "macAddress": "A0-36-9F-AA-BB-CC", "linkSpeed": "100 Mbps", "interfaceIndex": 1},
+            {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "macAddress": "A0-36-9F-DD-EE-FF", "linkSpeed": "100 Mbps", "interfaceIndex": 2},
+            {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I350 Gigabit Network Connection", "status": "Down", "macAddress": "A0-36-9F-00-11-22", "linkSpeed": "", "interfaceIndex": 3},
+        ],
         "ipConfigurations": [
-            {"interfaceAlias": "Ethernet 4 (Uplink)", "ipv4Address": ["10.0.1.50"], "ipv4DefaultGateway": ["10.0.1.1"], "dnsServers": ["8.8.8.8", "8.8.4.4"]},
-            {"interfaceAlias": "Ethernet 1", "ipv4Address": ["192.168.10.1"], "ipv4DefaultGateway": [], "dnsServers": []},
-            {"interfaceAlias": "Ethernet 2", "ipv4Address": ["192.168.11.1"], "ipv4DefaultGateway": [], "dnsServers": []},
-            {"interfaceAlias": "Ethernet 3", "ipv4Address": ["192.168.12.1"], "ipv4DefaultGateway": [], "dnsServers": []},
+            {"interfaceAlias": "Ethernet 4 (Uplink)", "interfaceIndex": 4, "ipv4Address": ["10.0.1.50"], "ipv4DefaultGateway": ["10.0.1.1"], "dnsServers": ["8.8.8.8", "8.8.4.4"], "dhcpEnabled": True, "prefixLength": 24},
+            {"interfaceAlias": "Ethernet 1", "interfaceIndex": 1, "ipv4Address": ["192.168.10.1"], "ipv4DefaultGateway": [], "dnsServers": [], "dhcpEnabled": False, "prefixLength": 24},
+            {"interfaceAlias": "Ethernet 2", "interfaceIndex": 2, "ipv4Address": ["192.168.11.1"], "ipv4DefaultGateway": [], "dnsServers": [], "dhcpEnabled": False, "prefixLength": 24},
+            {"interfaceAlias": "Ethernet 3", "interfaceIndex": 3, "ipv4Address": ["192.168.12.1"], "ipv4DefaultGateway": [], "dnsServers": [], "dhcpEnabled": False, "prefixLength": 24},
         ],
         "uplinkAdapter": {"interfaceAlias": "Ethernet 4 (Uplink)", "gateway": "10.0.1.1"},
         "internet": {"reachable": True, "testedHost": "www.google.com"},
