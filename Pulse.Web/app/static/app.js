@@ -628,7 +628,8 @@ function renderDashboard() {
   const findings = dash.findings || [];
   const svcs = (dash.services || svcData)?.services || [];
   const hostname = id.hostname || "VPU";
-  const vpuLabel = [id.manufacturer, id.model].filter(Boolean).join(" ") || hostname;
+  const vpuName = id.vpuName;
+  const hwLabel = [id.manufacturer, id.model].filter(Boolean).join(" ") || hostname;
 
   const cpu = perf.cpu?.usagePercent;
   const mem = perf.memory?.usedPercent;
@@ -683,8 +684,8 @@ function renderDashboard() {
     <!-- Header -->
     <div class="dash-header">
       <div>
-        <h2 class="text-2xl font-bold text-white">Dashboard</h2>
-        <p class="text-sm text-pulse-muted">${esc(vpuLabel)}</p>
+        <h2 class="text-2xl font-bold text-white">${vpuName ? esc(vpuName) : "Dashboard"}</h2>
+        <p class="text-sm text-pulse-muted">${esc(hwLabel)}</p>
       </div>
       <div class="dash-actions">
         <button class="btn-outline btn-ol-green" onclick="refreshAll()">
@@ -1277,38 +1278,30 @@ function renderNetwork() {
     <div class="net-bottom-grid">
       <div class="card">
         ${sectionTitle("globe", "Internet Adapter & IP Configuration")}
-        <div class="net-adapter-cols">
-          <div class="net-sub-card">
-            <div class="net-sub-heading">ADAPTER</div>
-            ${uplinkAdapterRow ? `
-              <div class="font-semibold text-white mb-3">${esc(uplinkAdapterRow.name)}</div>
-              <div class="net-kv">
-                ${kvRow("IP address", adapterIp)}
-                ${kvRowHtml("Link state", `<span style="color:${adapterLinkState === "Up" ? "#22c55e" : "#94a3b8"};font-weight:600">${esc(adapterLinkState)}</span>`)}
-                ${kvRow("Link speed", uplinkAdapterRow.linkSpeed || "—")}
-                ${kvRowHtml("Internet", cfg.internetReachable
-                  ? '<span class="status-pass">Reachable</span>'
-                  : '<span class="status-fail">Unreachable</span>')}
-                ${kvRow("Gateway", cfg.uplinkAdapter?.gateway || "—")}
-              </div>` : `
-              <p class="text-pulse-muted text-sm">No internet-bound adapter detected.</p>
-              ${kvRowHtml("Internet", cfg.internetReachable
-                ? '<span class="status-pass">Reachable</span>'
-                : '<span class="status-fail">Unreachable</span>')}`}
-          </div>
-          <div class="net-sub-card">
-            <div class="net-sub-heading">IP CONFIGURATION</div>
-            <div class="net-kv">
-              ${kvRow("IP address", adapterIp)}
-              ${kvRow("Assignment", dhcpLabel)}
-              ${kvRow("Subnet mask", subnetMask || "—")}
-              ${kvRow("Gateway", cfg.uplinkAdapter?.gateway || "—")}
-              ${kvRow("DNS", dnsStr)}
-              ${kvRow("NTP server", cfg.ntpSource || "—")}
-              ${kvRowHtml("NTP drift", ntp.offsetSeconds != null ? esc(ntp.offsetSeconds + "s") : "—")}
-              ${kvRowHtml("NTP status", ntp.status ? statusBadge(ntp.status) : "—")}
-            </div>
-          </div>
+        ${uplinkAdapterRow ? `
+          <div class="font-semibold text-white mb-3">${esc(uplinkAdapterRow.name)}</div>` : `
+          <p class="text-pulse-muted text-sm mb-3">No internet-bound adapter detected.</p>`}
+        <div class="kv-grid">
+          ${kvRow("IP address", adapterIp)}
+          ${kvRow("Subnet mask", subnetMask || "—")}
+          ${kvRow("Assignment", dhcpLabel)}
+          ${kvRow("Gateway", cfg.uplinkAdapter?.gateway || "—")}
+          ${kvRow("DNS", dnsStr)}
+          ${kvRowHtml("Link state", uplinkAdapterRow
+            ? `<span style="color:${adapterLinkState === "Up" ? "#22c55e" : "#94a3b8"};font-weight:600">${esc(adapterLinkState)}</span>`
+            : "—")}
+          ${kvRow("Link speed", uplinkAdapterRow?.linkSpeed || "—")}
+          ${kvRowHtml("Internet", cfg.internetReachable
+            ? '<span class="status-pass">Reachable</span>'
+            : '<span class="status-fail">Unreachable</span>')}
+          ${kvRow("NTP server", cfg.ntpSource || ntp.source || "—")}
+          ${kvRowHtml("NTP status", (function() {
+            var s = (ntp.status || "").toLowerCase();
+            if (s === "ok") return '<span class="status-pass" style="font-weight:600">OK</span>';
+            if (s === "warn") return '<span class="status-warn" style="font-weight:600">OK</span>';
+            if (!ntp.status) return "—";
+            return '<span class="status-fail" style="font-weight:600">ERROR</span>';
+          })())}
         </div>
       </div>
       <div class="card">

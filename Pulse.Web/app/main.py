@@ -274,6 +274,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None)
             "osVersion": identity.get("operatingSystem", {}).get("version"),
             "pixellotVersion": identity.get("pixellot", {}).get("version"),
             "imageVersion": identity.get("pixellot", {}).get("imageVersion"),
+            "vpuName": identity.get("pixellot", {}).get("vpuName"),
             "isNonVpuHost": identity.get("isNonVpuHost", False),
         }
 

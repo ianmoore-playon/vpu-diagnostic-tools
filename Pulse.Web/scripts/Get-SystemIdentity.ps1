@@ -39,6 +39,27 @@ try {
     }
     catch { }
 
+    # VPU friendly name from the latest agent_vpu2 log
+    $vpuName = $null
+    try {
+        $logDir = 'C:\Pixellot\Data\Log'
+        if (Test-Path $logDir) {
+            $latestLog = Get-ChildItem -Path $logDir -Filter 'agent_vpu2_*.log' -ErrorAction SilentlyContinue |
+                Sort-Object Name -Descending | Select-Object -First 1
+            if ($latestLog) {
+                # Scan last 5000 lines for the BROADCAST_NAME entry (most recent value)
+                $tail = Get-Content $latestLog.FullName -Tail 5000 -ErrorAction SilentlyContinue
+                for ($i = $tail.Count - 1; $i -ge 0; $i--) {
+                    if ($tail[$i] -match 'BROADCAST_NAME\s+result:\s*(.+)$') {
+                        $vpuName = $Matches[1].Trim()
+                        break
+                    }
+                }
+            }
+        }
+    }
+    catch { }
+
     # Detect non-VPU host
     $hasPixellotLogs = Test-Path 'D:\Pixellot\PixellotAgent\logs\*'
     $hasCPixellot    = Test-Path 'C:\Pixellot'
@@ -76,6 +97,7 @@ try {
         pixellot = [ordered]@{
             version      = $pixVersion
             imageVersion = $pixImageVersion
+            vpuName      = $vpuName
         }
         isNonVpuHost = $isNonVpuHost
     }
