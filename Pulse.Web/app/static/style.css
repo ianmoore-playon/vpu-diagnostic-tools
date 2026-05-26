@@ -1097,6 +1097,91 @@ html, body { height: 100%; margin: 0; }
     white-space: nowrap;
 }
 
+/* ── Camera Details expandable panel ────────────────────── */
+.cam-details-toggle {
+    margin-top: 8px;
+    border-top: 1px solid var(--c-border, #334155);
+    padding-top: 6px;
+}
+.cam-details-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #60a5fa;
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: 4px;
+    transition: background 0.15s;
+    user-select: none;
+    list-style: none;
+}
+.cam-details-btn::-webkit-details-marker { display: none; }
+.cam-details-btn::before {
+    content: "▸";
+    font-size: 0.65rem;
+    transition: transform 0.15s;
+}
+details[open] > .cam-details-btn::before { transform: rotate(90deg); }
+.cam-details-btn:hover { background: rgba(96,165,250,0.08); }
+
+.cam-details-body {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.cam-detail-camera {
+    background: var(--c-bg, #0f172a);
+    border: 1px solid var(--c-border, #334155);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.cam-detail-camera-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--c-text, #e2e8f0);
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--c-border, #334155);
+}
+.cam-detail-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.cam-detail-group-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--c-muted, #94a3b8);
+    margin-bottom: 2px;
+}
+.cam-detail-group .kv-mini span:first-child {
+    min-width: 70px;
+}
+.cam-cgi-badge {
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #22c55e;
+    border: 1px solid rgba(34,197,94,0.3);
+    border-radius: 3px;
+    padding: 0px 5px;
+    margin-left: auto;
+}
+.cam-cgi-none {
+    color: #94a3b8;
+    border-color: rgba(148,163,184,0.25);
+}
+
 .cam-port-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

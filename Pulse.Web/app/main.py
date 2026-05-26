@@ -106,48 +106,99 @@ _DEFAULT_OCR_IPS = {"169.254.16.52", "169.254.16.60"}
 _DEFAULT_MAIN_IPS = {"169.254.16.50", "169.254.16.51", "169.254.16.53"}
 
 
-def _cgi_probe_sync(ip: str, timeout: float = 2.0) -> Optional[dict]:
-    """Probe a Dynacolor camera CGI endpoint for MAC address and model.
-    Returns {"mac": "...", "model": "..."} or None on failure.
-    Runs in a thread — safe to call via asyncio.to_thread."""
-    creds = base64.b64encode(b"Admin:1234").decode()
-    headers = {"Authorization": f"Basic {creds}"}
-
-    # Request 1: MAC address (critical — required for identification)
-    mac_url = f"http://{ip}/cgi-bin/admin/param.cgi?action=list&group=Network.eth0.MACAddress"
-    mac = None
+def _cgi_fetch_group(ip, group, headers, timeout=2.0):
+    """Fetch a param.cgi group and return a flat dict of key=value pairs."""
+    url = f"http://{ip}/cgi-bin/admin/param.cgi?action=list&group={group}"
     try:
-        req = urllib.request.Request(mac_url, headers=headers)
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8", errors="replace")
+            result = {}
             for line in body.splitlines():
-                if "MACAddress=" in line:
-                    mac = line.split("=", 1)[1].strip()
+                if "=" in line:
+                    key, val = line.split("=", 1)
+                    key = key.strip()
+                    if key.startswith("root."):
+                        key = key[5:]
+                    result[key] = val.strip()
+            return result
     except Exception:
-        pass
+        return {}
 
+
+def _cgi_probe_sync(ip: str, timeout: float = 2.0) -> Optional[dict]:
+    """Probe a Dynacolor camera CGI endpoint for full diagnostic data.
+    Pulls: MAC, brand/model, serial, firmware, network config, stream
+    settings, and image sensor parameters. All queries except MAC are
+    best-effort — missing data just means those fields are None.
+    Runs in a thread — safe to call via asyncio.to_thread."""
+    headers = {"Authorization": "Basic " + base64.b64encode(b"Admin:1234").decode()}
+
+    # Request 1: MAC address (critical — determines if camera responds)
+    mac_data = _cgi_fetch_group(ip, "Network.eth0.MACAddress", headers, timeout)
+    mac = mac_data.get("Network.eth0.MACAddress")
     if not mac:
         return None
 
-    # Request 2: Camera model (best effort — Brand.ProdNbr / ProdFullName)
-    model = None
-    try:
-        brand_url = f"http://{ip}/cgi-bin/admin/param.cgi?action=list&group=Brand"
-        req = urllib.request.Request(brand_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-            prod_nbr = None
-            prod_full = None
-            for line in body.splitlines():
-                if "ProdNbr=" in line:
-                    prod_nbr = line.split("=", 1)[1].strip()
-                elif "ProdFullName=" in line:
-                    prod_full = line.split("=", 1)[1].strip()
-            model = prod_full or prod_nbr
-    except Exception:
-        pass
+    # Request 2: Brand / model / product type
+    brand = _cgi_fetch_group(ip, "Brand", headers, timeout)
 
-    return {"mac": mac, "model": model}
+    # Request 3: Firmware version + serial number
+    props = _cgi_fetch_group(ip, "Properties", headers, timeout)
+
+    # Request 4: Camera network config (IP, subnet, gateway, DHCP)
+    net = _cgi_fetch_group(ip, "Network.eth0", headers, timeout)
+
+    # Request 5: Stream encoding settings (S0 = primary H264, S1 = MJPEG)
+    streams = _cgi_fetch_group(ip, "Image.I0.Appearance", headers, timeout)
+
+    # Request 6: Image sensor / exposure settings
+    sensor = _cgi_fetch_group(ip, "ImageSource.I0.Sensor", headers, timeout)
+
+    def _v(d, k):
+        """Get a value, return None if empty."""
+        val = d.get(k, "")
+        return val if val else None
+
+    return {
+        "mac": mac,
+        # Device identity
+        "brand": _v(brand, "Brand.Brand"),
+        "model": _v(brand, "Brand.ProdFullName") or _v(brand, "Brand.ProdNbr"),
+        "modelNumber": _v(brand, "Brand.ProdNbr"),
+        "productType": _v(brand, "Brand.ProdType"),
+        "serialNumber": _v(props, "Properties.System.SerialNumber"),
+        "firmwareVersion": _v(props, "Properties.Firmware.Version"),
+        # Network
+        "network": {
+            "ip": _v(net, "Network.eth0.IPAddress"),
+            "subnet": _v(net, "Network.eth0.SubnetMask"),
+            "gateway": _v(net, "Network.eth0.DefaultRouter"),
+            "dhcp": _v(net, "Network.eth0.DHCP.Enabled"),
+        },
+        # Stream 0 (primary — typically H264 for recording)
+        "stream0": {
+            "codec": _v(streams, "Image.I0.Appearance.Stream.S0.EncodeType"),
+            "resolution": _v(streams, "Image.I0.Appearance.Stream.S0.Resolution"),
+            "framerate": _v(streams, "Image.I0.Appearance.Stream.S0.Framerate"),
+        },
+        # Stream 1 (secondary — typically MJPEG for live preview)
+        "stream1": {
+            "enabled": _v(streams, "Image.I0.Appearance.Stream.S1.Enabled"),
+            "codec": _v(streams, "Image.I0.Appearance.Stream.S1.EncodeType"),
+            "resolution": _v(streams, "Image.I0.Appearance.Stream.S1.Resolution"),
+            "framerate": _v(streams, "Image.I0.Appearance.Stream.S1.Framerate"),
+        },
+        # Image sensor tuning
+        "sensor": {
+            "exposure": _v(sensor, "ImageSource.I0.Sensor.Exposure"),
+            "brightness": _v(sensor, "ImageSource.I0.Sensor.Brightness"),
+            "contrast": _v(sensor, "ImageSource.I0.Sensor.Contrast"),
+            "colorLevel": _v(sensor, "ImageSource.I0.Sensor.ColorLevel"),
+            "maxShutterGain": _v(sensor, "ImageSource.I0.Sensor.Exposure.MaxShutterGain"),
+            "minShutterSpeed": _v(sensor, "ImageSource.I0.Sensor.Exposure.MinShutterSpeed"),
+        },
+    }
 
 
 async def _probe_camera_ip(ip, is_ocr_ip):
@@ -160,8 +211,8 @@ async def _probe_camera_ip(ip, is_ocr_ip):
     info = await asyncio.to_thread(_cgi_probe_sync, ip)
     if info and info.get("mac"):
         result = {
+            **info,
             "mac": info["mac"].upper().replace("-", ":"),
-            "model": info.get("model"),
             "ts": now,
             "is_ocr": is_ocr_ip,
             "ip": ip,
@@ -410,8 +461,13 @@ def _enrich_ports(
                 if probe:
                     cam_entry["cgiConfirmed"] = True
                     cam_entry["cgiMac"] = probe["mac"]
-                    if probe.get("model"):
-                        cam_entry["model"] = probe["model"]
+                    # Copy all probe fields into the camera entry
+                    for pkey in ("model", "modelNumber", "brand",
+                                 "productType", "serialNumber",
+                                 "firmwareVersion", "network",
+                                 "stream0", "stream1", "sensor"):
+                        if probe.get(pkey) is not None:
+                            cam_entry[pkey] = probe[pkey]
                     if probe.get("is_ocr"):
                         cam_entry["role"] = "OCR / Scoreboard"
                         cam_entry["identitySource"] = "Confirmed via CGI probe"

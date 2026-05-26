@@ -1938,6 +1938,93 @@ function renderNetwork() {
 
 var _camerasRefreshTimer = null;
 
+function _camDetailKv(label, val) {
+  if (!val && val !== 0) return '';
+  return '<div class="kv-mini"><span>' + esc(String(label)) + '</span><span class="font-mono">' + esc(String(val)) + '</span></div>';
+}
+
+function _camStreamBlock(label, s) {
+  if (!s || (!s.codec && !s.resolution && !s.framerate)) return '';
+  var enabled = s.enabled !== undefined ? (s.enabled === "yes" || s.enabled === true) : true;
+  return '<div class="cam-detail-group">' +
+    '<div class="cam-detail-group-title">' + esc(label) +
+      (!enabled ? ' <span class="status-warn">Disabled</span>' : '') +
+    '</div>' +
+    _camDetailKv("Codec", s.codec) +
+    _camDetailKv("Resolution", s.resolution) +
+    _camDetailKv("Framerate", s.framerate ? s.framerate + " fps" : null) +
+  '</div>';
+}
+
+function _camDetailsPanel(cams, portIdx) {
+  if (!cams.length) return '';
+
+  var inner = cams.map(function(c) {
+    var hasCgi = !!c.cgiConfirmed;
+    var net = c.network || {};
+    var sensor = c.sensor || {};
+
+    // Device section — always show MAC/IP; CGI adds model, serial, firmware
+    var deviceRows =
+      _camDetailKv("IP", c.ip) +
+      _camDetailKv("MAC", c.cgiMac || c.mac) +
+      _camDetailKv("Role", c.role) +
+      _camDetailKv("Identity", c.identitySource);
+    if (hasCgi) {
+      deviceRows +=
+        _camDetailKv("Model", c.model) +
+        _camDetailKv("Model No.", c.modelNumber) +
+        _camDetailKv("Serial", c.serialNumber) +
+        _camDetailKv("Firmware", c.firmwareVersion) +
+        _camDetailKv("Brand", c.brand) +
+        _camDetailKv("Type", c.productType);
+    }
+
+    return '<div class="cam-detail-camera">' +
+      '<div class="cam-detail-camera-header">' +
+        svgIcon("camera", 14) + ' ' + esc(c.ip) +
+        (c.modelNumber ? ' <span class="cam-model-label">' + esc(c.modelNumber) + '</span>' : '') +
+        (hasCgi ? ' <span class="cam-cgi-badge">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none">No CGI</span>') +
+      '</div>' +
+
+      // Device info
+      '<div class="cam-detail-group">' +
+        '<div class="cam-detail-group-title">Device</div>' +
+        deviceRows +
+      '</div>' +
+
+      // Network (CGI only)
+      (net.ip || net.subnet || net.gateway ? '<div class="cam-detail-group">' +
+        '<div class="cam-detail-group-title">Network Config</div>' +
+        _camDetailKv("IP Address", net.ip) +
+        _camDetailKv("Subnet", net.subnet) +
+        _camDetailKv("Gateway", net.gateway) +
+        _camDetailKv("DHCP", net.dhcp) +
+      '</div>' : '') +
+
+      // Streams (CGI only)
+      _camStreamBlock("Stream 0 — Primary", c.stream0) +
+      _camStreamBlock("Stream 1 — Secondary", c.stream1) +
+
+      // Sensor (CGI only)
+      (sensor.exposure || sensor.brightness ? '<div class="cam-detail-group">' +
+        '<div class="cam-detail-group-title">Image Sensor</div>' +
+        _camDetailKv("Exposure", sensor.exposure) +
+        _camDetailKv("Brightness", sensor.brightness) +
+        _camDetailKv("Contrast", sensor.contrast) +
+        _camDetailKv("Saturation", sensor.colorLevel) +
+        _camDetailKv("Max Gain", sensor.maxShutterGain) +
+        _camDetailKv("Min Shutter", sensor.minShutterSpeed) +
+      '</div>' : '') +
+    '</div>';
+  }).join('');
+
+  return '<details class="cam-details-toggle" data-port-idx="' + portIdx + '">' +
+    '<summary class="cam-details-btn">' + svgIcon("info", 14) + ' Details</summary>' +
+    '<div class="cam-details-body">' + inner + '</div>' +
+  '</details>';
+}
+
 function _camPortTile(port, index) {
   if (!port) {
     return `<div class="cam-port-tile cam-port-empty">
@@ -1989,6 +2076,7 @@ function _camPortTile(port, index) {
           ${c.identitySource ? '<span class="text-xs text-pulse-muted"> · ' + esc(c.identitySource) + '</span>' : ''}
         </div>`).join("")}
       </div>
+      ${_camDetailsPanel(cams, index)}
     ` : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
   </div>`;
 }
@@ -2139,7 +2227,18 @@ function renderCameras() {
       if (!fresh || fresh.error || currentPage !== "cameras") return;
       dataCache.cameras = fresh;
       var grid = document.getElementById("cam-port-grid");
-      if (grid) grid.innerHTML = _camPortGridHtml(fresh.ports || []);
+      // Preserve open Details panels across refresh
+      var openDetails = {};
+      if (grid) {
+        grid.querySelectorAll('details[open][data-port-idx]').forEach(function(d) {
+          openDetails[d.dataset.portIdx] = true;
+        });
+        grid.innerHTML = _camPortGridHtml(fresh.ports || []);
+        Object.keys(openDetails).forEach(function(idx) {
+          var d = grid.querySelector('details[data-port-idx="' + idx + '"]');
+          if (d) d.setAttribute('open', '');
+        });
+      }
       var diag = document.getElementById("cam-nic-diagram");
       if (diag) diag.innerHTML = _camNicDiagramHtml(fresh.ports || []);
       var fw = document.getElementById("cam-findings-wrap");
