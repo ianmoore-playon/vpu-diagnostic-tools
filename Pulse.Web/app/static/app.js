@@ -29,6 +29,9 @@ function svgIcon(name, size) {
     globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
     link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
     database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
+    mic: '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>',
+    volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
+    "volume-x": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
@@ -42,6 +45,7 @@ const NAV_SECTIONS = [
     { id: "network", label: "Network", icon: "wifi" },
     { id: "cameras", label: "Camera Connectivity", icon: "camera" },
     { id: "scoreconnect", label: "Score Connect", icon: "monitor" },
+    { id: "audio", label: "Audio", icon: "mic" },
   ]},
   { label: "SYSTEM", pages: [
     { id: "system", label: "System Overview", icon: "cpu" },
@@ -78,6 +82,7 @@ const PAGE_API = {
   services: "/api/services",
   "disk-health": "/api/disk-health",
   events: "/api/events",
+  audio: "/api/audio",
   scoreconnect: "/api/scoreconnect",
   settings: "/api/settings",
 };
@@ -520,6 +525,7 @@ const pageRenderers = {
   "disk-health": renderDiskHealth,
   events: renderEvents,
   reports: renderReports,
+  audio: renderAudio,
   scoreconnect: renderScoreConnect,
   "fault-isolator": renderFaultIsolator,
   settings: renderSettings,
@@ -568,7 +574,7 @@ function _findingPageFor(cat) {
 }
 
 function _metricColor(val) {
-  if (val == null) return "#94a3b8";
+  if (val == null) return "var(--c-muted)";
   if (val > 90) return "#ef4444";
   if (val > 75) return "#eab308";
   return "#22c55e";
@@ -611,7 +617,7 @@ function _renderNicRows(ports) {
     } else {
       rows.push(`<div class="dash-nic-row">
         <span class="dash-nic-port">Port ${i + 1}</span>
-        <span class="dash-nic-name" style="color:#475569">Not detected</span>
+        <span class="dash-nic-name" style="color:var(--c-dimmer)">Not detected</span>
         <span class="dash-nic-speed">—</span>
         <span class="dash-nic-badges"><span class="badge-ol badge-ol-muted">—</span></span>
       </div>`);
@@ -691,7 +697,7 @@ function renderDashboard() {
   const internetOk = netCfg.internetReachable;
   const internetFetching = fetchingKeys.has("network");
   const internetLabel = internetOk === true ? "Connected" : internetOk === false ? "Offline" : internetFetching ? "Checking" : "—";
-  const internetColor = internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "#94a3b8";
+  const internetColor = internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "var(--c-muted)";
 
   // Other data
   const nicPorts = cam.ports || [];
@@ -2411,6 +2417,31 @@ function renderScoreConnect() {
   const botStatus = data.botStatus || {};
   const liveScore = data.liveScoreData || {};
   const isDetected = data.reachable || status.isDetected;
+  const version = data.version || status.version;
+
+  // Build BOT and ScoreLink cards independently — ScoreLink detection
+  // is USB-based and works even when SC III is unreachable.
+  const botCard = botStatus.isConnected != null ? `
+    <div class="card">
+      ${sectionTitle("globe", "Cloud (BOT) Status")}
+      <div class="kv-grid">
+        ${kvRowHtml("Connected", botStatus.isConnected
+          ? '<span class="status-pass">Yes</span>'
+          : '<span class="status-fail">No</span>')}
+        ${kvRow("ScoreConnect ID", botStatus.scoreConnectId)}
+        ${kvRow("BOT Server", botStatus.botServerAddress)}
+        ${botStatus.lastErrorMessage ? kvRowHtml("Last Error", `<span class="text-pulse-muted">${esc(botStatus.lastErrorMessage)}</span>`) : ""}
+      </div>
+    </div>` : "";
+
+  const slCard = data.scoreLinkConnected != null ? `
+    <div class="card">
+      ${sectionTitle("link", "ScoreLink Device")}
+      <div class="sc-scorelink ${data.scoreLinkConnected ? "sc-scorelink-ok" : "sc-scorelink-err"}">
+        <span class="sc-scorelink-dot"></span>
+        <span class="font-semibold">${esc(data.scoreLinkStatusLabel || (data.scoreLinkConnected ? "ScoreLink Connected" : "ScoreLink Not Detected"))}</span>
+      </div>
+    </div>` : "";
 
   $page().innerHTML = `
     ${pageHeader("Score Connect", "ScoreConnect III scoreboard integration — service, configuration, and live data",
@@ -2428,7 +2459,7 @@ function renderScoreConnect() {
             ? '<span class="status-pass">Yes</span>'
             : '<span class="status-fail">No</span>')}
           ${kvRow("Base URL", status.baseUrl || data.baseUrl)}
-          ${kvRow("Version", status.version)}
+          ${kvRow("Version", version)}
           ${data.error && !isDetected ? kvRowHtml("Error", `<span class="text-red-400">${esc(typeof data.error === "string" ? data.error : data.message || "Connection failed")}</span>`) : ""}
         </div>
       </div>
@@ -2478,30 +2509,12 @@ function renderScoreConnect() {
     </div>` : ""}
 
     <!-- Cloud BOT + ScoreLink -->
-    ${botStatus.isConnected != null ? `
-    <div class="dash-2col">
-      <div class="card">
-        ${sectionTitle("globe", "Cloud (BOT) Status")}
-        <div class="kv-grid">
-          ${kvRowHtml("Connected", botStatus.isConnected
-            ? '<span class="status-pass">Yes</span>'
-            : '<span class="status-fail">No</span>')}
-          ${kvRow("ScoreConnect ID", botStatus.scoreConnectId)}
-          ${kvRow("BOT Server", botStatus.botServerAddress)}
-          ${botStatus.lastErrorMessage ? kvRowHtml("Last Error", `<span class="text-pulse-muted">${esc(botStatus.lastErrorMessage)}</span>`) : ""}
-        </div>
-      </div>
-      <div class="card">
-        ${sectionTitle("link", "ScoreLink Device")}
-        <div class="sc-scorelink ${data.scoreLinkConnected ? "sc-scorelink-ok" : "sc-scorelink-err"}">
-          <span class="sc-scorelink-dot"></span>
-          <span class="font-semibold">${esc(data.scoreLinkStatusLabel || (data.scoreLinkConnected ? "ScoreLink Connected" : "ScoreLink Not Detected"))}</span>
-        </div>
-      </div>
-    </div>` : ""}
+    ${botCard && slCard ? `<div class="dash-2col">${botCard}${slCard}</div>`
+     : botCard || slCard ? `<div class="mt-4">${botCard}${slCard}</div>`
+     : ""}
 
     <!-- Raw Data Fallback -->
-    ${!config.vendor && botStatus.isConnected == null && (data.status || data.configuration) ? `
+    ${!config.vendor && botStatus.isConnected == null && data.scoreLinkConnected == null && (data.status || data.configuration) ? `
     <div class="card mt-4">
       ${sectionTitle("file", "Raw Response")}
       <pre class="text-xs text-pulse-muted overflow-auto max-h-60 p-3 bg-pulse-bg rounded">${esc(JSON.stringify(data, null, 2))}</pre>
@@ -2599,7 +2612,7 @@ function renderFaultIsolator() {
     var rows = _fi.history.map(function(h) {
       var sc = h.severity === "Pass" ? "status-pass" : h.severity === "Fail" ? "status-fail" : "status-info";
       return "<tr>" +
-        '<td class="font-mono" style="font-size:0.7rem;color:#64748b">' + esc(h.ts) + "</td>" +
+        '<td class="font-mono" style="font-size:0.7rem;color:var(--c-dim)">' + esc(h.ts) + "</td>" +
         '<td><span class="' + sc + '">' + esc(h.severity) + "</span></td>" +
         "<td><strong>" + esc(h.phase) + "</strong></td>" +
         '<td class="text-pulse-muted" style="font-size:0.78rem">' + esc(h.config) + "</td>" +
@@ -2928,6 +2941,151 @@ function renderFaultIsolator() {
       "Cable replacement did not restore the link, and the original NIC port has already been cleared (Phase 2). The remaining suspect is the camera (CHU). Replace the camera unit when a known-good spare is available; if the link still fails with a known-good camera, the issue is likely NIC hardware and a full diagnostic + escalation is warranted.");
     renderFaultIsolator();
   }
+}
+
+// ── Audio ────────────────────────────────────────────────────
+
+var _audioRefreshTimer = null;
+
+function renderAudio() {
+  var data = cached("audio");
+  if (!data) { $page().innerHTML = sectionLoading("Audio"); fetchSection("audio"); return; }
+
+  // Clear any previous live-refresh timer
+  if (_audioRefreshTimer) { clearInterval(_audioRefreshTimer); _audioRefreshTimer = null; }
+
+  var devices = data.devices || [];
+  var inputs = devices.filter(function(d) { return d.dataFlow === "Input"; });
+  var outputs = devices.filter(function(d) { return d.dataFlow === "Output"; });
+  var activeInputs = inputs.filter(function(d) { return d.state === "Active"; });
+  var activeOutputs = outputs.filter(function(d) { return d.state === "Active"; });
+
+  // Page-level indicator: is anything making sound?
+  var anySignal = devices.some(function(d) { return d.peak != null && d.peak > 1; });
+
+  $page().innerHTML =
+    pageHeader("Audio", "Audio device diagnostics — line-in capture, volume levels, and signal activity",
+      '<button class="btn-outline btn-ol-blue" onclick="dataCache.audio=null;renderAudio()">' +
+        svgIcon("refresh", 14) + " Refresh</button>") +
+
+    // Summary cards
+    '<div class="audio-summary">' +
+      _audioSummaryCard("Input Devices", activeInputs.length, inputs.length, "mic") +
+      _audioSummaryCard("Output Devices", activeOutputs.length, outputs.length, "volume") +
+      '<div class="card audio-signal-card">' +
+        '<div class="audio-signal-dot ' + (anySignal ? "audio-signal-active" : "audio-signal-silent") + '"></div>' +
+        '<div><div class="text-sm font-semibold">' + (anySignal ? "Signal Detected" : "No Signal") + '</div>' +
+        '<div class="text-xs text-pulse-muted">' + (anySignal ? "Audio activity on one or more devices" : "All devices silent") + '</div></div>' +
+      '</div>' +
+    '</div>' +
+
+    // Input devices
+    '<div class="card mt-4">' +
+      sectionTitle("mic", "Input Devices") +
+      (inputs.length ? inputs.map(function(d) { return _audioDeviceRow(d); }).join("") :
+        '<p class="text-sm text-pulse-muted">No input devices detected</p>') +
+    '</div>' +
+
+    // Output devices
+    '<div class="card mt-4">' +
+      sectionTitle("volume", "Output Devices") +
+      (outputs.length ? outputs.map(function(d) { return _audioDeviceRow(d); }).join("") :
+        '<p class="text-sm text-pulse-muted">No output devices detected</p>') +
+    '</div>';
+
+  // Wire up volume sliders
+  devices.forEach(function(d) {
+    if (d.state !== "Active" || d.volume == null) return;
+    var slider = document.getElementById("vol-" + _audioSlug(d.id));
+    var label  = document.getElementById("vol-lbl-" + _audioSlug(d.id));
+    if (!slider) return;
+    slider.addEventListener("change", function() {
+      var val = parseInt(slider.value, 10);
+      if (label) label.textContent = val + "%";
+      apiPost("/api/audio/volume", { deviceId: d.id, volume: val });
+    });
+    slider.addEventListener("input", function() {
+      if (label) label.textContent = parseInt(slider.value, 10) + "%";
+    });
+  });
+
+  // Live-refresh peak meters every 2s
+  _audioRefreshTimer = setInterval(function() {
+    if (currentPage !== "audio") { clearInterval(_audioRefreshTimer); _audioRefreshTimer = null; return; }
+    api("/api/audio").then(function(fresh) {
+      if (!fresh || fresh.error || currentPage !== "audio") return;
+      (fresh.devices || []).forEach(function(d) {
+        var bar = document.getElementById("peak-" + _audioSlug(d.id));
+        var lbl = document.getElementById("peak-lbl-" + _audioSlug(d.id));
+        if (bar && d.peak != null) {
+          bar.style.width = Math.min(d.peak, 100) + "%";
+          bar.className = "audio-peak-fill" + (d.peak > 80 ? " audio-peak-hot" : d.peak > 1 ? " audio-peak-ok" : "");
+        }
+        if (lbl) lbl.textContent = d.peak != null ? d.peak + "%" : "—";
+      });
+    });
+  }, 2000);
+}
+
+function _audioSlug(id) {
+  return String(id || "").replace(/[^a-zA-Z0-9]/g, "");
+}
+
+function _audioSummaryCard(label, active, total, icon) {
+  return '<div class="card audio-summary-card">' +
+    '<div class="audio-summary-icon">' + svgIcon(icon, 20) + '</div>' +
+    '<div class="audio-summary-num">' + active + '<span class="text-pulse-muted text-sm font-normal"> / ' + total + '</span></div>' +
+    '<div class="text-xs text-pulse-muted">' + esc(label) + '</div>' +
+  '</div>';
+}
+
+function _audioFormFactorBadge(ff) {
+  var labels = {
+    LineLevel: "Line-In", Microphone: "Mic", Headphones: "Headphones",
+    Headset: "Headset", Speakers: "Speakers", SPDIF: "S/PDIF",
+    DigitalDisplay: "HDMI/DP", DigitalPassthrough: "Digital", RemoteNetwork: "Network",
+    Handset: "Handset", Unknown: "Unknown"
+  };
+  var text = labels[ff] || ff || "Unknown";
+  return '<span class="audio-port-badge">' + esc(text) + '</span>';
+}
+
+function _audioDeviceRow(d) {
+  var slug = _audioSlug(d.id);
+  var isActive = d.state === "Active";
+  var stateClass = isActive ? "status-pass" : d.state === "Disabled" ? "status-warn" : "status-fail";
+
+  return '<div class="audio-device ' + (isActive ? "" : "audio-device-inactive") + '">' +
+    '<div class="audio-device-header">' +
+      '<div class="audio-device-name">' + esc(d.name || "Unknown Device") + '</div>' +
+      '<div class="audio-device-badges">' +
+        _audioFormFactorBadge(d.formFactor) +
+        '<span class="' + stateClass + '">' + esc(d.state) + '</span>' +
+      '</div>' +
+    '</div>' +
+    (isActive ? (
+      '<div class="audio-device-controls">' +
+        // Peak meter
+        '<div class="audio-meter-row">' +
+          '<span class="audio-meter-label">Signal</span>' +
+          '<div class="audio-peak-track">' +
+            '<div id="peak-' + slug + '" class="audio-peak-fill' +
+              (d.peak > 80 ? " audio-peak-hot" : d.peak > 1 ? " audio-peak-ok" : "") +
+              '" style="width:' + Math.min(d.peak || 0, 100) + '%"></div>' +
+          '</div>' +
+          '<span id="peak-lbl-' + slug + '" class="audio-meter-val">' + (d.peak != null ? d.peak + "%" : "—") + '</span>' +
+        '</div>' +
+        // Volume slider
+        (d.volume != null ? (
+          '<div class="audio-meter-row">' +
+            '<span class="audio-meter-label">' + (d.muted ? svgIcon("volume-x", 14) : svgIcon("volume", 14)) + '</span>' +
+            '<input type="range" id="vol-' + slug + '" class="audio-slider" min="0" max="100" value="' + Math.round(d.volume) + '"/>' +
+            '<span id="vol-lbl-' + slug + '" class="audio-meter-val">' + Math.round(d.volume) + '%</span>' +
+          '</div>'
+        ) : "") +
+      '</div>'
+    ) : "") +
+  '</div>';
 }
 
 // ── Settings ─────────────────────────────────────────────────

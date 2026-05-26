@@ -405,6 +405,7 @@ async def api_preload():
         ports,
         ntp,
         local,
+        audio,
     ) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -421,6 +422,7 @@ async def api_preload():
         run_ps("Test-NetworkPorts.ps1"),
         run_ps("Test-NtpDrift.ps1"),
         run_ps("Test-LocalNetwork.ps1"),
+        run_ps("Get-AudioDevices.ps1"),
     )
 
     return {
@@ -438,6 +440,7 @@ async def api_preload():
         "services": services,
         "disk-health": disk_health,
         "events": event_logs,
+        "audio": audio,
         "scoreconnect": scoreconnect,
         "settings": {
             **load_settings(),
@@ -680,6 +683,19 @@ async def api_events(
     hours: int = Query(default=48), level: str = Query(default="all")
 ):
     return await run_ps("Get-EventLogs.ps1", {"HoursBack": hours, "Level": level})
+
+
+@app.get("/api/audio")
+async def api_audio():
+    return await run_ps("Get-AudioDevices.ps1")
+
+
+@app.post("/api/audio/volume")
+async def api_audio_volume(request: Request):
+    body = await request.json()
+    device_id = body.get("deviceId", "")
+    volume = body.get("volume", 50)
+    return await run_ps("Set-AudioVolume.ps1", {"DeviceId": device_id, "Volume": volume})
 
 
 @app.get("/api/scoreconnect")

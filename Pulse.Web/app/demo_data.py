@@ -164,6 +164,7 @@ DEMO = {
     "Get-ScoreConnectStatus.ps1": lambda **kw: {
         "reachable": True,
         "baseUrl": "http://localhost:5000",
+        "version": "2.4.1",
         "status": {"version": "2.4.1", "uptime": "12d 7h 42m", "isDetected": True},
         "configuration": {
             "vendor": "Daktronics",
@@ -266,6 +267,63 @@ DEMO = {
         "hopCount": 8,
     },
     "Restart-Service.ps1": lambda **kw: {"success": True, "message": "Service restarted successfully (demo)"},
+    "Get-AudioDevices.ps1": lambda **kw: {
+        "devices": [
+            {
+                "id": "{0.0.1.00000000}.{a1b2c3d4-1111-2222-3333-444455556666}",
+                "name": "Line In (Realtek High Definition Audio)",
+                "dataFlow": "Input",
+                "state": "Active",
+                "formFactor": "LineLevel",
+                "volume": 78,
+                "muted": False,
+                "peak": round(random.uniform(8, 35), 1),
+            },
+            {
+                "id": "{0.0.1.00000000}.{a1b2c3d4-1111-2222-3333-444455557777}",
+                "name": "Microphone (Realtek High Definition Audio)",
+                "dataFlow": "Input",
+                "state": "Active",
+                "formFactor": "Microphone",
+                "volume": 62,
+                "muted": False,
+                "peak": round(random.uniform(0, 2), 1),
+            },
+            {
+                "id": "{0.0.1.00000000}.{a1b2c3d4-1111-2222-3333-444455558888}",
+                "name": "Stereo Mix (Realtek High Definition Audio)",
+                "dataFlow": "Input",
+                "state": "Disabled",
+                "formFactor": "Unknown",
+                "volume": None,
+                "muted": None,
+                "peak": None,
+            },
+            {
+                "id": "{0.0.0.00000000}.{b2c3d4e5-2222-3333-4444-555566667777}",
+                "name": "Speakers (Realtek High Definition Audio)",
+                "dataFlow": "Output",
+                "state": "Active",
+                "formFactor": "Speakers",
+                "volume": 45,
+                "muted": False,
+                "peak": round(random.uniform(0, 5), 1),
+            },
+            {
+                "id": "{0.0.0.00000000}.{b2c3d4e5-2222-3333-4444-555566668888}",
+                "name": "HDMI Audio (Intel Display Audio)",
+                "dataFlow": "Output",
+                "state": "Unplugged",
+                "formFactor": "DigitalDisplay",
+                "volume": None,
+                "muted": None,
+                "peak": None,
+            },
+        ],
+        "inputCount": 2,
+        "outputCount": 1,
+    },
+    "Set-AudioVolume.ps1": lambda **kw: {"success": True, "deviceId": (kw or {}).get("DeviceId", ""), "volume": int((kw or {}).get("Volume", 50))},
 }
 
 
