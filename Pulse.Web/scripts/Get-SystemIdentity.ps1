@@ -40,6 +40,7 @@ try {
     catch { }
 
     # VPU friendly name from the latest agent_vpu2 log
+    # Uses findstr (native, encoding-safe) then regex to extract the name
     $vpuName = $null
     try {
         $logDir = 'C:\Pixellot\Data\Log'
@@ -47,11 +48,13 @@ try {
             $latestLog = Get-ChildItem -Path $logDir -Filter 'agent_vpu2_*.log' -ErrorAction SilentlyContinue |
                 Sort-Object Name -Descending | Select-Object -First 1
             if ($latestLog) {
-                # Search entire file for the last BROADCAST_NAME entry
-                $hit = Select-String -Path $latestLog.FullName -Pattern 'BROADCAST_NAME\s+result:\s*(.+)$' -ErrorAction SilentlyContinue |
-                    Select-Object -Last 1
-                if ($hit) {
-                    $vpuName = $hit.Matches[0].Groups[1].Value.Trim()
+                $lines = & findstr /C:"BROADCAST_NAME" $latestLog.FullName 2>$null
+                if ($lines) {
+                    # Take the last matching line
+                    $last = if ($lines -is [array]) { $lines[-1] } else { $lines }
+                    if ($last -match 'result:\s*(.+)$') {
+                        $vpuName = $Matches[1].Trim()
+                    }
                 }
             }
         }
