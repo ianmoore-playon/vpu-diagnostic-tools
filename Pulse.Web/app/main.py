@@ -172,16 +172,17 @@ def _compute_findings(identity, performance, services, nics) -> list:
             )
 
     if services and not services.get("error"):
-        critical_svcs = {"agent", "vpu"}
+        critical_svcs = {"agent"}  # vpu not running is normal (idle state)
         for svc in services.get("services", []):
             name_lower = svc["name"].lower()
+            display = svc.get("displayName") or svc["name"]
             if svc["status"] == "Stopped" and name_lower in critical_svcs:
                 findings.append(
                     {
                         "severity": "critical",
                         "category": "Services",
-                        "title": f"{svc['name']} Stopped",
-                        "recommendation": f"Restart {svc['name']} from the Services page.",
+                        "title": f"{display} Stopped",
+                        "recommendation": f"Restart {display} from the Services page.",
                     }
                 )
             elif svc["status"] == "NotFound" and name_lower in critical_svcs:
@@ -189,8 +190,8 @@ def _compute_findings(identity, performance, services, nics) -> list:
                     {
                         "severity": "warning",
                         "category": "Services",
-                        "title": f"{svc['name']} Not Installed",
-                        "recommendation": f"{svc['name']} was not found on this system.",
+                        "title": f"{display} Not Running",
+                        "recommendation": f"{display} service was not found running.",
                     }
                 )
 
