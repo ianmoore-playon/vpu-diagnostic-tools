@@ -33,21 +33,54 @@ try {
         return
     }
 
+    # ── Check for admin elevation (pktmon requires it) ───────────
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+        [ordered]@{
+            error = $true
+            message = 'Packet capture requires administrator privileges. Run Pulse as administrator.'
+            script = 'Start-NetworkCapture.ps1'
+        } | ConvertTo-Json -Compress
+        return
+    }
+
     # ── Clean up any prior state ─────────────────────────────────
     try { & pktmon stop 2>&1 | Out-Null } catch { }
     try { & pktmon filter remove 2>&1 | Out-Null } catch { }
 
     # ── Add filters: TCP on key ports ────────────────────────────
-    & pktmon filter add PulseTCP -t TCP -p 443 2>&1 | Out-Null
-    & pktmon filter add PulseRTMP -t TCP -p 1935 2>&1 | Out-Null
-    & pktmon filter add PulseHTTP -t TCP -p 80 2>&1 | Out-Null
-    & pktmon filter add PulseTelemetry -t TCP -p 8443 2>&1 | Out-Null
+    try {
+        & pktmon filter add PulseTCP -t TCP -p 443 2>&1 | Out-Null
+        & pktmon filter add PulseRTMP -t TCP -p 1935 2>&1 | Out-Null
+        & pktmon filter add PulseHTTP -t TCP -p 80 2>&1 | Out-Null
+        & pktmon filter add PulseZixi -t UDP -p 2088 2>&1 | Out-Null
+    }
+    catch {
+        [ordered]@{
+            error = $true
+            message = "Failed to add pktmon filters: $($_.Exception.Message)"
+            script = 'Start-NetworkCapture.ps1'
+        } | ConvertTo-Json -Compress
+        return
+    }
 
     # ── Start capture (ETL file, headers only) ───────────────────
     $etlPath = Join-Path $env:TEMP "pulse_capture.etl"
     if (Test-Path $etlPath) { Remove-Item $etlPath -Force }
 
-    & pktmon start --capture --pkt-size 128 -f $etlPath -c $MaxPackets 2>&1 | Out-Null
+    try {
+        & pktmon start --capture --pkt-size 128 -f $etlPath -c $MaxPackets 2>&1 | Out-Null
+    }
+    catch {
+        try { & pktmon filter remove 2>&1 | Out-Null } catch { }
+        [ordered]@{
+            error = $true
+            message = "Failed to start pktmon capture: $($_.Exception.Message)"
+            script = 'Start-NetworkCapture.ps1'
+        } | ConvertTo-Json -Compress
+        return
+    }
 
     # ── Wait for capture duration ────────────────────────────────
     Start-Sleep -Seconds $DurationSec

@@ -1427,7 +1427,7 @@ async function _runCapture(duration) {
   var btn = document.getElementById("net-capture-btn");
   var out = document.getElementById("net-capture-results");
   if (btn) { btn.disabled = true; btn.innerHTML = svgIcon("refresh", 14) + ' Capturing ' + duration + 's…'; }
-  if (out) out.innerHTML = '<p class="text-pulse-muted text-sm loading-pulse">Running ' + duration + 's packet capture — analyzing TCP headers on ports 443, 1935, 80, 8443…</p>';
+  if (out) out.innerHTML = '<p class="text-pulse-muted text-sm loading-pulse">Running ' + duration + 's packet capture — analyzing TCP headers on ports 443, 1935, 80, UDP 2088…</p>';
 
   try {
     var resp = await fetch("/api/network/capture?duration=" + duration);
@@ -1848,7 +1848,7 @@ function renderNetwork() {
             </button>
           </div>
         </div>
-        <p class="text-pulse-muted text-sm">Captures TCP packet headers using Windows pktmon (ports 443, 1935, 80, 8443). Analyzes retransmissions, resets, and drops.</p>
+        <p class="text-pulse-muted text-sm">Captures TCP packet headers using Windows pktmon (ports 443, 1935, 80, UDP 2088). Analyzes retransmissions, resets, and drops.</p>
         <div id="net-capture-results"></div>
       </div>
 
