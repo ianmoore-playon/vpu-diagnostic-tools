@@ -630,9 +630,6 @@ function renderDashboard() {
   const svcs = (dash.services || svcData)?.services || [];
   const hostname = id.hostname || "VPU";
   const vpuName = id.vpuName;
-  const mfr = id.manufacturer || "";
-  const model = id.model || "";
-  const hwLabel = (model.toLowerCase().startsWith(mfr.toLowerCase()) ? model : [mfr, model].filter(Boolean).join(" ")) || hostname;
 
   const cpu = perf.cpu?.usagePercent;
   const mem = perf.memory?.usedPercent;
@@ -687,8 +684,8 @@ function renderDashboard() {
     <!-- Header -->
     <div class="dash-header">
       <div>
-        <h2 class="text-2xl font-bold text-white">${vpuName ? esc(vpuName) : "Dashboard"}</h2>
-        <p class="text-sm text-pulse-muted">${esc(hwLabel)}</p>
+        <h2 class="text-2xl font-bold text-white">Dashboard</h2>
+        ${vpuName ? `<p class="text-sm text-pulse-muted">${esc(vpuName)}</p>` : ""}
       </div>
       <div class="dash-actions">
         <button class="btn-outline btn-ol-green" onclick="refreshAll()">
@@ -711,7 +708,7 @@ function renderDashboard() {
       <div class="card command-center">
         <h3 class="card-label">COMMAND CENTER</h3>
         <div class="cc-severity cc-sev-${sevColor}">${esc(sevLabel)}</div>
-        <div class="text-sm text-pulse-muted mb-3">${esc(hwLabel)}</div>
+        ${vpuName ? `<div class="text-sm text-pulse-muted mb-3">${esc(vpuName)}</div>` : ""}
         <div class="baseline-bar">
           ${svgIcon("check", 14)}
           Baseline completed ${esc(timeStr)} &bull; ${subsystems.length}/${subsystems.length} panels &bull; ${totalFindings} finding(s)
@@ -787,7 +784,7 @@ function renderDashboard() {
     <div class="dash-2col">
       <div class="card">
         <h3 class="card-label">VPU IDENTITY</h3>
-        <div class="text-lg font-bold text-white mb-3">${vpuName ? esc(vpuName) : esc(hwLabel)}</div>
+        ${vpuName ? `<div class="text-lg font-bold text-white mb-3">${esc(vpuName)}</div>` : ""}
         <div class="dash-kv">
           <span class="dash-kv-l">Model</span><span class="dash-kv-v">${esc(id.model || "—")}</span>
           <span class="dash-kv-l">Hostname</span><span class="dash-kv-v">${esc(hostname)}</span>
