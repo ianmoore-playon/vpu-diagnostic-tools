@@ -198,10 +198,13 @@ def _compute_findings(identity, performance, services, nics) -> list:
     if nics and not nics.get("error"):
         for port in nics.get("ports", []):
             if port.get("status") != "Up":
-                # Only flag NICs that have ARP entries (were actively used).
-                # Ports with no entries are unused hardware — not a finding.
+                # Only flag NICs that have Pixellot cameras in their ARP table.
+                # Ports with no camera MACs are unused hardware — not a finding.
                 arp = port.get("arpEntries") or []
-                if not arp:
+                has_cameras = any(
+                    _is_pixellot_mac(a.get("mac", "")) for a in arp
+                )
+                if not has_cameras:
                     continue
                 findings.append(
                     {

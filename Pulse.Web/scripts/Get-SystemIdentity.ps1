@@ -47,13 +47,11 @@ try {
             $latestLog = Get-ChildItem -Path $logDir -Filter 'agent_vpu2_*.log' -ErrorAction SilentlyContinue |
                 Sort-Object Name -Descending | Select-Object -First 1
             if ($latestLog) {
-                # Scan last 5000 lines for the BROADCAST_NAME entry (most recent value)
-                $tail = Get-Content $latestLog.FullName -Tail 5000 -ErrorAction SilentlyContinue
-                for ($i = $tail.Count - 1; $i -ge 0; $i--) {
-                    if ($tail[$i] -match 'BROADCAST_NAME\s+result:\s*(.+)$') {
-                        $vpuName = $Matches[1].Trim()
-                        break
-                    }
+                # Search entire file for the last BROADCAST_NAME entry
+                $hit = Select-String -Path $latestLog.FullName -Pattern 'BROADCAST_NAME\s+result:\s*(.+)$' -ErrorAction SilentlyContinue |
+                    Select-Object -Last 1
+                if ($hit) {
+                    $vpuName = $hit.Matches[0].Groups[1].Value.Trim()
                 }
             }
         }
