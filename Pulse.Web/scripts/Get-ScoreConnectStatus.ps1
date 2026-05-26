@@ -6,6 +6,9 @@
     Makes HTTP requests to the ScoreConnect local API to check reachability, retrieve
     configuration, and fetch cloud BOT status. Also enumerates Win32_PnPEntity to detect
     whether a ScoreLink hardware box is connected via USB. Outputs JSON to stdout.
+
+    Configuration fields are normalised to renderer-friendly names (vendor, sport, etc.)
+    using the same alias tables as the WPF ScoreConnectService.
 #>
 [CmdletBinding()]
 param(
@@ -13,6 +16,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 function Invoke-SafeGet {
     param([string]$Url, [int]$TimeoutSec = 2)
@@ -23,19 +28,34 @@ function Invoke-SafeGet {
     return @{ ok = $false; content = $null }
 }
 
-# Pick the first non-empty string from a list of property names on $Obj.
-function Get-FirstProp {
-    param($Obj, [string[]]$Names)
-    foreach ($n in $Names) {
-        $v = $null
-        try { $v = $Obj.$n } catch {}
-        if ($null -ne $v -and "$v".Trim() -ne '') { return "$v" }
+# Pick the first non-empty string value from a hashtable by an ordered list of
+# candidate keys.  Case-insensitive lookup.
+function Pick-First {
+    param([hashtable]$Map, [string[]]$Keys)
+    foreach ($k in $Keys) {
+        foreach ($mk in $Map.Keys) {
+            if ($mk -eq $k) {
+                $v = $Map[$mk]
+                if ($null -ne $v -and "$v".Trim() -ne '') { return "$v" }
+            }
+        }
     }
     return $null
 }
 
-# Read DEVPKEY_Device_BusReportedDeviceDesc from the PnP property store registry key.
-# The WPF ScoreLinkDetector uses the same path; value name is empty string (default).
+# Flatten a PSCustomObject (from ConvertFrom-Json) into a case-insensitive hashtable.
+function To-Map {
+    param($Obj)
+    $map = @{}
+    if ($null -eq $Obj) { return $map }
+    foreach ($p in $Obj.PSObject.Properties) {
+        $map[$p.Name] = if ($null -ne $p.Value) { "$($p.Value)" } else { $null }
+    }
+    return $map
+}
+
+# Read DEVPKEY_Device_BusReportedDeviceDesc from the PnP property store.
+# Same registry path as the WPF ScoreLinkDetector; value name is empty string (default).
 function Get-BusReportedDesc {
     param([string]$PnpDeviceId)
     if (-not $PnpDeviceId) { return '' }
@@ -48,6 +68,25 @@ function Get-BusReportedDesc {
     } catch { return '' }
 }
 
+# Read FileVersion from the ScoreConnect III executable on disk.
+# WPF uses this fallback because get-status often omits a version field.
+function Get-ScoreConnectExeVersion {
+    $candidates = @(
+        'C:\Program Files (x86)\Sportzcast LLC\ScoreConnectIII\ScoreConnectIII.exe',
+        'C:\Program Files\Sportzcast LLC\ScoreConnectIII\ScoreConnectIII.exe'
+    )
+    foreach ($path in $candidates) {
+        try {
+            if (-not (Test-Path -LiteralPath $path)) { continue }
+            $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($path)
+            $v = $info.ProductVersion
+            if (-not $v) { $v = $info.FileVersion }
+            if ($v) { return $v.Trim() }
+        } catch {}
+    }
+    return $null
+}
+
 try {
     $BaseUrl = $BaseUrl.TrimEnd('/')
 
@@ -55,21 +94,67 @@ try {
     $reachable  = $false
     $statusData = $null
     $errorMsg   = $null
+    $version    = $null
 
-    $sr = Invoke-SafeGet "$BaseUrl/api/configuration/get-status"
-    if ($sr.ok) {
-        $reachable = $true
-        try { $statusData = $sr.content | ConvertFrom-Json } catch {}
-    } else {
+    # WPF probes get-status → get-current-configuration → root, in order.
+    # We try the first two — root is too broad (matches any HTTP server).
+    foreach ($path in @(
+        "$BaseUrl/api/configuration/get-status",
+        "$BaseUrl/api/configuration/get-current-configuration"
+    )) {
+        $sr = Invoke-SafeGet $path
+        if ($sr.ok) {
+            $reachable = $true
+            try { $statusData = $sr.content | ConvertFrom-Json } catch {}
+            break
+        }
+    }
+
+    if (-not $reachable) {
         $errorMsg = "ScoreConnect III not reachable at $BaseUrl"
     }
 
+    # Resolve version: response field → exe on disk
+    if ($statusData) {
+        $sMap = To-Map $statusData
+        $version = Pick-First $sMap @('version', 'appVersion', 'serviceVersion')
+    }
+    if (-not $version) {
+        $version = Get-ScoreConnectExeVersion
+    }
+
     # ── 2. Extended configuration ────────────────────────────────────────────
+    # Try extended first (carries firmware / event-type / vendor-config-id),
+    # fall back to plain get-current-configuration like the WPF service does.
     $configuration = $null
     if ($reachable) {
-        $cr = Invoke-SafeGet "$BaseUrl/api/configuration/get-current-configuration-extended"
-        if ($cr.ok) {
-            try { $configuration = $cr.content | ConvertFrom-Json } catch {}
+        foreach ($cfgPath in @(
+            "$BaseUrl/api/configuration/get-current-configuration-extended",
+            "$BaseUrl/api/configuration/get-current-configuration"
+        )) {
+            $cr = Invoke-SafeGet $cfgPath
+            if ($cr.ok) {
+                try {
+                    $rawCfg = $cr.content | ConvertFrom-Json
+                    $cfgMap = To-Map $rawCfg
+
+                    # Normalise field names using the same alias tables as WPF
+                    # PopulateConfigurationFromJson.
+                    $configuration = [ordered]@{
+                        vendor                  = Pick-First $cfgMap @('vendorName', 'vendor', 'currentVendor', 'currentSbvendor')
+                        sport                   = Pick-First $cfgMap @('vendorSportName', 'sport', 'vendorSport', 'sportName', 'vendorSportCode', 'currentSbCode')
+                        vendorConfigurationName = Pick-First $cfgMap @('vendorConfigurationName', 'configurationName')
+                        device                  = Pick-First $cfgMap @('device', 'deviceName', 'deviceId')
+                        serialPort              = Pick-First $cfgMap @('serialPort', 'port', 'comPort', 'portName')
+                        firmware                = Pick-First $cfgMap @('firmware', 'firmwareVersion', 'fwVersion')
+                        eventType               = Pick-First $cfgMap @('eventType', 'eventTypeName', 'eventTypeId')
+                    }
+                    # If normalization found anything, stop trying endpoints
+                    $hasAny = $false
+                    foreach ($v in $configuration.Values) { if ($v) { $hasAny = $true; break } }
+                    if ($hasAny) { break }
+                } catch {}
+            }
         }
     }
 
@@ -79,9 +164,9 @@ try {
     $botStatus = $null
     if ($reachable) {
         $botIsConnected    = $false
-        $botScoreConnectId = ''
-        $botServerAddress  = ''
-        $botLastError      = ''
+        $botScoreConnectId = $null
+        $botServerAddress  = $null
+        $botLastError      = $null
 
         $br = Invoke-SafeGet "$BaseUrl/api/configuration/get-bot-number"
         if (-not $br.ok) {
@@ -94,25 +179,24 @@ try {
                 # Bare integer — non-zero means paired with Sportzcast cloud
                 $bareNumber        = [long]$trimmed
                 $botIsConnected    = $bareNumber -gt 0
-                $botScoreConnectId = if ($bareNumber -gt 0) { $trimmed } else { '' }
+                $botScoreConnectId = if ($bareNumber -gt 0) { $trimmed } else { $null }
             } else {
                 try {
-                    $botObj    = $trimmed | ConvertFrom-Json
-                    $botNumStr = Get-FirstProp $botObj @('botNumber', 'bot_number')
+                    $botObj = $trimmed | ConvertFrom-Json
+                    $botMap = To-Map $botObj
+
+                    $botNumStr = Pick-First $botMap @('botNumber', 'bot_number')
                     if ($null -ne $botNumStr) {
                         $botIsConnected    = ([long]$botNumStr) -gt 0
-                        $botScoreConnectId = if ($botIsConnected) { $botNumStr } else { '' }
+                        $botScoreConnectId = if ($botIsConnected) { $botNumStr } else { $null }
                     } else {
                         # Legacy shape: explicit boolean field
-                        $connStr        = Get-FirstProp $botObj @('botOnline', 'isConnected', 'cloudConnection', 'isCloudMode')
+                        $connStr        = Pick-First $botMap @('botOnline', 'isConnected', 'cloudConnection', 'isCloudMode')
                         $botIsConnected = ($connStr -eq 'True' -or $connStr -eq 'true' -or $connStr -eq '1')
-                        $idStr          = Get-FirstProp $botObj @('scoreConnectId', 'id')
-                        $botScoreConnectId = if ($idStr) { $idStr } else { '' }
+                        $botScoreConnectId = Pick-First $botMap @('scoreConnectId', 'id')
                     }
-                    $addrStr          = Get-FirstProp $botObj @('botServerAddress', 'botAddress', 'botServer')
-                    $botServerAddress = if ($addrStr) { $addrStr } else { '' }
-                    $errStr           = Get-FirstProp $botObj @('lastErrorMessage', 'lastError', 'errorMessage')
-                    $botLastError     = if ($errStr) { $errStr } else { '' }
+                    $botServerAddress = Pick-First $botMap @('botServerAddress', 'botAddress', 'botServer')
+                    $botLastError     = Pick-First $botMap @('lastErrorMessage', 'lastError', 'errorMessage')
                 } catch {}
             }
         }
@@ -128,7 +212,8 @@ try {
     # ── 4. ScoreLink USB detection ───────────────────────────────────────────
     # Matches bus-reported device description from the PnP property store
     # (DEVPKEY_Device_BusReportedDeviceDesc) against known ScoreLink needle
-    # strings — mirrors the WPF ScoreLinkDetector logic.
+    # strings — mirrors the WPF ScoreLinkDetector logic.  Also checks
+    # Caption and Description as secondary fallback.
     $scoreLinkConnected = $false
     $scoreLinkPort      = ''
     $scoreLinkModel     = ''
@@ -144,12 +229,14 @@ try {
     $comRx = [regex]'\bCOM(\d+)\b'
 
     try {
+        # USB\ filter — WPF checks pnpId.StartsWith("USB\\")
         $pnpDevices = Get-CimInstance -ClassName Win32_PnPEntity `
-            -Filter "PNPDeviceID LIKE 'USB%'" -ErrorAction Stop
+            -Filter "PNPDeviceID LIKE 'USB\\%'" -ErrorAction Stop
 
         foreach ($dev in $pnpDevices) {
-            $caption = [string]$dev.Caption
-            $name    = [string]$dev.Name
+            $caption     = [string]$dev.Caption
+            $name        = [string]$dev.Name
+            $description = [string]$dev.Description
 
             # Must expose a COM port number in Name or Caption
             $pm = $comRx.Match($name)
@@ -157,13 +244,17 @@ try {
             if (-not $pm.Success) { continue }
             $portName = 'COM' + $pm.Groups[1].Value
 
+            # Check bus-reported (primary), Caption, Description (secondary)
             $busDesc = Get-BusReportedDesc $dev.PNPDeviceID
             $busLow  = $busDesc.ToLower()
             $capLow  = $caption.ToLower()
+            $drvLow  = $description.ToLower()
 
             $matched = $null
             foreach ($entry in $busNeedles) {
-                if ($busLow.Contains($entry.needle) -or $capLow.Contains($entry.needle)) {
+                if ($busLow.Contains($entry.needle) -or
+                    $capLow.Contains($entry.needle) -or
+                    $drvLow.Contains($entry.needle)) {
                     $matched = $entry; break
                 }
             }
@@ -191,6 +282,7 @@ try {
     [ordered]@{
         reachable            = $reachable
         baseUrl              = $BaseUrl
+        version              = $version
         status               = $statusData
         configuration        = $configuration
         botStatus            = $botStatus
@@ -205,6 +297,7 @@ catch {
     [ordered]@{
         reachable            = $false
         baseUrl              = $BaseUrl
+        version              = $null
         status               = $null
         configuration        = $null
         botStatus            = $null
