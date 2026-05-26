@@ -518,12 +518,42 @@ async def api_export():
     return dict(zip(keys, results))
 
 
-# ─── WebSocket — live metrics ─────────────────────────────────
+# ─── WebSocket — live metrics + auto-shutdown ────────────────
+
+_ws_clients: set = set()
+_shutdown_task = None  # Optional[asyncio.Task]
+_ever_had_client: bool = False
+IDLE_SHUTDOWN_SECS = 60  # shut down 60s after last client disconnects
+
+
+async def _idle_shutdown():
+    """Shut down the server after all WebSocket clients disconnect."""
+    await asyncio.sleep(IDLE_SHUTDOWN_SECS)
+    if not _ws_clients and _ever_had_client:
+        _log("auto-shutdown", 0, "ok", f"no clients for {IDLE_SHUTDOWN_SECS}s")
+        _os._exit(0)
+
+
+def _on_ws_connect(ws: WebSocket):
+    global _shutdown_task, _ever_had_client
+    _ws_clients.add(id(ws))
+    _ever_had_client = True
+    if _shutdown_task and not _shutdown_task.done():
+        _shutdown_task.cancel()
+        _shutdown_task = None
+
+
+def _on_ws_disconnect(ws: WebSocket):
+    global _shutdown_task
+    _ws_clients.discard(id(ws))
+    if not _ws_clients and _ever_had_client:
+        _shutdown_task = asyncio.create_task(_idle_shutdown())
 
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
+    _on_ws_connect(ws)
     try:
         settings = load_settings()
         interval = max(settings.get("pollIntervalMs", 3000), 1000) / 1000
@@ -551,6 +581,8 @@ async def ws_endpoint(ws: WebSocket):
         pass
     except Exception:
         pass
+    finally:
+        _on_ws_disconnect(ws)
 
 
 # ─── Entry point ──────────────────────────────────────────────

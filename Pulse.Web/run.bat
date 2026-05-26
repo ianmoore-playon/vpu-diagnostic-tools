@@ -59,6 +59,12 @@ echo.
 :: ── Patch ._pth so app/ is on sys.path ───────────────────────
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$f=Get-ChildItem '%PYDIR%' -Filter '*._pth' | Select-Object -First 1; if($f){$c=Get-Content $f.FullName; if($c -notcontains '..'){Add-Content $f.FullName '..'}}"
 
+:: ── Kill stale Pulse Web processes ────────────────────────────
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8765 " ^| findstr "LISTENING"') do (
+    echo  [INFO] Killing stale Pulse process ^(PID %%a^) on port 8765
+    taskkill /PID %%a /F >nul 2>&1
+)
+
 :: ── Install Python dependencies ───────────────────────────────
 echo  [INFO] Checking dependencies...
 "%PYEXE%" -m pip install -r app\requirements.txt --quiet --no-warn-script-location
