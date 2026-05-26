@@ -24,6 +24,10 @@ set "PYZIP=python-%PYVER%-embed-amd64.zip"
 set "PYURL=https://www.python.org/ftp/python/%PYVER%/%PYZIP%"
 set "PIPURL=https://bootstrap.pypa.io/get-pip.py"
 
+:: ── Check for curl (some VPUs don't have it) ─────────────────
+set "HAS_CURL="
+where curl.exe >nul 2>&1 && set "HAS_CURL=1"
+
 :: ── Bootstrap embedded Python (first run only) ────────────────
 if exist "%PYEXE%" (
     echo  [INFO] Python %PYVER% found at %PYEXE%
@@ -41,7 +45,11 @@ if not exist "%PYDIR%" (
 )
 
 echo  [SETUP] Downloading Python...
-curl.exe -L --progress-bar -o "%PYDIR%\%PYZIP%" "%PYURL%"
+if defined HAS_CURL (
+    curl.exe -L --progress-bar -o "%PYDIR%\%PYZIP%" "%PYURL%"
+) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PYURL%' -OutFile '%PYDIR%\%PYZIP%'"
+)
 if not exist "%PYDIR%\%PYZIP%" (
     echo.
     echo  [ERROR] Python download failed. File not found: %PYDIR%\%PYZIP%
@@ -75,7 +83,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem '%PYDIR%' 
 
 :: Bootstrap pip
 echo  [SETUP] Installing pip...
-curl.exe -L --silent -o "%PYDIR%\get-pip.py" "%PIPURL%"
+if defined HAS_CURL (
+    curl.exe -L --silent -o "%PYDIR%\get-pip.py" "%PIPURL%"
+) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PIPURL%' -OutFile '%PYDIR%\get-pip.py'"
+)
 if not exist "%PYDIR%\get-pip.py" (
     echo  [ERROR] Failed to download get-pip.py from %PIPURL%
     goto :fatal

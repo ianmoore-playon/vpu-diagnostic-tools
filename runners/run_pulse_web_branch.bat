@@ -39,7 +39,13 @@ echo.
 set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/%BRANCH%.zip"
 echo  [INFO] URL: %ASSET_URL%
 echo  [INFO] Downloading branch '%BRANCH%'...
-curl.exe -L --progress-bar -o "%ZIPFILE%" "%ASSET_URL%"
+where curl.exe >nul 2>&1
+if %errorlevel% EQU 0 (
+    curl.exe -L --progress-bar -o "%ZIPFILE%" "%ASSET_URL%"
+) else (
+    echo  [INFO] curl not found, using PowerShell...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%ASSET_URL%' -OutFile '%ZIPFILE%'"
+)
 
 if not exist "%ZIPFILE%" goto :dl_failed
 for %%A in ("%ZIPFILE%") do (
