@@ -245,7 +245,7 @@ def _enrich_ports(nics: dict) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics):
+def _build_dashboard(identity, performance, services, nics, network_config=None):
     flat_identity = {}
     if identity and not identity.get("error"):
         flat_identity = {
@@ -262,11 +262,23 @@ def _build_dashboard(identity, performance, services, nics):
             "isNonVpuHost": identity.get("isNonVpuHost", False),
         }
 
+    # Basic network config for the dashboard network card
+    net_cfg = {}
+    if network_config and not network_config.get("error"):
+        net_cfg = {
+            "ipConfig": network_config.get("ipConfigurations", []),
+            "uplinkAdapter": network_config.get("uplinkAdapter"),
+            "internetReachable": network_config.get("internet", {}).get("reachable", False),
+            "testedHost": network_config.get("internet", {}).get("testedHost"),
+            "ntpSource": network_config.get("ntpSource"),
+        }
+
     return {
         "identity": flat_identity,
         "performance": performance if not performance.get("error", False) else {},
         "services": services if not services.get("error", False) else {"services": []},
         "findings": _compute_findings(identity, performance, services, nics),
+        "networkConfig": net_cfg,
     }
 
 
@@ -333,7 +345,7 @@ async def api_preload():
     )
 
     return {
-        "dashboard": _build_dashboard(identity, performance, services, nics),
+        "dashboard": _build_dashboard(identity, performance, services, nics, network_config),
         "system": {
             "identity": identity,
             "hardware": hardware,
@@ -386,13 +398,14 @@ async def api_scripts_cancel_all():
 
 @app.get("/api/dashboard")
 async def api_dashboard():
-    identity, performance, services, nics = await asyncio.gather(
+    identity, performance, services, nics, net_config = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
         run_ps("Get-NicAdapters.ps1"),
+        run_ps("Get-NetworkConfig.ps1", timeout=15),
     )
-    return _build_dashboard(identity, performance, services, nics)
+    return _build_dashboard(identity, performance, services, nics, net_config)
 
 
 @app.get("/api/system")

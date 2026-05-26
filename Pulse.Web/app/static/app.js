@@ -598,8 +598,8 @@ function renderDashboard() {
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-  // Network config
-  const netCfg = net.config || {};
+  // Network config — prefer dashboard-embedded data, fall back to full network cache
+  const netCfg = dash.networkConfig || net.config || {};
   const uplinkName = netCfg.uplinkAdapter?.interfaceAlias || "—";
   const ipConfigs = netCfg.ipConfig || netCfg.ipConfigurations || [];
   const uplinkIp = ipConfigs.find((ip) => ip.interfaceAlias === uplinkName);
