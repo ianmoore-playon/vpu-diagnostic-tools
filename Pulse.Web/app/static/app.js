@@ -582,6 +582,8 @@ function _metricColor(val) {
   return "#22c55e";
 }
 
+var _dashNicRefreshTimer = null;
+
 function _renderNicRows(ports) {
   const rows = [];
   const count = Math.max(4, ports.length);
@@ -883,7 +885,7 @@ function renderDashboard() {
           <span class="dash-hdr-icon">${svgIcon("link", 16)}</span>
           <h3 class="card-label mb-0">NETWORK INTERFACE CARD (NIC) CONNECTIONS</h3>
         </div>
-        <div class="dash-nic-table">${_renderNicRows(nicPorts)}</div>
+        <div class="dash-nic-table" id="dash-nic-table">${_renderNicRows(nicPorts)}</div>
       </div>
       <div class="card">
         <div class="dash-card-hdr">
@@ -925,6 +927,18 @@ function renderDashboard() {
       </div>
     </div>
   `;
+
+  // ── Live NIC refresh: poll /api/cameras every 3s and update NIC table ──
+  if (_dashNicRefreshTimer) clearInterval(_dashNicRefreshTimer);
+  _dashNicRefreshTimer = setInterval(function() {
+    if (currentPage !== "dashboard") { clearInterval(_dashNicRefreshTimer); _dashNicRefreshTimer = null; return; }
+    api("/api/cameras").then(function(fresh) {
+      if (!fresh || fresh.error || currentPage !== "dashboard") return;
+      dataCache.cameras = fresh;
+      var el = document.getElementById("dash-nic-table");
+      if (el) el.innerHTML = _renderNicRows(fresh.ports || []);
+    }).catch(function() { /* network blip — skip this tick */ });
+  }, 3000);
 }
 
 function idRow(label, val) {
