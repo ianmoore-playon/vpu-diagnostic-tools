@@ -654,7 +654,8 @@ function renderDashboard() {
   const uplinkIp = ipConfigs.find((ip) => ip.interfaceAlias === uplinkName);
   const ipAddr = uplinkIp?.ipv4Address?.[0] || "—";
   const gw = uplinkIp?.ipv4DefaultGateway?.[0] || netCfg.uplinkAdapter?.gateway || "—";
-  const dns = (uplinkIp?.dnsServers || []).flat().join(", ") || "—";
+  const dnsRaw = uplinkIp?.dnsServers;
+  const dns = dnsRaw ? String(dnsRaw).split(",").map(function(s) { return s.trim(); }).filter(Boolean).join(", ") : "—";
   const ntpSrv = netCfg.ntpSource || "—";
   const internetOk = netCfg.internetReachable;
   const internetFetching = fetchingKeys.has("network");
@@ -1157,7 +1158,7 @@ function renderNetwork() {
             <td>${esc(ip.interfaceAlias)}</td>
             <td class="font-mono text-xs">${(ip.ipv4Address || []).map(esc).join(", ") || "—"}</td>
             <td class="font-mono text-xs">${(ip.ipv4DefaultGateway || []).map(esc).join(", ") || "—"}</td>
-            <td class="font-mono text-xs">${(ip.dnsServers || []).flat().map(esc).join(", ") || "—"}</td>
+            <td class="font-mono text-xs">${ip.dnsServers ? String(ip.dnsServers).split(",").map(function(s) { return esc(s.trim()); }).filter(Boolean).join(", ") : "—"}</td>
           </tr>`).join("")}
           </tbody></table>
         ` : ""}
