@@ -666,8 +666,16 @@ function renderDashboard() {
   const nicPorts = cam.ports || [];
   const volumes = diskData.logicalDisks || [];
   const cpuInfo = sysData.hardware?.processors?.[0];
-  const memCaption = perf.memory?.usedGB && perf.memory?.totalGB
-    ? `${perf.memory.usedGB} GB of ${perf.memory.totalGB} GB` : "";
+  const cpuName = (cpuInfo?.name || "")
+    .replace(/\(R\)/gi, "").replace(/\(TM\)/gi, "")
+    .replace(/\s+CPU\s*/i, " ").replace(/\s{2,}/g, " ").trim();
+  const memTotalMB = perf.memory?.totalMB;
+  const memUsedMB = perf.memory?.usedMB;
+  const memCaption = memTotalMB
+    ? (memUsedMB != null
+        ? (memUsedMB / 1024).toFixed(1) + " / " + (memTotalMB / 1024).toFixed(0) + " GB"
+        : (memTotalMB / 1024).toFixed(0) + " GB")
+    : "";
   const sysDisk = volumes.find((d) => d.deviceID === "C:") || volumes[0];
   const diskCaption = sysDisk ? `${sysDisk.freeSpaceGB} GB free of ${sysDisk.sizeGB} GB` : "";
 
@@ -800,7 +808,7 @@ function renderDashboard() {
       <div class="dash-gauges-row" id="dash-gauges">
         <div class="dash-gauge-col" data-gauge="cpu">
           ${gauge("CPU", cpu != null ? Math.round(cpu) : null, "%")}
-          ${cpuInfo ? `<div class="dash-gauge-sub">${esc(cpuInfo.name || "")}</div><div class="dash-gauge-sub">${cpuInfo.numberOfLogicalProcessors || ""} threads</div>` : ""}
+          ${cpuInfo ? `<div class="dash-gauge-sub">${esc(cpuName)}</div><div class="dash-gauge-sub">${cpuInfo.numberOfLogicalProcessors || ""} threads</div>` : ""}
         </div>
         <div class="dash-gauge-col" data-gauge="mem">
           ${gauge("Memory", mem != null ? Math.round(mem) : null, "%")}

@@ -639,10 +639,9 @@
     font-size: 0.65rem;
     color: #475569;
     text-align: center;
-    max-width: 140px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    max-width: 160px;
+    line-height: 1.3;
+    word-break: break-word;
 }
 
 /* Uptime / Internet icon tiles */
