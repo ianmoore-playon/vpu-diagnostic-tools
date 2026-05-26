@@ -708,7 +708,6 @@ function renderDashboard() {
       <div class="card command-center">
         <h3 class="card-label">COMMAND CENTER</h3>
         <div class="cc-severity cc-sev-${sevColor}">${esc(sevLabel)}</div>
-        ${vpuName ? `<div class="text-sm text-pulse-muted mb-3">${esc(vpuName)}</div>` : ""}
         <div class="baseline-bar">
           ${svgIcon("check", 14)}
           Baseline completed ${esc(timeStr)} &bull; ${subsystems.length}/${subsystems.length} panels &bull; ${totalFindings} finding(s)
@@ -784,7 +783,7 @@ function renderDashboard() {
     <div class="dash-2col">
       <div class="card">
         <h3 class="card-label">VPU IDENTITY</h3>
-        ${vpuName ? `<div class="text-lg font-bold text-white mb-3">${esc(vpuName)}</div>` : ""}
+        ${vpuName ? `<div class="text-sm text-pulse-muted mb-3">${esc(vpuName)}</div>` : ""}
         <div class="dash-kv">
           <span class="dash-kv-l">Model</span><span class="dash-kv-v">${esc(id.model || "—")}</span>
           <span class="dash-kv-l">Hostname</span><span class="dash-kv-v">${esc(hostname)}</span>
