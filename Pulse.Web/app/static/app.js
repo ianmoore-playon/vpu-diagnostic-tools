@@ -91,6 +91,8 @@ const PAGE_API = {
 
 function navigate(id) {
   if (id === currentPage) return;
+  // Abort any in-flight fault-isolator poll when navigating away.
+  if (currentPage === "fault-isolator" && _fi) _fi._aborted = true;
   currentPage = id;
   window.location.hash = id;
   updateNav();
@@ -2539,6 +2541,8 @@ function renderScoreConnect() {
 var _fi = null;
 
 function _fiReset() {
+  // Abort any in-flight poll from a previous run before replacing state.
+  if (_fi) _fi._aborted = true;
   _fi = {
     phase: 0,           // 0=PickPort 1=AwaitingNicPortTest 2=AwaitingCableTest 3=AwaitingCameraTest 4=Concluded
     conclusion: "",     // NicPort | Cable | Camera | NicHardware | LikelyCamera
@@ -2553,6 +2557,7 @@ function _fiReset() {
     phaseInstruction: "Select the NIC port showing a degraded or missing link and click Start Baseline.",
     actionLabel: "Start Baseline",
     checking: false,
+    _aborted: false,
   };
 }
 
@@ -2627,18 +2632,23 @@ function renderFaultIsolator() {
       "<tbody>" + rows + "</tbody></table></div></div>";
   }
 
+  // ── port option builder (shared by Phase 0 and Phase 1 dropdowns) ──
+  function portOption(p, i, excludeIdx) {
+    if (i === excludeIdx) return "";
+    var spd;
+    if (!p.isUp) spd = " — No link";
+    else if (p.isOcr) spd = " — 100 Mbps (OCR — expected)";
+    else if (p.linkSpeedMbps >= 1000) spd = " — 1 Gbps";
+    else if (p.linkSpeedMbps > 0) spd = " — " + p.linkSpeedMbps + " Mbps (FAULT)";
+    else spd = " — No link";
+    return '<option value="' + i + '">Port ' + (i + 1) + " (" + esc(p.name) + ")" + esc(spd) + "</option>";
+  }
+
   // ── phase HTML ───────────────────────────────────────────────
   var inner = "";
 
   if (_fi.phase === 0) {
-    var opts = ports.map(function(p, i) {
-      var spd;
-      if (!p.isUp) spd = " — No link";
-      else if (p.linkSpeedMbps >= 1000) spd = " — 1 Gbps";
-      else if (p.linkSpeedMbps > 0) spd = " — " + p.linkSpeedMbps + " Mbps (FAULT)";
-      else spd = " — No link";
-      return '<option value="' + i + '">Port ' + (i + 1) + " (" + esc(p.name) + ")" + esc(spd) + "</option>";
-    }).join("");
+    var allOpts = ports.map(function(p, i) { return portOption(p, i, -1); }).join("");
     var def = '<option value="-1">— Select —</option>';
     inner = '<div class="fi-phase-card">' +
       '<div class="fi-phase-title">' + esc(_fi.phaseTitle) + "</div>" +
@@ -2646,9 +2656,9 @@ function renderFaultIsolator() {
       resultRow() +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0">' +
         '<div><div class="text-xs text-pulse-muted mb-1">Suspect port (has the fault)</div>' +
-          '<select id="fi-suspect" class="ev-select" style="width:100%">' + def + opts + "</select></div>" +
+          '<select id="fi-suspect" class="ev-select" style="width:100%">' + def + allOpts + "</select></div>" +
         '<div><div class="text-xs text-pulse-muted mb-1">Test port (known-good)</div>' +
-          '<select id="fi-test" class="ev-select" style="width:100%">' + def + opts + "</select></div>" +
+          '<select id="fi-test" class="ev-select" style="width:100%">' + def + allOpts + "</select></div>" +
       "</div>" +
       '<div style="display:flex;gap:10px;justify-content:flex-end">' +
         '<button id="fi-action" class="btn-primary" disabled>' + esc(_fi.actionLabel) + " →</button>" +
@@ -2671,13 +2681,27 @@ function renderFaultIsolator() {
       "</div>";
 
   } else {
+    // Phases 1-3: active swap phases
     var btnLabel = _fi.checking ? ("Checking... " + (_fi.checkElapsed || 0) + "s / 20s") : _fi.actionLabel;
+    // Phase 1 (AwaitingNicPortTest): show test port dropdown so the tech can
+    // change it after a pre-check failure without starting over entirely.
+    // Mirrors WPF's IsPickingTestPort => Phase == AwaitingNicPortTest.
+    var testPortPicker = "";
+    if (_fi.phase === 1 && !_fi.checking) {
+      var testOpts = ports.map(function(p, i) { return portOption(p, i, _fi.suspectIdx); }).join("");
+      testPortPicker = '<div style="margin:12px 0">' +
+        '<div class="text-xs text-pulse-muted mb-1">Test port (known-good)</div>' +
+        '<select id="fi-test" class="ev-select" style="width:100%;max-width:320px">' + testOpts + "</select>" +
+        "</div>";
+    }
     inner = '<div class="fi-phase-card">' +
       '<div class="fi-phase-title">' + esc(_fi.phaseTitle) + "</div>" +
       '<div class="fi-phase-instr">' + esc(_fi.phaseInstruction) + "</div>" +
       resultRow() +
+      testPortPicker +
       "</div>" +
       '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">' +
+        '<button id="fi-startover" class="btn-outline btn-ol-blue">Start Over</button>' +
         (_fi.phase === 3 && !_fi.checking ? '<button id="fi-infer" class="btn-outline btn-ol-muted">No Spare CHU — Infer</button>' : "") +
         '<button id="fi-action" class="btn-primary"' + (_fi.checking ? " disabled" : "") + ">" + esc(btnLabel) + "</button>" +
       "</div>";
@@ -2696,16 +2720,42 @@ function renderFaultIsolator() {
   var inferBtn   = document.getElementById("fi-infer");
   var soBtn      = document.getElementById("fi-startover");
 
-  if (suspectSel && testSel) {
+  // Phase 0: both dropdowns visible, suspect change rebuilds test options
+  if (suspectSel && testSel && _fi.phase === 0) {
     if (_fi.suspectIdx >= 0) suspectSel.value = String(_fi.suspectIdx);
     if (_fi.testIdx    >= 0) testSel.value    = String(_fi.testIdx);
+    var rebuildTestOpts = function() {
+      var si = parseInt(suspectSel.value);
+      var curTest = parseInt(testSel.value);
+      testSel.innerHTML = '<option value="-1">— Select —</option>' +
+        ports.map(function(p, i) { return portOption(p, i, si); }).join("");
+      // Restore selection if still valid
+      if (curTest >= 0 && curTest !== si) testSel.value = String(curTest);
+      else { testSel.value = "-1"; _fi.testIdx = -1; }
+    };
     var updateBegin = function() {
       var s = parseInt(suspectSel.value), t = parseInt(testSel.value);
       if (actionBtn) actionBtn.disabled = (s < 0 || t < 0 || s === t);
     };
-    suspectSel.addEventListener("change", function() { _fi.suspectIdx = parseInt(suspectSel.value); updateBegin(); });
-    testSel.addEventListener("change",    function() { _fi.testIdx    = parseInt(testSel.value);    updateBegin(); });
+    suspectSel.addEventListener("change", function() {
+      _fi.suspectIdx = parseInt(suspectSel.value);
+      rebuildTestOpts();
+      updateBegin();
+    });
+    testSel.addEventListener("change", function() { _fi.testIdx = parseInt(testSel.value); updateBegin(); });
+    rebuildTestOpts();
     updateBegin();
+  }
+
+  // Phase 1: test port dropdown (change-only, no suspect dropdown)
+  if (testSel && _fi.phase === 1) {
+    if (_fi.testIdx >= 0) testSel.value = String(_fi.testIdx);
+    testSel.addEventListener("change", function() {
+      _fi.testIdx = parseInt(testSel.value);
+      // Re-capture pre-swap speed for the newly-selected test port
+      var tp = ports[_fi.testIdx];
+      _fi.testPreSpeedMbps = tp ? (tp.linkSpeedMbps || 0) : 0;
+    });
   }
 
   if (actionBtn && _fi.phase === 4) {
@@ -2723,11 +2773,11 @@ function renderFaultIsolator() {
     var start = Date.now();
     var deadline = start + windowSec * 1000;
     while (Date.now() < deadline) {
+      if (_fi._aborted) return peak;
       var elapsed = Math.floor((Date.now() - start) / 1000);
       _fi.checkElapsed = elapsed;
       var btn = document.getElementById("fi-action");
       if (btn) btn.textContent = "Checking... " + elapsed + "s / " + windowSec + "s";
-      delete dataCache.cameras;
       var fresh;
       try { fresh = await api("/api/cameras"); dataCache.cameras = fresh; }
       catch (e) { fresh = { ports: [] }; }
@@ -2774,6 +2824,7 @@ function renderFaultIsolator() {
       renderFaultIsolator();
 
       var spd0 = await pollPeakSpeed(si, 20);
+      if (_fi._aborted) return;
       _fi.checking = false;
       var sl0 = formatSpeed(spd0);
       var sn0 = portLabel(si);
@@ -2810,12 +2861,20 @@ function renderFaultIsolator() {
 
     // Phase 1 — NIC Port Test: poll test port after moving cable+camera
     if (_fi.phase === 1) {
+      // Re-read test port index from dropdown (may have changed via test port picker)
+      var testSel1 = document.getElementById("fi-test");
+      if (testSel1) _fi.testIdx = parseInt(testSel1.value);
+      if (_fi.testIdx < 0 || _fi.testIdx === _fi.suspectIdx) {
+        showResult("No test port selected.", "Pick a test port from the dropdown before continuing.", "fail");
+        renderFaultIsolator();
+        return;
+      }
       // Pre-check: was the test port already degraded before the swap?
       var preSpd = _fi.testPreSpeedMbps || 0;
       if (preSpd > 0 && preSpd < 1000) {
         showResult(
           "Pre-check: " + portLabel(_fi.testIdx) + " was at " + preSpd + " Mbps BEFORE the swap.",
-          portLabel(_fi.testIdx) + " was already degraded before you moved anything. Phase 2 results will be unreliable — pick a different test port or click Start Over.",
+          portLabel(_fi.testIdx) + " was already degraded before you moved anything. Phase 2 results will be unreliable — pick a different test port from the dropdown above, or click Start Over.",
           "fail"
         );
         renderFaultIsolator();
@@ -2824,6 +2883,7 @@ function renderFaultIsolator() {
       _fi.checking = true;
       renderFaultIsolator();
       var spd1 = await pollPeakSpeed(_fi.testIdx, 20);
+      if (_fi._aborted) return;
       _fi.checking = false;
       var sl1 = formatSpeed(spd1);
       var tn1 = portLabel(_fi.testIdx);
@@ -2861,6 +2921,7 @@ function renderFaultIsolator() {
       _fi.checking = true;
       renderFaultIsolator();
       var spd2 = await pollPeakSpeed(_fi.testIdx, 20);
+      if (_fi._aborted) return;
       _fi.checking = false;
       var sl2 = formatSpeed(spd2);
       var tn2 = portLabel(_fi.testIdx);
@@ -2898,6 +2959,7 @@ function renderFaultIsolator() {
       _fi.checking = true;
       renderFaultIsolator();
       var spd3 = await pollPeakSpeed(_fi.testIdx, 20);
+      if (_fi._aborted) return;
       _fi.checking = false;
       var sl3 = formatSpeed(spd3);
       var tn3 = portLabel(_fi.testIdx);
