@@ -39,10 +39,16 @@ function Test-PingTarget {
 
         for ($i = 0; $i -lt $PingCount; $i++) {
             try {
+                # Use Stopwatch for sub-ms precision on LAN pings
+                $sw = [System.Diagnostics.Stopwatch]::StartNew()
                 $reply = $pinger.Send($Target, 2000)
+                $sw.Stop()
                 if ($reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
                     $recv++
-                    $times += $reply.RoundtripTime
+                    $elapsed = $sw.Elapsed.TotalMilliseconds
+                    # Use Stopwatch time if .NET reports 0 (sub-ms LAN ping)
+                    $ms = if ($reply.RoundtripTime -gt 0) { [double]$reply.RoundtripTime } else { $elapsed }
+                    $times += [math]::Round($ms, 2)
                 }
             }
             catch { }
@@ -54,9 +60,9 @@ function Test-PingTarget {
 
         if ($times.Count -gt 0) {
             $result.reachable = $true
-            $result.minMs = [int]($times | Measure-Object -Minimum).Minimum
-            $result.avgMs = [int][math]::Round(($times | Measure-Object -Average).Average, 0)
-            $result.maxMs = [int]($times | Measure-Object -Maximum).Maximum
+            $result.minMs = [math]::Round(($times | Measure-Object -Minimum).Minimum, 2)
+            $result.avgMs = [math]::Round(($times | Measure-Object -Average).Average, 2)
+            $result.maxMs = [math]::Round(($times | Measure-Object -Maximum).Maximum, 2)
         }
 
         # Classify

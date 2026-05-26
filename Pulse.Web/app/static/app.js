@@ -1108,13 +1108,21 @@ function _renderPingCards(local) {
   el.innerHTML = _pingCardHtml(gw) + _pingCardHtml(dns);
 }
 
+function _fmtMs(v) {
+  if (v == null) return "—";
+  if (v === 0) return "< 1 ms";
+  if (v < 1) return v.toFixed(2) + " ms";
+  if (v < 10) return v.toFixed(1) + " ms";
+  return Math.round(v) + " ms";
+}
+
 function _pingCardHtml(p) {
   if (!p || !p.target) return "";
   var sc = p.status === "pass" ? "net-ping-pass" : p.status === "warn" ? "net-ping-warn" : "net-ping-fail";
   var dot = p.status === "pass" ? "#22c55e" : p.status === "warn" ? "#eab308" : "#ef4444";
-  var latency = p.avgMs != null ? p.avgMs + " ms" : "—";
+  var latency = _fmtMs(p.avgMs);
   var loss = p.lossPercent != null ? p.lossPercent + "%" : "—";
-  var range = (p.minMs != null && p.maxMs != null) ? p.minMs + " / " + p.avgMs + " / " + p.maxMs + " ms" : "—";
+  var range = (p.minMs != null && p.maxMs != null) ? _fmtMs(p.minMs).replace(" ms","") + " / " + _fmtMs(p.avgMs).replace(" ms","") + " / " + _fmtMs(p.maxMs).replace(" ms","") + " ms" : "—";
   return '<div class="net-ping-card ' + sc + '">' +
     '<div class="net-ping-header">' +
       '<span class="net-ping-dot" style="background:' + dot + '"></span>' +
