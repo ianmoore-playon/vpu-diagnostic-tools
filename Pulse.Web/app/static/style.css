@@ -1,3 +1,7 @@
+/* ── Root layout — fallback for Tailwind CDN h-full ────────── */
+html, body { height: 100%; margin: 0; }
+#app { height: 100%; }
+
 /* ── Scrollbar ──────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
