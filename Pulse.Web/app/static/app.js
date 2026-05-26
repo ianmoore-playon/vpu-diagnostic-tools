@@ -150,14 +150,15 @@ function badge(text, type) {
 
 function statusBadge(status) {
   const s = (status || "").toLowerCase();
+  const cap = (status || "").charAt(0).toUpperCase() + (status || "").slice(1);
   if (s === "running" || s === "up" || s === "pass" || s === "ok" || s === "healthy")
-    return badge(status, "pass");
+    return badge(cap, "pass");
   if (s === "stopped" || s === "down" || s === "fail" || s === "critical")
-    return badge(status, "fail");
+    return badge(cap, "fail");
   if (s === "warning" || s === "warn" || s === "degraded")
-    return badge(status, "warn");
+    return badge(cap, "warn");
   if (s === "notfound") return badge("Not Found", "muted");
-  return badge(status || "Unknown", "muted");
+  return badge(cap || "Unknown", "muted");
 }
 
 function loading() {
@@ -708,7 +709,7 @@ function renderDashboard() {
       <div class="card command-center">
         <h3 class="card-label">COMMAND CENTER</h3>
         <div class="cc-severity cc-sev-${sevColor}">${esc(sevLabel)}</div>
-        <div class="text-sm text-pulse-muted mb-3">${esc(vpuLabel)}</div>
+        <div class="text-sm text-pulse-muted mb-3">${esc(hwLabel)}</div>
         <div class="baseline-bar">
           ${svgIcon("check", 14)}
           Baseline completed ${esc(timeStr)} &bull; ${subsystems.length}/${subsystems.length} panels &bull; ${totalFindings} finding(s)
@@ -784,7 +785,7 @@ function renderDashboard() {
     <div class="dash-2col">
       <div class="card">
         <h3 class="card-label">VPU IDENTITY</h3>
-        <div class="text-lg font-bold text-white mb-3">${esc(vpuLabel)}</div>
+        <div class="text-lg font-bold text-white mb-3">${vpuName ? esc(vpuName) : esc(hwLabel)}</div>
         <div class="dash-kv">
           <span class="dash-kv-l">Model</span><span class="dash-kv-v">${esc(id.model || "—")}</span>
           <span class="dash-kv-l">Hostname</span><span class="dash-kv-v">${esc(hostname)}</span>
