@@ -126,3 +126,8 @@ if not exist "%INSTALL_DIR%\run.bat" (
 :: (launch.vbs hides the window — fine for production, bad for first-run.)
 cd /d "%INSTALL_DIR%"
 call run.bat
+
+:: If we get here, run.bat exited — keep window open so errors are visible
+echo.
+echo  [INFO] Pulse Web exited. Press any key to close.
+pause >nul
