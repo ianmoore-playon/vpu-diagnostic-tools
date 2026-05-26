@@ -1105,8 +1105,16 @@ function _prefixToMask(prefix) {
   return [24, 16, 8, 0].map(function(s) { return (mask >>> s) & 0xFF; }).join(".");
 }
 
-function _buildNetFindings(cfg, ports, domains) {
+function _buildNetFindings(cfg, ports, domains, local) {
   var findings = [];
+  var gw = (local || {}).gateway;
+  var dns = (local || {}).dns;
+  if (gw && !gw.reachable)
+    findings.push({ severity: "critical", title: "Gateway unreachable (" + gw.target + ")", body: "Cannot ping the default gateway. Check the uplink cable and switch port." });
+  else if (gw && gw.lossPercent > 0)
+    findings.push({ severity: "warning", title: "Gateway packet loss: " + gw.lossPercent + "%", body: "Intermittent connectivity to the gateway (" + gw.target + "). Check cable, switch port, or congestion." });
+  if (dns && !dns.reachable)
+    findings.push({ severity: "warning", title: "DNS server unreachable (" + dns.target + ")", body: "Cannot ping the configured DNS server. Domain resolution may fail." });
   if (!cfg.internetReachable) {
     findings.push({ severity: "critical", title: "VPU has no internet connection", body: "Check the uplink cable and the gateway’s WAN status." });
     return findings;
@@ -1165,9 +1173,10 @@ function renderNetwork() {
   const domains = data.domains?.results || [];
   const ports = data.ports?.results || [];
   const ntp = data.ntp || {};
+  const local = data.local || {};
   const ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
 
-  const findings = _buildNetFindings(cfg, ports, domains);
+  const findings = _buildNetFindings(cfg, ports, domains, local);
   const recs = _buildNetRecommendations(cfg, ports, domains);
 
   const hasCrit = findings.some(function(f) { return f.severity === "critical"; });
@@ -1239,9 +1248,11 @@ function renderNetwork() {
           return `<div class="net-rec-card ${cls}">
             <div class="net-rec-header">
               <span class="sev-chip ${sc}">${esc(r.severity.toUpperCase())}</span>
-              <span class="net-rec-title">${esc(r.title)}</span>
+              <div>
+                <div class="net-rec-title">${esc(r.title)}</div>
+                <div class="net-rec-body">${esc(r.body)}</div>
+              </div>
             </div>
-            <div class="net-rec-body">${esc(r.body)}</div>
           </div>`;
         }).join("")}
       </div>
@@ -1277,12 +1288,45 @@ function renderNetwork() {
       </div>
     </div>
 
+    <!-- Local Network Health -->
+    ${(local.gateway || local.dns) ? (function() {
+      function pingCard(p) {
+        if (!p || !p.target) return "";
+        var sc = p.status === "pass" ? "net-ping-pass" : p.status === "warn" ? "net-ping-warn" : "net-ping-fail";
+        var dot = p.status === "pass" ? "#22c55e" : p.status === "warn" ? "#eab308" : "#ef4444";
+        var latency = p.avgMs != null ? p.avgMs + " ms" : "—";
+        var loss = p.lossPercent != null ? p.lossPercent + "%" : "—";
+        var range = (p.minMs != null && p.maxMs != null) ? p.minMs + " / " + p.avgMs + " / " + p.maxMs + " ms" : "—";
+        return '<div class="net-ping-card ' + sc + '">' +
+          '<div class="net-ping-header">' +
+            '<span class="net-ping-dot" style="background:' + dot + '"></span>' +
+            '<span class="net-ping-label">' + esc(p.label) + '</span>' +
+            '<span class="net-ping-target font-mono">' + esc(p.target) + '</span>' +
+          '</div>' +
+          '<div class="net-ping-stats">' +
+            '<div class="net-ping-stat"><span class="net-ping-stat-label">Latency</span><span class="net-ping-stat-value">' + esc(latency) + '</span></div>' +
+            '<div class="net-ping-stat"><span class="net-ping-stat-label">Packet loss</span><span class="net-ping-stat-value">' + esc(loss) + '</span></div>' +
+            '<div class="net-ping-stat"><span class="net-ping-stat-label">Min / Avg / Max</span><span class="net-ping-stat-value font-mono">' + esc(range) + '</span></div>' +
+            '<div class="net-ping-stat"><span class="net-ping-stat-label">Packets</span><span class="net-ping-stat-value">' + esc(String(p.received || 0)) + ' / ' + esc(String(p.sent || 4)) + ' received</span></div>' +
+          '</div>' +
+        '</div>';
+      }
+      return '<div class="card">' +
+        sectionTitle("activity", "Local Network Health") +
+        '<div class="net-ping-grid">' +
+          pingCard(local.gateway) +
+          pingCard(local.dns) +
+        '</div>' +
+      '</div>';
+    })() : ""}
+
     <!-- Internet Adapter + IP Config | Domain Reachability -->
     <div class="net-bottom-grid">
       <div class="card">
         ${sectionTitle("globe", "Internet Adapter & IP Configuration")}
         ${uplinkAdapterRow ? `
-          <div class="font-semibold text-white mb-3">${esc(uplinkAdapterRow.name)}</div>` : `
+          <div class="font-semibold text-white mb-1">${esc(uplinkAdapterRow.name)}</div>
+          <div class="text-pulse-muted text-xs mb-3">${esc(uplinkAdapterRow.interfaceDescription || "")}</div>` : `
           <p class="text-pulse-muted text-sm mb-3">No internet-bound adapter detected.</p>`}
         <div class="kv-grid">
           ${kvRow("IP address", adapterIp)}
@@ -1290,6 +1334,7 @@ function renderNetwork() {
           ${kvRow("Assignment", dhcpLabel)}
           ${kvRow("Gateway", cfg.uplinkAdapter?.gateway || "—")}
           ${kvRow("DNS", dnsStr)}
+          ${kvRow("MAC address", uplinkAdapterRow?.macAddress || "—")}
           ${kvRowHtml("Link state", uplinkAdapterRow
             ? `<span style="color:${adapterLinkState === "Up" ? "#22c55e" : "#94a3b8"};font-weight:600">${esc(adapterLinkState)}</span>`
             : "—")}
@@ -1297,6 +1342,7 @@ function renderNetwork() {
           ${kvRowHtml("Internet", cfg.internetReachable
             ? '<span class="status-pass">Reachable</span>'
             : '<span class="status-fail">Unreachable</span>')}
+          ${kvRow("Tested host", cfg.testedHost || "—")}
           ${kvRow("NTP server", cfg.ntpSource || ntp.source || "—")}
           ${kvRowHtml("NTP status", (function() {
             var s = (ntp.status || "").toLowerCase();
