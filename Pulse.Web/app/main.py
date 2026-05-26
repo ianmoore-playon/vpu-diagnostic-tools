@@ -301,7 +301,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None)
     }
 
 
-def _build_network(config, domains, ports, ntp):
+def _build_network(config, domains, ports, ntp, local=None):
     net = {}
     if config and not config.get("error"):
         net = {
@@ -313,7 +313,8 @@ def _build_network(config, domains, ports, ntp):
             "ntpSource": config.get("ntpSource"),
         }
 
-    return {"config": net, "domains": domains, "ports": ports, "ntp": ntp}
+    return {"config": net, "domains": domains, "ports": ports, "ntp": ntp,
+            "local": local if local and not (local or {}).get("error") else None}
 
 
 # ─── Routes ───────────────────────────────────────────────────
@@ -351,6 +352,7 @@ async def api_preload():
         domains,
         ports,
         ntp,
+        local,
     ) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -366,6 +368,7 @@ async def api_preload():
         run_ps("Test-NetworkDomains.ps1"),
         run_ps("Test-NetworkPorts.ps1"),
         run_ps("Test-NtpDrift.ps1"),
+        run_ps("Test-LocalNetwork.ps1"),
     )
 
     return {
@@ -375,7 +378,7 @@ async def api_preload():
             "hardware": hardware,
             "software": installed_sw,
         },
-        "network": _build_network(network_config, domains, ports, ntp),
+        "network": _build_network(network_config, domains, ports, ntp, local),
         "cameras": {
             "ports": _enrich_ports(nics),
             "pixellotConfig": pixellot_config,
@@ -455,13 +458,109 @@ async def api_system():
 
 @app.get("/api/network")
 async def api_network():
-    config, domains, ports, ntp = await asyncio.gather(
+    config, domains, ports, ntp, local = await asyncio.gather(
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Test-NetworkDomains.ps1", timeout=20),
         run_ps("Test-NetworkPorts.ps1", timeout=45),
         run_ps("Test-NtpDrift.ps1", timeout=15),
+        run_ps("Test-LocalNetwork.ps1", timeout=20),
     )
-    return _build_network(config, domains, ports, ntp)
+    return _build_network(config, domains, ports, ntp, local)
+
+
+@app.get("/api/network/local-ping")
+async def api_local_ping(count: int = 4):
+    count = max(1, min(count, 100))  # clamp 1-100
+    timeout = max(20, count * 3)  # ~3s per ping round
+    result = await run_ps("Test-LocalNetwork.ps1", timeout=timeout,
+                          args={"Count": count})
+    return result
+
+
+@app.get("/api/network/speedtest")
+async def api_speedtest(result_id: str = ""):
+    """Fetch a Speedtest.net result by ID or URL and parse the speeds."""
+    import re
+    import urllib.request
+    import urllib.error
+
+    # Extract numeric ID from URL or bare ID
+    result_id = result_id.strip()
+    m = re.search(r"(\d{9,14})", result_id)
+    if not m:
+        return {"error": True, "message": "Invalid result ID. Paste the Speedtest result URL or numeric ID."}
+    rid = m.group(1)
+    url = f"https://www.speedtest.net/result/{rid}"
+
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120",
+            "Accept": "text/html",
+        })
+        resp = urllib.request.urlopen(req, timeout=10)
+        html = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        return {"error": True, "message": f"Speedtest returned HTTP {e.code}. Check the result ID."}
+    except Exception as e:
+        return {"error": True, "message": f"Failed to fetch result: {e}"}
+
+    # Strategy 1: Parse OG description — "Download: XX.XX Mbps Upload: XX.XX Mbps Ping: XX ms"
+    download = upload = ping = jitter = isp = server = None
+
+    og_desc = re.search(r'<meta\s+[^>]*property=["\']og:description["\'][^>]*content=["\']([^"\']+)', html, re.I)
+    if og_desc:
+        desc = og_desc.group(1)
+        dl_m = re.search(r"Download[:\s]+(\d+(?:\.\d+)?)\s*(Mbps|Kbps|Gbps)", desc, re.I)
+        ul_m = re.search(r"Upload[:\s]+(\d+(?:\.\d+)?)\s*(Mbps|Kbps|Gbps)", desc, re.I)
+        pg_m = re.search(r"Ping[:\s]+(\d+(?:\.\d+)?)\s*ms", desc, re.I)
+        if dl_m:
+            download = float(dl_m.group(1))
+            if dl_m.group(2).lower() == "kbps": download /= 1000
+            elif dl_m.group(2).lower() == "gbps": download *= 1000
+        if ul_m:
+            upload = float(ul_m.group(1))
+            if ul_m.group(2).lower() == "kbps": upload /= 1000
+            elif ul_m.group(2).lower() == "gbps": upload *= 1000
+        if pg_m:
+            ping = float(pg_m.group(1))
+
+    # Strategy 2: Look for JSON data in script tags
+    if download is None:
+        json_m = re.search(r'"download"[:\s]+(\d+(?:\.\d+)?)', html)
+        if json_m:
+            val = float(json_m.group(1))
+            download = val / 1000 if val > 10000 else val  # might be kbps
+    if upload is None:
+        json_m = re.search(r'"upload"[:\s]+(\d+(?:\.\d+)?)', html)
+        if json_m:
+            val = float(json_m.group(1))
+            upload = val / 1000 if val > 10000 else val
+    if ping is None:
+        json_m = re.search(r'"ping"[:\s]+(\d+(?:\.\d+)?)', html)
+        if json_m:
+            ping = float(json_m.group(1))
+
+    # ISP and server
+    isp_m = re.search(r'"isp_name"[:\s]*"([^"]+)"', html) or re.search(r'"isp"[:\s]*"([^"]+)"', html)
+    if isp_m: isp = isp_m.group(1)
+    srv_m = re.search(r'"server_name"[:\s]*"([^"]+)"', html) or re.search(r'"name"[:\s]*"([^"]+)"', html)
+    if srv_m: server = srv_m.group(1)
+    jitter_m = re.search(r'"jitter"[:\s]+(\d+(?:\.\d+)?)', html)
+    if jitter_m: jitter = float(jitter_m.group(1))
+
+    if download is None and upload is None:
+        return {"error": True, "message": "Could not parse speeds from the result page. The result may be private or the page format changed."}
+
+    return {
+        "resultId": rid,
+        "url": url,
+        "download": round(download, 2) if download else None,
+        "upload": round(upload, 2) if upload else None,
+        "ping": round(ping, 1) if ping else None,
+        "jitter": round(jitter, 1) if jitter else None,
+        "isp": isp,
+        "server": server,
+    }
 
 
 @app.get("/api/cameras")

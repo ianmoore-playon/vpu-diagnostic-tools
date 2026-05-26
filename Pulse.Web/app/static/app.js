@@ -1097,6 +1097,199 @@ function renderSystem() {
 // PS single-element arrays unwrap to bare values — safe first-element accessor
 function _first(v) { return Array.isArray(v) ? v[0] : v != null ? String(v) : null; }
 
+// Local ping runner — manages preset and continuous ping modes
+var _localPingState = { running: false, continuous: false, abortCtrl: null };
+
+function _renderPingCards(local) {
+  var gw = (local || {}).gateway;
+  var dns = (local || {}).dns;
+  var el = document.getElementById("net-ping-results");
+  if (!el) return;
+  el.innerHTML = _pingCardHtml(gw) + _pingCardHtml(dns);
+}
+
+function _pingCardHtml(p) {
+  if (!p || !p.target) return "";
+  var sc = p.status === "pass" ? "net-ping-pass" : p.status === "warn" ? "net-ping-warn" : "net-ping-fail";
+  var dot = p.status === "pass" ? "#22c55e" : p.status === "warn" ? "#eab308" : "#ef4444";
+  var latency = p.avgMs != null ? p.avgMs + " ms" : "—";
+  var loss = p.lossPercent != null ? p.lossPercent + "%" : "—";
+  var range = (p.minMs != null && p.maxMs != null) ? p.minMs + " / " + p.avgMs + " / " + p.maxMs + " ms" : "—";
+  return '<div class="net-ping-card ' + sc + '">' +
+    '<div class="net-ping-header">' +
+      '<span class="net-ping-dot" style="background:' + dot + '"></span>' +
+      '<span class="net-ping-label">' + esc(p.label) + '</span>' +
+      '<span class="net-ping-target font-mono">' + esc(p.target) + '</span>' +
+    '</div>' +
+    '<div class="net-ping-stats">' +
+      '<div class="net-ping-stat"><span class="net-ping-stat-label">Latency</span><span class="net-ping-stat-value">' + esc(latency) + '</span></div>' +
+      '<div class="net-ping-stat"><span class="net-ping-stat-label">Packet loss</span><span class="net-ping-stat-value">' + esc(loss) + '</span></div>' +
+      '<div class="net-ping-stat"><span class="net-ping-stat-label">Min / Avg / Max</span><span class="net-ping-stat-value font-mono">' + esc(range) + '</span></div>' +
+      '<div class="net-ping-stat"><span class="net-ping-stat-label">Packets</span><span class="net-ping-stat-value">' + esc(String(p.received || 0)) + ' / ' + esc(String(p.sent || 0)) + ' received</span></div>' +
+    '</div>' +
+  '</div>';
+}
+
+async function runLocalPing(count) {
+  if (_localPingState.running) { stopLocalPing(); return; }
+  _localPingState.running = true;
+  _localPingState.continuous = (count === 0);
+  _localPingState.abortCtrl = new AbortController();
+  _updatePingControls();
+
+  var batchSize = _localPingState.continuous ? 4 : count;
+  var accum = { gateway: null, dns: null };
+
+  try {
+    while (_localPingState.running) {
+      var resp = await fetch("/api/network/local-ping?count=" + batchSize, { signal: _localPingState.abortCtrl.signal });
+      var data = await resp.json();
+      if (!_localPingState.running) break;
+
+      if (!_localPingState.continuous) {
+        // One-shot: just show the result
+        _renderPingCards(data);
+        // Also update the cached data
+        if (dataCache.network) dataCache.network.local = data;
+        break;
+      }
+
+      // Continuous: accumulate stats
+      accum = _accumPing(accum, data);
+      _renderPingCards(accum);
+      if (dataCache.network) dataCache.network.local = accum;
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") console.error("Local ping error:", e);
+  }
+
+  _localPingState.running = false;
+  _localPingState.continuous = false;
+  _localPingState.abortCtrl = null;
+  _updatePingControls();
+}
+
+function _accumPing(prev, batch) {
+  function merge(old, cur) {
+    if (!cur || !cur.target) return old;
+    if (!old || !old.target) return cur;
+    var sent = (old.sent || 0) + (cur.sent || 0);
+    var recv = (old.received || 0) + (cur.received || 0);
+    var minMs = (old.minMs != null && cur.minMs != null) ? Math.min(old.minMs, cur.minMs) : (cur.minMs != null ? cur.minMs : old.minMs);
+    var maxMs = (old.maxMs != null && cur.maxMs != null) ? Math.max(old.maxMs, cur.maxMs) : (cur.maxMs != null ? cur.maxMs : old.maxMs);
+    // Weighted average
+    var avgMs = null;
+    if (old.avgMs != null && cur.avgMs != null && old.received && cur.received) {
+      avgMs = Math.round(((old.avgMs * old.received) + (cur.avgMs * cur.received)) / recv);
+    } else if (cur.avgMs != null) { avgMs = cur.avgMs; }
+    else { avgMs = old.avgMs; }
+    var loss = sent > 0 ? Math.round(((sent - recv) / sent) * 100) : 100;
+    var status = recv === 0 ? "fail" : loss > 0 || (avgMs != null && avgMs > 50) ? "warn" : "pass";
+    return { target: cur.target, label: cur.label, reachable: recv > 0, sent: sent, received: recv,
+             lossPercent: loss, minMs: minMs, avgMs: avgMs, maxMs: maxMs, status: status };
+  }
+  return { gateway: merge(prev.gateway, batch.gateway), dns: merge(prev.dns, batch.dns) };
+}
+
+function stopLocalPing() {
+  _localPingState.running = false;
+  _localPingState.continuous = false;
+  if (_localPingState.abortCtrl) {
+    _localPingState.abortCtrl.abort();
+    _localPingState.abortCtrl = null;
+  }
+  _updatePingControls();
+}
+
+function _updatePingControls() {
+  var bar = document.getElementById("net-ping-controls");
+  if (!bar) return;
+  var btns = bar.querySelectorAll("button");
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].disabled = _localPingState.running && !btns[i].classList.contains("net-ping-stop");
+  }
+  var stopBtn = document.getElementById("net-ping-stop-btn");
+  if (stopBtn) stopBtn.style.display = _localPingState.running ? "inline-flex" : "none";
+  var spinner = document.getElementById("net-ping-spinner");
+  if (spinner) spinner.style.display = _localPingState.running ? "inline-flex" : "none";
+}
+
+// Speed Test — fetch and display Speedtest.net result
+async function _fetchSpeedtest() {
+  var input = document.getElementById("net-speed-input");
+  var out = document.getElementById("net-speed-results");
+  var btn = document.getElementById("net-speed-fetch-btn");
+  if (!input || !out) return;
+  var val = input.value.trim();
+  if (!val) { out.innerHTML = '<p class="text-sm status-fail">Please paste a Speedtest result URL or ID.</p>'; return; }
+
+  btn.disabled = true;
+  out.innerHTML = '<p class="text-pulse-muted text-sm loading-pulse">Fetching result…</p>';
+
+  try {
+    var resp = await fetch("/api/network/speedtest?result_id=" + encodeURIComponent(val));
+    var data = await resp.json();
+    if (data.error) {
+      out.innerHTML = '<p class="text-sm status-fail">' + esc(data.message) + '</p>';
+      btn.disabled = false;
+      return;
+    }
+    _renderSpeedResult(out, data);
+  } catch (e) {
+    out.innerHTML = '<p class="text-sm status-fail">Request failed: ' + esc(String(e)) + '</p>';
+  }
+  btn.disabled = false;
+}
+
+function _renderSpeedResult(el, d) {
+  var dlOk = d.download != null && d.download >= 10;
+  var ulOk = d.upload != null && d.upload >= 10;
+  var dlCls = d.download == null ? "" : dlOk ? "net-speed-ok" : "net-speed-bad";
+  var ulCls = d.upload == null ? "" : ulOk ? "net-speed-ok" : "net-speed-bad";
+
+  var findings = [];
+  if (d.download != null && d.download < 10)
+    findings.push("Download speed (" + d.download + " Mbps) is below the 10 Mbps minimum for Pixellot streaming.");
+  if (d.upload != null && d.upload < 10)
+    findings.push("Upload speed (" + d.upload + " Mbps) is below the 10 Mbps minimum for Pixellot streaming.");
+  if (d.ping != null && d.ping > 50)
+    findings.push("Ping (" + d.ping + " ms) is elevated — may cause stream buffering.");
+
+  el.innerHTML =
+    '<div class="net-speed-cards">' +
+      '<div class="net-speed-card">' +
+        '<div class="net-speed-card-label">DOWNLOAD</div>' +
+        '<div class="net-speed-card-val ' + dlCls + '">' + (d.download != null ? d.download : "—") + '</div>' +
+        '<div class="net-speed-card-unit">Mbps</div>' +
+      '</div>' +
+      '<div class="net-speed-card">' +
+        '<div class="net-speed-card-label">UPLOAD</div>' +
+        '<div class="net-speed-card-val ' + ulCls + '">' + (d.upload != null ? d.upload : "—") + '</div>' +
+        '<div class="net-speed-card-unit">Mbps</div>' +
+      '</div>' +
+      '<div class="net-speed-card">' +
+        '<div class="net-speed-card-label">PING</div>' +
+        '<div class="net-speed-card-val">' + (d.ping != null ? d.ping : "—") + '</div>' +
+        '<div class="net-speed-card-unit">ms</div>' +
+      '</div>' +
+      (d.jitter != null ? '<div class="net-speed-card">' +
+        '<div class="net-speed-card-label">JITTER</div>' +
+        '<div class="net-speed-card-val">' + d.jitter + '</div>' +
+        '<div class="net-speed-card-unit">ms</div>' +
+      '</div>' : '') +
+    '</div>' +
+    (d.isp || d.server ? '<div class="net-speed-meta">' +
+      (d.isp ? '<span>ISP: ' + esc(d.isp) + '</span>' : '') +
+      (d.server ? '<span>Server: ' + esc(d.server) + '</span>' : '') +
+      '<a href="' + esc(d.url) + '" target="_blank" rel="noopener" class="text-xs" style="color:#3b82f6">View full result ↗</a>' +
+    '</div>' : '') +
+    (findings.length ? '<div class="net-speed-findings">' +
+      findings.map(function(f) {
+        return '<div class="net-speed-finding">' + svgIcon("triangle", 14) + ' <span>' + esc(f) + '</span></div>';
+      }).join('') +
+    '</div>' : '<div class="net-speed-ok-msg">' + svgIcon("check", 14) + ' Bandwidth meets Pixellot minimum requirements (≥ 10 Mbps up/down)</div>');
+}
+
 function _prefixToMask(prefix) {
   if (prefix == null) return null;
   var n = parseInt(prefix, 10);
@@ -1111,10 +1304,20 @@ function _buildNetFindings(cfg, ports, domains, local) {
   var dns = (local || {}).dns;
   if (gw && !gw.reachable)
     findings.push({ severity: "critical", title: "Gateway unreachable (" + gw.target + ")", body: "Cannot ping the default gateway. Check the uplink cable and switch port." });
-  else if (gw && gw.lossPercent > 0)
-    findings.push({ severity: "warning", title: "Gateway packet loss: " + gw.lossPercent + "%", body: "Intermittent connectivity to the gateway (" + gw.target + "). Check cable, switch port, or congestion." });
+  else if (gw && gw.reachable) {
+    if (gw.lossPercent > 0)
+      findings.push({ severity: "warning", title: "Gateway packet loss: " + gw.lossPercent + "%", body: "Intermittent connectivity to gateway " + gw.target + ". Check cable, switch port, or network congestion." });
+    if (gw.avgMs != null && gw.avgMs > 50)
+      findings.push({ severity: "warning", title: "High gateway latency: " + gw.avgMs + " ms", body: "Average latency to " + gw.target + " exceeds 50 ms. This may indicate network congestion or a misconfigured route." });
+  }
   if (dns && !dns.reachable)
     findings.push({ severity: "warning", title: "DNS server unreachable (" + dns.target + ")", body: "Cannot ping the configured DNS server. Domain resolution may fail." });
+  else if (dns && dns.reachable) {
+    if (dns.lossPercent > 0)
+      findings.push({ severity: "warning", title: "DNS packet loss: " + dns.lossPercent + "%", body: "Intermittent connectivity to DNS server " + dns.target + ". Resolution may be unreliable." });
+    if (dns.avgMs != null && dns.avgMs > 100)
+      findings.push({ severity: "info", title: "High DNS latency: " + dns.avgMs + " ms", body: "Average latency to " + dns.target + " exceeds 100 ms. Consider using a closer DNS server." });
+  }
   if (!cfg.internetReachable) {
     findings.push({ severity: "critical", title: "VPU has no internet connection", body: "Check the uplink cable and the gateway’s WAN status." });
     return findings;
@@ -1138,8 +1341,16 @@ function _buildNetFindings(cfg, ports, domains, local) {
   return findings;
 }
 
-function _buildNetRecommendations(cfg, ports, domains) {
+function _buildNetRecommendations(cfg, ports, domains, local) {
   var recs = [];
+  var gw = (local || {}).gateway;
+  var dns = (local || {}).dns;
+  if (gw && !gw.reachable)
+    recs.push({ severity: "critical", title: "Gateway unreachable", body: "Cannot reach the default gateway (" + gw.target + "). Verify the uplink Ethernet cable is seated, the switch port is active, and the VLAN is correct. No traffic will leave the VPU until this is resolved." });
+  else if (gw && gw.reachable && (gw.lossPercent > 0 || (gw.avgMs != null && gw.avgMs > 50)))
+    recs.push({ severity: "warning", title: "Unstable gateway connection", body: "Latency " + (gw.avgMs || "?") + " ms, loss " + (gw.lossPercent || 0) + "% to " + gw.target + ". Try a different switch port, replace the Ethernet cable, or check for broadcast storms / congestion on the venue network." });
+  if (dns && !dns.reachable)
+    recs.push({ severity: "warning", title: "DNS server unreachable", body: "Cannot reach DNS server " + dns.target + ". Domain resolution will fail. Check the DNS server address in the adapter settings or try a public DNS (8.8.8.8, 1.1.1.1)." });
   if (!cfg.internetReachable) {
     recs.push({ severity: "critical", title: "No internet ping", body: "VPU has no internet connectivity. Verify the uplink cable and the gateway’s WAN status before further triage." });
     return recs;
@@ -1177,7 +1388,7 @@ function renderNetwork() {
   const ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
 
   const findings = _buildNetFindings(cfg, ports, domains, local);
-  const recs = _buildNetRecommendations(cfg, ports, domains);
+  const recs = _buildNetRecommendations(cfg, ports, domains, local);
 
   const hasCrit = findings.some(function(f) { return f.severity === "critical"; });
   const hasWarn = findings.some(function(f) { return f.severity === "warning"; });
@@ -1261,7 +1472,7 @@ function renderNetwork() {
   $page().innerHTML = `
     ${pageHeader("Network", "Adapters, IP, NTP, and reachability — what the box can talk to right now",
       statusChip + `<button class="btn-outline btn-ol-blue" onclick="dataCache.network=null;renderNetwork()">
-        ${svgIcon("refresh", 14)} Refresh
+        ${svgIcon("activity", 14)} Run Test
       </button>`
     )}
 
@@ -1289,36 +1500,49 @@ function renderNetwork() {
     </div>
 
     <!-- Local Network Health -->
-    ${(local.gateway || local.dns) ? (function() {
-      function pingCard(p) {
-        if (!p || !p.target) return "";
-        var sc = p.status === "pass" ? "net-ping-pass" : p.status === "warn" ? "net-ping-warn" : "net-ping-fail";
-        var dot = p.status === "pass" ? "#22c55e" : p.status === "warn" ? "#eab308" : "#ef4444";
-        var latency = p.avgMs != null ? p.avgMs + " ms" : "—";
-        var loss = p.lossPercent != null ? p.lossPercent + "%" : "—";
-        var range = (p.minMs != null && p.maxMs != null) ? p.minMs + " / " + p.avgMs + " / " + p.maxMs + " ms" : "—";
-        return '<div class="net-ping-card ' + sc + '">' +
-          '<div class="net-ping-header">' +
-            '<span class="net-ping-dot" style="background:' + dot + '"></span>' +
-            '<span class="net-ping-label">' + esc(p.label) + '</span>' +
-            '<span class="net-ping-target font-mono">' + esc(p.target) + '</span>' +
-          '</div>' +
-          '<div class="net-ping-stats">' +
-            '<div class="net-ping-stat"><span class="net-ping-stat-label">Latency</span><span class="net-ping-stat-value">' + esc(latency) + '</span></div>' +
-            '<div class="net-ping-stat"><span class="net-ping-stat-label">Packet loss</span><span class="net-ping-stat-value">' + esc(loss) + '</span></div>' +
-            '<div class="net-ping-stat"><span class="net-ping-stat-label">Min / Avg / Max</span><span class="net-ping-stat-value font-mono">' + esc(range) + '</span></div>' +
-            '<div class="net-ping-stat"><span class="net-ping-stat-label">Packets</span><span class="net-ping-stat-value">' + esc(String(p.received || 0)) + ' / ' + esc(String(p.sent || 4)) + ' received</span></div>' +
-          '</div>' +
-        '</div>';
-      }
-      return '<div class="card">' +
-        sectionTitle("activity", "Local Network Health") +
-        '<div class="net-ping-grid">' +
-          pingCard(local.gateway) +
-          pingCard(local.dns) +
-        '</div>' +
-      '</div>';
-    })() : ""}
+    <div class="card">
+      <div class="net-ping-toolbar">
+        ${sectionTitle("activity", "Local Network Health")}
+        <div id="net-ping-controls" class="net-ping-btns">
+          <span id="net-ping-spinner" class="net-ping-spin" style="display:none">${svgIcon("refresh", 14)}</span>
+          <button class="net-ping-preset${!local.gateway && !local.dns ? " net-ping-preset-active" : ""}" onclick="runLocalPing(4)">4</button>
+          <button class="net-ping-preset" onclick="runLocalPing(10)">10</button>
+          <button class="net-ping-preset" onclick="runLocalPing(20)">20</button>
+          <button class="net-ping-preset" onclick="runLocalPing(50)">50</button>
+          <button class="net-ping-preset net-ping-cont" onclick="runLocalPing(0)">Continuous</button>
+          <button id="net-ping-stop-btn" class="net-ping-stop btn-outline btn-ol-blue" style="display:none" onclick="stopLocalPing()">
+            ${svgIcon("square", 12)} Stop
+          </button>
+        </div>
+      </div>
+      <div id="net-ping-results" class="net-ping-grid">
+        ${(local.gateway || local.dns)
+          ? _pingCardHtml(local.gateway) + _pingCardHtml(local.dns)
+          : '<p class="text-pulse-muted text-sm mt-2">Select a ping count above to test local network health.</p>'}
+      </div>
+    </div>
+
+    <!-- Speed Test -->
+    <div class="card">
+      <div class="net-ping-toolbar">
+        ${sectionTitle("zap", "Speed Test")}
+        <div class="net-ping-btns">
+          <a href="https://www.speedtest.net" target="_blank" rel="noopener" class="btn-outline btn-ol-blue" style="text-decoration:none">
+            ${svgIcon("globe", 14)} Open Speedtest.net
+          </a>
+        </div>
+      </div>
+      <div id="net-speed-ui">
+        <p class="text-pulse-muted text-sm mb-3">Run a test at speedtest.net, then paste the result URL below.</p>
+        <div class="net-speed-input-row">
+          <input id="net-speed-input" type="text" class="net-speed-input" placeholder="https://www.speedtest.net/result/123456789 or result ID">
+          <button id="net-speed-fetch-btn" class="btn-outline btn-ol-blue" onclick="_fetchSpeedtest()">
+            ${svgIcon("refresh", 14)} Fetch Result
+          </button>
+        </div>
+        <div id="net-speed-results"></div>
+      </div>
+    </div>
 
     <!-- Internet Adapter + IP Config | Domain Reachability -->
     <div class="net-bottom-grid">

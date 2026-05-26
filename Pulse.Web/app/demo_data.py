@@ -118,7 +118,11 @@ DEMO = {
             {"purpose": "Telemetry", "host": "telemetry.pixellot.tv", "port": 8443, "protocol": "TCP", "status": "fail", "optional": True},
         ]
     },
-    "Test-NtpDrift.ps1": lambda **kw: {"offsetSeconds": round(random.uniform(-0.3, 0.5), 3), "status": "ok"},
+    "Test-NtpDrift.ps1": lambda **kw: {"offsetSeconds": round(random.uniform(-0.3, 0.5), 3), "status": "ok", "source": "time.windows.com"},
+    "Test-LocalNetwork.ps1": lambda **kw: {
+        "gateway": {"target": "10.0.1.1", "label": "Gateway", "reachable": True, "sent": 4, "received": 4, "lossPercent": 0, "minMs": 1, "avgMs": 2, "maxMs": 4, "status": "pass"},
+        "dns": {"target": "8.8.8.8", "label": "DNS Server", "reachable": True, "sent": 4, "received": 4, "lossPercent": 0, "minMs": 8, "avgMs": 12, "maxMs": 18, "status": "pass"},
+    },
     "Get-DiskHealth.ps1": lambda **kw: {
         "logicalDisks": [
             {"deviceID": "C:", "freeSpaceGB": 176, "sizeGB": 465, "usedPercent": 62, "fileSystem": "NTFS"},

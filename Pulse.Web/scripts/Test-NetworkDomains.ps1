@@ -14,7 +14,6 @@ $ErrorActionPreference = 'Stop'
 try {
     $domains = @(
         'nfhsnetwork.com'
-        'pixellot.stream'
         'pixellot.tv'
         'software.pixellot.tv'
         'sportzcast.net'

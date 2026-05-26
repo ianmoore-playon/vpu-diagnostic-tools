@@ -48,7 +48,7 @@ try {
             ipv4DefaultGateway = if ($_.IPv4DefaultGateway) { ($_.IPv4DefaultGateway | ForEach-Object { $_.NextHop }) } else { @() }
             dnsServers         = if ($_.DNSServer) { ($_.DNSServer | ForEach-Object { $_.ServerAddresses }) | Select-Object -Unique } else { @() }
             dhcpEnabled        = if ($iface) { $iface.Dhcp -eq 'Enabled' } else { $false }
-            prefixLength       = if ($addr) { [int]$addr.PrefixLength } else { $null }
+            prefixLength       = if ($_.IPv4Address) { [int]($_.IPv4Address | Select-Object -First 1).PrefixLength } else { if ($addr) { [int]$addr.PrefixLength } else { $null } }
         }
     }
 
