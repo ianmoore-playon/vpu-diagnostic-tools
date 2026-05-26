@@ -125,7 +125,7 @@ DEMO = {
             {"purpose": "AWS S3", "host": "s3.amazonaws.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "Singular Overlay", "host": "app.singular.live", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "LogMeIn", "host": "logmein.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
-            {"purpose": "NTP", "host": "pool.ntp.org", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
+            {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
             {"purpose": "Zixi Streaming", "host": "pixellot.tv", "port": 2088, "protocol": "UDP", "status": "pass", "optional": False},
             # Optional
             {"purpose": "RTMP Ingest", "host": "live.pixellot.tv", "port": 1935, "protocol": "TCP", "status": "pass", "optional": True},
@@ -164,8 +164,35 @@ DEMO = {
     },
     "Get-ScoreConnectStatus.ps1": lambda **kw: {
         "reachable": True,
-        "status": {"version": "2.4.1", "uptime": "12d 7h 42m", "activeConnections": 3},
-        "configuration": {"port": 5000, "autoStart": True, "maxConnections": 10},
+        "baseUrl": "http://localhost:5000",
+        "status": {"version": "2.4.1", "uptime": "12d 7h 42m", "isDetected": True},
+        "configuration": {
+            "vendor": "Daktronics",
+            "sport": "Basketball",
+            "vendorConfigurationName": "RTD-1702",
+            "serialPort": "COM4",
+            "firmware": "v3.11",
+            "eventType": "Game",
+        },
+        "botStatus": {
+            "isConnected": True,
+            "scoreConnectId": "84721",
+            "botServerAddress": "botserver.sportzcast.com",
+            "lastErrorMessage": None,
+        },
+        "liveScoreData": {
+            "homeTeam": "Eagles",
+            "awayTeam": "Panthers",
+            "homeScore": 24,
+            "awayScore": 17,
+            "period": "Q3",
+            "clock": "04:22",
+        },
+        "scoreLinkConnected": True,
+        "scoreLinkPort": "COM4",
+        "scoreLinkModel": "ScoreLinkII",
+        "scoreLinkStatusLabel": "ScoreLinkII device connected (COM4)",
+        "error": None,
     },
     "Get-PixellotConfig.ps1": lambda **kw: {
         "cameras": [
