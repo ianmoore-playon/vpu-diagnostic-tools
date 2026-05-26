@@ -398,6 +398,21 @@ function openServerLog() {
   switchLogTab("server");
 }
 
+function _updateThemeToggle() {
+  const btn = document.getElementById("theme-toggle");
+  if (!btn) return;
+  const isLight = document.documentElement.classList.contains("light");
+  btn.innerHTML = isLight
+    ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg> Dark mode`
+    : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> Light mode`;
+}
+
+function toggleTheme() {
+  const isLight = document.documentElement.classList.toggle("light");
+  localStorage.setItem("pulse-theme", isLight ? "light" : "dark");
+  _updateThemeToggle();
+}
+
 // ── WebSocket ────────────────────────────────────────────────
 
 function connectWS() {
@@ -2539,232 +2554,380 @@ function renderFaultIsolator() {
   var ports = cams.ports || [];
   if (!_fi) _fiReset();
 
+  // ── helpers ──────────────────────────────────────────────────
+
   function portLabel(idx) {
     var p = ports[idx];
     if (!p) return "Port " + (idx + 1);
     return "Port " + (idx + 1) + " (" + p.name + ")";
   }
 
+  function formatSpeed(mbps) {
+    if (mbps === null || mbps === undefined) return "—";
+    if (mbps >= 1000) return "1 Gbps";
+    if (mbps > 0) return mbps + " Mbps";
+    return "No link";
+  }
+
   function stepDots() {
     var html = '<div class="fi-stepper">';
     for (var i = 0; i < 5; i++) {
       var cls = "fi-step-dot";
-      if (i < _fi.step) cls += " fi-dot-done";
-      else if (i === _fi.step) cls += " fi-dot-active";
+      if (_fi.phase > i) cls += " fi-dot-done";
+      else if (_fi.phase === i) cls += " fi-dot-active";
       html += '<div class="' + cls + '">' + (i + 1) + "</div>";
-      if (i < 4) html += '<div class="fi-step-line' + (i < _fi.step ? " fi-line-done" : "") + '"></div>';
+      if (i < 4) html += '<div class="fi-step-line' + (_fi.phase > i ? " fi-line-done" : "") + '"></div>';
     }
     return html + "</div>";
   }
 
-  function resultChip(pass, note) {
-    if (pass === null || pass === undefined) return "";
-    var cls = pass ? "fi-result-pass" : "fi-result-fail";
-    var label = pass ? "LINKED" : "NO LINK";
-    return '<div class="fi-result-row ' + cls + '">' +
-      '<span class="fi-result-chip">' + label + "</span>" +
-      '<span class="fi-result-note">' + esc(note) + "</span>" +
+  function resultRow() {
+    if (!_fi.resultHeadline) return "";
+    var sev = _fi.resultSeverity || "info";
+    var chip = sev === "pass" ? "PASS" : sev === "fail" ? "FAIL" : "INFO";
+    return '<div class="fi-result-row fi-result-' + sev + '">' +
+      '<span class="fi-result-chip">' + chip + "</span>" +
+      "<div>" +
+        '<div class="fi-result-note">' + esc(_fi.resultHeadline) + "</div>" +
+        (_fi.resultDetail ? '<div class="fi-result-detail">' + esc(_fi.resultDetail) + "</div>" : "") +
+      "</div>" +
       "</div>";
   }
 
   function historyTable() {
-    if (!_fi.phases.length) return "";
-    var rows = _fi.phases.map(function(ph) {
+    if (!_fi.history.length) return "";
+    var rows = _fi.history.map(function(h) {
+      var sc = h.severity === "Pass" ? "status-pass" : h.severity === "Fail" ? "status-fail" : "status-info";
       return "<tr>" +
-        '<td class="font-mono" style="font-size:0.7rem;color:#64748b">' + esc(ph.ts) + "</td>" +
-        "<td><span class=\"" + (ph.pass ? "status-pass" : "status-fail") + "\">" + (ph.pass ? "Pass" : "Fail") + "</span></td>" +
-        "<td>" + esc(ph.phase) + "</td>" +
-        '<td class="text-pulse-muted">' + esc(ph.note) + "</td>" +
+        '<td class="font-mono" style="font-size:0.7rem;color:#64748b">' + esc(h.ts) + "</td>" +
+        '<td><span class="' + sc + '">' + esc(h.severity) + "</span></td>" +
+        "<td><strong>" + esc(h.phase) + "</strong></td>" +
+        '<td class="text-pulse-muted" style="font-size:0.78rem">' + esc(h.config) + "</td>" +
+        '<td class="font-mono" style="font-size:0.78rem">' + esc(h.speed) + "</td>" +
+        '<td class="text-pulse-muted" style="font-size:0.78rem">' + esc(h.verdict) + "</td>" +
         "</tr>";
     }).join("");
-    return '<div class="mt-4"><div class="text-sm font-semibold mb-2 text-pulse-muted">Phase history</div>' +
-      '<table class="data-table"><thead><tr><th>Time</th><th>Result</th><th>Phase</th><th>Note</th></tr></thead>' +
-      "<tbody>" + rows + "</tbody></table></div>";
+    return '<div class="mt-4">' +
+      '<div class="text-sm font-semibold mb-2 text-pulse-muted">Phase history (newest first)</div>' +
+      '<div style="overflow-x:auto"><table class="data-table">' +
+      "<thead><tr><th>Time</th><th>Result</th><th>Phase</th><th>Configuration</th><th>Speed</th><th>Verdict</th></tr></thead>" +
+      "<tbody>" + rows + "</tbody></table></div></div>";
   }
 
-  function getVerdict() {
-    var p1 = _fi.p1pass, p2 = _fi.p2pass, infer = _fi.p2infer;
-    var suspect = portLabel(_fi.suspect);
-    if (p1 === null) return { type: "unknown", title: "No phases completed", body: "Complete Phase 1 to generate a verdict." };
-    if (p1 === true) {
-      if (p2 === true)  return { type: "cable",   title: "Cable Fault",     body: suspect + " linked with a replacement cable. The original cable to this port is faulty — replace it." };
-      if (p2 === false) return { type: "nic",     title: "NIC Port Fault",  body: "Camera is OK but " + suspect + " did not link even with a replacement cable. The NIC port is likely faulty — contact Pixellot support." };
-      return { type: "cable-nic", title: "Cable or NIC Fault", body: "Camera is working. The fault is on the suspect port hardware (" + suspect + "). Try replacing the cable first." };
-    }
-    if (infer)        return { type: "camera",  title: "Camera Fault (Inferred)", body: "Camera did not link on the known-good test port. The camera on " + suspect + " is likely faulty — replace or reseat it." };
-    if (p2 === true)  return { type: "camera",  title: "Camera Fault (Confirmed)", body: "Spare camera linked on the test port, confirming the original camera is faulty. Replace the camera on " + suspect + "." };
-    if (p2 === false) return { type: "unknown", title: "Inconclusive",       body: "Both cameras failed to link on the test port. The test port cable or port itself may have an issue — try a different test port or check the test cable." };
-    return { type: "camera-nic", title: "Camera Likely Faulty", body: "Camera did not link on the test port. Complete Phase 2 to confirm." };
-  }
-
-  // ── per-step HTML ─────────────────────────────────────────────
+  // ── phase HTML ───────────────────────────────────────────────
   var inner = "";
 
-  if (_fi.step === 0) {
+  if (_fi.phase === 0) {
     var opts = ports.map(function(p, i) {
-      var s = p.isUp ? (" · Linked " + (p.linkSpeedMbps || "?") + " Mbps") : " · Down";
-      return "<option value=\"" + i + "\">Port " + (i + 1) + " — " + p.name + esc(s) + "</option>";
+      var spd;
+      if (!p.isUp) spd = " — No link";
+      else if (p.linkSpeedMbps >= 1000) spd = " — 1 Gbps";
+      else if (p.linkSpeedMbps > 0) spd = " — " + p.linkSpeedMbps + " Mbps (FAULT)";
+      else spd = " — No link";
+      return '<option value="' + i + '">Port ' + (i + 1) + " (" + esc(p.name) + ")" + esc(spd) + "</option>";
     }).join("");
-    var def = "<option value=\"-1\">— Select —</option>";
-    inner = "<div class=\"fi-phase-card\">" +
-      "<div class=\"fi-phase-title\">Setup — Select Ports</div>" +
-      "<div class=\"fi-phase-instr mb-3\">Choose the suspect port (the one with the issue) and a known-good test port. The test port should currently be linked.</div>" +
-      "<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px\">" +
-        "<div><div class=\"text-xs text-pulse-muted mb-1\">Suspect port</div>" +
-          "<select id=\"fi-suspect\" class=\"ev-select\" style=\"width:100%\">" + def + opts + "</select></div>" +
-        "<div><div class=\"text-xs text-pulse-muted mb-1\">Test port (known-good)</div>" +
-          "<select id=\"fi-test\" class=\"ev-select\" style=\"width:100%\">" + def + opts + "</select></div>" +
+    var def = '<option value="-1">— Select —</option>';
+    inner = '<div class="fi-phase-card">' +
+      '<div class="fi-phase-title">' + esc(_fi.phaseTitle) + "</div>" +
+      '<div class="fi-phase-instr">' + esc(_fi.phaseInstruction) + "</div>" +
+      resultRow() +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0">' +
+        '<div><div class="text-xs text-pulse-muted mb-1">Suspect port (has the fault)</div>' +
+          '<select id="fi-suspect" class="ev-select" style="width:100%">' + def + opts + "</select></div>" +
+        '<div><div class="text-xs text-pulse-muted mb-1">Test port (known-good)</div>' +
+          '<select id="fi-test" class="ev-select" style="width:100%">' + def + opts + "</select></div>" +
       "</div>" +
-      "<button id=\"fi-begin\" class=\"btn-primary\" disabled>Begin Fault Isolation →</button>" +
+      '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+        '<button id="fi-action" class="btn-primary" disabled>' + esc(_fi.actionLabel) + " →</button>" +
+      "</div>" +
       "</div>";
 
-  } else if (_fi.step === 1) {
-    var sn = portLabel(_fi.suspect), tn = portLabel(_fi.test);
-    inner = "<div class=\"fi-phase-card\">" +
-      "<div class=\"fi-phase-title\">Phase 1 of 3 — Camera Swap</div>" +
-      "<div class=\"fi-phase-instr\">Move the camera cable from <strong>" + esc(sn) + "</strong> to <strong>" + esc(tn) + "</strong>. Leave both power cables connected. Click <em>Check</em> when the camera is fully seated on the test port.</div>" +
-      resultChip(_fi.p1pass, _fi.p1pass === true ? "Camera linked on test port — camera is OK." : _fi.p1pass === false ? "Camera did not link on test port — camera may be faulty." : "") +
+  } else if (_fi.phase === 4) {
+    var verdictClsMap = {
+      NicPort: "fi-verdict-nic", Cable: "fi-verdict-cable",
+      Camera: "fi-verdict-camera", LikelyCamera: "fi-verdict-camera", NicHardware: "fi-verdict-nic"
+    };
+    var vCls = verdictClsMap[_fi.conclusion] || "fi-verdict-unknown";
+    inner = '<div class="fi-verdict-card ' + esc(vCls) + '">' +
+      '<div class="fi-verdict-title">' + esc(_fi.phaseTitle) + "</div>" +
+      '<div class="fi-verdict-body">' + esc(_fi.phaseInstruction) + "</div>" +
       "</div>" +
-      "<div style=\"display:flex;gap:10px;justify-content:flex-end\">" +
-        "<button id=\"fi-check1\" class=\"btn-outline btn-ol-blue\">" + svgIcon("zap", 14) + " Check</button>" +
-        (_fi.p1pass !== null ? "<button id=\"fi-next1\" class=\"btn-primary\">Next Phase →</button>" : "") +
-      "</div>";
-
-  } else if (_fi.step === 2) {
-    var sn2 = portLabel(_fi.suspect), tn2 = portLabel(_fi.test);
-    var ph2title, ph2instr;
-    if (_fi.p1pass === true) {
-      ph2title = "Phase 2 of 3 — Cable Test";
-      ph2instr = "Camera is working — it linked on <strong>" + esc(tn2) + "</strong>. Move it back to <strong>" + esc(sn2) + "</strong> using a different cable. Click <em>Check</em> when reconnected.";
-    } else {
-      ph2title = "Phase 2 of 3 — Spare Camera Test";
-      ph2instr = "Camera did not link. Plug a known-good spare camera into <strong>" + esc(tn2) + "</strong>. Click <em>Check</em>, or click <em>No Spare</em> to infer a conclusion from Phase 1.";
-    }
-    var p2note = _fi.p2infer ? "No spare camera — inferring camera fault." :
-      _fi.p2pass === true  ? "Link confirmed." :
-      _fi.p2pass === false ? "No link detected." : "";
-    var p2chipPass = _fi.p2infer ? false : _fi.p2pass;
-    var canAdvance = _fi.p2pass !== null || _fi.p2infer;
-    inner = "<div class=\"fi-phase-card\">" +
-      "<div class=\"fi-phase-title\">" + ph2title + "</div>" +
-      "<div class=\"fi-phase-instr\">" + ph2instr + "</div>" +
-      resultChip(p2chipPass, p2note) +
-      "</div>" +
-      "<div style=\"display:flex;gap:10px;justify-content:flex-end\">" +
-        (!_fi.p2infer && _fi.p1pass === false && _fi.p2pass === null
-          ? "<button id=\"fi-infer\" class=\"btn-outline btn-ol-muted\">No Spare — Infer</button>" : "") +
-        "<button id=\"fi-check2\" class=\"btn-outline btn-ol-blue\">" + svgIcon("zap", 14) + " Check</button>" +
-        (canAdvance ? "<button id=\"fi-next2\" class=\"btn-primary\">Next →</button>" : "") +
-      "</div>";
-
-  } else if (_fi.step === 3) {
-    var sn3 = portLabel(_fi.suspect), tn3 = portLabel(_fi.test);
-    var ph3title, ph3instr;
-    if (_fi.p1pass === true && _fi.p2pass === true) {
-      ph3title = "Phase 3 of 3 — Confirm and Restore";
-      ph3instr = "Cable fault confirmed. Reconnect the original camera to <strong>" + esc(sn3) + "</strong> with the replacement cable. Click <em>Verify</em> to confirm the port is healthy, or click <em>Finish</em>.";
-    } else if (_fi.p1pass === true && _fi.p2pass === false) {
-      ph3title = "Phase 3 of 3 — NIC Port Isolation";
-      ph3instr = "Camera is OK but " + esc(sn3) + " won't link even with a new cable. Try plugging the camera into a different NIC port to confirm the NIC port is faulty. Click <em>Verify</em> or <em>Finish</em>.";
-    } else if (_fi.p2infer || _fi.p2pass === true) {
-      ph3title = "Phase 3 of 3 — Camera Replacement";
-      ph3instr = "Camera fault identified. Plug the replacement camera into <strong>" + esc(sn3) + "</strong>. Click <em>Verify</em> to confirm the port comes up, or click <em>Finish</em>.";
-    } else {
-      ph3title = "Phase 3 of 3 — Additional Diagnostics";
-      ph3instr = "Both cameras failed on the test port. Check the cable on <strong>" + esc(tn3) + "</strong> or try a different test port. Click <em>Verify</em> when ready, or <em>Finish</em> to see the verdict.";
-    }
-    inner = "<div class=\"fi-phase-card\">" +
-      "<div class=\"fi-phase-title\">" + ph3title + "</div>" +
-      "<div class=\"fi-phase-instr\">" + ph3instr + "</div>" +
-      resultChip(_fi.p3pass, _fi.p3pass === true ? "Port is healthy — repair confirmed." : _fi.p3pass === false ? "Port still not linking — further investigation may be needed." : "") +
-      "</div>" +
-      "<div style=\"display:flex;gap:10px;justify-content:flex-end\">" +
-        "<button id=\"fi-check3\" class=\"btn-outline btn-ol-blue\">" + svgIcon("zap", 14) + " Verify</button>" +
-        "<button id=\"fi-finish\" class=\"btn-primary\">Finish — View Verdict →</button>" +
+      '<div style="display:flex;gap:10px;margin-top:16px">' +
+        '<button id="fi-action" class="btn-primary">' + esc(_fi.actionLabel) + "</button>" +
+        '<button id="fi-startover" class="btn-outline btn-ol-blue">Start Over</button>' +
       "</div>";
 
   } else {
-    var v = getVerdict();
-    inner = "<div class=\"fi-verdict-card fi-verdict-" + esc(v.type) + "\">" +
-      "<div class=\"fi-verdict-title\">Verdict: " + esc(v.title) + "</div>" +
-      "<div class=\"fi-verdict-body\">" + esc(v.body) + "</div>" +
+    var btnLabel = _fi.checking ? ("Checking... " + (_fi.checkElapsed || 0) + "s / 20s") : _fi.actionLabel;
+    inner = '<div class="fi-phase-card">' +
+      '<div class="fi-phase-title">' + esc(_fi.phaseTitle) + "</div>" +
+      '<div class="fi-phase-instr">' + esc(_fi.phaseInstruction) + "</div>" +
+      resultRow() +
       "</div>" +
-      "<div style=\"display:flex;gap:10px\">" +
-        "<button id=\"fi-startover\" class=\"btn-outline btn-ol-blue\">Start Over</button>" +
-        "<button class=\"btn-outline btn-ol-blue\" onclick=\"navigate('cameras')\">← Back to Cameras</button>" +
+      '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">' +
+        (_fi.phase === 3 && !_fi.checking ? '<button id="fi-infer" class="btn-outline btn-ol-muted">No Spare CHU — Infer</button>' : "") +
+        '<button id="fi-action" class="btn-primary"' + (_fi.checking ? " disabled" : "") + ">" + esc(btnLabel) + "</button>" +
       "</div>";
   }
 
-  $page().innerHTML = pageHeader("Camera Fault Isolator",
-    "3-phase swap test to isolate a fault to NIC, cable, or camera.",
-    "<button class=\"btn-outline btn-ol-blue\" onclick=\"navigate('cameras')\">" + svgIcon("arrow-left", 14) + " Cameras</button>"
-  ) + "<div class=\"card\">" + stepDots() + inner + historyTable() + "</div>";
+  $page().innerHTML = pageHeader(
+    "Camera Fault Isolator",
+    "Process-of-elimination swap test — isolate a camera fault to NIC port, cable, or camera (CHU).",
+    '<button class="btn-outline btn-ol-blue" onclick="navigate(\'cameras\')">' + svgIcon("arrow-left", 14) + " Cameras</button>"
+  ) + '<div class="card">' + stepDots() + inner + historyTable() + "</div>";
 
-  // ── event listeners ───────────────────────────────────────────
+  // ── event wiring ─────────────────────────────────────────────
   var suspectSel = document.getElementById("fi-suspect");
   var testSel    = document.getElementById("fi-test");
-  var beginBtn   = document.getElementById("fi-begin");
+  var actionBtn  = document.getElementById("fi-action");
+  var inferBtn   = document.getElementById("fi-infer");
+  var soBtn      = document.getElementById("fi-startover");
 
-  if (suspectSel && testSel && beginBtn) {
-    if (_fi.suspect >= 0) suspectSel.value = String(_fi.suspect);
-    if (_fi.test    >= 0) testSel.value    = String(_fi.test);
-    function updateBegin() {
+  if (suspectSel && testSel) {
+    if (_fi.suspectIdx >= 0) suspectSel.value = String(_fi.suspectIdx);
+    if (_fi.testIdx    >= 0) testSel.value    = String(_fi.testIdx);
+    var updateBegin = function() {
       var s = parseInt(suspectSel.value), t = parseInt(testSel.value);
-      beginBtn.disabled = s < 0 || t < 0 || s === t;
-    }
-    suspectSel.addEventListener("change", updateBegin);
-    testSel.addEventListener("change", updateBegin);
+      if (actionBtn) actionBtn.disabled = (s < 0 || t < 0 || s === t);
+    };
+    suspectSel.addEventListener("change", function() { _fi.suspectIdx = parseInt(suspectSel.value); updateBegin(); });
+    testSel.addEventListener("change",    function() { _fi.testIdx    = parseInt(testSel.value);    updateBegin(); });
     updateBegin();
-    beginBtn.addEventListener("click", function() {
-      _fi.suspect = parseInt(suspectSel.value);
-      _fi.test    = parseInt(testSel.value);
-      _fi.step = 1;
+  }
+
+  if (actionBtn && _fi.phase === 4) {
+    actionBtn.addEventListener("click", function() { navigate("cameras"); });
+  } else if (actionBtn && !_fi.checking) {
+    actionBtn.addEventListener("click", doAction);
+  }
+  if (inferBtn) inferBtn.addEventListener("click", doInfer);
+  if (soBtn) soBtn.addEventListener("click", function() { _fiReset(); renderFaultIsolator(); });
+
+  // ── async state machine ──────────────────────────────────────
+
+  async function pollPeakSpeed(portIdx, windowSec) {
+    var peak = 0;
+    var start = Date.now();
+    var deadline = start + windowSec * 1000;
+    while (Date.now() < deadline) {
+      var elapsed = Math.floor((Date.now() - start) / 1000);
+      _fi.checkElapsed = elapsed;
+      var btn = document.getElementById("fi-action");
+      if (btn) btn.textContent = "Checking... " + elapsed + "s / " + windowSec + "s";
+      delete dataCache.cameras;
+      var fresh;
+      try { fresh = await api("/api/cameras"); dataCache.cameras = fresh; }
+      catch (e) { fresh = { ports: [] }; }
+      var portData = (fresh.ports || [])[portIdx];
+      var sample = portData ? (portData.linkSpeedMbps || 0) : 0;
+      if (sample > peak) peak = sample;
+      if (peak >= 1000) return peak;
+      await new Promise(function(r) { setTimeout(r, 1000); });
+    }
+    return peak;
+  }
+
+  function addHistory(phaseName, config, speed, verdict, severity) {
+    _fi.history.unshift({ ts: new Date().toLocaleTimeString(), phase: phaseName,
+      config: config, speed: speed, verdict: verdict, severity: severity });
+  }
+
+  function showResult(headline, detail, severity) {
+    _fi.resultHeadline = headline;
+    _fi.resultDetail   = detail;
+    _fi.resultSeverity = severity.toLowerCase();
+  }
+
+  function conclude(conclusion, title, instruction) {
+    _fi.conclusion = conclusion;
+    _fi.phase = 4;
+    _fi.phaseTitle = title;
+    _fi.phaseInstruction = instruction;
+    _fi.actionLabel = "Run Full Diagnostic";
+    _fi.checking = false;
+  }
+
+  async function doAction() {
+    if (_fi.checking) return;
+
+    // Phase 0 — Baseline: poll suspect port speed
+    if (_fi.phase === 0) {
+      var si = _fi.suspectIdx, ti = _fi.testIdx;
+      if (si < 0 || ti < 0 || si === ti) return;
+      // Capture test port pre-swap speed now for Phase 2 pre-check
+      var tPort = ports[ti];
+      _fi.testPreSpeedMbps = tPort ? (tPort.linkSpeedMbps || 0) : 0;
+      _fi.checking = true;
       renderFaultIsolator();
-    });
+
+      var spd0 = await pollPeakSpeed(si, 20);
+      _fi.checking = false;
+      var sl0 = formatSpeed(spd0);
+      var sn0 = portLabel(si);
+      var cfg0 = "Port: " + sn0 + "  |  Cable: (original)  |  Camera: (original)";
+
+      if (spd0 >= 1000) {
+        addHistory("Phase 1 - Baseline", cfg0, sl0, "Port healthy — no fault on this port.", "Pass");
+        showResult("Baseline: " + sl0 + " — Port is operating normally.",
+          "The selected port is already running at 1 Gbps. No fault detected. Select a different port or close the wizard.", "pass");
+        _fi.phaseTitle = "BASELINE — PORT HEALTHY";
+        _fi.phaseInstruction = "Select a different port or close the wizard.";
+        _fi.actionLabel = "Recheck Port";
+        renderFaultIsolator();
+        return;
+      }
+
+      var bMsg, bInstr;
+      if (spd0 <= 0) {
+        bMsg   = "No link detected";
+        bInstr = "Verify the camera is powered on and the cable is seated firmly. Then click Check Now to continue.";
+      } else {
+        bMsg   = "Link is degraded at " + sl0 + " (expected 1 Gbps)";
+        bInstr = "Move the SAME cable and camera from " + sn0 + " to the test port (" + portLabel(ti) + "). Then click Check Now.";
+      }
+      addHistory("Phase 1 - Baseline", cfg0, sl0, bMsg + " — beginning isolation.", "Fail");
+      showResult("Baseline: " + sl0 + " — " + bMsg + ".", bInstr, "fail");
+      _fi.phase = 1;
+      _fi.phaseTitle = "PHASE 2 — DOES THE FAULT FOLLOW THE NIC PORT?";
+      _fi.phaseInstruction = bInstr;
+      _fi.actionLabel = "Check Now";
+      renderFaultIsolator();
+      return;
+    }
+
+    // Phase 1 — NIC Port Test: poll test port after moving cable+camera
+    if (_fi.phase === 1) {
+      // Pre-check: was the test port already degraded before the swap?
+      var preSpd = _fi.testPreSpeedMbps || 0;
+      if (preSpd > 0 && preSpd < 1000) {
+        showResult(
+          "Pre-check: " + portLabel(_fi.testIdx) + " was at " + preSpd + " Mbps BEFORE the swap.",
+          portLabel(_fi.testIdx) + " was already degraded before you moved anything. Phase 2 results will be unreliable — pick a different test port or click Start Over.",
+          "fail"
+        );
+        renderFaultIsolator();
+        return;
+      }
+      _fi.checking = true;
+      renderFaultIsolator();
+      var spd1 = await pollPeakSpeed(_fi.testIdx, 20);
+      _fi.checking = false;
+      var sl1 = formatSpeed(spd1);
+      var tn1 = portLabel(_fi.testIdx);
+      var cfg1 = "Port: " + tn1 + " (test port)  |  Cable: (original)  |  Camera: (original)";
+
+      if (spd1 >= 1000) {
+        var v1 = "Link restored on the test port. The fault follows the original NIC port.";
+        addHistory("Phase 2 - NIC Port Test", cfg1, sl1, v1, "Pass");
+        showResult("Phase 2: " + sl1 + " — Fault follows the original NIC port.", v1, "pass");
+        conclude("NicPort", "CONCLUSION — FAULTY NIC PORT",
+          "Moving the cable and camera to " + tn1 + " restored the link. The original NIC port is the source of the fault. Escalate for NIC or motherboard repair.");
+        renderFaultIsolator();
+        return;
+      }
+      if (spd1 <= 0) {
+        addHistory("Phase 2 - NIC Port Test", cfg1, sl1, "No link detected — test inconclusive.", "Info");
+        _fi.phaseInstruction = "No link on " + tn1 + ". Verify the cable is fully seated on the test port and the camera is powered on, then click Check Now to re-measure.";
+        showResult("Phase 2: No link — test inconclusive.", _fi.phaseInstruction, "info");
+        renderFaultIsolator();
+        return;
+      }
+      var cv1 = "Fault stayed with the cable / camera. The original NIC port is not the source.";
+      addHistory("Phase 2 - NIC Port Test", cfg1, sl1, cv1, "Info");
+      showResult("Phase 2: " + sl1 + " — Fault follows cable / camera, not the NIC port.", cv1, "info");
+      _fi.phase = 2;
+      _fi.phaseTitle = "PHASE 3 — DOES THE FAULT FOLLOW THE CABLE?";
+      _fi.phaseInstruction = "Stay on " + tn1 + " with the same camera. Swap the cable for a known-good cable. Then click Check Now.";
+      _fi.actionLabel = "Check Now";
+      renderFaultIsolator();
+      return;
+    }
+
+    // Phase 2 — Cable Test: poll test port after swapping cable
+    if (_fi.phase === 2) {
+      _fi.checking = true;
+      renderFaultIsolator();
+      var spd2 = await pollPeakSpeed(_fi.testIdx, 20);
+      _fi.checking = false;
+      var sl2 = formatSpeed(spd2);
+      var tn2 = portLabel(_fi.testIdx);
+      var cfg2 = "Port: " + tn2 + "  |  Cable: (NEW — known good)  |  Camera: (original)";
+
+      if (spd2 >= 1000) {
+        var v2 = "Link restored with a known-good cable. The original cable is the source of the fault.";
+        addHistory("Phase 3 - Cable Test", cfg2, sl2, v2, "Pass");
+        showResult("Phase 3: " + sl2 + " — Fault follows the cable.", v2, "pass");
+        conclude("Cable", "CONCLUSION — FAULTY CABLE",
+          "Replacing the cable restored the link. The original cable (or its termination) is the source of the fault. Replace the cable end-to-end.");
+        renderFaultIsolator();
+        return;
+      }
+      if (spd2 <= 0) {
+        addHistory("Phase 3 - Cable Test", cfg2, sl2, "No link detected — test inconclusive.", "Info");
+        _fi.phaseInstruction = "No link on " + tn2 + ". Verify the new cable is fully seated on both ends and the camera is powered on, then click Check Now to re-measure.";
+        showResult("Phase 3: No link — test inconclusive.", _fi.phaseInstruction, "info");
+        renderFaultIsolator();
+        return;
+      }
+      var cv2 = "Fault stayed with the camera. The original cable is not the source.";
+      addHistory("Phase 3 - Cable Test", cfg2, sl2, cv2, "Info");
+      showResult("Phase 3: " + sl2 + " — Fault is not the cable.", cv2, "info");
+      _fi.phase = 3;
+      _fi.phaseTitle = "PHASE 4 — DOES THE FAULT FOLLOW THE CAMERA?";
+      _fi.phaseInstruction = "Stay on " + tn2 + " with the new cable. Connect a known-good camera, then click Check Now. If you don't have a spare camera, click \"No Spare CHU — Infer\" to conclude from what's already been ruled out.";
+      _fi.actionLabel = "Check Now";
+      renderFaultIsolator();
+      return;
+    }
+
+    // Phase 3 — Camera Test: poll test port after swapping camera
+    if (_fi.phase === 3) {
+      _fi.checking = true;
+      renderFaultIsolator();
+      var spd3 = await pollPeakSpeed(_fi.testIdx, 20);
+      _fi.checking = false;
+      var sl3 = formatSpeed(spd3);
+      var tn3 = portLabel(_fi.testIdx);
+      var cfg3 = "Port: " + tn3 + "  |  Cable: (NEW)  |  Camera: (NEW — known good)";
+
+      if (spd3 >= 1000) {
+        var v3 = "Link restored with a known-good camera. The original camera is the source of the fault.";
+        addHistory("Phase 4 - Camera Test", cfg3, sl3, v3, "Pass");
+        showResult("Phase 4: " + sl3 + " — Fault follows the camera.", v3, "pass");
+        conclude("Camera", "CONCLUSION — FAULTY CAMERA (CHU)",
+          "Replacing the camera restored the link. The original camera (CHU) is the source of the fault. Replace the camera unit.");
+        renderFaultIsolator();
+        return;
+      }
+      if (spd3 <= 0) {
+        addHistory("Phase 4 - Camera Test", cfg3, sl3, "No link detected — test inconclusive.", "Info");
+        _fi.phaseInstruction = "No link on " + tn3 + ". Verify the known-good camera is connected and powered on, then click Check Now to re-measure.";
+        showResult("Phase 4: No link — test inconclusive.", _fi.phaseInstruction, "info");
+        renderFaultIsolator();
+        return;
+      }
+      var vf3 = "Fault persists with known-good cable and camera. The fault is likely in the NIC hardware or the VPU motherboard.";
+      addHistory("Phase 4 - Camera Test", cfg3, sl3, vf3, "Fail");
+      showResult("Phase 4: " + sl3 + " — Fault persists with known-good equipment.", vf3, "fail");
+      conclude("NicHardware", "CONCLUSION — NIC / HARDWARE FAULT",
+        "Known-good cable and camera still fail on " + tn3 + ". This indicates a fault in the NIC hardware or the VPU motherboard. Run the full diagnostic from the Camera Connectivity panel and escalate to hardware repair.");
+      renderFaultIsolator();
+      return;
+    }
   }
 
-  async function doCheck(checkFn, passKey, phaseLabel) {
-    delete dataCache.cameras;
-    var fresh;
-    try { fresh = await api("/api/cameras"); dataCache.cameras = fresh; } catch(e) { fresh = { ports: [] }; }
-    var ps = fresh.ports || [];
-    var pass = checkFn(ps);
-    _fi[passKey] = pass;
-    var note = pass ? portLabel(_fi.suspect) + " linked." : "No link detected on checked port.";
-    _fi.phases.push({ ts: new Date().toLocaleTimeString(), phase: phaseLabel, pass: pass, note: note });
+  function doInfer() {
+    if (_fi.phase !== 3) return;
+    var tn = portLabel(_fi.testIdx);
+    var cfg = "Port: " + tn + "  |  Cable: (NEW)  |  Camera: (no spare available)";
+    addHistory("Phase 4 - SKIPPED", cfg, "—",
+      "No spare CHU available. Conclusion inferred from Phase 2 and Phase 3 outcomes.", "Info");
+    showResult("Phase 4 skipped — inferred conclusion.",
+      "Phase 2 cleared the original NIC port; Phase 3 cleared the original cable. The remaining suspect is the camera (CHU).", "info");
+    conclude("LikelyCamera", "LIKELY CAMERA (CHU) FAULT — UNVERIFIED",
+      "Cable replacement did not restore the link, and the original NIC port has already been cleared (Phase 2). The remaining suspect is the camera (CHU). Replace the camera unit when a known-good spare is available; if the link still fails with a known-good camera, the issue is likely NIC hardware and a full diagnostic + escalation is warranted.");
     renderFaultIsolator();
   }
-
-  var c1 = document.getElementById("fi-check1");
-  if (c1) c1.addEventListener("click", function() {
-    doCheck(function(ps) { return !!(ps[_fi.test] && ps[_fi.test].isUp); }, "p1pass", "Phase 1 — Camera Swap");
-  });
-  var n1 = document.getElementById("fi-next1");
-  if (n1) n1.addEventListener("click", function() { _fi.step = 2; renderFaultIsolator(); });
-
-  var c2 = document.getElementById("fi-check2");
-  if (c2) c2.addEventListener("click", function() {
-    var idx = _fi.p1pass === true ? _fi.suspect : _fi.test;
-    doCheck(function(ps) { return !!(ps[idx] && ps[idx].isUp); }, "p2pass", "Phase 2 — " + (_fi.p1pass === true ? "Cable Test" : "Spare Camera Test"));
-  });
-  var infer = document.getElementById("fi-infer");
-  if (infer) infer.addEventListener("click", function() {
-    _fi.p2infer = true;
-    _fi.phases.push({ ts: new Date().toLocaleTimeString(), phase: "Phase 2 — Spare Camera Test", pass: false, note: "No spare — inferred camera fault." });
-    renderFaultIsolator();
-  });
-  var n2 = document.getElementById("fi-next2");
-  if (n2) n2.addEventListener("click", function() { _fi.step = 3; renderFaultIsolator(); });
-
-  var c3 = document.getElementById("fi-check3");
-  if (c3) c3.addEventListener("click", function() {
-    doCheck(function(ps) { return !!(ps[_fi.suspect] && ps[_fi.suspect].isUp); }, "p3pass", "Phase 3 — Verify");
-  });
-  var fin = document.getElementById("fi-finish");
-  if (fin) fin.addEventListener("click", function() { _fi.step = 4; renderFaultIsolator(); });
-
-  var so = document.getElementById("fi-startover");
-  if (so) so.addEventListener("click", function() { _fiReset(); renderFaultIsolator(); });
 }
 
 // ── Settings ─────────────────────────────────────────────────
@@ -2937,6 +3100,7 @@ async function init() {
   const startPage = window.location.hash.slice(1) || "dashboard";
   navigate(startPage);
   preloadProgressive();
+  _updateThemeToggle();
   // WebSocket is started inside preloadProgressive() after dashboard loads
 }
 

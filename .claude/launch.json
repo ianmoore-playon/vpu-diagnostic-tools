@@ -4,7 +4,7 @@
     {
       "name": "pulse-web",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["app/main.py"],
+      "runtimeArgs": ["app/main.py", "--demo"],
       "port": 8765,
       "cwd": "Pulse.Web"
     }
