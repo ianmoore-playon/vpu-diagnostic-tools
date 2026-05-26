@@ -68,6 +68,7 @@ let dataCache = {};
 let logEntries = [];
 let logPaneOpen = false;
 let fetchingKeys = new Set();
+let fetchPromises = {};
 
 const PAGE_API = {
   dashboard: "/api/dashboard",
@@ -99,8 +100,15 @@ function updateNav() {
 
 function renderPage(id) {
   const fn = pageRenderers[id];
-  if (fn) fn();
-  else $page().innerHTML = `<p class="text-pulse-muted">Unknown page: ${esc(id)}</p>`;
+  if (!fn) { $page().innerHTML = `<p class="text-pulse-muted">Unknown page: ${esc(id)}</p>`; return; }
+  try {
+    fn();
+  } catch (err) {
+    console.error("Render error on", id, err);
+    $page().innerHTML = `<div class="card"><p class="text-red-400 font-bold">Render Error</p>
+      <pre class="text-xs text-pulse-muted mt-2" style="white-space:pre-wrap">${esc(err.message)}\n${esc(err.stack || "")}</pre>
+      <button class="btn-outline btn-ol-blue mt-3" onclick="refreshAll()">Retry</button></div>`;
+  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -222,18 +230,23 @@ function gauge(label, value, unit, color, opts) {
 
 // ── Data Preload (progressive) ──────────────────────────────
 
-async function fetchSection(key) {
-  if (fetchingKeys.has(key) || dataCache[key]) return dataCache[key];
+function fetchSection(key) {
+  if (dataCache[key]) return Promise.resolve(dataCache[key]);
+  // Return the existing in-flight promise so multiple callers wait for the same request
+  if (fetchPromises[key]) return fetchPromises[key];
   const url = PAGE_API[key];
-  if (!url) return null;
+  if (!url) return Promise.resolve(null);
   fetchingKeys.add(key);
-  const data = await api(url);
-  fetchingKeys.delete(key);
-  if (data && !data.error) {
-    dataCache[key] = data;
-  }
-  if (currentPage === key || currentPage === "dashboard") renderPage(currentPage);
-  return data;
+  fetchPromises[key] = api(url).then((data) => {
+    fetchingKeys.delete(key);
+    delete fetchPromises[key];
+    if (data && !data.error) {
+      dataCache[key] = data;
+    }
+    if (currentPage === key || currentPage === "dashboard") renderPage(currentPage);
+    return data;
+  });
+  return fetchPromises[key];
 }
 
 function preloadProgressive() {
@@ -269,6 +282,7 @@ function preloadProgressive() {
 async function refreshAll() {
   dataCache = {};
   fetchingKeys.clear();
+  fetchPromises = {};
   renderPage(currentPage);
   preloadProgressive();
   connectWS();
@@ -277,6 +291,7 @@ async function refreshAll() {
 async function refreshSection(key) {
   dataCache[key] = null;
   fetchingKeys.delete(key);
+  delete fetchPromises[key];
   renderPage(currentPage);
   fetchSection(key);
 }
