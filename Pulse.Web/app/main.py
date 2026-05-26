@@ -309,12 +309,17 @@ def _build_network(config, domains, ports, ntp):
 # ─── Routes ───────────────────────────────────────────────────
 
 
+_BOOT_TS = str(int(__import__("time").time()))  # changes every server restart
+
+
 @app.get("/")
 async def serve_index():
     with open(_os.path.join(_static_dir, "index.html")) as f:
         html = f.read()
-    html = html.replace("/static/style.css", f"/static/style.css?v={APP_VERSION}")
-    html = html.replace("/static/app.js", f"/static/app.js?v={APP_VERSION}")
+    # Cache-bust with version + boot timestamp so Chrome always gets fresh assets
+    bust = f"{APP_VERSION}.{_BOOT_TS}"
+    html = html.replace("/static/style.css", f"/static/style.css?v={bust}")
+    html = html.replace("/static/app.js", f"/static/app.js?v={bust}")
     return HTMLResponse(html)
 
 
