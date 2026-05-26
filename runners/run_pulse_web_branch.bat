@@ -122,12 +122,7 @@ if not exist "%INSTALL_DIR%\run.bat" (
     exit /b 1
 )
 
-:: Use hidden launcher if available, otherwise fall back to console mode
-if exist "%INSTALL_DIR%\launch.vbs" (
-    echo  [INFO] Launching Pulse Web (hidden console^)...
-    echo  [INFO] Server log available inside Pulse Web UI.
-    cscript //nologo "%INSTALL_DIR%\launch.vbs"
-) else (
-    cd /d "%INSTALL_DIR%"
-    call run.bat
-)
+:: Branch launcher always uses visible console so bootstrap progress is shown.
+:: (launch.vbs hides the window — fine for production, bad for first-run.)
+cd /d "%INSTALL_DIR%"
+call run.bat
