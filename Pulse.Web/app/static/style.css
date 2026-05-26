@@ -460,8 +460,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px 14px;
-    cursor: pointer;
+    padding: 0 14px 0 0;
     font-size: 0.7rem;
     font-weight: 600;
     color: #64748b;
@@ -471,8 +470,24 @@
     flex-shrink: 0;
     user-select: none;
 }
-.log-pane-header:hover { color: #94a3b8; }
-.log-toggle-icon { transition: transform 0.25s; }
+.log-tabs { display: flex; gap: 0; }
+.log-tab {
+    padding: 7px 14px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    color: #475569;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+}
+.log-tab:hover { color: #94a3b8; }
+.log-tab-active { color: #94a3b8; border-bottom-color: #3b82f6; }
+.log-toggle-icon { cursor: pointer; transition: transform 0.25s; padding: 6px 0; }
+.log-toggle-icon:hover { color: #94a3b8; }
 .log-pane-open .log-toggle-icon { transform: rotate(180deg); }
 .log-body {
     flex: 1;
@@ -482,6 +497,7 @@
     font-size: 0.68rem;
     line-height: 1.6;
 }
+.log-body-hidden { display: none; }
 .log-entry {
     display: flex;
     gap: 10px;
@@ -489,6 +505,7 @@
     color: #64748b;
 }
 .log-entry:hover { background: rgba(59, 130, 246, 0.04); }
+.server-log-line { white-space: pre; color: #94a3b8; }
 .log-ts { color: #475569; min-width: 80px; }
 .log-script { color: #94a3b8; min-width: 180px; font-weight: 500; }
 .log-dur { color: #64748b; min-width: 55px; text-align: right; }

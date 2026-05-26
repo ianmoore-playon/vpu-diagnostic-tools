@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from powershell import (
-    run_ps, LOG_BUFFER, DEMO_MODE,
+    run_ps, LOG_BUFFER, DEMO_MODE, _log as ps_log,
     get_running_tasks, cancel_task, cancel_all_tasks,
 )
 
@@ -54,10 +54,19 @@ def _read_version() -> str:
 APP_VERSION = _read_version()
 _static_dir = _os.path.join(_app_dir, "static")
 
+SERVER_LOG_PATH = _os.path.join(_web_root, "pulse-server.log")
+
 app = FastAPI(title="Pulse Web | VPU Diagnostics")
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 PIXELLOT_OUIS = ["00:0E:53", "00:30:53", "70:B3:D5"]
+
+
+@app.on_event("startup")
+async def _on_startup():
+    """Log startup info so the Script Log shows server activity."""
+    ps_log("server", 0, "ok", f"Pulse Web {APP_VERSION} starting")
+    ps_log("server", 0, "ok", f"Python {_sys.version.split()[0]} | port {_os.environ.get('PORT', 8765)}")
 
 
 def load_settings() -> dict:
@@ -376,6 +385,17 @@ async def api_logs(since: int = Query(default=0)):
     """Return recent script execution logs. `since` is an index offset."""
     logs = list(LOG_BUFFER)
     return {"demoMode": DEMO_MODE, "logs": logs[since:], "total": len(logs)}
+
+
+@app.get("/api/server-log")
+async def api_server_log(tail: int = Query(default=200)):
+    """Return the last N lines of the server bootstrap/startup log file."""
+    try:
+        with open(SERVER_LOG_PATH, "r", errors="replace") as f:
+            lines = f.readlines()
+        return {"lines": [l.rstrip() for l in lines[-tail:]], "total": len(lines)}
+    except FileNotFoundError:
+        return {"lines": [], "total": 0}
 
 
 @app.get("/api/scripts/running")

@@ -1,7 +1,14 @@
 @echo off
-title Pulse Web ^| VPU Diagnostics
 cd /d "%~dp0"
-color 0B
+
+:: ── Silent mode (launched from launch.vbs — no console window) ─
+set "SILENT="
+if "%~1"=="--silent" set "SILENT=1"
+
+if not defined SILENT (
+    title Pulse Web ^| VPU Diagnostics
+    color 0B
+)
 
 echo.
 echo  =========================================
@@ -29,7 +36,7 @@ if not exist "%PYDIR%" mkdir "%PYDIR%"
 curl.exe -L --progress-bar -o "%PYDIR%\%PYZIP%" "%PYURL%"
 if not exist "%PYDIR%\%PYZIP%" (
     echo  [ERROR] Download failed. Check your internet connection.
-    pause
+    if not defined SILENT pause
     exit /b 1
 )
 
@@ -37,7 +44,7 @@ echo  [SETUP] Extracting...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -Assembly System.IO.Compression.FileSystem; try { [System.IO.Compression.ZipFile]::ExtractToDirectory('%PYDIR%\%PYZIP%', '%PYDIR%') } catch { }" >nul 2>&1
 if not exist "%PYEXE%" (
     echo  [ERROR] Extraction failed -- python.exe not found after unzip.
-    pause
+    if not defined SILENT pause
     exit /b 1
 )
 del "%PYDIR%\%PYZIP%"
@@ -70,7 +77,7 @@ echo  [INFO] Checking dependencies...
 "%PYEXE%" -m pip install -r app\requirements.txt --quiet --no-warn-script-location
 if errorlevel 1 (
     echo  [ERROR] Dependency installation failed.
-    pause
+    if not defined SILENT pause
     exit /b 1
 )
 
@@ -79,11 +86,13 @@ echo  [INFO] Starting server at http://localhost:8765
 start /b "" cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:8765"
 
 :: ── Launch server ─────────────────────────────────────────────
-echo  [INFO] Press Ctrl+C to stop.
+if not defined SILENT (
+    echo  [INFO] Press Ctrl+C to stop.
+)
 echo.
 "%PYEXE%" app\main.py
 
 :: ── On exit ───────────────────────────────────────────────────
 echo.
 echo  Server stopped.
-pause
+if not defined SILENT pause

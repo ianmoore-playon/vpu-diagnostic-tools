@@ -47,11 +47,15 @@
             <div class="max-w-6xl mx-auto" id="page"></div>
         </main>
         <div id="log-pane" class="log-pane">
-            <div class="log-pane-header" onclick="toggleLogPane()">
-                <span>Script Log</span>
-                <span class="log-toggle-icon">&#9650;</span>
+            <div class="log-pane-header">
+                <div class="log-tabs">
+                    <button class="log-tab log-tab-active" data-log-tab="script" onclick="switchLogTab('script')">Script Log</button>
+                    <button class="log-tab" data-log-tab="server" onclick="switchLogTab('server')">Server Log</button>
+                </div>
+                <span class="log-toggle-icon" onclick="toggleLogPane()">&#9650;</span>
             </div>
-            <div class="log-body"></div>
+            <div class="log-body" data-log-body="script"></div>
+            <div class="log-body log-body-hidden" data-log-body="server"></div>
         </div>
     </div>
     <script src="/static/app.js"></script>

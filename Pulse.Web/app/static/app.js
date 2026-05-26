@@ -305,11 +305,13 @@ function sectionLoading(label) {
 
 // ── Logging Pane ────────────────────────────────────────────
 
+let activeLogTab = "script";
+
 function renderLogPane() {
   const pane = document.getElementById("log-pane");
   if (!pane) return;
   const entries = logEntries.slice(-200);
-  const body = pane.querySelector(".log-body");
+  const body = pane.querySelector('[data-log-body="script"]');
   if (!body) return;
   body.innerHTML = entries.map((e) => {
     const statusCls = e.status === "ok" ? "log-ok" : e.status === "timeout" ? "log-warn" : "log-err";
@@ -325,11 +327,40 @@ function renderLogPane() {
   body.scrollTop = body.scrollHeight;
 }
 
+function renderServerLog(lines) {
+  const pane = document.getElementById("log-pane");
+  if (!pane) return;
+  const body = pane.querySelector('[data-log-body="server"]');
+  if (!body) return;
+  body.innerHTML = lines.map((l) =>
+    `<div class="log-entry server-log-line">${esc(l)}</div>`
+  ).join("");
+  body.scrollTop = body.scrollHeight;
+}
+
+async function fetchServerLog() {
+  const data = await api("/api/server-log?tail=500");
+  if (data && !data.error) renderServerLog(data.lines || []);
+}
+
+function switchLogTab(tab) {
+  activeLogTab = tab;
+  const pane = document.getElementById("log-pane");
+  if (!pane) return;
+  pane.querySelectorAll(".log-tab").forEach((t) =>
+    t.classList.toggle("log-tab-active", t.dataset.logTab === tab)
+  );
+  pane.querySelectorAll("[data-log-body]").forEach((b) =>
+    b.classList.toggle("log-body-hidden", b.dataset.logBody !== tab)
+  );
+  if (tab === "server") fetchServerLog();
+}
+
 function appendLogs(newLogs) {
   if (!newLogs?.length) return;
   logEntries.push(...newLogs);
   if (logEntries.length > 500) logEntries = logEntries.slice(-500);
-  if (logPaneOpen) renderLogPane();
+  if (logPaneOpen && activeLogTab === "script") renderLogPane();
 }
 
 function toggleLogPane() {
@@ -337,7 +368,10 @@ function toggleLogPane() {
   const pane = document.getElementById("log-pane");
   if (pane) {
     pane.classList.toggle("log-pane-open", logPaneOpen);
-    if (logPaneOpen) renderLogPane();
+    if (logPaneOpen) {
+      if (activeLogTab === "script") renderLogPane();
+      else fetchServerLog();
+    }
   }
 }
 

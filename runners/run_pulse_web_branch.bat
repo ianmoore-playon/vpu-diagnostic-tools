@@ -122,5 +122,12 @@ if not exist "%INSTALL_DIR%\run.bat" (
     exit /b 1
 )
 
-cd /d "%INSTALL_DIR%"
-call run.bat
+:: Use hidden launcher if available, otherwise fall back to console mode
+if exist "%INSTALL_DIR%\launch.vbs" (
+    echo  [INFO] Launching Pulse Web (hidden console^)...
+    echo  [INFO] Server log available inside Pulse Web UI.
+    cscript //nologo "%INSTALL_DIR%\launch.vbs"
+) else (
+    cd /d "%INSTALL_DIR%"
+    call run.bat
+)
