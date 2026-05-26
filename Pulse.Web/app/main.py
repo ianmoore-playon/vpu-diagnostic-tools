@@ -233,18 +233,56 @@ def _compute_findings(identity, performance, services, nics) -> list:
     return findings
 
 
-def _enrich_ports(nics: dict) -> list:
+def _enrich_ports(nics: dict, pixellot_config: dict = None) -> list:
+    """Enrich raw NIC port data with status flags and camera detection.
+
+    OCR determination cross-references the port's ARP entries against
+    cameras.cfg roles.  A port is OCR only when a camera on it is mapped
+    to role "OCR" (or section "OCR") in the config, or its IP matches a
+    known default OCR address (169.254.16.52, 169.254.16.60).  A bare
+    speed == 100 without corroboration is treated as degraded — a faulty
+    cable can force a 1 Gbps camera to negotiate at 100 Mbps.
+    """
+    # Build a set of IPs and MACs that are known OCR from cameras.cfg.
+    ocr_ips: set[str] = {"169.254.16.52", "169.254.16.60"}
+    ocr_macs: set[str] = set()
+    cfg_cameras = []
+    if pixellot_config and not pixellot_config.get("error"):
+        cfg_cameras = pixellot_config.get("cameras", [])
+    for cam in cfg_cameras:
+        role = (cam.get("role") or cam.get("section") or "").strip()
+        if role.upper() == "OCR":
+            ip = cam.get("ip", "").strip()
+            mac = cam.get("mac", "").strip().upper().replace("-", ":")
+            if ip:
+                ocr_ips.add(ip)
+            if mac:
+                ocr_macs.add(mac)
+
     ports = []
     if nics and not nics.get("error"):
         for port in nics.get("ports", []):
             speed = port.get("linkSpeedMbps")
             is_up = port.get("status") == "Up"
-            is_ocr = speed == 100
             cameras = [
                 arp
                 for arp in port.get("arpEntries", [])
                 if _is_pixellot_mac(arp.get("mac", ""))
             ]
+            # OCR: check if any ARP entry on this port matches a known OCR
+            # IP or MAC.  This mirrors the WPF's positive-identification
+            # approach (CGI probe + cfg lookup) without requiring the HTTP
+            # probe — the cfg role is authoritative enough for the web UI.
+            is_ocr = False
+            if is_up and speed is not None and speed < 1000:
+                for arp in port.get("arpEntries", []):
+                    arp_ip = (arp.get("ip") or "").strip()
+                    arp_mac = (
+                        (arp.get("mac") or "").strip().upper().replace("-", ":")
+                    )
+                    if arp_ip in ocr_ips or arp_mac in ocr_macs:
+                        is_ocr = True
+                        break
             ports.append(
                 {
                     **port,
@@ -434,7 +472,7 @@ async def api_preload():
         },
         "network": _build_network(network_config, domains, ports, ntp, local),
         "cameras": {
-            "ports": _enrich_ports(nics),
+            "ports": _enrich_ports(nics, pixellot_config),
             "pixellotConfig": pixellot_config,
         },
         "services": services,
@@ -653,7 +691,7 @@ async def api_cameras():
         run_ps("Get-NicAdapters.ps1"),
         run_ps("Get-PixellotConfig.ps1"),
     )
-    ports = _enrich_ports(nics)
+    ports = _enrich_ports(nics, pix_config)
     return {
         "ports": ports,
         "pixellotConfig": pix_config,
@@ -800,6 +838,8 @@ async def ws_endpoint(ws: WebSocket):
         settings = load_settings()
         interval = max(settings.get("pollIntervalMs", 3000), 1000) / 1000
         last_log_idx = len(LOG_BUFFER)
+        # Cache pixellot config once — it's static and shouldn't slow the poll loop.
+        pix_cfg = await run_ps("Get-PixellotConfig.ps1", timeout=10)
 
         while True:
             perf, nics, net_health = await asyncio.gather(
@@ -815,7 +855,7 @@ async def ws_endpoint(ws: WebSocket):
                 {
                     "type": "metrics",
                     "performance": perf,
-                    "ports": _enrich_ports(nics),
+                    "ports": _enrich_ports(nics, pix_cfg),
                     "networkHealth": net_health,
                     "logs": new_logs,
                 }
