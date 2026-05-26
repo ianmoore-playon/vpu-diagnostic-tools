@@ -12,16 +12,16 @@ param()
 $ErrorActionPreference = 'Stop'
 
 try {
-    $serviceNames = @(
-        'agent'
-        'coordinator'
-        'vpu'
-        'scoreconnect'
-        'LogMeIn'
+    $serviceList = @(
+        @{ name = 'agent';        fallbackDisplay = 'Pixellot Agent' }
+        @{ name = 'coordinator';  fallbackDisplay = 'Pixellot Coordinator' }
+        @{ name = 'vpu';          fallbackDisplay = 'Pixellot VPU' }
+        @{ name = 'scoreconnect'; fallbackDisplay = 'ScoreConnect' }
+        @{ name = 'LogMeIn';      fallbackDisplay = 'LogMeIn Remote Access' }
     )
 
-    $services = foreach ($name in $serviceNames) {
-        $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
+    $services = foreach ($entry in $serviceList) {
+        $svc = Get-Service -Name $entry.name -ErrorAction SilentlyContinue
         if ($svc) {
             [ordered]@{
                 name        = $svc.Name
@@ -32,8 +32,8 @@ try {
         }
         else {
             [ordered]@{
-                name        = $name
-                displayName = $null
+                name        = $entry.name
+                displayName = $entry.fallbackDisplay
                 status      = 'NotFound'
                 startType   = $null
             }

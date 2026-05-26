@@ -603,7 +603,7 @@
 .dash-gauges-row {
     display: flex;
     justify-content: space-around;
-    align-items: flex-start;
+    align-items: center;
     gap: 1rem;
     flex-wrap: wrap;
     padding-top: 0.5rem;
@@ -614,6 +614,10 @@
     align-items: center;
     min-width: 110px;
 }
+.dash-gauge-col-center {
+    justify-content: center;
+    min-height: 7rem;
+}
 .dash-gauge-sub {
     font-size: 0.65rem;
     color: #475569;
@@ -623,20 +627,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-
-/* Temperature icon ring */
-.dash-icon-ring {
-    width: 5rem;
-    height: 5rem;
-    border-radius: 50%;
-    border: 5px solid #2a2d3e;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-}
-.dash-ring-val { font-size: 0.9rem; font-weight: 700; }
 
 /* Uptime / Internet icon tiles */
 .dash-icon-tile {
@@ -669,6 +659,7 @@
 .dash-nic-port { font-size: 0.75rem; font-weight: 600; color: #e2e8f0; }
 .dash-nic-name { font-size: 0.75rem; font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dash-nic-speed { font-size: 0.75rem; font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; color: #64748b; text-align: right; }
+.dash-nic-badges { display: flex; gap: 4px; justify-content: flex-end; }
 
 /* Outlined badges for NIC status */
 .badge-ol {

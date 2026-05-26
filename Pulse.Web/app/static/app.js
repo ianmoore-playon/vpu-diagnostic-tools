@@ -188,15 +188,20 @@ function usageBar(pct, color) {
 
 // ── Circular Gauge ───────────────────────────────────────────
 
-function gauge(label, value, unit, color) {
-  const pct = Math.min(Math.max(value || 0, 0), 100);
+function gauge(label, value, unit, color, opts) {
+  const o = opts || {};
+  const maxVal = o.max || 100;
+  const pct = Math.min(Math.max((value || 0) / maxVal * 100, 0), 100);
   const r = 40;
   const circ = 2 * Math.PI * r;
   const offset = circ * (1 - pct / 100);
+  const warnAt = o.warn || 75;
+  const critAt = o.crit || 90;
+  const raw = value || 0;
   const c =
-    pct > 90
+    raw > critAt
       ? "#ef4444"
-      : pct > 75
+      : raw > warnAt
         ? "#eab308"
         : color || "#3b82f6";
   return `<div class="flex flex-col items-center gap-2">
@@ -373,6 +378,8 @@ function updateLiveMetrics(msg) {
   _updateGaugeLive("cpu", cpu);
   _updateGaugeLive("mem", mem);
   _updateGaugeLive("disk", disk);
+  const liveT = perf.temperature?.celsius;
+  _updateGaugeLive("temp", liveT, { max: 100, warn: 65, crit: 85, unit: "°C" });
 
   // Auto-refresh findings when live metrics diverge from cached snapshot
   const dash = dataCache["dashboard"];
@@ -389,17 +396,22 @@ function updateLiveMetrics(msg) {
   }
 }
 
-function _updateGaugeLive(name, val) {
+function _updateGaugeLive(name, val, opts) {
   const col = document.querySelector(`[data-gauge="${name}"]`);
   if (!col) return;
+  const o = opts || {};
+  const maxVal = o.max || 100;
+  const warnAt = o.warn || 75;
+  const critAt = o.crit || 90;
   const ring = col.querySelector(".gauge-ring");
   const valEl = col.querySelector(".gauge-val");
   if (ring) {
-    const pct = Math.min(Math.max(val || 0, 0), 100);
+    const pct = Math.min(Math.max((val || 0) / maxVal * 100, 0), 100);
     const r = 40;
     const circ = 2 * Math.PI * r;
     ring.setAttribute("stroke-dashoffset", String(circ * (1 - pct / 100)));
-    ring.setAttribute("stroke", pct > 90 ? "#ef4444" : pct > 75 ? "#eab308" : "#3b82f6");
+    const raw = val || 0;
+    ring.setAttribute("stroke", raw > critAt ? "#ef4444" : raw > warnAt ? "#eab308" : "#3b82f6");
   }
   if (valEl) valEl.textContent = val != null ? Math.round(val) : "--";
 }
@@ -448,9 +460,6 @@ function _subsystemHealth(findings) {
     { id: "events", label: "Event Viewer", icon: "triangle",
       health: "Healthy",
       desc: "Recent OS errors from VPU providers." },
-    { id: "reports", label: "Reports", icon: "file",
-      health: "Evidence ready",
-      desc: "View and export diagnostic reports." },
   ];
 }
 
@@ -475,6 +484,19 @@ function _metricColor(val) {
 function _renderNicRows(ports) {
   const rows = [];
   const count = Math.max(4, ports.length);
+  // Assign camera numbers to non-OCR ports with detected cameras
+  let camNum = 0;
+  const roles = [];
+  for (let i = 0; i < count; i++) {
+    if (i < ports.length) {
+      const p = ports[i];
+      if (p.isOcr) roles.push("OCR");
+      else if (p.isUp && (p.camerasDetected || []).length > 0) roles.push("Camera " + (++camNum));
+      else roles.push(null);
+    } else {
+      roles.push(null);
+    }
+  }
   for (let i = 0; i < count; i++) {
     if (i < ports.length) {
       const p = ports[i];
@@ -483,21 +505,22 @@ function _renderNicRows(ports) {
         : "—";
       let status, cls;
       if (!p.isUp) { status = "Down"; cls = "muted"; }
-      else if (p.isOcr) { status = "OCR"; cls = "info"; }
       else if (p.isDegraded) { status = "Error"; cls = "warn"; }
       else { status = "Linked"; cls = "pass"; }
+      const role = roles[i];
+      const roleBadge = role ? ` <span class="badge-ol badge-ol-info">${esc(role)}</span>` : "";
       rows.push(`<div class="dash-nic-row">
         <span class="dash-nic-port">Port ${i + 1}</span>
         <span class="dash-nic-name">${esc(p.name)}</span>
         <span class="dash-nic-speed">${p.isUp ? esc(speed) : "—"}</span>
-        <span class="badge-ol badge-ol-${cls}">${esc(status)}</span>
+        <span class="dash-nic-badges"><span class="badge-ol badge-ol-${cls}">${esc(status)}</span>${roleBadge}</span>
       </div>`);
     } else {
       rows.push(`<div class="dash-nic-row">
         <span class="dash-nic-port">Port ${i + 1}</span>
         <span class="dash-nic-name" style="color:#475569">Not detected</span>
         <span class="dash-nic-speed">—</span>
-        <span class="badge-ol badge-ol-muted">—</span>
+        <span class="dash-nic-badges"><span class="badge-ol badge-ol-muted">—</span></span>
       </div>`);
     }
   }
@@ -724,22 +747,17 @@ function renderDashboard() {
           ${gauge("System Disk", disk != null ? Math.round(disk) : null, "%")}
           <div class="dash-gauge-sub">${esc(diskCaption)}</div>
         </div>
-        ${temp != null ? `
-        <div class="dash-gauge-col">
-          <div class="dash-icon-ring" style="--ring-color:${temp >= 78 ? "#ef4444" : temp >= 65 ? "#eab308" : "#3b82f6"}">
-            <span style="color:var(--ring-color)">${svgIcon("thermometer", 18)}</span>
-            <span class="dash-ring-val" style="color:var(--ring-color)">${Math.round(temp)}°C</span>
-          </div>
-          <span class="text-xs text-pulse-muted font-medium mt-2">Temperature</span>
-        </div>` : ""}
-        <div class="dash-gauge-col">
+        <div class="dash-gauge-col" data-gauge="temp">
+          ${gauge("Temperature", temp != null ? Math.round(temp) : null, "°C", "#3b82f6", { max: 100, warn: 65, crit: 85 })}
+        </div>
+        <div class="dash-gauge-col dash-gauge-col-center">
           <div class="dash-icon-tile">
             <span class="text-blue-400">${svgIcon("clock", 26)}</span>
             <span class="dash-tile-val">${esc(id.uptime || "—")}</span>
           </div>
           <span class="text-xs text-pulse-muted font-medium">Uptime</span>
         </div>
-        <div class="dash-gauge-col">
+        <div class="dash-gauge-col dash-gauge-col-center">
           <div class="dash-icon-tile">
             <span style="color:${internetColor}">${svgIcon("globe", 26)}</span>
             <span class="dash-tile-val" style="color:${internetColor}">${internetLabel === "Connected" ? "Connected" : internetLabel === "Offline" ? "No connection" : internetLabel}</span>
@@ -754,7 +772,7 @@ function renderDashboard() {
       <div class="card">
         <div class="dash-card-hdr">
           <span class="dash-hdr-icon">${svgIcon("link", 16)}</span>
-          <h3 class="card-label mb-0">NIC PORTS</h3>
+          <h3 class="card-label mb-0">NETWORK INTERFACE CARD (NIC) CONNECTIONS</h3>
         </div>
         <div class="dash-nic-table">${_renderNicRows(nicPorts)}</div>
       </div>
