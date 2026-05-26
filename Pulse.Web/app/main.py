@@ -260,6 +260,56 @@ def _enrich_ports(nics: dict) -> list:
     return ports
 
 
+def _compute_camera_findings(ports: list) -> list:
+    findings = []
+    for port in ports:
+        name = port.get("name", "Port")
+        is_up = port.get("isUp")
+        cams = port.get("camerasDetected") or []
+
+        if not is_up and cams:
+            findings.append(
+                {
+                    "severity": "critical",
+                    "title": f"{name} down — {len(cams)} camera(s) last detected",
+                    "body": "Port is down but Pixellot cameras were recently in the ARP table. Check the cable or use Fault Isolator.",
+                }
+            )
+
+        if is_up and port.get("isDegraded"):
+            speed = port.get("linkSpeedMbps")
+            findings.append(
+                {
+                    "severity": "warning",
+                    "title": f"{name} running at {speed} Mbps — expected 1 Gbps",
+                    "body": "Degraded link speed usually means a bad cable, faulty connector, or wrong duplex negotiation.",
+                }
+            )
+
+        if is_up and port.get("fullDuplex") is False:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "title": f"{name} in half-duplex mode",
+                    "body": "Half-duplex causes collisions and packet loss at camera scale. Check cable quality.",
+                }
+            )
+
+        rx_errs = (port.get("rxPacketErrors") or 0) + (port.get("rxDiscards") or 0)
+        tx_errs = (port.get("txPacketErrors") or 0) + (port.get("txDiscards") or 0)
+        total_errs = rx_errs + tx_errs
+        if is_up and total_errs > 0:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "title": f"{name} — {total_errs} packet error(s)",
+                    "body": f"RX {rx_errs}, TX {tx_errs}. May indicate a bad cable or NIC driver issue.",
+                }
+            )
+
+    return findings
+
+
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
@@ -389,7 +439,13 @@ async def api_preload():
         "disk-health": disk_health,
         "events": event_logs,
         "scoreconnect": scoreconnect,
-        "settings": load_settings(),
+        "settings": {
+            **load_settings(),
+            "_paths": {
+                "settingsFile": SETTINGS_PATH,
+                "serverLog": SERVER_LOG_PATH,
+            },
+        },
         "_version": APP_VERSION,
         "_logs": list(LOG_BUFFER),
     }
@@ -594,7 +650,12 @@ async def api_cameras():
         run_ps("Get-NicAdapters.ps1"),
         run_ps("Get-PixellotConfig.ps1"),
     )
-    return {"ports": _enrich_ports(nics), "pixellotConfig": pix_config}
+    ports = _enrich_ports(nics)
+    return {
+        "ports": ports,
+        "pixellotConfig": pix_config,
+        "findings": _compute_camera_findings(ports),
+    }
 
 
 @app.get("/api/services")
@@ -630,7 +691,13 @@ async def api_scoreconnect():
 
 @app.get("/api/settings")
 async def api_get_settings():
-    return load_settings()
+    return {
+        **load_settings(),
+        "_paths": {
+            "settingsFile": SETTINGS_PATH,
+            "serverLog": SERVER_LOG_PATH,
+        },
+    }
 
 
 @app.post("/api/settings")
