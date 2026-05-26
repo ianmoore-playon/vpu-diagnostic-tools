@@ -654,7 +654,7 @@ function renderDashboard() {
   const uplinkIp = ipConfigs.find((ip) => ip.interfaceAlias === uplinkName);
   const ipAddr = uplinkIp?.ipv4Address?.[0] || "—";
   const gw = uplinkIp?.ipv4DefaultGateway?.[0] || netCfg.uplinkAdapter?.gateway || "—";
-  const dns = uplinkIp?.dnsServers?.join(", ") || "—";
+  const dns = (uplinkIp?.dnsServers || []).flat().join(", ") || "—";
   const ntpSrv = netCfg.ntpSource || "—";
   const internetOk = netCfg.internetReachable;
   const internetFetching = fetchingKeys.has("network");
