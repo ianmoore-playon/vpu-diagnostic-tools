@@ -11,7 +11,7 @@ import asyncio
 import json
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from powershell import (
@@ -290,7 +290,11 @@ def _build_network(config, domains, ports, ntp):
 
 @app.get("/")
 async def serve_index():
-    return FileResponse(_os.path.join(_static_dir, "index.html"))
+    with open(_os.path.join(_static_dir, "index.html")) as f:
+        html = f.read()
+    html = html.replace("/static/style.css", f"/static/style.css?v={APP_VERSION}")
+    html = html.replace("/static/app.js", f"/static/app.js?v={APP_VERSION}")
+    return HTMLResponse(html)
 
 
 @app.get("/api/preload")
