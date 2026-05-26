@@ -17,7 +17,7 @@ try {
         'pixellot.tv'
         'software.pixellot.tv'
         'sportzcast.net'
-        'app.singular.live'
+        'service.singular.live'
         'logmein.com'
         's3.amazonaws.com'
         'leaf-uploads.s3.amazonaws.com'

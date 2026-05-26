@@ -18,7 +18,7 @@ try {
         @{ protocol = 'TCP'; port = 443;  host = 'nfhsnetwork.com';      purpose = 'NFHS Network';      optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'software.pixellot.tv'; purpose = 'Software Updates';  optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 's3.amazonaws.com';     purpose = 'AWS S3';            optional = $false }
-        @{ protocol = 'TCP'; port = 443;  host = 'app.singular.live';    purpose = 'Singular Overlay';  optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 'service.singular.live'; purpose = 'Singular Overlay';  optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'logmein.com';          purpose = 'LogMeIn';           optional = $false }
         @{ protocol = 'UDP'; port = 123;  host = 'prod-echo.pixellot.tv'; purpose = 'NTP';               optional = $false }
         @{ protocol = 'UDP'; port = 2088; host = 'pixellot.tv';          purpose = 'Zixi Streaming';    optional = $false }
