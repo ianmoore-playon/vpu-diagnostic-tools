@@ -237,7 +237,19 @@ async function fetchSection(key) {
 }
 
 function preloadProgressive() {
-  Object.keys(PAGE_API).forEach((key) => fetchSection(key));
+  // Phase 1: Dashboard first (fast scripts — identity, performance, services, nics)
+  fetchSection("dashboard").then(() => {
+    // Phase 2: After dashboard renders, start WebSocket for live metrics
+    connectWS();
+    // Phase 3: Background-load remaining pages with small delays
+    // to avoid saturating VPU CPU with simultaneous PS processes
+    const deferred = Object.keys(PAGE_API).filter((k) => k !== "dashboard");
+    let delay = 500;
+    deferred.forEach((key) => {
+      setTimeout(() => fetchSection(key), delay);
+      delay += 300;
+    });
+  });
   api("/api/version").then((data) => {
     if (data?.version) {
       const footer = document.querySelector(".sidebar-footer");
@@ -259,6 +271,7 @@ async function refreshAll() {
   fetchingKeys.clear();
   renderPage(currentPage);
   preloadProgressive();
+  connectWS();
 }
 
 async function refreshSection(key) {
@@ -2008,7 +2021,7 @@ async function init() {
   const startPage = window.location.hash.slice(1) || "dashboard";
   navigate(startPage);
   preloadProgressive();
-  connectWS();
+  // WebSocket is started inside preloadProgressive() after dashboard loads
 }
 
 document.addEventListener("DOMContentLoaded", init);

@@ -52,25 +52,20 @@ try {
         }
     }
 
-    # Internet reachability
+    # Internet reachability — use .NET Ping with explicit 2s timeout
+    # (Test-Connection can hang for 10+ seconds on VPU hardware)
     $internetReachable = $false
     $reachHost = $null
-    try {
-        $ping = Test-Connection -ComputerName '8.8.8.8' -Count 1 -Quiet -ErrorAction SilentlyContinue
-        if ($ping) {
-            $internetReachable = $true
-            $reachHost = '8.8.8.8'
-        }
-    }
-    catch { }
-
-    if (-not $internetReachable) {
+    foreach ($target in @('8.8.8.8', '1.1.1.1')) {
+        if ($internetReachable) { break }
         try {
-            $ping = Test-Connection -ComputerName '1.1.1.1' -Count 1 -Quiet -ErrorAction SilentlyContinue
-            if ($ping) {
+            $pinger = New-Object System.Net.NetworkInformation.Ping
+            $reply = $pinger.Send($target, 2000)
+            if ($reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
                 $internetReachable = $true
-                $reachHost = '1.1.1.1'
+                $reachHost = $target
             }
+            $pinger.Dispose()
         }
         catch { }
     }

@@ -19,8 +19,19 @@ try {
     $status = 'fail'
 
     try {
-        $rawOutput = & w32tm /stripchart /computer:$source /samples:1 /dataonly 2>&1 | Out-String
-        $rawOutput = $rawOutput.Trim()
+        # Run w32tm with a 5-second timeout to avoid hanging on unreachable NTP
+        $job = Start-Job -ScriptBlock {
+            & w32tm /stripchart /computer:$using:source /samples:1 /dataonly 2>&1 | Out-String
+        }
+        $completed = Wait-Job -Job $job -Timeout 5
+        if ($completed) {
+            $rawOutput = (Receive-Job -Job $job).Trim()
+        }
+        else {
+            Stop-Job -Job $job
+            $rawOutput = 'Timeout waiting for NTP response'
+        }
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
 
         # Parse offset from output line like: "12:34:56, +00.1234567s"
         # or "12:34:56, -02.5000000s"

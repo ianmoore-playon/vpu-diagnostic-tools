@@ -408,10 +408,10 @@ async def api_system():
 @app.get("/api/network")
 async def api_network():
     config, domains, ports, ntp = await asyncio.gather(
-        run_ps("Get-NetworkConfig.ps1"),
-        run_ps("Test-NetworkDomains.ps1"),
-        run_ps("Test-NetworkPorts.ps1"),
-        run_ps("Test-NtpDrift.ps1"),
+        run_ps("Get-NetworkConfig.ps1", timeout=15),
+        run_ps("Test-NetworkDomains.ps1", timeout=20),
+        run_ps("Test-NetworkPorts.ps1", timeout=45),
+        run_ps("Test-NtpDrift.ps1", timeout=15),
     )
     return _build_network(config, domains, ports, ntp)
 

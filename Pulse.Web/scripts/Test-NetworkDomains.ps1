@@ -31,7 +31,8 @@ try {
         $status = 'fail'
 
         try {
-            $dns = Resolve-DnsName -Name $domain -Type A -ErrorAction Stop
+            # DnsOnly avoids slow LLMNR/NetBIOS fallback; 3s timeout via wrapper
+            $dns = Resolve-DnsName -Name $domain -Type A -DnsOnly -ErrorAction Stop
             $ipRecord = $dns | Where-Object { $_.QueryType -eq 'A' } | Select-Object -First 1
             if ($ipRecord) {
                 $resolvedTo = $ipRecord.IPAddress
