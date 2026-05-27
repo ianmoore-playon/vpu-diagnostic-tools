@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pulse Web | VPU Diagnostics</title>
-    <link rel="icon" type="image/png" href="/static/img/pulse-full.png">
-    <link rel="apple-touch-icon" href="/static/img/pulse-full.png">
+    <link rel="icon" type="image/png" href="/static/img/pulse-full-transparent.png">
+    <link rel="apple-touch-icon" href="/static/img/pulse-full-transparent.png">
     <link rel="stylesheet" href="/static/tailwind-min.css">
     <link rel="stylesheet" href="/static/style.css">
     <script>
@@ -22,9 +22,11 @@
     </script>
 </head>
 <body class="h-full bg-pulse-bg text-pulse-text overflow-hidden">
-    <!-- Splash screen — visible until app.js init() runs and hides it -->
+    <!-- Splash screen — visible until ALL preload sections finish loading.
+         App.js calls hideSplash() once preloadProgressive() resolves. -->
     <div id="splash" class="splash">
-        <img src="/static/img/pulse-full.png" alt="Pulse" class="splash-logo">
+        <img src="/static/img/pulse-full-transparent.png" alt="Pulse" class="splash-logo">
+        <div class="splash-status" id="splash-status">Loading diagnostics…</div>
     </div>
     <div id="app" class="flex h-full">
         <nav id="sidebar" class="w-56 bg-pulse-sidebar border-r border-pulse-border flex flex-col flex-shrink-0">

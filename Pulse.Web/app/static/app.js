@@ -268,21 +268,33 @@ function fetchSection(key) {
   return fetchPromises[key];
 }
 
+function _updateSplashStatus(text) {
+  const el = document.getElementById("splash-status");
+  if (el) el.textContent = text;
+}
+
 function preloadProgressive() {
-  // Phase 1: Dashboard first (fast scripts — identity, performance, services, nics)
-  fetchSection("dashboard").then(() => {
-    // Phase 2: After dashboard renders, start WebSocket for live metrics
-    connectWS();
-    // Phase 3: Background-load remaining pages with small delays
-    // to avoid saturating VPU CPU with simultaneous PS processes
-    const deferred = Object.keys(PAGE_API).filter((k) => k !== "dashboard");
-    let delay = 500;
-    deferred.forEach((key) => {
-      setTimeout(() => fetchSection(key), delay);
-      delay += 300;
-    });
-  });
-  api("/api/version").then((data) => {
+  // Returns a Promise that resolves when EVERY preload section has settled.
+  // The splash screen waits on this so users see the loading state until
+  // every PowerShell-backed endpoint has at least had one chance to respond.
+  //
+  // Phasing (preserved from earlier impl to avoid CPU saturation on VPU):
+  //   1. Dashboard first (the visible page).
+  //   2. WS connect once dashboard returns (enables live metrics).
+  //   3. Remaining PAGE_API sections in stagger, 300ms apart.
+  //   4. Version + log endpoints in parallel.
+  const deferred = Object.keys(PAGE_API).filter((k) => k !== "dashboard");
+  const totalSections = 1 + deferred.length;   // dashboard + deferred
+  let completedSections = 0;
+  const tick = (key) => {
+    completedSections++;
+    _updateSplashStatus(`Loading diagnostics… (${completedSections}/${totalSections}) ${key}`);
+  };
+
+  _updateSplashStatus(`Loading diagnostics… (0/${totalSections})`);
+
+  // Phase 4 helpers — run in parallel, not gated on dashboard
+  const versionPromise = api("/api/version").then((data) => {
     if (data?.version) {
       dataCache._version = data.version;
       const footer = document.querySelector(".sidebar-footer");
@@ -290,7 +302,7 @@ function preloadProgressive() {
       if (currentPage === "about") renderPage("about");
     }
   });
-  api("/api/logs").then((logData) => {
+  const logsPromise = api("/api/logs").then((logData) => {
     if (logData && !logData.error) {
       appendLogs(logData.logs || []);
       if (logData.demoMode) {
@@ -298,6 +310,35 @@ function preloadProgressive() {
       }
     }
   });
+
+  // Phase 1: dashboard
+  const dashboardPromise = fetchSection("dashboard").then((res) => {
+    tick("dashboard");
+    // Phase 2: WebSocket after dashboard
+    connectWS();
+    return res;
+  });
+
+  // Phase 3: stagger the rest
+  const deferredPromises = deferred.map((key, i) => new Promise((resolve) => {
+    setTimeout(() => {
+      fetchSection(key).then((res) => { tick(key); resolve(res); });
+    }, 500 + i * 300);
+  }));
+
+  // Resolve when ALL preload work has finished (or errored — we use
+  // allSettled so a single failing endpoint doesn't trap the splash).
+  return Promise.allSettled([
+    dashboardPromise, versionPromise, logsPromise, ...deferredPromises,
+  ]);
+}
+
+function hideSplash() {
+  const splash = document.getElementById("splash");
+  if (!splash) return;
+  _updateSplashStatus("Ready");
+  splash.classList.add("splash-hidden");
+  setTimeout(() => splash.remove(), 450);
 }
 
 async function refreshAll() {
@@ -3768,16 +3809,16 @@ async function init() {
 
   const startPage = window.location.hash.slice(1) || "dashboard";
   navigate(startPage);
-  preloadProgressive();
   _updateThemeToggle();
-  // Fade out the splash screen now that the first render has happened.
-  // A short minimum delay (300ms) prevents a jarring flash on fast loads.
-  setTimeout(() => {
-    const splash = document.getElementById("splash");
-    if (!splash) return;
-    splash.classList.add("splash-hidden");
-    setTimeout(() => splash.remove(), 400);
-  }, 300);
+  // Hold the splash screen until every preload section has settled
+  // (success or error), so users see the loading state through a full
+  // cold start instead of a half-rendered dashboard.
+  //
+  // Belt-and-suspenders: also enforce a maximum 60s splash duration so
+  // a single hung endpoint can't strand the user behind the splash.
+  const preloadPromise = preloadProgressive();
+  const safetyTimeout = new Promise((resolve) => setTimeout(resolve, 60000));
+  Promise.race([preloadPromise, safetyTimeout]).then(hideSplash);
   // WebSocket is started inside preloadProgressive() after dashboard loads
 }
 

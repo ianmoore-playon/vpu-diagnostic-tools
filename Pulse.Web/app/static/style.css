@@ -94,25 +94,38 @@ html, body { height: 100%; margin: 0; }
 }
 
 /* ── Splash screen ─────────────────────────────────────────── */
-/* Shown immediately on page load (before app.js runs) so users see
-   Pulse branding instead of a flash of blank background while the
-   JS bootstrap and first /api/dashboard fetch run. Removed by
-   init() once the first render completes. */
+/* Shown immediately on page load and kept up until every preload
+   section (dashboard + all PAGE_API endpoints + WebSocket) has
+   reported success. Hidden by hideSplash() in app.js. The "Loading
+   diagnostics..." status updates with the current fetch count so
+   users on a slow cold start can see progress instead of a frozen
+   logo. */
 .splash {
     position: fixed;
     inset: 0;
     background: var(--c-bg);
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 1.5rem;
     z-index: 9999;
-    transition: opacity 0.35s ease-out;
+    transition: opacity 0.4s ease-out;
 }
 .splash-logo {
-    max-width: 340px;
-    width: 55vmin;
+    max-width: 420px;
+    width: 60vmin;
     height: auto;
     animation: pulse-fade 1.6s ease-in-out infinite;
+}
+.splash-status {
+    font-size: 0.85rem;
+    color: var(--c-muted);
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-align: center;
+    min-height: 1.2em;
+    transition: color 0.2s;
 }
 .splash-hidden {
     opacity: 0;
