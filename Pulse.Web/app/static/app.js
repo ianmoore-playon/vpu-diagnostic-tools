@@ -3109,6 +3109,7 @@ function _fiReset() {
     testIdx: -1,
     testPreSpeedMbps: null,
     expectedSpeedMbps: null,  // captured from suspect port at baseline time
+    suspectCameraMacs: [],    // captured at end of baseline; used to verify the physical swap in phase 1
     history: [],        // [{ts,phase,config,speed,verdict,severity}]
     resultHeadline: "",
     resultDetail: "",
@@ -3439,6 +3440,12 @@ function renderFaultIsolator() {
       showResult("Baseline: " + sl0 + " — " + bMsg + ".", bInstr, "fail");
       // Remember expected speed so subsequent phases use the right pass threshold.
       _fi.expectedSpeedMbps = expectedSpd;
+      // Capture the suspect's camera MAC(s) so Phase 1 can verify the swap
+      // actually moved the camera to the test port (vs. user clicked Check
+      // Now without doing anything).
+      _fi.suspectCameraMacs = (suspectPort.camerasDetected || []).map(function(c) {
+        return String(c.mac || "").toUpperCase().replace(/-/g, ":");
+      }).filter(function(m) { return m; });
       _fi.phase = 1;
       _fi.phaseTitle = "PHASE 2 — DOES THE FAULT FOLLOW THE NIC PORT?";
       _fi.phaseInstruction = bInstr;
@@ -3481,7 +3488,51 @@ function renderFaultIsolator() {
       _fi.checking = false;
       var sl1 = formatSpeed(spd1);
       var tn1 = portLabel(_fi.testIdx);
+      var sn1 = portLabel(_fi.suspectIdx);
       var cfg1 = "Port: " + tn1 + " (test port)  |  Cable: (original)  |  Camera: (original)";
+
+      // Swap verification: the suspect camera's MAC should now appear on
+      // the test port's ARP. If it doesn't AND the suspect port still has
+      // it, the user clicked Check Now without performing the physical
+      // swap. Without this check, a healthy test port + unmoved cable
+      // would falsely conclude "NIC port fault".
+      var swapVerified = true;
+      if ((_fi.suspectCameraMacs || []).length > 0) {
+        var fresh = dataCache.cameras || {};
+        var freshPorts = fresh.ports || [];
+        var testPortFresh = freshPorts[_fi.testIdx] || {};
+        var suspectPortFresh = freshPorts[_fi.suspectIdx] || {};
+        var macsOnTest = (testPortFresh.camerasDetected || []).map(function(c) {
+          return String(c.mac || "").toUpperCase().replace(/-/g, ":");
+        });
+        var macsOnSuspect = (suspectPortFresh.camerasDetected || []).map(function(c) {
+          return String(c.mac || "").toUpperCase().replace(/-/g, ":");
+        });
+        var movedToTest = _fi.suspectCameraMacs.some(function(m) {
+          return macsOnTest.indexOf(m) >= 0;
+        });
+        var stillOnSuspect = _fi.suspectCameraMacs.some(function(m) {
+          return macsOnSuspect.indexOf(m) >= 0;
+        });
+        // If the camera didn't appear on the test port AND it's still on
+        // the suspect port, the swap clearly wasn't done.
+        if (!movedToTest && stillOnSuspect) {
+          swapVerified = false;
+          var suspectMac = _fi.suspectCameraMacs[0];
+          addHistory("Phase 2 - NIC Port Test", cfg1, sl1,
+            "Swap not verified — camera " + suspectMac + " still on " + sn1 + ", not on " + tn1 + ".", "Info");
+          showResult(
+            "Swap not detected — test inconclusive.",
+            "The suspect camera (" + suspectMac + ") still appears on " + sn1 +
+            " and was not detected on " + tn1 + ". Please physically move the cable and camera from " +
+            sn1 + " to " + tn1 + ", then click Check Now again. " +
+            "Note: ARP can take up to 30 seconds to refresh after a swap.",
+            "fail"
+          );
+          renderFaultIsolator();
+          return;
+        }
+      }
 
       if (spd1 >= expSpd1) {
         var v1 = "Link restored on the test port. The fault follows the original NIC port.";
