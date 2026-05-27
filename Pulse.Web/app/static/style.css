@@ -1,18 +1,5 @@
 /* ── Theme variables ─────────────────────────────────────────── */
 :root {
-  --c-bg:        #0f1117;
-  --c-surface:   #1c1f2e;
-  --c-surface-2: #161822;
-  --c-surface-3: #13141f;
-  --c-border:    #2a2d3e;
-  --c-text:      #e2e8f0;
-  --c-muted:     #94a3b8;
-  --c-dim:       #64748b;
-  --c-dimmer:    #475569;
-  --c-deep-bg:   #0d0f16;
-}
-
-html.light {
   --c-bg:        #f1f5f9;
   --c-surface:   #ffffff;
   --c-surface-2: #f1f5f9;
@@ -23,6 +10,19 @@ html.light {
   --c-dim:       #64748b;
   --c-dimmer:    #94a3b8;
   --c-deep-bg:   #e8eef5;
+}
+
+html.dark {
+  --c-bg:        #0f1117;
+  --c-surface:   #1c1f2e;
+  --c-surface-2: #161822;
+  --c-surface-3: #13141f;
+  --c-border:    #2a2d3e;
+  --c-text:      #e2e8f0;
+  --c-muted:     #94a3b8;
+  --c-dim:       #64748b;
+  --c-dimmer:    #475569;
+  --c-deep-bg:   #0d0f16;
 }
 
 /* ── Root layout — fallback for Tailwind CDN h-full ────────── */
@@ -255,6 +255,7 @@ html, body { height: 100%; margin: 0; }
     background: transparent;
     transition: all 0.15s;
 }
+.btn-outline:disabled { opacity: 0.35; cursor: not-allowed; }
 .btn-ol-green {
     border: 1px solid #22c55e;
     color: #22c55e;
