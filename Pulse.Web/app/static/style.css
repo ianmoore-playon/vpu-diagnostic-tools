@@ -995,6 +995,14 @@ html, body { height: 100%; margin: 0; }
     border-bottom: 1px solid var(--c-border, #334155);
     margin-bottom: 8px;
 }
+.nic-diagram-note {
+    font-size: 0.7rem;
+    color: var(--c-dim, #64748b);
+    text-align: center;
+    padding-top: 4px;
+    border-top: 1px solid var(--c-border, #334155);
+    margin-top: 4px;
+}
 .nic-diagram-wrap {
     display: flex;
     align-items: center;

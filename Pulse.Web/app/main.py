@@ -466,7 +466,7 @@ def _enrich_ports(
 
     ports = []
     if nics and not nics.get("error"):
-        for port in nics.get("ports", []):
+        for port_idx, port in enumerate(nics.get("ports", [])):
             speed = port.get("linkSpeedMbps")
             is_up = port.get("status") == "Up"
 
@@ -549,6 +549,8 @@ def _enrich_ports(
             ports.append(
                 {
                     **port,
+                    "portIndex": port_idx,
+                    "portLabel": f"Port {port_idx + 1}",
                     "isUp": is_up,
                     "isOcr": is_ocr,
                     "isDegraded": is_degraded,
@@ -562,7 +564,8 @@ def _enrich_ports(
 def _compute_camera_findings(ports: list) -> list:
     findings = []
     for port in ports:
-        name = port.get("name", "Port")
+        label = port.get("portLabel", port.get("name", "Port"))
+        adapter = port.get("name", "")
         is_up = port.get("isUp")
         cams = port.get("camerasDetected") or []
 
@@ -570,8 +573,8 @@ def _compute_camera_findings(ports: list) -> list:
             findings.append(
                 {
                     "severity": "critical",
-                    "title": f"{name} down — {len(cams)} camera(s) last detected",
-                    "body": "Port is down but Pixellot cameras were recently in the ARP table. Check the cable or use Fault Isolator.",
+                    "title": f"{label} down — camera last detected",
+                    "body": f"{adapter}. Port is down but a Pixellot camera was recently in the ARP table. Check the cable or use Fault Isolator.",
                 }
             )
 
@@ -582,8 +585,8 @@ def _compute_camera_findings(ports: list) -> list:
             findings.append(
                 {
                     "severity": "warning",
-                    "title": f"{name} running at {speed} Mbps — expected {exp_label}",
-                    "body": "Degraded link speed usually means a bad cable, faulty connector, or wrong duplex negotiation.",
+                    "title": f"{label} running at {speed} Mbps — expected {exp_label}",
+                    "body": f"{adapter}. Degraded link speed usually means a bad cable, faulty connector, or wrong duplex negotiation.",
                 }
             )
 
@@ -591,8 +594,8 @@ def _compute_camera_findings(ports: list) -> list:
             findings.append(
                 {
                     "severity": "warning",
-                    "title": f"{name} in half-duplex mode",
-                    "body": "Half-duplex causes collisions and packet loss at camera scale. Check cable quality.",
+                    "title": f"{label} in half-duplex mode",
+                    "body": f"{adapter}. Half-duplex causes collisions and packet loss at camera scale. Check cable quality.",
                 }
             )
 
@@ -603,8 +606,8 @@ def _compute_camera_findings(ports: list) -> list:
             findings.append(
                 {
                     "severity": "warning",
-                    "title": f"{name} — {total_errs} packet error(s)",
-                    "body": f"RX {rx_errs}, TX {tx_errs}. May indicate a bad cable or NIC driver issue.",
+                    "title": f"{label} — {total_errs} packet error(s)",
+                    "body": f"{adapter}. RX {rx_errs}, TX {tx_errs}. May indicate a bad cable or NIC driver issue.",
                 }
             )
 

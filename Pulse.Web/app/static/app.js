@@ -2156,7 +2156,8 @@ function _camNicDiagramHtml(ports) {
   return nicHeader + '<div class="nic-diagram-wrap">' +
     '<div class="nic-diagram-ports">' + portIcons + '</div>' +
     '<div class="nic-diagram-legend">' + legend + '</div>' +
-  '</div>';
+  '</div>' +
+  '<div class="nic-diagram-note">Port order mirrors the physical orientation of the NIC — Port ' + count + ' is leftmost on the card.</div>';
 }
 
 function renderCameras() {
@@ -2187,7 +2188,6 @@ function renderCameras() {
     <div class="cam-port-grid" id="cam-port-grid">
       ${_camPortGridHtml(ports)}
     </div>
-    <div class="text-xs text-pulse-muted mt-2 mb-1">Port order matches physical chassis: Port ${portSlots.length} (left) → Port 1 (right).</div>
 
     ${cfgCameras.length ? `
     <div class="card mt-4">
