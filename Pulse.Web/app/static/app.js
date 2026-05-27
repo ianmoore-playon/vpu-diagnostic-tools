@@ -636,23 +636,6 @@ function updateLiveMetrics(msg) {
   const mem = perf.memory?.usedPercent;
   const disk = perf.disk?.usedPercent;
 
-  // Update command center metric boxes
-  const container = document.getElementById("live-metrics");
-  if (container) {
-    const boxes = container.querySelectorAll(".metric-box");
-    function setMetric(box, val) {
-      if (!box) return;
-      const el = box.querySelector(".metric-val");
-      if (!el) return;
-      const v = val != null ? Math.round(val) : null;
-      el.textContent = v != null ? v + "%" : "--";
-      el.style.color = _metricColor(val);
-    }
-    setMetric(boxes[0], cpu);
-    setMetric(boxes[1], mem);
-    setMetric(boxes[2], disk);
-  }
-
   // Update system status gauge SVGs
   _updateGaugeLive("cpu", cpu);
   _updateGaugeLive("mem", mem);
@@ -942,12 +925,6 @@ function renderDashboard() {
         <div class="baseline-bar">
           ${svgIcon("check", 14)}
           Baseline completed ${esc(timeStr)} &bull; ${subsystems.length} panel${subsystems.length === 1 ? "" : "s"} checked &bull; ${totalFindings} finding${totalFindings === 1 ? "" : "s"}
-        </div>
-        <div id="live-metrics" class="metrics-row">
-          <div class="metric-box"><span class="metric-label">CPU</span><span class="metric-val" style="color:${_metricColor(cpu)}">${cpu != null ? Math.round(cpu) + "%" : "--"}</span></div>
-          <div class="metric-box"><span class="metric-label">MEMORY</span><span class="metric-val" style="color:${_metricColor(mem)}">${mem != null ? Math.round(mem) + "%" : "--"}</span></div>
-          <div class="metric-box"><span class="metric-label">DISK</span><span class="metric-val" style="color:${_metricColor(disk)}">${disk != null ? Math.round(disk) + "%" : "--"}</span></div>
-          <div class="metric-box"><span class="metric-label">INTERNET</span><span class="metric-val" style="color:${internetColor}">${internetLabel}</span></div>
         </div>
       </div>
       <div class="card findings-panel">

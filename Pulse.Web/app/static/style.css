@@ -402,7 +402,14 @@ html.dark .splash-logo {
 }
 
 /* ── Command center card ──────────────────────────────────── */
-.command-center { display: flex; flex-direction: column; }
+/* Center the contents vertically — with the live-metric boxes
+   removed, the panel is shorter than the findings/subsystems card
+   next to it, and a top-aligned baseline bar leaves a visible gap. */
+.command-center {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
 .card-label {
     font-size: 0.7rem;
     font-weight: 600;
@@ -430,37 +437,7 @@ html.dark .splash-logo {
     border-radius: 6px;
     font-size: 0.7rem;
     color: var(--c-green-soft);
-    margin-bottom: 0.75rem;
-}
-
-/* ── Metric boxes ─────────────────────────────────────────── */
-.metrics-row {
-    display: flex;
-    gap: 0.75rem;
-    margin-top: auto;
-}
-.metric-box {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    padding: 8px 4px;
-    background: var(--c-surface-2);
-    border: 1px solid var(--c-border);
-    border-radius: 6px;
-}
-.metric-label {
-    font-size: 0.6rem;
-    font-weight: 600;
-    color: var(--c-dim);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-}
-.metric-val {
-    font-size: 1.1rem;
-    font-weight: 700;
-    transition: color 0.3s;
+    margin-bottom: 0;
 }
 
 /* ── Top findings panel ───────────────────────────────────── */
