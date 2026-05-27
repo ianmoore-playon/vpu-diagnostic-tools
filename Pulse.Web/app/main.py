@@ -651,6 +651,15 @@ def _enrich_ports(
                     and not is_ocr
                 )
 
+            # Populate expectedSpeedMbps so downstream consumers (findings,
+            # fault isolator) have a consistent value. When model lookup
+            # didn't fire, default to 100 for OCR (most common) or 1000
+            # for everything else. This is a safe heuristic — the 1 Gbps
+            # OCR variant (E8NC-G) only gets correctly classified when
+            # CGI probe succeeds and the model match runs.
+            if expected_speed is None and cameras:
+                expected_speed = 100 if is_ocr else 1000
+
             ports.append(
                 {
                     **port,

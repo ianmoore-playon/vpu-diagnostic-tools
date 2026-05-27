@@ -2856,6 +2856,7 @@ function _fiReset() {
     suspectIdx: -1,
     testIdx: -1,
     testPreSpeedMbps: null,
+    expectedSpeedMbps: null,  // captured from suspect port at baseline time
     history: [],        // [{ts,phase,config,speed,verdict,severity}]
     resultHeadline: "",
     resultDetail: "",
@@ -3079,7 +3080,10 @@ function renderFaultIsolator() {
 
   // ── async state machine ──────────────────────────────────────
 
-  async function pollPeakSpeed(portIdx, windowSec) {
+  // expectedMbps: optional. If provided, polling exits early once peak
+  // hits or exceeds the camera's expected speed. Defaults to 1 Gbps.
+  async function pollPeakSpeed(portIdx, windowSec, expectedMbps) {
+    var threshold = expectedMbps || 1000;
     var peak = 0;
     var start = Date.now();
     var deadline = start + windowSec * 1000;
@@ -3095,7 +3099,7 @@ function renderFaultIsolator() {
       var portData = (fresh.ports || [])[portIdx];
       var sample = portData ? (portData.linkSpeedMbps || 0) : 0;
       if (sample > peak) peak = sample;
-      if (peak >= 1000) return peak;
+      if (peak >= threshold) return peak;
       await new Promise(function(r) { setTimeout(r, 1000); });
     }
     return peak;
@@ -3137,10 +3141,12 @@ function renderFaultIsolator() {
     if (_fi.phase === 0) {
       var si = _fi.suspectIdx;
       if (si < 0) return;
-      // Per-port expected speed — 100 Mbps for OCR, 1 Gbps for Main, etc.
-      // Falls back to 1 Gbps if the backend didn't identify the camera.
+      // Per-port expected speed. Backend sets expectedSpeedMbps from the
+      // camera model when CGI probe succeeded. If absent, fall back to
+      // 100 Mbps for OCR (most common OCR variant) or 1 Gbps for Main.
       var suspectPort = ports[si] || {};
-      var expectedSpd = suspectPort.expectedSpeedMbps || 1000;
+      var expectedSpd = suspectPort.expectedSpeedMbps
+        || (suspectPort.isOcr ? 100 : 1000);
       var expectedLbl = formatSpeed(expectedSpd);
       _fi.checking = true;
       renderFaultIsolator();
@@ -3199,7 +3205,10 @@ function renderFaultIsolator() {
         renderFaultIsolator();
         return;
       }
-      // Pre-check: was the test port already degraded before the swap?
+      // Pre-check: was the test port already running below 1 Gbps before
+      // the swap? Even an OCR test port should provide 1 Gbps capacity once
+      // a Main camera is moved to it, so 1 Gbps is the correct sanity bar
+      // here regardless of the suspect camera's expected speed.
       var preSpd = _fi.testPreSpeedMbps || 0;
       if (preSpd > 0 && preSpd < 1000) {
         showResult(
@@ -3210,16 +3219,19 @@ function renderFaultIsolator() {
         renderFaultIsolator();
         return;
       }
+      // Expected speed for the suspect camera — drives the pass threshold.
+      var expSpd1 = _fi.expectedSpeedMbps || 1000;
+      var expLbl1 = formatSpeed(expSpd1);
       _fi.checking = true;
       renderFaultIsolator();
-      var spd1 = await pollPeakSpeed(_fi.testIdx, 20);
+      var spd1 = await pollPeakSpeed(_fi.testIdx, 20, expSpd1);
       if (_fi._aborted) return;
       _fi.checking = false;
       var sl1 = formatSpeed(spd1);
       var tn1 = portLabel(_fi.testIdx);
       var cfg1 = "Port: " + tn1 + " (test port)  |  Cable: (original)  |  Camera: (original)";
 
-      if (spd1 >= 1000) {
+      if (spd1 >= expSpd1) {
         var v1 = "Link restored on the test port. The fault follows the original NIC port.";
         addHistory("Phase 2 - NIC Port Test", cfg1, sl1, v1, "Pass");
         showResult("Phase 2: " + sl1 + " — Fault follows the original NIC port.", v1, "pass");
@@ -3248,16 +3260,17 @@ function renderFaultIsolator() {
 
     // Phase 2 — Cable Test: poll test port after swapping cable
     if (_fi.phase === 2) {
+      var expSpd2 = _fi.expectedSpeedMbps || 1000;
       _fi.checking = true;
       renderFaultIsolator();
-      var spd2 = await pollPeakSpeed(_fi.testIdx, 20);
+      var spd2 = await pollPeakSpeed(_fi.testIdx, 20, expSpd2);
       if (_fi._aborted) return;
       _fi.checking = false;
       var sl2 = formatSpeed(spd2);
       var tn2 = portLabel(_fi.testIdx);
       var cfg2 = "Port: " + tn2 + "  |  Cable: (NEW — known good)  |  Camera: (original)";
 
-      if (spd2 >= 1000) {
+      if (spd2 >= expSpd2) {
         var v2 = "Link restored with a known-good cable. The original cable is the source of the fault.";
         addHistory("Phase 3 - Cable Test", cfg2, sl2, v2, "Pass");
         showResult("Phase 3: " + sl2 + " — Fault follows the cable.", v2, "pass");
@@ -3285,6 +3298,9 @@ function renderFaultIsolator() {
     }
 
     // Phase 3 — Camera Test: poll test port after swapping camera
+    // Note: known-good camera is most likely a Main Camera (1 Gbps) since
+    // OCR spares are rare. Pass threshold is 1 Gbps here, not the suspect's
+    // expected speed — we're testing the NEW camera's capability.
     if (_fi.phase === 3) {
       _fi.checking = true;
       renderFaultIsolator();
