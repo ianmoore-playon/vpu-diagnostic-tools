@@ -48,10 +48,16 @@ for /f "usebackq delims=" %%S in (`
 `) do set "COMMIT_SHA=%%S"
 
 :: -- Download branch zip (commit-specific to bypass CDN cache) -----------
-set "ASSET_URL="
-if "%COMMIT_SHA%"=="" set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/%BRANCH%.zip"
-if "%COMMIT_SHA%"=="unknown" set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/%BRANCH%.zip"
-if not defined ASSET_URL set "ASSET_URL=https://github.com/%REPO%/archive/%COMMIT_SHA%.zip"
+:: If we couldn't resolve a SHA (offline, rate-limited, deleted branch), fall
+:: back to the named-branch archive — accept that it may be CDN-cached.
+if "%COMMIT_SHA%"=="" goto :use_branch_url
+if "%COMMIT_SHA%"=="unknown" goto :use_branch_url
+set "ASSET_URL=https://github.com/%REPO%/archive/%COMMIT_SHA%.zip"
+goto :url_resolved
+:use_branch_url
+echo  [WARN] No commit SHA resolved — using branch archive (may be CDN-cached).
+set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/%BRANCH%.zip"
+:url_resolved
 echo  [INFO] SHA: %COMMIT_SHA%
 echo  [INFO] URL: %ASSET_URL%
 echo  [INFO] Downloading branch '%BRANCH%'...

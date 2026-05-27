@@ -18,7 +18,7 @@ set "EXTRACT=%TEMP%\pulse-web-beta-extract"
 reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe" >nul 2>&1
 if %errorlevel% NEQ 0 (
     echo  [INFO] Chrome not found — installing...
-    powershell -Command "Invoke-WebRequest -Uri 'https://dl.google.com/chrome/install/latest/chrome_installer.exe' -OutFile '%TEMP%\chrome_installer.exe'"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://dl.google.com/chrome/install/latest/chrome_installer.exe' -OutFile '%TEMP%\chrome_installer.exe'"
     echo  [INFO] Running Chrome installer...
     start /wait "" "%TEMP%\chrome_installer.exe" /silent /install
     del "%TEMP%\chrome_installer.exe"
@@ -28,12 +28,17 @@ if %errorlevel% NEQ 0 (
 )
 echo.
 
+:: -- Check for curl (some VPUs don't have it) -------------------------
+set "HAS_CURL="
+where curl.exe >nul 2>&1 && set "HAS_CURL=1"
+
 :: -- Try beta pre-release download first -------------------------------
 echo  [INFO] Checking for latest Pulse Web beta release...
 set "ASSET_URL="
 for /f "usebackq delims=" %%U in (`
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
         "try { " ^
+        "  [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; " ^
         "  $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%PUBLIC_REPO%/releases' -TimeoutSec 10; " ^
         "  $rel = $r | Where-Object { $_.tag_name -like 'web-beta-v*' -and $_.prerelease } | Select-Object -First 1; " ^
         "  if ($rel) { $rel.assets[0].browser_download_url } " ^
@@ -45,6 +50,7 @@ if not defined ASSET_URL (
     for /f "usebackq delims=" %%U in (`
         powershell -NoProfile -ExecutionPolicy Bypass -Command ^
             "try { " ^
+            "  [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; " ^
             "  $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/releases' -TimeoutSec 10; " ^
             "  $rel = $r | Where-Object { $_.tag_name -like 'web-beta-v*' -and $_.prerelease } | Select-Object -First 1; " ^
             "  if ($rel) { $rel.assets[0].browser_download_url } " ^
@@ -52,15 +58,36 @@ if not defined ASSET_URL (
     `) do set "ASSET_URL=%%U"
 )
 
+:: Fall back to beta branch commit-specific archive if no release exists.
+:: Commit-specific URLs bypass GitHub's CDN branch-archive cache.
 if not defined ASSET_URL (
-    echo  [WARN] No beta releases found — falling back to beta branch zip.
-    set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/beta.zip"
+    echo  [WARN] No beta releases found — falling back to beta branch commit archive.
+    for /f "usebackq delims=" %%S in (`
+        powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+            "try { " ^
+            "  [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; " ^
+            "  $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/commits/beta' -TimeoutSec 10; " ^
+            "  $r.sha " ^
+            "} catch { '' }"
+    `) do set "BETA_SHA=%%S"
+    if defined BETA_SHA (
+        set "ASSET_URL=https://github.com/%REPO%/archive/!BETA_SHA!.zip"
+    ) else (
+        set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/beta.zip"
+    )
 )
 
 :: -- Download ----------------------------------------------------------
-echo  [INFO] URL: %ASSET_URL%
+setlocal EnableDelayedExpansion
+echo  [INFO] URL: !ASSET_URL!
 echo  [INFO] Downloading latest Pulse Web BETA...
-curl.exe -L --progress-bar -o "%ZIPFILE%" "%ASSET_URL%"
+if defined HAS_CURL (
+    curl.exe -L --progress-bar -o "%ZIPFILE%" "!ASSET_URL!"
+) else (
+    echo  [INFO] curl not found, using PowerShell...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '!ASSET_URL!' -OutFile '%ZIPFILE%'"
+)
+endlocal
 
 if not exist "%ZIPFILE%" goto :dl_failed
 for %%A in ("%ZIPFILE%") do (
@@ -76,8 +103,7 @@ if exist "%INSTALL_DIR%\run.bat" (
     goto :launch
 )
 echo  [ERROR] Download failed. Check your internet connection.
-pause
-exit /b 1
+goto :fatal
 
 :dl_ok
 
@@ -119,11 +145,11 @@ if not defined SRC (
     echo  [ERROR] Full directory listing:
     dir /b /s /ad "%EXTRACT%" 2>nul
     if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
-    pause
-    exit /b 1
+    goto :fatal
 )
 
 :: -- Copy to install dir (preserves app\python\ and settings) ---------
+echo  [INFO] Copying to %INSTALL_DIR%...
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 xcopy "%SRC%\*" "%INSTALL_DIR%\" /s /e /y /q >nul
 if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
@@ -135,9 +161,27 @@ echo.
 :launch
 if not exist "%INSTALL_DIR%\run.bat" (
     echo  [ERROR] Pulse Web not found at %INSTALL_DIR%
-    pause
-    exit /b 1
+    goto :fatal
 )
 
+echo  [INFO] Launching from %INSTALL_DIR%...
 cd /d "%INSTALL_DIR%"
 call run.bat
+goto :done
+
+:: -- Error handler ----------------------------------------------------
+:fatal
+echo.
+echo  ============================================
+echo   PULSE WEB FAILED — see errors above.
+echo   Press any key to close.
+echo  ============================================
+pause >nul
+exit /b 1
+
+:done
+
+:: If we get here, run.bat exited — keep window open so errors are visible
+echo.
+echo  [INFO] Pulse Web exited. Press any key to close.
+pause >nul
