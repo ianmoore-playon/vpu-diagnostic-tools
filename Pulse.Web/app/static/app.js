@@ -3204,13 +3204,12 @@ function renderFaultIsolator() {
     if (i === excludeIdx) return "";
     var spd;
     if (!p.isUp) spd = " — No link";
-    else if (p.isOcr) spd = " — " + (p.linkSpeedMbps || 100) + " Mbps (OCR — expected)";
+    else if (p.isOcr) spd = " — " + formatSpeed(p.linkSpeedMbps || 100) + " (OCR — expected)";
     // Trust the backend isDegraded flag — it knows the expected speed for
     // each camera model. A 100 Mbps OCR isn't degraded; an unknown 100 Mbps
     // camera might be.
-    else if (p.isDegraded) spd = " — " + p.linkSpeedMbps + " Mbps (FAULT)";
-    else if (p.linkSpeedMbps >= 1000) spd = " — " + formatSpeed(p.linkSpeedMbps);
-    else if (p.linkSpeedMbps > 0) spd = " — " + p.linkSpeedMbps + " Mbps";
+    else if (p.isDegraded) spd = " — " + formatSpeed(p.linkSpeedMbps) + " (FAULT)";
+    else if (p.linkSpeedMbps > 0) spd = " — " + formatSpeed(p.linkSpeedMbps);
     else spd = " — No link";
     return '<option value="' + i + '">Port ' + (i + 1) + esc(spd) + "</option>";
   }
