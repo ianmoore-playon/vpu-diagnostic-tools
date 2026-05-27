@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 import time
@@ -11,6 +12,12 @@ import uuid
 from collections import deque
 from datetime import datetime
 from typing import Optional
+
+# Mirror every script-log entry into the root logger so it also flows
+# to pulse-server.log (the file handler is wired in main.py). Lets the
+# Server Log pane in the UI show full PS execution history alongside
+# uvicorn/fastapi output.
+_file_log = logging.getLogger("pulse.ps")
 
 SCRIPTS_DIR = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
@@ -43,6 +50,15 @@ def _log(script: str, duration_ms: float, status: str, detail: str = "", size: i
         "bytes": size,
     }
     LOG_BUFFER.append(entry)
+    # Mirror into pulse-server.log via the root logger. Pick the log
+    # level from the status field so warnings and errors stand out.
+    level = (
+        logging.ERROR if status in ("error", "fail") else
+        logging.WARNING if status in ("timeout", "warn", "cancelled") else
+        logging.INFO
+    )
+    bytes_str = f" ({size}B)" if size else ""
+    _file_log.log(level, f"{script} {duration_ms:.0f}ms [{status}]{bytes_str} {detail}")
     return entry
 
 

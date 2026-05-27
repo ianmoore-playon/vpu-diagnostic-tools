@@ -459,18 +459,28 @@ function sectionLoading(label) {
 
 let activeLogTab = "script";
 
+function _logEmptyState(message) {
+  return `<div class="log-empty">${esc(message)}</div>`;
+}
+
 function renderLogPane() {
   const pane = document.getElementById("log-pane");
   if (!pane) return;
-  const entries = logEntries.slice(-200);
   const body = pane.querySelector('[data-log-body="script"]');
   if (!body) return;
+  const entries = logEntries.slice(-200);
+  if (!entries.length) {
+    body.innerHTML = _logEmptyState("Waiting for diagnostic activity… script calls will appear here.");
+    return;
+  }
   body.innerHTML = entries.map((e) => {
-    const statusCls = e.status === "ok" ? "log-ok" : e.status === "timeout" ? "log-warn" : "log-err";
+    const statusCls = e.status === "ok" ? "log-ok"
+      : e.status === "timeout" || e.status === "warn" ? "log-warn"
+      : "log-err";
     return `<div class="log-entry">
       <span class="log-ts">${esc(e.ts?.split("T")[1] || "")}</span>
       <span class="log-script">${esc(e.script)}</span>
-      <span class="log-dur">${e.durationMs}ms</span>
+      <span class="log-dur">${e.durationMs != null ? e.durationMs + "ms" : ""}</span>
       <span class="log-size">${e.bytes > 0 ? formatBytes(e.bytes) : ""}</span>
       <span class="log-status ${statusCls}">${esc(e.status)}</span>
       <span class="log-detail">${esc(e.detail)}</span>
@@ -484,6 +494,10 @@ function renderServerLog(lines) {
   if (!pane) return;
   const body = pane.querySelector('[data-log-body="server"]');
   if (!body) return;
+  if (!lines || !lines.length) {
+    body.innerHTML = _logEmptyState("Server log empty. The server logs to pulse-server.log on startup and during requests.");
+    return;
+  }
   body.innerHTML = lines.map((l) =>
     `<div class="log-entry server-log-line">${esc(l)}</div>`
   ).join("");
@@ -495,8 +509,26 @@ async function fetchServerLog() {
   if (data && !data.error) renderServerLog(data.lines || []);
 }
 
+// Periodically refresh the server log while the user is watching it,
+// so they see new entries appear without needing to switch tabs or
+// re-open the pane. Auto-refresh stops when pane closes or tab changes.
+let _serverLogTimer = null;
+function _startServerLogPolling() {
+  if (_serverLogTimer) return;
+  _serverLogTimer = setInterval(() => {
+    if (logPaneOpen && activeLogTab === "server") fetchServerLog();
+    else _stopServerLogPolling();
+  }, 2000);
+}
+function _stopServerLogPolling() {
+  if (_serverLogTimer) { clearInterval(_serverLogTimer); _serverLogTimer = null; }
+}
+
 function switchLogTab(tab) {
   activeLogTab = tab;
+  // If the pane is collapsed, open it. toggleLogPane() handles the
+  // render/fetch for the now-active tab.
+  if (!logPaneOpen) { toggleLogPane(); return; }
   const pane = document.getElementById("log-pane");
   if (!pane) return;
   pane.querySelectorAll(".log-tab").forEach((t) =>
@@ -505,7 +537,8 @@ function switchLogTab(tab) {
   pane.querySelectorAll("[data-log-body]").forEach((b) =>
     b.classList.toggle("log-body-hidden", b.dataset.logBody !== tab)
   );
-  if (tab === "server") fetchServerLog();
+  if (tab === "server") { fetchServerLog(); _startServerLogPolling(); }
+  else { _stopServerLogPolling(); renderLogPane(); }
 }
 
 function appendLogs(newLogs) {
@@ -518,18 +551,28 @@ function appendLogs(newLogs) {
 function toggleLogPane() {
   logPaneOpen = !logPaneOpen;
   const pane = document.getElementById("log-pane");
-  if (pane) {
-    pane.classList.toggle("log-pane-open", logPaneOpen);
-    if (logPaneOpen) {
-      if (activeLogTab === "script") renderLogPane();
-      else fetchServerLog();
-    }
+  if (!pane) return;
+  pane.classList.toggle("log-pane-open", logPaneOpen);
+  // Reflect the active tab visually whenever we open — useful when a
+  // tab click is what triggered the toggle.
+  pane.querySelectorAll(".log-tab").forEach((t) =>
+    t.classList.toggle("log-tab-active", t.dataset.logTab === activeLogTab)
+  );
+  pane.querySelectorAll("[data-log-body]").forEach((b) =>
+    b.classList.toggle("log-body-hidden", b.dataset.logBody !== activeLogTab)
+  );
+  if (logPaneOpen) {
+    if (activeLogTab === "script") renderLogPane();
+    else { fetchServerLog(); _startServerLogPolling(); }
+  } else {
+    _stopServerLogPolling();
   }
 }
 
 function openServerLog() {
+  activeLogTab = "server";
   if (!logPaneOpen) toggleLogPane();
-  switchLogTab("server");
+  else switchLogTab("server");
 }
 
 function _updateThemeToggle() {

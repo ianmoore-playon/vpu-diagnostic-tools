@@ -665,6 +665,14 @@ html.dark .splash-logo {
     line-height: 1.6;
 }
 .log-body-hidden { display: none; }
+.log-empty {
+    padding: 16px 14px;
+    color: var(--c-dim);
+    font-size: 0.75rem;
+    font-style: italic;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    text-align: center;
+}
 .log-entry {
     display: flex;
     gap: 10px;

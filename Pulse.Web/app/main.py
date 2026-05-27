@@ -56,6 +56,27 @@ _static_dir = _os.path.join(_app_dir, "static")
 
 SERVER_LOG_PATH = _os.path.join(_web_root, "pulse-server.log")
 
+# ── Server log file ──────────────────────────────────────────
+# Attach a file handler to the root logger so ANY library that logs
+# (uvicorn, asyncio, fastapi, our app, third-party deps) flows into
+# pulse-server.log. The Server Log tab in the UI tails this file.
+#
+# Mode "w" truncates on each process start so the file never grows
+# unbounded across restarts. The file is also small enough (a few KB
+# per session) that we don't need rotation.
+import logging as _logging
+_server_log_handler = _logging.FileHandler(SERVER_LOG_PATH, mode="w", encoding="utf-8")
+_server_log_handler.setLevel(_logging.INFO)
+_server_log_handler.setFormatter(
+    _logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                       datefmt="%Y-%m-%d %H:%M:%S")
+)
+_root_logger = _logging.getLogger()
+_root_logger.setLevel(_logging.INFO)
+_root_logger.addHandler(_server_log_handler)
+_server_log = _logging.getLogger("pulse")
+_server_log.info(f"pulse-server.log opened — Pulse Web bootstrap")
+
 app = FastAPI(title="Pulse Web | VPU Diagnostics")
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
@@ -114,9 +135,15 @@ def _is_us_timezone(tz_id: str, tz_caption: str = "") -> bool:
 
 @app.on_event("startup")
 async def _on_startup():
-    """Log startup info so the Script Log shows server activity."""
-    ps_log("server", 0, "ok", f"Pulse Web {APP_VERSION} starting")
-    ps_log("server", 0, "ok", f"Python {_sys.version.split()[0]} | port {_os.environ.get('PORT', 8765)}")
+    """Log startup info to both the Script Log buffer (UI) and the
+    Server Log file (pulse-server.log)."""
+    msg_version = f"Pulse Web {APP_VERSION} starting"
+    msg_python  = f"Python {_sys.version.split()[0]} | port {_os.environ.get('PORT', 8765)}"
+    msg_mode    = f"Demo mode = {DEMO_MODE} | platform = {_sys.platform}"
+    msg_paths   = f"Scripts dir = {_os.path.join(_app_dir, 'scripts')} | Settings = {SETTINGS_PATH}"
+    for msg in (msg_version, msg_python, msg_mode, msg_paths):
+        ps_log("server", 0, "ok", msg)
+        _server_log.info(msg)
 
 
 def load_settings() -> dict:
@@ -1412,6 +1439,7 @@ async def ws_endpoint(ws: WebSocket):
                     last_pix_refresh = time.time()
                 except Exception as e:
                     ps_log("ws-refresh", 0, "warn", f"pix_cfg refresh failed: {e}")
+                    _server_log.warning(f"pix_cfg refresh failed: {e}")
 
             perf, nics, net_health = await asyncio.gather(
                 run_ps("Get-Performance.ps1", timeout=10),
@@ -1438,9 +1466,12 @@ async def ws_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        # Log unexpected errors so they're surfaced in the Server Log pane
-        # instead of silently killing live metric updates.
-        ps_log("ws-loop", 0, "error", f"WebSocket loop crashed: {type(e).__name__}: {e}")
+        # Log unexpected errors so they're surfaced in BOTH the Script Log
+        # buffer (for live WS clients) and the Server Log file (for
+        # post-hoc inspection) instead of silently killing live metric updates.
+        msg = f"WebSocket loop crashed: {type(e).__name__}: {e}"
+        ps_log("ws-loop", 0, "error", msg)
+        _server_log.exception(msg)
     finally:
         _on_ws_disconnect(ws)
 
