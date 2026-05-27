@@ -2041,7 +2041,7 @@ function _camPortTile(port, index) {
     : "No link";
   let statusLabel, dotCls;
   if (!p.isUp) { statusLabel = "Down"; dotCls = "cam-dot-down"; }
-  else if (p.isOcr) { statusLabel = "OCR (100 Mbps)"; dotCls = "cam-dot-info"; }
+  else if (p.isOcr) { statusLabel = "OCR (" + speed + ")"; dotCls = "cam-dot-info"; }
   else if (p.isDegraded) { statusLabel = "Degraded"; dotCls = "cam-dot-warn"; }
   else { statusLabel = "Linked · " + speed; dotCls = "cam-dot-up"; }
 
@@ -2068,13 +2068,16 @@ function _camPortTile(port, index) {
     ${cams.length > 0 ? `
       <div class="cam-detected">
         <div class="cam-detected-label">${cams.length} Pixellot camera${cams.length > 1 ? "s" : ""} detected</div>
-        ${cams.map(c => `<div class="cam-detected-entry">
-          <span class="font-mono">${esc(c.ip)}</span>
-          <span class="font-mono text-pulse-muted">${esc(c.mac)}</span>
+        ${cams.map(c => {
+          var displayModel = c.modelNumber || (c.model && c.model !== "IP Camera" ? c.model : null);
+          return `<div class="cam-detected-entry">
+          <span class="font-mono cam-entry-ip">${esc(c.ip)}</span>
+          <span class="font-mono text-pulse-muted cam-entry-mac">${esc(c.mac)}</span>
           ${c.role ? '<span class="cam-role-badge">' + esc(c.role) + '</span>' : ''}
-          ${c.model ? '<span class="cam-model-label">' + esc(c.model) + '</span>' : ''}
-          ${c.identitySource ? '<span class="text-xs text-pulse-muted"> · ' + esc(c.identitySource) + '</span>' : ''}
-        </div>`).join("")}
+          ${displayModel ? '<span class="cam-model-label">' + esc(displayModel) + '</span>' : ''}
+          <span class="cam-entry-source text-pulse-muted">${esc(c.identitySource || '')}</span>
+        </div>`;
+        }).join("")}
       </div>
       ${_camDetailsPanel(cams, index)}
     ` : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
