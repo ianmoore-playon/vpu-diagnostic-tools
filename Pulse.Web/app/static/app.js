@@ -268,31 +268,79 @@ function fetchSection(key) {
   return fetchPromises[key];
 }
 
-function _updateSplashStatus(text) {
-  const el = document.getElementById("splash-status");
+// ── Splash status helpers ──────────────────────────────────────────────
+// Three independently-updatable lines: verb (Loading/Running diagnostics),
+// section (the human-readable name of the panel currently being fetched),
+// and percentage (animated via tabular-nums so digits don't jiggle).
+//
+// The section label uses the friendly nav title (e.g. "Disk & System
+// Health") rather than the API key (e.g. "disk-health") — we build the
+// lookup from NAV_SECTIONS on first use so it stays in sync with the
+// sidebar even if labels change later.
+let _SECTION_LABELS_CACHE = null;
+function _sectionLabels() {
+  if (_SECTION_LABELS_CACHE) return _SECTION_LABELS_CACHE;
+  const map = {};
+  NAV_SECTIONS.forEach((s) => s.pages.forEach((p) => { map[p.id] = p.label; }));
+  HIDDEN_PAGES.forEach((p) => { map[p.id] = p.label; });
+  _SECTION_LABELS_CACHE = map;
+  return map;
+}
+
+function _setSplashVerb(text) {
+  const el = document.getElementById("splash-verb");
   if (el) el.textContent = text;
 }
 
-function _updateSplashProgress(completed, total) {
-  const fill = document.getElementById("splash-progress-fill");
-  if (!fill || !total) return;
-  const pct = Math.max(0, Math.min(100, (completed / total) * 100));
-  fill.style.width = pct + "%";
+function _setSplashSection(key) {
+  const el = document.getElementById("splash-section");
+  if (!el) return;
+  // Empty/blank → keep the row reserved (non-breaking space) so layout
+  // doesn't bounce when the splash first appears.
+  if (!key) { el.innerHTML = "&nbsp;"; return; }
+  const label = _sectionLabels()[key] || key.charAt(0).toUpperCase() + key.slice(1);
+  el.textContent = label;
 }
 
-function showSplash(statusText) {
+let _splashPctAnim = null;
+function _setSplashPct(targetPct) {
+  const el = document.getElementById("splash-pct");
+  const fill = document.getElementById("splash-progress-fill");
+  if (!el && !fill) return;
+  const clamped = Math.max(0, Math.min(100, targetPct));
+  if (fill) fill.style.width = clamped + "%";
+  if (!el) return;
+  // Smoothly tween the displayed number from current → target over ~350ms
+  // so the percentage feels like it's growing instead of jumping.
+  if (_splashPctAnim) cancelAnimationFrame(_splashPctAnim);
+  const start = parseInt(el.textContent, 10) || 0;
+  const startTs = performance.now();
+  const duration = 350;
+  const step = (ts) => {
+    const t = Math.min(1, (ts - startTs) / duration);
+    const v = Math.round(start + (clamped - start) * t);
+    el.textContent = v + "%";
+    if (t < 1) _splashPctAnim = requestAnimationFrame(step);
+    else _splashPctAnim = null;
+  };
+  _splashPctAnim = requestAnimationFrame(step);
+}
+
+function showSplash(verbText) {
   const splash = document.getElementById("splash");
   if (!splash) return;
-  _updateSplashProgress(0, 1);
-  _updateSplashStatus(statusText || "Loading diagnostics…");
+  _setSplashVerb(verbText || "Loading diagnostics…");
+  _setSplashSection(null);
+  _setSplashPct(0);
   splash.classList.remove("splash-hidden");
 }
 
 function hideSplash() {
   const splash = document.getElementById("splash");
   if (!splash) return;
-  _updateSplashProgress(1, 1);
-  _updateSplashStatus("Ready");
+  _setSplashSection(null);
+  _setSplashPct(100);
+  _setSplashVerb("Ready");
   splash.classList.add("splash-hidden");
 }
 
@@ -313,12 +361,13 @@ function preloadProgressive(opts) {
   let completedSections = 0;
   const tick = (key) => {
     completedSections++;
-    _updateSplashStatus(`${verb}… (${completedSections}/${totalSections}) ${key}`);
-    _updateSplashProgress(completedSections, totalSections);
+    _setSplashSection(key);
+    _setSplashPct((completedSections / totalSections) * 100);
   };
 
-  _updateSplashStatus(`${verb}… (0/${totalSections})`);
-  _updateSplashProgress(0, totalSections);
+  _setSplashVerb(`${verb}…`);
+  _setSplashSection(null);
+  _setSplashPct(0);
 
   // Phase 4 helpers — run in parallel, not gated on dashboard
   const versionPromise = api("/api/version").then((data) => {
