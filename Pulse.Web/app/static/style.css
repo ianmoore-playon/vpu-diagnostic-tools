@@ -376,6 +376,11 @@ html.dark .splash-logo {
     color: var(--c-dimmer);
 }
 .btn-ol-muted:hover { background: rgba(71, 85, 105, 0.15); }
+.btn-ol-amber {
+    border: 1px solid var(--c-accent-amber);
+    color: var(--c-accent-amber);
+}
+.btn-ol-amber:hover { background: var(--c-tint-amber); }
 
 .dash-sev-pill {
     display: inline-flex;
@@ -1495,6 +1500,28 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 
 /* ── Services page ─────────────────────────────────────────── */
 
+/* keepagentup.exe quick-action card (PDF #13) */
+.svc-quick-action { margin-bottom: 1rem; padding: 1rem 1.25rem; }
+.svc-quick-action-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; flex-wrap: wrap;
+}
+.svc-quick-action-title { font-weight: 600; font-size: 0.95rem; color: var(--c-text); }
+.svc-quick-action-body  { font-size: 0.8rem; color: var(--c-muted); margin-top: 4px; max-width: 580px; line-height: 1.5; }
+.svc-quick-action-result {
+    margin-top: 0.75rem; padding: 0.75rem 0.875rem; border-radius: 6px;
+}
+.svc-quick-action-result.hidden { display: none; }
+.svc-result-ok  { background: var(--c-tint-green); border-left: 3px solid var(--c-accent-green); color: var(--c-text); }
+.svc-result-err { background: var(--c-tint-red);   border-left: 3px solid var(--c-accent-red);   color: var(--c-text); }
+.svc-result-output {
+    margin-top: 6px; padding: 6px 8px; border-radius: 4px;
+    background: var(--c-surface-3); color: var(--c-text);
+    font-family: 'Cascadia Mono', monospace; font-size: 0.72rem;
+    white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;
+}
+.svc-result-stderr { color: var(--c-accent-red); }
+
 .svc-grid {
     display: flex;
     flex-wrap: wrap;
@@ -2307,6 +2334,21 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     border-radius: 6px;
     padding: 6px 10px;
 }
+
+/* ── NTP source approval chip (PDF #9) ───────────────────── */
+.ntp-source-chip {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    vertical-align: middle;
+}
+.ntp-source-ok  { background: var(--c-tint-green); color: var(--c-accent-green); }
+.ntp-source-bad { background: var(--c-tint-amber); color: var(--c-accent-amber); }
 
 /* ── Advanced Diagnostics Toggle ─────────────────────────── */
 .net-adv-toggle {

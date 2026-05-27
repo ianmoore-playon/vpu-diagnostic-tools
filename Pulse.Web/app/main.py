@@ -1060,6 +1060,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
 def _build_network(config, domains, ports, ntp, local=None):
     net = {}
     if config and not config.get("error"):
+        ntp_src = config.get("ntpSource")
         net = {
             "adapters": config.get("adapters", []),
             "ipConfig": config.get("ipConfigurations", []),
@@ -1067,7 +1068,9 @@ def _build_network(config, domains, ports, ntp, local=None):
             "uplinkStats": config.get("uplinkStats"),
             "internetReachable": config.get("internet", {}).get("reachable", False),
             "testedHost": config.get("internet", {}).get("testedHost"),
-            "ntpSource": config.get("ntpSource"),
+            "ntpSource": ntp_src,
+            "ntpSourceApproved": _is_approved_ntp_source(ntp_src),
+            "ntpSourceApprovedList": list(PIXELLOT_APPROVED_NTP_SOURCES),
         }
 
     # Pass local data through even on error — let frontend display the issue
@@ -1394,6 +1397,13 @@ async def api_restart_service(request: Request):
     body = await request.json()
     name = body.get("serviceName", "")
     return await run_ps("Restart-Service.ps1", {"ServiceName": name}, timeout=60)
+
+
+@app.post("/api/services/restart-agent")
+async def api_restart_agent():
+    """Runs c:\\pixellot\\bin\\keepagentup.exe per PDF #13 — the documented
+    fast remedy for hung agent/coordinator before escalating to RMA."""
+    return await run_ps("Restart-PixellotAgent.ps1", timeout=120)
 
 
 @app.get("/api/disk-health")

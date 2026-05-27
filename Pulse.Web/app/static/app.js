@@ -2085,9 +2085,24 @@ function renderNetwork() {
             ? '<span class="status-pass">Reachable</span>'
             : '<span class="status-fail">Unreachable</span>')}
           ${kvRow("Tested host", cfg.testedHost || "—")}
-          ${kvRowHtml("NTP server",
-            '<span title="Drift is measured against the Windows-configured NTP source. The port test (UDP/123) targets prod-echo.pixellot.tv separately.">' +
-            esc(cfg.ntpSource || ntp.source || "—") + '</span>')}
+          ${kvRowHtml("NTP server", (function() {
+            var src = cfg.ntpSource || ntp.source || "";
+            if (!src) return "—";
+            // PDF #9: the four *.us.pool.ntp.org hosts are the only approved sources.
+            // Show a green Approved chip when matched, amber Unapproved chip otherwise.
+            var approved = cfg.ntpSourceApproved;
+            var approvedList = (cfg.ntpSourceApprovedList || []).join(", ");
+            var chip;
+            if (approved === true) {
+              chip = '<span class="ntp-source-chip ntp-source-ok" title="Matches Pixellot approved NTP source list">Approved</span>';
+            } else if (approved === false) {
+              chip = '<span class="ntp-source-chip ntp-source-bad" title="Not in Pixellot approved list. Expected one of: ' + esc(approvedList) + '">Unapproved</span>';
+            } else {
+              chip = "";
+            }
+            var tooltip = "Drift is measured against the Windows-configured NTP source. The port test (UDP/123) targets prod-echo.pixellot.tv separately.";
+            return '<span title="' + esc(tooltip) + '">' + esc(src) + '</span> ' + chip;
+          })())}
           ${kvRowHtml("NTP status", (function() {
             var s = (ntp.status || "").toLowerCase();
             var offset = ntp.offsetSeconds != null ? " (" + ntp.offsetSeconds + "s)" : "";
@@ -2628,6 +2643,22 @@ function renderServices() {
       </button>`
     )}
 
+    <!-- keepagentup.exe — PDF #13 fast-remedy action -->
+    <div class="card svc-quick-action">
+      <div class="svc-quick-action-row">
+        <div>
+          <div class="svc-quick-action-title">Restart Agent + Coordinator</div>
+          <div class="svc-quick-action-body">
+            Runs <span class="font-mono">c:\\pixellot\\bin\\keepagentup.exe</span> — the documented fast remedy when the Pixellot Agent or Coordinator is unresponsive. Try this before escalating to an RMA.
+          </div>
+        </div>
+        <button class="btn-outline btn-ol-amber" id="svc-keepagent-btn">
+          ${svgIcon("zap", 14)} Restart Agent + Coordinator
+        </button>
+      </div>
+      <div id="svc-keepagent-result" class="svc-quick-action-result hidden"></div>
+    </div>
+
     <div class="svc-grid" id="svc-grid">
       ${svcs.map(svcTile).join("")}
       ${!svcs.length ? '<p class="text-pulse-muted text-sm">No services data</p>' : ""}
@@ -2649,6 +2680,42 @@ function renderServices() {
     } else {
       btn.innerHTML = result.message || "Failed";
       setTimeout(() => { btn.innerHTML = `${svgIcon("refresh", 12)} Restart`; }, 3000);
+    }
+  });
+
+  // keepagentup.exe — confirmation modal + inline result
+  document.getElementById("svc-keepagent-btn")?.addEventListener("click", async () => {
+    const ok = confirm(
+      "Restart Pixellot Agent + Coordinator?\n\n" +
+      "This runs c:\\pixellot\\bin\\keepagentup.exe, which will briefly stop and " +
+      "relaunch both services. Recording may pause for a few seconds.\n\n" +
+      "Proceed?"
+    );
+    if (!ok) return;
+
+    const btn = document.getElementById("svc-keepagent-btn");
+    const resultEl = document.getElementById("svc-keepagent-result");
+    btn.disabled = true;
+    btn.innerHTML = `${svgIcon("refresh", 14)} Running keepagentup.exe...`;
+    resultEl.classList.add("hidden");
+
+    const r = await apiPost("/api/services/restart-agent", {});
+    btn.disabled = false;
+    btn.innerHTML = `${svgIcon("zap", 14)} Restart Agent + Coordinator`;
+
+    const ok2 = r && r.success;
+    resultEl.className = "svc-quick-action-result " + (ok2 ? "svc-result-ok" : "svc-result-err");
+    resultEl.innerHTML = `
+      <div class="font-semibold">${ok2 ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
+      <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
+      ${r?.agentStatus ? `<div class="text-xs mt-2 text-pulse-muted">Agent: <span class="font-mono">${esc(r.agentStatus)}</span> &middot; Coordinator: <span class="font-mono">${esc(r.coordinatorStatus || "?")}</span></div>` : ""}
+      ${r?.stdout ? `<pre class="svc-result-output">${esc(r.stdout)}</pre>` : ""}
+      ${r?.stderr ? `<pre class="svc-result-output svc-result-stderr">${esc(r.stderr)}</pre>` : ""}
+    `;
+
+    if (ok2) {
+      // Refresh the service grid after a brief delay so the new statuses show
+      setTimeout(() => { dataCache.services = null; renderServices(); }, 1500);
     }
   });
 }
