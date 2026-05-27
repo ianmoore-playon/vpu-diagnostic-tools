@@ -35,12 +35,32 @@ if %errorlevel% NEQ 0 (
 )
 echo.
 
-:: -- Download branch zip --------------------------------------------------
-set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/%BRANCH%.zip"
+:: -- Resolve latest commit SHA (used for cache-bust download) -------------
+echo  [INFO] Resolving latest commit on '%BRANCH%'...
+set "COMMIT_SHA=unknown"
+for /f "usebackq delims=" %%S in (`
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "try { " ^
+        "  [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; " ^
+        "  $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/commits/%BRANCH%' -TimeoutSec 10; " ^
+        "  $r.sha " ^
+        "} catch { '' }"
+`) do set "COMMIT_SHA=%%S"
+
+:: -- Download branch zip (commit-specific to bypass CDN cache) -----------
+set "ASSET_URL="
+if "%COMMIT_SHA%"=="" set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/%BRANCH%.zip"
+if "%COMMIT_SHA%"=="unknown" set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/%BRANCH%.zip"
+if not defined ASSET_URL set "ASSET_URL=https://github.com/%REPO%/archive/%COMMIT_SHA%.zip"
+echo  [INFO] SHA: %COMMIT_SHA%
 echo  [INFO] URL: %ASSET_URL%
 echo  [INFO] Downloading branch '%BRANCH%'...
-where curl.exe >nul 2>&1
-if %errorlevel% EQU 0 (
+
+:: -- Check for curl (some VPUs don't have it) --
+set "HAS_CURL="
+where curl.exe >nul 2>&1 && set "HAS_CURL=1"
+
+if defined HAS_CURL (
     curl.exe -L --progress-bar -o "%ZIPFILE%" "%ASSET_URL%"
 ) else (
     echo  [INFO] curl not found, using PowerShell...
@@ -61,8 +81,7 @@ if exist "%INSTALL_DIR%\run.bat" (
     goto :launch
 )
 echo  [ERROR] Download failed. Check your internet connection or branch name.
-pause
-exit /b 1
+goto :fatal
 
 :dl_ok
 
@@ -111,17 +130,10 @@ if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
 echo  [INFO] Copy complete.
 
 :: -- Stamp VERSION with branch + commit SHA --------------------------------
-echo  [INFO] Fetching commit SHA...
-set "COMMIT_SHA=unknown"
-for /f "usebackq delims=" %%S in (`
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "try { " ^
-        "  $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/commits/%BRANCH%' -TimeoutSec 10; " ^
-        "  $r.sha.Substring(0,7) " ^
-        "} catch { 'unknown' }"
-`) do set "COMMIT_SHA=%%S"
-echo %BRANCH%-%COMMIT_SHA%> "%INSTALL_DIR%\VERSION"
-echo  [INFO] Version: %BRANCH%-%COMMIT_SHA%
+set "SHORT_SHA=%COMMIT_SHA:~0,7%"
+if "%SHORT_SHA%"=="" set "SHORT_SHA=unknown"
+echo %BRANCH%-%SHORT_SHA%> "%INSTALL_DIR%\VERSION"
+echo  [INFO] Version: %BRANCH%-%SHORT_SHA%
 
 echo  [INFO] Updated to latest '%BRANCH%' branch.
 echo.
