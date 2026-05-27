@@ -389,6 +389,26 @@ DEMO = {
         ],
         "cbsLogPath": "C:\\Windows\\Logs\\CBS\\CBS.log",
     })((kw or {}).get("Action", "CheckHealth")),
+    "Test-PixellotInstallState.ps1": lambda **kw: {
+        "dirExists": True,
+        "dir": "C:\\pixellot\\downloadedversion",
+        "incomplete": True,
+        "rebooting": False,
+        "partFiles": [
+            {"name": "Pixellot-5.2.1.part_1", "sizeMB": 487.3, "lastWrite": (datetime.now() - timedelta(hours=14)).isoformat()},
+            {"name": "Pixellot-5.2.1.part_2", "sizeMB": 487.3, "lastWrite": (datetime.now() - timedelta(hours=14)).isoformat()},
+            {"name": "Pixellot-5.2.1.part_3", "sizeMB": 192.7, "lastWrite": (datetime.now() - timedelta(hours=14)).isoformat()},
+        ],
+        "partCount": 3,
+        "log": {
+            "path": "C:\\pixellot\\downloadedversion\\install_log_2026-05-26.log",
+            "name": "install_log_2026-05-26.log",
+            "sizeKB": 38.6,
+            "lastWrite": (datetime.now() - timedelta(hours=14)).isoformat(),
+            "lastLine": "Verifying part_3 integrity — 47% complete",
+        },
+        "message": "Half-finished install: 3 part file(s) present and log does not end with 'Rebooting...'.",
+    },
     "Install-PixellotDependencies.ps1": lambda **kw: {
         "success": True,
         "targetDir": "C:\\pixellot\\downloadedversion",

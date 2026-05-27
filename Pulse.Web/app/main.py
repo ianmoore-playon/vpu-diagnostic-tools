@@ -542,7 +542,7 @@ def _total_ram_gb(hardware, performance) -> float:
     return 0.0
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None) -> list:
     findings = []
 
     # ── NTP allowlist (PDF #9) ───────────────────────────────
@@ -800,6 +800,30 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                         "recommendation": f"Running at {speed} Mbps, expected 1 Gbps.",
                     }
                 )
+
+    # ── Half-finished install (PDF #3) ───────────────────────
+    # If part_1/2/3 files exist in c:\pixellot\downloadedversion and the
+    # most-recent installer log doesn't end with "Rebooting...", the last
+    # install run was interrupted and needs to be resumed.
+    if install_state and not install_state.get("error") and install_state.get("incomplete"):
+        part_count = install_state.get("partCount", 0)
+        log = install_state.get("log") or {}
+        last_line = (log.get("lastLine") or "").strip()
+        log_name = log.get("name") or "(no log)"
+        last_excerpt = last_line[:160] + ("…" if len(last_line) > 160 else "")
+        findings.append(
+            {
+                "severity": "warning",
+                "category": "Pixellot",
+                "title": "Half-finished Pixellot install detected",
+                "recommendation": (
+                    f"{part_count} part file(s) present in C:\\pixellot\\downloadedversion "
+                    f"and {log_name} does not end with 'Rebooting...'. Last log line was: "
+                    f'"{last_excerpt}". Resume the install by re-running the installer in '
+                    f"that directory."
+                ),
+            }
+        )
 
     # Deduplicate by (category, title) — separate checks shouldn't produce
     # the same finding twice on the dashboard.
@@ -1091,7 +1115,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None):
     flat_identity = {}
     if identity and not identity.get("error"):
         flat_identity = {
@@ -1124,7 +1148,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         "identity": flat_identity,
         "performance": performance if not performance.get("error", False) else {},
         "services": services if not services.get("error", False) else {"services": []},
-        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config),
+        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state),
         "networkConfig": net_cfg,
     }
 
@@ -1197,6 +1221,7 @@ async def api_preload():
         local,
         ntp_peers,
         dns_resolution,
+        install_state,
     ) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -1215,6 +1240,7 @@ async def api_preload():
         run_ps("Test-LocalNetwork.ps1"),
         run_ps("Get-NtpPeers.ps1"),
         run_ps("Test-DnsResolution.ps1"),
+        run_ps("Test-PixellotInstallState.ps1", timeout=15),
     )
     # Audio is deferred — lazy-fetched on tab visit to keep preload lean.
 
@@ -1224,7 +1250,7 @@ async def api_preload():
     probe_results_pre = await _probe_all_cameras(raw_ports_pre, ocr_ips_pre)
 
     return {
-        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw),
+        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state),
         "system": {
             "identity": _enrich_identity_lifecycle(identity),
             "hardware": hardware,
@@ -1294,7 +1320,7 @@ async def api_scripts_cancel_all():
 
 @app.get("/api/dashboard")
 async def api_dashboard():
-    identity, performance, services, nics, net_config, hardware, installed_sw = await asyncio.gather(
+    identity, performance, services, nics, net_config, hardware, installed_sw, install_state = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
@@ -1302,8 +1328,9 @@ async def api_dashboard():
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Get-Hardware.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
+        run_ps("Test-PixellotInstallState.ps1", timeout=15),
     )
-    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw)
+    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw, install_state)
 
 
 def _enrich_identity_lifecycle(identity):
@@ -1507,6 +1534,14 @@ async def api_reinstall_deps():
     VPU logs. Download can take a few minutes; installer up to ~10 min."""
     # 20 min cap covers a slow download plus the installer itself.
     return await run_ps("Install-PixellotDependencies.ps1", timeout=1200)
+
+
+@app.get("/api/services/install-state")
+async def api_install_state():
+    """PDF #3: detect a half-finished install in c:\\pixellot\\downloadedversion.
+    Returns the part files present and the last line of the most-recent
+    installer log."""
+    return await run_ps("Test-PixellotInstallState.ps1", timeout=15)
 
 
 @app.get("/api/disk-health")
