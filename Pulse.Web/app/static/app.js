@@ -3137,20 +3137,26 @@ function renderFaultIsolator() {
     if (_fi.phase === 0) {
       var si = _fi.suspectIdx;
       if (si < 0) return;
+      // Per-port expected speed — 100 Mbps for OCR, 1 Gbps for Main, etc.
+      // Falls back to 1 Gbps if the backend didn't identify the camera.
+      var suspectPort = ports[si] || {};
+      var expectedSpd = suspectPort.expectedSpeedMbps || 1000;
+      var expectedLbl = formatSpeed(expectedSpd);
       _fi.checking = true;
       renderFaultIsolator();
 
-      var spd0 = await pollPeakSpeed(si, 20);
+      var spd0 = await pollPeakSpeed(si, 20, expectedSpd);
       if (_fi._aborted) return;
       _fi.checking = false;
       var sl0 = formatSpeed(spd0);
       var sn0 = portLabel(si);
       var cfg0 = "Port: " + sn0 + "  |  Cable: (original)  |  Camera: (original)";
 
-      if (spd0 >= 1000) {
+      // Healthy if speed meets or exceeds expected for the camera type.
+      if (spd0 >= expectedSpd) {
         addHistory("Phase 1 - Baseline", cfg0, sl0, "Port healthy — no fault on this port.", "Pass");
         showResult("Baseline: " + sl0 + " — Port is operating normally.",
-          "The selected port is already running at 1 Gbps. No fault detected.", "pass");
+          "The selected port is at the expected " + expectedLbl + ". No fault detected.", "pass");
         _fi.phaseTitle = "BASELINE — PORT HEALTHY";
         _fi.phaseInstruction = "Pick a different port from the dropdown above and click Run Baseline, or close the wizard.";
         _fi.actionLabel = "Run Baseline";
@@ -3168,11 +3174,13 @@ function renderFaultIsolator() {
         bInstr = "Step 1: Confirm the camera is powered on and the cable is firmly seated on both ends. " +
                  "Step 2: If there's still no link, select a known-good test port below and click Check Now.";
       } else {
-        bMsg   = "Link is degraded at " + sl0 + " (expected 1 Gbps)";
+        bMsg   = "Link is degraded at " + sl0 + " (expected " + expectedLbl + ")";
         bInstr = "Select a known-good test port below, then move the SAME cable and camera from " + sn0 + " to it. Click Check Now when ready.";
       }
       addHistory("Phase 1 - Baseline", cfg0, sl0, bMsg + " — beginning isolation.", "Fail");
       showResult("Baseline: " + sl0 + " — " + bMsg + ".", bInstr, "fail");
+      // Remember expected speed so subsequent phases use the right pass threshold.
+      _fi.expectedSpeedMbps = expectedSpd;
       _fi.phase = 1;
       _fi.phaseTitle = "PHASE 2 — DOES THE FAULT FOLLOW THE NIC PORT?";
       _fi.phaseInstruction = bInstr;
@@ -3746,6 +3754,14 @@ async function init() {
   navigate(startPage);
   preloadProgressive();
   _updateThemeToggle();
+  // Fade out the splash screen now that the first render has happened.
+  // A short minimum delay (300ms) prevents a jarring flash on fast loads.
+  setTimeout(() => {
+    const splash = document.getElementById("splash");
+    if (!splash) return;
+    splash.classList.add("splash-hidden");
+    setTimeout(() => splash.remove(), 400);
+  }, 300);
   // WebSocket is started inside preloadProgressive() after dashboard loads
 }
 

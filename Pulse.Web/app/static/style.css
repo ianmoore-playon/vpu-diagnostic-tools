@@ -86,7 +86,42 @@ html, body { height: 100%; margin: 0; }
     padding: 14px 16px;
     border-bottom: 1px solid var(--c-border);
 }
-.brand-icon { flex-shrink: 0; }
+.brand-icon {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+}
+
+/* ── Splash screen ─────────────────────────────────────────── */
+/* Shown immediately on page load (before app.js runs) so users see
+   Pulse branding instead of a flash of blank background while the
+   JS bootstrap and first /api/dashboard fetch run. Removed by
+   init() once the first render completes. */
+.splash {
+    position: fixed;
+    inset: 0;
+    background: var(--c-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.35s ease-out;
+}
+.splash-logo {
+    max-width: 340px;
+    width: 55vmin;
+    height: auto;
+    animation: pulse-fade 1.6s ease-in-out infinite;
+}
+.splash-hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+@keyframes pulse-fade {
+    0%, 100% { opacity: 0.85; transform: scale(1); }
+    50%      { opacity: 1;    transform: scale(1.02); }
+}
 
 /* ── Theme toggle ───────────────────────────────────────────── */
 .theme-toggle-btn {

@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pulse Web | VPU Diagnostics</title>
+    <link rel="icon" type="image/png" href="/static/img/pulse-full.png">
+    <link rel="apple-touch-icon" href="/static/img/pulse-full.png">
     <link rel="stylesheet" href="/static/tailwind-min.css">
     <link rel="stylesheet" href="/static/style.css">
     <script>
@@ -20,14 +22,16 @@
     </script>
 </head>
 <body class="h-full bg-pulse-bg text-pulse-text overflow-hidden">
+    <!-- Splash screen — visible until app.js init() runs and hides it -->
+    <div id="splash" class="splash">
+        <img src="/static/img/pulse-full.png" alt="Pulse" class="splash-logo">
+    </div>
     <div id="app" class="flex h-full">
         <nav id="sidebar" class="w-56 bg-pulse-sidebar border-r border-pulse-border flex flex-col flex-shrink-0">
             <div class="sidebar-brand">
-                <svg class="brand-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--c-accent-blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-                </svg>
+                <img class="brand-icon" src="/static/img/pulse-logo.png" alt="Pulse logo" width="32" height="32">
                 <div>
-                    <h1 class="text-base font-bold text-pulse-text tracking-tight leading-tight">Pulse Web</h1>
+                    <h1 class="text-base font-bold text-pulse-text tracking-tight leading-tight">Pulse</h1>
                     <p class="text-[10px] text-pulse-muted leading-tight">VPU Diagnostics</p>
                 </div>
             </div>

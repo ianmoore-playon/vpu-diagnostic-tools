@@ -3,9 +3,16 @@ title Pulse Web BETA ^| VPU Diagnostics
 color 0E
 
 echo.
-echo  =========================================
-echo   Pulse Web BETA  ^|  VPU Diagnostic Tools
-echo  =========================================
+echo  ===============================================
+echo.
+echo     ____        _
+echo    ^|  _ \ _   _^| ^|___  ___                 /\
+echo    ^| ^|_) ^| ^| ^| ^| / __^|/ _ \                /  \
+echo    ^|  __/^| ^|_^| ^| \__ \  __/    .---._______/    \_
+echo    ^|_^|    \__,_^|_^|___/\___^|         [ BETA ]
+echo.
+echo               VPU Diagnostic Tools
+echo  ===============================================
 echo.
 
 set "INSTALL_DIR=%LOCALAPPDATA%\PulseWeb-beta"
