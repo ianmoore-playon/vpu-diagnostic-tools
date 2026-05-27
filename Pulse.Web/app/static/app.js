@@ -2357,21 +2357,21 @@ function renderNetwork() {
       </div>
     </div>
 
-    ${_netTimeSyncCard(cfg, ntp, ntpPeers)}
-
-    ${_netDnsResolutionCard(dnsResolution, cfg)}
-
     <!-- Advanced Diagnostics Toggle -->
     <div class="net-adv-toggle" onclick="_toggleAdvNet()">
       <div class="net-adv-toggle-inner">
         <span class="net-adv-toggle-icon" id="net-adv-arrow">${svgIcon("chevron", 14)}</span>
         <span class="net-adv-toggle-label">Advanced Diagnostics</span>
-        <span class="text-xs text-pulse-muted">Speed test, packet capture, traceroute, live monitoring</span>
+        <span class="text-xs text-pulse-muted">Time sync, DNS comparison, speed test, packet capture, traceroute, live monitoring</span>
       </div>
     </div>
 
     <!-- Advanced Diagnostics (collapsed by default) -->
     <div id="net-adv-section" class="net-adv-section net-adv-collapsed">
+
+      ${_netTimeSyncCard(cfg, ntp, ntpPeers)}
+
+      ${_netDnsResolutionCard(dnsResolution, cfg)}
 
       <!-- Speed Test -->
       <div class="card">
