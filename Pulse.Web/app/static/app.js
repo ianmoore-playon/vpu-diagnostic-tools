@@ -2349,13 +2349,18 @@ function _camNicDiagramHtml(ports) {
       '<span class="nic-legend-label">Port ' + (li + 1) + '</span>' +
     '</div>';
   }
-  // NIC header: collect unique adapter descriptions across all ports
-  // (mixed-NIC systems can have e.g. an I210 + an I350 + an I211 uplink).
+  // NIC header: collect unique adapter descriptions across all ports.
+  // Windows tacks " #2", " #3" etc on duplicate adapter names from the
+  // same physical NIC card — strip those before deduplicating so we
+  // don't show the same card four times. Mixed-NIC systems (e.g. an
+  // I210 + an I350) will still show both unique cards joined.
   var seenDescs = {};
   var uniqueDescs = [];
   for (var ni = 0; ni < ports.length; ni++) {
     var d = ports[ni] && ports[ni].interfaceDescription;
-    if (d && !seenDescs[d]) { seenDescs[d] = true; uniqueDescs.push(d); }
+    if (!d) continue;
+    var norm = d.replace(/\s*#\d+\s*$/, "").trim();
+    if (!seenDescs[norm]) { seenDescs[norm] = true; uniqueDescs.push(norm); }
   }
   var nicDesc = uniqueDescs.join(" + ");
   var hasRealPorts = ports.length > 0;
