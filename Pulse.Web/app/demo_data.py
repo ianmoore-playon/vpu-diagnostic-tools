@@ -136,6 +136,32 @@ DEMO = {
         ]
     },
     "Test-NtpDrift.ps1": lambda **kw: {"offsetSeconds": round(random.uniform(-0.3, 0.5), 3), "status": "ok", "source": "time.windows.com"},
+    "Get-NtpPeers.ps1": lambda **kw: {
+        "status": {
+            "source": "time.windows.com",
+            "sourceIp": "13.86.101.172",
+            "stratum": 3,
+            "stratumText": "3 (secondary reference - syncd by (S)NTP)",
+            "lastSync": (datetime.now() - timedelta(minutes=12)).strftime("%-m/%-d/%Y %-I:%M:%S %p"),
+            "leapIndicator": "0(no warning)",
+            "rootDelay": "0.0445007s",
+            "rootDispersion": "7.7799853s",
+            "pollInterval": "10 (1024s)",
+        },
+        "peers": [
+            {
+                "name": "time.windows.com",
+                "state": "Active",
+                "timeRemaining": "534.1234567s",
+                "mode": "3 (Client)",
+                "stratum": 3,
+                "stratumText": "3 (secondary reference - syncd by (S)NTP)",
+                "peerPollInterval": "10 (1024s)",
+                "hostPollInterval": "10 (1024s)",
+                "lastSyncTimestamp": (datetime.now() - timedelta(minutes=12)).strftime("%-m/%-d/%Y %-I:%M:%S %p"),
+            },
+        ],
+    },
     "Test-LocalNetwork.ps1": lambda **kw: {
         "gateway": {"target": "10.0.1.1", "label": "Gateway", "reachable": True, "sent": 4, "received": 4, "lossPercent": 0, "minMs": 1, "avgMs": 2, "maxMs": 4, "status": "pass"},
         "dns": {"target": "8.8.8.8", "label": "DNS Server", "reachable": True, "sent": 4, "received": 4, "lossPercent": 0, "minMs": 8, "avgMs": 12, "maxMs": 18, "status": "pass"},
