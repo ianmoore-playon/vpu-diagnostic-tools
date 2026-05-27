@@ -2041,8 +2041,8 @@ function _camPortTile(port, index) {
     : "No link";
   let statusLabel, dotCls;
   if (!p.isUp) { statusLabel = "Down"; dotCls = "cam-dot-down"; }
-  else if (p.isOcr) { statusLabel = "OCR (" + speed + ")"; dotCls = "cam-dot-info"; }
-  else if (p.isDegraded) { statusLabel = "Degraded"; dotCls = "cam-dot-warn"; }
+  else if (p.isDegraded) { statusLabel = "Degraded · " + speed; dotCls = "cam-dot-warn"; }
+  else if (p.isOcr) { statusLabel = "OCR · " + speed; dotCls = "cam-dot-info"; }
   else { statusLabel = "Linked · " + speed; dotCls = "cam-dot-up"; }
 
   const cams = p.camerasDetected || [];

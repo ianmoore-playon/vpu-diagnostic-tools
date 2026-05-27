@@ -105,6 +105,28 @@ _DEFAULT_OCR_IPS = {"169.254.16.52", "169.254.16.60"}
 # Known default main camera IPs
 _DEFAULT_MAIN_IPS = {"169.254.16.50", "169.254.16.51", "169.254.16.53"}
 
+# Camera model → (role, expected link speed in Mbps)
+# Used for positive hardware-based identification from CGI Brand.ProdNbr.
+_CAMERA_MODELS = {
+    "Z4SF-F": ("Main Camera", 1000),
+    "R2SD-G": ("OCR / Scoreboard", 100),
+    "S5SD-G": ("OCR / Scoreboard", 100),
+    "E8NC-G": ("OCR / Scoreboard", 1000),
+}
+
+
+def _lookup_camera_model(model_number):
+    """Return (role, expected_speed_mbps) for a known model, or (None, None)."""
+    if not model_number:
+        return None, None
+    # Try exact match first, then prefix match (ProdNbr may have suffixes)
+    if model_number in _CAMERA_MODELS:
+        return _CAMERA_MODELS[model_number]
+    for prefix, info in _CAMERA_MODELS.items():
+        if model_number.startswith(prefix):
+            return info
+    return None, None
+
 
 def _cgi_fetch_group(ip, group, headers, timeout=2.0):
     """Fetch a param.cgi group and return a flat dict of key=value pairs."""
@@ -426,13 +448,16 @@ def _enrich_ports(
 ) -> list:
     """Enrich raw NIC port data with status flags and camera detection.
 
-    OCR determination uses a layered approach (mirrors WPF):
-      1. CGI probe results (positive ID from camera firmware)
-      2. cameras.cfg role mapping (IP/MAC cross-reference)
-      3. Known default OCR IPs (169.254.16.52, 169.254.16.60)
-    A bare speed == 100 without corroboration is treated as degraded.
+    OCR / degraded determination uses a layered approach:
+      1. Camera model number from CGI probe (hardware identity — highest
+         priority).  Known models map to role + expected link speed.
+      2. CGI probe IP match against known OCR/main IPs
+      3. cameras.cfg role mapping (IP/MAC cross-reference)
+      4. Default IP convention
+    Degraded = actual speed < expected speed for the camera model. When
+    model is unknown, any sub-1 Gbps non-OCR port is treated as degraded.
 
-    probe_results: dict keyed by normalized MAC -> {mac, ip, is_ocr}
+    probe_results: dict keyed by normalized MAC -> {mac, ip, is_ocr, ...}
     from _probe_all_cameras(). Optional — when absent, falls back to
     cfg-only identification.
     """
@@ -448,6 +473,7 @@ def _enrich_ports(
             # Build enriched camera list from ARP entries
             cameras = []
             is_ocr = False
+            expected_speed = None  # from camera model lookup
             for arp in port.get("arpEntries", []):
                 arp_mac_raw = arp.get("mac", "")
                 if not _is_pixellot_mac(arp_mac_raw):
@@ -455,48 +481,78 @@ def _enrich_ports(
                 arp_ip = (arp.get("ip") or "").strip()
                 arp_mac = arp_mac_raw.strip().upper().replace("-", ":")
 
-                # Determine camera identity from probe + cfg
+                # Determine camera identity — layered approach
                 probe = probe_results.get(arp_mac)
                 cam_entry = {**arp}
+
+                # Layer 1: CGI probe data (copy all fields)
                 if probe:
                     cam_entry["cgiConfirmed"] = True
                     cam_entry["cgiMac"] = probe["mac"]
-                    # Copy all probe fields into the camera entry
                     for pkey in ("model", "modelNumber", "brand",
                                  "productType", "serialNumber",
                                  "firmwareVersion", "network",
                                  "stream0", "stream1", "sensor"):
                         if probe.get(pkey) is not None:
                             cam_entry[pkey] = probe[pkey]
+
+                # Layer 1a: Model number → role + expected speed (highest priority)
+                model_role, model_speed = _lookup_camera_model(
+                    cam_entry.get("modelNumber")
+                )
+                if model_role:
+                    cam_entry["role"] = model_role
+                    cam_entry["identitySource"] = "Camera model"
+                    cam_entry["expectedSpeedMbps"] = model_speed
+                    expected_speed = model_speed
+                    if "OCR" in model_role:
+                        is_ocr = True
+                # Layer 2: CGI probe IP-based OCR flag
+                elif probe:
                     if probe.get("is_ocr"):
                         cam_entry["role"] = "OCR / Scoreboard"
-                        cam_entry["identitySource"] = "Confirmed via CGI probe"
+                        cam_entry["identitySource"] = "CGI probe + OCR IP"
                         is_ocr = True
                     else:
                         cam_entry["role"] = "Main Camera"
-                        cam_entry["identitySource"] = "Confirmed via CGI probe"
+                        cam_entry["identitySource"] = "CGI probe"
+                # Layer 3: cameras.cfg
                 elif arp_ip in ocr_ips or arp_mac in ocr_macs:
                     cam_entry["role"] = "OCR / Scoreboard"
                     cam_entry["identitySource"] = "Matched cameras.cfg"
                     is_ocr = True
+                # Layer 4: Default IP convention
                 elif arp_ip in _DEFAULT_MAIN_IPS:
                     cam_entry["role"] = "Main Camera"
-                    cam_entry["identitySource"] = "Default IP convention"
+                    cam_entry["identitySource"] = "Default IP"
                 else:
                     cam_entry["role"] = None
                     cam_entry["identitySource"] = "OUI vendor match"
 
                 cameras.append(cam_entry)
 
+            # Degraded: compare actual speed against expected speed from
+            # camera model. If model is unknown, fall back to < 1 Gbps
+            # for non-OCR ports.
+            if expected_speed is not None:
+                is_degraded = (
+                    is_up and speed is not None and speed < expected_speed
+                )
+            else:
+                is_degraded = (
+                    is_up
+                    and speed is not None
+                    and speed < 1000
+                    and not is_ocr
+                )
+
             ports.append(
                 {
                     **port,
                     "isUp": is_up,
                     "isOcr": is_ocr,
-                    "isDegraded": is_up
-                    and speed is not None
-                    and speed < 1000
-                    and not is_ocr,
+                    "isDegraded": is_degraded,
+                    "expectedSpeedMbps": expected_speed,
                     "camerasDetected": cameras,
                 }
             )
@@ -521,10 +577,12 @@ def _compute_camera_findings(ports: list) -> list:
 
         if is_up and port.get("isDegraded"):
             speed = port.get("linkSpeedMbps")
+            exp = port.get("expectedSpeedMbps") or 1000
+            exp_label = f"{exp} Mbps" if exp < 1000 else f"{exp // 1000} Gbps"
             findings.append(
                 {
                     "severity": "warning",
-                    "title": f"{name} running at {speed} Mbps — expected 1 Gbps",
+                    "title": f"{name} running at {speed} Mbps — expected {exp_label}",
                     "body": "Degraded link speed usually means a bad cable, faulty connector, or wrong duplex negotiation.",
                 }
             )
