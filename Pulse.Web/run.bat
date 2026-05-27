@@ -77,9 +77,22 @@ if not exist "%PYEXE%" (
 del "%PYDIR%\%PYZIP%"
 echo  [SETUP] Python extracted OK.
 
+:: Verify the extracted Python actually runs (catches partial downloads
+:: that passed the 5KB size check but were truncated mid-archive).
+"%PYEXE%" --version >nul 2>&1
+if errorlevel 1 (
+    echo  [ERROR] Extracted Python failed to run. Archive may be corrupt.
+    echo  [ERROR] Delete %PYDIR% and try again.
+    goto :fatal
+)
+
 :: Enable site-packages
 echo  [SETUP] Enabling site-packages...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem '%PYDIR%' -Filter '*._pth' | ForEach-Object { (Get-Content $_.FullName) -replace '#import site', 'import site' | Set-Content $_.FullName }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$count = (Get-ChildItem '%PYDIR%' -Filter '*._pth' | ForEach-Object { (Get-Content $_.FullName) -replace '#import site', 'import site' | Set-Content $_.FullName; 1 } | Measure-Object).Count; if ($count -lt 1) { Write-Host '[ERROR] No ._pth file found to patch'; exit 1 }"
+if errorlevel 1 (
+    echo  [ERROR] Could not enable site-packages — Python install is broken.
+    goto :fatal
+)
 
 :: Bootstrap pip
 echo  [SETUP] Installing pip...
@@ -141,8 +154,11 @@ if not exist "app\main.py" (
 )
 
 :: ── Open browser after server starts ─────────────────────────
+:: Poll port 8765 until uvicorn is actually accepting connections, then
+:: launch Chrome. A fixed 3s sleep races on cold VPUs where Python
+:: bootstrap takes longer — browser would open to "can't connect".
 echo  [INFO] Starting server at http://localhost:8765
-start /b "" cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:8765"
+start /b "" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Wait-AndLaunch.ps1" -Port 8765 -Url "http://localhost:8765" -TimeoutSec 30
 
 :: ── Launch server ─────────────────────────────────────────────
 if not defined SILENT (

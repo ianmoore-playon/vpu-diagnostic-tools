@@ -4,37 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pulse Web | VPU Diagnostics</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        pulse: {
-                            bg:      'var(--c-bg)',
-                            sidebar: 'var(--c-surface-2)',
-                            card:    'var(--c-surface)',
-                            border:  'var(--c-border)',
-                            accent:  '#3b82f6',
-                            text:    'var(--c-text)',
-                            muted:   'var(--c-muted)',
-                        }
-                    }
-                }
-            }
-        }
-        // Apply saved theme before first paint (default is light)
-        if (localStorage.getItem('pulse-theme') === 'dark') {
-            document.documentElement.classList.add('dark');
-        }
-    </script>
+    <link rel="stylesheet" href="/static/tailwind-min.css">
     <link rel="stylesheet" href="/static/style.css">
+    <script>
+        // Theme detection runs before first paint to avoid flash.
+        // Priority: saved preference > system preference > light (default).
+        (function() {
+            var saved = localStorage.getItem('pulse-theme');
+            if (saved === 'dark') {
+                document.documentElement.classList.add('dark');
+            } else if (!saved && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
 </head>
 <body class="h-full bg-pulse-bg text-pulse-text overflow-hidden">
     <div id="app" class="flex h-full">
         <nav id="sidebar" class="w-56 bg-pulse-sidebar border-r border-pulse-border flex flex-col flex-shrink-0">
             <div class="sidebar-brand">
-                <svg class="brand-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <svg class="brand-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--c-accent-blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
                 </svg>
                 <div>
@@ -56,7 +45,9 @@
                     <button class="log-tab log-tab-active" data-log-tab="script" onclick="switchLogTab('script')">Script Log</button>
                     <button class="log-tab" data-log-tab="server" onclick="switchLogTab('server')">Server Log</button>
                 </div>
-                <span class="log-toggle-icon" onclick="toggleLogPane()">&#9650;</span>
+                <button class="log-toggle-icon" onclick="toggleLogPane()" title="Toggle log pane" aria-label="Toggle log pane">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                </button>
             </div>
             <div class="log-body" data-log-body="script"></div>
             <div class="log-body log-body-hidden" data-log-body="server"></div>
