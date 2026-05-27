@@ -115,7 +115,7 @@ _CAMERA_MODELS = {
 }
 
 
-def _lookup_camera_model(model_number):
+def _lookup_camera_model(model_number: Optional[str]) -> tuple:
     """Return (role, expected_speed_mbps) for a known model, or (None, None)."""
     if not model_number:
         return None, None
@@ -153,7 +153,12 @@ def _cgi_probe_sync(ip: str, timeout: float = 2.0) -> Optional[dict]:
     Pulls: MAC, brand/model, serial, firmware, network config, stream
     settings, and image sensor parameters. All queries except MAC are
     best-effort — missing data just means those fields are None.
-    Runs in a thread — safe to call via asyncio.to_thread."""
+    Runs in a thread — safe to call via asyncio.to_thread.
+
+    Auth is the Pixellot/Dynacolor factory default (Admin / 1234). If a
+    site has rotated camera credentials, probes will silently return None
+    and identification falls back to ARP/cameras.cfg only.
+    """
     headers = {"Authorization": "Basic " + base64.b64encode(b"Admin:1234").decode()}
 
     # Request 1: MAC address (critical — determines if camera responds)
@@ -244,19 +249,61 @@ async def _probe_camera_ip(ip, is_ocr_ip):
     return None
 
 
-async def _probe_all_cameras(ports, ocr_ips):
-    """Probe all camera IPs found in ARP entries across all ports.
-    Returns a dict keyed by normalized MAC -> {mac, ip, is_ocr}."""
+def _collect_camera_ips(ports, ocr_ips):
+    """Collect all IPs worth probing: defaults + any Pixellot ARP entries."""
     all_camera_ips = set(ocr_ips)
     all_camera_ips.update(_DEFAULT_OCR_IPS)
     all_camera_ips.update(_DEFAULT_MAIN_IPS)
-    # Also probe any Pixellot camera IPs found in ARP
     for port in ports:
         for arp in port.get("arpEntries", []):
             if _is_pixellot_mac(arp.get("mac", "")):
                 ip = arp.get("ip", "").strip()
                 if ip:
                     all_camera_ips.add(ip)
+    return all_camera_ips
+
+
+def _cached_probes_by_mac() -> dict:
+    """Return all currently-fresh probe cache entries keyed by MAC."""
+    now = time.monotonic()
+    by_mac = {}
+    for entry in list(_CGI_PROBE_CACHE.values()):
+        if (now - entry["ts"]) < _CGI_PROBE_TTL and entry.get("mac"):
+            by_mac[entry["mac"]] = entry
+    return by_mac
+
+
+async def _probe_all_cameras(ports, ocr_ips, block: bool = True):
+    """Probe all camera IPs found in ARP entries across all ports.
+
+    block=True  — wait for probes (used for dashboard/WS preload).
+    block=False — return cached data immediately; start a fire-and-forget
+                  background probe for any cold IPs. Used by /api/cameras
+                  so the first paint isn't gated on slow CGI calls. The
+                  next live-refresh tick picks up the new data.
+
+    Returns a dict keyed by normalized MAC -> probe result.
+    """
+    all_camera_ips = _collect_camera_ips(ports, ocr_ips)
+
+    if not block:
+        now = time.monotonic()
+        cold_ips = [
+            ip for ip in all_camera_ips
+            if (_CGI_PROBE_CACHE.get(ip) is None
+                or (now - _CGI_PROBE_CACHE[ip]["ts"]) >= _CGI_PROBE_TTL)
+        ]
+        if cold_ips:
+            async def _warm_cache():
+                tasks = [
+                    _probe_camera_ip(
+                        ip, ip in ocr_ips or ip in _DEFAULT_OCR_IPS
+                    )
+                    for ip in cold_ips
+                ]
+                await asyncio.gather(*tasks, return_exceptions=True)
+            asyncio.create_task(_warm_cache())
+        return _cached_probes_by_mac()
 
     tasks = []
     for ip in all_camera_ips:
@@ -298,8 +345,10 @@ def _compute_findings(identity, performance, services, nics) -> list:
             )
 
     if performance and not performance.get("error"):
-        cpu = performance.get("cpu", {}).get("usagePercent", 0)
-        if cpu and cpu > 90:
+        # Use `is not None` instead of truthy checks so a legitimate 0 value
+        # doesn't get short-circuited (would mask metric-collection bugs).
+        cpu = performance.get("cpu", {}).get("usagePercent")
+        if cpu is not None and cpu > 90:
             findings.append(
                 {
                     "severity": "critical",
@@ -308,7 +357,7 @@ def _compute_findings(identity, performance, services, nics) -> list:
                     "recommendation": f"CPU at {cpu}%. Check for runaway processes.",
                 }
             )
-        elif cpu and cpu > 75:
+        elif cpu is not None and cpu > 75:
             findings.append(
                 {
                     "severity": "warning",
@@ -318,8 +367,8 @@ def _compute_findings(identity, performance, services, nics) -> list:
                 }
             )
 
-        mem = performance.get("memory", {}).get("usedPercent", 0)
-        if mem and mem > 90:
+        mem = performance.get("memory", {}).get("usedPercent")
+        if mem is not None and mem > 90:
             findings.append(
                 {
                     "severity": "critical",
@@ -328,9 +377,18 @@ def _compute_findings(identity, performance, services, nics) -> list:
                     "recommendation": f"Memory at {mem}%. Close apps or add RAM.",
                 }
             )
+        elif mem is not None and mem > 80:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "category": "Performance",
+                    "title": "Memory Usage Elevated",
+                    "recommendation": f"Memory at {mem}%. Monitor for pressure.",
+                }
+            )
 
-        disk = performance.get("disk", {}).get("usedPercent", 0)
-        if disk and disk > 90:
+        disk = performance.get("disk", {}).get("usedPercent")
+        if disk is not None and disk > 90:
             findings.append(
                 {
                     "severity": "critical",
@@ -339,7 +397,7 @@ def _compute_findings(identity, performance, services, nics) -> list:
                     "recommendation": f"Disk at {disk}%. Free space immediately.",
                 }
             )
-        elif disk and disk > 80:
+        elif disk is not None and disk > 80:
             findings.append(
                 {
                     "severity": "warning",
@@ -350,7 +408,7 @@ def _compute_findings(identity, performance, services, nics) -> list:
             )
 
         temp = performance.get("temperature", {}).get("celsius")
-        if temp and temp > 85:
+        if temp is not None and temp > 85:
             findings.append(
                 {
                     "severity": "critical",
@@ -404,6 +462,10 @@ def _compute_findings(identity, performance, services, nics) -> list:
                     }
                 )
             speed = port.get("linkSpeedMbps")
+            # Flag links running below gigabit, EXCEPT 100 Mbps — that's the
+            # native speed of Pixellot OCR/scoreboard cameras (R2SD-G, S5SD-G,
+            # see _CAMERA_MODELS above). Anything else (10, 250, 500) is
+            # legitimately degraded auto-negotiation.
             if (
                 port.get("status") == "Up"
                 and speed
@@ -419,26 +481,61 @@ def _compute_findings(identity, performance, services, nics) -> list:
                     }
                 )
 
-    return findings
+    # Deduplicate by (category, title) — separate checks shouldn't produce
+    # the same finding twice on the dashboard.
+    seen = set()
+    deduped = []
+    for f in findings:
+        key = (f.get("category", ""), f.get("title", ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(f)
+    return deduped
 
 
-def _build_ocr_sets(pixellot_config=None):
-    """Return (ocr_ips, ocr_macs) from cameras.cfg + known defaults."""
+def _build_camera_sets(pixellot_config=None):
+    """Return cameras.cfg-derived sets for OCR and Main camera identification.
+
+    Returns dict with keys:
+      ocr_ips, ocr_macs  — OCR cameras (role contains "OCR")
+      main_ips, main_macs — Main/Panoramic/Tactical cameras (other roles)
+    Always includes the hardcoded default OCR IPs.
+    """
     ocr_ips = set(_DEFAULT_OCR_IPS)
     ocr_macs = set()
+    main_ips = set()
+    main_macs = set()
     cfg_cameras = []
     if pixellot_config and not pixellot_config.get("error"):
         cfg_cameras = pixellot_config.get("cameras", [])
     for cam in cfg_cameras:
         role = (cam.get("role") or cam.get("section") or "").strip()
+        ip = cam.get("ip", "").strip()
+        mac = cam.get("mac", "").strip().upper().replace("-", ":")
         if role.upper() == "OCR":
-            ip = cam.get("ip", "").strip()
-            mac = cam.get("mac", "").strip().upper().replace("-", ":")
             if ip:
                 ocr_ips.add(ip)
             if mac:
                 ocr_macs.add(mac)
-    return ocr_ips, ocr_macs
+        elif role:
+            # Main, Panoramic, Tactical, etc — non-OCR Pixellot camera roles.
+            if ip:
+                main_ips.add(ip)
+            if mac:
+                main_macs.add(mac)
+    return {
+        "ocr_ips": ocr_ips,
+        "ocr_macs": ocr_macs,
+        "main_ips": main_ips,
+        "main_macs": main_macs,
+    }
+
+
+def _build_ocr_sets(pixellot_config=None):
+    """Backwards-compatible wrapper — returns (ocr_ips, ocr_macs)."""
+    s = _build_camera_sets(pixellot_config)
+    return s["ocr_ips"], s["ocr_macs"]
 
 
 def _enrich_ports(
@@ -461,7 +558,11 @@ def _enrich_ports(
     from _probe_all_cameras(). Optional — when absent, falls back to
     cfg-only identification.
     """
-    ocr_ips, ocr_macs = _build_ocr_sets(pixellot_config)
+    cam_sets = _build_camera_sets(pixellot_config)
+    ocr_ips = cam_sets["ocr_ips"]
+    ocr_macs = cam_sets["ocr_macs"]
+    main_ips = cam_sets["main_ips"]
+    main_macs = cam_sets["main_macs"]
     probe_results = probe_results or {}
 
     ports = []
@@ -507,24 +608,28 @@ def _enrich_ports(
                     expected_speed = model_speed
                     if "OCR" in model_role:
                         is_ocr = True
-                # Layer 2: CGI probe IP-based OCR flag
-                elif probe:
-                    if probe.get("is_ocr"):
-                        cam_entry["role"] = "OCR / Scoreboard"
-                        cam_entry["identitySource"] = "CGI probe + OCR IP"
-                        is_ocr = True
-                    else:
-                        cam_entry["role"] = "Main Camera"
-                        cam_entry["identitySource"] = "CGI probe"
+                # Layer 2: CGI probe IP-based OCR flag (only flags OCR; we
+                # don't assume "Main Camera" without model or cfg confirmation)
+                elif probe and probe.get("is_ocr"):
+                    cam_entry["role"] = "OCR / Scoreboard"
+                    cam_entry["identitySource"] = "CGI probe + OCR IP"
+                    is_ocr = True
                 # Layer 3: cameras.cfg
                 elif arp_ip in ocr_ips or arp_mac in ocr_macs:
                     cam_entry["role"] = "OCR / Scoreboard"
                     cam_entry["identitySource"] = "Matched cameras.cfg"
                     is_ocr = True
+                elif arp_ip in main_ips or arp_mac in main_macs:
+                    cam_entry["role"] = "Main Camera"
+                    cam_entry["identitySource"] = "Matched cameras.cfg"
                 # Layer 4: Default IP convention
                 elif arp_ip in _DEFAULT_MAIN_IPS:
                     cam_entry["role"] = "Main Camera"
                     cam_entry["identitySource"] = "Default IP"
+                # Layer 5: CGI probe confirmed a Pixellot camera but no role match
+                elif probe:
+                    cam_entry["role"] = "Pixellot Camera"
+                    cam_entry["identitySource"] = "CGI probe"
                 else:
                     cam_entry["role"] = None
                     cam_entry["identitySource"] = "OUI vendor match"
@@ -559,10 +664,11 @@ def _enrich_ports(
                 }
             )
 
-    # Second pass: number main cameras by IP (.50 → 1, .51 → 2) and label ports.
-    # Collect main-camera ports, sort by camera IP, then assign numbers.
+    # Second pass: number main cameras and OCR cameras by camera IP so
+    # numbering is stable (Main Camera 1 = .50, Main Camera 2 = .51, etc).
+    # Collect per-role, sort, then assign numeric suffixes.
     main_ports = []
-    ocr_count = 0
+    ocr_ports = []
     for p in ports:
         cams = p.get("camerasDetected") or []
         if not cams:
@@ -570,17 +676,32 @@ def _enrich_ports(
             continue
         role = cams[0].get("role") or ""
         if "OCR" in role:
-            ocr_count += 1
-            p["cameraLabel"] = f"OCR {ocr_count}" if ocr_count > 1 else "OCR"
+            ocr_ports.append(p)
         elif role == "Main Camera":
             main_ports.append(p)
+        elif role == "Pixellot Camera":
+            p["cameraLabel"] = "Pixellot Camera"
         else:
             p["cameraLabel"] = "Camera"
 
-    # Sort main cameras by IP so numbering follows the IP convention
-    main_ports.sort(key=lambda p: p["camerasDetected"][0].get("ip", ""))
+    def _ip_sort_key(p):
+        # Numeric per-octet sort so .50 < .100 (string sort would invert)
+        ip = p["camerasDetected"][0].get("ip", "")
+        try:
+            return tuple(int(o) for o in ip.split("."))
+        except (ValueError, AttributeError):
+            return (999, 999, 999, 999)
+
+    main_ports.sort(key=_ip_sort_key)
     for i, p in enumerate(main_ports, 1):
         p["cameraLabel"] = f"Main Camera {i}"
+
+    ocr_ports.sort(key=_ip_sort_key)
+    if len(ocr_ports) == 1:
+        ocr_ports[0]["cameraLabel"] = "OCR"
+    else:
+        for i, p in enumerate(ocr_ports, 1):
+            p["cameraLabel"] = f"OCR {i}"
 
     return ports
 
@@ -717,6 +838,7 @@ async def serve_index():
 @app.get("/api/preload")
 async def api_preload():
     """Run ALL diagnostic scripts once in parallel and return per-page data."""
+    sc_url = load_settings().get("scoreConnectUrl", "http://localhost:5000")
     (
         identity,
         hardware,
@@ -733,7 +855,6 @@ async def api_preload():
         ports,
         ntp,
         local,
-        audio,
     ) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -743,15 +864,15 @@ async def api_preload():
         run_ps("Get-Services.ps1"),
         run_ps("Get-DiskHealth.ps1"),
         run_ps("Get-EventLogs.ps1"),
-        run_ps("Get-ScoreConnectStatus.ps1"),
+        run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": sc_url}),
         run_ps("Get-PixellotConfig.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
         run_ps("Test-NetworkDomains.ps1"),
         run_ps("Test-NetworkPorts.ps1"),
         run_ps("Test-NtpDrift.ps1"),
         run_ps("Test-LocalNetwork.ps1"),
-        run_ps("Get-AudioDevices.ps1"),
     )
+    # Audio is deferred — lazy-fetched on tab visit to keep preload lean.
 
     # Run CGI probes for camera identification (cached 30s)
     ocr_ips_pre, _ = _build_ocr_sets(pixellot_config)
@@ -773,7 +894,6 @@ async def api_preload():
         "services": services,
         "disk-health": disk_health,
         "events": event_logs,
-        "audio": audio,
         "scoreconnect": scoreconnect,
         "settings": {
             **load_settings(),
@@ -987,9 +1107,10 @@ async def api_cameras():
         run_ps("Get-PixellotConfig.ps1"),
     )
     ocr_ips, _ = _build_ocr_sets(pix_config)
-    # Run CGI probes (cached 30s) for positive camera identification
+    # First paint: use cached probes only; warm the cache in the background
+    # so the next live-refresh tick picks up fresh camera identification.
     raw_ports = nics.get("ports", []) if nics and not nics.get("error") else []
-    probe_results = await _probe_all_cameras(raw_ports, ocr_ips)
+    probe_results = await _probe_all_cameras(raw_ports, ocr_ips, block=False)
     ports = _enrich_ports(nics, pix_config, probe_results)
     return {
         "ports": ports,
@@ -1031,7 +1152,18 @@ async def api_audio():
 async def api_audio_volume(request: Request):
     body = await request.json()
     device_id = body.get("deviceId", "")
-    volume = body.get("volume", 50)
+    volume = body.get("volume")
+
+    # Validate — reject bad input before it reaches PowerShell.
+    if not isinstance(device_id, str) or not device_id.strip():
+        return {"error": True, "message": "deviceId must be a non-empty string"}
+    try:
+        volume = int(volume)
+    except (TypeError, ValueError):
+        return {"error": True, "message": "volume must be an integer"}
+    if volume < 0 or volume > 100:
+        return {"error": True, "message": "volume must be 0-100"}
+
     return await run_ps("Set-AudioVolume.ps1", {"DeviceId": device_id, "Volume": volume})
 
 
@@ -1078,6 +1210,7 @@ async def api_export():
         "networkPorts",
         "ntpDrift",
     ]
+    sc_url = load_settings().get("scoreConnectUrl", "http://localhost:5000")
     results = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -1087,7 +1220,7 @@ async def api_export():
         run_ps("Get-Services.ps1"),
         run_ps("Get-DiskHealth.ps1"),
         run_ps("Get-EventLogs.ps1"),
-        run_ps("Get-ScoreConnectStatus.ps1"),
+        run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": sc_url}),
         run_ps("Get-PixellotConfig.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
         run_ps("Test-NetworkDomains.ps1"),
@@ -1110,7 +1243,13 @@ async def _idle_shutdown():
     await asyncio.sleep(IDLE_SHUTDOWN_SECS)
     if not _ws_clients and _ever_had_client:
         _log("auto-shutdown", 0, "ok", f"no clients for {IDLE_SHUTDOWN_SECS}s")
-        _os._exit(0)
+        # Send SIGINT to ourselves so uvicorn's lifespan handlers run cleanly.
+        # _os._exit would bypass cleanup and abruptly tear down the process.
+        import signal
+        try:
+            _os.kill(_os.getpid(), signal.SIGINT)
+        except Exception:
+            _os._exit(0)  # fall back to hard exit if signal raise fails
 
 
 def _on_ws_connect(ws: WebSocket):
@@ -1137,11 +1276,23 @@ async def ws_endpoint(ws: WebSocket):
         settings = load_settings()
         interval = max(settings.get("pollIntervalMs", 3000), 1000) / 1000
         last_log_idx = len(LOG_BUFFER)
-        # Cache pixellot config once — it's static and shouldn't slow the poll loop.
+        # Cache pixellot config but refresh periodically so config changes
+        # made during a long session pick up without forcing a reconnect.
         pix_cfg = await run_ps("Get-PixellotConfig.ps1", timeout=10)
         ws_ocr_ips, _ = _build_ocr_sets(pix_cfg)
+        pix_cfg_ttl_secs = 120  # refresh every ~2 minutes
+        last_pix_refresh = time.time()
 
         while True:
+            # Periodically refresh pixellot config (cheap — runs in parallel below).
+            if time.time() - last_pix_refresh > pix_cfg_ttl_secs:
+                try:
+                    pix_cfg = await run_ps("Get-PixellotConfig.ps1", timeout=10)
+                    ws_ocr_ips, _ = _build_ocr_sets(pix_cfg)
+                    last_pix_refresh = time.time()
+                except Exception as e:
+                    ps_log("ws-refresh", 0, "warn", f"pix_cfg refresh failed: {e}")
+
             perf, nics, net_health = await asyncio.gather(
                 run_ps("Get-Performance.ps1", timeout=10),
                 run_ps("Get-NicAdapters.ps1", timeout=10),
@@ -1166,8 +1317,10 @@ async def ws_endpoint(ws: WebSocket):
             await asyncio.sleep(interval)
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as e:
+        # Log unexpected errors so they're surfaced in the Server Log pane
+        # instead of silently killing live metric updates.
+        ps_log("ws-loop", 0, "error", f"WebSocket loop crashed: {type(e).__name__}: {e}")
     finally:
         _on_ws_disconnect(ws)
 

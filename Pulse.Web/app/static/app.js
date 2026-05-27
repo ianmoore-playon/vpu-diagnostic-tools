@@ -195,10 +195,10 @@ function errorBox(msg) {
 function usageBar(pct, color) {
   const c =
     pct > 90
-      ? "#ef4444"
+      ? "var(--c-accent-red)"
       : pct > 75
-        ? "#eab308"
-        : color || "#3b82f6";
+        ? "var(--c-accent-amber)"
+        : color || "var(--c-accent-blue)";
   return `<div class="usage-bar-bg"><div class="usage-bar-fill" style="width:${Math.min(pct, 100)}%;background:${c}"></div></div>`;
 }
 
@@ -216,10 +216,10 @@ function gauge(label, value, unit, color, opts) {
   const raw = value || 0;
   const c =
     raw > critAt
-      ? "#ef4444"
+      ? "var(--c-accent-red)"
       : raw > warnAt
-        ? "#eab308"
-        : color || "#3b82f6";
+        ? "var(--c-accent-amber)"
+        : color || "var(--c-accent-blue)";
   return `<div class="flex flex-col items-center gap-2">
     <div class="relative" style="width:7rem;height:7rem">
       <svg viewBox="0 0 100 100" class="w-full h-full">
@@ -238,6 +238,12 @@ function gauge(label, value, unit, color, opts) {
 
 // ── Data Preload (progressive) ──────────────────────────────
 
+// Sections whose data feeds the dashboard cards (NIC table, gauges, services, etc.).
+// Used by fetchSection to avoid unnecessary dashboard re-renders during preload.
+const DASHBOARD_DEPENDENCIES = new Set([
+  "dashboard", "cameras", "system", "disk-health", "services",
+]);
+
 function fetchSection(key) {
   if (dataCache[key]) return Promise.resolve(dataCache[key]);
   // Return the existing in-flight promise so multiple callers wait for the same request
@@ -251,7 +257,12 @@ function fetchSection(key) {
     if (data && !data.error) {
       dataCache[key] = data;
     }
-    if (currentPage === key || currentPage === "dashboard") renderPage(currentPage);
+    // Re-render the current page only when the completed fetch is relevant to it.
+    // For dashboard, only its own deps trigger a refresh — non-dashboard data
+    // (events, audio, scoreconnect, etc.) doesn't change anything visible.
+    const shouldRender = currentPage === key
+      || (currentPage === "dashboard" && DASHBOARD_DEPENDENCIES.has(key));
+    if (shouldRender) renderPage(currentPage);
     return data;
   });
   return fetchPromises[key];
@@ -426,6 +437,10 @@ function connectWS() {
   if (ws && ws.readyState <= 1) return;
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => {
+    _wsConnected = true;
+    if (currentPage === "network" && _liveNetHealth) _renderLiveNetHealth(_liveNetHealth);
+  };
   ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
@@ -436,6 +451,8 @@ function connectWS() {
     } catch { /* ignore parse errors */ }
   };
   ws.onclose = () => {
+    _wsConnected = false;
+    if (currentPage === "network" && _liveNetHealth) _renderLiveNetHealth(_liveNetHealth);
     clearTimeout(wsRetryTimer);
     wsRetryTimer = setTimeout(connectWS, 5000);
   };
@@ -444,6 +461,9 @@ function connectWS() {
 
 // Latest network health from WebSocket — shared between pages
 var _liveNetHealth = null;
+var _wsConnected = false;
+// Track previous TCP counters to compute deltas (Get-Counter values are cumulative since boot)
+var _prevLiveCounters = null;
 
 function updateLiveMetrics(msg) {
   // Store network health regardless of current page
@@ -481,12 +501,20 @@ function updateLiveMetrics(msg) {
   const liveT = perf.temperature?.celsius;
   _updateGaugeLive("temp", liveT, { max: 100, warn: 65, crit: 85, unit: "°C" });
 
-  // Auto-refresh findings when live metrics diverge from cached snapshot
+  // Auto-refresh findings when live metrics diverge from cached snapshot.
+  // We match by (category + severity) instead of title strings so this
+  // doesn't silently break when finding wording changes in main.py.
   const dash = dataCache["dashboard"];
   if (dash && dash.findings?.length) {
-    const hadCpuCrit = dash.findings.some((f) => f.title === "CPU Usage Critical");
-    const hadCpuWarn = dash.findings.some((f) => f.title === "CPU Usage Elevated");
-    const hadTempCrit = dash.findings.some((f) => f.title === "Temperature Critical");
+    const hasFinding = (cat, sev) => dash.findings.some(
+      (f) => (f.category || "").toLowerCase() === cat && f.severity === sev
+    );
+    const hadCpuCrit = hasFinding("performance", "critical")
+      && dash.findings.some((f) => /cpu/i.test(f.title || ""));
+    const hadCpuWarn = hasFinding("performance", "warning")
+      && dash.findings.some((f) => /cpu/i.test(f.title || ""));
+    const hadTempCrit = hasFinding("hardware", "critical")
+      && dash.findings.some((f) => /temp/i.test(f.title || ""));
     const liveTemp = perf.temperature?.celsius;
     const stale =
       (hadCpuCrit && cpu != null && cpu <= 75) ||
@@ -511,7 +539,7 @@ function _updateGaugeLive(name, val, opts) {
     const circ = 2 * Math.PI * r;
     ring.setAttribute("stroke-dashoffset", String(circ * (1 - pct / 100)));
     const raw = val || 0;
-    ring.setAttribute("stroke", raw > critAt ? "#ef4444" : raw > warnAt ? "#eab308" : "#3b82f6");
+    ring.setAttribute("stroke", raw > critAt ? "var(--c-accent-red)" : raw > warnAt ? "var(--c-accent-amber)" : "var(--c-accent-blue)");
   }
   if (valEl) valEl.textContent = val != null ? Math.round(val) : "--";
 }
@@ -537,6 +565,8 @@ const pageRenderers = {
 // ── Dashboard ────────────────────────────────────────────────
 
 function _subsystemHealth(findings) {
+  // Map each finding category to the subsystem panel that owns it.
+  // Each finding lights up exactly ONE panel — no double-flagging.
   const cats = {};
   (findings || []).forEach((f) => {
     const k = (f.category || "").toLowerCase();
@@ -544,21 +574,23 @@ function _subsystemHealth(findings) {
   });
   return [
     { id: "system", label: "System Overview", icon: "cpu",
-      health: cats.system ? "Warning" : "Healthy",
+      health: (cats.system || cats.hardware || cats.performance) ? "Warning" : "Healthy",
       desc: "Hardware, OS, uptime, and Pixellot software." },
     { id: "network", label: "Network", icon: "wifi",
       health: cats.network ? "Warning" : "Healthy",
       desc: "IP, DNS, firewall, and port connectivity." },
     { id: "cameras", label: "Camera Connectivity", icon: "camera",
-      health: (cats.network || cats.camera) ? "Warning" : "Healthy",
+      health: cats.camera ? "Warning" : "Healthy",
       desc: "NICs, link status, speed, and camera detection." },
     { id: "services", label: "Pixellot Services", icon: "server",
       health: cats.services ? "Warning" : "Healthy",
       desc: "Agent, encoder, watchdog service status." },
     { id: "disk-health", label: "Disk Health", icon: "hdd",
-      health: (cats.storage || cats.hardware) ? "Warning" : "Healthy",
+      health: cats.storage ? "Warning" : "Healthy",
       desc: "Free space, SMART health, disk events." },
     { id: "events", label: "Event Viewer", icon: "triangle",
+      // Event Viewer surfaces OS errors but doesn't generate findings of its own —
+      // its health rolls up from the dashboard, so it stays Healthy here.
       health: "Healthy",
       desc: "Recent OS errors from VPU providers." },
   ];
@@ -799,13 +831,13 @@ function renderDashboard() {
       </div>
     </div>` : ""}
 
-    <!-- Active Findings -->
-    ${findings.length ? `
+    <!-- Active Findings — only shown when there are more than the Top Findings panel displays -->
+    ${findings.length > 3 ? `
     <div class="card dash-findings-card">
       <div class="af-header">
         <span class="af-icon">${svgIcon("triangle", 18)}</span>
         <span class="af-label">ACTIVE FINDINGS</span>
-        <span class="af-count-badge">${totalFindings} issue(s) found</span>
+        <span class="af-count-badge">${totalFindings} issue${totalFindings === 1 ? "" : "s"} found</span>
       </div>
       <div class="af-list">
         ${findings.slice(0, 10).map((f) => `
@@ -871,7 +903,7 @@ function renderDashboard() {
         <div class="dash-gauge-col dash-gauge-col-center">
           <div class="dash-icon-tile">
             <span style="color:${internetColor}">${svgIcon("globe", 26)}</span>
-            <span class="dash-tile-val" style="color:${internetColor}">${internetLabel === "Connected" ? "Connected" : internetLabel === "Offline" ? "No connection" : internetLabel}</span>
+            <span class="dash-tile-val" style="color:${internetColor}">${esc(internetLabel)}</span>
           </div>
           <span class="text-xs text-pulse-muted font-medium">Internet</span>
         </div>
@@ -929,15 +961,21 @@ function renderDashboard() {
   `;
 
   // ── Live NIC refresh: poll /api/cameras every 3s and update NIC table ──
+  // Uses an in-flight flag to skip ticks while a previous request is pending,
+  // so slow PowerShell on the VPU can't pile up overlapping requests.
   if (_dashNicRefreshTimer) clearInterval(_dashNicRefreshTimer);
+  var _nicPollBusy = false;
   _dashNicRefreshTimer = setInterval(function() {
     if (currentPage !== "dashboard") { clearInterval(_dashNicRefreshTimer); _dashNicRefreshTimer = null; return; }
+    if (_nicPollBusy) return;
+    _nicPollBusy = true;
     api("/api/cameras").then(function(fresh) {
       if (!fresh || fresh.error || currentPage !== "dashboard") return;
       dataCache.cameras = fresh;
       var el = document.getElementById("dash-nic-table");
       if (el) el.innerHTML = _renderNicRows(fresh.ports || []);
-    }).catch(function() { /* network blip — skip this tick */ });
+    }).catch(function() { /* network blip — skip this tick */ })
+      .then(function() { _nicPollBusy = false; });
   }, 3000);
 }
 
@@ -1417,16 +1455,35 @@ function _renderLiveNetHealth(h) {
   var tcp = h.tcp || {};
   var conns = h.connections || [];
 
+  // Update stale indicator (lives in the header, outside #net-live-body)
+  var ind = document.querySelector(".net-live-indicator");
+  if (ind) {
+    ind.classList.toggle("net-live-stale", !_wsConnected);
+    var label = ind.querySelector(".text-xs");
+    if (label) label.textContent = _wsConnected ? "Live via WebSocket" : "Disconnected — reconnecting…";
+  }
+
   // Retransmission gauge color
   var retrans = tcp.retransmitsSec || 0;
   var retCls = retrans > 10 ? "status-fail" : retrans > 2 ? "status-warn" : "status-pass";
+
+  // Compute deltas for cumulative counters (Failures/Resets are cumulative since boot)
+  var curFailures = tcp.connFailures || 0;
+  var curResets   = tcp.connResets || 0;
+  var failuresDelta = 0;
+  var resetsDelta = 0;
+  if (_prevLiveCounters) {
+    failuresDelta = Math.max(0, curFailures - _prevLiveCounters.failures);
+    resetsDelta   = Math.max(0, curResets - _prevLiveCounters.resets);
+  }
+  _prevLiveCounters = { failures: curFailures, resets: curResets };
 
   el.innerHTML =
     '<div class="net-live-gauges">' +
       _liveGauge("Retransmits/s", retrans, retCls) +
       _liveGauge("Established", tcp.established || 0, "") +
-      _liveGauge("Failures", tcp.connFailures || 0, (tcp.connFailures || 0) > 0 ? "status-warn" : "") +
-      _liveGauge("Resets", tcp.connResets || 0, (tcp.connResets || 0) > 0 ? "status-warn" : "") +
+      _liveGauge("New Failures", failuresDelta, failuresDelta > 0 ? "status-warn" : "") +
+      _liveGauge("New Resets", resetsDelta, resetsDelta > 0 ? "status-warn" : "") +
       _liveGauge("Segs Out/s", tcp.segsOutSec || 0, "") +
       _liveGauge("Segs In/s", tcp.segsInSec || 0, "") +
     '</div>' +
@@ -1504,21 +1561,23 @@ function _renderCapture(el, d) {
       }).join("") +
     '</div>' : '') +
     // Top talkers
-    (topTalkers.length ? '<div class="net-cap-talkers">' +
+    '<div class="net-cap-talkers">' +
       '<div class="net-cap-talkers-title">Top Endpoints by Packet Count</div>' +
-      '<table class="data-table"><thead><tr>' +
-        '<th>Host</th><th>Address</th><th>Port</th><th>Packets</th>' +
-      '</tr></thead><tbody>' +
-      topTalkers.map(function(t) {
-        return '<tr>' +
-          '<td>' + esc(t.remoteHost || "—") + '</td>' +
-          '<td class="font-mono text-xs">' + esc(t.remoteAddr) + '</td>' +
-          '<td class="font-mono">' + esc(String(t.remotePort)) + '</td>' +
-          '<td class="font-mono">' + esc(String(t.packets)) + '</td>' +
-        '</tr>';
-      }).join("") +
-      '</tbody></table>' +
-    '</div>' : '');
+      (topTalkers.length
+        ? '<table class="data-table"><thead><tr>' +
+            '<th>Host</th><th>Address</th><th>Port</th><th>Packets</th>' +
+          '</tr></thead><tbody>' +
+          topTalkers.map(function(t) {
+            return '<tr>' +
+              '<td>' + esc(t.remoteHost || "—") + '</td>' +
+              '<td class="font-mono text-xs">' + esc(t.remoteAddr) + '</td>' +
+              '<td class="font-mono">' + esc(String(t.remotePort)) + '</td>' +
+              '<td class="font-mono">' + esc(String(t.packets)) + '</td>' +
+            '</tr>';
+          }).join("") +
+          '</tbody></table>'
+        : '<p class="net-cap-empty">No outbound destinations parsed from the capture — this Windows build may not expose IP details via etl2txt.</p>') +
+    '</div>';
 }
 
 function _prefixToMask(prefix) {
@@ -1535,10 +1594,15 @@ function _buildNetIssues(cfg, ports, domains, local) {
   var dns = (local || {}).dns;
 
   // ── Critical: Gateway ────────────────────────────────────
-  if (gw && !gw.reachable)
-    issues.push({ severity: "critical", title: "Gateway unreachable (" + gw.target + ")",
-      body: "Verify the uplink Ethernet cable is seated, the switch port is active, and the VLAN is correct. No traffic will leave the VPU until this is resolved." });
-  else if (gw && gw.reachable && (gw.lossPercent > 0 || (gw.avgMs != null && gw.avgMs > 50)))
+  if (gw && !gw.reachable) {
+    if (!gw.target)
+      issues.push({ severity: "critical", title: "No default gateway configured",
+        body: "The uplink adapter has no IPv4 default gateway. Set one via DHCP or static configuration — the VPU cannot reach the internet without it." });
+    else
+      issues.push({ severity: "critical", title: "Gateway unreachable (" + gw.target + ")",
+        body: "Verify the uplink Ethernet cable is seated, the switch port is active, and the VLAN is correct. No traffic will leave the VPU until this is resolved." });
+  }
+  else if (gw && gw.reachable && (gw.lossPercent > 0 || (gw.avgMs != null && gw.avgMs > 10)))
     issues.push({ severity: "warning", title: "Unstable gateway — " + (gw.avgMs || "?") + " ms latency, " + (gw.lossPercent || 0) + "% loss",
       body: "Try a different switch port, replace the Ethernet cable, or check for broadcast storms on the venue network." });
 
@@ -1937,6 +2001,7 @@ function renderNetwork() {
 // ── Cameras ──────────────────────────────────────────────────
 
 var _camerasRefreshTimer = null;
+var _camerasFailCount = 0;  // consecutive /api/cameras failures during live refresh
 
 function _camDetailKv(label, val) {
   if (!val && val !== 0) return '';
@@ -1963,9 +2028,17 @@ function _camDetailsPanel(cams, portIdx, portData) {
   var nicGroup = '';
   if (portData) {
     var duplexVal = portData.fullDuplex === true ? "Full" : portData.fullDuplex === false ? "Half" : "—";
-    var errTotal = (portData.rxErrors || 0) + (portData.txErrors || 0);
+    // Sum every error/discard counter for the "has errors" check so we
+    // don't miss problems that only register on packet-error or discard
+    // counters (driver-dependent which fields populate).
+    var rxPktErr = portData.rxPacketErrors || 0;
+    var txPktErr = portData.txPacketErrors || 0;
+    var rxDisc   = portData.rxDiscards || 0;
+    var txDisc   = portData.txDiscards || 0;
+    var errTotal = (portData.rxErrors || 0) + (portData.txErrors || 0) +
+                   rxPktErr + txPktErr + rxDisc + txDisc;
     var errVal = errTotal > 0
-      ? 'RX ' + (portData.rxPacketErrors || 0) + ' / TX ' + (portData.txPacketErrors || 0) + ' / Discards ' + ((portData.rxDiscards || 0) + (portData.txDiscards || 0))
+      ? 'RX ' + rxPktErr + ' / TX ' + txPktErr + ' / Discards ' + (rxDisc + txDisc)
       : 'None';
     nicGroup = '<div class="cam-detail-group">' +
       '<div class="cam-detail-group-title">NIC Adapter</div>' +
@@ -2063,11 +2136,15 @@ function _camPortTile(port, index) {
 
   const cams = p.camerasDetected || [];
   var camLabel = p.cameraLabel;
-  var isMain = camLabel && camLabel.indexOf("Main") === 0;
+  // Badge color: OCR → blue, Main Camera N → teal, generic Camera/Pixellot → muted.
+  var camLabelCls;
+  if (p.isOcr) camLabelCls = "badge-ol-info";
+  else if (camLabel && camLabel.indexOf("Main") === 0) camLabelCls = "badge-ol-main";
+  else camLabelCls = "badge-ol-muted";
   return `<div class="cam-port-tile ${p.isUp ? "cam-port-active" : "cam-port-down"}">
     <div class="cam-port-header">
       <span class="cam-port-num">Port ${index + 1}</span>
-      ${camLabel ? '<span class="badge-ol ' + (p.isOcr ? 'badge-ol-info' : 'badge-ol-main') + '">' + esc(camLabel) + '</span>' : ''}
+      ${camLabel ? '<span class="badge-ol ' + camLabelCls + '">' + esc(camLabel) + '</span>' : ''}
       ${p.isDegraded ? '<span class="badge-ol badge-ol-warn">Degraded</span>' : ""}
     </div>
     <div class="cam-port-name">${esc(p.name)}</div>
@@ -2156,20 +2233,33 @@ function _camNicDiagramHtml(ports) {
       '<span class="nic-legend-label">Port ' + (li + 1) + '</span>' +
     '</div>';
   }
-  // NIC header: grab adapter description from first real port
-  var nicDesc = "";
+  // NIC header: collect unique adapter descriptions across all ports
+  // (mixed-NIC systems can have e.g. an I210 + an I350 + an I211 uplink).
+  var seenDescs = {};
+  var uniqueDescs = [];
   for (var ni = 0; ni < ports.length; ni++) {
-    if (ports[ni] && ports[ni].interfaceDescription) { nicDesc = ports[ni].interfaceDescription; break; }
+    var d = ports[ni] && ports[ni].interfaceDescription;
+    if (d && !seenDescs[d]) { seenDescs[d] = true; uniqueDescs.push(d); }
   }
+  var nicDesc = uniqueDescs.join(" + ");
+  var hasRealPorts = ports.length > 0;
+  var headerLabel;
+  if (nicDesc) headerLabel = svgIcon("cpu", 16) + ' ' + esc(nicDesc) + ' · ' + count + ' ports';
+  else if (hasRealPorts) headerLabel = count + ' ports';
+  else headerLabel = svgIcon("cpu", 16) + ' No NIC ports detected';
   var nicHeader = '<div class="nic-diagram-header">' +
-    (nicDesc ? svgIcon("cpu", 16) + ' ' + esc(nicDesc) + ' · ' + count + ' ports' : count + ' ports') +
+    headerLabel +
     '<span id="cam-live-badge" class="cam-live-badge">Auto-Refresh</span>' +
   '</div>';
+  // Only show the physical-order note when we actually have NIC data;
+  // otherwise it reads misleadingly on an empty system.
+  var note = hasRealPorts
+    ? '<div class="nic-diagram-note">Port order mirrors the physical orientation of the NIC — Port ' + count + ' is leftmost on the card.</div>'
+    : '';
   return nicHeader + '<div class="nic-diagram-wrap">' +
     '<div class="nic-diagram-ports">' + portIcons + '</div>' +
     '<div class="nic-diagram-legend">' + legend + '</div>' +
-  '</div>' +
-  '<div class="nic-diagram-note">Port order mirrors the physical orientation of the NIC — Port ' + count + ' is leftmost on the card.</div>';
+  '</div>' + note;
 }
 
 function renderCameras() {
@@ -2220,10 +2310,20 @@ function renderCameras() {
 
   // ── Live refresh: poll /api/cameras every 3s and update port grid + findings ──
   if (_camerasRefreshTimer) clearInterval(_camerasRefreshTimer);
+  _camerasFailCount = 0;
   _camerasRefreshTimer = setInterval(function() {
     if (currentPage !== "cameras") { clearInterval(_camerasRefreshTimer); _camerasRefreshTimer = null; return; }
+    var markStale = function() {
+      // After 3 consecutive failures (~9s) flag the Auto-Refresh badge as stale.
+      _camerasFailCount++;
+      if (_camerasFailCount >= 3) {
+        var b = document.getElementById("cam-live-badge");
+        if (b) { b.classList.add("cam-live-stale"); b.textContent = "Stale (" + _camerasFailCount + ")"; }
+      }
+    };
     api("/api/cameras").then(function(fresh) {
-      if (!fresh || fresh.error || currentPage !== "cameras") return;
+      if (!fresh || fresh.error || currentPage !== "cameras") { markStale(); return; }
+      _camerasFailCount = 0;
       dataCache.cameras = fresh;
       var grid = document.getElementById("cam-port-grid");
       // Preserve open Details panels across refresh
@@ -2242,13 +2342,15 @@ function renderCameras() {
       if (diag) diag.innerHTML = _camNicDiagramHtml(fresh.ports || []);
       var fw = document.getElementById("cam-findings-wrap");
       if (fw) fw.innerHTML = _camFindingsHtml(fresh.findings || []);
-      // Pulse the live badge to show the tick happened
+      // Pulse the live badge to show the tick happened and clear any stale state
       var badge = document.getElementById("cam-live-badge");
       if (badge) {
+        badge.classList.remove("cam-live-stale");
+        badge.textContent = "Auto-Refresh";
         badge.classList.add("cam-live-tick");
         setTimeout(function() { badge.classList.remove("cam-live-tick"); }, 600);
       }
-    }).catch(function() { /* network blip — skip this tick */ });
+    }).catch(function() { markStale(); });
   }, 3000);
 }
 
@@ -2638,8 +2740,11 @@ function renderScoreConnect() {
       </div>
     </div>` : "";
 
-  const slCard = data.scoreLinkConnected != null ? `
-    <div class="card">
+  // Hide ScoreLink card when SC III isn't reachable — showing "Not Detected"
+  // for USB hardware is misleading when the service itself is absent.
+  // sc-sl-card class enables flex-stretch to match BOT card height.
+  const slCard = data.scoreLinkConnected != null && isDetected ? `
+    <div class="card sc-sl-card">
       ${sectionTitle("link", "ScoreLink Device")}
       <div class="sc-scorelink ${data.scoreLinkConnected ? "sc-scorelink-ok" : "sc-scorelink-err"}">
         <span class="sc-scorelink-dot"></span>
@@ -2664,7 +2769,7 @@ function renderScoreConnect() {
             : '<span class="status-fail">No</span>')}
           ${kvRow("Base URL", status.baseUrl || data.baseUrl)}
           ${kvRow("Version", version)}
-          ${data.error && !isDetected ? kvRowHtml("Error", `<span class="text-red-400">${esc(typeof data.error === "string" ? data.error : data.message || "Connection failed")}</span>`) : ""}
+          ${data.error && !isDetected ? kvRowHtml("Error", `<span class="status-fail">${esc(typeof data.error === "string" ? data.error : data.message || "Connection failed")}</span>`) : ""}
         </div>
       </div>
       <div class="card">
@@ -2683,10 +2788,10 @@ function renderScoreConnect() {
             </div>
           </div>
           <div class="sc-game-info">
-            <div><span class="text-pulse-muted">Period</span> <span class="font-mono">${esc(String(liveScore.period || "—"))}</span></div>
+            <div><span class="text-pulse-muted">Period</span> <span class="font-mono">${esc(String(liveScore.period != null ? liveScore.period : "—"))}</span></div>
             <div><span class="text-pulse-muted">Clock</span> <span class="font-mono">${esc(String(liveScore.clock || "—"))}</span></div>
           </div>
-        ` : '<div class="text-sm text-pulse-muted">No live scoreboard data available</div>'}
+        ` : `<div class="kv-grid"><div class="text-sm text-pulse-muted" style="grid-column:1/-1">No active game — scores appear here when ScoreConnect is receiving data</div></div>`}
       </div>
     </div>
 
@@ -2782,18 +2887,26 @@ function renderFaultIsolator() {
 
   function formatSpeed(mbps) {
     if (mbps === null || mbps === undefined) return "—";
-    if (mbps >= 1000) return "1 Gbps";
+    if (mbps >= 1000) {
+      var g = mbps / 1000;
+      return (g === Math.floor(g) ? g : g.toFixed(1)) + " Gbps";
+    }
     if (mbps > 0) return mbps + " Mbps";
     return "No link";
   }
 
   function stepDots() {
+    var labels = ["Baseline", "NIC Port", "Cable", "Camera", "Verdict"];
     var html = '<div class="fi-stepper">';
     for (var i = 0; i < 5; i++) {
       var cls = "fi-step-dot";
-      if (_fi.phase > i) cls += " fi-dot-done";
-      else if (_fi.phase === i) cls += " fi-dot-active";
-      html += '<div class="' + cls + '">' + (i + 1) + "</div>";
+      var lblCls = "fi-step-label";
+      if (_fi.phase > i) { cls += " fi-dot-done"; lblCls += " fi-step-label-done"; }
+      else if (_fi.phase === i) { cls += " fi-dot-active"; lblCls += " fi-step-label-active"; }
+      html += '<div class="fi-step-cell">' +
+        '<div class="' + cls + '">' + (i + 1) + "</div>" +
+        '<div class="' + lblCls + '">' + labels[i] + "</div>" +
+      '</div>';
       if (i < 4) html += '<div class="fi-step-line' + (_fi.phase > i ? " fi-line-done" : "") + '"></div>';
     }
     return html + "</div>";
@@ -2837,9 +2950,13 @@ function renderFaultIsolator() {
     if (i === excludeIdx) return "";
     var spd;
     if (!p.isUp) spd = " — No link";
-    else if (p.isOcr) spd = " — 100 Mbps (OCR — expected)";
-    else if (p.linkSpeedMbps >= 1000) spd = " — 1 Gbps";
-    else if (p.linkSpeedMbps > 0) spd = " — " + p.linkSpeedMbps + " Mbps (FAULT)";
+    else if (p.isOcr) spd = " — " + (p.linkSpeedMbps || 100) + " Mbps (OCR — expected)";
+    // Trust the backend isDegraded flag — it knows the expected speed for
+    // each camera model. A 100 Mbps OCR isn't degraded; an unknown 100 Mbps
+    // camera might be.
+    else if (p.isDegraded) spd = " — " + p.linkSpeedMbps + " Mbps (FAULT)";
+    else if (p.linkSpeedMbps >= 1000) spd = " — " + formatSpeed(p.linkSpeedMbps);
+    else if (p.linkSpeedMbps > 0) spd = " — " + p.linkSpeedMbps + " Mbps";
     else spd = " — No link";
     return '<option value="' + i + '">Port ' + (i + 1) + esc(spd) + "</option>";
   }
@@ -2940,6 +3057,15 @@ function renderFaultIsolator() {
       // Re-capture pre-swap speed for the newly-selected test port
       var tp = ports[_fi.testIdx];
       _fi.testPreSpeedMbps = tp ? (tp.linkSpeedMbps || 0) : 0;
+      // Visual feedback: confirm the selection by updating the instruction text
+      // so the tech can see "Check Now" will use the new port.
+      if (_fi.testIdx >= 0 && _fi.suspectIdx >= 0) {
+        var sn = portLabel(_fi.suspectIdx);
+        var tn = portLabel(_fi.testIdx);
+        _fi.phaseInstruction = "Move the SAME cable and camera from " + sn +
+          " to " + tn + " (test port). Click Check Now when ready.";
+        renderFaultIsolator();
+      }
     });
   }
 
@@ -2986,6 +3112,12 @@ function renderFaultIsolator() {
     _fi.resultSeverity = severity.toLowerCase();
   }
 
+  function clearResult() {
+    _fi.resultHeadline = "";
+    _fi.resultDetail   = "";
+    _fi.resultSeverity = "";
+  }
+
   function conclude(conclusion, title, instruction) {
     _fi.conclusion = conclusion;
     _fi.phase = 4;
@@ -2997,6 +3129,9 @@ function renderFaultIsolator() {
 
   async function doAction() {
     if (_fi.checking) return;
+    // Clear the previous phase's PASS/FAIL chip so the user sees only the
+    // current phase's status while polling.
+    clearResult();
 
     // Phase 0 — Baseline: poll suspect port speed (discovery only, no test port yet)
     if (_fi.phase === 0) {
@@ -3015,18 +3150,23 @@ function renderFaultIsolator() {
       if (spd0 >= 1000) {
         addHistory("Phase 1 - Baseline", cfg0, sl0, "Port healthy — no fault on this port.", "Pass");
         showResult("Baseline: " + sl0 + " — Port is operating normally.",
-          "The selected port is already running at 1 Gbps. No fault detected. Select a different port or close the wizard.", "pass");
+          "The selected port is already running at 1 Gbps. No fault detected.", "pass");
         _fi.phaseTitle = "BASELINE — PORT HEALTHY";
-        _fi.phaseInstruction = "Select a different port or close the wizard.";
-        _fi.actionLabel = "Recheck Port";
+        _fi.phaseInstruction = "Pick a different port from the dropdown above and click Run Baseline, or close the wizard.";
+        _fi.actionLabel = "Run Baseline";
+        // Reset to phase 0 so the suspect dropdown reappears for re-selection.
+        _fi.phase = 0;
         renderFaultIsolator();
         return;
       }
 
       var bMsg, bInstr;
       if (spd0 <= 0) {
-        bMsg   = "No link detected";
-        bInstr = "Verify the camera is powered on and the cable is seated firmly. Select a known-good test port below, then click Check Now.";
+        bMsg = "No link detected";
+        // Split the no-link case into a clear two-step prompt so the tech
+        // first verifies basics, then moves on to the swap test if still no link.
+        bInstr = "Step 1: Confirm the camera is powered on and the cable is firmly seated on both ends. " +
+                 "Step 2: If there's still no link, select a known-good test port below and click Check Now.";
       } else {
         bMsg   = "Link is degraded at " + sl0 + " (expected 1 Gbps)";
         bInstr = "Select a known-good test port below, then move the SAME cable and camera from " + sn0 + " to it. Click Check Now when ready.";
@@ -3092,7 +3232,7 @@ function renderFaultIsolator() {
       showResult("Phase 2: " + sl1 + " — Fault follows cable / camera, not the NIC port.", cv1, "info");
       _fi.phase = 2;
       _fi.phaseTitle = "PHASE 3 — DOES THE FAULT FOLLOW THE CABLE?";
-      _fi.phaseInstruction = "Stay on " + tn1 + " with the same camera. Swap the cable for a known-good cable. Then click Check Now.";
+      _fi.phaseInstruction = "Keep the camera on " + tn1 + ". Disconnect the original cable on both ends and replace it with a known-good cable. Then click Check Now.";
       _fi.actionLabel = "Check Now";
       renderFaultIsolator();
       return;
@@ -3189,147 +3329,250 @@ function renderFaultIsolator() {
 
 // ── Audio ────────────────────────────────────────────────────
 
-var _audioRefreshTimer = null;
+// Thresholds & timing constants
+const AUDIO_SIGNAL_THRESHOLD = 1;
+const AUDIO_PEAK_HOT = 80;
+const AUDIO_REFRESH_MS = 2000;
+
+let _audioRefreshTimer = null;
+let _audioFetchInFlight = false;
 
 function renderAudio() {
-  var data = cached("audio");
+  const data = cached("audio");
   if (!data) { $page().innerHTML = sectionLoading("Audio"); fetchSection("audio"); return; }
 
-  // Clear any previous live-refresh timer
+  // Clear any previous live-refresh timer + reset in-flight guard
   if (_audioRefreshTimer) { clearInterval(_audioRefreshTimer); _audioRefreshTimer = null; }
+  _audioFetchInFlight = false;
 
-  var devices = data.devices || [];
-  var inputs = devices.filter(function(d) { return d.dataFlow === "Input"; });
-  var outputs = devices.filter(function(d) { return d.dataFlow === "Output"; });
-  var activeInputs = inputs.filter(function(d) { return d.state === "Active"; });
-  var activeOutputs = outputs.filter(function(d) { return d.state === "Active"; });
+  // Hard error — show errorBox like other renderers
+  if (data.error) { $page().innerHTML = errorBox(data.message || "Failed to enumerate audio devices"); return; }
+
+  const devices = data.devices || [];
+  const inputs = devices.filter(d => d.dataFlow === "Input");
+  const outputs = devices.filter(d => d.dataFlow === "Output");
+  // WMI fallback returns dataFlow="Unknown" — surface these so they're not invisible
+  const others = devices.filter(d => d.dataFlow !== "Input" && d.dataFlow !== "Output");
+  const activeInputs = inputs.filter(d => d.state === "Active");
+  const activeOutputs = outputs.filter(d => d.state === "Active");
 
   // Page-level indicator: is anything making sound?
-  var anySignal = devices.some(function(d) { return d.peak != null && d.peak > 1; });
+  const anySignal = devices.some(d => d.peak != null && d.peak > AUDIO_SIGNAL_THRESHOLD);
 
-  $page().innerHTML =
-    pageHeader("Audio", "Audio device diagnostics — line-in capture, volume levels, and signal activity",
-      '<button class="btn-outline btn-ol-blue" onclick="dataCache.audio=null;renderAudio()">' +
-        svgIcon("refresh", 14) + " Refresh</button>") +
+  // Findings — surface diagnostic warnings (PULSEDEV-38)
+  const findings = _audioFindings(devices, data);
 
-    // Summary cards
-    '<div class="audio-summary">' +
-      _audioSummaryCard("Input Devices", activeInputs.length, inputs.length, "mic") +
-      _audioSummaryCard("Output Devices", activeOutputs.length, outputs.length, "volume") +
-      '<div class="card audio-signal-card">' +
-        '<div class="audio-signal-dot ' + (anySignal ? "audio-signal-active" : "audio-signal-silent") + '"></div>' +
-        '<div><div class="text-sm font-semibold">' + (anySignal ? "Signal Detected" : "No Signal") + '</div>' +
-        '<div class="text-xs text-pulse-muted">' + (anySignal ? "Audio activity on one or more devices" : "All devices silent") + '</div></div>' +
-      '</div>' +
-    '</div>' +
+  $page().innerHTML = `
+    ${pageHeader("Audio", "Audio devices, volume, and signal activity",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.audio=null;renderAudio()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
 
-    // Input devices
-    '<div class="card mt-4">' +
-      sectionTitle("mic", "Input Devices") +
-      (inputs.length ? inputs.map(function(d) { return _audioDeviceRow(d); }).join("") :
-        '<p class="text-sm text-pulse-muted">No input devices detected</p>') +
-    '</div>' +
+    ${findings.length ? `<div class="card audio-findings">
+      ${findings.map(f => `<div class="audio-finding audio-finding-${esc(f.severity)}">
+        <span class="audio-finding-pill audio-finding-pill-${esc(f.severity)}">${esc(f.severity.toUpperCase())}</span>
+        <div><div class="audio-finding-title">${esc(f.title)}</div>
+          <div class="audio-finding-body">${esc(f.body)}</div></div>
+      </div>`).join("")}
+    </div>` : ""}
 
-    // Output devices
-    '<div class="card mt-4">' +
-      sectionTitle("volume", "Output Devices") +
-      (outputs.length ? outputs.map(function(d) { return _audioDeviceRow(d); }).join("") :
-        '<p class="text-sm text-pulse-muted">No output devices detected</p>') +
-    '</div>';
+    <div class="audio-summary">
+      ${_audioSummaryCard("Input Devices", activeInputs.length, inputs.length, "mic")}
+      ${_audioSummaryCard("Output Devices", activeOutputs.length, outputs.length, "volume")}
+      <div class="card audio-signal-card">
+        <div class="audio-signal-dot ${anySignal ? "audio-signal-active" : "audio-signal-silent"}"></div>
+        <div>
+          <div class="text-sm font-semibold">${anySignal ? "Signal Detected" : "No Signal"}</div>
+          <div class="text-xs text-pulse-muted">${anySignal ? "Audio activity on one or more devices" : "All devices silent"}</div>
+        </div>
+      </div>
+    </div>
 
-  // Wire up volume sliders
-  devices.forEach(function(d) {
+    <div class="card mt-4">
+      ${sectionTitle("mic", "Input Devices")}
+      ${inputs.length
+        ? inputs.map(d => _audioDeviceRow(d)).join("")
+        : '<p class="text-sm text-pulse-muted">No input devices detected</p>'}
+    </div>
+
+    <div class="card mt-4">
+      ${sectionTitle("volume", "Output Devices")}
+      ${outputs.length
+        ? outputs.map(d => _audioDeviceRow(d)).join("")
+        : '<p class="text-sm text-pulse-muted">No output devices detected</p>'}
+    </div>
+
+    ${others.length ? `<div class="card mt-4">
+      ${sectionTitle("info", "Other Devices")}
+      <p class="text-xs text-pulse-muted mb-2">Devices reported by WMI without input/output direction.</p>
+      ${others.map(d => _audioDeviceRow(d)).join("")}
+    </div>` : ""}
+  `;
+
+  // Wire up volume sliders with success/error feedback
+  devices.forEach(d => {
     if (d.state !== "Active" || d.volume == null) return;
-    var slider = document.getElementById("vol-" + _audioSlug(d.id));
-    var label  = document.getElementById("vol-lbl-" + _audioSlug(d.id));
+    const slug = _audioSlug(d.id);
+    const slider = document.getElementById(`vol-${slug}`);
+    const label  = document.getElementById(`vol-lbl-${slug}`);
+    const msg    = document.getElementById(`vol-msg-${slug}`);
     if (!slider) return;
-    slider.addEventListener("change", function() {
-      var val = parseInt(slider.value, 10);
+
+    slider.addEventListener("change", async () => {
+      const val = parseInt(slider.value, 10);
       if (label) label.textContent = val + "%";
-      apiPost("/api/audio/volume", { deviceId: d.id, volume: val });
+      const r = await apiPost("/api/audio/volume", { deviceId: d.id, volume: val });
+      if (!msg) return;
+      if (r && r.error) {
+        msg.textContent = "Failed: " + (r.message || "unknown error");
+        msg.className = "audio-vol-msg audio-vol-msg-err";
+      } else {
+        msg.textContent = "Saved";
+        msg.className = "audio-vol-msg audio-vol-msg-ok";
+        setTimeout(() => { if (msg) msg.textContent = ""; }, 1500);
+      }
     });
-    slider.addEventListener("input", function() {
+    slider.addEventListener("input", () => {
       if (label) label.textContent = parseInt(slider.value, 10) + "%";
     });
   });
 
-  // Live-refresh peak meters every 2s
-  _audioRefreshTimer = setInterval(function() {
-    if (currentPage !== "audio") { clearInterval(_audioRefreshTimer); _audioRefreshTimer = null; return; }
-    api("/api/audio").then(function(fresh) {
+  // Live-refresh peak meters. In-flight guard prevents overlapping requests
+  // when the backend script takes longer than the refresh interval on slow VPUs.
+  _audioRefreshTimer = setInterval(() => {
+    if (currentPage !== "audio") {
+      clearInterval(_audioRefreshTimer); _audioRefreshTimer = null; return;
+    }
+    if (_audioFetchInFlight) return;
+    _audioFetchInFlight = true;
+    api("/api/audio").then(fresh => {
+      _audioFetchInFlight = false;
       if (!fresh || fresh.error || currentPage !== "audio") return;
-      (fresh.devices || []).forEach(function(d) {
-        var bar = document.getElementById("peak-" + _audioSlug(d.id));
-        var lbl = document.getElementById("peak-lbl-" + _audioSlug(d.id));
-        if (bar && d.peak != null) {
-          bar.style.width = Math.min(d.peak, 100) + "%";
-          bar.className = "audio-peak-fill" + (d.peak > 80 ? " audio-peak-hot" : d.peak > 1 ? " audio-peak-ok" : "");
-        }
-        if (lbl) lbl.textContent = d.peak != null ? d.peak + "%" : "—";
-      });
-    });
-  }, 2000);
+      (fresh.devices || []).forEach(d => _audioUpdateMeter(d));
+    }).catch(() => { _audioFetchInFlight = false; });
+  }, AUDIO_REFRESH_MS);
 }
 
+function _audioUpdateMeter(d) {
+  const slug = _audioSlug(d.id);
+  const bar = document.getElementById(`peak-${slug}`);
+  const lbl = document.getElementById(`peak-lbl-${slug}`);
+  if (bar && d.peak != null) {
+    bar.style.width = Math.min(d.peak, 100) + "%";
+    bar.className = "audio-peak-fill" + _audioPeakClass(d.peak);
+  }
+  if (lbl) lbl.textContent = d.peak != null ? d.peak + "%" : "—";
+}
+
+function _audioPeakClass(peak) {
+  if (peak == null) return "";
+  if (peak > AUDIO_PEAK_HOT) return " audio-peak-hot";
+  if (peak > AUDIO_SIGNAL_THRESHOLD) return " audio-peak-ok";
+  return "";
+}
+
+// Surface diagnostic findings — e.g. "Line-In active but silent" (PULSEDEV-38).
+function _audioFindings(devices, data) {
+  const out = [];
+  const silentLineIns = devices.filter(d =>
+    d.state === "Active" &&
+    d.dataFlow === "Input" &&
+    (d.formFactor === "LineLevel" || /line.in/i.test(d.name || "")) &&
+    d.peak != null && d.peak <= AUDIO_SIGNAL_THRESHOLD
+  );
+  silentLineIns.forEach(d => {
+    out.push({
+      severity: "warning",
+      title: "Line-in source is silent",
+      body: `${d.name || "Line-in device"} is active but no audio signal detected. Verify the source is connected and unmuted.`
+    });
+  });
+  if (data.wmiFallback) {
+    out.push({
+      severity: "info",
+      title: "Limited device info",
+      body: "CoreAudio enumeration failed — falling back to WMI. Volume, mute, and peak meters are unavailable."
+    });
+  }
+  return out;
+}
+
+// Short stable slug from a device ID — djb2-style hash so HTML IDs stay
+// compact even for long Windows endpoint GUIDs.
 function _audioSlug(id) {
-  return String(id || "").replace(/[^a-zA-Z0-9]/g, "");
+  const s = String(id || "");
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return "d" + (h >>> 0).toString(36);
 }
 
 function _audioSummaryCard(label, active, total, icon) {
-  return '<div class="card audio-summary-card">' +
-    '<div class="audio-summary-icon">' + svgIcon(icon, 20) + '</div>' +
-    '<div class="audio-summary-num">' + active + '<span class="text-pulse-muted text-sm font-normal"> / ' + total + '</span></div>' +
-    '<div class="text-xs text-pulse-muted">' + esc(label) + '</div>' +
-  '</div>';
+  return `<div class="card audio-summary-card">
+    <div class="audio-summary-icon">${svgIcon(icon, 20)}</div>
+    <div class="audio-summary-num">${active}<span class="text-pulse-muted text-sm font-normal"> / ${total}</span></div>
+    <div class="text-xs text-pulse-muted">${esc(label)}</div>
+  </div>`;
 }
 
 function _audioFormFactorBadge(ff) {
-  var labels = {
+  const labels = {
     LineLevel: "Line-In", Microphone: "Mic", Headphones: "Headphones",
     Headset: "Headset", Speakers: "Speakers", SPDIF: "S/PDIF",
     DigitalDisplay: "HDMI/DP", DigitalPassthrough: "Digital", RemoteNetwork: "Network",
     Handset: "Handset", Unknown: "Unknown"
   };
-  var text = labels[ff] || ff || "Unknown";
-  return '<span class="audio-port-badge">' + esc(text) + '</span>';
+  const text = labels[ff] || ff || "Unknown";
+  return `<span class="audio-port-badge">${esc(text)}</span>`;
+}
+
+function _audioFormFactorLabel(ff) {
+  const labels = {
+    LineLevel: "Line-in", Microphone: "Microphone", Headphones: "Headphone",
+    Headset: "Headset", Speakers: "Speaker", SPDIF: "S/PDIF",
+    DigitalDisplay: "Display audio (HDMI/DisplayPort)",
+    DigitalPassthrough: "Digital passthrough", RemoteNetwork: "Network",
+    Handset: "Handset"
+  };
+  return labels[ff] || ff;
 }
 
 function _audioDeviceRow(d) {
-  var slug = _audioSlug(d.id);
-  var isActive = d.state === "Active";
-  var stateClass = isActive ? "status-pass" : d.state === "Disabled" ? "status-warn" : "status-fail";
+  const slug = _audioSlug(d.id);
+  const isActive = d.state === "Active";
+  const stateClass = isActive ? "status-pass" : d.state === "Disabled" ? "status-warn" : "status-fail";
 
-  return '<div class="audio-device ' + (isActive ? "" : "audio-device-inactive") + '">' +
-    '<div class="audio-device-header">' +
-      '<div class="audio-device-name">' + esc(d.name || "Unknown Device") + '</div>' +
-      '<div class="audio-device-badges">' +
-        _audioFormFactorBadge(d.formFactor) +
-        '<span class="' + stateClass + '">' + esc(d.state) + '</span>' +
-      '</div>' +
-    '</div>' +
-    (isActive ? (
-      '<div class="audio-device-controls">' +
-        // Peak meter
-        '<div class="audio-meter-row">' +
-          '<span class="audio-meter-label">Signal</span>' +
-          '<div class="audio-peak-track">' +
-            '<div id="peak-' + slug + '" class="audio-peak-fill' +
-              (d.peak > 80 ? " audio-peak-hot" : d.peak > 1 ? " audio-peak-ok" : "") +
-              '" style="width:' + Math.min(d.peak || 0, 100) + '%"></div>' +
-          '</div>' +
-          '<span id="peak-lbl-' + slug + '" class="audio-meter-val">' + (d.peak != null ? d.peak + "%" : "—") + '</span>' +
-        '</div>' +
-        // Volume slider
-        (d.volume != null ? (
-          '<div class="audio-meter-row">' +
-            '<span class="audio-meter-label">' + (d.muted ? svgIcon("volume-x", 14) : svgIcon("volume", 14)) + '</span>' +
-            '<input type="range" id="vol-' + slug + '" class="audio-slider" min="0" max="100" value="' + Math.round(d.volume) + '"/>' +
-            '<span id="vol-lbl-' + slug + '" class="audio-meter-val">' + Math.round(d.volume) + '%</span>' +
-          '</div>'
-        ) : "") +
-      '</div>'
-    ) : "") +
-  '</div>';
+  return `<div class="audio-device${isActive ? "" : " audio-device-inactive"}">
+    <div class="audio-device-header">
+      <div class="audio-device-name">${esc(d.name || "Unknown Device")}</div>
+      <div class="audio-device-badges">
+        ${_audioFormFactorBadge(d.formFactor)}
+        <span class="${stateClass}">${esc(d.state)}</span>
+      </div>
+    </div>
+    ${isActive ? `
+      <div class="audio-device-controls">
+        <div class="audio-meter-row">
+          <span class="audio-meter-label">Signal</span>
+          <div class="audio-peak-track">
+            <div id="peak-${slug}" class="audio-peak-fill${_audioPeakClass(d.peak)}" style="width:${Math.min(d.peak || 0, 100)}%"></div>
+          </div>
+          <span id="peak-lbl-${slug}" class="audio-meter-val">${d.peak != null ? d.peak + "%" : "—"}</span>
+        </div>
+        ${d.volume != null ? `
+          <div class="audio-meter-row">
+            <span class="audio-meter-label">${d.muted ? svgIcon("volume-x", 14) : svgIcon("volume", 14)}</span>
+            <input type="range" id="vol-${slug}" class="audio-slider${d.muted ? " audio-slider-muted" : ""}" min="0" max="100" value="${Math.round(d.volume)}"/>
+            <span id="vol-lbl-${slug}" class="audio-meter-val">${Math.round(d.volume)}%</span>
+            <span id="vol-msg-${slug}" class="audio-vol-msg"></span>
+          </div>` : ""}
+      </div>
+    ` : (d.formFactor && d.formFactor !== "Unknown" ? `
+      <div class="audio-device-controls">
+        <p class="text-xs text-pulse-muted">${esc(_audioFormFactorLabel(d.formFactor))} device — controls unavailable while ${esc(d.state.toLowerCase())}.</p>
+      </div>
+    ` : "")}
+  </div>`;
 }
 
 // ── Settings ─────────────────────────────────────────────────

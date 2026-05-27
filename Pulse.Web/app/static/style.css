@@ -278,12 +278,12 @@ html, body { height: 100%; margin: 0; }
     border: 1px solid var(--c-accent-green);
     color: var(--c-accent-green);
 }
-.btn-ol-green:hover { background: rgba(34, 197, 94, 0.1); }
+.btn-ol-green:hover { background: var(--c-tint-green); }
 .btn-ol-blue {
-    border: 1px solid #3b82f6;
-    color: #3b82f6;
+    border: 1px solid var(--c-accent-blue);
+    color: var(--c-accent-blue);
 }
-.btn-ol-blue:hover { background: rgba(59, 130, 246, 0.1); }
+.btn-ol-blue:hover { background: var(--c-tint-blue); }
 .btn-ol-muted {
     border: 1px solid var(--c-muted);
     color: var(--c-dimmer);
@@ -396,9 +396,9 @@ html, body { height: 100%; margin: 0; }
     border-radius: 50%;
     flex-shrink: 0;
 }
-.finding-dot-critical { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
-.finding-dot-warning  { background: #eab308; box-shadow: 0 0 6px rgba(234, 179, 8, 0.3); }
-.finding-dot-info     { background: #3b82f6; }
+.finding-dot-critical { background: var(--c-accent-red); box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+.finding-dot-warning  { background: var(--c-accent-amber); box-shadow: 0 0 6px rgba(234, 179, 8, 0.3); }
+.finding-dot-info     { background: var(--c-accent-blue); }
 .finding-cat {
     font-size: 0.7rem;
     font-weight: 600;
@@ -606,9 +606,9 @@ html, body { height: 100%; margin: 0; }
     display: inline-block;
     vertical-align: middle;
 }
-.dash-sev-critical .dash-sev-dot { background: #ef4444; }
-.dash-sev-warn .dash-sev-dot     { background: #eab308; }
-.dash-sev-ok .dash-sev-dot       { background: #22c55e; }
+.dash-sev-critical .dash-sev-dot { background: var(--c-accent-red); }
+.dash-sev-warn .dash-sev-dot     { background: var(--c-accent-amber); }
+.dash-sev-ok .dash-sev-dot       { background: var(--c-accent-green); }
 
 /* Empty-state findings in command center */
 .dash-no-findings {
@@ -641,14 +641,14 @@ html, body { height: 100%; margin: 0; }
     transition: border-color 0.15s, background 0.15s;
     cursor: pointer;
 }
-.dash-sub-tile:hover { border-color: #3b82f6; background: rgba(59, 130, 246, 0.04); }
+.dash-sub-tile:hover { border-color: var(--c-accent-blue); background: var(--c-tint-blue); }
 .dash-sub-top {
     display: flex;
     align-items: center;
     gap: 6px;
     margin-bottom: 4px;
 }
-.dash-sub-icon { color: #3b82f6; display: inline-flex; flex-shrink: 0; }
+.dash-sub-icon { color: var(--c-accent-blue); display: inline-flex; flex-shrink: 0; }
 .dash-sub-name { font-size: 0.75rem; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dash-sub-desc { font-size: 0.65rem; color: var(--c-dim); line-height: 1.35; margin: 0; }
 
@@ -675,7 +675,7 @@ html, body { height: 100%; margin: 0; }
     border: 1px solid var(--c-border);
     border-radius: 8px;
 }
-.dash-banner-icon { color: #3b82f6; flex-shrink: 0; margin-top: 2px; }
+.dash-banner-icon { color: var(--c-accent-blue); flex-shrink: 0; margin-top: 2px; }
 
 /* 2-column grid */
 .dash-2col {
@@ -741,7 +741,7 @@ html, body { height: 100%; margin: 0; }
     gap: 10px;
     margin-bottom: 0.75rem;
 }
-.dash-hdr-icon { color: #3b82f6; display: inline-flex; flex-shrink: 0; }
+.dash-hdr-icon { color: var(--c-accent-blue); display: inline-flex; flex-shrink: 0; }
 
 /* NIC port rows */
 .dash-nic-table { display: flex; flex-direction: column; gap: 2px; }
@@ -842,7 +842,7 @@ html, body { height: 100%; margin: 0; }
     gap: 10px;
     margin-bottom: 0.75rem;
 }
-.section-hdr-icon { color: #3b82f6; display: inline-flex; flex-shrink: 0; }
+.section-hdr-icon { color: var(--c-accent-blue); display: inline-flex; flex-shrink: 0; }
 .section-hdr-text {
     font-size: 0.8rem;
     font-weight: 600;
@@ -877,6 +877,7 @@ html, body { height: 100%; margin: 0; }
 .sev-chip-ok   { background: var(--c-tint-green); color: var(--c-accent-green); }
 .sev-chip-warn { background: var(--c-tint-amber); color: var(--c-accent-amber); }
 .sev-chip-crit { background: var(--c-tint-red); color: var(--c-accent-red); }
+.sev-chip-info { background: var(--c-tint-blue);  color: var(--c-accent-blue); }
 
 /* Sub-card (inner bordered box) */
 .sub-card {
@@ -1001,6 +1002,15 @@ html, body { height: 100%; margin: 0; }
 .cam-live-badge.cam-live-tick {
     border-color: rgba(34,197,94,0.7);
     background: rgba(34,197,94,0.08);
+}
+.cam-live-badge.cam-live-stale {
+    color: #f59e0b;
+    border-color: rgba(245,158,11,0.4);
+    background: rgba(245,158,11,0.06);
+}
+.cam-live-badge.cam-live-stale::before {
+    background: #f59e0b;
+    animation: none;
 }
 
 /* ── Physical NIC diagram ─────────────────────────────────── */
@@ -1241,7 +1251,7 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .cam-dot-warn { background: #eab308; }
 .cam-dot-info { background: #60a5fa; }
 .cam-dot-muted { background: var(--c-dimmer); }
-.cam-port-detail { border-top: 1px solid var(--c-border); padding-top: 6px; }
+.cam-port-detail { padding-top: 2px; }
 .kv-mini { display: flex; justify-content: space-between; gap: 8px; font-size: 0.7rem; color: var(--c-muted); padding: 1px 0; }
 .kv-mini span:last-child { color: var(--c-text); white-space: nowrap; }
 .cam-detected {
@@ -1258,9 +1268,7 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     align-items: center;
     gap: 4px 8px;
     padding: 4px 0;
-    border-bottom: 1px solid rgba(34, 197, 94, 0.08);
 }
-.cam-detected-entry:last-child { border-bottom: none; }
 .cam-entry-ip { white-space: nowrap; }
 .cam-entry-mac { white-space: nowrap; }
 .cam-entry-source { font-size: 0.6rem; flex-basis: 100%; }
@@ -1279,6 +1287,13 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 
 /* ── Camera Fault Isolator wizard ──────────────────────────── */
 .fi-stepper { display: flex; align-items: center; margin-bottom: 20px; }
+.fi-step-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
 .fi-step-dot {
     width: 28px; height: 28px; border-radius: 50%;
     border: 2px solid var(--c-border); background: var(--c-surface-3);
@@ -1287,7 +1302,23 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 }
 .fi-step-dot.fi-dot-active { border-color: #3b82f6; color: #60a5fa; background: rgba(59,130,246,0.12); }
 .fi-step-dot.fi-dot-done   { border-color: #22c55e; color: #22c55e; background: rgba(34,197,94,0.1); }
-.fi-step-line { flex: 1; height: 2px; background: var(--c-surface-3); }
+.fi-step-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--c-dim);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+.fi-step-label-active { color: #60a5fa; }
+.fi-step-label-done   { color: #22c55e; }
+/* Step lines sit between cells; center them vertically with the dots
+   (cells are 2 lines tall now, lines should align with the top row). */
+.fi-step-line {
+    flex: 1;
+    height: 2px;
+    background: var(--c-surface-3);
+    margin-top: -16px; /* nudge up to align with dot row, not cell midline */
+}
 .fi-step-line.fi-line-done { background: #22c55e; }
 
 .fi-phase-card { background: var(--c-surface-3); border: 1px solid var(--c-border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
@@ -1440,6 +1471,10 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .sc-game-info { display: flex; gap: 2rem; font-size: 0.85rem; color: var(--c-text); }
 .sc-game-info span.font-mono { font-size: 0.9rem; }
 
+/* Make ScoreLink card stretch to match BOT card height in the 2-col grid */
+.sc-sl-card { display: flex; flex-direction: column; }
+.sc-sl-card .sc-scorelink { flex: 1; }
+
 .sc-scorelink {
     display: flex;
     align-items: center;
@@ -1449,16 +1484,16 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     border: 1px solid;
     margin-bottom: 0.75rem;
 }
-.sc-scorelink-ok  { background: rgba(34, 197, 94, 0.06); border-color: #22c55e; }
-.sc-scorelink-err { background: rgba(239, 68, 68, 0.06); border-color: #ef4444; }
+.sc-scorelink-ok  { background: var(--c-tint-green); border-color: var(--c-accent-green); color: var(--c-accent-green); }
+.sc-scorelink-err { background: var(--c-tint-red);   border-color: var(--c-accent-red);   color: var(--c-accent-red); }
 .sc-scorelink-dot {
     width: 12px;
     height: 12px;
     border-radius: 50%;
     flex-shrink: 0;
 }
-.sc-scorelink-ok .sc-scorelink-dot  { background: #22c55e; }
-.sc-scorelink-err .sc-scorelink-dot { background: #ef4444; }
+.sc-scorelink-ok .sc-scorelink-dot  { background: var(--c-accent-green); }
+.sc-scorelink-err .sc-scorelink-dot { background: var(--c-accent-red); }
 
 /* ── Settings page ─────────────────────────────────────────── */
 
@@ -1872,8 +1907,15 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .net-live-dot {
     width: 8px; height: 8px;
     border-radius: 50%;
-    background: #22c55e;
+    background: var(--c-accent-green);
     animation: net-live-blink 2s ease-in-out infinite;
+}
+.net-live-indicator.net-live-stale .net-live-dot {
+    background: var(--c-accent-amber);
+    animation: none;
+}
+.net-live-indicator.net-live-stale .text-pulse-muted {
+    color: var(--c-accent-amber);
 }
 @keyframes net-live-blink {
     0%, 100% { opacity: 1; }
@@ -1966,9 +2008,30 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     line-height: 1.4;
 }
 .net-cap-pass {
-    color: #22c55e;
+    color: var(--c-accent-green);
     background: rgba(34, 197, 94, 0.08);
     border: 1px solid rgba(34, 197, 94, 0.2);
+}
+.net-rec-warn {
+    color: var(--c-accent-amber);
+    background: rgba(234, 179, 8, 0.08);
+    border: 1px solid rgba(234, 179, 8, 0.2);
+}
+.net-rec-critical {
+    color: var(--c-accent-red);
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+.net-rec-info {
+    color: var(--c-muted);
+    background: rgba(59, 130, 246, 0.06);
+    border: 1px solid rgba(59, 130, 246, 0.18);
+}
+.net-cap-empty {
+    font-size: 0.75rem;
+    color: var(--c-dim);
+    font-style: italic;
+    padding: 6px 0;
 }
 .net-cap-talkers { margin-top: 0.5rem; }
 .net-cap-talkers-title {
