@@ -10,7 +10,7 @@ echo.
 
 :: -- Config ---------------------------------------------------------------
 :: Change BRANCH to test any branch directly on the VPU.
-set "BRANCH=web-convert"
+set "BRANCH=dev"
 if not "%~1"=="" set "BRANCH=%~1"
 
 set "INSTALL_DIR=%LOCALAPPDATA%\PulseWeb-branch"
