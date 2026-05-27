@@ -1001,6 +1001,25 @@ html.dark .splash-logo {
 }
 .sys-mem-warn svg { flex-shrink: 0; color: var(--c-accent-amber, #d97706); margin-top: 2px; }
 
+/* OS lifecycle banner (PDF #4) */
+.sys-lifecycle {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    color: var(--c-text);
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+.sys-lifecycle svg { flex-shrink: 0; margin-top: 2px; }
+.sys-lifecycle-ok   { background: var(--c-tint-green); border-left: 3px solid var(--c-accent-green); }
+.sys-lifecycle-ok   svg { color: var(--c-accent-green); }
+.sys-lifecycle-warn { background: var(--c-tint-amber); border-left: 3px solid var(--c-accent-amber); }
+.sys-lifecycle-warn svg { color: var(--c-accent-amber); }
+.sys-lifecycle-crit { background: var(--c-tint-red);   border-left: 3px solid var(--c-accent-red);   }
+.sys-lifecycle-crit svg { color: var(--c-accent-red); }
+
 /* Software filter */
 .sw-filter-input {
     width: 100%;

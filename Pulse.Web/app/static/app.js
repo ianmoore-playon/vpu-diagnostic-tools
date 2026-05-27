@@ -1293,6 +1293,36 @@ function renderSystem() {
         ${kvRow("Timezone", id.timezone)}
         ${kvRow("Locale", id.locale)}
       </div>
+      ${(() => {
+        const lc = os.lifecycle;
+        if (!lc) return "";
+        const days = lc.daysToEos;
+        let cls = "sys-lifecycle-ok";
+        let label = "";
+        if (days == null) {
+          label = `End-of-support: ${lc.eosDate}`;
+        } else if (days < 0) {
+          cls = "sys-lifecycle-crit";
+          label = `End-of-support reached on ${lc.eosDate} (${Math.abs(days)} days ago)`;
+        } else if (days < 90) {
+          cls = "sys-lifecycle-crit";
+          label = `End-of-support in ${days} days (${lc.eosDate})`;
+        } else if (days < 365) {
+          cls = "sys-lifecycle-warn";
+          const months = Math.floor(days / 30);
+          label = `End-of-support in ~${months} months (${lc.eosDate})`;
+        } else {
+          const years = Math.floor(days / 365);
+          label = `End-of-support: ${lc.eosDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
+        }
+        return `<div class="sys-lifecycle ${cls} mt-3">
+          ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
+          <div>
+            <div class="font-semibold">${esc(lc.ltscRelease)}</div>
+            <div class="text-xs mt-1">${esc(label)}${lc.endOfServicingDate ? ` &middot; End-of-servicing: ${esc(lc.endOfServicingDate)}` : ""}</div>
+          </div>
+        </div>`;
+      })()}
     </div>
 
     <!-- Software Inventory -->

@@ -435,6 +435,45 @@ def _is_approved_ntp_source(source: Optional[str]) -> bool:
     return host.endswith(".us.pool.ntp.org")
 
 
+# ── Windows LTSC lifecycle map (PDF #4) ─────────────────────
+# Pixellot VPUs ship on Win 10 IoT LTSC. Two builds in the field:
+#   1809 (LTSC 2019) → build 17763 → all VPUs except Z2
+#   21H2 (LTSC 2021) → build 19044 → Z2 VPUs
+# Date format: ISO yyyy-mm-dd, used to compute days-until-EOS.
+_LTSC_LIFECYCLE = {
+    "17763": {
+        "ltscRelease": "Windows 10 IoT Enterprise LTSC 2019 (1809)",
+        "eosDate": "2029-01-09",  # IoT extended support / end-of-servicing
+    },
+    "19044": {
+        "ltscRelease": "Windows 10 IoT Enterprise LTSC 2021 (21H2)",
+        "eosDate": "2027-01-12",  # end-of-support per PDF #4
+        "endOfServicingDate": "2032-01-13",  # IoT extended servicing
+    },
+}
+
+
+def _os_lifecycle(build_number) -> Optional[dict]:
+    """Return {ltscRelease, eosDate, daysToEos[, endOfServicingDate]} for
+    a known Pixellot OS build, or None if build is unknown."""
+    if not build_number:
+        return None
+    key = str(build_number).strip()
+    info = _LTSC_LIFECYCLE.get(key)
+    if not info:
+        return None
+    from datetime import date as _date
+    try:
+        y, m, d = [int(x) for x in info["eosDate"].split("-")]
+        days = (_date(y, m, d) - _date.today()).days
+    except (ValueError, KeyError):
+        days = None
+    return {
+        **info,
+        "daysToEos": days,
+    }
+
+
 # ── Unsupported security software ────────────────────────────
 # Per Pixellot Troubleshooting Tips PDF #11: any EDR / non-Defender
 # antivirus blocks agent.exe and forces an RMA. Only Windows Defender is
@@ -591,6 +630,39 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "recommendation": f"System timezone is '{shown}'. VPU must be set to a US timezone (Pacific/Mountain/Central/Eastern, or Alaska/Hawaii). Open Date & Time settings and choose a US zone.",
                 }
             )
+
+        # ── OS lifecycle (PDF #4) ───────────────────────────────
+        # Warn 12 months before LTSC EOS, critical at 3 months. Skip
+        # silently if the build isn't in our LTSC map (covers non-VPU dev
+        # boxes running 22H2 / Server / etc).
+        build = identity.get("operatingSystem", {}).get("buildNumber")
+        lifecycle = _os_lifecycle(build)
+        if lifecycle and lifecycle.get("daysToEos") is not None:
+            days = lifecycle["daysToEos"]
+            release = lifecycle["ltscRelease"]
+            eos = lifecycle["eosDate"]
+            if days < 0:
+                findings.append({
+                    "severity": "critical",
+                    "category": "System",
+                    "title": "OS end-of-support reached",
+                    "recommendation": f"{release} reached end-of-support on {eos} ({abs(days)} days ago). This host no longer receives security updates and should be re-imaged to a supported LTSC release.",
+                })
+            elif days < 90:
+                findings.append({
+                    "severity": "critical",
+                    "category": "System",
+                    "title": "OS end-of-support imminent",
+                    "recommendation": f"{release} end-of-support is {eos} — {days} days away. Plan re-imaging to a supported LTSC release before that date.",
+                })
+            elif days < 365:
+                months = days // 30
+                findings.append({
+                    "severity": "warning",
+                    "category": "System",
+                    "title": "OS end-of-support approaching",
+                    "recommendation": f"{release} end-of-support is {eos} (~{months} months away). Begin planning a re-image to a supported LTSC release.",
+                })
 
     if performance and not performance.get("error"):
         # Use `is not None` instead of truthy checks so a legitimate 0 value
@@ -1057,7 +1129,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
     }
 
 
-def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None):
+def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None):
     net = {}
     if config and not config.get("error"):
         ntp_src = config.get("ntpSource")
@@ -1073,9 +1145,11 @@ def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None):
             "ntpSourceApprovedList": list(PIXELLOT_APPROVED_NTP_SOURCES),
         }
 
-    # Pass local + ntpPeers through even on error — let the frontend show the issue
+    # Pass local, ntpPeers, dnsResolution through even on error — let the
+    # frontend surface whichever subsection failed.
     return {"config": net, "domains": domains, "ports": ports, "ntp": ntp,
-            "local": local, "ntpPeers": ntp_peers}
+            "local": local, "ntpPeers": ntp_peers,
+            "dnsResolution": dns_resolution}
 
 
 # ─── Routes ───────────────────────────────────────────────────
@@ -1122,6 +1196,7 @@ async def api_preload():
         ntp,
         local,
         ntp_peers,
+        dns_resolution,
     ) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -1139,6 +1214,7 @@ async def api_preload():
         run_ps("Test-NtpDrift.ps1"),
         run_ps("Test-LocalNetwork.ps1"),
         run_ps("Get-NtpPeers.ps1"),
+        run_ps("Test-DnsResolution.ps1"),
     )
     # Audio is deferred — lazy-fetched on tab visit to keep preload lean.
 
@@ -1150,11 +1226,11 @@ async def api_preload():
     return {
         "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw),
         "system": {
-            "identity": identity,
+            "identity": _enrich_identity_lifecycle(identity),
             "hardware": hardware,
             "software": installed_sw,
         },
-        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers),
+        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers, dns_resolution),
         "cameras": {
             "ports": _enrich_ports(nics, pixellot_config, probe_results_pre),
             "pixellotConfig": pixellot_config,
@@ -1230,6 +1306,20 @@ async def api_dashboard():
     return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw)
 
 
+def _enrich_identity_lifecycle(identity):
+    """Attach OS lifecycle info (PDF #4) to identity.operatingSystem so the
+    System Overview can display it next to the OS version. No-op if the
+    build number isn't in our LTSC map."""
+    if not identity or identity.get("error"):
+        return identity
+    os_block = identity.get("operatingSystem") or {}
+    lifecycle = _os_lifecycle(os_block.get("buildNumber"))
+    if lifecycle:
+        os_block["lifecycle"] = lifecycle
+        identity["operatingSystem"] = os_block
+    return identity
+
+
 @app.get("/api/system")
 async def api_system():
     identity, hardware, software = await asyncio.gather(
@@ -1237,20 +1327,21 @@ async def api_system():
         run_ps("Get-Hardware.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
     )
-    return {"identity": identity, "hardware": hardware, "software": software}
+    return {"identity": _enrich_identity_lifecycle(identity), "hardware": hardware, "software": software}
 
 
 @app.get("/api/network")
 async def api_network():
-    config, domains, ports, ntp, local, ntp_peers = await asyncio.gather(
+    config, domains, ports, ntp, local, ntp_peers, dns_resolution = await asyncio.gather(
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Test-NetworkDomains.ps1", timeout=20),
         run_ps("Test-NetworkPorts.ps1", timeout=45),
         run_ps("Test-NtpDrift.ps1", timeout=15),
         run_ps("Test-LocalNetwork.ps1", timeout=20),
         run_ps("Get-NtpPeers.ps1", timeout=15),
+        run_ps("Test-DnsResolution.ps1", timeout=30),
     )
-    return _build_network(config, domains, ports, ntp, local, ntp_peers)
+    return _build_network(config, domains, ports, ntp, local, ntp_peers, dns_resolution)
 
 
 @app.get("/api/network/local-ping")
