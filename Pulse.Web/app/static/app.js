@@ -223,7 +223,7 @@ function gauge(label, value, unit, color, opts) {
   return `<div class="flex flex-col items-center gap-2">
     <div class="relative" style="width:7rem;height:7rem">
       <svg viewBox="0 0 100 100" class="w-full h-full">
-        <circle cx="50" cy="50" r="${r}" stroke="#2a2d3e" stroke-width="8" fill="none"/>
+        <circle cx="50" cy="50" r="${r}" stroke="var(--c-border)" stroke-width="8" fill="none"/>
         <circle cx="50" cy="50" r="${r}" stroke="${c}" stroke-width="8" fill="none"
           stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
           stroke-linecap="round" transform="rotate(-90 50 50)" class="gauge-ring"/>
@@ -577,9 +577,9 @@ function _findingPageFor(cat) {
 
 function _metricColor(val) {
   if (val == null) return "var(--c-muted)";
-  if (val > 90) return "#ef4444";
-  if (val > 75) return "#eab308";
-  return "#22c55e";
+  if (val > 90) return "var(--c-accent-red)";
+  if (val > 75) return "var(--c-accent-amber)";
+  return "var(--c-accent-green)";
 }
 
 var _dashNicRefreshTimer = null;
@@ -701,7 +701,7 @@ function renderDashboard() {
   const internetOk = netCfg.internetReachable;
   const internetFetching = fetchingKeys.has("network");
   const internetLabel = internetOk === true ? "Connected" : internetOk === false ? "Offline" : internetFetching ? "Checking" : "—";
-  const internetColor = internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "var(--c-muted)";
+  const internetColor = internetOk === true ? "var(--c-accent-green)" : internetOk === false ? "var(--c-accent-red)" : "var(--c-muted)";
 
   // Other data
   const nicPorts = cam.ports || [];
@@ -750,7 +750,7 @@ function renderDashboard() {
         <div class="cc-severity cc-sev-${sevColor}">${esc(sevLabel)}</div>
         <div class="baseline-bar">
           ${svgIcon("check", 14)}
-          Baseline completed ${esc(timeStr)} &bull; ${subsystems.length}/${subsystems.length} panels &bull; ${totalFindings} finding(s)
+          Baseline completed ${esc(timeStr)} &bull; ${subsystems.length} panel${subsystems.length === 1 ? "" : "s"} checked &bull; ${totalFindings} finding${totalFindings === 1 ? "" : "s"}
         </div>
         <div id="live-metrics" class="metrics-row">
           <div class="metric-box"><span class="metric-label">CPU</span><span class="metric-val" style="color:${_metricColor(cpu)}">${cpu != null ? Math.round(cpu) + "%" : "--"}</span></div>
@@ -894,10 +894,10 @@ function renderDashboard() {
         </div>
         <div class="dash-net-kv">
           <div class="dash-net-row"><span></span><span class="dash-kv-l">Uplink Adapter</span><span class="dash-kv-v">${esc(uplinkName)}</span></div>
-          <div class="dash-net-row"><span class="dash-net-dot" style="background:${ipAddr !== "—" ? "#22c55e" : "#475569"}"></span><span class="dash-kv-l">IP Address</span><span class="dash-kv-v font-mono">${esc(ipAddr)}</span></div>
-          <div class="dash-net-row"><span class="dash-net-dot" style="background:${gw !== "—" ? "#22c55e" : "#475569"}"></span><span class="dash-kv-l">Gateway</span><span class="dash-kv-v font-mono">${esc(gw)}</span></div>
-          <div class="dash-net-row"><span class="dash-net-dot" style="background:${dns !== "—" ? "#22c55e" : "#475569"}"></span><span class="dash-kv-l">DNS Servers</span><span class="dash-kv-v font-mono">${esc(dns)}</span></div>
-          <div class="dash-net-row"><span class="dash-net-dot" style="background:${ntpSrv !== "—" ? "#22c55e" : "#475569"}"></span><span class="dash-kv-l">NTP Server</span><span class="dash-kv-v font-mono">${esc(ntpSrv)}</span></div>
+          <div class="dash-net-row"><span class="dash-net-dot" style="background:${ipAddr !== "—" ? "var(--c-accent-green)" : "var(--c-dimmer)"}"></span><span class="dash-kv-l">IP Address</span><span class="dash-kv-v font-mono">${esc(ipAddr)}</span></div>
+          <div class="dash-net-row"><span class="dash-net-dot" style="background:${gw !== "—" ? "var(--c-accent-green)" : "var(--c-dimmer)"}"></span><span class="dash-kv-l">Gateway</span><span class="dash-kv-v font-mono">${esc(gw)}</span></div>
+          <div class="dash-net-row"><span class="dash-net-dot" style="background:${dns !== "—" ? "var(--c-accent-green)" : "var(--c-dimmer)"}"></span><span class="dash-kv-l">DNS Servers</span><span class="dash-kv-v font-mono">${esc(dns)}</span></div>
+          <div class="dash-net-row"><span class="dash-net-dot" style="background:${ntpSrv !== "—" ? "var(--c-accent-green)" : "var(--c-dimmer)"}"></span><span class="dash-kv-l">NTP Server</span><span class="dash-kv-v font-mono">${esc(ntpSrv)}</span></div>
         </div>
       </div>
     </div>
@@ -1785,7 +1785,7 @@ function renderNetwork() {
           ${kvRow("DNS", dnsStr)}
           ${kvRow("MAC address", uplinkAdapterRow?.macAddress || "—")}
           ${kvRowHtml("Link state", uplinkAdapterRow
-            ? `<span style="color:${adapterLinkState === "Up" ? "#22c55e" : "#94a3b8"};font-weight:600">${esc(adapterLinkState)}</span>`
+            ? `<span style="color:${adapterLinkState === "Up" ? "var(--c-accent-green)" : "var(--c-muted)"};font-weight:600">${esc(adapterLinkState)}</span>`
             : "—")}
           ${kvRow("Link speed", uplinkAdapterRow?.linkSpeed || "—")}
           ${duplexLabel ? kvRowHtml("Duplex", duplexLabel === "Half Duplex"
@@ -2128,7 +2128,7 @@ function _camNicDiagramHtml(ports) {
     return "nic-led-ok";
   }
   function ledDotColor(p) {
-    if (!p || !p.isUp) return "#64748b";
+    if (!p || !p.isUp) return "var(--c-dim)";
     if (p.isDegraded) return "#f59e0b";
     if (p.isOcr) return "#22c55e";
     return "#22c55e";
