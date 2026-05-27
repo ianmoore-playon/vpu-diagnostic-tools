@@ -2042,14 +2042,15 @@ function _camPortTile(port, index) {
   let statusLabel, dotCls;
   if (!p.isUp) { statusLabel = "Down"; dotCls = "cam-dot-down"; }
   else if (p.isDegraded) { statusLabel = "Degraded · " + speed; dotCls = "cam-dot-warn"; }
-  else if (p.isOcr) { statusLabel = "OCR · " + speed; dotCls = "cam-dot-info"; }
-  else { statusLabel = "Linked · " + speed; dotCls = "cam-dot-up"; }
+  else { statusLabel = "Linked · " + speed; dotCls = p.isOcr ? "cam-dot-info" : "cam-dot-up"; }
 
   const cams = p.camerasDetected || [];
+  var camLabel = p.cameraLabel;
+  var isMain = camLabel && camLabel.indexOf("Main") === 0;
   return `<div class="cam-port-tile ${p.isUp ? "cam-port-active" : "cam-port-down"}">
     <div class="cam-port-header">
       <span class="cam-port-num">Port ${index + 1}</span>
-      ${p.isOcr ? '<span class="badge-ol badge-ol-info">OCR</span>' : ""}
+      ${camLabel ? '<span class="badge-ol ' + (p.isOcr ? 'badge-ol-info' : 'badge-ol-main') + '">' + esc(camLabel) + '</span>' : ''}
       ${p.isDegraded ? '<span class="badge-ol badge-ol-warn">Degraded</span>' : ""}
     </div>
     <div class="cam-port-name">${esc(p.name)}</div>

@@ -558,6 +558,25 @@ def _enrich_ports(
                     "camerasDetected": cameras,
                 }
             )
+
+    # Second pass: number main cameras and assign port-level camera label
+    main_num = 0
+    ocr_num = 0
+    for p in ports:
+        cams = p.get("camerasDetected") or []
+        if not cams:
+            p["cameraLabel"] = None
+            continue
+        role = cams[0].get("role") or ""
+        if "OCR" in role:
+            ocr_num += 1
+            p["cameraLabel"] = f"OCR {ocr_num}" if ocr_num > 1 else "OCR"
+        elif role == "Main Camera":
+            main_num += 1
+            p["cameraLabel"] = f"Main Camera {main_num}"
+        else:
+            p["cameraLabel"] = "Camera"
+
     return ports
 
 
