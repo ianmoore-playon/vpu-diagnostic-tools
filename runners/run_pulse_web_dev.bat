@@ -28,6 +28,10 @@ if %errorlevel% NEQ 0 (
 )
 echo.
 
+:: -- Check for curl (some VPUs don't have it) -------------------------
+set "HAS_CURL="
+where curl.exe >nul 2>&1 && set "HAS_CURL=1"
+
 :: -- Try dev pre-release download first --------------------------------
 echo  [INFO] Checking for latest Pulse Web dev release...
 set "ASSET_URL="
@@ -60,7 +64,12 @@ if not defined ASSET_URL (
 :: -- Download ----------------------------------------------------------
 echo  [INFO] URL: %ASSET_URL%
 echo  [INFO] Downloading latest Pulse Web DEV...
-curl.exe -L --progress-bar -o "%ZIPFILE%" "%ASSET_URL%"
+if defined HAS_CURL (
+    curl.exe -L --progress-bar -o "%ZIPFILE%" "%ASSET_URL%"
+) else (
+    echo  [INFO] curl not found, using PowerShell...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%ASSET_URL%' -OutFile '%ZIPFILE%'"
+)
 
 if not exist "%ZIPFILE%" goto :dl_failed
 for %%A in ("%ZIPFILE%") do (
@@ -76,8 +85,7 @@ if exist "%INSTALL_DIR%\run.bat" (
     goto :launch
 )
 echo  [ERROR] Download failed. Check your internet connection.
-pause
-exit /b 1
+goto :fatal
 
 :dl_ok
 
@@ -119,8 +127,7 @@ if not defined SRC (
     echo  [ERROR] Full directory listing:
     dir /b /s /ad "%EXTRACT%" 2>nul
     if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
-    pause
-    exit /b 1
+    goto :fatal
 )
 
 :: -- Copy to install dir (preserves app\python\ and settings) ---------
@@ -135,9 +142,27 @@ echo.
 :launch
 if not exist "%INSTALL_DIR%\run.bat" (
     echo  [ERROR] Pulse Web not found at %INSTALL_DIR%
-    pause
-    exit /b 1
+    goto :fatal
 )
 
+echo  [INFO] Launching from %INSTALL_DIR%...
 cd /d "%INSTALL_DIR%"
 call run.bat
+goto :done
+
+:: -- Error handler --------------------------------------------------------
+:fatal
+echo.
+echo  ============================================
+echo   PULSE WEB FAILED — see errors above.
+echo   Press any key to close.
+echo  ============================================
+pause >nul
+exit /b 1
+
+:done
+
+:: If we get here, run.bat exited — keep window open so errors are visible
+echo.
+echo  [INFO] Pulse Web exited. Press any key to close.
+pause >nul
