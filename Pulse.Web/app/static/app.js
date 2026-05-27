@@ -2714,8 +2714,13 @@ function renderServices() {
     `;
 
     if (ok2) {
-      // Refresh the service grid after a brief delay so the new statuses show
-      setTimeout(() => { dataCache.services = null; renderServices(); }, 1500);
+      // Refresh service-tile statuses in-place so the result panel stays visible
+      api("/api/services").then(fresh => {
+        if (!fresh || fresh.error || currentPage !== "services") return;
+        dataCache.services = fresh;
+        const grid = document.getElementById("svc-grid");
+        if (grid) grid.innerHTML = (fresh.services || []).map(svcTile).join("");
+      });
     }
   });
 }

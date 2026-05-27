@@ -272,6 +272,16 @@ DEMO = {
         "hopCount": 8,
     },
     "Restart-Service.ps1": lambda **kw: {"success": True, "message": "Service restarted successfully (demo)"},
+    "Restart-PixellotAgent.ps1": lambda **kw: {
+        "success": True,
+        "exitCode": 0,
+        "path": "C:\\pixellot\\bin\\keepagentup.exe",
+        "stdout": "Agent service started.\nCoordinator service started.\nAll Pixellot services up.",
+        "stderr": "",
+        "agentStatus": "Running",
+        "coordinatorStatus": "Running",
+        "message": "keepagentup.exe completed successfully (demo)",
+    },
     "Get-AudioDevices.ps1": lambda **kw: {
         "devices": [
             {

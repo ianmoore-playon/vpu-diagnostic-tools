@@ -1121,6 +1121,7 @@ async def api_preload():
         ports,
         ntp,
         local,
+        ntp_peers,
     ) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -1137,6 +1138,7 @@ async def api_preload():
         run_ps("Test-NetworkPorts.ps1"),
         run_ps("Test-NtpDrift.ps1"),
         run_ps("Test-LocalNetwork.ps1"),
+        run_ps("Get-NtpPeers.ps1"),
     )
     # Audio is deferred — lazy-fetched on tab visit to keep preload lean.
 
@@ -1240,14 +1242,15 @@ async def api_system():
 
 @app.get("/api/network")
 async def api_network():
-    config, domains, ports, ntp, local = await asyncio.gather(
+    config, domains, ports, ntp, local, ntp_peers = await asyncio.gather(
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Test-NetworkDomains.ps1", timeout=20),
         run_ps("Test-NetworkPorts.ps1", timeout=45),
         run_ps("Test-NtpDrift.ps1", timeout=15),
         run_ps("Test-LocalNetwork.ps1", timeout=20),
+        run_ps("Get-NtpPeers.ps1", timeout=15),
     )
-    return _build_network(config, domains, ports, ntp, local)
+    return _build_network(config, domains, ports, ntp, local, ntp_peers)
 
 
 @app.get("/api/network/local-ping")
