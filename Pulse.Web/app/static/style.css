@@ -1052,13 +1052,73 @@ html.dark .splash-logo {
     min-width: 80px;
     transition: background 0.15s;
 }
-.port-card-pass { border-color: #22c55e; background: rgba(34, 197, 94, 0.05); }
-.port-card-fail { border-color: #ef4444; background: rgba(239, 68, 68, 0.05); }
-.port-card-warn { border-color: #eab308; background: rgba(234, 179, 8, 0.05); }
+.port-card-pass { border-color: var(--c-accent-green); background: rgba(34, 197, 94, 0.05); }
+.port-card-fail { border-color: var(--c-accent-red);   background: rgba(239, 68, 68, 0.05); }
+.port-card-warn { border-color: var(--c-accent-amber); background: rgba(234, 179, 8, 0.05); }
 .port-card-num { font-size: 1.1rem; font-weight: 700; color: var(--c-text); }
 .port-card-name { font-size: 0.7rem; color: var(--c-muted); text-align: center; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .port-card-host { font-size: 0.65rem; font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; color: var(--c-dim); }
 .port-card-opt { font-size: 0.6rem; color: var(--c-dimmer); font-style: italic; }
+
+/* Multi-host port card — used when several endpoints share one protocol/port (e.g. TCP/443) */
+.port-card-multi {
+    grid-column: span 2;
+    align-items: stretch;
+    text-align: left;
+    padding: 12px 14px;
+    gap: 4px;
+    min-width: 220px;
+}
+.port-card-multi .port-card-num {
+    align-self: center;
+}
+.port-card-multi .port-card-name {
+    text-align: center;
+    max-width: none;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--c-text);
+}
+.port-card-summary {
+    text-align: center;
+    font-size: 0.65rem;
+    color: var(--c-dim);
+    margin-bottom: 4px;
+}
+.port-card-hosts {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.port-card-hosts li {
+    display: grid;
+    grid-template-columns: 8px 1fr auto;
+    gap: 6px;
+    align-items: center;
+}
+.port-card-host-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+.port-card-host-name {
+    font-size: 0.7rem;
+    font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
+    color: var(--c-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.port-card-host-purpose {
+    font-size: 0.6rem;
+    color: var(--c-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
 .port-section-label {
     font-size: 0.7rem;
     font-weight: 600;

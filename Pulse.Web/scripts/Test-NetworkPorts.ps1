@@ -14,6 +14,7 @@ $ErrorActionPreference = 'Stop'
 try {
     $portTests = @(
         # Required
+        @{ protocol = 'UDP'; port = 53;   host = '8.8.8.8';               purpose = 'DNS';               optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'pixellot.tv';          purpose = 'Pixellot';          optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'nfhsnetwork.com';      purpose = 'NFHS Network';      optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 's3.amazonaws.com';     purpose = 'AWS S3';            optional = $false }
@@ -62,6 +63,37 @@ try {
                     $remoteEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
                     $resp = $udp.Receive([ref]$remoteEP)
                     if ($resp.Length -ge 48) { $status = 'pass' }
+                }
+                $udp.Close()
+            }
+            catch {
+                $status = 'fail'
+            }
+        }
+        elseif ($test.protocol -eq 'UDP' -and $test.port -eq 53) {
+            # Real DNS UDP test — send a minimal NS-root query and check for response
+            try {
+                $udp = New-Object System.Net.Sockets.UdpClient
+                $udp.Client.ReceiveTimeout = 3000
+                $udp.Client.SendTimeout = 3000
+                $addr = [System.Net.Dns]::GetHostAddresses($test.host) |
+                    Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } |
+                    Select-Object -First 1
+                if ($addr) {
+                    $ep = New-Object System.Net.IPEndPoint($addr, 53)
+                    # 17-byte DNS query: ID=0x1234, flags=0x0100 (std query, RD), 1 question
+                    # Name: root (.), QTYPE=NS (0x0002), QCLASS=IN (0x0001)
+                    $dnsReq = [byte[]](
+                        0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01
+                    )
+                    $udp.Send($dnsReq, $dnsReq.Length, $ep) | Out-Null
+                    $remoteEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+                    $resp = $udp.Receive([ref]$remoteEP)
+                    # Reply needs to be at least 12 bytes (header) and echo our ID
+                    if ($resp.Length -ge 12 -and $resp[0] -eq 0x12 -and $resp[1] -eq 0x34) {
+                        $status = 'pass'
+                    }
                 }
                 $udp.Close()
             }

@@ -1396,7 +1396,12 @@ function _pingCardHtml(p) {
 }
 
 async function runLocalPing(count) {
-  if (_localPingState.running) { stopLocalPing(); return; }
+  // If a run is already in progress, abort it and start a fresh batch with the new count.
+  if (_localPingState.running) {
+    stopLocalPing();
+    // Give the previous abort a tick to settle so we don't race on _localPingState.
+    await new Promise(function(r) { setTimeout(r, 30); });
+  }
   _localPingState.running = true;
   _localPingState.continuous = (count === 0);
   _localPingState.abortCtrl = new AbortController();
@@ -1435,7 +1440,8 @@ async function runLocalPing(count) {
 }
 
 function _accumPing(prev, batch) {
-  function merge(old, cur) {
+  // Gateway should be a local hop (< 10 ms typical); DNS may legitimately be 20–50 ms.
+  function merge(old, cur, warnLatencyMs) {
     if (!cur || !cur.target) return old;
     if (!old || !old.target) return cur;
     var sent = (old.sent || 0) + (cur.sent || 0);
@@ -1449,11 +1455,14 @@ function _accumPing(prev, batch) {
     } else if (cur.avgMs != null) { avgMs = cur.avgMs; }
     else { avgMs = old.avgMs; }
     var loss = sent > 0 ? Math.round(((sent - recv) / sent) * 100) : 100;
-    var status = recv === 0 ? "fail" : loss > 0 || (avgMs != null && avgMs > 50) ? "warn" : "pass";
+    var status = recv === 0 ? "fail" : loss > 0 || (avgMs != null && avgMs > warnLatencyMs) ? "warn" : "pass";
     return { target: cur.target, label: cur.label, reachable: recv > 0, sent: sent, received: recv,
              lossPercent: loss, minMs: minMs, avgMs: avgMs, maxMs: maxMs, status: status };
   }
-  return { gateway: merge(prev.gateway, batch.gateway), dns: merge(prev.dns, batch.dns) };
+  return {
+    gateway: merge(prev.gateway, batch.gateway, 10),
+    dns:     merge(prev.dns,     batch.dns,     50),
+  };
 }
 
 function stopLocalPing() {
@@ -1483,11 +1492,29 @@ function _updatePingControls() {
 function _toggleAdvNet() {
   var sec = document.getElementById("net-adv-section");
   var arrow = document.getElementById("net-adv-arrow");
-  var hint = document.getElementById("net-adv-hint");
   if (!sec) return;
-  var open = sec.classList.toggle("net-adv-collapsed");
-  if (arrow) arrow.classList.toggle("net-adv-arrow-open", !open);
-  if (hint) hint.textContent = open ? "Click to expand" : "Click to collapse";
+  // classList.toggle returns whether the class is present *after* the toggle —
+  // i.e., true when the section is now collapsed.
+  var collapsed = sec.classList.toggle("net-adv-collapsed");
+  if (arrow) arrow.classList.toggle("net-adv-arrow-open", !collapsed);
+}
+
+// Re-run all network probes with a button spinner — avoids the flash-to-skeleton
+// reload pattern that other tabs use.
+async function _rerunNetworkTests(btn) {
+  if (btn && btn.disabled) return;
+  if (btn) {
+    btn.disabled = true;
+    var labelSpan = btn.querySelector("span");
+    if (labelSpan) labelSpan.textContent = "Running…";
+  }
+  try {
+    dataCache.network = null;
+    await fetchSection("network");
+  } finally {
+    // renderNetwork will rebuild the page (including the button), so no need
+    // to restore the label here.
+  }
 }
 
 // Traceroute runner
@@ -1529,10 +1556,10 @@ function _renderTraceroute(el, d) {
       '<th>#</th><th>IP Address</th><th>Hostname</th><th>RTT</th><th>Status</th>' +
     '</tr></thead><tbody>' +
     hops.map(function(h) {
-      var sc = h.status === "reached" ? "status-pass" : h.status === "transit" ? "" : h.status === "timeout" ? "text-pulse-muted" : "status-fail";
+      var sc = h.status === "reached" ? "status-pass" : h.status === "timeout" ? "text-pulse-muted" : h.status === "transit" ? "" : "status-fail";
       var rtt = h.rttMs != null ? h.rttMs + " ms" : "—";
       var statusLabel = h.status === "reached" ? "Reached" : h.status === "transit" ? "OK" : h.status === "timeout" ? "* * *" : esc(h.status);
-      return '<tr class="' + sc + '">' +
+      return '<tr' + (sc ? ' class="' + sc + '"' : '') + '>' +
         '<td>' + esc(String(h.hop)) + '</td>' +
         '<td class="font-mono">' + esc(h.ip || "* * *") + '</td>' +
         '<td class="text-pulse-muted">' + esc(h.hostname || "") + '</td>' +
@@ -1616,7 +1643,11 @@ function _renderSpeedResult(el, d) {
       findings.map(function(f) {
         return '<div class="net-speed-finding">' + svgIcon("triangle", 14) + ' <span>' + esc(f) + '</span></div>';
       }).join('') +
-    '</div>' : '<div class="net-speed-ok-msg">' + svgIcon("check", 14) + ' Bandwidth meets Pixellot minimum requirements (≥ 10 Mbps up/down)</div>');
+    '</div>' :
+      // Only claim "meets requirements" when we actually parsed both numbers.
+      (d.download != null && d.upload != null
+        ? '<div class="net-speed-ok-msg">' + svgIcon("check", 14) + ' Bandwidth meets Pixellot minimum requirements (≥ 10 Mbps up/down)</div>'
+        : '<div class="net-speed-finding">' + svgIcon("triangle", 14) + ' <span>Speedtest returned partial results — could not verify all thresholds.</span></div>'));
 }
 
 // ── Live Network Health (WebSocket-driven) ──────────────────
@@ -1689,9 +1720,18 @@ var _captureState = { running: false };
 async function _runCapture(duration) {
   if (_captureState.running) return;
   _captureState.running = true;
-  var btn = document.getElementById("net-capture-btn");
+
+  var ctrls = document.getElementById("net-capture-controls");
+  var spinner = document.getElementById("net-capture-status");
   var out = document.getElementById("net-capture-results");
-  if (btn) { btn.disabled = true; btn.innerHTML = svgIcon("refresh", 14) + ' Capturing ' + duration + 's…'; }
+  var presets = ctrls ? ctrls.querySelectorAll(".net-ping-preset") : [];
+  // Highlight which duration is running, disable others.
+  presets.forEach(function(b) {
+    var bDur = parseInt((b.textContent || "").replace("s",""), 10);
+    b.classList.toggle("net-ping-preset-active", bDur === duration);
+    b.disabled = true;
+  });
+  if (spinner) spinner.style.display = "inline-flex";
   if (out) out.innerHTML = '<p class="text-pulse-muted text-sm loading-pulse">Running ' + duration + 's packet capture — analyzing TCP headers on ports 443, 1935, 80, UDP 2088…</p>';
 
   try {
@@ -1706,7 +1746,8 @@ async function _runCapture(duration) {
     if (out) out.innerHTML = '<p class="text-sm status-fail">Capture failed: ' + esc(String(e)) + '</p>';
   }
   _captureState.running = false;
-  if (btn) { btn.disabled = false; btn.innerHTML = svgIcon("activity", 14) + ' Capture 30s'; }
+  presets.forEach(function(b) { b.disabled = false; });
+  if (spinner) spinner.style.display = "none";
 }
 
 function _renderCapture(el, d) {
@@ -1911,6 +1952,18 @@ function renderNetwork() {
   const tcpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "TCP"; });
   const udpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "UDP"; });
 
+  // Group ports that share (protocol, port). Renders as a single multi-host card.
+  function groupPorts(list) {
+    var byKey = {};
+    var order = [];
+    list.forEach(function(p) {
+      var key = (p.protocol || "").toUpperCase() + "/" + p.port;
+      if (!byKey[key]) { byKey[key] = []; order.push(key); }
+      byKey[key].push(p);
+    });
+    return order.map(function(k) { return byKey[k]; });
+  }
+
   function portCard(p) {
     const ok = (p.status || "").toLowerCase() === "pass";
     const cls = ok ? "port-card-pass" : (p.optional ? "port-card-warn" : "port-card-fail");
@@ -1919,6 +1972,31 @@ function renderNetwork() {
       <div class="port-card-name">${esc(p.purpose)}</div>
       <div class="port-card-host">${esc(p.host)}</div>
       ${p.optional ? '<div class="port-card-opt">Optional</div>' : ""}
+    </div>`;
+  }
+
+  // Multi-host card: one card showing all endpoints tested on the same protocol/port.
+  function portCardGroup(group) {
+    if (group.length === 1) return portCard(group[0]);
+    const anyFail = group.some(function(p) { return (p.status || "").toLowerCase() !== "pass"; });
+    const allOptional = group.every(function(p) { return p.optional; });
+    const cls = !anyFail ? "port-card-pass" : (allOptional ? "port-card-warn" : "port-card-fail");
+    const passCount = group.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
+    const port = group[0].port;
+    const proto = (group[0].protocol || "").toUpperCase();
+    const label = proto === "TCP" && port === 443 ? "HTTPS Endpoints" : (group[0].purpose || (proto + "/" + port));
+    const hosts = group.map(function(p) {
+      const hostOk = (p.status || "").toLowerCase() === "pass";
+      const dotColor = hostOk ? "var(--c-accent-green)" : (p.optional ? "var(--c-accent-amber)" : "var(--c-accent-red)");
+      return `<li><span class="port-card-host-dot" style="background:${dotColor}"></span>` +
+             `<span class="port-card-host-name">${esc(p.host)}</span>` +
+             `<span class="port-card-host-purpose">${esc(p.purpose)}</span></li>`;
+    }).join("");
+    return `<div class="port-card port-card-multi ${cls}">
+      <div class="port-card-num">${esc(String(port))}</div>
+      <div class="port-card-name">${esc(label)}</div>
+      <div class="port-card-summary">${passCount} of ${group.length} passing</div>
+      <ul class="port-card-hosts">${hosts}</ul>
     </div>`;
   }
 
@@ -1931,7 +2009,7 @@ function renderNetwork() {
       </div>
       <div class="net-issues-list">
         ${issues.map(function(item) {
-          var sc = item.severity === "critical" ? "sev-chip-crit" : item.severity === "warning" ? "sev-chip-warn" : "sev-chip-ok";
+          var sc = item.severity === "critical" ? "sev-chip-crit" : item.severity === "warning" ? "sev-chip-warn" : item.severity === "info" ? "sev-chip-info" : "sev-chip-ok";
           var borderCls = item.severity === "critical" ? "net-issue-critical" : item.severity === "warning" ? "net-issue-warn" : "net-issue-info";
           var detailsHtml = "";
           if (item.details && item.details.length) {
@@ -1952,9 +2030,9 @@ function renderNetwork() {
     </div>` : "";
 
   $page().innerHTML = `
-    ${pageHeader("Network", "Adapters, IP, NTP, and reachability — what the box can talk to right now",
-      statusChip + `<button class="btn-outline btn-ol-blue" onclick="dataCache.network=null;renderNetwork()">
-        ${svgIcon("activity", 14)} Run Test
+    ${pageHeader("Network", "Adapters, IP configuration, NTP, and reachability for required services.",
+      statusChip + `<button id="net-run-test-btn" class="btn-outline btn-ol-blue" onclick="_rerunNetworkTests(this)">
+        ${svgIcon("activity", 14)} <span>Run Test</span>
       </button>`
     )}
 
@@ -1967,13 +2045,13 @@ function renderNetwork() {
         <div class="net-sub-card">
           <div class="net-sub-heading">TCP ports <span class="net-proto-badge net-proto-tcp">TCP</span></div>
           ${tcpPorts.length
-            ? `<div class="port-grid">${tcpPorts.map(portCard).join("")}</div>`
+            ? `<div class="port-grid">${groupPorts(tcpPorts).map(portCardGroup).join("")}</div>`
             : '<p class="text-pulse-muted text-sm mt-2">No TCP port results</p>'}
         </div>
         <div class="net-sub-card">
           <div class="net-sub-heading">UDP ports <span class="net-proto-badge net-proto-udp">UDP</span></div>
           ${udpPorts.length
-            ? `<div class="port-grid">${udpPorts.map(portCard).join("")}</div>`
+            ? `<div class="port-grid">${groupPorts(udpPorts).map(portCardGroup).join("")}</div>`
             : '<p class="text-pulse-muted text-sm mt-2">No UDP port results</p>'}
         </div>
       </div>
@@ -2030,11 +2108,14 @@ function renderNetwork() {
             ? '<span class="status-pass">Reachable</span>'
             : '<span class="status-fail">Unreachable</span>')}
           ${kvRow("Tested host", cfg.testedHost || "—")}
-          ${kvRow("NTP server", cfg.ntpSource || ntp.source || "—")}
+          ${kvRowHtml("NTP server",
+            '<span title="Drift is measured against the Windows-configured NTP source. The port test (UDP/123) targets prod-echo.pixellot.tv separately.">' +
+            esc(cfg.ntpSource || ntp.source || "—") + '</span>')}
           ${kvRowHtml("NTP status", (function() {
             var s = (ntp.status || "").toLowerCase();
-            if (s === "ok") return '<span class="status-pass" style="font-weight:600">OK</span>';
-            if (s === "warn") return '<span class="status-warn" style="font-weight:600">OK</span>';
+            var offset = ntp.offsetSeconds != null ? " (" + ntp.offsetSeconds + "s)" : "";
+            if (s === "ok") return '<span class="status-pass" style="font-weight:600">OK' + esc(offset) + '</span>';
+            if (s === "warn") return '<span class="status-warn" style="font-weight:600">DRIFT' + esc(offset) + '</span>';
             if (!ntp.status) return "—";
             return '<span class="status-fail" style="font-weight:600">ERROR</span>';
           })())}
@@ -2071,11 +2152,12 @@ function renderNetwork() {
               const ok = (d.status || "").toLowerCase() === "pass";
               var dnsTime = d.resolutionMs != null ? d.resolutionMs + " ms" : "";
               var dnsSlow = d.resolutionMs != null && d.resolutionMs > 200;
+              var dotColor = ok ? "var(--c-accent-green)" : "var(--c-accent-red)";
               return `<div class="domain-row">
-                <span class="domain-dot" style="background:${ok ? "#22c55e" : "#ef4444"}"></span>
+                <span class="domain-dot" style="background:${dotColor}"></span>
                 <span class="domain-name">${esc(d.domain)}</span>
                 <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
-                ${dnsTime ? '<span class="domain-dns-time font-mono' + (dnsSlow ? ' status-warn' : '') + '">' + esc(dnsTime) + '</span>' : ''}
+                <span class="domain-dns-time font-mono${dnsSlow ? ' status-warn' : ''}">${esc(dnsTime)}</span>
                 ${statusBadge(d.status)}
               </div>`;
             }).join("")}
@@ -2091,7 +2173,6 @@ function renderNetwork() {
         <span class="net-adv-toggle-label">Advanced Diagnostics</span>
         <span class="text-xs text-pulse-muted">Speed test, packet capture, traceroute, live monitoring</span>
       </div>
-      <span class="net-adv-toggle-hint text-xs text-pulse-muted" id="net-adv-hint">Click to expand</span>
     </div>
 
     <!-- Advanced Diagnostics (collapsed by default) -->
@@ -2110,7 +2191,7 @@ function renderNetwork() {
         <div id="net-speed-ui">
           <p class="text-pulse-muted text-sm mb-3">Run a test at speedtest.net, then paste the result URL below.</p>
           <div class="net-speed-input-row">
-            <input id="net-speed-input" type="text" class="net-speed-input" placeholder="https://www.speedtest.net/result/123456789 or result ID">
+            <input id="net-speed-input" type="text" class="net-speed-input" placeholder="https://www.speedtest.net/result/123456789 or result ID" onkeydown="if(event.key==='Enter'){event.preventDefault();_fetchSpeedtest();}">
             <button id="net-speed-fetch-btn" class="btn-outline btn-ol-blue" onclick="_fetchSpeedtest()">
               ${svgIcon("refresh", 14)} Fetch Result
             </button>
@@ -2123,10 +2204,11 @@ function renderNetwork() {
       <div class="card">
         <div class="net-ping-toolbar">
           ${sectionTitle("shield", "Packet Capture")}
-          <div class="net-ping-btns">
-            <button id="net-capture-btn" class="btn-outline btn-ol-blue" onclick="_runCapture(30)">
-              ${svgIcon("activity", 14)} Capture 30s
-            </button>
+          <div id="net-capture-controls" class="net-ping-btns">
+            <button class="net-ping-preset" onclick="_runCapture(10)">10s</button>
+            <button class="net-ping-preset net-ping-preset-active" onclick="_runCapture(30)">30s</button>
+            <button class="net-ping-preset" onclick="_runCapture(60)">60s</button>
+            <span id="net-capture-status" class="net-ping-spin" style="display:none">${svgIcon("refresh", 14)}</span>
           </div>
         </div>
         <p class="text-pulse-muted text-sm">Captures TCP packet headers using Windows pktmon (ports 443, 1935, 80, UDP 2088). Analyzes retransmissions, resets, and drops.</p>
@@ -2138,7 +2220,7 @@ function renderNetwork() {
         <div class="net-ping-toolbar">
           ${sectionTitle("share", "Traceroute")}
           <div class="net-ping-btns">
-            <input id="net-trace-target" type="text" class="net-trace-input" placeholder="pixellot.tv" value="pixellot.tv">
+            <input id="net-trace-target" type="text" class="net-trace-input" placeholder="pixellot.tv" value="pixellot.tv" onkeydown="if(event.key==='Enter'){event.preventDefault();_runTraceroute(this.value.trim()||'pixellot.tv');}">
             <button id="net-trace-btn" class="btn-outline btn-ol-blue" onclick="_runTraceroute(document.getElementById('net-trace-target').value.trim()||'pixellot.tv')">
               ${svgIcon("activity", 14)} Run
             </button>

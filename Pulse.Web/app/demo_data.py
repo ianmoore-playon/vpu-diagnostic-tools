@@ -120,6 +120,7 @@ DEMO = {
     "Test-NetworkPorts.ps1": lambda **kw: {
         "results": [
             # Required
+            {"purpose": "DNS", "host": "8.8.8.8", "port": 53, "protocol": "UDP", "status": "pass", "optional": False},
             {"purpose": "Pixellot", "host": "pixellot.tv", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NFHS Network", "host": "nfhsnetwork.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "AWS S3", "host": "s3.amazonaws.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
@@ -214,13 +215,14 @@ DEMO = {
             "segsOutSec": random.randint(800, 3000),
             "segsInSec": random.randint(2000, 8000),
         },
+        # Match the real script: no remoteHost (reverse DNS removed for poll-loop speed).
         "connections": [
-            {"localPort": 49201, "remoteAddr": "52.20.181.44", "remotePort": 443, "remoteHost": "api.pixellot.tv", "state": "Established", "pid": 4120},
-            {"localPort": 49205, "remoteAddr": "52.20.181.45", "remotePort": 443, "remoteHost": "cloud.pixellot.tv", "state": "Established", "pid": 4120},
-            {"localPort": 49210, "remoteAddr": "52.20.181.46", "remotePort": 1935, "remoteHost": "live.pixellot.tv", "state": "Established", "pid": 5230},
-            {"localPort": 49215, "remoteAddr": "52.217.44.54", "remotePort": 443, "remoteHost": "s3.amazonaws.com", "state": "Established", "pid": 4120},
-            {"localPort": 49220, "remoteAddr": "76.76.21.21", "remotePort": 443, "remoteHost": "service.singular.live", "state": "Established", "pid": 6010},
-            {"localPort": 49225, "remoteAddr": "216.52.233.2", "remotePort": 443, "remoteHost": "secure.logmein.com", "state": "TimeWait", "pid": 0},
+            {"localPort": 49201, "remoteAddr": "52.20.181.44", "remotePort": 443, "state": "Established", "pid": 4120},
+            {"localPort": 49205, "remoteAddr": "52.20.181.45", "remotePort": 443, "state": "Established", "pid": 4120},
+            {"localPort": 49210, "remoteAddr": "52.20.181.46", "remotePort": 1935, "state": "Established", "pid": 5230},
+            {"localPort": 49215, "remoteAddr": "52.217.44.54", "remotePort": 443, "state": "Established", "pid": 4120},
+            {"localPort": 49220, "remoteAddr": "76.76.21.21", "remotePort": 443, "state": "Established", "pid": 6010},
+            {"localPort": 49225, "remoteAddr": "216.52.233.2", "remotePort": 443, "state": "TimeWait", "pid": 0},
         ],
         "nics": [
             {"name": "intel[r] i210 gigabit network connection", "queueLen": 0, "rxErrors": 0, "txErrors": 0, "rxPktSec": random.randint(1500, 4000), "txPktSec": random.randint(200, 800)},
