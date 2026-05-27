@@ -1,132 +1,45 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Enumerates audio devices with volume, peak, and port info.
+    Enumerates audio devices with volume, mute, peak, and port info.
 .DESCRIPTION
     Uses CoreAudio COM interop to list all audio endpoints (input + output),
     read volume/mute state, sample peak meter, and identify physical port.
     Falls back to WMI Win32_SoundDevice if CoreAudio fails.
     Outputs JSON to stdout.
+.NOTES
+    Peak sampling uses a single GetPeakValue() call — the CoreAudio meter
+    tracks the highest sample since the last query internally, so frequent
+    polling from the frontend gives a real-time view without forcing this
+    script to block on Start-Sleep.
 #>
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
 
-# ── CoreAudio interop types ──────────────────────────────────
-# Compiled once per session via Add-Type; skipped if already loaded.
-if (-not ([System.Management.Automation.PSTypeName]'CoreAudio.MMDeviceEnumerator').Type) {
-    Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
+# ── CoreAudio interop types (idempotent — only compiled once per session) ──
+. (Join-Path $PSScriptRoot '_AudioInterop.ps1')
 
-namespace CoreAudio {
+# Track COM objects for cleanup
+$comObjects = [System.Collections.ArrayList]::new()
 
-    // ── COM class ────────────────────────────────────────────
-    [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-    public class MMDeviceEnumerator {}
-
-    // ── Enums ────────────────────────────────────────────────
-    public enum EDataFlow : uint { eRender = 0, eCapture = 1, eAll = 2 }
-    public enum EDeviceState : uint {
-        ACTIVE = 0x1, DISABLED = 0x2, NOTPRESENT = 0x4, UNPLUGGED = 0x8,
-        ALL = 0xF
-    }
-    public enum EndpointFormFactor : uint {
-        RemoteNetworkDevice = 0, Speakers = 1, LineLevel = 2, Headphones = 3,
-        Microphone = 4, Headset = 5, Handset = 6, UnknownDigitalPassthrough = 7,
-        SPDIF = 8, DigitalAudioDisplayDevice = 9, UnknownFormFactor = 10
-    }
-
-    // ── IMMDeviceCollection ──────────────────────────────────
-    [Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"),
-     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IMMDeviceCollection {
-        int GetCount(out uint count);
-        int Item(uint index, out IMMDevice device);
-    }
-
-    // ── IMMDevice ────────────────────────────────────────────
-    [Guid("D666063F-1587-4E43-81F1-B948E807363F"),
-     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IMMDevice {
-        int Activate([MarshalAs(UnmanagedType.LPStruct)] Guid iid,
-                     uint clsCtx, IntPtr pActivationParams,
-                     [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
-        int OpenPropertyStore(uint access, out IPropertyStore store);
-        int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
-        int GetState(out uint state);
-    }
-
-    // ── IPropertyStore ───────────────────────────────────────
-    [Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"),
-     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IPropertyStore {
-        int GetCount(out uint count);
-        int GetAt(uint index, out PROPERTYKEY key);
-        int GetValue(ref PROPERTYKEY key, out PROPVARIANT value);
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct PROPERTYKEY {
-        public Guid fmtid; public uint pid;
-        public PROPERTYKEY(Guid g, uint p) { fmtid = g; pid = p; }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct PROPVARIANT {
-        public ushort vt; ushort r1; ushort r2; ushort r3;
-        public IntPtr data1; public IntPtr data2;
-    }
-
-    // ── IAudioEndpointVolume ─────────────────────────────────
-    [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"),
-     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IAudioEndpointVolume {
-        int RegisterControlChangeNotify(IntPtr n);
-        int UnregisterControlChangeNotify(IntPtr n);
-        int GetChannelCount(out uint count);
-        int SetMasterVolumeLevel(float fLevelDB, ref Guid ctx);
-        int SetMasterVolumeLevelScalar(float fLevel, ref Guid ctx);
-        int GetMasterVolumeLevel(out float pfLevelDB);
-        int GetMasterVolumeLevelScalar(out float pfLevel);
-    }
-
-    // ── IAudioMeterInformation ───────────────────────────────
-    [Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064"),
-     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IAudioMeterInformation {
-        int GetPeakValue(out float pfPeak);
-    }
-
-    // ── IMMDeviceEnumerator ──────────────────────────────────
-    [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"),
-     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IMMDeviceEnumerator {
-        int EnumAudioEndpoints(EDataFlow flow, uint mask,
-                               out IMMDeviceCollection col);
-        int GetDefaultAudioEndpoint(EDataFlow flow, uint role,
-                                    out IMMDevice device);
-    }
-
-    // ── Helper ───────────────────────────────────────────────
-    public static class Guids {
-        public static Guid IID_IAudioEndpointVolume =
-            new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
-        public static Guid IID_IAudioMeterInformation =
-            new Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064");
-        // Property keys
-        public static PROPERTYKEY PKEY_Device_FriendlyName =
-            new PROPERTYKEY(new Guid("A45C254E-DF1C-4EFD-8020-67D146A850E0"), 14);
-        public static PROPERTYKEY PKEY_AudioEndpoint_FormFactor =
-            new PROPERTYKEY(new Guid("1DA5D803-D492-4EDD-8C23-E0C0FFEE7F0E"), 0);
+function _Release($obj) {
+    if ($null -ne $obj) {
+        try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($obj) } catch {}
     }
 }
-'@ -ErrorAction Stop
+
+function _ClearPropVariant([ref]$pv) {
+    try {
+        # PropVariantClear from ole32.dll frees any allocated strings/blobs
+        [CoreAudio.Ole32]::PropVariantClear([ref]$pv.Value) | Out-Null
+    } catch {}
 }
 
 try {
     $enum = New-Object CoreAudio.MMDeviceEnumerator
+    [void]$comObjects.Add($enum)
     $iEnum = [CoreAudio.IMMDeviceEnumerator]$enum
 
     $devices = @()
@@ -134,12 +47,14 @@ try {
     foreach ($flow in @([CoreAudio.EDataFlow]::eCapture, [CoreAudio.EDataFlow]::eRender)) {
         $col = $null
         [void]$iEnum.EnumAudioEndpoints($flow, [uint32]([CoreAudio.EDeviceState]::ALL), [ref]$col)
+        [void]$comObjects.Add($col)
         $count = [uint32]0
         [void]$col.GetCount([ref]$count)
 
         for ($i = 0; $i -lt $count; $i++) {
             $dev = $null
             [void]$col.Item($i, [ref]$dev)
+            [void]$comObjects.Add($dev)
 
             # State
             $state = [uint32]0
@@ -156,6 +71,7 @@ try {
             # Property store — friendly name + form factor
             $store = $null
             [void]$dev.OpenPropertyStore(0, [ref]$store)
+            [void]$comObjects.Add($store)
 
             $nameKey = [CoreAudio.Guids]::PKEY_Device_FriendlyName
             $namePV = New-Object CoreAudio.PROPVARIANT
@@ -166,6 +82,7 @@ try {
                     $friendlyName = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($namePV.data1)
                 }
             } catch {}
+            finally { _ClearPropVariant ([ref]$namePV) }
 
             $ffKey = [CoreAudio.Guids]::PKEY_AudioEndpoint_FormFactor
             $ffPV = New-Object CoreAudio.PROPVARIANT
@@ -180,43 +97,46 @@ try {
                     9 { 'DigitalDisplay' } default { 'Unknown' }
                 }
             } catch {}
+            finally { _ClearPropVariant ([ref]$ffPV) }
 
             $dataFlow = if ($flow -eq [CoreAudio.EDataFlow]::eCapture) { 'Input' } else { 'Output' }
 
-            # Volume + mute (only for active devices)
+            # Volume + mute + peak (only for active devices)
             $volume = $null
             $muted = $null
             $peakValue = $null
 
             if ($state -eq 1) {
-                # IAudioEndpointVolume
+                # IAudioEndpointVolume — volume + mute
+                $volObj = $null
                 try {
-                    $volObj = $null
                     [void]$dev.Activate(
                         [CoreAudio.Guids]::IID_IAudioEndpointVolume,
                         1, [IntPtr]::Zero, [ref]$volObj)
                     $iVol = [CoreAudio.IAudioEndpointVolume]$volObj
+
                     $scalar = [float]0
                     [void]$iVol.GetMasterVolumeLevelScalar([ref]$scalar)
                     $volume = [math]::Round($scalar * 100, 1)
-                } catch {}
 
-                # IAudioMeterInformation — sample peak over ~500ms
+                    $muteState = 0
+                    [void]$iVol.GetMute([ref]$muteState)
+                    $muted = ($muteState -ne 0)
+                } catch {}
+                finally { _Release $volObj }
+
+                # IAudioMeterInformation — single peak read
+                $meterObj = $null
                 try {
-                    $meterObj = $null
                     [void]$dev.Activate(
                         [CoreAudio.Guids]::IID_IAudioMeterInformation,
                         1, [IntPtr]::Zero, [ref]$meterObj)
                     $iMeter = [CoreAudio.IAudioMeterInformation]$meterObj
-                    $maxPeak = [float]0
-                    for ($s = 0; $s -lt 5; $s++) {
-                        $pk = [float]0
-                        [void]$iMeter.GetPeakValue([ref]$pk)
-                        if ($pk -gt $maxPeak) { $maxPeak = $pk }
-                        Start-Sleep -Milliseconds 100
-                    }
-                    $peakValue = [math]::Round($maxPeak * 100, 1)
+                    $pk = [float]0
+                    [void]$iMeter.GetPeakValue([ref]$pk)
+                    $peakValue = [math]::Round($pk * 100, 1)
                 } catch {}
+                finally { _Release $meterObj }
             }
 
             $devices += [ordered]@{
@@ -233,8 +153,8 @@ try {
     }
 
     [ordered]@{
-        devices = @($devices)
-        inputCount = ($devices | Where-Object { $_.dataFlow -eq 'Input' -and $_.state -eq 'Active' }).Count
+        devices     = @($devices)
+        inputCount  = ($devices | Where-Object { $_.dataFlow -eq 'Input' -and $_.state -eq 'Active' }).Count
         outputCount = ($devices | Where-Object { $_.dataFlow -eq 'Output' -and $_.state -eq 'Active' }).Count
     } | ConvertTo-Json -Depth 4 -Compress
 }
@@ -259,6 +179,7 @@ catch {
             inputCount  = 0
             outputCount = 0
             wmiFallback = $true
+            warning     = "CoreAudio unavailable — limited device info from WMI only"
         } | ConvertTo-Json -Depth 4 -Compress
     }
     catch {
@@ -268,4 +189,12 @@ catch {
             script  = 'Get-AudioDevices.ps1'
         } | ConvertTo-Json -Compress
     }
+}
+finally {
+    # Release COM objects in reverse order
+    for ($i = $comObjects.Count - 1; $i -ge 0; $i--) {
+        _Release $comObjects[$i]
+    }
+    [System.GC]::Collect()
+    [System.GC]::WaitForPendingFinalizers()
 }

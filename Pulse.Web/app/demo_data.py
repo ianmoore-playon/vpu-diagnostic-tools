@@ -277,7 +277,9 @@ DEMO = {
                 "formFactor": "LineLevel",
                 "volume": 78,
                 "muted": False,
-                "peak": round(random.uniform(8, 35), 1),
+                # Stays clearly above signal threshold (1%) so the "Signal
+                # Detected" indicator doesn't flicker between frames.
+                "peak": round(random.uniform(12, 32), 1),
             },
             {
                 "id": "{0.0.1.00000000}.{a1b2c3d4-1111-2222-3333-444455557777}",
@@ -286,8 +288,8 @@ DEMO = {
                 "state": "Active",
                 "formFactor": "Microphone",
                 "volume": 62,
-                "muted": False,
-                "peak": round(random.uniform(0, 2), 1),
+                "muted": True,  # Demonstrates the muted-slider state
+                "peak": round(random.uniform(0, 0.8), 1),  # always below threshold
             },
             {
                 "id": "{0.0.1.00000000}.{a1b2c3d4-1111-2222-3333-444455558888}",
@@ -307,7 +309,7 @@ DEMO = {
                 "formFactor": "Speakers",
                 "volume": 45,
                 "muted": False,
-                "peak": round(random.uniform(0, 5), 1),
+                "peak": round(random.uniform(2, 8), 1),  # clearly above threshold
             },
             {
                 "id": "{0.0.0.00000000}.{b2c3d4e5-2222-3333-4444-555566668888}",

@@ -1538,6 +1538,9 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 /* ── Audio Panel ─────────────────────────────────────────── */
 
 .audio-summary { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+@media (max-width: 768px) {
+  .audio-summary { grid-template-columns: 1fr; }
+}
 .audio-summary-card { text-align: center; padding: 1.25rem 1rem; }
 .audio-summary-icon { color: var(--c-muted); margin-bottom: 0.5rem; display: flex; justify-content: center; }
 .audio-summary-num { font-size: 1.5rem; font-weight: 700; color: var(--c-text); }
@@ -1548,12 +1551,30 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .audio-signal-active { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.5); }
 .audio-signal-silent { background: var(--c-dim); }
 
+/* Findings card (active line-in silent, WMI fallback, etc.) */
+.audio-findings { padding: 0.5rem; }
+.audio-finding {
+  display: flex; gap: 0.75rem; align-items: flex-start;
+  padding: 0.625rem 0.75rem; border-radius: 6px; margin-bottom: 0.5rem;
+}
+.audio-finding:last-child { margin-bottom: 0; }
+.audio-finding-warning { background: var(--c-tint-amber, rgba(217, 119, 6, 0.08)); border-left: 3px solid var(--c-accent-amber, #d97706); }
+.audio-finding-info    { background: rgba(59,130,246,0.08); border-left: 3px solid #3b82f6; }
+.audio-finding-pill {
+  font-size: 0.65rem; font-weight: 700; border-radius: 3px;
+  padding: 2px 6px; color: #fff; flex-shrink: 0;
+}
+.audio-finding-pill-warning { background: #d97706; }
+.audio-finding-pill-info    { background: #3b82f6; }
+.audio-finding-title { font-size: 0.85rem; font-weight: 600; color: var(--c-text); }
+.audio-finding-body  { font-size: 0.75rem; color: var(--c-muted); line-height: 1.4; margin-top: 2px; }
+
 .audio-device {
   border: 1px solid var(--c-border); border-radius: 8px;
   padding: 0.875rem 1rem; margin-top: 0.75rem;
   background: var(--c-surface-2);
 }
-.audio-device-inactive { opacity: 0.55; }
+.audio-device-inactive { opacity: 0.7; }  /* was 0.55 — improves badge contrast */
 .audio-device-header {
   display: flex; justify-content: space-between; align-items: center;
   flex-wrap: wrap; gap: 0.5rem;
@@ -1578,6 +1599,11 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
   width: 48px; text-align: right; font-size: 0.75rem; font-family: 'Cascadia Mono', monospace;
   color: var(--c-muted); flex-shrink: 0;
 }
+.audio-vol-msg {
+  font-size: 0.7rem; min-width: 60px; flex-shrink: 0; font-family: 'Cascadia Mono', monospace;
+}
+.audio-vol-msg-ok  { color: var(--c-accent-green, #22c55e); }
+.audio-vol-msg-err { color: var(--c-accent-red, #ef4444); }
 
 .audio-peak-track {
   flex: 1; height: 8px; border-radius: 4px;
@@ -1590,6 +1616,7 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .audio-peak-ok  { background: #22c55e; }
 .audio-peak-hot { background: #ef4444; }
 
+/* Slider: progress fill behind the thumb via background gradient */
 .audio-slider {
   flex: 1; height: 6px; appearance: none; -webkit-appearance: none;
   background: var(--c-surface-3); border-radius: 3px; outline: none; cursor: pointer;
@@ -1602,6 +1629,9 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
   width: 16px; height: 16px; border-radius: 50%;
   background: #3b82f6; border: 2px solid var(--c-surface); cursor: pointer;
 }
+.audio-slider-muted::-webkit-slider-thumb { background: var(--c-dim); }
+.audio-slider-muted::-moz-range-thumb     { background: var(--c-dim); }
+.audio-slider-muted { opacity: 0.6; }
 
 /* ── Network Panel ───────────────────────────────────────── */
 
