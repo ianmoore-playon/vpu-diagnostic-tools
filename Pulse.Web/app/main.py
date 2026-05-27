@@ -101,9 +101,9 @@ _CGI_PROBE_CACHE = {}  # ip -> {mac, ts, is_ocr}
 _CGI_PROBE_TTL = 30  # seconds
 
 # Known default OCR IPs (from WPF's DefaultOcrIps + Pixellot convention)
-_DEFAULT_OCR_IPS = {"169.254.16.52", "169.254.16.60"}
+_DEFAULT_OCR_IPS = {"169.254.16.52", "169.254.16.53", "169.254.16.60"}
 # Known default main camera IPs
-_DEFAULT_MAIN_IPS = {"169.254.16.50", "169.254.16.51", "169.254.16.53"}
+_DEFAULT_MAIN_IPS = {"169.254.16.50", "169.254.16.51"}
 
 # Camera model → (role, expected link speed in Mbps)
 # Used for positive hardware-based identification from CGI Brand.ProdNbr.
@@ -559,9 +559,10 @@ def _enrich_ports(
                 }
             )
 
-    # Second pass: number main cameras and assign port-level camera label
-    main_num = 0
-    ocr_num = 0
+    # Second pass: number main cameras by IP (.50 → 1, .51 → 2) and label ports.
+    # Collect main-camera ports, sort by camera IP, then assign numbers.
+    main_ports = []
+    ocr_count = 0
     for p in ports:
         cams = p.get("camerasDetected") or []
         if not cams:
@@ -569,13 +570,17 @@ def _enrich_ports(
             continue
         role = cams[0].get("role") or ""
         if "OCR" in role:
-            ocr_num += 1
-            p["cameraLabel"] = f"OCR {ocr_num}" if ocr_num > 1 else "OCR"
+            ocr_count += 1
+            p["cameraLabel"] = f"OCR {ocr_count}" if ocr_count > 1 else "OCR"
         elif role == "Main Camera":
-            main_num += 1
-            p["cameraLabel"] = f"Main Camera {main_num}"
+            main_ports.append(p)
         else:
             p["cameraLabel"] = "Camera"
+
+    # Sort main cameras by IP so numbering follows the IP convention
+    main_ports.sort(key=lambda p: p["camerasDetected"][0].get("ip", ""))
+    for i, p in enumerate(main_ports, 1):
+        p["cameraLabel"] = f"Main Camera {i}"
 
     return ports
 

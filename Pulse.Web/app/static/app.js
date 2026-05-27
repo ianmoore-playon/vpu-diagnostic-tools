@@ -1956,10 +1956,27 @@ function _camStreamBlock(label, s) {
   '</div>';
 }
 
-function _camDetailsPanel(cams, portIdx) {
+function _camDetailsPanel(cams, portIdx, portData) {
   if (!cams.length) return '';
 
-  var inner = cams.map(function(c) {
+  // NIC / adapter section
+  var nicGroup = '';
+  if (portData) {
+    var duplexVal = portData.fullDuplex === true ? "Full" : portData.fullDuplex === false ? "Half" : "—";
+    var errTotal = (portData.rxErrors || 0) + (portData.txErrors || 0);
+    var errVal = errTotal > 0
+      ? 'RX ' + (portData.rxPacketErrors || 0) + ' / TX ' + (portData.txPacketErrors || 0) + ' / Discards ' + ((portData.rxDiscards || 0) + (portData.txDiscards || 0))
+      : 'None';
+    nicGroup = '<div class="cam-detail-group">' +
+      '<div class="cam-detail-group-title">NIC Adapter</div>' +
+      _camDetailKv("Adapter", portData.name) +
+      _camDetailKv("MAC", portData.mac) +
+      _camDetailKv("Duplex", duplexVal) +
+      _camDetailKv("Errors", errVal) +
+    '</div>';
+  }
+
+  var inner = nicGroup + cams.map(function(c) {
     var hasCgi = !!c.cgiConfirmed;
     var net = c.network || {};
     var sensor = c.sensor || {};
@@ -2059,12 +2076,7 @@ function _camPortTile(port, index) {
       <span class="text-sm">${esc(statusLabel)}</span>
     </div>
     <div class="cam-port-detail">
-      <div class="kv-mini"><span>MAC</span><span class="font-mono">${esc(p.mac)}</span></div>
       <div class="kv-mini"><span>RX / TX</span><span>${formatBytes(p.rxBytes)} / ${formatBytes(p.txBytes)}</span></div>
-      <div class="kv-mini"><span>Duplex</span><span>${p.fullDuplex === true ? "Full" : p.fullDuplex === false ? '<span class="status-warn">Half</span>' : "—"}</span></div>
-      ${(p.rxErrors || 0) + (p.txErrors || 0) > 0
-        ? '<div class="kv-mini"><span>Errors</span><span class="status-warn">RX ' + (p.rxPacketErrors || 0) + ' / TX ' + (p.txPacketErrors || 0) + ' / Discards ' + ((p.rxDiscards || 0) + (p.txDiscards || 0)) + '</span></div>'
-        : '<div class="kv-mini"><span>Errors</span><span class="status-pass">None</span></div>'}
     </div>
     ${cams.length > 0 ? (() => {
       var c = cams[0];
@@ -2074,12 +2086,11 @@ function _camPortTile(port, index) {
         <div class="cam-detected-entry">
           <span class="font-mono cam-entry-ip">${esc(c.ip)}</span>
           <span class="font-mono text-pulse-muted cam-entry-mac">${esc(c.mac)}</span>
-          ${c.role ? '<span class="cam-role-badge">' + esc(c.role) + '</span>' : ''}
           ${displayModel ? '<span class="cam-model-label">' + esc(displayModel) + '</span>' : ''}
           <span class="cam-entry-source text-pulse-muted">${esc(c.identitySource || '')}</span>
         </div>
       </div>
-      ${_camDetailsPanel(cams, index)}`;
+      ${_camDetailsPanel(cams, index, p)}`;
     })()
     : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
   </div>`;
