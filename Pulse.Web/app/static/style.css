@@ -96,35 +96,51 @@ html, body { height: 100%; margin: 0; }
 /* ── Splash screen ─────────────────────────────────────────── */
 /* Shown immediately on page load and kept up until every preload
    section (dashboard + all PAGE_API endpoints + WebSocket) has
-   reported success. Hidden by hideSplash() in app.js. The "Loading
-   diagnostics..." status updates with the current fetch count so
-   users on a slow cold start can see progress instead of a frozen
-   logo. */
+   settled. Also re-shown when "Run All Diagnostics" is invoked.
+   Both the background and the logo image swap based on the active
+   theme — html.dark uses the dark-bg / white-text variant. */
 .splash {
     position: fixed;
     inset: 0;
-    /* Splash uses a fixed light background regardless of theme so the
-       dark-navy PULSE wordmark on the logo always reads. The brand-first
-       view is intentionally not theme-aware — the UI behind it picks up
-       the user's theme as soon as the splash fades. */
-    background: #f8fafc;
+    background: var(--c-bg);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1.5rem;
+    gap: 1.25rem;
     z-index: 9999;
     transition: opacity 0.4s ease-out;
 }
 .splash-logo {
-    max-width: 480px;
     width: 65vmin;
-    height: auto;
+    max-width: 480px;
+    aspect-ratio: 3 / 2;
+    background-image: url('/static/img/pulse-splash-light.png');
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
     animation: pulse-fade 1.6s ease-in-out infinite;
+}
+html.dark .splash-logo {
+    background-image: url('/static/img/pulse-splash-dark.png');
+}
+.splash-progress {
+    width: min(420px, 60vmin);
+    height: 6px;
+    border-radius: 3px;
+    background: var(--c-border);
+    overflow: hidden;
+}
+.splash-progress-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--c-accent-blue), #38bdf8);
+    transition: width 0.35s ease-out;
 }
 .splash-status {
     font-size: 0.85rem;
-    color: #475569;          /* mid slate, readable on the fixed light bg */
+    color: var(--c-muted);
     font-weight: 500;
     letter-spacing: 0.02em;
     text-align: center;

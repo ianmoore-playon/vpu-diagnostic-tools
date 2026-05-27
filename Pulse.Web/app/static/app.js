@@ -273,7 +273,30 @@ function _updateSplashStatus(text) {
   if (el) el.textContent = text;
 }
 
-function preloadProgressive() {
+function _updateSplashProgress(completed, total) {
+  const fill = document.getElementById("splash-progress-fill");
+  if (!fill || !total) return;
+  const pct = Math.max(0, Math.min(100, (completed / total) * 100));
+  fill.style.width = pct + "%";
+}
+
+function showSplash(statusText) {
+  const splash = document.getElementById("splash");
+  if (!splash) return;
+  _updateSplashProgress(0, 1);
+  _updateSplashStatus(statusText || "Loading diagnostics…");
+  splash.classList.remove("splash-hidden");
+}
+
+function hideSplash() {
+  const splash = document.getElementById("splash");
+  if (!splash) return;
+  _updateSplashProgress(1, 1);
+  _updateSplashStatus("Ready");
+  splash.classList.add("splash-hidden");
+}
+
+function preloadProgressive(opts) {
   // Returns a Promise that resolves when EVERY preload section has settled.
   // The splash screen waits on this so users see the loading state until
   // every PowerShell-backed endpoint has at least had one chance to respond.
@@ -283,15 +306,19 @@ function preloadProgressive() {
   //   2. WS connect once dashboard returns (enables live metrics).
   //   3. Remaining PAGE_API sections in stagger, 300ms apart.
   //   4. Version + log endpoints in parallel.
+  const o = opts || {};
+  const verb = o.verb || "Loading diagnostics";
   const deferred = Object.keys(PAGE_API).filter((k) => k !== "dashboard");
   const totalSections = 1 + deferred.length;   // dashboard + deferred
   let completedSections = 0;
   const tick = (key) => {
     completedSections++;
-    _updateSplashStatus(`Loading diagnostics… (${completedSections}/${totalSections}) ${key}`);
+    _updateSplashStatus(`${verb}… (${completedSections}/${totalSections}) ${key}`);
+    _updateSplashProgress(completedSections, totalSections);
   };
 
-  _updateSplashStatus(`Loading diagnostics… (0/${totalSections})`);
+  _updateSplashStatus(`${verb}… (0/${totalSections})`);
+  _updateSplashProgress(0, totalSections);
 
   // Phase 4 helpers — run in parallel, not gated on dashboard
   const versionPromise = api("/api/version").then((data) => {
@@ -333,21 +360,20 @@ function preloadProgressive() {
   ]);
 }
 
-function hideSplash() {
-  const splash = document.getElementById("splash");
-  if (!splash) return;
-  _updateSplashStatus("Ready");
-  splash.classList.add("splash-hidden");
-  setTimeout(() => splash.remove(), 450);
-}
-
 async function refreshAll() {
+  // Full re-run: clear caches, drop the live WS, then re-show the splash
+  // and gate it on a fresh preload — exactly like a cold start. The user
+  // explicitly asked for this on "Run All Diagnostics" so they see the
+  // same branded progress UI as on first launch.
   dataCache = {};
   fetchingKeys.clear();
   fetchPromises = {};
+  if (ws && ws.readyState <= 1) { try { ws.close(); } catch {} }
+  showSplash("Running diagnostics");
   renderPage(currentPage);
-  preloadProgressive();
-  connectWS();
+  const preloadPromise = preloadProgressive({ verb: "Running diagnostics" });
+  const safetyTimeout = new Promise((resolve) => setTimeout(resolve, 60000));
+  Promise.race([preloadPromise, safetyTimeout]).then(hideSplash);
 }
 
 async function refreshSection(key) {

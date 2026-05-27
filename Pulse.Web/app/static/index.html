@@ -23,9 +23,15 @@
 </head>
 <body class="h-full bg-pulse-bg text-pulse-text overflow-hidden">
     <!-- Splash screen — visible until ALL preload sections finish loading.
-         App.js calls hideSplash() once preloadProgressive() resolves. -->
-    <div id="splash" class="splash">
-        <img src="/static/img/pulse-logo-v2.png" alt="Pulse" class="splash-logo">
+         App.js calls hideSplash() once preloadProgressive() resolves, and
+         showSplash() when refreshAll() re-runs diagnostics. The logo div
+         picks its background image from CSS based on html.dark — no JS
+         needed to swap themes. -->
+    <div id="splash" class="splash" role="status" aria-live="polite">
+        <div class="splash-logo" aria-label="Pulse"></div>
+        <div class="splash-progress">
+            <div id="splash-progress-fill" class="splash-progress-fill"></div>
+        </div>
         <div class="splash-status" id="splash-status">Loading diagnostics…</div>
     </div>
     <div id="app" class="flex h-full">
