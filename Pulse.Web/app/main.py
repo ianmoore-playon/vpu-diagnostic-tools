@@ -61,6 +61,56 @@ app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 PIXELLOT_OUIS = ["00:0E:53", "00:30:53", "70:B3:D5", "00:D0:89"]
 
+# ── US timezone allowlist ────────────────────────────────────
+# VPUs must run in a US timezone for log timestamps / scheduling to line up
+# with field operations. Anything off-continent (Jerusalem, UTC, Tokyo, etc.)
+# breaks correlation with cloud-side event timing.
+#
+# Matches Windows TimeZoneInfo.StandardName values. Covers the 50 states +
+# DC + Indiana/Arizona quirks. Excludes Mexico/Canada zones that share names
+# with US zones, and explicitly excludes Atlantic Standard Time which is
+# ambiguous (Puerto Rico is US, but Canada also uses it).
+_US_TIMEZONE_IDS = {
+    "Hawaiian Standard Time",          # HST (UTC-10)
+    "Aleutian Standard Time",          # HAST/HADT (UTC-10/-9, Alaska Aleutians)
+    "Alaskan Standard Time",           # AKST/AKDT (UTC-9/-8)
+    "Pacific Standard Time",           # PST/PDT (UTC-8/-7)
+    "US Mountain Standard Time",       # MST (UTC-7, Arizona — no DST)
+    "Mountain Standard Time",          # MST/MDT (UTC-7/-6)
+    "Central Standard Time",           # CST/CDT (UTC-6/-5)
+    "US Eastern Standard Time",        # EST (UTC-5, Indiana East — no DST)
+    "Eastern Standard Time",           # EST/EDT (UTC-5/-4)
+}
+
+# Fallback substrings for matching Caption strings when StandardName missing.
+# Order matters — more specific first (so "Arizona" wins over "Mountain").
+_US_CAPTION_HINTS = (
+    "(US & Canada)",  # canonical Windows caption for the 4 main US zones
+    "Hawaii",
+    "Aleutian",
+    "Alaska",
+    "Arizona",
+    "Indiana",
+)
+
+
+def _is_us_timezone(tz_id: str, tz_caption: str = "") -> bool:
+    """True if the system is in a US timezone (50 states + DC).
+
+    Prefers the stable StandardName (`tz_id`). Falls back to fuzzy substring
+    matching on the user-visible caption for hosts that only supply that.
+    Returns False for anything off-continent — Jerusalem, UTC, GMT, Mexico,
+    Canada-only zones, etc.
+    """
+    if tz_id and tz_id in _US_TIMEZONE_IDS:
+        return True
+    if tz_caption:
+        cap = tz_caption
+        for hint in _US_CAPTION_HINTS:
+            if hint in cap:
+                return True
+    return False
+
 
 @app.on_event("startup")
 async def _on_startup():
@@ -341,6 +391,22 @@ def _compute_findings(identity, performance, services, nics) -> list:
                     "category": "System",
                     "title": "High Uptime",
                     "recommendation": f"System running {uptime_secs // 86400} days. Consider a reboot.",
+                }
+            )
+
+        # Timezone must be a US zone — cloud-side timestamps are recorded in
+        # US local time, so a VPU set to Jerusalem (or any non-US zone) will
+        # produce logs that don't line up with field events.
+        tz_id = identity.get("timezoneId") or ""
+        tz_caption = identity.get("timezone") or ""
+        if (tz_id or tz_caption) and not _is_us_timezone(tz_id, tz_caption):
+            shown = tz_caption or tz_id
+            findings.append(
+                {
+                    "severity": "critical",
+                    "category": "System",
+                    "title": "Non-US Timezone",
+                    "recommendation": f"System timezone is '{shown}'. VPU must be set to a US timezone (Pacific/Mountain/Central/Eastern, or Alaska/Hawaii). Open Date & Time settings and choose a US zone.",
                 }
             )
 

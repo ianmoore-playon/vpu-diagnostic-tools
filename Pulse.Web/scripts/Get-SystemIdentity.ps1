@@ -98,6 +98,7 @@ try {
             freePhysicalMemoryKB = $os.FreePhysicalMemory
         }
         timezone = $tz.Caption
+        timezoneId = $tz.StandardName  # Stable identifier — e.g. "Eastern Standard Time" — used for US-only validation
         uptime = [ordered]@{
             totalSeconds = [math]::Round($uptime.TotalSeconds, 0)
             formatted    = $uptimeStr

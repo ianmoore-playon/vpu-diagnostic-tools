@@ -26,7 +26,8 @@ DEMO = {
         "operatingSystem": {"caption": "Microsoft Windows 10 IoT Enterprise", "version": "10.0.19045", "buildNumber": "19045", "osArchitecture": "64-bit"},
         "pixellot": {"version": "5.2.1.3842", "imageVersion": "23.04.002"},
         "isNonVpuHost": False,
-        "timezone": "Eastern Standard Time",
+        "timezone": "(UTC-05:00) Eastern Time (US & Canada)",
+        "timezoneId": "Eastern Standard Time",
     },
     "Get-Performance.ps1": lambda **kw: {
         "cpu": {"usagePercent": round(28 + random.uniform(-8, 15), 1)},
