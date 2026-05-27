@@ -1057,7 +1057,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
     }
 
 
-def _build_network(config, domains, ports, ntp, local=None):
+def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None):
     net = {}
     if config and not config.get("error"):
         ntp_src = config.get("ntpSource")
@@ -1073,9 +1073,9 @@ def _build_network(config, domains, ports, ntp, local=None):
             "ntpSourceApprovedList": list(PIXELLOT_APPROVED_NTP_SOURCES),
         }
 
-    # Pass local data through even on error — let frontend display the issue
+    # Pass local + ntpPeers through even on error — let the frontend show the issue
     return {"config": net, "domains": domains, "ports": ports, "ntp": ntp,
-            "local": local}
+            "local": local, "ntpPeers": ntp_peers}
 
 
 # ─── Routes ───────────────────────────────────────────────────
@@ -1154,7 +1154,7 @@ async def api_preload():
             "hardware": hardware,
             "software": installed_sw,
         },
-        "network": _build_network(network_config, domains, ports, ntp, local),
+        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers),
         "cameras": {
             "ports": _enrich_ports(nics, pixellot_config, probe_results_pre),
             "pixellotConfig": pixellot_config,
@@ -1419,6 +1419,15 @@ async def api_events(
     hours: int = Query(default=48), level: str = Query(default="all")
 ):
     return await run_ps("Get-EventLogs.ps1", {"HoursBack": hours, "Level": level})
+
+
+@app.get("/api/pixellot-logs")
+async def api_pixellot_logs(hours: int = Query(default=24)):
+    """Scan C:\\Pixellot\\Data\\Log for errors, fatals, and process
+    restarts in the last `hours` (PDF #5). Returns up to 500 matches with
+    a `depsErrorDetected` flag that the UI uses to surface the PDF #2
+    dependency-reinstall remedy."""
+    return await run_ps("Search-PixellotLogs.ps1", {"HoursBack": hours}, timeout=30)
 
 
 @app.get("/api/audio")

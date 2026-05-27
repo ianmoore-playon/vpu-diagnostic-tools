@@ -1884,6 +1884,73 @@ function _buildNetIssues(cfg, ports, domains, local) {
   return issues;
 }
 
+// Time Sync card — Windows Time service status + peer list from `w32tm /query`.
+// PDF #8 in the Pixellot Troubleshooting Tips.
+function _netTimeSyncCard(cfg, ntp, ntpPeers) {
+  // Always show the card so techs see drift even when w32tm /query fails.
+  var st = (ntpPeers && ntpPeers.status) || {};
+  var peers = (ntpPeers && ntpPeers.peers) || [];
+
+  // NTP drift summary (from Test-NtpDrift.ps1, separate from w32tm /query)
+  var driftStatus = (ntp.status || "").toLowerCase();
+  var offset = ntp.offsetSeconds != null ? ntp.offsetSeconds + "s" : "—";
+  var driftLabel;
+  if (driftStatus === "ok") driftLabel = '<span class="status-pass" style="font-weight:600">In sync (' + esc(offset) + ')</span>';
+  else if (driftStatus === "warn") driftLabel = '<span class="status-warn" style="font-weight:600">Drift (' + esc(offset) + ')</span>';
+  else if (driftStatus) driftLabel = '<span class="status-fail" style="font-weight:600">Error</span>';
+  else driftLabel = "—";
+
+  // Approval chip (mirrors the row in the Adapter card)
+  var approvedChip = "";
+  if (cfg.ntpSourceApproved === true)
+    approvedChip = '<span class="ntp-source-chip ntp-source-ok">Approved</span>';
+  else if (cfg.ntpSourceApproved === false)
+    approvedChip = '<span class="ntp-source-chip ntp-source-bad">Unapproved</span>';
+
+  var sourceDisplay = st.source || cfg.ntpSource || ntp.source || "—";
+  var sourceIpDisplay = st.sourceIp ? st.sourceIp : "—";
+  var stratumDisplay = st.stratum != null ? String(st.stratum) : "—";
+  var lastSyncDisplay = st.lastSync || "Never synced";
+
+  var peersHtml;
+  if (!ntpPeers) {
+    peersHtml = '<p class="text-pulse-muted text-sm mt-2">w32tm peer data unavailable.</p>';
+  } else if (!peers.length) {
+    peersHtml = '<p class="text-pulse-muted text-sm mt-2">No peers configured for the Windows Time service.</p>';
+  } else {
+    peersHtml =
+      '<table class="data-table"><thead><tr>' +
+        '<th>Peer</th><th>State</th><th>Stratum</th><th>Last Sync</th><th>Poll</th>' +
+      '</tr></thead><tbody>' +
+      peers.map(function(p) {
+        var stateCls = (p.state || "").toLowerCase() === "active" ? "status-pass" : "text-pulse-muted";
+        return '<tr>' +
+          '<td class="font-mono text-xs">' + esc(p.name || "—") + '</td>' +
+          '<td class="' + stateCls + '">' + esc(p.state || "—") + '</td>' +
+          '<td>' + esc(p.stratum != null ? String(p.stratum) : "—") + '</td>' +
+          '<td class="text-xs">' + esc(p.lastSyncTimestamp || "Never") + '</td>' +
+          '<td class="text-xs text-pulse-muted">' + esc(p.peerPollInterval || "—") + '</td>' +
+        '</tr>';
+      }).join("") +
+      '</tbody></table>';
+  }
+
+  return `<div class="card">
+    ${sectionTitle("clock", "Time Sync (NTP)")}
+    <div class="kv-grid">
+      ${kvRowHtml("Source", esc(sourceDisplay) + " " + approvedChip)}
+      ${kvRow("Source IP", sourceIpDisplay)}
+      ${kvRow("Stratum", stratumDisplay)}
+      ${kvRow("Last sync", lastSyncDisplay)}
+      ${kvRowHtml("Drift status", driftLabel)}
+    </div>
+    <div class="net-ntp-peers">
+      <div class="net-ntp-peers-title">${svgIcon("activity", 12)} Active Peers</div>
+      ${peersHtml}
+    </div>
+  </div>`;
+}
+
 function renderNetwork() {
   const data = cached("network");
   if (!data) { $page().innerHTML = sectionLoading("Network"); fetchSection("network"); return; }
@@ -1893,6 +1960,7 @@ function renderNetwork() {
   const ports = data.ports?.results || [];
   const ntp = data.ntp || {};
   const local = data.local || {};
+  const ntpPeers = (data.ntpPeers && !data.ntpPeers.error) ? data.ntpPeers : null;
   const ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
 
   const issues = _buildNetIssues(cfg, ports, domains, local);
@@ -2157,6 +2225,8 @@ function renderNetwork() {
         ` : '<p class="text-pulse-muted text-sm">No DNS data</p>'}
       </div>
     </div>
+
+    ${_netTimeSyncCard(cfg, ntp, ntpPeers)}
 
     <!-- Advanced Diagnostics Toggle -->
     <div class="net-adv-toggle" onclick="_toggleAdvNet()">
@@ -2898,6 +2968,9 @@ function renderEvents() {
     </div>
 
     <div class="card mt-4" id="ev-body">${loading()}</div>
+
+    <!-- Pixellot Logs scan (PDF #5) — separate from Windows event log -->
+    <div class="card mt-4" id="ev-pixellot-body">${loading()}</div>
   `;
 
   const loadEvents = async () => {
@@ -2952,13 +3025,84 @@ function renderEvents() {
     `;
   };
 
-  document.getElementById("ev-refresh")?.addEventListener("click", loadEvents);
-  document.getElementById("ev-hours")?.addEventListener("change", loadEvents);
+  // Pixellot logs scanner (PDF #5) — scans C:\Pixellot\Data\Log for
+  // error / fatal / restart markers. Surfaces CUDNN/TensorFlow patterns
+  // with a "reinstall dependencies" hint per PDF #2.
+  const loadPixellotLogs = async () => {
+    const hours = document.getElementById("ev-hours").value;
+    const body = document.getElementById("ev-pixellot-body");
+    if (!body) return;
+    body.innerHTML = loading();
+    const data = await api(`/api/pixellot-logs?hours=${encodeURIComponent(hours)}`);
+    if (currentPage !== "events") return;
+
+    if (data.error) {
+      body.innerHTML = `${sectionTitle("file", "Pixellot Logs")}
+        <p class="text-sm text-pulse-muted">${esc(data.message || "Failed to scan Pixellot logs")}</p>`;
+      return;
+    }
+
+    const entries = data.entries || [];
+    const stats = data.stats || {};
+    const depsErr = !!data.depsErrorDetected;
+
+    const levelChip = (lvl) => {
+      const l = (lvl || "").toLowerCase();
+      if (l === "fatal")   return '<span class="ev-level-chip ev-level-error">Fatal</span>';
+      if (l === "error")   return '<span class="ev-level-chip ev-level-error">Error</span>';
+      if (l === "restart") return '<span class="ev-level-chip ev-level-warn">Restart</span>';
+      return `<span class="ev-level-chip ev-level-info">${esc(l)}</span>`;
+    };
+
+    body.innerHTML = `
+      ${sectionTitle("file", "Pixellot Logs")}
+      <p class="text-xs text-pulse-muted mb-3">
+        Scanned ${esc(String(data.scannedFiles || 0))} log file(s) in <span class="font-mono">C:\\Pixellot\\Data\\Log</span> over the last ${esc(String(data.hoursBack || ""))} hour(s).
+      </p>
+
+      <div class="px-log-summary">
+        <span class="px-log-stat ${stats.fatal > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.fatal || 0))} fatal</span>
+        <span class="px-log-stat ${stats.error > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.error || 0))} error</span>
+        <span class="px-log-stat ${stats.restart > 0 ? 'px-log-stat-warn' : ''}">${esc(String(stats.restart || 0))} restart</span>
+      </div>
+
+      ${depsErr ? `<div class="px-log-deps-warn mt-3">
+        ${svgIcon("alert", 14)}
+        <div>
+          <div class="font-semibold">CUDNN / TensorFlow failure detected</div>
+          <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. The documented remedy is to reinstall the Pixellot dependencies installer — see PDF #2.</div>
+        </div>
+      </div>` : ""}
+
+      ${data.warning ? `<p class="text-xs text-pulse-muted mt-2">${esc(data.warning)}</p>` : ""}
+
+      ${entries.length ? `
+        <div class="ev-table-wrap mt-3">
+          <table class="data-table ev-table"><thead><tr>
+            <th>Time</th><th>Level</th><th>File</th><th>Line</th><th>Content</th>
+          </tr></thead><tbody>
+          ${entries.map(e => `<tr class="${e.depsError ? 'px-log-row-deps' : ''}">
+            <td class="text-xs whitespace-nowrap font-mono">${esc(e.timestamp || formatTime(e.fileMTime))}</td>
+            <td>${levelChip(e.level)}</td>
+            <td class="text-xs font-mono">${esc(e.file)}</td>
+            <td class="text-xs font-mono">${esc(String(e.lineNumber || ""))}</td>
+            <td class="text-xs ev-msg-cell" title="${esc(e.content)}">${esc(e.content)}${e.depsError ? ' <span class="px-log-deps-pill">DEPS</span>' : ''}</td>
+          </tr>`).join("")}
+          </tbody></table>
+        </div>
+        ${data.truncated ? '<p class="text-xs text-pulse-muted mt-2">Results truncated at 500 matches.</p>' : ""}
+      ` : '<p class="text-sm text-pulse-muted mt-3">No matching entries.</p>'}
+    `;
+  };
+
+  document.getElementById("ev-refresh")?.addEventListener("click", () => { loadEvents(); loadPixellotLogs(); });
+  document.getElementById("ev-hours")?.addEventListener("change", () => { loadEvents(); loadPixellotLogs(); });
   ["ev-error", "ev-warning", "ev-info"].forEach(id => {
     document.getElementById(id)?.addEventListener("change", loadEvents);
   });
   document.getElementById("ev-source")?.addEventListener("input", _debounce(loadEvents, 300));
   loadEvents();
+  loadPixellotLogs();
 }
 
 // ── Reports ──────────────────────────────────────────────────

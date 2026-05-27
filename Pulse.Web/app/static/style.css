@@ -1630,6 +1630,41 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .ev-level-info  { border-color: #3b82f6; color: #60a5fa; background: rgba(59, 130, 246, 0.08); }
 .ev-msg-cell { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Pixellot logs scanner (PDF #5) */
+.px-log-summary { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.px-log-stat {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 4px;
+    background: var(--c-surface-3);
+    color: var(--c-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.px-log-stat-bad  { color: var(--c-accent-red);   background: var(--c-tint-red); }
+.px-log-stat-warn { color: var(--c-accent-amber); background: var(--c-tint-amber); }
+
+.px-log-deps-warn {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 10px 14px; border-radius: 6px;
+    background: var(--c-tint-red); border-left: 3px solid var(--c-accent-red);
+    color: var(--c-text);
+}
+.px-log-deps-warn svg { flex-shrink: 0; color: var(--c-accent-red); margin-top: 2px; }
+
+.px-log-row-deps { background: rgba(239, 68, 68, 0.04); }
+.px-log-deps-pill {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--c-accent-red);
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 700;
+    margin-left: 4px;
+    letter-spacing: 0.05em;
+}
+
 /* ── ScoreConnect page ─────────────────────────────────────── */
 
 .sc-teams { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem; }
@@ -2349,6 +2384,24 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 }
 .ntp-source-ok  { background: var(--c-tint-green); color: var(--c-accent-green); }
 .ntp-source-bad { background: var(--c-tint-amber); color: var(--c-accent-amber); }
+
+/* ── Time Sync card peers table (PDF #8) ─────────────────── */
+.net-ntp-peers {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--c-border);
+}
+.net-ntp-peers-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--c-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5rem;
+}
 
 /* ── Advanced Diagnostics Toggle ─────────────────────────── */
 .net-adv-toggle {
