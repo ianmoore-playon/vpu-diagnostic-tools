@@ -408,6 +408,79 @@ def _is_pixellot_mac(mac: str) -> bool:
 
 PIXELLOT_MIN_RAM_GB = 32
 
+# ── Approved NTP sources ─────────────────────────────────────
+# Per Pixellot Troubleshooting Tips PDF #9: VPU clocks must sync from the
+# US NTP pool. A school IT department occasionally points VPUs at an
+# internal NTP server which drifts, breaking signed-URL streaming.
+PIXELLOT_APPROVED_NTP_SOURCES = (
+    "0.us.pool.ntp.org",
+    "1.us.pool.ntp.org",
+    "2.us.pool.ntp.org",
+    "3.us.pool.ntp.org",
+)
+
+
+def _is_approved_ntp_source(source: Optional[str]) -> bool:
+    """True if `source` matches one of the approved Pixellot NTP servers.
+
+    Match is case-insensitive and tolerates trailing whitespace. We also
+    accept any `*.us.pool.ntp.org` host since the four canonical names
+    are aliases for the same NTP pool.
+    """
+    if not source:
+        return False
+    host = source.strip().lower()
+    if host in PIXELLOT_APPROVED_NTP_SOURCES:
+        return True
+    return host.endswith(".us.pool.ntp.org")
+
+
+# ── Unsupported security software ────────────────────────────
+# Per Pixellot Troubleshooting Tips PDF #11: any EDR / non-Defender
+# antivirus blocks agent.exe and forces an RMA. Only Windows Defender is
+# approved. Each entry is matched as a case-insensitive substring against
+# the installed-software displayName.
+_BANNED_SECURITY_VENDORS = [
+    "CrowdStrike",
+    "SentinelOne",
+    "Sophos",
+    "Carbon Black",
+    "Bitdefender",
+    "McAfee",
+    "Norton",
+    "Symantec",
+    "Trend Micro",
+    "Kaspersky",
+    "ESET",
+    "Webroot",
+    "Cylance",
+    "Cortex XDR",
+]
+
+
+def _detect_banned_security(installed_sw) -> list:
+    """Return a list of {name, version, matched} for any installed software
+    matching the banned-vendors list. Empty if clean."""
+    if not installed_sw or installed_sw.get("error"):
+        return []
+    matches = []
+    seen_names = set()  # dedupe — installers often appear under multiple keys
+    for sw in installed_sw.get("software") or []:
+        name = (sw.get("displayName") or "").strip()
+        if not name:
+            continue
+        name_lc = name.lower()
+        for vendor in _BANNED_SECURITY_VENDORS:
+            if vendor.lower() in name_lc and name_lc not in seen_names:
+                seen_names.add(name_lc)
+                matches.append({
+                    "name": name,
+                    "version": (sw.get("displayVersion") or "").strip() or None,
+                    "matched": vendor,
+                })
+                break
+    return matches
+
 
 def _total_ram_gb(hardware, performance) -> float:
     """Return total installed RAM in GB. Prefers DIMM sum (exact) over the
@@ -430,8 +503,52 @@ def _total_ram_gb(hardware, performance) -> float:
     return 0.0
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None) -> list:
     findings = []
+
+    # ── NTP allowlist (PDF #9) ───────────────────────────────
+    # School networks sometimes force VPUs onto an internal NTP server. If
+    # that source drifts, signed-URL streaming breaks. The four canonical
+    # `*.us.pool.ntp.org` hosts are the only Pixellot-approved sources.
+    if network_config and not network_config.get("error"):
+        ntp_src = (network_config.get("ntpSource") or "").strip()
+        if ntp_src and not _is_approved_ntp_source(ntp_src):
+            approved_list = ", ".join(PIXELLOT_APPROVED_NTP_SOURCES)
+            findings.append(
+                {
+                    "severity": "warning",
+                    "category": "Network",
+                    "title": "NTP source not in approved Pixellot list",
+                    "recommendation": (
+                        f"Current source: {ntp_src}. Pixellot requires one of: {approved_list}. "
+                        f"Run `w32tm /config /manualpeerlist:\"0.us.pool.ntp.org 1.us.pool.ntp.org "
+                        f"2.us.pool.ntp.org 3.us.pool.ntp.org\" /syncfromflags:manual /update` and "
+                        f"restart the Windows Time service."
+                    ),
+                }
+            )
+
+    # ── Unsupported security software (PDF #11) ──────────────
+    # Non-Defender AV/EDR blocks agent.exe and forces an RMA. Only
+    # Windows Defender is approved.
+    banned = _detect_banned_security(installed_sw)
+    if banned:
+        names_str = ", ".join(
+            f"{b['name']}" + (f" {b['version']}" if b.get('version') else "")
+            for b in banned
+        )
+        findings.append(
+            {
+                "severity": "critical",
+                "category": "Hardware",
+                "title": "Unsupported security software detected",
+                "recommendation": (
+                    f"Found: {names_str}. Pixellot VPUs only support Windows Defender — "
+                    f"third-party AV/EDR products block agent.exe and force an RMA. "
+                    f"Uninstall the listed software immediately."
+                ),
+            }
+        )
 
     # ── Installed RAM ────────────────────────────────────────
     # Pixellot VPUs ship with 32GB of RAM. Anything less suggests an
@@ -902,7 +1019,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None):
     flat_identity = {}
     if identity and not identity.get("error"):
         flat_identity = {
@@ -935,7 +1052,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         "identity": flat_identity,
         "performance": performance if not performance.get("error", False) else {},
         "services": services if not services.get("error", False) else {"services": []},
-        "findings": _compute_findings(identity, performance, services, nics, hardware),
+        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config),
         "networkConfig": net_cfg,
     }
 
@@ -1026,7 +1143,7 @@ async def api_preload():
     probe_results_pre = await _probe_all_cameras(raw_ports_pre, ocr_ips_pre)
 
     return {
-        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware),
+        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw),
         "system": {
             "identity": identity,
             "hardware": hardware,
@@ -1096,15 +1213,16 @@ async def api_scripts_cancel_all():
 
 @app.get("/api/dashboard")
 async def api_dashboard():
-    identity, performance, services, nics, net_config, hardware = await asyncio.gather(
+    identity, performance, services, nics, net_config, hardware, installed_sw = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
         run_ps("Get-NicAdapters.ps1"),
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Get-Hardware.ps1"),
+        run_ps("Get-InstalledSoftware.ps1"),
     )
-    return _build_dashboard(identity, performance, services, nics, net_config, hardware)
+    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw)
 
 
 @app.get("/api/system")

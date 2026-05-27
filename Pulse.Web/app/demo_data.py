@@ -84,6 +84,8 @@ DEMO = {
             {"displayName": "Intel(R) Network Connections", "displayVersion": "27.2", "publisher": "Intel"},
             {"displayName": "7-Zip 23.01 (x64)", "displayVersion": "23.01", "publisher": "Igor Pavlov"},
             {"displayName": "TightVNC", "displayVersion": "2.8.81", "publisher": "GlavSoft LLC."},
+            # Triggers PDF #11 banned-AV finding on the dashboard.
+            {"displayName": "CrowdStrike Falcon Sensor", "displayVersion": "7.18.16805.0", "publisher": "CrowdStrike, Inc."},
         ],
     },
     "Get-NetworkConfig.ps1": lambda **kw: {
