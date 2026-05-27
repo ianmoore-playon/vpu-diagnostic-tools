@@ -22,6 +22,21 @@ $ErrorActionPreference = 'Stop'
 function Invoke-SafeGet {
     param([string]$Url, [int]$TimeoutSec = 2)
     try {
+        # Pre-check TCP connection with explicit socket timeout.
+        # Invoke-WebRequest's -TimeoutSec only covers the response phase;
+        # a SYN-blackholed port can hang for 20+ seconds at the TCP layer.
+        $uri = [System.Uri]$Url
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        try {
+            $connectTask = $tcp.ConnectAsync($uri.Host, $uri.Port)
+            if (-not $connectTask.Wait($TimeoutSec * 1000)) {
+                return @{ ok = $false; content = $null }
+            }
+            if ($connectTask.IsFaulted) {
+                return @{ ok = $false; content = $null }
+            }
+        } finally { $tcp.Dispose() }
+
         $r = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec $TimeoutSec -ErrorAction Stop
         if ($r.StatusCode -eq 200) { return @{ ok = $true; content = $r.Content } }
     } catch {}
@@ -29,7 +44,10 @@ function Invoke-SafeGet {
 }
 
 # Pick the first non-empty string value from a hashtable by an ordered list of
-# candidate keys.  Case-insensitive lookup.
+# candidate keys.  Uses PowerShell's -eq operator which is case-insensitive by
+# default (e.g. 'VendorName' -eq 'vendorName' → True).  Do NOT replace with a
+# direct hashtable index ($Map[$k]) — that would break the case-insensitive
+# matching that SC III's inconsistent casing requires.
 function Pick-First {
     param([hashtable]$Map, [string[]]$Keys)
     foreach ($k in $Keys) {
@@ -44,12 +62,19 @@ function Pick-First {
 }
 
 # Flatten a PSCustomObject (from ConvertFrom-Json) into a case-insensitive hashtable.
+# Only scalar values are kept as strings; nested objects/arrays are skipped so
+# Pick-First never sees a "System.Management.Automation.PSCustomObject" string.
 function To-Map {
     param($Obj)
     $map = @{}
     if ($null -eq $Obj) { return $map }
     foreach ($p in $Obj.PSObject.Properties) {
-        $map[$p.Name] = if ($null -ne $p.Value) { "$($p.Value)" } else { $null }
+        if ($null -eq $p.Value) {
+            $map[$p.Name] = $null
+        } elseif ($p.Value -is [string] -or $p.Value -is [bool] -or $p.Value -is [ValueType]) {
+            $map[$p.Name] = "$($p.Value)"
+        }
+        # Nested PSCustomObject / arrays are intentionally omitted
     }
     return $map
 }
@@ -214,6 +239,9 @@ try {
     # (DEVPKEY_Device_BusReportedDeviceDesc) against known ScoreLink needle
     # strings — mirrors the WPF ScoreLinkDetector logic.  Also checks
     # Caption and Description as secondary fallback.
+    #
+    # Not cached — runs every poll cycle (~30s).  The WMI USB enumeration is
+    # sub-100ms and ScoreLink hardware can be plugged/unplugged between polls.
     $scoreLinkConnected = $false
     $scoreLinkPort      = ''
     $scoreLinkModel     = ''
@@ -229,9 +257,18 @@ try {
     $comRx = [regex]'\bCOM(\d+)\b'
 
     try {
-        # USB\ filter — WPF checks pnpId.StartsWith("USB\\")
-        $pnpDevices = Get-CimInstance -ClassName Win32_PnPEntity `
-            -Filter "PNPDeviceID LIKE 'USB\\%'" -ErrorAction Stop
+        # USB\ filter — WPF checks pnpId.StartsWith("USB\\").
+        # WQL escaping: 'USB\\%' is a literal backslash + wildcard.
+        # Some WMI provider builds reject the escaped backslash, so fall back
+        # to a broader query with client-side filtering if the first fails.
+        $pnpDevices = $null
+        try {
+            $pnpDevices = Get-CimInstance -ClassName Win32_PnPEntity `
+                -Filter "PNPDeviceID LIKE 'USB\\%'" -ErrorAction Stop
+        } catch {
+            $allDevices = Get-CimInstance -ClassName Win32_PnPEntity -ErrorAction Stop
+            $pnpDevices = $allDevices | Where-Object { $_.PNPDeviceID -like 'USB\*' }
+        }
 
         foreach ($dev in $pnpDevices) {
             $caption     = [string]$dev.Caption
