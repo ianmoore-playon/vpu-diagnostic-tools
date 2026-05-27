@@ -1401,7 +1401,7 @@ function _renderSpeedResult(el, d) {
     (d.isp || d.server ? '<div class="net-speed-meta">' +
       (d.isp ? '<span>ISP: ' + esc(d.isp) + '</span>' : '') +
       (d.server ? '<span>Server: ' + esc(d.server) + '</span>' : '') +
-      '<a href="' + esc(d.url) + '" target="_blank" rel="noopener" class="text-xs" style="color:#3b82f6">View full result ↗</a>' +
+      '<a href="' + esc(d.url) + '" target="_blank" rel="noopener" class="text-xs" style="color:var(--c-accent-blue)">View full result ↗</a>' +
     '</div>' : '') +
     (findings.length ? '<div class="net-speed-findings">' +
       findings.map(function(f) {
@@ -1790,7 +1790,7 @@ function renderNetwork() {
           ${kvRow("Link speed", uplinkAdapterRow?.linkSpeed || "—")}
           ${duplexLabel ? kvRowHtml("Duplex", duplexLabel === "Half Duplex"
             ? '<span class="status-warn" style="font-weight:600">Half Duplex</span>'
-            : '<span style="color:#22c55e;font-weight:600">Full Duplex</span>') : ""}
+            : '<span style="color:var(--c-accent-green);font-weight:600">Full Duplex</span>') : ""}
           ${kvRowHtml("Internet", cfg.internetReachable
             ? '<span class="status-pass">Reachable</span>'
             : '<span class="status-fail">Unreachable</span>')}
@@ -2382,7 +2382,7 @@ function renderDiskHealth() {
         const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
         const role = d.deviceID === "C:" ? "OS Drive" : "Storage";
         const status = pct > 90 ? "Critical" : pct > 80 ? "Low" : "OK";
-        const statusColor = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#22c55e";
+        const statusColor = pct > 90 ? "var(--c-accent-red)" : pct > 80 ? "var(--c-accent-amber)" : "var(--c-accent-green)";
         return `<div class="dh-vol-row">
           <span class="dh-vol-drive font-mono">${esc(d.deviceID)}</span>
           <span class="dh-vol-role">${esc(role)}</span>
@@ -2482,9 +2482,9 @@ function renderEvents() {
         <div class="ev-filter-group">
           <label class="ev-filter-label">LEVELS</label>
           <div class="ev-checks">
-            <label class="ev-check"><input type="checkbox" id="ev-error" checked> <span style="color:#ef4444">Error</span></label>
-            <label class="ev-check"><input type="checkbox" id="ev-warning" checked> <span style="color:#eab308">Warning</span></label>
-            <label class="ev-check"><input type="checkbox" id="ev-info" checked> <span style="color:#3b82f6">Information</span></label>
+            <label class="ev-check"><input type="checkbox" id="ev-error" checked> <span style="color:var(--c-accent-red)">Error</span></label>
+            <label class="ev-check"><input type="checkbox" id="ev-warning" checked> <span style="color:var(--c-accent-amber)">Warning</span></label>
+            <label class="ev-check"><input type="checkbox" id="ev-info" checked> <span style="color:var(--c-accent-blue)">Information</span></label>
           </div>
         </div>
         <div class="ev-filter-group ev-filter-grow">

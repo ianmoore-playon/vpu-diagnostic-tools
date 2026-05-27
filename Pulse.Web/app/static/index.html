@@ -24,9 +24,9 @@
                 }
             }
         }
-        // Apply saved theme before first paint
-        if (localStorage.getItem('pulse-theme') === 'light') {
-            document.documentElement.classList.add('light');
+        // Apply saved theme before first paint (default is light)
+        if (localStorage.getItem('pulse-theme') === 'dark') {
+            document.documentElement.classList.add('dark');
         }
     </script>
     <link rel="stylesheet" href="/static/style.css">
