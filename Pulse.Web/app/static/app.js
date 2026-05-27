@@ -1807,10 +1807,38 @@ function _prefixToMask(prefix) {
   return [24, 16, 8, 0].map(function(s) { return (mask >>> s) & 0xFF; }).join(".");
 }
 
-function _buildNetIssues(cfg, ports, domains, local) {
+function _buildNetIssues(cfg, ports, domains, local, dnsResolution) {
   var issues = [];
   var gw = (local || {}).gateway;
   var dns = (local || {}).dns;
+
+  // ── DNS comparison vs Google DNS (PDF #10) ──────────────
+  // If 8.8.8.8 resolves but the configured DNS doesn't, the school's
+  // internal resolver is blocking Pixellot infrastructure.
+  if (dnsResolution && !dnsResolution.error) {
+    var sysBlocked = (dnsResolution.results || []).filter(function(r) { return r.discrepancy === "system-blocked"; });
+    if (sysBlocked.length) {
+      issues.push({
+        severity: "critical",
+        title: sysBlocked.length + " domain(s) blocked by configured DNS but reachable via Google DNS (8.8.8.8)",
+        body: "The local DNS resolver is filtering or failing on Pixellot infrastructure. Change the VPU's DNS servers to 8.8.8.8 / 8.8.4.4, or ask the venue's network admin to whitelist these hostnames.",
+        details: sysBlocked.map(function(r) {
+          return r.host + " — system: " + (r.system.error || "no answer") + "; google: " + (r.google.resolvedTo || "—");
+        }),
+      });
+    }
+    var mismatches = (dnsResolution.results || []).filter(function(r) { return r.discrepancy === "mismatch"; });
+    if (mismatches.length) {
+      issues.push({
+        severity: "warning",
+        title: mismatches.length + " domain(s) resolve to different IPs via system vs Google DNS",
+        body: "Could indicate a captive portal, school filter, or internal mirror. Verify the resolved IP matches Pixellot's expected ranges.",
+        details: mismatches.map(function(r) {
+          return r.host + " — system: " + r.system.resolvedTo + "; google: " + r.google.resolvedTo;
+        }),
+      });
+    }
+  }
 
   // ── Critical: Gateway ────────────────────────────────────
   if (gw && !gw.reachable) {
@@ -1981,6 +2009,78 @@ function _netTimeSyncCard(cfg, ntp, ntpPeers) {
   </div>`;
 }
 
+// DNS Resolution card — side-by-side comparison of system DNS vs Google DNS.
+// PDF #10: a misconfigured school resolver can block Pixellot infrastructure
+// while 8.8.8.8 works fine. Flag those rows clearly.
+function _netDnsResolutionCard(dnsResolution, cfg) {
+  if (!dnsResolution) {
+    return `<div class="card">
+      ${sectionTitle("globe", "DNS Resolution Comparison")}
+      <p class="text-pulse-muted text-sm">DNS comparison data unavailable.</p>
+    </div>`;
+  }
+
+  var results = dnsResolution.results || [];
+  var googleSrv = dnsResolution.googleServer || "8.8.8.8";
+  // Pull the configured system DNS server from the network config if we have it.
+  var ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
+  var uplinkName = cfg.uplinkAdapter && cfg.uplinkAdapter.interfaceAlias;
+  var uplinkIpCfg = uplinkName ? ipConfigs.find(function(ip) { return ip.interfaceAlias === uplinkName; }) : null;
+  var systemDns = uplinkIpCfg && uplinkIpCfg.dnsServers
+    ? String(uplinkIpCfg.dnsServers).split(",").map(function(s) { return s.trim(); }).filter(Boolean).join(", ")
+    : "system resolver";
+
+  var rowsHtml = results.length
+    ? results.map(function(r) {
+        var sys = r.system || {};
+        var goog = r.google || {};
+        function cellHtml(side) {
+          if (side.status === "pass") {
+            var ms = side.resolutionMs != null ? side.resolutionMs + " ms" : "";
+            return '<div class="net-dns-ok">' +
+              '<div class="net-dns-ip font-mono">' + esc(side.resolvedTo || "—") + '</div>' +
+              '<div class="net-dns-ms text-xs text-pulse-muted">' + esc(ms) + '</div>' +
+            '</div>';
+          }
+          return '<div class="net-dns-fail">' +
+            '<div class="net-dns-ip status-fail">Failed</div>' +
+            '<div class="net-dns-ms text-xs text-pulse-muted">' + esc(side.error || "no answer") + '</div>' +
+          '</div>';
+        }
+        var rowCls = "";
+        var note = "";
+        if (r.discrepancy === "system-blocked") {
+          rowCls = "net-dns-row-bad";
+          note = '<span class="net-dns-note status-fail">School DNS blocking Pixellot</span>';
+        } else if (r.discrepancy === "mismatch") {
+          rowCls = "net-dns-row-warn";
+          note = '<span class="net-dns-note status-warn">IPs differ — possible DNS rewrite</span>';
+        }
+        return '<tr class="' + rowCls + '">' +
+          '<td class="font-mono text-xs">' + esc(r.host) + '</td>' +
+          '<td>' + cellHtml(sys) + '</td>' +
+          '<td>' + cellHtml(goog) + '</td>' +
+          '<td>' + note + '</td>' +
+        '</tr>';
+      }).join("")
+    : '<tr><td colspan="4" class="text-pulse-muted text-sm">No DNS comparison data.</td></tr>';
+
+  return `<div class="card">
+    ${sectionTitle("globe", "DNS Resolution Comparison")}
+    <p class="text-pulse-muted text-sm">
+      Compares the configured DNS (<span class="font-mono">${esc(systemDns)}</span>)
+      against Google DNS (<span class="font-mono">${esc(googleSrv)}</span>) for key Pixellot hosts.
+      A row flagged red means the venue's DNS is filtering Pixellot infrastructure.
+    </p>
+    <table class="data-table net-dns-table"><thead><tr>
+      <th>Host</th>
+      <th>Configured DNS</th>
+      <th>Google DNS (${esc(googleSrv)})</th>
+      <th></th>
+    </tr></thead><tbody>${rowsHtml}</tbody></table>
+  </div>`;
+}
+
 function renderNetwork() {
   const data = cached("network");
   if (!data) { $page().innerHTML = sectionLoading("Network"); fetchSection("network"); return; }
@@ -1991,9 +2091,10 @@ function renderNetwork() {
   const ntp = data.ntp || {};
   const local = data.local || {};
   const ntpPeers = (data.ntpPeers && !data.ntpPeers.error) ? data.ntpPeers : null;
+  const dnsResolution = (data.dnsResolution && !data.dnsResolution.error) ? data.dnsResolution : null;
   const ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
 
-  const issues = _buildNetIssues(cfg, ports, domains, local);
+  const issues = _buildNetIssues(cfg, ports, domains, local, dnsResolution);
 
   const hasCrit = issues.some(function(f) { return f.severity === "critical"; });
   const hasWarn = issues.some(function(f) { return f.severity === "warning"; });
@@ -2257,6 +2358,8 @@ function renderNetwork() {
     </div>
 
     ${_netTimeSyncCard(cfg, ntp, ntpPeers)}
+
+    ${_netDnsResolutionCard(dnsResolution, cfg)}
 
     <!-- Advanced Diagnostics Toggle -->
     <div class="net-adv-toggle" onclick="_toggleAdvNet()">
@@ -2948,6 +3051,100 @@ function renderDiskHealth() {
         </tbody></table>
       </div>
     </div>` : ""}
+
+    <!-- Repair Tools (PDF #1) — DISM CheckHealth / RestoreHealth, sfc, chkdsk -->
+    <div class="card mt-4" id="dh-repair">
+      ${sectionTitle("zap", "Repair Tools")}
+      <p class="text-xs text-pulse-muted mb-3">
+        Windows image &amp; file repair sequence. The first three tail
+        <span class="font-mono">C:\\Windows\\Logs\\CBS\\CBS.log</span> on completion.
+        <strong>RestoreHealth and SFC can take 10–30 minutes</strong> — leave the tab open.
+      </p>
+      <div class="dh-repair-grid">
+        ${_repairCard("CheckHealth", "Check Image Health", "Fast (~30s) — reports component-store corruption without repairing.", "dism /Online /Cleanup-Image /CheckHealth")}
+        ${_repairCard("RestoreHealth", "Restore Image", "Slow (5–20 min) — downloads + replaces corrupt component-store files.", "dism /Online /Cleanup-Image /RestoreHealth")}
+        ${_repairCard("SfcScan", "Scan System Files", "Slow (10–30 min) — verifies protected system files against the image.", "sfc /scannow")}
+        ${_repairCard("ChkdskSchedule", "Schedule chkdsk on Next Reboot", "Queues chkdsk /f /r C: — actual check runs on next boot. Returns immediately.", "chkdsk /f /r C:", /*amber*/ true)}
+      </div>
+    </div>
+  `;
+
+  // Wire up repair buttons
+  document.querySelectorAll(".dh-repair-btn").forEach(btn => {
+    btn.addEventListener("click", () => _runRepairTool(btn.dataset.action));
+  });
+}
+
+function _repairCard(action, title, body, command, amber) {
+  const cls = amber ? "btn-ol-amber" : "btn-ol-blue";
+  return `<div class="dh-repair-card">
+    <div class="dh-repair-title">${esc(title)}</div>
+    <div class="dh-repair-body">${esc(body)}</div>
+    <div class="dh-repair-cmd font-mono">${esc(command)}</div>
+    <button class="btn-outline ${cls} dh-repair-btn" data-action="${esc(action)}">
+      ${svgIcon("play", 12)} Run
+    </button>
+    <div class="dh-repair-result hidden" id="dh-repair-result-${esc(action)}"></div>
+  </div>`;
+}
+
+async function _runRepairTool(action) {
+  const titles = {
+    CheckHealth: "Check Image Health",
+    RestoreHealth: "Restore Image",
+    SfcScan: "Scan System Files",
+    ChkdskSchedule: "Schedule chkdsk",
+  };
+  const slow = action === "RestoreHealth" || action === "SfcScan";
+  if (slow) {
+    const ok = confirm(
+      `${titles[action]} can take 10–30 minutes to complete. ` +
+      `Pulse will block waiting for it.\n\nProceed?`
+    );
+    if (!ok) return;
+  }
+
+  const btn = document.querySelector(`.dh-repair-btn[data-action="${action}"]`);
+  const result = document.getElementById(`dh-repair-result-${action}`);
+  if (!btn || !result) return;
+
+  btn.disabled = true;
+  btn.innerHTML = `${svgIcon("refresh", 12)} Running…`;
+  result.classList.remove("hidden");
+  result.innerHTML = `<div class="text-xs text-pulse-muted">Running ${esc(titles[action] || action)}… ${slow ? "this may take a long time." : ""}</div>`;
+
+  const r = await apiPost("/api/disk-health/repair", { action });
+
+  btn.disabled = false;
+  btn.innerHTML = `${svgIcon("play", 12)} Run again`;
+
+  if (!r || r.error) {
+    result.innerHTML = `<div class="dh-repair-result-err">
+      ${svgIcon("alert", 14)} <span class="font-semibold">Failed</span>
+      <div class="text-xs mt-1">${esc(r?.message || "(no message)")}</div>
+    </div>`;
+    return;
+  }
+
+  const okState = !!r.success;
+  const durSec = r.durationMs ? Math.round(r.durationMs / 1000) : null;
+  result.innerHTML = `
+    <div class="${okState ? "dh-repair-result-ok" : "dh-repair-result-err"}">
+      ${svgIcon(okState ? "check" : "alert", 14)}
+      <span class="font-semibold">${okState ? "Completed" : (r.timedOut ? "Timed out" : "Failed")}</span>
+      ${durSec != null ? ` <span class="text-xs text-pulse-muted">· ${durSec}s · exit code ${esc(String(r.exitCode))}</span>` : ""}
+    </div>
+    <details class="dh-repair-details mt-2">
+      <summary class="text-xs text-pulse-muted">Command output</summary>
+      <pre class="dh-repair-output">${esc(r.stdout || "(empty)")}</pre>
+      ${r.stderr ? `<pre class="dh-repair-output dh-repair-stderr">${esc(r.stderr)}</pre>` : ""}
+    </details>
+    ${(r.cbsTail || []).length ? `
+      <details class="dh-repair-details">
+        <summary class="text-xs text-pulse-muted">CBS.log tail (last ${r.cbsTail.length} lines)</summary>
+        <pre class="dh-repair-output">${esc((r.cbsTail || []).join("\n"))}</pre>
+      </details>
+    ` : ""}
   `;
 }
 

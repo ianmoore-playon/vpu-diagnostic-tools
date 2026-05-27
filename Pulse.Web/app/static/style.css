@@ -1596,6 +1596,36 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .dh-vol-free { font-size: 0.75rem; color: var(--c-muted); }
 .dh-vol-status { font-size: 0.8rem; font-weight: 600; text-align: right; }
 
+/* Repair Tools (PDF #1) — DISM, sfc, chkdsk action cards */
+.dh-repair-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+}
+@media (max-width: 768px) { .dh-repair-grid { grid-template-columns: 1fr; } }
+.dh-repair-card {
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    padding: 0.875rem 1rem;
+}
+.dh-repair-title { font-weight: 600; font-size: 0.9rem; color: var(--c-text); margin-bottom: 4px; }
+.dh-repair-body  { font-size: 0.75rem; color: var(--c-muted); line-height: 1.45; margin-bottom: 8px; }
+.dh-repair-cmd   { font-size: 0.7rem; color: var(--c-dim); margin-bottom: 10px; word-break: break-all; }
+.dh-repair-result { margin-top: 10px; }
+.dh-repair-result.hidden { display: none; }
+.dh-repair-result-ok  { color: var(--c-accent-green); display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: var(--c-tint-green); border-radius: 6px; }
+.dh-repair-result-err { color: var(--c-accent-red);   display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: var(--c-tint-red);   border-radius: 6px; }
+.dh-repair-details { margin-top: 6px; }
+.dh-repair-details summary { cursor: pointer; padding: 2px 0; }
+.dh-repair-output {
+    margin-top: 4px; padding: 8px 10px; border-radius: 4px;
+    background: var(--c-surface-3); color: var(--c-text);
+    font-family: 'Cascadia Mono', monospace; font-size: 0.7rem;
+    white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow-y: auto;
+}
+.dh-repair-stderr { color: var(--c-accent-red); }
+
 /* ── Event Viewer page ─────────────────────────────────────── */
 
 .ev-filter-card { margin-bottom: 0; }
@@ -2420,6 +2450,20 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin-bottom: 0.5rem;
+}
+
+/* ── DNS comparison table (PDF #10) ──────────────────────── */
+.net-dns-table {
+    margin-top: 0.75rem;
+}
+.net-dns-table td { vertical-align: top; padding: 8px 12px; }
+.net-dns-ip { font-size: 0.8rem; }
+.net-dns-ok .net-dns-ip { color: var(--c-text); }
+.net-dns-row-bad  td { background: rgba(239, 68, 68, 0.06); }
+.net-dns-row-warn td { background: rgba(234, 179, 8, 0.06); }
+.net-dns-note {
+    font-size: 0.72rem;
+    font-weight: 600;
 }
 
 /* ── Advanced Diagnostics Toggle ─────────────────────────── */

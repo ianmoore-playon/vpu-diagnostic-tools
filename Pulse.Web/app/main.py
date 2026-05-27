@@ -1505,6 +1505,29 @@ async def api_disk_health():
     return await run_ps("Get-DiskHealth.ps1")
 
 
+# PDF #1: Image / file repair commands. RestoreHealth and sfc /scannow
+# can run 10–30 minutes, so each action gets its own generous timeout.
+_REPAIR_TIMEOUTS = {
+    "CheckHealth":    240,    # ~30s typical, give it 4 min
+    "RestoreHealth":  1900,   # up to 30 min + buffer
+    "SfcScan":        1900,
+    "ChkdskSchedule": 60,     # just queues, returns fast
+}
+
+
+@app.post("/api/disk-health/repair")
+async def api_disk_repair(request: Request):
+    body = await request.json()
+    action = body.get("action", "")
+    if action not in _REPAIR_TIMEOUTS:
+        return {"error": True, "message": f"Unknown action: {action!r}. Expected one of {list(_REPAIR_TIMEOUTS)}"}
+    return await run_ps(
+        "Invoke-RepairTool.ps1",
+        {"Action": action},
+        timeout=_REPAIR_TIMEOUTS[action],
+    )
+
+
 @app.get("/api/events")
 async def api_events(
     hours: int = Query(default=48), level: str = Query(default="all")
