@@ -3202,16 +3202,18 @@ function renderFaultIsolator() {
   // ── port option builder (shared by Phase 0 and Phase 1 dropdowns) ──
   function portOption(p, i, excludeIdx) {
     if (i === excludeIdx) return "";
+    // Camera label (Main Camera 1, OCR, etc.) — same one shown on the port tile.
+    var camLbl = p.cameraLabel ? " (" + p.cameraLabel + ")" : "";
     var spd;
     if (!p.isUp) spd = " — No link";
-    else if (p.isOcr) spd = " — " + formatSpeed(p.linkSpeedMbps || 100) + " (OCR — expected)";
     // Trust the backend isDegraded flag — it knows the expected speed for
     // each camera model. A 100 Mbps OCR isn't degraded; an unknown 100 Mbps
     // camera might be.
     else if (p.isDegraded) spd = " — " + formatSpeed(p.linkSpeedMbps) + " (FAULT)";
+    else if (p.isOcr) spd = " — " + formatSpeed(p.linkSpeedMbps || 100) + " (expected)";
     else if (p.linkSpeedMbps > 0) spd = " — " + formatSpeed(p.linkSpeedMbps);
     else spd = " — No link";
-    return '<option value="' + i + '">Port ' + (i + 1) + esc(spd) + "</option>";
+    return '<option value="' + i + '">Port ' + (i + 1) + esc(camLbl) + esc(spd) + "</option>";
   }
 
   // ── phase HTML ───────────────────────────────────────────────
