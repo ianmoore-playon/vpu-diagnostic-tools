@@ -21,6 +21,17 @@ DEMO_MODE = sys.platform != "win32"
 LOG_BUFFER: deque[dict] = deque(maxlen=500)
 RUNNING_TASKS: dict[str, dict] = {}
 
+# Cap concurrent PowerShell processes to avoid CPU-starving VPU hardware.
+# Dashboard scripts get priority; network/heavy tests queue behind them.
+_PS_SEMAPHORE: Optional[asyncio.Semaphore] = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _PS_SEMAPHORE
+    if _PS_SEMAPHORE is None:
+        _PS_SEMAPHORE = asyncio.Semaphore(4)
+    return _PS_SEMAPHORE
+
 
 def _log(script: str, duration_ms: float, status: str, detail: str = "", size: int = 0):
     entry = {
@@ -81,7 +92,8 @@ async def run_ps(
     }
 
     try:
-        return await _run_ps_inner(script_name, args, timeout, task_id, cancel_evt)
+        async with _get_semaphore():
+            return await _run_ps_inner(script_name, args, timeout, task_id, cancel_evt)
     finally:
         RUNNING_TASKS.pop(task_id, None)
 

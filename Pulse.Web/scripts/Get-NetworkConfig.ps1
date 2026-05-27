@@ -24,14 +24,31 @@ try {
         }
     }
 
+    # Build lookup tables keyed by InterfaceIndex for DHCP status and prefix length
+    $ipIfaceMap = @{}
+    Get-NetIPInterface -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object {
+        $ipIfaceMap[$_.InterfaceIndex] = $_
+    }
+    $ipAddrMap = @{}
+    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object {
+        if (-not $ipAddrMap.ContainsKey($_.InterfaceIndex)) {
+            $ipAddrMap[$_.InterfaceIndex] = $_
+        }
+    }
+
     # IP configurations
     $ipConfigs = Get-NetIPConfiguration -ErrorAction SilentlyContinue | ForEach-Object {
+        $idx   = $_.InterfaceIndex
+        $iface = $ipIfaceMap[$idx]
+        $addr  = $ipAddrMap[$idx]
         [ordered]@{
-            interfaceAlias   = $_.InterfaceAlias
-            interfaceIndex   = $_.InterfaceIndex
-            ipv4Address      = if ($_.IPv4Address) { ($_.IPv4Address | ForEach-Object { $_.IPAddress }) } else { @() }
+            interfaceAlias     = $_.InterfaceAlias
+            interfaceIndex     = $idx
+            ipv4Address        = if ($_.IPv4Address) { ($_.IPv4Address | ForEach-Object { $_.IPAddress }) } else { @() }
             ipv4DefaultGateway = if ($_.IPv4DefaultGateway) { ($_.IPv4DefaultGateway | ForEach-Object { $_.NextHop }) } else { @() }
-            dnsServers       = if ($_.DNSServer) { ($_.DNSServer | ForEach-Object { $_.ServerAddresses }) | Select-Object -Unique } else { @() }
+            dnsServers         = if ($_.DNSServer) { ($_.DNSServer | ForEach-Object { $_.ServerAddresses }) | Select-Object -Unique } else { @() }
+            dhcpEnabled        = if ($iface) { $iface.Dhcp -eq 'Enabled' } else { $false }
+            prefixLength       = if ($_.IPv4Address) { [int]($_.IPv4Address | Select-Object -First 1).PrefixLength } else { if ($addr) { [int]$addr.PrefixLength } else { $null } }
         }
     }
 
@@ -52,25 +69,20 @@ try {
         }
     }
 
-    # Internet reachability
+    # Internet reachability — use .NET Ping with explicit 2s timeout
+    # (Test-Connection can hang for 10+ seconds on VPU hardware)
     $internetReachable = $false
     $reachHost = $null
-    try {
-        $ping = Test-Connection -ComputerName '8.8.8.8' -Count 1 -Quiet -ErrorAction SilentlyContinue
-        if ($ping) {
-            $internetReachable = $true
-            $reachHost = '8.8.8.8'
-        }
-    }
-    catch { }
-
-    if (-not $internetReachable) {
+    foreach ($target in @('8.8.8.8', '1.1.1.1')) {
+        if ($internetReachable) { break }
         try {
-            $ping = Test-Connection -ComputerName '1.1.1.1' -Count 1 -Quiet -ErrorAction SilentlyContinue
-            if ($ping) {
+            $pinger = New-Object System.Net.NetworkInformation.Ping
+            $reply = $pinger.Send($target, 2000)
+            if ($reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
                 $internetReachable = $true
-                $reachHost = '1.1.1.1'
+                $reachHost = $target
             }
+            $pinger.Dispose()
         }
         catch { }
     }
@@ -85,10 +97,43 @@ try {
     }
     catch { }
 
+    # Uplink adapter statistics (duplex, error counters) — only if we found one
+    $uplinkStats = $null
+    if ($uplinkAdapter) {
+        try {
+            $uAdapter = Get-NetAdapter -InterfaceIndex $uplinkAdapter.interfaceIndex -ErrorAction Stop
+            $uDuplex = $null
+            try { $uDuplex = $uAdapter.FullDuplex } catch { }
+
+            $uStats = [ordered]@{
+                fullDuplex      = $uDuplex
+                rxBytes         = $null; txBytes         = $null
+                rxErrors        = 0; txErrors        = 0
+                rxPacketErrors  = 0; rxDiscards      = 0
+                txPacketErrors  = 0; txDiscards      = 0
+            }
+            try {
+                $s = Get-NetAdapterStatistics -Name $uAdapter.Name -ErrorAction Stop
+                $uStats.rxBytes        = $s.ReceivedBytes
+                $uStats.txBytes        = $s.SentBytes
+                $uStats.rxPacketErrors = $s.ReceivedUnicastPacketsWithErrors
+                $uStats.rxDiscards     = $s.ReceivedDiscards
+                $uStats.txPacketErrors = $s.OutboundPacketErrors
+                $uStats.txDiscards     = $s.OutboundDiscards
+                $uStats.rxErrors       = $uStats.rxPacketErrors + $uStats.rxDiscards
+                $uStats.txErrors       = $uStats.txPacketErrors + $uStats.txDiscards
+            }
+            catch { }
+            $uplinkStats = $uStats
+        }
+        catch { }
+    }
+
     $result = [ordered]@{
         adapters         = @($adapters)
         ipConfigurations = @($ipConfigs)
         uplinkAdapter    = $uplinkAdapter
+        uplinkStats      = $uplinkStats
         internet = [ordered]@{
             reachable = $internetReachable
             testedHost = $reachHost

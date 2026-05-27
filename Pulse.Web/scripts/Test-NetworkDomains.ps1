@@ -14,12 +14,10 @@ $ErrorActionPreference = 'Stop'
 try {
     $domains = @(
         'nfhsnetwork.com'
-        'pixellot.stream'
         'pixellot.tv'
         'software.pixellot.tv'
         'sportzcast.net'
-        'app.singular.live'
-        'balena-cloud.com'
+        'service.singular.live'
         'logmein.com'
         's3.amazonaws.com'
         'leaf-uploads.s3.amazonaws.com'
@@ -29,9 +27,15 @@ try {
     $results = foreach ($domain in $domains) {
         $resolvedTo = $null
         $status = 'fail'
+        $resolutionMs = $null
 
         try {
-            $dns = Resolve-DnsName -Name $domain -Type A -ErrorAction Stop
+            # DnsOnly avoids slow LLMNR/NetBIOS fallback; 3s timeout via wrapper
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            $dns = Resolve-DnsName -Name $domain -Type A -DnsOnly -ErrorAction Stop
+            $sw.Stop()
+            $resolutionMs = [math]::Round($sw.Elapsed.TotalMilliseconds, 1)
+
             $ipRecord = $dns | Where-Object { $_.QueryType -eq 'A' } | Select-Object -First 1
             if ($ipRecord) {
                 $resolvedTo = $ipRecord.IPAddress
@@ -51,13 +55,16 @@ try {
             }
         }
         catch {
+            if ($sw -and $sw.IsRunning) { $sw.Stop() }
+            if ($sw) { $resolutionMs = [math]::Round($sw.Elapsed.TotalMilliseconds, 1) }
             $status = 'fail'
         }
 
         [ordered]@{
-            domain     = $domain
-            resolvedTo = $resolvedTo
-            status     = $status
+            domain       = $domain
+            resolvedTo   = $resolvedTo
+            status       = $status
+            resolutionMs = $resolutionMs
         }
     }
 

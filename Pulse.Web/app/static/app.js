@@ -29,6 +29,9 @@ function svgIcon(name, size) {
     globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
     link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
     database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
+    mic: '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>',
+    volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
+    "volume-x": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
@@ -42,6 +45,7 @@ const NAV_SECTIONS = [
     { id: "network", label: "Network", icon: "wifi" },
     { id: "cameras", label: "Camera Connectivity", icon: "camera" },
     { id: "scoreconnect", label: "Score Connect", icon: "monitor" },
+    { id: "audio", label: "Audio", icon: "mic" },
   ]},
   { label: "SYSTEM", pages: [
     { id: "system", label: "System Overview", icon: "cpu" },
@@ -68,6 +72,7 @@ let dataCache = {};
 let logEntries = [];
 let logPaneOpen = false;
 let fetchingKeys = new Set();
+let fetchPromises = {};
 
 const PAGE_API = {
   dashboard: "/api/dashboard",
@@ -77,6 +82,7 @@ const PAGE_API = {
   services: "/api/services",
   "disk-health": "/api/disk-health",
   events: "/api/events",
+  audio: "/api/audio",
   scoreconnect: "/api/scoreconnect",
   settings: "/api/settings",
 };
@@ -85,6 +91,8 @@ const PAGE_API = {
 
 function navigate(id) {
   if (id === currentPage) return;
+  // Abort any in-flight fault-isolator poll when navigating away.
+  if (currentPage === "fault-isolator" && _fi) _fi._aborted = true;
   currentPage = id;
   window.location.hash = id;
   updateNav();
@@ -99,8 +107,15 @@ function updateNav() {
 
 function renderPage(id) {
   const fn = pageRenderers[id];
-  if (fn) fn();
-  else $page().innerHTML = `<p class="text-pulse-muted">Unknown page: ${esc(id)}</p>`;
+  if (!fn) { $page().innerHTML = `<p class="text-pulse-muted">Unknown page: ${esc(id)}</p>`; return; }
+  try {
+    fn();
+  } catch (err) {
+    console.error("Render error on", id, err);
+    $page().innerHTML = `<div class="card"><p class="text-red-400 font-bold">Render Error</p>
+      <pre class="text-xs text-pulse-muted mt-2" style="white-space:pre-wrap">${esc(err.message)}\n${esc(err.stack || "")}</pre>
+      <button class="btn-outline btn-ol-blue mt-3" onclick="refreshAll()">Retry</button></div>`;
+  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -142,14 +157,15 @@ function badge(text, type) {
 
 function statusBadge(status) {
   const s = (status || "").toLowerCase();
+  const cap = (status || "").charAt(0).toUpperCase() + (status || "").slice(1);
   if (s === "running" || s === "up" || s === "pass" || s === "ok" || s === "healthy")
-    return badge(status, "pass");
+    return badge(cap, "pass");
   if (s === "stopped" || s === "down" || s === "fail" || s === "critical")
-    return badge(status, "fail");
+    return badge(cap, "fail");
   if (s === "warning" || s === "warn" || s === "degraded")
-    return badge(status, "warn");
+    return badge(cap, "warn");
   if (s === "notfound") return badge("Not Found", "muted");
-  return badge(status || "Unknown", "muted");
+  return badge(cap || "Unknown", "muted");
 }
 
 function loading() {
@@ -188,15 +204,20 @@ function usageBar(pct, color) {
 
 // ── Circular Gauge ───────────────────────────────────────────
 
-function gauge(label, value, unit, color) {
-  const pct = Math.min(Math.max(value || 0, 0), 100);
+function gauge(label, value, unit, color, opts) {
+  const o = opts || {};
+  const maxVal = o.max || 100;
+  const pct = Math.min(Math.max((value || 0) / maxVal * 100, 0), 100);
   const r = 40;
   const circ = 2 * Math.PI * r;
   const offset = circ * (1 - pct / 100);
+  const warnAt = o.warn || 75;
+  const critAt = o.crit || 90;
+  const raw = value || 0;
   const c =
-    pct > 90
+    raw > critAt
       ? "#ef4444"
-      : pct > 75
+      : raw > warnAt
         ? "#eab308"
         : color || "#3b82f6";
   return `<div class="flex flex-col items-center gap-2">
@@ -217,29 +238,45 @@ function gauge(label, value, unit, color) {
 
 // ── Data Preload (progressive) ──────────────────────────────
 
-async function fetchSection(key) {
-  if (fetchingKeys.has(key) || dataCache[key]) return dataCache[key];
+function fetchSection(key) {
+  if (dataCache[key]) return Promise.resolve(dataCache[key]);
+  // Return the existing in-flight promise so multiple callers wait for the same request
+  if (fetchPromises[key]) return fetchPromises[key];
   const url = PAGE_API[key];
-  if (!url) return null;
+  if (!url) return Promise.resolve(null);
   fetchingKeys.add(key);
-  const data = await api(url);
-  fetchingKeys.delete(key);
-  if (data && !data.error) {
-    dataCache[key] = data;
-    if (currentPage === key) renderPage(currentPage);
-    else if (currentPage === "dashboard") renderPage("dashboard");
-  } else if (currentPage === key) {
-    renderPage(currentPage);
-  }
-  return data;
+  fetchPromises[key] = api(url).then((data) => {
+    fetchingKeys.delete(key);
+    delete fetchPromises[key];
+    if (data && !data.error) {
+      dataCache[key] = data;
+    }
+    if (currentPage === key || currentPage === "dashboard") renderPage(currentPage);
+    return data;
+  });
+  return fetchPromises[key];
 }
 
 function preloadProgressive() {
-  Object.keys(PAGE_API).forEach((key) => fetchSection(key));
+  // Phase 1: Dashboard first (fast scripts — identity, performance, services, nics)
+  fetchSection("dashboard").then(() => {
+    // Phase 2: After dashboard renders, start WebSocket for live metrics
+    connectWS();
+    // Phase 3: Background-load remaining pages with small delays
+    // to avoid saturating VPU CPU with simultaneous PS processes
+    const deferred = Object.keys(PAGE_API).filter((k) => k !== "dashboard");
+    let delay = 500;
+    deferred.forEach((key) => {
+      setTimeout(() => fetchSection(key), delay);
+      delay += 300;
+    });
+  });
   api("/api/version").then((data) => {
     if (data?.version) {
+      dataCache._version = data.version;
       const footer = document.querySelector(".sidebar-footer");
       if (footer) footer.textContent = data.version;
+      if (currentPage === "about") renderPage("about");
     }
   });
   api("/api/logs").then((logData) => {
@@ -255,13 +292,16 @@ function preloadProgressive() {
 async function refreshAll() {
   dataCache = {};
   fetchingKeys.clear();
+  fetchPromises = {};
   renderPage(currentPage);
   preloadProgressive();
+  connectWS();
 }
 
 async function refreshSection(key) {
   dataCache[key] = null;
   fetchingKeys.delete(key);
+  delete fetchPromises[key];
   renderPage(currentPage);
   fetchSection(key);
 }
@@ -290,11 +330,13 @@ function sectionLoading(label) {
 
 // ── Logging Pane ────────────────────────────────────────────
 
+let activeLogTab = "script";
+
 function renderLogPane() {
   const pane = document.getElementById("log-pane");
   if (!pane) return;
   const entries = logEntries.slice(-200);
-  const body = pane.querySelector(".log-body");
+  const body = pane.querySelector('[data-log-body="script"]');
   if (!body) return;
   body.innerHTML = entries.map((e) => {
     const statusCls = e.status === "ok" ? "log-ok" : e.status === "timeout" ? "log-warn" : "log-err";
@@ -310,11 +352,40 @@ function renderLogPane() {
   body.scrollTop = body.scrollHeight;
 }
 
+function renderServerLog(lines) {
+  const pane = document.getElementById("log-pane");
+  if (!pane) return;
+  const body = pane.querySelector('[data-log-body="server"]');
+  if (!body) return;
+  body.innerHTML = lines.map((l) =>
+    `<div class="log-entry server-log-line">${esc(l)}</div>`
+  ).join("");
+  body.scrollTop = body.scrollHeight;
+}
+
+async function fetchServerLog() {
+  const data = await api("/api/server-log?tail=500");
+  if (data && !data.error) renderServerLog(data.lines || []);
+}
+
+function switchLogTab(tab) {
+  activeLogTab = tab;
+  const pane = document.getElementById("log-pane");
+  if (!pane) return;
+  pane.querySelectorAll(".log-tab").forEach((t) =>
+    t.classList.toggle("log-tab-active", t.dataset.logTab === tab)
+  );
+  pane.querySelectorAll("[data-log-body]").forEach((b) =>
+    b.classList.toggle("log-body-hidden", b.dataset.logBody !== tab)
+  );
+  if (tab === "server") fetchServerLog();
+}
+
 function appendLogs(newLogs) {
   if (!newLogs?.length) return;
   logEntries.push(...newLogs);
   if (logEntries.length > 500) logEntries = logEntries.slice(-500);
-  if (logPaneOpen) renderLogPane();
+  if (logPaneOpen && activeLogTab === "script") renderLogPane();
 }
 
 function toggleLogPane() {
@@ -322,8 +393,31 @@ function toggleLogPane() {
   const pane = document.getElementById("log-pane");
   if (pane) {
     pane.classList.toggle("log-pane-open", logPaneOpen);
-    if (logPaneOpen) renderLogPane();
+    if (logPaneOpen) {
+      if (activeLogTab === "script") renderLogPane();
+      else fetchServerLog();
+    }
   }
+}
+
+function openServerLog() {
+  if (!logPaneOpen) toggleLogPane();
+  switchLogTab("server");
+}
+
+function _updateThemeToggle() {
+  const btn = document.getElementById("theme-toggle");
+  if (!btn) return;
+  const isDark = document.documentElement.classList.contains("dark");
+  btn.innerHTML = isDark
+    ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> Light mode`
+    : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg> Dark mode`;
+}
+
+function toggleTheme() {
+  const isDark = document.documentElement.classList.toggle("dark");
+  localStorage.setItem("pulse-theme", isDark ? "dark" : "light");
+  _updateThemeToggle();
 }
 
 // ── WebSocket ────────────────────────────────────────────────
@@ -348,7 +442,15 @@ function connectWS() {
   ws.onerror = () => ws.close();
 }
 
+// Latest network health from WebSocket — shared between pages
+var _liveNetHealth = null;
+
 function updateLiveMetrics(msg) {
+  // Store network health regardless of current page
+  if (msg.networkHealth && !msg.networkHealth.error) {
+    _liveNetHealth = msg.networkHealth;
+    if (currentPage === "network") _renderLiveNetHealth(msg.networkHealth);
+  }
   if (currentPage !== "dashboard") return;
   const perf = msg.performance || {};
   const cpu = perf.cpu?.usagePercent;
@@ -376,19 +478,40 @@ function updateLiveMetrics(msg) {
   _updateGaugeLive("cpu", cpu);
   _updateGaugeLive("mem", mem);
   _updateGaugeLive("disk", disk);
+  const liveT = perf.temperature?.celsius;
+  _updateGaugeLive("temp", liveT, { max: 100, warn: 65, crit: 85, unit: "°C" });
+
+  // Auto-refresh findings when live metrics diverge from cached snapshot
+  const dash = dataCache["dashboard"];
+  if (dash && dash.findings?.length) {
+    const hadCpuCrit = dash.findings.some((f) => f.title === "CPU Usage Critical");
+    const hadCpuWarn = dash.findings.some((f) => f.title === "CPU Usage Elevated");
+    const hadTempCrit = dash.findings.some((f) => f.title === "Temperature Critical");
+    const liveTemp = perf.temperature?.celsius;
+    const stale =
+      (hadCpuCrit && cpu != null && cpu <= 75) ||
+      (hadCpuWarn && cpu != null && cpu <= 60) ||
+      (hadTempCrit && liveTemp != null && liveTemp <= 85);
+    if (stale) refreshSection("dashboard");
+  }
 }
 
-function _updateGaugeLive(name, val) {
+function _updateGaugeLive(name, val, opts) {
   const col = document.querySelector(`[data-gauge="${name}"]`);
   if (!col) return;
+  const o = opts || {};
+  const maxVal = o.max || 100;
+  const warnAt = o.warn || 75;
+  const critAt = o.crit || 90;
   const ring = col.querySelector(".gauge-ring");
   const valEl = col.querySelector(".gauge-val");
   if (ring) {
-    const pct = Math.min(Math.max(val || 0, 0), 100);
+    const pct = Math.min(Math.max((val || 0) / maxVal * 100, 0), 100);
     const r = 40;
     const circ = 2 * Math.PI * r;
     ring.setAttribute("stroke-dashoffset", String(circ * (1 - pct / 100)));
-    ring.setAttribute("stroke", pct > 90 ? "#ef4444" : pct > 75 ? "#eab308" : "#3b82f6");
+    const raw = val || 0;
+    ring.setAttribute("stroke", raw > critAt ? "#ef4444" : raw > warnAt ? "#eab308" : "#3b82f6");
   }
   if (valEl) valEl.textContent = val != null ? Math.round(val) : "--";
 }
@@ -404,6 +527,7 @@ const pageRenderers = {
   "disk-health": renderDiskHealth,
   events: renderEvents,
   reports: renderReports,
+  audio: renderAudio,
   scoreconnect: renderScoreConnect,
   "fault-isolator": renderFaultIsolator,
   settings: renderSettings,
@@ -437,9 +561,6 @@ function _subsystemHealth(findings) {
     { id: "events", label: "Event Viewer", icon: "triangle",
       health: "Healthy",
       desc: "Recent OS errors from VPU providers." },
-    { id: "reports", label: "Reports", icon: "file",
-      health: "Evidence ready",
-      desc: "View and export diagnostic reports." },
   ];
 }
 
@@ -455,15 +576,30 @@ function _findingPageFor(cat) {
 }
 
 function _metricColor(val) {
-  if (val == null) return "#94a3b8";
+  if (val == null) return "var(--c-muted)";
   if (val > 90) return "#ef4444";
   if (val > 75) return "#eab308";
   return "#22c55e";
 }
 
+var _dashNicRefreshTimer = null;
+
 function _renderNicRows(ports) {
   const rows = [];
   const count = Math.max(4, ports.length);
+  // Assign camera numbers to non-OCR ports with detected cameras
+  let camNum = 0;
+  const roles = [];
+  for (let i = 0; i < count; i++) {
+    if (i < ports.length) {
+      const p = ports[i];
+      if (p.isOcr) roles.push("OCR");
+      else if (p.isUp && (p.camerasDetected || []).length > 0) roles.push("Camera " + (++camNum));
+      else roles.push(null);
+    } else {
+      roles.push(null);
+    }
+  }
   for (let i = 0; i < count; i++) {
     if (i < ports.length) {
       const p = ports[i];
@@ -472,21 +608,22 @@ function _renderNicRows(ports) {
         : "—";
       let status, cls;
       if (!p.isUp) { status = "Down"; cls = "muted"; }
-      else if (p.isOcr) { status = "OCR"; cls = "info"; }
       else if (p.isDegraded) { status = "Error"; cls = "warn"; }
       else { status = "Linked"; cls = "pass"; }
+      const role = roles[i];
+      const roleBadge = role ? ` <span class="badge-ol badge-ol-info">${esc(role)}</span>` : "";
       rows.push(`<div class="dash-nic-row">
         <span class="dash-nic-port">Port ${i + 1}</span>
         <span class="dash-nic-name">${esc(p.name)}</span>
         <span class="dash-nic-speed">${p.isUp ? esc(speed) : "—"}</span>
-        <span class="badge-ol badge-ol-${cls}">${esc(status)}</span>
+        <span class="dash-nic-badges"><span class="badge-ol badge-ol-${cls}">${esc(status)}</span>${roleBadge}</span>
       </div>`);
     } else {
       rows.push(`<div class="dash-nic-row">
         <span class="dash-nic-port">Port ${i + 1}</span>
-        <span class="dash-nic-name" style="color:#475569">Not detected</span>
+        <span class="dash-nic-name" style="color:var(--c-dimmer)">Not detected</span>
         <span class="dash-nic-speed">—</span>
-        <span class="badge-ol badge-ol-muted">—</span>
+        <span class="dash-nic-badges"><span class="badge-ol badge-ol-muted">—</span></span>
       </div>`);
     }
   }
@@ -532,7 +669,7 @@ function renderDashboard() {
   const findings = dash.findings || [];
   const svcs = (dash.services || svcData)?.services || [];
   const hostname = id.hostname || "VPU";
-  const vpuLabel = [id.manufacturer, id.model].filter(Boolean).join(" ") || hostname;
+  const vpuName = id.vpuName;
 
   const cpu = perf.cpu?.usagePercent;
   const mem = perf.memory?.usedPercent;
@@ -551,23 +688,35 @@ function renderDashboard() {
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-  // Network config
-  const netCfg = net.config || {};
+  // Network config — prefer dashboard-embedded data, fall back to full network cache
+  const netCfg = dash.networkConfig || net.config || {};
   const uplinkName = netCfg.uplinkAdapter?.interfaceAlias || "—";
   const ipConfigs = netCfg.ipConfig || netCfg.ipConfigurations || [];
   const uplinkIp = ipConfigs.find((ip) => ip.interfaceAlias === uplinkName);
-  const ipAddr = uplinkIp?.ipv4Address?.[0] || "—";
-  const gw = uplinkIp?.ipv4DefaultGateway?.[0] || netCfg.uplinkAdapter?.gateway || "—";
-  const dns = uplinkIp?.dnsServers?.join(", ") || "—";
+  const ipAddr = _first(uplinkIp?.ipv4Address) || "—";
+  const gw = _first(uplinkIp?.ipv4DefaultGateway) || netCfg.uplinkAdapter?.gateway || "—";
+  const dnsRaw = uplinkIp?.dnsServers;
+  const dns = dnsRaw ? String(dnsRaw).split(",").map(function(s) { return s.trim(); }).filter(Boolean).join(", ") : "—";
   const ntpSrv = netCfg.ntpSource || "—";
   const internetOk = netCfg.internetReachable;
+  const internetFetching = fetchingKeys.has("network");
+  const internetLabel = internetOk === true ? "Connected" : internetOk === false ? "Offline" : internetFetching ? "Checking" : "—";
+  const internetColor = internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "var(--c-muted)";
 
   // Other data
   const nicPorts = cam.ports || [];
   const volumes = diskData.logicalDisks || [];
   const cpuInfo = sysData.hardware?.processors?.[0];
-  const memCaption = perf.memory?.usedGB && perf.memory?.totalGB
-    ? `${perf.memory.usedGB} GB of ${perf.memory.totalGB} GB` : "";
+  const cpuName = (cpuInfo?.name || "")
+    .replace(/\(R\)/gi, "").replace(/\(TM\)/gi, "")
+    .replace(/\s+CPU\s*/i, " ").replace(/\s{2,}/g, " ").trim();
+  const memTotalMB = perf.memory?.totalMB;
+  const memUsedMB = perf.memory?.usedMB;
+  const memCaption = memTotalMB
+    ? (memUsedMB != null
+        ? (memUsedMB / 1024).toFixed(1) + " / " + (memTotalMB / 1024).toFixed(0) + " GB"
+        : (memTotalMB / 1024).toFixed(0) + " GB")
+    : "";
   const sysDisk = volumes.find((d) => d.deviceID === "C:") || volumes[0];
   const diskCaption = sysDisk ? `${sysDisk.freeSpaceGB} GB free of ${sysDisk.sizeGB} GB` : "";
 
@@ -576,7 +725,7 @@ function renderDashboard() {
     <div class="dash-header">
       <div>
         <h2 class="text-2xl font-bold text-white">Dashboard</h2>
-        <p class="text-sm text-pulse-muted">${esc(vpuLabel)}</p>
+        ${vpuName ? `<p class="text-sm text-pulse-muted">${esc(vpuName)}</p>` : ""}
       </div>
       <div class="dash-actions">
         <button class="btn-outline btn-ol-green" onclick="refreshAll()">
@@ -599,7 +748,6 @@ function renderDashboard() {
       <div class="card command-center">
         <h3 class="card-label">COMMAND CENTER</h3>
         <div class="cc-severity cc-sev-${sevColor}">${esc(sevLabel)}</div>
-        <div class="text-sm text-pulse-muted mb-3">${esc(vpuLabel)}</div>
         <div class="baseline-bar">
           ${svgIcon("check", 14)}
           Baseline completed ${esc(timeStr)} &bull; ${subsystems.length}/${subsystems.length} panels &bull; ${totalFindings} finding(s)
@@ -608,7 +756,7 @@ function renderDashboard() {
           <div class="metric-box"><span class="metric-label">CPU</span><span class="metric-val" style="color:${_metricColor(cpu)}">${cpu != null ? Math.round(cpu) + "%" : "--"}</span></div>
           <div class="metric-box"><span class="metric-label">MEMORY</span><span class="metric-val" style="color:${_metricColor(mem)}">${mem != null ? Math.round(mem) + "%" : "--"}</span></div>
           <div class="metric-box"><span class="metric-label">DISK</span><span class="metric-val" style="color:${_metricColor(disk)}">${disk != null ? Math.round(disk) + "%" : "--"}</span></div>
-          <div class="metric-box"><span class="metric-label">INTERNET</span><span class="metric-val" style="color:${internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "#94a3b8"}">${internetOk === true ? "Connected" : internetOk === false ? "Offline" : "Checking"}</span></div>
+          <div class="metric-box"><span class="metric-label">INTERNET</span><span class="metric-val" style="color:${internetColor}">${internetLabel}</span></div>
         </div>
       </div>
       <div class="card findings-panel">
@@ -675,7 +823,7 @@ function renderDashboard() {
     <div class="dash-2col">
       <div class="card">
         <h3 class="card-label">VPU IDENTITY</h3>
-        <div class="text-lg font-bold text-white mb-3">${esc(vpuLabel)}</div>
+        ${vpuName ? `<div class="text-sm text-pulse-muted mb-3">${esc(vpuName)}</div>` : ""}
         <div class="dash-kv">
           <span class="dash-kv-l">Model</span><span class="dash-kv-v">${esc(id.model || "—")}</span>
           <span class="dash-kv-l">Hostname</span><span class="dash-kv-v">${esc(hostname)}</span>
@@ -700,7 +848,7 @@ function renderDashboard() {
       <div class="dash-gauges-row" id="dash-gauges">
         <div class="dash-gauge-col" data-gauge="cpu">
           ${gauge("CPU", cpu != null ? Math.round(cpu) : null, "%")}
-          ${cpuInfo ? `<div class="dash-gauge-sub">${esc(cpuInfo.name || "")}</div><div class="dash-gauge-sub">${cpuInfo.numberOfLogicalProcessors || ""} threads</div>` : ""}
+          ${cpuInfo ? `<div class="dash-gauge-sub">${esc(cpuName)}</div><div class="dash-gauge-sub">${cpuInfo.numberOfLogicalProcessors || ""} threads</div>` : ""}
         </div>
         <div class="dash-gauge-col" data-gauge="mem">
           ${gauge("Memory", mem != null ? Math.round(mem) : null, "%")}
@@ -710,25 +858,20 @@ function renderDashboard() {
           ${gauge("System Disk", disk != null ? Math.round(disk) : null, "%")}
           <div class="dash-gauge-sub">${esc(diskCaption)}</div>
         </div>
-        ${temp != null ? `
-        <div class="dash-gauge-col">
-          <div class="dash-icon-ring" style="--ring-color:${temp >= 78 ? "#ef4444" : temp >= 65 ? "#eab308" : "#3b82f6"}">
-            <span style="color:var(--ring-color)">${svgIcon("thermometer", 18)}</span>
-            <span class="dash-ring-val" style="color:var(--ring-color)">${Math.round(temp)}°C</span>
-          </div>
-          <span class="text-xs text-pulse-muted font-medium mt-2">Temperature</span>
-        </div>` : ""}
-        <div class="dash-gauge-col">
+        <div class="dash-gauge-col" data-gauge="temp">
+          ${gauge("Temperature", temp != null ? Math.round(temp) : null, "°C", "#3b82f6", { max: 100, warn: 65, crit: 85 })}
+        </div>
+        <div class="dash-gauge-col dash-gauge-col-center">
           <div class="dash-icon-tile">
             <span class="text-blue-400">${svgIcon("clock", 26)}</span>
             <span class="dash-tile-val">${esc(id.uptime || "—")}</span>
           </div>
           <span class="text-xs text-pulse-muted font-medium">Uptime</span>
         </div>
-        <div class="dash-gauge-col">
+        <div class="dash-gauge-col dash-gauge-col-center">
           <div class="dash-icon-tile">
-            <span style="color:${internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "#94a3b8"}">${svgIcon("globe", 26)}</span>
-            <span class="dash-tile-val" style="color:${internetOk === true ? "#22c55e" : internetOk === false ? "#ef4444" : "#e2e8f0"}">${internetOk === true ? "Connected" : internetOk === false ? "No connection" : "—"}</span>
+            <span style="color:${internetColor}">${svgIcon("globe", 26)}</span>
+            <span class="dash-tile-val" style="color:${internetColor}">${internetLabel === "Connected" ? "Connected" : internetLabel === "Offline" ? "No connection" : internetLabel}</span>
           </div>
           <span class="text-xs text-pulse-muted font-medium">Internet</span>
         </div>
@@ -740,9 +883,9 @@ function renderDashboard() {
       <div class="card">
         <div class="dash-card-hdr">
           <span class="dash-hdr-icon">${svgIcon("link", 16)}</span>
-          <h3 class="card-label mb-0">NIC PORTS</h3>
+          <h3 class="card-label mb-0">NETWORK INTERFACE CARD (NIC) CONNECTIONS</h3>
         </div>
-        <div class="dash-nic-table">${_renderNicRows(nicPorts)}</div>
+        <div class="dash-nic-table" id="dash-nic-table">${_renderNicRows(nicPorts)}</div>
       </div>
       <div class="card">
         <div class="dash-card-hdr">
@@ -784,6 +927,18 @@ function renderDashboard() {
       </div>
     </div>
   `;
+
+  // ── Live NIC refresh: poll /api/cameras every 3s and update NIC table ──
+  if (_dashNicRefreshTimer) clearInterval(_dashNicRefreshTimer);
+  _dashNicRefreshTimer = setInterval(function() {
+    if (currentPage !== "dashboard") { clearInterval(_dashNicRefreshTimer); _dashNicRefreshTimer = null; return; }
+    api("/api/cameras").then(function(fresh) {
+      if (!fresh || fresh.error || currentPage !== "dashboard") return;
+      dataCache.cameras = fresh;
+      var el = document.getElementById("dash-nic-table");
+      if (el) el.innerHTML = _renderNicRows(fresh.ports || []);
+    }).catch(function() { /* network blip — skip this tick */ });
+  }, 3000);
 }
 
 function idRow(label, val) {
@@ -987,6 +1142,495 @@ function renderSystem() {
 
 // ── Network ──────────────────────────────────────────────────
 
+// PS single-element arrays unwrap to bare values — safe first-element accessor
+function _first(v) { return Array.isArray(v) ? v[0] : v != null ? String(v) : null; }
+
+// Local ping runner — manages preset and continuous ping modes
+var _localPingState = { running: false, continuous: false, abortCtrl: null };
+
+function _renderPingCards(local) {
+  var gw = (local || {}).gateway;
+  var dns = (local || {}).dns;
+  var el = document.getElementById("net-ping-results");
+  if (!el) return;
+  el.innerHTML = _pingCardHtml(gw) + _pingCardHtml(dns);
+}
+
+function _fmtMs(v) {
+  if (v == null) return "—";
+  if (v === 0) return "< 1 ms";
+  if (v < 1) return v.toFixed(2) + " ms";
+  if (v < 10) return v.toFixed(1) + " ms";
+  return Math.round(v) + " ms";
+}
+
+function _pingCardHtml(p) {
+  if (!p || !p.target) return "";
+  var sc = p.status === "pass" ? "net-ping-pass" : p.status === "warn" ? "net-ping-warn" : "net-ping-fail";
+  var dot = p.status === "pass" ? "#22c55e" : p.status === "warn" ? "#eab308" : "#ef4444";
+  var latency = _fmtMs(p.avgMs);
+  var loss = p.lossPercent != null ? p.lossPercent + "%" : "—";
+  var range = (p.minMs != null && p.maxMs != null) ? _fmtMs(p.minMs).replace(" ms","") + " / " + _fmtMs(p.avgMs).replace(" ms","") + " / " + _fmtMs(p.maxMs).replace(" ms","") + " ms" : "—";
+  return '<div class="net-ping-card ' + sc + '">' +
+    '<div class="net-ping-header">' +
+      '<span class="net-ping-dot" style="background:' + dot + '"></span>' +
+      '<span class="net-ping-label">' + esc(p.label) + '</span>' +
+      '<span class="net-ping-target font-mono">' + esc(p.target) + '</span>' +
+    '</div>' +
+    '<div class="net-ping-stats">' +
+      '<div class="net-ping-stat"><span class="net-ping-stat-label">Latency</span><span class="net-ping-stat-value">' + esc(latency) + '</span></div>' +
+      '<div class="net-ping-stat"><span class="net-ping-stat-label">Packet loss</span><span class="net-ping-stat-value">' + esc(loss) + '</span></div>' +
+      '<div class="net-ping-stat"><span class="net-ping-stat-label">Min / Avg / Max</span><span class="net-ping-stat-value font-mono">' + esc(range) + '</span></div>' +
+      '<div class="net-ping-stat"><span class="net-ping-stat-label">Packets</span><span class="net-ping-stat-value">' + esc(String(p.received || 0)) + ' / ' + esc(String(p.sent || 0)) + ' received</span></div>' +
+    '</div>' +
+  '</div>';
+}
+
+async function runLocalPing(count) {
+  if (_localPingState.running) { stopLocalPing(); return; }
+  _localPingState.running = true;
+  _localPingState.continuous = (count === 0);
+  _localPingState.abortCtrl = new AbortController();
+  _updatePingControls();
+
+  var batchSize = _localPingState.continuous ? 4 : count;
+  var accum = { gateway: null, dns: null };
+
+  try {
+    while (_localPingState.running) {
+      var resp = await fetch("/api/network/local-ping?count=" + batchSize, { signal: _localPingState.abortCtrl.signal });
+      var data = await resp.json();
+      if (!_localPingState.running) break;
+
+      if (!_localPingState.continuous) {
+        // One-shot: just show the result
+        _renderPingCards(data);
+        // Also update the cached data
+        if (dataCache.network) dataCache.network.local = data;
+        break;
+      }
+
+      // Continuous: accumulate stats
+      accum = _accumPing(accum, data);
+      _renderPingCards(accum);
+      if (dataCache.network) dataCache.network.local = accum;
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") console.error("Local ping error:", e);
+  }
+
+  _localPingState.running = false;
+  _localPingState.continuous = false;
+  _localPingState.abortCtrl = null;
+  _updatePingControls();
+}
+
+function _accumPing(prev, batch) {
+  function merge(old, cur) {
+    if (!cur || !cur.target) return old;
+    if (!old || !old.target) return cur;
+    var sent = (old.sent || 0) + (cur.sent || 0);
+    var recv = (old.received || 0) + (cur.received || 0);
+    var minMs = (old.minMs != null && cur.minMs != null) ? Math.min(old.minMs, cur.minMs) : (cur.minMs != null ? cur.minMs : old.minMs);
+    var maxMs = (old.maxMs != null && cur.maxMs != null) ? Math.max(old.maxMs, cur.maxMs) : (cur.maxMs != null ? cur.maxMs : old.maxMs);
+    // Weighted average
+    var avgMs = null;
+    if (old.avgMs != null && cur.avgMs != null && old.received && cur.received) {
+      avgMs = Math.round(((old.avgMs * old.received) + (cur.avgMs * cur.received)) / recv);
+    } else if (cur.avgMs != null) { avgMs = cur.avgMs; }
+    else { avgMs = old.avgMs; }
+    var loss = sent > 0 ? Math.round(((sent - recv) / sent) * 100) : 100;
+    var status = recv === 0 ? "fail" : loss > 0 || (avgMs != null && avgMs > 50) ? "warn" : "pass";
+    return { target: cur.target, label: cur.label, reachable: recv > 0, sent: sent, received: recv,
+             lossPercent: loss, minMs: minMs, avgMs: avgMs, maxMs: maxMs, status: status };
+  }
+  return { gateway: merge(prev.gateway, batch.gateway), dns: merge(prev.dns, batch.dns) };
+}
+
+function stopLocalPing() {
+  _localPingState.running = false;
+  _localPingState.continuous = false;
+  if (_localPingState.abortCtrl) {
+    _localPingState.abortCtrl.abort();
+    _localPingState.abortCtrl = null;
+  }
+  _updatePingControls();
+}
+
+function _updatePingControls() {
+  var bar = document.getElementById("net-ping-controls");
+  if (!bar) return;
+  var btns = bar.querySelectorAll("button");
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].disabled = _localPingState.running && !btns[i].classList.contains("net-ping-stop");
+  }
+  var stopBtn = document.getElementById("net-ping-stop-btn");
+  if (stopBtn) stopBtn.style.display = _localPingState.running ? "inline-flex" : "none";
+  var spinner = document.getElementById("net-ping-spinner");
+  if (spinner) spinner.style.display = _localPingState.running ? "inline-flex" : "none";
+}
+
+// Advanced diagnostics toggle
+function _toggleAdvNet() {
+  var sec = document.getElementById("net-adv-section");
+  var arrow = document.getElementById("net-adv-arrow");
+  var hint = document.getElementById("net-adv-hint");
+  if (!sec) return;
+  var open = sec.classList.toggle("net-adv-collapsed");
+  if (arrow) arrow.classList.toggle("net-adv-arrow-open", !open);
+  if (hint) hint.textContent = open ? "Click to expand" : "Click to collapse";
+}
+
+// Traceroute runner
+var _traceState = { running: false };
+async function _runTraceroute(target) {
+  if (_traceState.running) return;
+  _traceState.running = true;
+  var out = document.getElementById("net-trace-results");
+  var btn = document.getElementById("net-trace-btn");
+  if (btn) btn.disabled = true;
+  if (out) out.innerHTML = '<p class="text-pulse-muted text-sm loading-pulse">Running traceroute to ' + esc(target) + '…</p>';
+
+  try {
+    var resp = await fetch("/api/network/traceroute?target=" + encodeURIComponent(target));
+    var data = await resp.json();
+    if (data.error) {
+      if (out) out.innerHTML = '<p class="text-sm status-fail">' + esc(data.message) + '</p>';
+    } else {
+      _renderTraceroute(out, data);
+    }
+  } catch (e) {
+    if (out) out.innerHTML = '<p class="text-sm status-fail">Traceroute failed: ' + esc(String(e)) + '</p>';
+  }
+  _traceState.running = false;
+  if (btn) btn.disabled = false;
+}
+
+function _renderTraceroute(el, d) {
+  var hops = d.hops || [];
+  var reachedCls = d.reached ? "status-pass" : "status-fail";
+  var reachedLabel = d.reached ? "Reached" : "Not reached";
+  el.innerHTML =
+    '<div class="net-trace-summary">' +
+      '<span class="text-sm text-pulse-muted">Target: <span class="font-mono text-white">' + esc(d.target) + '</span></span>' +
+      '<span class="text-sm text-pulse-muted">IP: <span class="font-mono text-white">' + esc(d.targetIp || "—") + '</span></span>' +
+      '<span class="text-sm ' + reachedCls + '">' + esc(reachedLabel) + ' in ' + esc(String(d.hopCount || 0)) + ' hops</span>' +
+    '</div>' +
+    '<table class="data-table net-trace-table"><thead><tr>' +
+      '<th>#</th><th>IP Address</th><th>Hostname</th><th>RTT</th><th>Status</th>' +
+    '</tr></thead><tbody>' +
+    hops.map(function(h) {
+      var sc = h.status === "reached" ? "status-pass" : h.status === "transit" ? "" : h.status === "timeout" ? "text-pulse-muted" : "status-fail";
+      var rtt = h.rttMs != null ? h.rttMs + " ms" : "—";
+      var statusLabel = h.status === "reached" ? "Reached" : h.status === "transit" ? "OK" : h.status === "timeout" ? "* * *" : esc(h.status);
+      return '<tr class="' + sc + '">' +
+        '<td>' + esc(String(h.hop)) + '</td>' +
+        '<td class="font-mono">' + esc(h.ip || "* * *") + '</td>' +
+        '<td class="text-pulse-muted">' + esc(h.hostname || "") + '</td>' +
+        '<td class="font-mono">' + esc(rtt) + '</td>' +
+        '<td>' + esc(statusLabel) + '</td>' +
+      '</tr>';
+    }).join("") +
+    '</tbody></table>';
+}
+
+// Speed Test — fetch and display Speedtest.net result
+async function _fetchSpeedtest() {
+  var input = document.getElementById("net-speed-input");
+  var out = document.getElementById("net-speed-results");
+  var btn = document.getElementById("net-speed-fetch-btn");
+  if (!input || !out) return;
+  var val = input.value.trim();
+  if (!val) { out.innerHTML = '<p class="text-sm status-fail">Please paste a Speedtest result URL or ID.</p>'; return; }
+
+  btn.disabled = true;
+  out.innerHTML = '<p class="text-pulse-muted text-sm loading-pulse">Fetching result…</p>';
+
+  try {
+    var resp = await fetch("/api/network/speedtest?result_id=" + encodeURIComponent(val));
+    var data = await resp.json();
+    if (data.error) {
+      out.innerHTML = '<p class="text-sm status-fail">' + esc(data.message) + '</p>';
+      btn.disabled = false;
+      return;
+    }
+    _renderSpeedResult(out, data);
+  } catch (e) {
+    out.innerHTML = '<p class="text-sm status-fail">Request failed: ' + esc(String(e)) + '</p>';
+  }
+  btn.disabled = false;
+}
+
+function _renderSpeedResult(el, d) {
+  var dlOk = d.download != null && d.download >= 10;
+  var ulOk = d.upload != null && d.upload >= 10;
+  var dlCls = d.download == null ? "" : dlOk ? "net-speed-ok" : "net-speed-bad";
+  var ulCls = d.upload == null ? "" : ulOk ? "net-speed-ok" : "net-speed-bad";
+
+  var findings = [];
+  if (d.download != null && d.download < 10)
+    findings.push("Download speed (" + d.download + " Mbps) is below the 10 Mbps minimum for Pixellot streaming.");
+  if (d.upload != null && d.upload < 10)
+    findings.push("Upload speed (" + d.upload + " Mbps) is below the 10 Mbps minimum for Pixellot streaming.");
+  if (d.ping != null && d.ping > 50)
+    findings.push("Ping (" + d.ping + " ms) is elevated — may cause stream buffering.");
+
+  el.innerHTML =
+    '<div class="net-speed-cards">' +
+      '<div class="net-speed-card">' +
+        '<div class="net-speed-card-label">DOWNLOAD</div>' +
+        '<div class="net-speed-card-val ' + dlCls + '">' + (d.download != null ? d.download : "—") + '</div>' +
+        '<div class="net-speed-card-unit">Mbps</div>' +
+      '</div>' +
+      '<div class="net-speed-card">' +
+        '<div class="net-speed-card-label">UPLOAD</div>' +
+        '<div class="net-speed-card-val ' + ulCls + '">' + (d.upload != null ? d.upload : "—") + '</div>' +
+        '<div class="net-speed-card-unit">Mbps</div>' +
+      '</div>' +
+      '<div class="net-speed-card">' +
+        '<div class="net-speed-card-label">PING</div>' +
+        '<div class="net-speed-card-val">' + (d.ping != null ? d.ping : "—") + '</div>' +
+        '<div class="net-speed-card-unit">ms</div>' +
+      '</div>' +
+      (d.jitter != null ? '<div class="net-speed-card">' +
+        '<div class="net-speed-card-label">JITTER</div>' +
+        '<div class="net-speed-card-val">' + d.jitter + '</div>' +
+        '<div class="net-speed-card-unit">ms</div>' +
+      '</div>' : '') +
+    '</div>' +
+    (d.isp || d.server ? '<div class="net-speed-meta">' +
+      (d.isp ? '<span>ISP: ' + esc(d.isp) + '</span>' : '') +
+      (d.server ? '<span>Server: ' + esc(d.server) + '</span>' : '') +
+      '<a href="' + esc(d.url) + '" target="_blank" rel="noopener" class="text-xs" style="color:#3b82f6">View full result ↗</a>' +
+    '</div>' : '') +
+    (findings.length ? '<div class="net-speed-findings">' +
+      findings.map(function(f) {
+        return '<div class="net-speed-finding">' + svgIcon("triangle", 14) + ' <span>' + esc(f) + '</span></div>';
+      }).join('') +
+    '</div>' : '<div class="net-speed-ok-msg">' + svgIcon("check", 14) + ' Bandwidth meets Pixellot minimum requirements (≥ 10 Mbps up/down)</div>');
+}
+
+// ── Live Network Health (WebSocket-driven) ──────────────────
+function _renderLiveNetHealth(h) {
+  var el = document.getElementById("net-live-body");
+  if (!el) return;
+  var tcp = h.tcp || {};
+  var conns = h.connections || [];
+
+  // Retransmission gauge color
+  var retrans = tcp.retransmitsSec || 0;
+  var retCls = retrans > 10 ? "status-fail" : retrans > 2 ? "status-warn" : "status-pass";
+
+  el.innerHTML =
+    '<div class="net-live-gauges">' +
+      _liveGauge("Retransmits/s", retrans, retCls) +
+      _liveGauge("Established", tcp.established || 0, "") +
+      _liveGauge("Failures", tcp.connFailures || 0, (tcp.connFailures || 0) > 0 ? "status-warn" : "") +
+      _liveGauge("Resets", tcp.connResets || 0, (tcp.connResets || 0) > 0 ? "status-warn" : "") +
+      _liveGauge("Segs Out/s", tcp.segsOutSec || 0, "") +
+      _liveGauge("Segs In/s", tcp.segsInSec || 0, "") +
+    '</div>' +
+    (conns.length ? '<div class="net-live-conns">' +
+      '<div class="net-live-conns-title">Active Connections (' + conns.length + ')</div>' +
+      '<table class="data-table"><thead><tr>' +
+        '<th>Remote Address</th><th>Port</th><th>Local Port</th><th>State</th>' +
+      '</tr></thead><tbody>' +
+      conns.map(function(c) {
+        var stCls = c.state === "Established" ? "status-pass" : c.state === "TimeWait" ? "text-pulse-muted" : "status-warn";
+        return '<tr>' +
+          '<td class="font-mono text-xs">' + esc(c.remoteAddr) + '</td>' +
+          '<td class="font-mono">' + esc(String(c.remotePort)) + '</td>' +
+          '<td class="font-mono text-xs text-pulse-muted">' + esc(String(c.localPort || "")) + '</td>' +
+          '<td class="' + stCls + '">' + esc(c.state) + '</td>' +
+        '</tr>';
+      }).join("") +
+      '</tbody></table>' +
+    '</div>' : '');
+}
+
+function _liveGauge(label, val, cls) {
+  return '<div class="net-live-gauge">' +
+    '<div class="net-live-gauge-val ' + (cls || '') + '">' + esc(String(val)) + '</div>' +
+    '<div class="net-live-gauge-label">' + esc(label) + '</div>' +
+  '</div>';
+}
+
+// ── Network Capture (on-demand pktmon) ──────────────────────
+var _captureState = { running: false };
+
+async function _runCapture(duration) {
+  if (_captureState.running) return;
+  _captureState.running = true;
+  var btn = document.getElementById("net-capture-btn");
+  var out = document.getElementById("net-capture-results");
+  if (btn) { btn.disabled = true; btn.innerHTML = svgIcon("refresh", 14) + ' Capturing ' + duration + 's…'; }
+  if (out) out.innerHTML = '<p class="text-pulse-muted text-sm loading-pulse">Running ' + duration + 's packet capture — analyzing TCP headers on ports 443, 1935, 80, UDP 2088…</p>';
+
+  try {
+    var resp = await fetch("/api/network/capture?duration=" + duration);
+    var data = await resp.json();
+    if (data.error) {
+      if (out) out.innerHTML = '<p class="text-sm status-fail">' + esc(data.message) + '</p>';
+    } else {
+      _renderCapture(out, data);
+    }
+  } catch (e) {
+    if (out) out.innerHTML = '<p class="text-sm status-fail">Capture failed: ' + esc(String(e)) + '</p>';
+  }
+  _captureState.running = false;
+  if (btn) { btn.disabled = false; btn.innerHTML = svgIcon("activity", 14) + ' Capture 30s'; }
+}
+
+function _renderCapture(el, d) {
+  var findings = d.findings || [];
+  var topTalkers = d.topTalkers || [];
+
+  el.innerHTML =
+    // Summary stats
+    '<div class="net-cap-summary">' +
+      '<div class="net-cap-stat"><span class="net-cap-stat-val">' + esc(String(d.totalPackets || 0)) + '</span><span class="net-cap-stat-label">Packets</span></div>' +
+      '<div class="net-cap-stat"><span class="net-cap-stat-val ' + ((d.tcpRetransmits || 0) > 0 ? 'status-warn' : '') + '">' + esc(String(d.tcpRetransmits || 0)) + '</span><span class="net-cap-stat-label">Retransmits</span></div>' +
+      '<div class="net-cap-stat"><span class="net-cap-stat-val ' + ((d.tcpResets || 0) > 0 ? 'status-warn' : '') + '">' + esc(String(d.tcpResets || 0)) + '</span><span class="net-cap-stat-label">Resets</span></div>' +
+      '<div class="net-cap-stat"><span class="net-cap-stat-val ' + ((d.droppedPackets || 0) > 0 ? 'status-fail' : '') + '">' + esc(String(d.droppedPackets || 0)) + '</span><span class="net-cap-stat-label">Drops</span></div>' +
+      '<div class="net-cap-stat"><span class="net-cap-stat-val">' + esc(String(d.tcpSyns || 0)) + '</span><span class="net-cap-stat-label">SYN</span></div>' +
+      '<div class="net-cap-stat"><span class="net-cap-stat-val">' + esc(String(d.tcpFins || 0)) + '</span><span class="net-cap-stat-label">FIN</span></div>' +
+    '</div>' +
+    // Findings
+    (findings.length ? '<div class="net-cap-findings">' +
+      findings.map(function(f) {
+        var cls = f.severity === "critical" ? "net-rec-critical" : f.severity === "warning" ? "net-rec-warn" : f.severity === "pass" ? "net-cap-pass" : "net-rec-info";
+        var icon = f.severity === "pass" ? svgIcon("check", 14) : svgIcon("triangle", 14);
+        return '<div class="net-cap-finding ' + cls + '">' + icon + ' <strong>' + esc(f.title) + '</strong> — ' + esc(f.body) + '</div>';
+      }).join("") +
+    '</div>' : '') +
+    // Top talkers
+    (topTalkers.length ? '<div class="net-cap-talkers">' +
+      '<div class="net-cap-talkers-title">Top Endpoints by Packet Count</div>' +
+      '<table class="data-table"><thead><tr>' +
+        '<th>Host</th><th>Address</th><th>Port</th><th>Packets</th>' +
+      '</tr></thead><tbody>' +
+      topTalkers.map(function(t) {
+        return '<tr>' +
+          '<td>' + esc(t.remoteHost || "—") + '</td>' +
+          '<td class="font-mono text-xs">' + esc(t.remoteAddr) + '</td>' +
+          '<td class="font-mono">' + esc(String(t.remotePort)) + '</td>' +
+          '<td class="font-mono">' + esc(String(t.packets)) + '</td>' +
+        '</tr>';
+      }).join("") +
+      '</tbody></table>' +
+    '</div>' : '');
+}
+
+function _prefixToMask(prefix) {
+  if (prefix == null) return null;
+  var n = parseInt(prefix, 10);
+  if (isNaN(n) || n < 0 || n > 32) return null;
+  var mask = n === 0 ? 0 : (0xFFFFFFFF << (32 - n)) >>> 0;
+  return [24, 16, 8, 0].map(function(s) { return (mask >>> s) & 0xFF; }).join(".");
+}
+
+function _buildNetIssues(cfg, ports, domains, local) {
+  var issues = [];
+  var gw = (local || {}).gateway;
+  var dns = (local || {}).dns;
+
+  // ── Critical: Gateway ────────────────────────────────────
+  if (gw && !gw.reachable)
+    issues.push({ severity: "critical", title: "Gateway unreachable (" + gw.target + ")",
+      body: "Verify the uplink Ethernet cable is seated, the switch port is active, and the VLAN is correct. No traffic will leave the VPU until this is resolved." });
+  else if (gw && gw.reachable && (gw.lossPercent > 0 || (gw.avgMs != null && gw.avgMs > 50)))
+    issues.push({ severity: "warning", title: "Unstable gateway — " + (gw.avgMs || "?") + " ms latency, " + (gw.lossPercent || 0) + "% loss",
+      body: "Try a different switch port, replace the Ethernet cable, or check for broadcast storms on the venue network." });
+
+  // ── Warning/Info: DNS server ─────────────────────────────
+  if (dns && !dns.reachable)
+    issues.push({ severity: "warning", title: "DNS server unreachable (" + dns.target + ")",
+      body: "Domain resolution will fail. Check DNS server address in adapter settings or try a public DNS (8.8.8.8, 1.1.1.1)." });
+  else if (dns && dns.reachable) {
+    if (dns.lossPercent > 0)
+      issues.push({ severity: "warning", title: "DNS packet loss: " + dns.lossPercent + "% to " + dns.target,
+        body: "Resolution may be unreliable. Check cable or try a different DNS server." });
+    if (dns.avgMs != null && dns.avgMs > 100)
+      issues.push({ severity: "info", title: "High DNS latency: " + dns.avgMs + " ms to " + dns.target,
+        body: "Consider switching to a closer DNS server (8.8.8.8 or 1.1.1.1)." });
+  }
+
+  // ── Critical: No internet ────────────────────────────────
+  if (!cfg.internetReachable) {
+    issues.push({ severity: "critical", title: "VPU has no internet connection",
+      body: "Verify the uplink cable and the gateway’s WAN status before further triage." });
+    // Sort and return early — no point checking ports/domains
+    issues.sort(function(a, b) { var o = { critical: 0, warning: 1, info: 2 }; return (o[a.severity] || 3) - (o[b.severity] || 3); });
+    return issues;
+  }
+
+  // ── Ports: required failures ─────────────────────────────
+  var reqFailed = (ports || []).filter(function(p) { return !p.optional && (p.status || "").toLowerCase() !== "pass"; });
+  var reqPass = (ports || []).filter(function(p) { return !p.optional && (p.status || "").toLowerCase() === "pass"; });
+  if (reqFailed.length > 0) {
+    var portDetails = reqFailed.map(function(p) {
+      var proto = (p.protocol || "TCP").toUpperCase();
+      if (p.port === 123 && proto === "UDP")
+        return proto + "/" + p.port + " — NTP sync failed. VPU clock will drift, breaking signed-URL streaming.";
+      return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote");
+    });
+    issues.push({ severity: "critical", title: reqFailed.length + " of " + (reqFailed.length + reqPass.length) + " required ports blocked",
+      body: "Ensure these ports are allowed by the venue firewall and VLAN policy.",
+      details: portDetails });
+  }
+
+  // ── Ports: optional failures ─────────────────────────────
+  var optFailed = (ports || []).filter(function(p) { return p.optional && (p.status || "").toLowerCase() !== "pass"; });
+  if (optFailed.length > 0) {
+    var optDetails = optFailed.map(function(p) {
+      var proto = (p.protocol || "TCP").toUpperCase();
+      return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote");
+    });
+    issues.push({ severity: "info", title: optFailed.length + " optional port(s) blocked",
+      body: "These aren’t required at every venue — only act if streaming is failing.",
+      details: optDetails });
+  }
+
+  // ── Domains: failures ────────────────────────────────────
+  var domFailed = (domains || []).filter(function(d) { return (d.status || "").toLowerCase() !== "pass"; });
+  var domTotal = (domains || []).length;
+  if (domFailed.length > 0) {
+    var domDetails = domFailed.map(function(d) {
+      return d.domain + " — ensure it is whitelisted (firewall, DNS allow-list, SSL inspection bypass)";
+    });
+    issues.push({ severity: "warning", title: domFailed.length + " of " + domTotal + " domains failed DNS resolution",
+      body: "Check DNS server settings on this adapter.",
+      details: domDetails });
+  }
+
+  // ── Domains: slow resolution ─────────────────────────────
+  var slowDns = (domains || []).filter(function(d) { return d.resolutionMs != null && d.resolutionMs > 500 && (d.status || "").toLowerCase() === "pass"; });
+  if (slowDns.length > 0) {
+    var slowDetails = slowDns.map(function(d) { return d.domain + " — " + d.resolutionMs + " ms"; });
+    issues.push({ severity: "info", title: slowDns.length + " domain(s) resolved slowly (>500 ms)",
+      body: "Slow DNS can delay connections. Consider switching to a faster DNS server.",
+      details: slowDetails });
+  }
+
+  // ── Adapter: half-duplex ─────────────────────────────────
+  var uStats = cfg.uplinkStats || {};
+  if (uStats.fullDuplex === false)
+    issues.push({ severity: "warning", title: "Uplink adapter running in half-duplex",
+      body: "Set both the VPU NIC and the switch port to auto-negotiate, or hard-set both to 1 Gbps full-duplex." });
+
+  // ── Adapter: interface errors ────────────────────────────
+  var ifaceErrors = (uStats.rxErrors || 0) + (uStats.txErrors || 0);
+  if (ifaceErrors > 0)
+    issues.push({ severity: "warning", title: ifaceErrors + " interface error(s) on uplink adapter",
+      body: "RX errors: " + (uStats.rxPacketErrors || 0) + ", RX discards: " + (uStats.rxDiscards || 0) +
+            ", TX errors: " + (uStats.txPacketErrors || 0) + ", TX discards: " + (uStats.txDiscards || 0) +
+            ". Try replacing the cable, switching ports, or updating the NIC driver." });
+
+  // Sort by severity: critical → warning → info
+  issues.sort(function(a, b) { var o = { critical: 0, warning: 1, info: 2 }; return (o[a.severity] || 3) - (o[b.severity] || 3); });
+  return issues;
+}
+
 function renderNetwork() {
   const data = cached("network");
   if (!data) { $page().innerHTML = sectionLoading("Network"); fetchSection("network"); return; }
@@ -995,15 +1639,46 @@ function renderNetwork() {
   const domains = data.domains?.results || [];
   const ports = data.ports?.results || [];
   const ntp = data.ntp || {};
+  const local = data.local || {};
   const ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
 
-  const tcpPorts = ports.filter(p => (p.protocol || "").toUpperCase() === "TCP");
-  const udpPorts = ports.filter(p => (p.protocol || "").toUpperCase() === "UDP");
-  const otherPorts = ports.filter(p => !["TCP","UDP"].includes((p.protocol || "").toUpperCase()));
+  const issues = _buildNetIssues(cfg, ports, domains, local);
+
+  const hasCrit = issues.some(function(f) { return f.severity === "critical"; });
+  const hasWarn = issues.some(function(f) { return f.severity === "warning"; });
+  const sevClass = hasCrit ? "critical" : hasWarn ? "warn" : "ok";
+  const sevLabel = hasCrit ? "Fail" : hasWarn ? "Warning" : "Pass";
+  const statusChip = `<span class="dash-sev-pill dash-sev-${sevClass}"><span class="dash-sev-dot"></span> ${sevLabel}</span>`;
+
+  // Primary adapter — join uplinkAdapter with adapters[] and ipConfig[]
+  const uplinkName = cfg.uplinkAdapter?.interfaceAlias;
+  const uplinkAdapterRow = uplinkName
+    ? (cfg.adapters || []).find(function(a) { return a.name === uplinkName; }) || null
+    : null;
+  const uplinkIpCfg = uplinkName
+    ? ipConfigs.find(function(ip) { return ip.interfaceAlias === uplinkName; }) || null
+    : null;
+  const adapterLinkState = uplinkAdapterRow
+    ? ((uplinkAdapterRow.status || "").toLowerCase() === "up" ? "Up" : uplinkAdapterRow.status || "Unknown")
+    : "—";
+  const adapterIp = _first(uplinkIpCfg?.ipv4Address) || "—";
+  const subnetMask = uplinkIpCfg ? _prefixToMask(uplinkIpCfg.prefixLength) : null;
+  const dhcpLabel = uplinkIpCfg?.dhcpEnabled === true ? "DHCP" : uplinkIpCfg?.dhcpEnabled === false ? "Static" : "—";
+  const dnsStr = uplinkIpCfg?.dnsServers
+    ? String(uplinkIpCfg.dnsServers).split(",").map(function(s) { return s.trim(); }).filter(Boolean).join(", ")
+    : "—";
+
+  // Uplink adapter stats (duplex, error counters)
+  const uplinkStats = cfg.uplinkStats || {};
+  const duplexLabel = uplinkStats.fullDuplex === true ? "Full Duplex" : uplinkStats.fullDuplex === false ? "Half Duplex" : null;
+  const totalErrors = (uplinkStats.rxErrors || 0) + (uplinkStats.txErrors || 0);
+
+  const tcpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "TCP"; });
+  const udpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "UDP"; });
 
   function portCard(p) {
-    const ok = (p.status || "").toLowerCase() === "pass" || (p.status || "").toLowerCase() === "ok";
-    const cls = ok ? "port-card-pass" : "port-card-fail";
+    const ok = (p.status || "").toLowerCase() === "pass";
+    const cls = ok ? "port-card-pass" : (p.optional ? "port-card-warn" : "port-card-fail");
     return `<div class="port-card ${cls}">
       <div class="port-card-num">${esc(String(p.port))}</div>
       <div class="port-card-name">${esc(p.purpose)}</div>
@@ -1012,72 +1687,160 @@ function renderNetwork() {
     </div>`;
   }
 
+  const issuesPanel = issues.length ? `
+    <div class="card">
+      <div class="af-header">
+        ${svgIcon("triangle", 16)}
+        <span class="af-label">ISSUES & RECOMMENDATIONS</span>
+        <span class="af-count-badge">${issues.length} item${issues.length !== 1 ? "s" : ""}</span>
+      </div>
+      <div class="net-issues-list">
+        ${issues.map(function(item) {
+          var sc = item.severity === "critical" ? "sev-chip-crit" : item.severity === "warning" ? "sev-chip-warn" : "sev-chip-ok";
+          var borderCls = item.severity === "critical" ? "net-issue-critical" : item.severity === "warning" ? "net-issue-warn" : "net-issue-info";
+          var detailsHtml = "";
+          if (item.details && item.details.length) {
+            detailsHtml = '<ul class="net-issue-details">' +
+              item.details.map(function(d) { return '<li>' + esc(d) + '</li>'; }).join("") +
+            '</ul>';
+          }
+          return '<div class="net-issue-row ' + borderCls + '">' +
+            '<span class="sev-chip ' + sc + '">' + esc(item.severity.toUpperCase()) + '</span>' +
+            '<div class="net-issue-text">' +
+              '<div class="net-issue-title">' + esc(item.title) + '</div>' +
+              '<div class="net-issue-body">' + esc(item.body) + '</div>' +
+              detailsHtml +
+            '</div>' +
+          '</div>';
+        }).join("")}
+      </div>
+    </div>` : "";
+
   $page().innerHTML = `
-    ${pageHeader("Network", "Port connectivity, IP configuration, DNS resolution, and NTP drift",
-      `<button class="btn-outline btn-ol-blue" onclick="dataCache.network=null;renderNetwork()">
-        ${svgIcon("refresh", 14)} Refresh
+    ${pageHeader("Network", "Adapters, IP, NTP, and reachability — what the box can talk to right now",
+      statusChip + `<button class="btn-outline btn-ol-blue" onclick="dataCache.network=null;renderNetwork()">
+        ${svgIcon("activity", 14)} Run Test
       </button>`
     )}
+
+    ${issuesPanel}
 
     <!-- Port Connectivity -->
     <div class="card">
       ${sectionTitle("link", "Port Connectivity")}
-      ${tcpPorts.length ? `
-        <div class="port-section-label">TCP</div>
-        <div class="port-grid">${tcpPorts.map(portCard).join("")}</div>
-      ` : ""}
-      ${udpPorts.length ? `
-        <div class="port-section-label mt-4">UDP</div>
-        <div class="port-grid">${udpPorts.map(portCard).join("")}</div>
-      ` : ""}
-      ${otherPorts.length ? `
-        <div class="port-section-label mt-4">OTHER</div>
-        <div class="port-grid">${otherPorts.map(portCard).join("")}</div>
-      ` : ""}
-      ${!ports.length ? '<p class="text-pulse-muted text-sm">No port test results</p>' : ""}
+      <div class="net-port-cols">
+        <div class="net-sub-card">
+          <div class="net-sub-heading">TCP ports <span class="net-proto-badge net-proto-tcp">TCP</span></div>
+          ${tcpPorts.length
+            ? `<div class="port-grid">${tcpPorts.map(portCard).join("")}</div>`
+            : '<p class="text-pulse-muted text-sm mt-2">No TCP port results</p>'}
+        </div>
+        <div class="net-sub-card">
+          <div class="net-sub-heading">UDP ports <span class="net-proto-badge net-proto-udp">UDP</span></div>
+          ${udpPorts.length
+            ? `<div class="port-grid">${udpPorts.map(portCard).join("")}</div>`
+            : '<p class="text-pulse-muted text-sm mt-2">No UDP port results</p>'}
+        </div>
+      </div>
     </div>
 
-    <!-- Internet + IP Config / Domain Resolution -->
-    <div class="dash-2col">
+    <!-- Local Network Health -->
+    <div class="card">
+      <div class="net-ping-toolbar">
+        ${sectionTitle("activity", "Local Network Health")}
+        <div id="net-ping-controls" class="net-ping-btns">
+          <span id="net-ping-spinner" class="net-ping-spin" style="display:none">${svgIcon("refresh", 14)}</span>
+          <button class="net-ping-preset${!local.gateway && !local.dns ? " net-ping-preset-active" : ""}" onclick="runLocalPing(4)">4</button>
+          <button class="net-ping-preset" onclick="runLocalPing(10)">10</button>
+          <button class="net-ping-preset" onclick="runLocalPing(20)">20</button>
+          <button class="net-ping-preset" onclick="runLocalPing(50)">50</button>
+          <button class="net-ping-preset net-ping-cont" onclick="runLocalPing(0)">Continuous</button>
+          <button id="net-ping-stop-btn" class="net-ping-stop btn-outline btn-ol-blue" style="display:none" onclick="stopLocalPing()">
+            ${svgIcon("square", 12)} Stop
+          </button>
+        </div>
+      </div>
+      <div id="net-ping-results" class="net-ping-grid">
+        ${local && local.error
+          ? '<p class="text-sm status-fail">Local network test failed: ' + esc(local.message || 'unknown error') + '</p>'
+          : (local.gateway || local.dns)
+            ? _pingCardHtml(local.gateway) + _pingCardHtml(local.dns)
+            : '<p class="text-pulse-muted text-sm mt-2">Select a ping count above to test local network health.</p>'}
+      </div>
+    </div>
+
+    <!-- Internet Adapter + IP Config | Domain Reachability -->
+    <div class="net-bottom-grid">
       <div class="card">
-        ${sectionTitle("globe", "Internet & Adapter")}
+        ${sectionTitle("globe", "Internet Adapter & IP Configuration")}
+        ${uplinkAdapterRow ? `
+          <div class="font-semibold text-white mb-1">${esc(uplinkAdapterRow.name)}</div>
+          <div class="text-pulse-muted text-xs mb-3">${esc(uplinkAdapterRow.interfaceDescription || "")}</div>` : `
+          <p class="text-pulse-muted text-sm mb-3">No internet-bound adapter detected.</p>`}
         <div class="kv-grid">
+          ${kvRow("IP address", adapterIp)}
+          ${kvRow("Subnet mask", subnetMask || "—")}
+          ${kvRow("Assignment", dhcpLabel)}
+          ${kvRow("Gateway", cfg.uplinkAdapter?.gateway || "—")}
+          ${kvRow("DNS", dnsStr)}
+          ${kvRow("MAC address", uplinkAdapterRow?.macAddress || "—")}
+          ${kvRowHtml("Link state", uplinkAdapterRow
+            ? `<span style="color:${adapterLinkState === "Up" ? "#22c55e" : "#94a3b8"};font-weight:600">${esc(adapterLinkState)}</span>`
+            : "—")}
+          ${kvRow("Link speed", uplinkAdapterRow?.linkSpeed || "—")}
+          ${duplexLabel ? kvRowHtml("Duplex", duplexLabel === "Half Duplex"
+            ? '<span class="status-warn" style="font-weight:600">Half Duplex</span>'
+            : '<span style="color:#22c55e;font-weight:600">Full Duplex</span>') : ""}
           ${kvRowHtml("Internet", cfg.internetReachable
             ? '<span class="status-pass">Reachable</span>'
             : '<span class="status-fail">Unreachable</span>')}
-          ${kvRow("Tested Host", cfg.testedHost)}
-          ${kvRow("Uplink Adapter", cfg.uplinkAdapter?.interfaceAlias)}
-          ${kvRow("Gateway", cfg.uplinkAdapter?.gateway)}
-          ${kvRow("NTP Source", cfg.ntpSource)}
-          ${kvRowHtml("NTP Status", ntp.status ? statusBadge(ntp.status) : "—")}
-          ${kvRow("NTP Drift", ntp.offsetSeconds != null ? ntp.offsetSeconds + "s" : "N/A")}
+          ${kvRow("Tested host", cfg.testedHost || "—")}
+          ${kvRow("NTP server", cfg.ntpSource || ntp.source || "—")}
+          ${kvRowHtml("NTP status", (function() {
+            var s = (ntp.status || "").toLowerCase();
+            if (s === "ok") return '<span class="status-pass" style="font-weight:600">OK</span>';
+            if (s === "warn") return '<span class="status-warn" style="font-weight:600">OK</span>';
+            if (!ntp.status) return "—";
+            return '<span class="status-fail" style="font-weight:600">ERROR</span>';
+          })())}
         </div>
-
-        ${ipConfigs.length ? `
-          <div class="section-divider"></div>
-          <div class="subsection-label">IP CONFIGURATION</div>
-          <table class="data-table"><thead><tr>
-            <th>Interface</th><th>IPv4</th><th>Gateway</th><th>DNS</th>
-          </tr></thead><tbody>
-          ${ipConfigs.map(ip => `<tr>
-            <td>${esc(ip.interfaceAlias)}</td>
-            <td class="font-mono text-xs">${(ip.ipv4Address || []).map(esc).join(", ") || "—"}</td>
-            <td class="font-mono text-xs">${(ip.ipv4DefaultGateway || []).map(esc).join(", ") || "—"}</td>
-            <td class="font-mono text-xs">${(ip.dnsServers || []).flat().map(esc).join(", ") || "—"}</td>
-          </tr>`).join("")}
-          </tbody></table>
-        ` : ""}
+        ${totalErrors > 0 || (uplinkStats.rxBytes != null) ? `
+          <div class="net-iface-stats">
+            <div class="net-iface-stats-title">${svgIcon("activity", 12)} Interface Counters</div>
+            <div class="net-iface-stats-grid">
+              <div class="net-iface-stat">
+                <span class="net-iface-stat-label">RX Errors</span>
+                <span class="net-iface-stat-val ${uplinkStats.rxPacketErrors > 0 ? 'status-warn' : ''}">${uplinkStats.rxPacketErrors || 0}</span>
+              </div>
+              <div class="net-iface-stat">
+                <span class="net-iface-stat-label">RX Discards</span>
+                <span class="net-iface-stat-val ${uplinkStats.rxDiscards > 0 ? 'status-warn' : ''}">${uplinkStats.rxDiscards || 0}</span>
+              </div>
+              <div class="net-iface-stat">
+                <span class="net-iface-stat-label">TX Errors</span>
+                <span class="net-iface-stat-val ${uplinkStats.txPacketErrors > 0 ? 'status-warn' : ''}">${uplinkStats.txPacketErrors || 0}</span>
+              </div>
+              <div class="net-iface-stat">
+                <span class="net-iface-stat-label">TX Discards</span>
+                <span class="net-iface-stat-val ${uplinkStats.txDiscards > 0 ? 'status-warn' : ''}">${uplinkStats.txDiscards || 0}</span>
+              </div>
+            </div>
+            ${totalErrors > 0 ? '<div class="net-iface-stats-warn">' + svgIcon("triangle", 12) + ' Interface errors detected — check cable, switch port, or NIC driver.</div>' : ''}
+          </div>` : ""}
       </div>
       <div class="card">
         ${sectionTitle("wifi", "Domain Reachability")}
         ${domains.length ? `
           <div class="domain-list">
-            ${domains.map(d => {
-              const ok = (d.status || "").toLowerCase() === "pass" || (d.status || "").toLowerCase() === "ok";
+            ${domains.map(function(d) {
+              const ok = (d.status || "").toLowerCase() === "pass";
+              var dnsTime = d.resolutionMs != null ? d.resolutionMs + " ms" : "";
+              var dnsSlow = d.resolutionMs != null && d.resolutionMs > 200;
               return `<div class="domain-row">
                 <span class="domain-dot" style="background:${ok ? "#22c55e" : "#ef4444"}"></span>
                 <span class="domain-name">${esc(d.domain)}</span>
                 <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
+                ${dnsTime ? '<span class="domain-dns-time font-mono' + (dnsSlow ? ' status-warn' : '') + '">' + esc(dnsTime) + '</span>' : ''}
                 ${statusBadge(d.status)}
               </div>`;
             }).join("")}
@@ -1085,10 +1848,329 @@ function renderNetwork() {
         ` : '<p class="text-pulse-muted text-sm">No DNS data</p>'}
       </div>
     </div>
+
+    <!-- Advanced Diagnostics Toggle -->
+    <div class="net-adv-toggle" onclick="_toggleAdvNet()">
+      <div class="net-adv-toggle-inner">
+        <span class="net-adv-toggle-icon" id="net-adv-arrow">${svgIcon("chevron", 14)}</span>
+        <span class="net-adv-toggle-label">Advanced Diagnostics</span>
+        <span class="text-xs text-pulse-muted">Speed test, packet capture, traceroute, live monitoring</span>
+      </div>
+      <span class="net-adv-toggle-hint text-xs text-pulse-muted" id="net-adv-hint">Click to expand</span>
+    </div>
+
+    <!-- Advanced Diagnostics (collapsed by default) -->
+    <div id="net-adv-section" class="net-adv-section net-adv-collapsed">
+
+      <!-- Speed Test -->
+      <div class="card">
+        <div class="net-ping-toolbar">
+          ${sectionTitle("zap", "Speed Test")}
+          <div class="net-ping-btns">
+            <a href="https://www.speedtest.net" target="_blank" rel="noopener" class="btn-outline btn-ol-blue" style="text-decoration:none">
+              ${svgIcon("globe", 14)} Open Speedtest.net
+            </a>
+          </div>
+        </div>
+        <div id="net-speed-ui">
+          <p class="text-pulse-muted text-sm mb-3">Run a test at speedtest.net, then paste the result URL below.</p>
+          <div class="net-speed-input-row">
+            <input id="net-speed-input" type="text" class="net-speed-input" placeholder="https://www.speedtest.net/result/123456789 or result ID">
+            <button id="net-speed-fetch-btn" class="btn-outline btn-ol-blue" onclick="_fetchSpeedtest()">
+              ${svgIcon("refresh", 14)} Fetch Result
+            </button>
+          </div>
+          <div id="net-speed-results"></div>
+        </div>
+      </div>
+
+      <!-- Packet Capture -->
+      <div class="card">
+        <div class="net-ping-toolbar">
+          ${sectionTitle("shield", "Packet Capture")}
+          <div class="net-ping-btns">
+            <button id="net-capture-btn" class="btn-outline btn-ol-blue" onclick="_runCapture(30)">
+              ${svgIcon("activity", 14)} Capture 30s
+            </button>
+          </div>
+        </div>
+        <p class="text-pulse-muted text-sm">Captures TCP packet headers using Windows pktmon (ports 443, 1935, 80, UDP 2088). Analyzes retransmissions, resets, and drops.</p>
+        <div id="net-capture-results"></div>
+      </div>
+
+      <!-- Traceroute -->
+      <div class="card">
+        <div class="net-ping-toolbar">
+          ${sectionTitle("share", "Traceroute")}
+          <div class="net-ping-btns">
+            <input id="net-trace-target" type="text" class="net-trace-input" placeholder="pixellot.tv" value="pixellot.tv">
+            <button id="net-trace-btn" class="btn-outline btn-ol-blue" onclick="_runTraceroute(document.getElementById('net-trace-target').value.trim()||'pixellot.tv')">
+              ${svgIcon("activity", 14)} Run
+            </button>
+          </div>
+        </div>
+        <div id="net-trace-results">
+          <p class="text-pulse-muted text-sm mt-2">Click Run to trace the network path to a target host.</p>
+        </div>
+      </div>
+
+      <!-- Live Network Health (WebSocket-driven) -->
+      <div class="card">
+        <div class="net-ping-toolbar">
+          ${sectionTitle("zap", "Live Network Health")}
+          <div class="net-live-indicator">
+            <span class="net-live-dot"></span> <span class="text-xs text-pulse-muted">Live via WebSocket</span>
+          </div>
+        </div>
+        <div id="net-live-body">
+          <p class="text-pulse-muted text-sm">Waiting for live data…</p>
+        </div>
+      </div>
+
+    </div>
   `;
+
+  // Seed live health panel if we already have WebSocket data
+  if (_liveNetHealth) _renderLiveNetHealth(_liveNetHealth);
 }
 
 // ── Cameras ──────────────────────────────────────────────────
+
+var _camerasRefreshTimer = null;
+
+function _camDetailKv(label, val) {
+  if (!val && val !== 0) return '';
+  return '<div class="kv-mini"><span>' + esc(String(label)) + '</span><span class="font-mono">' + esc(String(val)) + '</span></div>';
+}
+
+function _camStreamBlock(label, s) {
+  if (!s || (!s.codec && !s.resolution && !s.framerate)) return '';
+  var enabled = s.enabled !== undefined ? (s.enabled === "yes" || s.enabled === true) : true;
+  return '<div class="cam-detail-group">' +
+    '<div class="cam-detail-group-title">' + esc(label) +
+      (!enabled ? ' <span class="status-warn">Disabled</span>' : '') +
+    '</div>' +
+    _camDetailKv("Codec", s.codec) +
+    _camDetailKv("Resolution", s.resolution) +
+    _camDetailKv("Framerate", s.framerate ? s.framerate + " fps" : null) +
+  '</div>';
+}
+
+function _camDetailsPanel(cams, portIdx, portData) {
+  if (!cams.length) return '';
+
+  // NIC / adapter section
+  var nicGroup = '';
+  if (portData) {
+    var duplexVal = portData.fullDuplex === true ? "Full" : portData.fullDuplex === false ? "Half" : "—";
+    var errTotal = (portData.rxErrors || 0) + (portData.txErrors || 0);
+    var errVal = errTotal > 0
+      ? 'RX ' + (portData.rxPacketErrors || 0) + ' / TX ' + (portData.txPacketErrors || 0) + ' / Discards ' + ((portData.rxDiscards || 0) + (portData.txDiscards || 0))
+      : 'None';
+    nicGroup = '<div class="cam-detail-group">' +
+      '<div class="cam-detail-group-title">NIC Adapter</div>' +
+      _camDetailKv("Adapter", portData.name) +
+      _camDetailKv("MAC", portData.mac) +
+      _camDetailKv("Duplex", duplexVal) +
+      _camDetailKv("Errors", errVal) +
+    '</div>';
+  }
+
+  var inner = nicGroup + cams.map(function(c) {
+    var hasCgi = !!c.cgiConfirmed;
+    var net = c.network || {};
+    var sensor = c.sensor || {};
+
+    // Device section — always show MAC/IP; CGI adds model, serial, firmware
+    var deviceRows =
+      _camDetailKv("IP", c.ip) +
+      _camDetailKv("MAC", c.cgiMac || c.mac) +
+      _camDetailKv("Role", c.role) +
+      _camDetailKv("Identity", c.identitySource);
+    if (hasCgi) {
+      deviceRows +=
+        _camDetailKv("Model", c.model) +
+        _camDetailKv("Model No.", c.modelNumber) +
+        _camDetailKv("Serial", c.serialNumber) +
+        _camDetailKv("Firmware", c.firmwareVersion) +
+        _camDetailKv("Brand", c.brand) +
+        _camDetailKv("Type", c.productType);
+    }
+
+    return '<div class="cam-detail-camera">' +
+      '<div class="cam-detail-camera-header">' +
+        svgIcon("camera", 14) + ' ' + esc(c.ip) +
+        (c.modelNumber ? ' <span class="cam-model-label">' + esc(c.modelNumber) + '</span>' : '') +
+        (hasCgi ? ' <span class="cam-cgi-badge">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none">No CGI</span>') +
+      '</div>' +
+
+      // Device info
+      '<div class="cam-detail-group">' +
+        '<div class="cam-detail-group-title">Device</div>' +
+        deviceRows +
+      '</div>' +
+
+      // Network (CGI only)
+      (net.ip || net.subnet || net.gateway ? '<div class="cam-detail-group">' +
+        '<div class="cam-detail-group-title">Network Config</div>' +
+        _camDetailKv("IP Address", net.ip) +
+        _camDetailKv("Subnet", net.subnet) +
+        _camDetailKv("Gateway", net.gateway) +
+        _camDetailKv("DHCP", net.dhcp) +
+      '</div>' : '') +
+
+      // Streams (CGI only)
+      _camStreamBlock("Stream 0 — Primary", c.stream0) +
+      _camStreamBlock("Stream 1 — Secondary", c.stream1) +
+
+      // Sensor (CGI only)
+      (sensor.exposure || sensor.brightness ? '<div class="cam-detail-group">' +
+        '<div class="cam-detail-group-title">Image Sensor</div>' +
+        _camDetailKv("Exposure", sensor.exposure) +
+        _camDetailKv("Brightness", sensor.brightness) +
+        _camDetailKv("Contrast", sensor.contrast) +
+        _camDetailKv("Saturation", sensor.colorLevel) +
+        _camDetailKv("Max Gain", sensor.maxShutterGain) +
+        _camDetailKv("Min Shutter", sensor.minShutterSpeed) +
+      '</div>' : '') +
+    '</div>';
+  }).join('');
+
+  return '<details class="cam-details-toggle" data-port-idx="' + portIdx + '">' +
+    '<summary class="cam-details-btn">' + svgIcon("info", 14) + ' Details</summary>' +
+    '<div class="cam-details-body">' + inner + '</div>' +
+  '</details>';
+}
+
+function _camPortTile(port, index) {
+  if (!port) {
+    return `<div class="cam-port-tile cam-port-empty">
+      <div class="cam-port-num">Port ${index + 1}</div>
+      <div class="cam-port-status">
+        <span class="cam-dot cam-dot-muted"></span>
+        <span class="text-sm text-pulse-muted">Not detected</span>
+      </div>
+    </div>`;
+  }
+  const p = port;
+  const speed = p.linkSpeedMbps
+    ? p.linkSpeedMbps >= 1000 ? (p.linkSpeedMbps / 1000) + " Gbps" : p.linkSpeedMbps + " Mbps"
+    : "No link";
+  let statusLabel, dotCls;
+  if (!p.isUp) { statusLabel = "Down"; dotCls = "cam-dot-down"; }
+  else if (p.isDegraded) { statusLabel = "Degraded · " + speed; dotCls = "cam-dot-warn"; }
+  else { statusLabel = "Linked · " + speed; dotCls = p.isOcr ? "cam-dot-info" : "cam-dot-up"; }
+
+  const cams = p.camerasDetected || [];
+  var camLabel = p.cameraLabel;
+  var isMain = camLabel && camLabel.indexOf("Main") === 0;
+  return `<div class="cam-port-tile ${p.isUp ? "cam-port-active" : "cam-port-down"}">
+    <div class="cam-port-header">
+      <span class="cam-port-num">Port ${index + 1}</span>
+      ${camLabel ? '<span class="badge-ol ' + (p.isOcr ? 'badge-ol-info' : 'badge-ol-main') + '">' + esc(camLabel) + '</span>' : ''}
+      ${p.isDegraded ? '<span class="badge-ol badge-ol-warn">Degraded</span>' : ""}
+    </div>
+    <div class="cam-port-name">${esc(p.name)}</div>
+    <div class="cam-port-status">
+      <span class="cam-dot ${dotCls}"></span>
+      <span class="text-sm">${esc(statusLabel)}</span>
+    </div>
+    <div class="cam-port-detail">
+      <div class="kv-mini"><span>RX / TX</span><span>${formatBytes(p.rxBytes)} / ${formatBytes(p.txBytes)}</span></div>
+    </div>
+    ${cams.length > 0 ? (() => {
+      var c = cams[0];
+      var displayModel = c.modelNumber || (c.model && c.model !== "IP Camera" ? c.model : null);
+      return `<div class="cam-detected">
+        <div class="cam-detected-label">Pixellot camera detected</div>
+        <div class="cam-detected-entry">
+          <span class="font-mono cam-entry-ip">${esc(c.ip)}</span>
+          <span class="font-mono text-pulse-muted cam-entry-mac">${esc(c.mac)}</span>
+          ${displayModel ? '<span class="cam-model-label">' + esc(displayModel) + '</span>' : ''}
+          <span class="cam-entry-source text-pulse-muted">${esc(c.identitySource || '')}</span>
+        </div>
+      </div>
+      ${_camDetailsPanel(cams, index, p)}`;
+    })()
+    : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
+  </div>`;
+}
+
+function _camFindingsHtml(findings) {
+  if (!findings.length) return "";
+  return `<div class="card" id="cam-findings">
+    ${sectionTitle("alert-circle", findings.length + " finding" + (findings.length !== 1 ? "s" : "") + " need attention")}
+    ${findings.map(f => `
+      <div class="cam-finding-row cam-finding-row-${esc(f.severity)}">
+        <div class="cam-finding-header">
+          <span class="cam-finding-pill cam-finding-pill-${esc(f.severity)}">${esc(f.severity.toUpperCase())}</span>
+          <span class="font-semibold text-sm">${esc(f.title)}</span>
+        </div>
+        <div class="cam-finding-body">${esc(f.body)}</div>
+      </div>`).join("")}
+  </div>`;
+}
+
+function _camPortGridHtml(ports) {
+  const portSlots = [];
+  for (let i = 0; i < Math.max(4, ports.length); i++) {
+    portSlots.push(ports[i] || null);
+  }
+  return portSlots.slice().reverse().map((p, ri) => _camPortTile(p, portSlots.length - 1 - ri)).join("");
+}
+
+function _camNicDiagramHtml(ports) {
+  const count = Math.max(4, ports.length);
+  function ledColor(p) {
+    if (!p || !p.isUp) return "nic-led-off";
+    if (p.isDegraded) return "nic-led-warn";
+    if (p.isOcr) return "nic-led-ok";
+    return "nic-led-ok";
+  }
+  function ledDotColor(p) {
+    if (!p || !p.isUp) return "#64748b";
+    if (p.isDegraded) return "#f59e0b";
+    if (p.isOcr) return "#22c55e";
+    return "#22c55e";
+  }
+  // Physical ports: reversed (highest port on left = physical chassis left)
+  var portIcons = "";
+  for (var ri = 0; ri < count; ri++) {
+    var idx = count - 1 - ri;
+    var p = ports[idx] || null;
+    var cls = ledColor(p);
+    portIcons += '<div class="nic-port-icon">' +
+      '<div class="nic-port-body">' +
+        '<div class="nic-port-slots"></div>' +
+        '<div class="nic-port-led ' + cls + '"></div>' +
+      '</div>' +
+      '<div class="nic-port-label">Port ' + (idx + 1) + '</div>' +
+    '</div>';
+  }
+  // Vertical legend on the right
+  var legend = "";
+  for (var li = count - 1; li >= 0; li--) {
+    var lp = ports[li] || null;
+    legend += '<div class="nic-legend-row">' +
+      '<span class="nic-legend-dot" style="background:' + ledDotColor(lp) + '"></span>' +
+      '<span class="nic-legend-label">Port ' + (li + 1) + '</span>' +
+    '</div>';
+  }
+  // NIC header: grab adapter description from first real port
+  var nicDesc = "";
+  for (var ni = 0; ni < ports.length; ni++) {
+    if (ports[ni] && ports[ni].interfaceDescription) { nicDesc = ports[ni].interfaceDescription; break; }
+  }
+  var nicHeader = '<div class="nic-diagram-header">' +
+    (nicDesc ? svgIcon("cpu", 16) + ' ' + esc(nicDesc) + ' · ' + count + ' ports' : count + ' ports') +
+    '<span id="cam-live-badge" class="cam-live-badge">Auto-Refresh</span>' +
+  '</div>';
+  return nicHeader + '<div class="nic-diagram-wrap">' +
+    '<div class="nic-diagram-ports">' + portIcons + '</div>' +
+    '<div class="nic-diagram-legend">' + legend + '</div>' +
+  '</div>' +
+  '<div class="nic-diagram-note">Port order mirrors the physical orientation of the NIC — Port ' + count + ' is leftmost on the card.</div>';
+}
 
 function renderCameras() {
   const data = cached("cameras");
@@ -1097,72 +2179,26 @@ function renderCameras() {
   const ports = data.ports || [];
   const pixCfg = data.pixellotConfig || {};
   const cfgCameras = pixCfg.cameras || [];
+  const findings = data.findings || [];
 
   const portSlots = [];
   for (let i = 0; i < Math.max(4, ports.length); i++) {
     portSlots.push(ports[i] || null);
   }
 
-  function portTile(port, index) {
-    if (!port) {
-      return `<div class="cam-port-tile cam-port-empty">
-        <div class="cam-port-num">Port ${index + 1}</div>
-        <div class="cam-port-status">
-          <span class="cam-dot cam-dot-muted"></span>
-          <span class="text-sm text-pulse-muted">Not detected</span>
-        </div>
-      </div>`;
-    }
-    const p = port;
-    const speed = p.linkSpeedMbps
-      ? p.linkSpeedMbps >= 1000 ? (p.linkSpeedMbps / 1000) + " Gbps" : p.linkSpeedMbps + " Mbps"
-      : "No link";
-    let statusLabel, dotCls;
-    if (!p.isUp) { statusLabel = "Down"; dotCls = "cam-dot-down"; }
-    else if (p.isOcr) { statusLabel = "OCR (100 Mbps)"; dotCls = "cam-dot-info"; }
-    else if (p.isDegraded) { statusLabel = "Degraded"; dotCls = "cam-dot-warn"; }
-    else { statusLabel = "Linked · " + speed; dotCls = "cam-dot-up"; }
-
-    const cams = p.camerasDetected || [];
-    return `<div class="cam-port-tile ${p.isUp ? "cam-port-active" : "cam-port-down"}">
-      <div class="cam-port-header">
-        <span class="cam-port-num">Port ${index + 1}</span>
-        ${p.isOcr ? '<span class="badge-ol badge-ol-info">OCR</span>' : ""}
-        ${p.isDegraded ? '<span class="badge-ol badge-ol-warn">Degraded</span>' : ""}
-      </div>
-      <div class="cam-port-name">${esc(p.name)}</div>
-      <div class="cam-port-status">
-        <span class="cam-dot ${dotCls}"></span>
-        <span class="text-sm">${esc(statusLabel)}</span>
-      </div>
-      <div class="cam-port-detail">
-        <div class="kv-mini"><span>MAC</span><span class="font-mono">${esc(p.mac)}</span></div>
-        <div class="kv-mini"><span>RX / TX</span><span>${formatBytes(p.rxBytes)} / ${formatBytes(p.txBytes)}</span></div>
-      </div>
-      ${cams.length > 0 ? `
-        <div class="cam-detected">
-          <div class="cam-detected-label">${cams.length} Pixellot camera${cams.length > 1 ? "s" : ""} detected</div>
-          ${cams.map(c => `<div class="cam-detected-entry">
-            <span class="font-mono">${esc(c.ip)}</span>
-            <span class="font-mono text-pulse-muted">${esc(c.mac)}</span>
-          </div>`).join("")}
-        </div>
-      ` : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
-    </div>`;
-  }
-
   $page().innerHTML = `
     ${pageHeader("Camera Connectivity", "NIC ports, link status, speed, and Pixellot camera detection",
       `<button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
         ${svgIcon("zap", 14)} Fault Isolator
-      </button>
-      <button class="btn-outline btn-ol-blue" onclick="dataCache.cameras=null;renderCameras()">
-        ${svgIcon("refresh", 14)} Refresh
       </button>`
     )}
 
-    <div class="cam-port-grid">
-      ${portSlots.map((p, i) => portTile(p, i)).join("")}
+    <div id="cam-findings-wrap">${_camFindingsHtml(findings)}</div>
+
+    <div class="card" id="cam-nic-diagram">${_camNicDiagramHtml(ports)}</div>
+
+    <div class="cam-port-grid" id="cam-port-grid">
+      ${_camPortGridHtml(ports)}
     </div>
 
     ${cfgCameras.length ? `
@@ -1180,23 +2216,40 @@ function renderCameras() {
       </tbody></table>
     </div>` : ""}
 
-    ${ports.filter(p => p.arpEntries?.length).map(p => `
-    <div class="card mt-4">
-      <details>
-        <summary class="text-sm text-pulse-muted cursor-pointer font-medium">
-          ${esc(p.name)} — ARP entries (${p.arpEntries.length})
-        </summary>
-        <div class="mt-3 max-h-48 overflow-y-auto">
-          <table class="data-table"><thead><tr><th>IP</th><th>MAC</th></tr></thead><tbody>
-          ${p.arpEntries.map(a => `<tr>
-            <td class="font-mono text-xs">${esc(a.ip)}</td>
-            <td class="font-mono text-xs">${esc(a.mac)}</td>
-          </tr>`).join("")}
-          </tbody></table>
-        </div>
-      </details>
-    </div>`).join("")}
   `;
+
+  // ── Live refresh: poll /api/cameras every 3s and update port grid + findings ──
+  if (_camerasRefreshTimer) clearInterval(_camerasRefreshTimer);
+  _camerasRefreshTimer = setInterval(function() {
+    if (currentPage !== "cameras") { clearInterval(_camerasRefreshTimer); _camerasRefreshTimer = null; return; }
+    api("/api/cameras").then(function(fresh) {
+      if (!fresh || fresh.error || currentPage !== "cameras") return;
+      dataCache.cameras = fresh;
+      var grid = document.getElementById("cam-port-grid");
+      // Preserve open Details panels across refresh
+      var openDetails = {};
+      if (grid) {
+        grid.querySelectorAll('details[open][data-port-idx]').forEach(function(d) {
+          openDetails[d.dataset.portIdx] = true;
+        });
+        grid.innerHTML = _camPortGridHtml(fresh.ports || []);
+        Object.keys(openDetails).forEach(function(idx) {
+          var d = grid.querySelector('details[data-port-idx="' + idx + '"]');
+          if (d) d.setAttribute('open', '');
+        });
+      }
+      var diag = document.getElementById("cam-nic-diagram");
+      if (diag) diag.innerHTML = _camNicDiagramHtml(fresh.ports || []);
+      var fw = document.getElementById("cam-findings-wrap");
+      if (fw) fw.innerHTML = _camFindingsHtml(fresh.findings || []);
+      // Pulse the live badge to show the tick happened
+      var badge = document.getElementById("cam-live-badge");
+      if (badge) {
+        badge.classList.add("cam-live-tick");
+        setTimeout(function() { badge.classList.remove("cam-live-tick"); }, 600);
+      }
+    }).catch(function() { /* network blip — skip this tick */ });
+  }, 3000);
 }
 
 function formatBytes(b) {
@@ -1568,6 +2621,31 @@ function renderScoreConnect() {
   const botStatus = data.botStatus || {};
   const liveScore = data.liveScoreData || {};
   const isDetected = data.reachable || status.isDetected;
+  const version = data.version || status.version;
+
+  // Build BOT and ScoreLink cards independently — ScoreLink detection
+  // is USB-based and works even when SC III is unreachable.
+  const botCard = botStatus.isConnected != null ? `
+    <div class="card">
+      ${sectionTitle("globe", "Cloud (BOT) Status")}
+      <div class="kv-grid">
+        ${kvRowHtml("Connected", botStatus.isConnected
+          ? '<span class="status-pass">Yes</span>'
+          : '<span class="status-fail">No</span>')}
+        ${kvRow("ScoreConnect ID", botStatus.scoreConnectId)}
+        ${kvRow("BOT Server", botStatus.botServerAddress)}
+        ${botStatus.lastErrorMessage ? kvRowHtml("Last Error", `<span class="text-pulse-muted">${esc(botStatus.lastErrorMessage)}</span>`) : ""}
+      </div>
+    </div>` : "";
+
+  const slCard = data.scoreLinkConnected != null ? `
+    <div class="card">
+      ${sectionTitle("link", "ScoreLink Device")}
+      <div class="sc-scorelink ${data.scoreLinkConnected ? "sc-scorelink-ok" : "sc-scorelink-err"}">
+        <span class="sc-scorelink-dot"></span>
+        <span class="font-semibold">${esc(data.scoreLinkStatusLabel || (data.scoreLinkConnected ? "ScoreLink Connected" : "ScoreLink Not Detected"))}</span>
+      </div>
+    </div>` : "";
 
   $page().innerHTML = `
     ${pageHeader("Score Connect", "ScoreConnect III scoreboard integration — service, configuration, and live data",
@@ -1585,7 +2663,7 @@ function renderScoreConnect() {
             ? '<span class="status-pass">Yes</span>'
             : '<span class="status-fail">No</span>')}
           ${kvRow("Base URL", status.baseUrl || data.baseUrl)}
-          ${kvRow("Version", status.version)}
+          ${kvRow("Version", version)}
           ${data.error && !isDetected ? kvRowHtml("Error", `<span class="text-red-400">${esc(typeof data.error === "string" ? data.error : data.message || "Connection failed")}</span>`) : ""}
         </div>
       </div>
@@ -1635,30 +2713,12 @@ function renderScoreConnect() {
     </div>` : ""}
 
     <!-- Cloud BOT + ScoreLink -->
-    ${botStatus.isConnected != null ? `
-    <div class="dash-2col">
-      <div class="card">
-        ${sectionTitle("globe", "Cloud (BOT) Status")}
-        <div class="kv-grid">
-          ${kvRowHtml("Connected", botStatus.isConnected
-            ? '<span class="status-pass">Yes</span>'
-            : '<span class="status-fail">No</span>')}
-          ${kvRow("ScoreConnect ID", botStatus.scoreConnectId)}
-          ${kvRow("BOT Server", botStatus.botServerAddress)}
-          ${botStatus.lastErrorMessage ? kvRowHtml("Last Error", `<span class="text-pulse-muted">${esc(botStatus.lastErrorMessage)}</span>`) : ""}
-        </div>
-      </div>
-      <div class="card">
-        ${sectionTitle("link", "ScoreLink Device")}
-        <div class="sc-scorelink ${data.scoreLinkConnected ? "sc-scorelink-ok" : "sc-scorelink-err"}">
-          <span class="sc-scorelink-dot"></span>
-          <span class="font-semibold">${esc(data.scoreLinkStatusLabel || (data.scoreLinkConnected ? "ScoreLink Connected" : "ScoreLink Not Detected"))}</span>
-        </div>
-      </div>
-    </div>` : ""}
+    ${botCard && slCard ? `<div class="dash-2col">${botCard}${slCard}</div>`
+     : botCard || slCard ? `<div class="mt-4">${botCard}${slCard}</div>`
+     : ""}
 
     <!-- Raw Data Fallback -->
-    ${!config.vendor && botStatus.isConnected == null && (data.status || data.configuration) ? `
+    ${!config.vendor && botStatus.isConnected == null && data.scoreLinkConnected == null && (data.status || data.configuration) ? `
     <div class="card mt-4">
       ${sectionTitle("file", "Raw Response")}
       <pre class="text-xs text-pulse-muted overflow-auto max-h-60 p-3 bg-pulse-bg rounded">${esc(JSON.stringify(data, null, 2))}</pre>
@@ -1666,170 +2726,610 @@ function renderScoreConnect() {
   `;
 }
 
-// ── Fault Isolator ───────────────────────────────────────────
+// ── Camera Fault Isolator ────────────────────────────────────
+//
+// 4-phase swap test — process of elimination:
+//   Phase 1 (Baseline): measure suspect port speed.
+//   Phase 2 (NIC Port): move same cable+camera to test port. Fault follows?
+//     Pass (1 Gbps on test) → NIC Port fault.  Fail (still degraded) → Phase 3.
+//   Phase 3 (Cable): swap cable for known-good on test port. Fault follows?
+//     Pass → Cable fault.  Fail → Phase 4.
+//   Phase 4 (Camera): swap camera for known-good on test port. Fault follows?
+//     Pass → Camera fault.  Fail → NIC Hardware fault.
+//     "No spare CHU" → infer camera fault from Phase 2+3 eliminations.
+//
+// Ported from FaultIsolatorViewModel.cs (v0.8.21-beta).
+
+var _fi = null;
+
+function _fiReset() {
+  // Abort any in-flight poll from a previous run before replacing state.
+  if (_fi) _fi._aborted = true;
+  _fi = {
+    phase: 0,           // 0=PickPort 1=AwaitingNicPortTest 2=AwaitingCableTest 3=AwaitingCameraTest 4=Concluded
+    conclusion: "",     // NicPort | Cable | Camera | NicHardware | LikelyCamera
+    suspectIdx: -1,
+    testIdx: -1,
+    testPreSpeedMbps: null,
+    history: [],        // [{ts,phase,config,speed,verdict,severity}]
+    resultHeadline: "",
+    resultDetail: "",
+    resultSeverity: "", // pass | info | fail
+    phaseTitle: "SELECT A PORT TO BEGIN",
+    phaseInstruction: "Select the NIC port showing a degraded or missing link and click Start Baseline.",
+    actionLabel: "Start Baseline",
+    checking: false,
+    _aborted: false,
+  };
+}
 
 function renderFaultIsolator() {
-  const steps = [
-    { id: "internet", label: "Internet Connectivity" },
-    { id: "dns", label: "DNS Resolution" },
-    { id: "ports", label: "Port Connectivity" },
-    { id: "services", label: "Service Status" },
-    { id: "cameras", label: "Camera Detection" },
-    { id: "performance", label: "System Performance" },
-  ];
+  var cams = cached("cameras");
+  if (!cams) {
+    $page().innerHTML = sectionLoading("Camera Fault Isolator");
+    api("/api/cameras").then(function(d) { dataCache.cameras = d; renderFaultIsolator(); });
+    return;
+  }
 
-  $page().innerHTML = `
-    <h2 class="text-xl font-bold mb-4">Fault Isolator</h2>
-    <p class="text-sm text-pulse-muted mb-6">Run a sequential diagnostic check across all subsystems.</p>
-    <button class="btn btn-primary mb-6" id="fi-start">Start Diagnosis</button>
-    <button class="btn btn-secondary mb-6 ml-2 hidden" id="fi-reset">Reset</button>
-    <div id="fi-steps">
-      ${steps.map((s) => `<div class="wizard-step" id="fi-${esc(s.id)}"><div class="flex items-center gap-3"><span class="text-sm font-medium">${esc(s.label)}</span><span id="fi-badge-${esc(s.id)}" class="text-xs text-pulse-muted">Pending</span></div><div id="fi-detail-${esc(s.id)}" class="text-xs text-pulse-muted mt-1 hidden"></div></div>`).join("")}
-    </div>
-    <div id="fi-summary" class="mt-6 hidden"></div>
-  `;
+  var ports = cams.ports || [];
+  if (!_fi) _fiReset();
 
-  document.getElementById("fi-start").addEventListener("click", async () => {
-    document.getElementById("fi-start").classList.add("hidden");
-    document.getElementById("fi-reset").classList.remove("hidden");
+  // ── helpers ──────────────────────────────────────────────────
 
-    let passCount = 0;
-    let warnCount = 0;
-    let failCount = 0;
+  function portLabel(idx) {
+    return "Port " + (idx + 1);
+  }
 
-    async function runStep(id, fn) {
-      const el = document.getElementById("fi-" + id);
-      const badgeEl = document.getElementById("fi-badge-" + id);
-      const detailEl = document.getElementById("fi-detail-" + id);
-      el.className = "wizard-step step-running";
-      badgeEl.textContent = "Checking...";
-      detailEl.classList.remove("hidden");
-      detailEl.textContent = "";
+  function formatSpeed(mbps) {
+    if (mbps === null || mbps === undefined) return "—";
+    if (mbps >= 1000) return "1 Gbps";
+    if (mbps > 0) return mbps + " Mbps";
+    return "No link";
+  }
 
-      try {
-        const result = await fn();
-        el.className = "wizard-step step-" + result.status;
-        badgeEl.innerHTML = statusBadge(
-          result.status === "pass" ? "Pass" : result.status === "warn" ? "Warning" : "Fail"
-        );
-        detailEl.textContent = result.detail;
-        if (result.status === "pass") passCount++;
-        else if (result.status === "warn") warnCount++;
-        else failCount++;
-      } catch (e) {
-        el.className = "wizard-step step-fail";
-        badgeEl.innerHTML = statusBadge("Fail");
-        detailEl.textContent = e.message;
-        failCount++;
+  function stepDots() {
+    var html = '<div class="fi-stepper">';
+    for (var i = 0; i < 5; i++) {
+      var cls = "fi-step-dot";
+      if (_fi.phase > i) cls += " fi-dot-done";
+      else if (_fi.phase === i) cls += " fi-dot-active";
+      html += '<div class="' + cls + '">' + (i + 1) + "</div>";
+      if (i < 4) html += '<div class="fi-step-line' + (_fi.phase > i ? " fi-line-done" : "") + '"></div>';
+    }
+    return html + "</div>";
+  }
+
+  function resultRow() {
+    if (!_fi.resultHeadline) return "";
+    var sev = _fi.resultSeverity || "info";
+    var chip = sev === "pass" ? "PASS" : sev === "fail" ? "FAIL" : "INFO";
+    return '<div class="fi-result-row fi-result-' + sev + '">' +
+      '<span class="fi-result-chip">' + chip + "</span>" +
+      "<div>" +
+        '<div class="fi-result-note">' + esc(_fi.resultHeadline) + "</div>" +
+        (_fi.resultDetail ? '<div class="fi-result-detail">' + esc(_fi.resultDetail) + "</div>" : "") +
+      "</div>" +
+      "</div>";
+  }
+
+  function historyTable() {
+    if (!_fi.history.length) return "";
+    var rows = _fi.history.map(function(h) {
+      var sc = h.severity === "Pass" ? "status-pass" : h.severity === "Fail" ? "status-fail" : "status-info";
+      return "<tr>" +
+        '<td class="font-mono" style="font-size:0.7rem;color:var(--c-dim)">' + esc(h.ts) + "</td>" +
+        '<td><span class="' + sc + '">' + esc(h.severity) + "</span></td>" +
+        "<td><strong>" + esc(h.phase) + "</strong></td>" +
+        '<td class="text-pulse-muted" style="font-size:0.78rem">' + esc(h.config) + "</td>" +
+        '<td class="font-mono" style="font-size:0.78rem">' + esc(h.speed) + "</td>" +
+        '<td class="text-pulse-muted" style="font-size:0.78rem">' + esc(h.verdict) + "</td>" +
+        "</tr>";
+    }).join("");
+    return '<div class="mt-4">' +
+      '<div class="text-sm font-semibold mb-2 text-pulse-muted">Phase history (newest first)</div>' +
+      '<div style="overflow-x:auto"><table class="data-table">' +
+      "<thead><tr><th>Time</th><th>Result</th><th>Phase</th><th>Configuration</th><th>Speed</th><th>Verdict</th></tr></thead>" +
+      "<tbody>" + rows + "</tbody></table></div></div>";
+  }
+
+  // ── port option builder (shared by Phase 0 and Phase 1 dropdowns) ──
+  function portOption(p, i, excludeIdx) {
+    if (i === excludeIdx) return "";
+    var spd;
+    if (!p.isUp) spd = " — No link";
+    else if (p.isOcr) spd = " — 100 Mbps (OCR — expected)";
+    else if (p.linkSpeedMbps >= 1000) spd = " — 1 Gbps";
+    else if (p.linkSpeedMbps > 0) spd = " — " + p.linkSpeedMbps + " Mbps (FAULT)";
+    else spd = " — No link";
+    return '<option value="' + i + '">Port ' + (i + 1) + esc(spd) + "</option>";
+  }
+
+  // ── phase HTML ───────────────────────────────────────────────
+  var inner = "";
+
+  if (_fi.phase === 0) {
+    var allOpts = ports.map(function(p, i) { return portOption(p, i, -1); }).join("");
+    var def = '<option value="-1">— Select —</option>';
+    inner = '<div class="fi-phase-card">' +
+      '<div class="fi-phase-title">' + esc(_fi.phaseTitle) + "</div>" +
+      '<div class="fi-phase-instr">' + esc(_fi.phaseInstruction) + "</div>" +
+      resultRow() +
+      '<div style="margin:16px 0;max-width:480px">' +
+        '<div class="text-xs text-pulse-muted mb-1">Suspect port (has the fault)</div>' +
+        '<select id="fi-suspect" class="ev-select" style="width:100%">' + def + allOpts + "</select>" +
+      "</div>" +
+      '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+        '<button id="fi-action" class="btn-outline btn-ol-blue" disabled>' + esc(_fi.actionLabel) + " →</button>" +
+      "</div>" +
+      "</div>";
+
+  } else if (_fi.phase === 4) {
+    var verdictClsMap = {
+      NicPort: "fi-verdict-nic", Cable: "fi-verdict-cable",
+      Camera: "fi-verdict-camera", LikelyCamera: "fi-verdict-camera", NicHardware: "fi-verdict-nic"
+    };
+    var vCls = verdictClsMap[_fi.conclusion] || "fi-verdict-unknown";
+    inner = '<div class="fi-verdict-card ' + esc(vCls) + '">' +
+      '<div class="fi-verdict-title">' + esc(_fi.phaseTitle) + "</div>" +
+      '<div class="fi-verdict-body">' + esc(_fi.phaseInstruction) + "</div>" +
+      "</div>" +
+      '<div style="display:flex;gap:10px;margin-top:16px">' +
+        '<button id="fi-action" class="btn-outline btn-ol-blue">' + esc(_fi.actionLabel) + "</button>" +
+        '<button id="fi-startover" class="btn-outline btn-ol-blue">Start Over</button>' +
+      "</div>";
+
+  } else {
+    // Phases 1-3: active swap phases
+    var btnLabel = _fi.checking ? ("Checking... " + (_fi.checkElapsed || 0) + "s / 20s") : _fi.actionLabel;
+    // Phase 1 (AwaitingNicPortTest): show test port dropdown so the tech can
+    // change it after a pre-check failure without starting over entirely.
+    // Mirrors WPF's IsPickingTestPort => Phase == AwaitingNicPortTest.
+    var testPortPicker = "";
+    if (_fi.phase === 1 && !_fi.checking) {
+      var testOpts = ports.map(function(p, i) { return portOption(p, i, _fi.suspectIdx); }).join("");
+      testPortPicker = '<div style="margin:12px 0">' +
+        '<div class="text-xs text-pulse-muted mb-1">Test port (known-good)</div>' +
+        '<select id="fi-test" class="ev-select" style="width:100%;max-width:320px">' + testOpts + "</select>" +
+        "</div>";
+    }
+    inner = '<div class="fi-phase-card">' +
+      '<div class="fi-phase-title">' + esc(_fi.phaseTitle) + "</div>" +
+      '<div class="fi-phase-instr">' + esc(_fi.phaseInstruction) + "</div>" +
+      resultRow() +
+      testPortPicker +
+      "</div>" +
+      '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">' +
+        '<button id="fi-startover" class="btn-outline btn-ol-blue">Start Over</button>' +
+        (_fi.phase === 3 && !_fi.checking ? '<button id="fi-infer" class="btn-outline btn-ol-muted">No Spare CHU — Infer</button>' : "") +
+        '<button id="fi-action" class="btn-outline btn-ol-blue"' + (_fi.checking ? " disabled" : "") + ">" + esc(btnLabel) + "</button>" +
+      "</div>";
+  }
+
+  $page().innerHTML = pageHeader(
+    "Camera Fault Isolator",
+    "Process-of-elimination swap test — isolate a camera fault to NIC port, cable, or camera (CHU).",
+    '<button class="btn-outline btn-ol-blue" onclick="navigate(\'cameras\')">' + svgIcon("arrow-left", 14) + " Back to Camera Connectivity</button>"
+  ) + '<div class="card">' + stepDots() + inner + historyTable() + "</div>";
+
+  // ── event wiring ─────────────────────────────────────────────
+  var suspectSel = document.getElementById("fi-suspect");
+  var testSel    = document.getElementById("fi-test");
+  var actionBtn  = document.getElementById("fi-action");
+  var inferBtn   = document.getElementById("fi-infer");
+  var soBtn      = document.getElementById("fi-startover");
+
+  // Phase 0: only suspect dropdown — baseline is discovery only
+  if (suspectSel && _fi.phase === 0) {
+    if (_fi.suspectIdx >= 0) suspectSel.value = String(_fi.suspectIdx);
+    var updateBegin = function() {
+      var s = parseInt(suspectSel.value);
+      if (actionBtn) actionBtn.disabled = (s < 0);
+    };
+    suspectSel.addEventListener("change", function() {
+      _fi.suspectIdx = parseInt(suspectSel.value);
+      updateBegin();
+    });
+    updateBegin();
+  }
+
+  // Phase 1: test port dropdown (change-only, no suspect dropdown)
+  if (testSel && _fi.phase === 1) {
+    if (_fi.testIdx >= 0) testSel.value = String(_fi.testIdx);
+    testSel.addEventListener("change", function() {
+      _fi.testIdx = parseInt(testSel.value);
+      // Re-capture pre-swap speed for the newly-selected test port
+      var tp = ports[_fi.testIdx];
+      _fi.testPreSpeedMbps = tp ? (tp.linkSpeedMbps || 0) : 0;
+    });
+  }
+
+  if (actionBtn && _fi.phase === 4) {
+    actionBtn.addEventListener("click", function() { navigate("cameras"); });
+  } else if (actionBtn && !_fi.checking) {
+    actionBtn.addEventListener("click", doAction);
+  }
+  if (inferBtn) inferBtn.addEventListener("click", doInfer);
+  if (soBtn) soBtn.addEventListener("click", function() { _fiReset(); renderFaultIsolator(); });
+
+  // ── async state machine ──────────────────────────────────────
+
+  async function pollPeakSpeed(portIdx, windowSec) {
+    var peak = 0;
+    var start = Date.now();
+    var deadline = start + windowSec * 1000;
+    while (Date.now() < deadline) {
+      if (_fi._aborted) return peak;
+      var elapsed = Math.floor((Date.now() - start) / 1000);
+      _fi.checkElapsed = elapsed;
+      var btn = document.getElementById("fi-action");
+      if (btn) btn.textContent = "Checking... " + elapsed + "s / " + windowSec + "s";
+      var fresh;
+      try { fresh = await api("/api/cameras"); dataCache.cameras = fresh; }
+      catch (e) { fresh = { ports: [] }; }
+      var portData = (fresh.ports || [])[portIdx];
+      var sample = portData ? (portData.linkSpeedMbps || 0) : 0;
+      if (sample > peak) peak = sample;
+      if (peak >= 1000) return peak;
+      await new Promise(function(r) { setTimeout(r, 1000); });
+    }
+    return peak;
+  }
+
+  function addHistory(phaseName, config, speed, verdict, severity) {
+    _fi.history.unshift({ ts: new Date().toLocaleTimeString(), phase: phaseName,
+      config: config, speed: speed, verdict: verdict, severity: severity });
+  }
+
+  function showResult(headline, detail, severity) {
+    _fi.resultHeadline = headline;
+    _fi.resultDetail   = detail;
+    _fi.resultSeverity = severity.toLowerCase();
+  }
+
+  function conclude(conclusion, title, instruction) {
+    _fi.conclusion = conclusion;
+    _fi.phase = 4;
+    _fi.phaseTitle = title;
+    _fi.phaseInstruction = instruction;
+    _fi.actionLabel = "Run Full Diagnostic";
+    _fi.checking = false;
+  }
+
+  async function doAction() {
+    if (_fi.checking) return;
+
+    // Phase 0 — Baseline: poll suspect port speed (discovery only, no test port yet)
+    if (_fi.phase === 0) {
+      var si = _fi.suspectIdx;
+      if (si < 0) return;
+      _fi.checking = true;
+      renderFaultIsolator();
+
+      var spd0 = await pollPeakSpeed(si, 20);
+      if (_fi._aborted) return;
+      _fi.checking = false;
+      var sl0 = formatSpeed(spd0);
+      var sn0 = portLabel(si);
+      var cfg0 = "Port: " + sn0 + "  |  Cable: (original)  |  Camera: (original)";
+
+      if (spd0 >= 1000) {
+        addHistory("Phase 1 - Baseline", cfg0, sl0, "Port healthy — no fault on this port.", "Pass");
+        showResult("Baseline: " + sl0 + " — Port is operating normally.",
+          "The selected port is already running at 1 Gbps. No fault detected. Select a different port or close the wizard.", "pass");
+        _fi.phaseTitle = "BASELINE — PORT HEALTHY";
+        _fi.phaseInstruction = "Select a different port or close the wizard.";
+        _fi.actionLabel = "Recheck Port";
+        renderFaultIsolator();
+        return;
       }
+
+      var bMsg, bInstr;
+      if (spd0 <= 0) {
+        bMsg   = "No link detected";
+        bInstr = "Verify the camera is powered on and the cable is seated firmly. Select a known-good test port below, then click Check Now.";
+      } else {
+        bMsg   = "Link is degraded at " + sl0 + " (expected 1 Gbps)";
+        bInstr = "Select a known-good test port below, then move the SAME cable and camera from " + sn0 + " to it. Click Check Now when ready.";
+      }
+      addHistory("Phase 1 - Baseline", cfg0, sl0, bMsg + " — beginning isolation.", "Fail");
+      showResult("Baseline: " + sl0 + " — " + bMsg + ".", bInstr, "fail");
+      _fi.phase = 1;
+      _fi.phaseTitle = "PHASE 2 — DOES THE FAULT FOLLOW THE NIC PORT?";
+      _fi.phaseInstruction = bInstr;
+      _fi.actionLabel = "Check Now";
+      renderFaultIsolator();
+      return;
     }
 
-    await runStep("internet", async () => {
-      const d = await api("/api/network");
-      const ok = d.config?.internetReachable;
-      return {
-        status: ok ? "pass" : "fail",
-        detail: ok
-          ? "Internet reachable via " + (d.config?.testedHost || "ping")
-          : "No internet connectivity detected",
-      };
-    });
+    // Phase 1 — NIC Port Test: poll test port after moving cable+camera
+    if (_fi.phase === 1) {
+      // Re-read test port index from dropdown (may have changed via test port picker)
+      var testSel1 = document.getElementById("fi-test");
+      if (testSel1) _fi.testIdx = parseInt(testSel1.value);
+      if (_fi.testIdx < 0 || _fi.testIdx === _fi.suspectIdx) {
+        showResult("No test port selected.", "Pick a test port from the dropdown before continuing.", "fail");
+        renderFaultIsolator();
+        return;
+      }
+      // Pre-check: was the test port already degraded before the swap?
+      var preSpd = _fi.testPreSpeedMbps || 0;
+      if (preSpd > 0 && preSpd < 1000) {
+        showResult(
+          "Pre-check: " + portLabel(_fi.testIdx) + " was at " + preSpd + " Mbps BEFORE the swap.",
+          portLabel(_fi.testIdx) + " was already degraded before you moved anything. Phase 2 results will be unreliable — pick a different test port from the dropdown above, or click Start Over.",
+          "fail"
+        );
+        renderFaultIsolator();
+        return;
+      }
+      _fi.checking = true;
+      renderFaultIsolator();
+      var spd1 = await pollPeakSpeed(_fi.testIdx, 20);
+      if (_fi._aborted) return;
+      _fi.checking = false;
+      var sl1 = formatSpeed(spd1);
+      var tn1 = portLabel(_fi.testIdx);
+      var cfg1 = "Port: " + tn1 + " (test port)  |  Cable: (original)  |  Camera: (original)";
 
-    await runStep("dns", async () => {
-      const d = await api("/api/network");
-      const results = d.domains?.results || [];
-      const fails = results.filter((r) => r.status === "fail");
-      if (!results.length) return { status: "fail", detail: "No DNS results" };
-      if (fails.length === 0)
-        return { status: "pass", detail: "All " + results.length + " domains resolved" };
-      if (fails.length < results.length)
-        return {
-          status: "warn",
-          detail: fails.length + " of " + results.length + " domains failed: " + fails.map((f) => f.domain).join(", "),
-        };
-      return { status: "fail", detail: "All DNS resolution failed" };
-    });
+      if (spd1 >= 1000) {
+        var v1 = "Link restored on the test port. The fault follows the original NIC port.";
+        addHistory("Phase 2 - NIC Port Test", cfg1, sl1, v1, "Pass");
+        showResult("Phase 2: " + sl1 + " — Fault follows the original NIC port.", v1, "pass");
+        conclude("NicPort", "CONCLUSION — FAULTY NIC PORT",
+          "Moving the cable and camera to " + tn1 + " restored the link. The original NIC port is the source of the fault. Escalate for NIC or motherboard repair.");
+        renderFaultIsolator();
+        return;
+      }
+      if (spd1 <= 0) {
+        addHistory("Phase 2 - NIC Port Test", cfg1, sl1, "No link detected — test inconclusive.", "Info");
+        _fi.phaseInstruction = "No link on " + tn1 + ". Verify the cable is fully seated on the test port and the camera is powered on, then click Check Now to re-measure.";
+        showResult("Phase 2: No link — test inconclusive.", _fi.phaseInstruction, "info");
+        renderFaultIsolator();
+        return;
+      }
+      var cv1 = "Fault stayed with the cable / camera. The original NIC port is not the source.";
+      addHistory("Phase 2 - NIC Port Test", cfg1, sl1, cv1, "Info");
+      showResult("Phase 2: " + sl1 + " — Fault follows cable / camera, not the NIC port.", cv1, "info");
+      _fi.phase = 2;
+      _fi.phaseTitle = "PHASE 3 — DOES THE FAULT FOLLOW THE CABLE?";
+      _fi.phaseInstruction = "Stay on " + tn1 + " with the same camera. Swap the cable for a known-good cable. Then click Check Now.";
+      _fi.actionLabel = "Check Now";
+      renderFaultIsolator();
+      return;
+    }
 
-    await runStep("ports", async () => {
-      const d = await api("/api/network");
-      const results = d.ports?.results || [];
-      const required = results.filter((r) => !r.optional);
-      const reqFails = required.filter((r) => r.status === "fail");
-      if (!results.length) return { status: "fail", detail: "No port test results" };
-      if (reqFails.length === 0)
-        return { status: "pass", detail: "All " + required.length + " required ports open" };
-      return {
-        status: "fail",
-        detail: reqFails.length + " required port(s) blocked: " + reqFails.map((f) => f.purpose).join(", "),
-      };
-    });
+    // Phase 2 — Cable Test: poll test port after swapping cable
+    if (_fi.phase === 2) {
+      _fi.checking = true;
+      renderFaultIsolator();
+      var spd2 = await pollPeakSpeed(_fi.testIdx, 20);
+      if (_fi._aborted) return;
+      _fi.checking = false;
+      var sl2 = formatSpeed(spd2);
+      var tn2 = portLabel(_fi.testIdx);
+      var cfg2 = "Port: " + tn2 + "  |  Cable: (NEW — known good)  |  Camera: (original)";
 
-    await runStep("services", async () => {
-      const d = await api("/api/services");
-      const svcs = d.services || [];
-      const critical = ["agent", "vpu"];
-      const stopped = svcs.filter(
-        (s) => s.status === "Stopped" && critical.includes(s.name.toLowerCase())
-      );
-      const missing = svcs.filter(
-        (s) => s.status === "NotFound" && critical.includes(s.name.toLowerCase())
-      );
-      if (stopped.length)
-        return { status: "fail", detail: "Stopped: " + stopped.map((s) => s.name).join(", ") };
-      if (missing.length)
-        return { status: "warn", detail: "Not installed: " + missing.map((s) => s.name).join(", ") };
-      return { status: "pass", detail: "All critical services running" };
-    });
+      if (spd2 >= 1000) {
+        var v2 = "Link restored with a known-good cable. The original cable is the source of the fault.";
+        addHistory("Phase 3 - Cable Test", cfg2, sl2, v2, "Pass");
+        showResult("Phase 3: " + sl2 + " — Fault follows the cable.", v2, "pass");
+        conclude("Cable", "CONCLUSION — FAULTY CABLE",
+          "Replacing the cable restored the link. The original cable (or its termination) is the source of the fault. Replace the cable end-to-end.");
+        renderFaultIsolator();
+        return;
+      }
+      if (spd2 <= 0) {
+        addHistory("Phase 3 - Cable Test", cfg2, sl2, "No link detected — test inconclusive.", "Info");
+        _fi.phaseInstruction = "No link on " + tn2 + ". Verify the new cable is fully seated on both ends and the camera is powered on, then click Check Now to re-measure.";
+        showResult("Phase 3: No link — test inconclusive.", _fi.phaseInstruction, "info");
+        renderFaultIsolator();
+        return;
+      }
+      var cv2 = "Fault stayed with the camera. The original cable is not the source.";
+      addHistory("Phase 3 - Cable Test", cfg2, sl2, cv2, "Info");
+      showResult("Phase 3: " + sl2 + " — Fault is not the cable.", cv2, "info");
+      _fi.phase = 3;
+      _fi.phaseTitle = "PHASE 4 — DOES THE FAULT FOLLOW THE CAMERA?";
+      _fi.phaseInstruction = "Stay on " + tn2 + " with the new cable. Connect a known-good camera, then click Check Now. If you don't have a spare camera, click \"No Spare CHU — Infer\" to conclude from what's already been ruled out.";
+      _fi.actionLabel = "Check Now";
+      renderFaultIsolator();
+      return;
+    }
 
-    await runStep("cameras", async () => {
-      const d = await api("/api/cameras");
-      const cPorts = d.ports || [];
-      const allCams = cPorts.flatMap((p) => p.camerasDetected || []);
-      const downPorts = cPorts.filter((p) => !p.isUp);
-      if (downPorts.length)
-        return {
-          status: "warn",
-          detail: downPorts.length + " NIC port(s) down. " + allCams.length + " camera(s) detected on other ports.",
-        };
-      if (allCams.length === 0)
-        return { status: "warn", detail: "No Pixellot cameras detected in ARP tables" };
-      return {
-        status: "pass",
-        detail: allCams.length + " Pixellot camera(s) detected across " + cPorts.filter((p) => (p.camerasDetected || []).length > 0).length + " port(s)",
-      };
-    });
+    // Phase 3 — Camera Test: poll test port after swapping camera
+    if (_fi.phase === 3) {
+      _fi.checking = true;
+      renderFaultIsolator();
+      var spd3 = await pollPeakSpeed(_fi.testIdx, 20);
+      if (_fi._aborted) return;
+      _fi.checking = false;
+      var sl3 = formatSpeed(spd3);
+      var tn3 = portLabel(_fi.testIdx);
+      var cfg3 = "Port: " + tn3 + "  |  Cable: (NEW)  |  Camera: (NEW — known good)";
 
-    await runStep("performance", async () => {
-      const d = await api("/api/dashboard");
-      const perf = d.performance || {};
-      const issues = [];
-      const cpuVal = perf.cpu?.usagePercent || 0;
-      const memVal = perf.memory?.usedPercent || 0;
-      const diskVal = perf.disk?.usedPercent || 0;
-      if (cpuVal > 90) issues.push("CPU at " + cpuVal + "%");
-      if (memVal > 90) issues.push("Memory at " + memVal + "%");
-      if (diskVal > 90) issues.push("Disk at " + diskVal + "%");
-      if (issues.length)
-        return { status: "fail", detail: issues.join("; ") };
-      return {
-        status: "pass",
-        detail: "CPU " + cpuVal + "%, Memory " + memVal + "%, Disk " + diskVal + "%",
-      };
-    });
+      if (spd3 >= 1000) {
+        var v3 = "Link restored with a known-good camera. The original camera is the source of the fault.";
+        addHistory("Phase 4 - Camera Test", cfg3, sl3, v3, "Pass");
+        showResult("Phase 4: " + sl3 + " — Fault follows the camera.", v3, "pass");
+        conclude("Camera", "CONCLUSION — FAULTY CAMERA (CHU)",
+          "Replacing the camera restored the link. The original camera (CHU) is the source of the fault. Replace the camera unit.");
+        renderFaultIsolator();
+        return;
+      }
+      if (spd3 <= 0) {
+        addHistory("Phase 4 - Camera Test", cfg3, sl3, "No link detected — test inconclusive.", "Info");
+        _fi.phaseInstruction = "No link on " + tn3 + ". Verify the known-good camera is connected and powered on, then click Check Now to re-measure.";
+        showResult("Phase 4: No link — test inconclusive.", _fi.phaseInstruction, "info");
+        renderFaultIsolator();
+        return;
+      }
+      var vf3 = "Fault persists with known-good cable and camera. The fault is likely in the NIC hardware or the VPU motherboard.";
+      addHistory("Phase 4 - Camera Test", cfg3, sl3, vf3, "Fail");
+      showResult("Phase 4: " + sl3 + " — Fault persists with known-good equipment.", vf3, "fail");
+      conclude("NicHardware", "CONCLUSION — NIC / HARDWARE FAULT",
+        "Known-good cable and camera still fail on " + tn3 + ". This indicates a fault in the NIC hardware or the VPU motherboard. Run the full diagnostic from the Camera Connectivity panel and escalate to hardware repair.");
+      renderFaultIsolator();
+      return;
+    }
+  }
 
-    const summaryEl = document.getElementById("fi-summary");
-    summaryEl.classList.remove("hidden");
-    const overall =
-      failCount > 0 ? "critical" : warnCount > 0 ? "warning" : "ok";
-    summaryEl.innerHTML = `<div class="sev-${esc(overall)} rounded px-4 py-3">
-      <div class="font-semibold">Diagnosis Complete</div>
-      <div class="text-sm mt-1">${passCount} passed, ${warnCount} warning(s), ${failCount} failed</div>
-    </div>`;
+  function doInfer() {
+    if (_fi.phase !== 3) return;
+    var tn = portLabel(_fi.testIdx);
+    var cfg = "Port: " + tn + "  |  Cable: (NEW)  |  Camera: (no spare available)";
+    addHistory("Phase 4 - SKIPPED", cfg, "—",
+      "No spare CHU available. Conclusion inferred from Phase 2 and Phase 3 outcomes.", "Info");
+    showResult("Phase 4 skipped — inferred conclusion.",
+      "Phase 2 cleared the original NIC port; Phase 3 cleared the original cable. The remaining suspect is the camera (CHU).", "info");
+    conclude("LikelyCamera", "LIKELY CAMERA (CHU) FAULT — UNVERIFIED",
+      "Cable replacement did not restore the link, and the original NIC port has already been cleared (Phase 2). The remaining suspect is the camera (CHU). Replace the camera unit when a known-good spare is available; if the link still fails with a known-good camera, the issue is likely NIC hardware and a full diagnostic + escalation is warranted.");
+    renderFaultIsolator();
+  }
+}
+
+// ── Audio ────────────────────────────────────────────────────
+
+var _audioRefreshTimer = null;
+
+function renderAudio() {
+  var data = cached("audio");
+  if (!data) { $page().innerHTML = sectionLoading("Audio"); fetchSection("audio"); return; }
+
+  // Clear any previous live-refresh timer
+  if (_audioRefreshTimer) { clearInterval(_audioRefreshTimer); _audioRefreshTimer = null; }
+
+  var devices = data.devices || [];
+  var inputs = devices.filter(function(d) { return d.dataFlow === "Input"; });
+  var outputs = devices.filter(function(d) { return d.dataFlow === "Output"; });
+  var activeInputs = inputs.filter(function(d) { return d.state === "Active"; });
+  var activeOutputs = outputs.filter(function(d) { return d.state === "Active"; });
+
+  // Page-level indicator: is anything making sound?
+  var anySignal = devices.some(function(d) { return d.peak != null && d.peak > 1; });
+
+  $page().innerHTML =
+    pageHeader("Audio", "Audio device diagnostics — line-in capture, volume levels, and signal activity",
+      '<button class="btn-outline btn-ol-blue" onclick="dataCache.audio=null;renderAudio()">' +
+        svgIcon("refresh", 14) + " Refresh</button>") +
+
+    // Summary cards
+    '<div class="audio-summary">' +
+      _audioSummaryCard("Input Devices", activeInputs.length, inputs.length, "mic") +
+      _audioSummaryCard("Output Devices", activeOutputs.length, outputs.length, "volume") +
+      '<div class="card audio-signal-card">' +
+        '<div class="audio-signal-dot ' + (anySignal ? "audio-signal-active" : "audio-signal-silent") + '"></div>' +
+        '<div><div class="text-sm font-semibold">' + (anySignal ? "Signal Detected" : "No Signal") + '</div>' +
+        '<div class="text-xs text-pulse-muted">' + (anySignal ? "Audio activity on one or more devices" : "All devices silent") + '</div></div>' +
+      '</div>' +
+    '</div>' +
+
+    // Input devices
+    '<div class="card mt-4">' +
+      sectionTitle("mic", "Input Devices") +
+      (inputs.length ? inputs.map(function(d) { return _audioDeviceRow(d); }).join("") :
+        '<p class="text-sm text-pulse-muted">No input devices detected</p>') +
+    '</div>' +
+
+    // Output devices
+    '<div class="card mt-4">' +
+      sectionTitle("volume", "Output Devices") +
+      (outputs.length ? outputs.map(function(d) { return _audioDeviceRow(d); }).join("") :
+        '<p class="text-sm text-pulse-muted">No output devices detected</p>') +
+    '</div>';
+
+  // Wire up volume sliders
+  devices.forEach(function(d) {
+    if (d.state !== "Active" || d.volume == null) return;
+    var slider = document.getElementById("vol-" + _audioSlug(d.id));
+    var label  = document.getElementById("vol-lbl-" + _audioSlug(d.id));
+    if (!slider) return;
+    slider.addEventListener("change", function() {
+      var val = parseInt(slider.value, 10);
+      if (label) label.textContent = val + "%";
+      apiPost("/api/audio/volume", { deviceId: d.id, volume: val });
+    });
+    slider.addEventListener("input", function() {
+      if (label) label.textContent = parseInt(slider.value, 10) + "%";
+    });
   });
 
-  document
-    .getElementById("fi-reset")
-    .addEventListener("click", () => renderFaultIsolator());
+  // Live-refresh peak meters every 2s
+  _audioRefreshTimer = setInterval(function() {
+    if (currentPage !== "audio") { clearInterval(_audioRefreshTimer); _audioRefreshTimer = null; return; }
+    api("/api/audio").then(function(fresh) {
+      if (!fresh || fresh.error || currentPage !== "audio") return;
+      (fresh.devices || []).forEach(function(d) {
+        var bar = document.getElementById("peak-" + _audioSlug(d.id));
+        var lbl = document.getElementById("peak-lbl-" + _audioSlug(d.id));
+        if (bar && d.peak != null) {
+          bar.style.width = Math.min(d.peak, 100) + "%";
+          bar.className = "audio-peak-fill" + (d.peak > 80 ? " audio-peak-hot" : d.peak > 1 ? " audio-peak-ok" : "");
+        }
+        if (lbl) lbl.textContent = d.peak != null ? d.peak + "%" : "—";
+      });
+    });
+  }, 2000);
+}
+
+function _audioSlug(id) {
+  return String(id || "").replace(/[^a-zA-Z0-9]/g, "");
+}
+
+function _audioSummaryCard(label, active, total, icon) {
+  return '<div class="card audio-summary-card">' +
+    '<div class="audio-summary-icon">' + svgIcon(icon, 20) + '</div>' +
+    '<div class="audio-summary-num">' + active + '<span class="text-pulse-muted text-sm font-normal"> / ' + total + '</span></div>' +
+    '<div class="text-xs text-pulse-muted">' + esc(label) + '</div>' +
+  '</div>';
+}
+
+function _audioFormFactorBadge(ff) {
+  var labels = {
+    LineLevel: "Line-In", Microphone: "Mic", Headphones: "Headphones",
+    Headset: "Headset", Speakers: "Speakers", SPDIF: "S/PDIF",
+    DigitalDisplay: "HDMI/DP", DigitalPassthrough: "Digital", RemoteNetwork: "Network",
+    Handset: "Handset", Unknown: "Unknown"
+  };
+  var text = labels[ff] || ff || "Unknown";
+  return '<span class="audio-port-badge">' + esc(text) + '</span>';
+}
+
+function _audioDeviceRow(d) {
+  var slug = _audioSlug(d.id);
+  var isActive = d.state === "Active";
+  var stateClass = isActive ? "status-pass" : d.state === "Disabled" ? "status-warn" : "status-fail";
+
+  return '<div class="audio-device ' + (isActive ? "" : "audio-device-inactive") + '">' +
+    '<div class="audio-device-header">' +
+      '<div class="audio-device-name">' + esc(d.name || "Unknown Device") + '</div>' +
+      '<div class="audio-device-badges">' +
+        _audioFormFactorBadge(d.formFactor) +
+        '<span class="' + stateClass + '">' + esc(d.state) + '</span>' +
+      '</div>' +
+    '</div>' +
+    (isActive ? (
+      '<div class="audio-device-controls">' +
+        // Peak meter
+        '<div class="audio-meter-row">' +
+          '<span class="audio-meter-label">Signal</span>' +
+          '<div class="audio-peak-track">' +
+            '<div id="peak-' + slug + '" class="audio-peak-fill' +
+              (d.peak > 80 ? " audio-peak-hot" : d.peak > 1 ? " audio-peak-ok" : "") +
+              '" style="width:' + Math.min(d.peak || 0, 100) + '%"></div>' +
+          '</div>' +
+          '<span id="peak-lbl-' + slug + '" class="audio-meter-val">' + (d.peak != null ? d.peak + "%" : "—") + '</span>' +
+        '</div>' +
+        // Volume slider
+        (d.volume != null ? (
+          '<div class="audio-meter-row">' +
+            '<span class="audio-meter-label">' + (d.muted ? svgIcon("volume-x", 14) : svgIcon("volume", 14)) + '</span>' +
+            '<input type="range" id="vol-' + slug + '" class="audio-slider" min="0" max="100" value="' + Math.round(d.volume) + '"/>' +
+            '<span id="vol-lbl-' + slug + '" class="audio-meter-val">' + Math.round(d.volume) + '%</span>' +
+          '</div>'
+        ) : "") +
+      '</div>'
+    ) : "") +
+  '</div>';
 }
 
 // ── Settings ─────────────────────────────────────────────────
@@ -1873,6 +3373,19 @@ function renderSettings() {
       </div>
     </div>
 
+    <!-- Logs & Reports -->
+    <div class="card mt-4">
+      ${sectionTitle("file", "Logs & Reports")}
+      <p class="text-sm text-pulse-muted mb-3">File paths used by Pulse on this VPU.</p>
+      <div class="kv-grid mb-3" style="max-width:640px">
+        ${kvRow("Server log", data._paths?.serverLog || "—")}
+        ${kvRow("Settings file", data._paths?.settingsFile || "—")}
+      </div>
+      <button class="btn-outline btn-ol-blue" onclick="openServerLog()">
+        ${svgIcon("file", 14)} View Server Log
+      </button>
+    </div>
+
     <!-- Diagnostics -->
     <div class="card mt-4">
       ${sectionTitle("zap", "Diagnostics")}
@@ -1912,6 +3425,11 @@ function renderSettings() {
 // ── About ────────────────────────────────────────────────────
 
 function renderAbout() {
+  const dash = cached("dashboard");
+  if (!dash) fetchSection("dashboard");
+  const id = (dash || {}).identity || {};
+  const ver = dataCache._version;
+
   $page().innerHTML = `
     <div class="about-container">
       <div class="card about-card">
@@ -1922,10 +3440,12 @@ function renderAbout() {
         </div>
         <h2 class="about-title">Pulse</h2>
         <p class="about-tagline">Pixellot Unified Live System Evaluator</p>
-        <div class="about-version">v0.9.0-beta · Web Edition</div>
+        <div class="about-version" id="about-version">${ver ? esc(ver) + " · Web Edition" : "… · Web Edition"}</div>
         <p class="about-desc">A lightweight, self-contained diagnostic tool for Pixellot VPU systems. Collects system identity, hardware, performance metrics, network configuration, camera connectivity, service status, disk health, and event logs.</p>
         <div class="about-info">
           <div class="kv-grid kv-grid-center">
+            ${kvRow("Hostname", id.hostname || "—")}
+            ${kvRow("OS", id.os || "—")}
             ${kvRow("Backend", "Python + FastAPI + Uvicorn")}
             ${kvRow("Frontend", "Vanilla HTML/JS + Tailwind CSS")}
             ${kvRow("Data Collection", "PowerShell + WMI/CIM")}
@@ -1942,6 +3462,12 @@ function renderAbout() {
       </div>
     </div>
   `;
+  if (!ver) {
+    api("/api/version").then((d) => {
+      const el = document.getElementById("about-version");
+      if (el && d?.version) el.textContent = d.version + " · Web Edition";
+    }).catch(() => {});
+  }
 }
 
 // ── Init ─────────────────────────────────────────────────────
@@ -1976,7 +3502,8 @@ async function init() {
   const startPage = window.location.hash.slice(1) || "dashboard";
   navigate(startPage);
   preloadProgressive();
-  connectWS();
+  _updateThemeToggle();
+  // WebSocket is started inside preloadProgressive() after dashboard loads
 }
 
 document.addEventListener("DOMContentLoaded", init);

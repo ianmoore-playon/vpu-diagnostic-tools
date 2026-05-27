@@ -12,22 +12,26 @@
                 extend: {
                     colors: {
                         pulse: {
-                            bg: '#0f1117',
-                            sidebar: '#161822',
-                            card: '#1c1f2e',
-                            border: '#2a2d3e',
-                            accent: '#3b82f6',
-                            text: '#e2e8f0',
-                            muted: '#94a3b8',
+                            bg:      'var(--c-bg)',
+                            sidebar: 'var(--c-surface-2)',
+                            card:    'var(--c-surface)',
+                            border:  'var(--c-border)',
+                            accent:  '#3b82f6',
+                            text:    'var(--c-text)',
+                            muted:   'var(--c-muted)',
                         }
                     }
                 }
             }
         }
+        // Apply saved theme before first paint
+        if (localStorage.getItem('pulse-theme') === 'light') {
+            document.documentElement.classList.add('light');
+        }
     </script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
-<body class="dark h-full bg-pulse-bg text-pulse-text overflow-hidden">
+<body class="h-full bg-pulse-bg text-pulse-text overflow-hidden">
     <div id="app" class="flex h-full">
         <nav id="sidebar" class="w-56 bg-pulse-sidebar border-r border-pulse-border flex flex-col flex-shrink-0">
             <div class="sidebar-brand">
@@ -35,23 +39,28 @@
                     <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
                 </svg>
                 <div>
-                    <h1 class="text-base font-bold text-white tracking-tight leading-tight">Pulse Web</h1>
+                    <h1 class="text-base font-bold text-pulse-text tracking-tight leading-tight">Pulse Web</h1>
                     <p class="text-[10px] text-pulse-muted leading-tight">VPU Diagnostics</p>
                 </div>
             </div>
             <div id="demo-banner" class="demo-banner hidden">DEMO DATA</div>
             <div class="flex-1 overflow-y-auto py-1" id="nav-links"></div>
+            <button id="theme-toggle" class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle light/dark mode"></button>
             <div class="sidebar-footer"></div>
         </nav>
         <main id="content" class="flex-1 overflow-y-auto p-6">
             <div class="max-w-6xl mx-auto" id="page"></div>
         </main>
         <div id="log-pane" class="log-pane">
-            <div class="log-pane-header" onclick="toggleLogPane()">
-                <span>Script Log</span>
-                <span class="log-toggle-icon">&#9650;</span>
+            <div class="log-pane-header">
+                <div class="log-tabs">
+                    <button class="log-tab log-tab-active" data-log-tab="script" onclick="switchLogTab('script')">Script Log</button>
+                    <button class="log-tab" data-log-tab="server" onclick="switchLogTab('server')">Server Log</button>
+                </div>
+                <span class="log-toggle-icon" onclick="toggleLogPane()">&#9650;</span>
             </div>
-            <div class="log-body"></div>
+            <div class="log-body" data-log-body="script"></div>
+            <div class="log-body log-body-hidden" data-log-body="server"></div>
         </div>
     </div>
     <script src="/static/app.js"></script>

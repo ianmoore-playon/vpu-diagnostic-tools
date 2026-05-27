@@ -13,16 +13,17 @@ $ErrorActionPreference = 'Stop'
 
 try {
     $portTests = @(
-        @{ protocol = 'TCP'; port = 443; host = 'pixellot.tv';        purpose = 'Pixellot Cloud';    optional = $false }
-        @{ protocol = 'TCP'; port = 443; host = 'nfhsnetwork.com';    purpose = 'NFHS Network';      optional = $false }
-        @{ protocol = 'TCP'; port = 443; host = 'software.pixellot.tv'; purpose = 'Software Updates'; optional = $false }
-        @{ protocol = 'TCP'; port = 443; host = 's3.amazonaws.com';   purpose = 'AWS S3';            optional = $false }
-        @{ protocol = 'TCP'; port = 443; host = 'app.singular.live';  purpose = 'Singular Overlay';  optional = $false }
-        @{ protocol = 'TCP'; port = 443; host = 'balena-cloud.com';   purpose = 'Balena Cloud';      optional = $false }
-        @{ protocol = 'TCP'; port = 53;  host = '8.8.8.8';           purpose = 'Google DNS';         optional = $false }
-        @{ protocol = 'UDP'; port = 123; host = 'pool.ntp.org';      purpose = 'NTP';                optional = $false }
-        @{ protocol = 'TCP'; port = 443; host = 'logmein.com';       purpose = 'LogMeIn';            optional = $true }
-        @{ protocol = 'TCP'; port = 1402; host = 'sportzcast.net';   purpose = 'SportzCast';         optional = $true }
+        # Required
+        @{ protocol = 'TCP'; port = 443;  host = 'pixellot.tv';          purpose = 'Pixellot';          optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 'nfhsnetwork.com';      purpose = 'NFHS Network';      optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 's3.amazonaws.com';     purpose = 'AWS S3';            optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 'service.singular.live'; purpose = 'Singular Overlay';  optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 'logmein.com';          purpose = 'LogMeIn';           optional = $false }
+        @{ protocol = 'UDP'; port = 123;  host = 'prod-echo.pixellot.tv'; purpose = 'NTP';               optional = $false }
+        @{ protocol = 'UDP'; port = 2088; host = 'pixellot.tv';          purpose = 'Zixi Streaming';    optional = $false }
+        # Optional
+        @{ protocol = 'TCP'; port = 1935; host = 'sportzcast.net';       purpose = 'RTMP Ingest';       optional = $true }
+        @{ protocol = 'TCP'; port = 1402; host = 'sportzcast.net';       purpose = 'SportzCast';        optional = $true }
     )
 
     $results = foreach ($test in $portTests) {
@@ -44,12 +45,61 @@ try {
             }
         }
         elseif ($test.protocol -eq 'UDP' -and $test.port -eq 123) {
-            # For UDP NTP, verify DNS resolution as a proxy test
+            # Real NTP UDP test — send an NTP v3 client request and verify response
             try {
-                $resolved = Resolve-DnsName -Name $test.host -ErrorAction Stop
-                if ($resolved) {
-                    $status = 'pass'
+                $udp = New-Object System.Net.Sockets.UdpClient
+                $udp.Client.ReceiveTimeout = 3000
+                $udp.Client.SendTimeout = 3000
+                $addr = [System.Net.Dns]::GetHostAddresses($test.host) |
+                    Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } |
+                    Select-Object -First 1
+                if ($addr) {
+                    $ep = New-Object System.Net.IPEndPoint($addr, 123)
+                    # 48-byte NTP packet: byte 0 = 0x1B (LI=0, Version=3, Mode=3 client)
+                    $ntpReq = New-Object byte[] 48
+                    $ntpReq[0] = 0x1B
+                    $udp.Send($ntpReq, $ntpReq.Length, $ep) | Out-Null
+                    $remoteEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+                    $resp = $udp.Receive([ref]$remoteEP)
+                    if ($resp.Length -ge 48) { $status = 'pass' }
                 }
+                $udp.Close()
+            }
+            catch {
+                $status = 'fail'
+            }
+        }
+        elseif ($test.protocol -eq 'UDP') {
+            # Generic UDP probe — send a small packet and check for ICMP port-unreachable
+            # If we get a response or timeout with no rejection, consider it open
+            try {
+                $udp = New-Object System.Net.Sockets.UdpClient
+                $udp.Client.ReceiveTimeout = 2000
+                $udp.Client.SendTimeout = 2000
+                $addr = [System.Net.Dns]::GetHostAddresses($test.host) |
+                    Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } |
+                    Select-Object -First 1
+                if ($addr) {
+                    $ep = New-Object System.Net.IPEndPoint($addr, $test.port)
+                    $probe = New-Object byte[] 4
+                    $udp.Send($probe, $probe.Length, $ep) | Out-Null
+                    try {
+                        $remoteEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+                        $resp = $udp.Receive([ref]$remoteEP)
+                        # Got a response — port is open
+                        $status = 'pass'
+                    }
+                    catch [System.Net.Sockets.SocketException] {
+                        # ErrorCode 10054 = ICMP port unreachable (connection reset) — port blocked
+                        # Timeout (no ICMP rejection) usually means open/filtered — treat as pass
+                        if ($_.Exception.InnerException -and $_.Exception.InnerException.ErrorCode -eq 10054) {
+                            $status = 'fail'
+                        } else {
+                            $status = 'pass'
+                        }
+                    }
+                }
+                $udp.Close()
             }
             catch {
                 $status = 'fail'

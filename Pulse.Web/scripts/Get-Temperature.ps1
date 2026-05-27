@@ -28,15 +28,18 @@ try {
     }
     catch { }
 
-    # Try 2: Win32_PerfFormattedData_Counters_ThermalZoneInformation (already Celsius)
+    # Try 2: Win32_PerfFormattedData_Counters_ThermalZoneInformation (Kelvin)
     if ($null -eq $celsius) {
         try {
             $perfThermal = Get-CimInstance -ClassName Win32_PerfFormattedData_Counters_ThermalZoneInformation -ErrorAction Stop
             if ($perfThermal) {
                 $maxTemp = ($perfThermal | Measure-Object -Property Temperature -Maximum).Maximum
                 if ($null -ne $maxTemp) {
-                    $celsius = [math]::Round([double]$maxTemp, 1)
-                    $source = 'Win32_PerfFormattedData_Counters_ThermalZoneInformation'
+                    $converted = [math]::Round([double]$maxTemp - 273.15, 1)
+                    if ($converted -gt 0 -and $converted -lt 110) {
+                        $celsius = $converted
+                        $source = 'Win32_PerfFormattedData_Counters_ThermalZoneInformation'
+                    }
                 }
             }
         }
