@@ -2908,7 +2908,7 @@ function renderFaultIsolator() {
   $page().innerHTML = pageHeader(
     "Camera Fault Isolator",
     "Process-of-elimination swap test — isolate a camera fault to NIC port, cable, or camera (CHU).",
-    '<button class="btn-outline btn-ol-blue" onclick="navigate(\'cameras\')">' + svgIcon("arrow-left", 14) + " Cameras</button>"
+    '<button class="btn-outline btn-ol-blue" onclick="navigate(\'cameras\')">' + svgIcon("arrow-left", 14) + " Back to Camera Connectivity</button>"
   ) + '<div class="card">' + stepDots() + inner + historyTable() + "</div>";
 
   // ── event wiring ─────────────────────────────────────────────
