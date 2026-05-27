@@ -2856,11 +2856,9 @@ function renderFaultIsolator() {
       '<div class="fi-phase-title">' + esc(_fi.phaseTitle) + "</div>" +
       '<div class="fi-phase-instr">' + esc(_fi.phaseInstruction) + "</div>" +
       resultRow() +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0">' +
-        '<div><div class="text-xs text-pulse-muted mb-1">Suspect port (has the fault)</div>' +
-          '<select id="fi-suspect" class="ev-select" style="width:100%">' + def + allOpts + "</select></div>" +
-        '<div><div class="text-xs text-pulse-muted mb-1">Test port (known-good)</div>' +
-          '<select id="fi-test" class="ev-select" style="width:100%">' + def + allOpts + "</select></div>" +
+      '<div style="margin:16px 0;max-width:480px">' +
+        '<div class="text-xs text-pulse-muted mb-1">Suspect port (has the fault)</div>' +
+        '<select id="fi-suspect" class="ev-select" style="width:100%">' + def + allOpts + "</select>" +
       "</div>" +
       '<div style="display:flex;gap:10px;justify-content:flex-end">' +
         '<button id="fi-action" class="btn-primary" disabled>' + esc(_fi.actionLabel) + " →</button>" +
@@ -2922,30 +2920,17 @@ function renderFaultIsolator() {
   var inferBtn   = document.getElementById("fi-infer");
   var soBtn      = document.getElementById("fi-startover");
 
-  // Phase 0: both dropdowns visible, suspect change rebuilds test options
-  if (suspectSel && testSel && _fi.phase === 0) {
+  // Phase 0: only suspect dropdown — baseline is discovery only
+  if (suspectSel && _fi.phase === 0) {
     if (_fi.suspectIdx >= 0) suspectSel.value = String(_fi.suspectIdx);
-    if (_fi.testIdx    >= 0) testSel.value    = String(_fi.testIdx);
-    var rebuildTestOpts = function() {
-      var si = parseInt(suspectSel.value);
-      var curTest = parseInt(testSel.value);
-      testSel.innerHTML = '<option value="-1">— Select —</option>' +
-        ports.map(function(p, i) { return portOption(p, i, si); }).join("");
-      // Restore selection if still valid
-      if (curTest >= 0 && curTest !== si) testSel.value = String(curTest);
-      else { testSel.value = "-1"; _fi.testIdx = -1; }
-    };
     var updateBegin = function() {
-      var s = parseInt(suspectSel.value), t = parseInt(testSel.value);
-      if (actionBtn) actionBtn.disabled = (s < 0 || t < 0 || s === t);
+      var s = parseInt(suspectSel.value);
+      if (actionBtn) actionBtn.disabled = (s < 0);
     };
     suspectSel.addEventListener("change", function() {
       _fi.suspectIdx = parseInt(suspectSel.value);
-      rebuildTestOpts();
       updateBegin();
     });
-    testSel.addEventListener("change", function() { _fi.testIdx = parseInt(testSel.value); updateBegin(); });
-    rebuildTestOpts();
     updateBegin();
   }
 
@@ -3015,13 +3000,10 @@ function renderFaultIsolator() {
   async function doAction() {
     if (_fi.checking) return;
 
-    // Phase 0 — Baseline: poll suspect port speed
+    // Phase 0 — Baseline: poll suspect port speed (discovery only, no test port yet)
     if (_fi.phase === 0) {
-      var si = _fi.suspectIdx, ti = _fi.testIdx;
-      if (si < 0 || ti < 0 || si === ti) return;
-      // Capture test port pre-swap speed now for Phase 2 pre-check
-      var tPort = ports[ti];
-      _fi.testPreSpeedMbps = tPort ? (tPort.linkSpeedMbps || 0) : 0;
+      var si = _fi.suspectIdx;
+      if (si < 0) return;
       _fi.checking = true;
       renderFaultIsolator();
 
@@ -3046,10 +3028,10 @@ function renderFaultIsolator() {
       var bMsg, bInstr;
       if (spd0 <= 0) {
         bMsg   = "No link detected";
-        bInstr = "Verify the camera is powered on and the cable is seated firmly. Then click Check Now to continue.";
+        bInstr = "Verify the camera is powered on and the cable is seated firmly. Select a known-good test port below, then click Check Now.";
       } else {
         bMsg   = "Link is degraded at " + sl0 + " (expected 1 Gbps)";
-        bInstr = "Move the SAME cable and camera from " + sn0 + " to the test port (" + portLabel(ti) + "). Then click Check Now.";
+        bInstr = "Select a known-good test port below, then move the SAME cable and camera from " + sn0 + " to it. Click Check Now when ready.";
       }
       addHistory("Phase 1 - Baseline", cfg0, sl0, bMsg + " — beginning isolation.", "Fail");
       showResult("Baseline: " + sl0 + " — " + bMsg + ".", bInstr, "fail");
