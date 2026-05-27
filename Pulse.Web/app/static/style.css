@@ -103,7 +103,11 @@ html, body { height: 100%; margin: 0; }
 .splash {
     position: fixed;
     inset: 0;
-    background: var(--c-bg);
+    /* Splash uses a fixed light background regardless of theme so the
+       dark-navy PULSE wordmark on the logo always reads. The brand-first
+       view is intentionally not theme-aware — the UI behind it picks up
+       the user's theme as soon as the splash fades. */
+    background: #f8fafc;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -113,14 +117,14 @@ html, body { height: 100%; margin: 0; }
     transition: opacity 0.4s ease-out;
 }
 .splash-logo {
-    max-width: 420px;
-    width: 60vmin;
+    max-width: 480px;
+    width: 65vmin;
     height: auto;
     animation: pulse-fade 1.6s ease-in-out infinite;
 }
 .splash-status {
     font-size: 0.85rem;
-    color: var(--c-muted);
+    color: #475569;          /* mid slate, readable on the fixed light bg */
     font-weight: 500;
     letter-spacing: 0.02em;
     text-align: center;
