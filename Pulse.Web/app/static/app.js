@@ -2349,20 +2349,14 @@ function _camNicDiagramHtml(ports) {
       '<span class="nic-legend-label">Port ' + (li + 1) + '</span>' +
     '</div>';
   }
-  // NIC header: collect unique adapter descriptions across all ports.
-  // Windows tacks " #2", " #3" etc on duplicate adapter names from the
-  // same physical NIC card — strip those before deduplicating so we
-  // don't show the same card four times. Mixed-NIC systems (e.g. an
-  // I210 + an I350) will still show both unique cards joined.
-  var seenDescs = {};
-  var uniqueDescs = [];
+  // NIC header: show just the primary card name. Windows appends " #N"
+  // to duplicate adapter descriptions from the same card — strip that
+  // and use the first port's description as the card label.
+  var nicDesc = "";
   for (var ni = 0; ni < ports.length; ni++) {
     var d = ports[ni] && ports[ni].interfaceDescription;
-    if (!d) continue;
-    var norm = d.replace(/\s*#\d+\s*$/, "").trim();
-    if (!seenDescs[norm]) { seenDescs[norm] = true; uniqueDescs.push(norm); }
+    if (d) { nicDesc = d.replace(/\s*#\d+\s*$/, "").trim(); break; }
   }
-  var nicDesc = uniqueDescs.join(" + ");
   var hasRealPorts = ports.length > 0;
   var headerLabel;
   if (nicDesc) headerLabel = svgIcon("cpu", 16) + ' ' + esc(nicDesc) + ' · ' + count + ' ports';
