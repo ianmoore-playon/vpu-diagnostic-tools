@@ -1500,6 +1500,15 @@ async def api_restart_agent():
     return await run_ps("Restart-PixellotAgent.ps1", timeout=120)
 
 
+@app.post("/api/services/reinstall-deps")
+async def api_reinstall_deps():
+    """Downloads and runs Pixellot-Installer-Dependencies-5.0.0.exe per
+    PDF #2 — the documented remedy for CUDNN/TensorFlow errors in the
+    VPU logs. Download can take a few minutes; installer up to ~10 min."""
+    # 20 min cap covers a slow download plus the installer itself.
+    return await run_ps("Install-PixellotDependencies.ps1", timeout=1200)
+
+
 @app.get("/api/disk-health")
 async def api_disk_health():
     return await run_ps("Get-DiskHealth.ps1")

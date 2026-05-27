@@ -2862,11 +2862,48 @@ function renderServices() {
       <div id="svc-keepagent-result" class="svc-quick-action-result hidden"></div>
     </div>
 
+    <!-- Reinstall Pixellot Dependencies — PDF #2 -->
+    <!-- Hidden by default; revealed if the log scanner found CUDNN/TensorFlow errors. -->
+    <div class="card svc-quick-action hidden" id="svc-reinstall-card">
+      <div class="svc-quick-action-row">
+        <div>
+          <div class="svc-quick-action-title">Reinstall Pixellot Dependencies</div>
+          <div class="svc-quick-action-body" id="svc-reinstall-body">
+            Downloads <span class="font-mono">Pixellot-Installer-Dependencies-5.0.0.exe</span> to <span class="font-mono">C:\\pixellot\\downloadedversion\\</span> and runs it silently. Documented remedy for <span class="font-mono">CUDNN_STATUS_*</span> and TensorFlow errors in the VPU logs.
+          </div>
+        </div>
+        <button class="btn-outline btn-ol-amber" id="svc-reinstall-btn">
+          ${svgIcon("download", 14)} Reinstall Dependencies
+        </button>
+      </div>
+      <div id="svc-reinstall-result" class="svc-quick-action-result hidden"></div>
+    </div>
+
     <div class="svc-grid" id="svc-grid">
       ${svcs.map(svcTile).join("")}
       ${!svcs.length ? '<p class="text-pulse-muted text-sm">No services data</p>' : ""}
     </div>
   `;
+
+  // Check the log scanner for CUDNN/TensorFlow errors — show the reinstall
+  // card only when those errors are present so we don't suggest a 10-min
+  // install on a healthy box.
+  (async () => {
+    const r = await api("/api/pixellot-logs?hours=48");
+    if (currentPage !== "services") return;
+    const card = document.getElementById("svc-reinstall-card");
+    const body = document.getElementById("svc-reinstall-body");
+    if (!card) return;
+    if (r && !r.error && r.depsErrorDetected) {
+      card.classList.remove("hidden");
+      if (body) {
+        body.innerHTML = `
+          <span class="font-semibold" style="color:var(--c-accent-red)">${svgIcon("alert", 12)} CUDNN/TensorFlow errors detected in the VPU logs.</span>
+          Downloads <span class="font-mono">Pixellot-Installer-Dependencies-5.0.0.exe</span> to <span class="font-mono">C:\\pixellot\\downloadedversion\\</span> and runs it silently — documented remedy per PDF #2.
+        `;
+      }
+    }
+  })();
 
   document.getElementById("svc-grid")?.addEventListener("click", async (e) => {
     const btn = e.target.closest(".svc-restart-btn");
@@ -2925,6 +2962,47 @@ function renderServices() {
         if (grid) grid.innerHTML = (fresh.services || []).map(svcTile).join("");
       });
     }
+  });
+
+  // Reinstall Pixellot Dependencies (PDF #2) — confirm + run + show result
+  document.getElementById("svc-reinstall-btn")?.addEventListener("click", async () => {
+    const ok = confirm(
+      "Reinstall Pixellot Dependencies?\n\n" +
+      "This downloads Pixellot-Installer-Dependencies-5.0.0.exe (~90 MB) and " +
+      "runs it silently. Total time can be 5–15 minutes. Recording will be " +
+      "paused while the installer runs, and a reboot is recommended afterward.\n\n" +
+      "Proceed?"
+    );
+    if (!ok) return;
+
+    const btn = document.getElementById("svc-reinstall-btn");
+    const result = document.getElementById("svc-reinstall-result");
+    btn.disabled = true;
+    btn.innerHTML = `${svgIcon("refresh", 14)} Downloading + installing…`;
+    result.classList.remove("hidden");
+    result.className = "svc-quick-action-result";
+    result.innerHTML = `<div class="text-xs text-pulse-muted">Running — this can take 5–15 minutes. Watch the Script Log for progress.</div>`;
+
+    const r = await apiPost("/api/services/reinstall-deps", {});
+    btn.disabled = false;
+    btn.innerHTML = `${svgIcon("download", 14)} Reinstall Dependencies`;
+
+    const okState = r && r.success;
+    result.className = "svc-quick-action-result " + (okState ? "svc-result-ok" : "svc-result-err");
+    const stepsHtml = (r?.steps || []).map(s =>
+      `<li class="px-step px-step-${esc(s.status)}">
+        ${svgIcon(s.status === "ok" ? "check" : s.status === "skipped" ? "info" : "alert", 12)}
+        <span class="font-semibold">${esc(s.label)}</span>
+        <span class="text-xs text-pulse-muted">${esc(s.detail || "")}</span>
+        ${s.durationMs ? `<span class="text-xs text-pulse-muted">· ${Math.round(s.durationMs/1000)}s</span>` : ""}
+      </li>`
+    ).join("");
+    result.innerHTML = `
+      <div class="font-semibold">${okState ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
+      <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
+      ${stepsHtml ? `<ul class="px-steps mt-2">${stepsHtml}</ul>` : ""}
+      ${r?.targetFile ? `<div class="text-xs text-pulse-muted mt-2">Installer: <span class="font-mono">${esc(r.targetFile)}</span></div>` : ""}
+    `;
   });
 }
 
