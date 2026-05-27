@@ -2149,9 +2149,10 @@ function _camNicDiagramHtml(ports) {
   for (var ni = 0; ni < ports.length; ni++) {
     if (ports[ni] && ports[ni].interfaceDescription) { nicDesc = ports[ni].interfaceDescription; break; }
   }
-  var nicHeader = nicDesc
-    ? '<div class="nic-diagram-header">' + svgIcon("cpu", 16) + ' ' + esc(nicDesc) + ' · ' + count + ' ports</div>'
-    : '';
+  var nicHeader = '<div class="nic-diagram-header">' +
+    (nicDesc ? svgIcon("cpu", 16) + ' ' + esc(nicDesc) + ' · ' + count + ' ports' : count + ' ports') +
+    '<span id="cam-live-badge" class="cam-live-badge">Auto-Refresh</span>' +
+  '</div>';
   return nicHeader + '<div class="nic-diagram-wrap">' +
     '<div class="nic-diagram-ports">' + portIcons + '</div>' +
     '<div class="nic-diagram-legend">' + legend + '</div>' +
@@ -2174,8 +2175,7 @@ function renderCameras() {
 
   $page().innerHTML = `
     ${pageHeader("Camera Connectivity", "NIC ports, link status, speed, and Pixellot camera detection",
-      `<span id="cam-live-badge" class="cam-live-badge">LIVE</span>
-      <button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
+      `<button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
         ${svgIcon("zap", 14)} Fault Isolator
       </button>`
     )}
