@@ -1217,6 +1217,18 @@ function renderSystem() {
             <td>${esc(m.deviceLocator)}</td>
           </tr>`).join("")}
           </tbody></table>
+          ${(() => {
+            const totalGb = memory.reduce((s, m) => s + (Number(m.capacityGB) || 0), 0);
+            if (totalGb <= 0) return "";
+            const formatted = Number.isInteger(totalGb) ? totalGb : totalGb.toFixed(2);
+            if (totalGb < 32) {
+              return `<div class="sys-mem-warn mt-3">
+                ${svgIcon("alert", 14)}
+                <span><strong>${esc(String(formatted))} GB installed</strong> — Pixellot VPUs require 32 GB. Encoder workloads may stall or drop frames.</span>
+              </div>`;
+            }
+            return `<div class="text-xs text-pulse-muted mt-2">Total: ${esc(String(formatted))} GB</div>`;
+          })()}
         ` : '<p class="text-pulse-muted text-sm">No memory data</p>'}
       </div>
     </div>

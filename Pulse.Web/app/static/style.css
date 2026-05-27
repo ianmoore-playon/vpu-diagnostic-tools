@@ -996,6 +996,21 @@ html.dark .splash-logo {
     font-weight: 600;
 }
 
+/* System Overview — RAM warning when under the 32 GB Pixellot baseline */
+.sys-mem-warn {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: var(--c-tint-amber, rgba(217, 119, 6, 0.08));
+    border-left: 3px solid var(--c-accent-amber, #d97706);
+    color: var(--c-text);
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+.sys-mem-warn svg { flex-shrink: 0; color: var(--c-accent-amber, #d97706); margin-top: 2px; }
+
 /* Software filter */
 .sw-filter-input {
     width: 100%;

@@ -379,8 +379,46 @@ def _is_pixellot_mac(mac: str) -> bool:
     return False
 
 
-def _compute_findings(identity, performance, services, nics) -> list:
+PIXELLOT_MIN_RAM_GB = 32
+
+
+def _total_ram_gb(hardware, performance) -> float:
+    """Return total installed RAM in GB. Prefers DIMM sum (exact) over the
+    OS-visible total (reduced by reserved memory). Returns 0 if neither
+    source is usable."""
+    if hardware and not hardware.get("error"):
+        dimms = hardware.get("memory") or []
+        total = sum((d.get("capacityGB") or 0) for d in dimms)
+        if total > 0:
+            return float(total)
+    if performance and not performance.get("error"):
+        mem = performance.get("memory") or {}
+        # Real script emits totalMB; demo emits totalGB. Try both.
+        total_mb = mem.get("totalMB")
+        if total_mb:
+            return round(total_mb / 1024, 2)
+        total_gb = mem.get("totalGB")
+        if total_gb:
+            return float(total_gb)
+    return 0.0
+
+
+def _compute_findings(identity, performance, services, nics, hardware=None) -> list:
     findings = []
+
+    # ── Installed RAM ────────────────────────────────────────
+    # Pixellot VPUs ship with 32GB of RAM. Anything less suggests an
+    # undersized host or a failed DIMM — encoder workloads will degrade.
+    total_ram = _total_ram_gb(hardware, performance)
+    if total_ram > 0 and total_ram < PIXELLOT_MIN_RAM_GB - 1:  # -1 GB tolerance for OS overhead when falling back to performance.memory
+        findings.append(
+            {
+                "severity": "warning",
+                "category": "Hardware",
+                "title": "Insufficient RAM",
+                "recommendation": f"System has {total_ram:g} GB RAM; Pixellot VPUs require {PIXELLOT_MIN_RAM_GB} GB. Encoder workloads may stall or drop frames. Add memory or escalate for replacement.",
+            }
+        )
 
     if identity and not identity.get("error"):
         uptime_secs = identity.get("uptime", {}).get("totalSeconds", 0)
@@ -837,7 +875,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None):
     flat_identity = {}
     if identity and not identity.get("error"):
         flat_identity = {
@@ -870,7 +908,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None)
         "identity": flat_identity,
         "performance": performance if not performance.get("error", False) else {},
         "services": services if not services.get("error", False) else {"services": []},
-        "findings": _compute_findings(identity, performance, services, nics),
+        "findings": _compute_findings(identity, performance, services, nics, hardware),
         "networkConfig": net_cfg,
     }
 
@@ -961,7 +999,7 @@ async def api_preload():
     probe_results_pre = await _probe_all_cameras(raw_ports_pre, ocr_ips_pre)
 
     return {
-        "dashboard": _build_dashboard(identity, performance, services, nics, network_config),
+        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware),
         "system": {
             "identity": identity,
             "hardware": hardware,
@@ -1031,14 +1069,15 @@ async def api_scripts_cancel_all():
 
 @app.get("/api/dashboard")
 async def api_dashboard():
-    identity, performance, services, nics, net_config = await asyncio.gather(
+    identity, performance, services, nics, net_config, hardware = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
         run_ps("Get-NicAdapters.ps1"),
         run_ps("Get-NetworkConfig.ps1", timeout=15),
+        run_ps("Get-Hardware.ps1"),
     )
-    return _build_dashboard(identity, performance, services, nics, net_config)
+    return _build_dashboard(identity, performance, services, nics, net_config, hardware)
 
 
 @app.get("/api/system")

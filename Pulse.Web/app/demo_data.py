@@ -63,8 +63,8 @@ DEMO = {
     "Get-Hardware.ps1": lambda **kw: {
         "processors": [{"name": "Intel(R) Core(TM) i7-8700T CPU @ 2.40GHz", "numberOfCores": 6, "numberOfLogicalProcessors": 12, "maxClockSpeedMHz": 2400}],
         "memory": [
-            {"capacityGB": 8, "speedMHz": 2666, "memoryType": "DDR4", "deviceLocator": "DIMM_A1"},
-            {"capacityGB": 8, "speedMHz": 2666, "memoryType": "DDR4", "deviceLocator": "DIMM_B1"},
+            {"capacityGB": 16, "speedMHz": 2666, "memoryType": "DDR4", "deviceLocator": "DIMM_A1"},
+            {"capacityGB": 16, "speedMHz": 2666, "memoryType": "DDR4", "deviceLocator": "DIMM_B1"},
         ],
         "gpus": [{"name": "Intel(R) UHD Graphics 630", "adapterRAMMB": 1024, "driverVersion": "27.20.100.8935"}],
         "diskDrives": [
