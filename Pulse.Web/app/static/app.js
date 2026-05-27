@@ -917,7 +917,7 @@ function renderDashboard() {
       </div>
     </div>
 
-    <!-- Command Center + Top Findings -->
+    <!-- Command Center (left: severity + baseline + top findings) + Subsystems (right) -->
     <div class="dash-top-grid">
       <div class="card command-center">
         <h3 class="card-label">COMMAND CENTER</h3>
@@ -926,24 +926,26 @@ function renderDashboard() {
           ${svgIcon("check", 14)}
           Baseline completed ${esc(timeStr)} &bull; ${subsystems.length} panel${subsystems.length === 1 ? "" : "s"} checked &bull; ${totalFindings} finding${totalFindings === 1 ? "" : "s"}
         </div>
-      </div>
-      <div class="card findings-panel">
-        <div class="flex justify-between items-center mb-3">
-          <h3 class="card-label mb-0">TOP FINDINGS</h3>
-          ${moreCount > 0 ? `<span class="text-xs text-pulse-muted">${moreCount} more below</span>` : ""}
+        <div class="cc-findings">
+          <div class="flex justify-between items-center mb-2">
+            <h3 class="card-label mb-0">TOP FINDINGS</h3>
+            ${moreCount > 0 ? `<span class="text-xs text-pulse-muted">${moreCount} more below</span>` : ""}
+          </div>
+          ${topFindings.length
+            ? topFindings.map((f) => `
+              <a class="finding-item" href="#${esc(_findingPageFor(f.category))}" onclick="event.preventDefault();navigate('${esc(_findingPageFor(f.category))}')">
+                <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
+                <span class="finding-cat">[${esc(f.category)}]</span>
+                <span class="finding-title">${esc(f.title)}</span>
+                <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
+              </a>`).join("")
+            : `<div class="dash-no-findings">${svgIcon("check", 16)} <span>No active findings detected.</span></div>`
+          }
         </div>
-        ${topFindings.length
-          ? topFindings.map((f) => `
-            <a class="finding-item" href="#${esc(_findingPageFor(f.category))}" onclick="event.preventDefault();navigate('${esc(_findingPageFor(f.category))}')">
-              <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
-              <span class="finding-cat">[${esc(f.category)}]</span>
-              <span class="finding-title">${esc(f.title)}</span>
-              <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
-            </a>`).join("")
-          : `<div class="dash-no-findings">${svgIcon("check", 16)} <span>No active findings detected.</span></div>`
-        }
-        <h3 class="card-label mt-4 mb-2">SUBSYSTEMS</h3>
-        <div class="dash-sub-grid">
+      </div>
+      <div class="card subsystems-panel">
+        <h3 class="card-label">SUBSYSTEMS</h3>
+        <div class="dash-sub-grid dash-sub-grid-full">
           ${subsystems.map((s) => `
             <a class="dash-sub-tile" href="#${esc(s.id)}" onclick="event.preventDefault();navigate('${esc(s.id)}')">
               <div class="dash-sub-top">

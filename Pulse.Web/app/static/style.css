@@ -407,13 +407,18 @@ html.dark .splash-logo {
 }
 
 /* ── Command center card ──────────────────────────────────── */
-/* Center the contents vertically — with the live-metric boxes
-   removed, the panel is shorter than the findings/subsystems card
-   next to it, and a top-aligned baseline bar leaves a visible gap. */
+/* Houses severity heading + baseline bar + Top Findings list.
+   No vertical centering — content fills the card naturally now
+   that Top Findings was moved in from the right panel. */
 .command-center {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+}
+/* Top Findings block inside the Command Center.
+   Pushed down a touch from the baseline bar so the section header
+   reads as its own subsection rather than running into the bar. */
+.cc-findings {
+    margin-top: 0.9rem;
 }
 .card-label {
     font-size: 0.7rem;
@@ -445,8 +450,12 @@ html.dark .splash-logo {
     margin-bottom: 0;
 }
 
-/* ── Top findings panel ───────────────────────────────────── */
+/* ── Top findings + Subsystems panels ───────────────────────── */
+/* .findings-panel = legacy class kept for any older renders; current
+   layout uses .cc-findings (inside Command Center) for the list and
+   .subsystems-panel (right side) for the tile grid. */
 .findings-panel { display: flex; flex-direction: column; }
+.subsystems-panel { display: flex; flex-direction: column; }
 .finding-item {
     display: flex;
     align-items: center;
@@ -701,12 +710,25 @@ html.dark .splash-logo {
 }
 .dash-no-findings svg { color: var(--c-accent-green); flex-shrink: 0; }
 
-/* Compact subsystem tiles (inside findings panel) */
+/* Subsystem tiles — base styling. */
 .dash-sub-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 6px;
 }
+/* When the grid owns its own panel (right side of dash-top-grid), stretch
+   the tiles to fill the panel's vertical space evenly. Tile padding +
+   description sizing scale up so they read at the new larger footprint. */
+.dash-sub-grid-full {
+    grid-auto-rows: 1fr;
+    flex: 1;
+    gap: 10px;
+}
+.dash-sub-grid-full .dash-sub-tile {
+    padding: 12px 14px;
+}
+.dash-sub-grid-full .dash-sub-name { font-size: 0.85rem; }
+.dash-sub-grid-full .dash-sub-desc { font-size: 0.7rem; }
 .dash-sub-tile {
     display: block;
     padding: 8px 10px;
