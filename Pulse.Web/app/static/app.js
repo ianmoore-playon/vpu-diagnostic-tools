@@ -2065,22 +2065,22 @@ function _camPortTile(port, index) {
         ? '<div class="kv-mini"><span>Errors</span><span class="status-warn">RX ' + (p.rxPacketErrors || 0) + ' / TX ' + (p.txPacketErrors || 0) + ' / Discards ' + ((p.rxDiscards || 0) + (p.txDiscards || 0)) + '</span></div>'
         : '<div class="kv-mini"><span>Errors</span><span class="status-pass">None</span></div>'}
     </div>
-    ${cams.length > 0 ? `
-      <div class="cam-detected">
-        <div class="cam-detected-label">${cams.length} Pixellot camera${cams.length > 1 ? "s" : ""} detected</div>
-        ${cams.map(c => {
-          var displayModel = c.modelNumber || (c.model && c.model !== "IP Camera" ? c.model : null);
-          return `<div class="cam-detected-entry">
+    ${cams.length > 0 ? (() => {
+      var c = cams[0];
+      var displayModel = c.modelNumber || (c.model && c.model !== "IP Camera" ? c.model : null);
+      return `<div class="cam-detected">
+        <div class="cam-detected-label">Pixellot camera detected</div>
+        <div class="cam-detected-entry">
           <span class="font-mono cam-entry-ip">${esc(c.ip)}</span>
           <span class="font-mono text-pulse-muted cam-entry-mac">${esc(c.mac)}</span>
           ${c.role ? '<span class="cam-role-badge">' + esc(c.role) + '</span>' : ''}
           ${displayModel ? '<span class="cam-model-label">' + esc(displayModel) + '</span>' : ''}
           <span class="cam-entry-source text-pulse-muted">${esc(c.identitySource || '')}</span>
-        </div>`;
-        }).join("")}
+        </div>
       </div>
-      ${_camDetailsPanel(cams, index)}
-    ` : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
+      ${_camDetailsPanel(cams, index)}`;
+    })()
+    : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
   </div>`;
 }
 
