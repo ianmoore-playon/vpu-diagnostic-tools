@@ -39,14 +39,21 @@ try {
     }
     catch { }
 
-    # VPU friendly name from the latest agent_vpu2 log
-    # Uses findstr (native, encoding-safe) then regex to extract the name
+    # VPU friendly name from the latest Pixellot agent log
+    # Uses findstr (native, encoding-safe) then regex to extract the name.
+    # We try several log filename patterns since Pixellot has renamed these
+    # across firmware versions (agent_vpu2_*, agent_vpu_*, agent_*).
     $vpuName = $null
     try {
         $logDir = 'C:\Pixellot\Data\Log'
         if (Test-Path $logDir) {
-            $latestLog = Get-ChildItem -Path $logDir -Filter 'agent_vpu2_*.log' -ErrorAction SilentlyContinue |
-                Sort-Object Name -Descending | Select-Object -First 1
+            $logPatterns = @('agent_vpu2_*.log', 'agent_vpu_*.log', 'agent_*.log')
+            $latestLog = $null
+            foreach ($pattern in $logPatterns) {
+                $latestLog = Get-ChildItem -Path $logDir -Filter $pattern -ErrorAction SilentlyContinue |
+                    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                if ($latestLog) { break }
+            }
             if ($latestLog) {
                 $lines = & findstr /C:"BROADCAST_NAME" $latestLog.FullName 2>$null
                 if ($lines) {

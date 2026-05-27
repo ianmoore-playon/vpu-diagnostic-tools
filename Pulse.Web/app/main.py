@@ -828,10 +828,16 @@ _BOOT_TS = str(int(__import__("time").time()))  # changes every server restart
 async def serve_index():
     with open(_os.path.join(_static_dir, "index.html")) as f:
         html = f.read()
-    # Cache-bust with version + boot timestamp so Chrome always gets fresh assets
+    # Cache-bust with version + boot timestamp so Chrome always gets fresh
+    # assets. Regex-based replacement is robust to attribute reordering or
+    # additional tag attributes — string replace would silently break.
+    import re
     bust = f"{APP_VERSION}.{_BOOT_TS}"
-    html = html.replace("/static/style.css", f"/static/style.css?v={bust}")
-    html = html.replace("/static/app.js", f"/static/app.js?v={bust}")
+    html = re.sub(
+        r'(/static/[a-z0-9_\-]+\.(?:css|js))(\?[^"\']*)?',
+        lambda m: f"{m.group(1)}?v={bust}",
+        html,
+    )
     return HTMLResponse(html)
 
 
