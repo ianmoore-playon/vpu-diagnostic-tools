@@ -2204,22 +2204,6 @@ function renderCameras() {
       </tbody></table>
     </div>` : ""}
 
-    ${ports.filter(p => p.arpEntries?.length).map(p => `
-    <div class="card mt-4">
-      <details>
-        <summary class="text-sm text-pulse-muted cursor-pointer font-medium">
-          ${esc(p.name)} — ARP entries (${p.arpEntries.length})
-        </summary>
-        <div class="mt-3 max-h-48 overflow-y-auto">
-          <table class="data-table"><thead><tr><th>IP</th><th>MAC</th></tr></thead><tbody>
-          ${p.arpEntries.map(a => `<tr>
-            <td class="font-mono text-xs">${esc(a.ip)}</td>
-            <td class="font-mono text-xs">${esc(a.mac)}</td>
-          </tr>`).join("")}
-          </tbody></table>
-        </div>
-      </details>
-    </div>`).join("")}
   `;
 
   // ── Live refresh: poll /api/cameras every 3s and update port grid + findings ──
