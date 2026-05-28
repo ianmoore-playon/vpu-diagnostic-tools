@@ -2174,6 +2174,18 @@ async def api_scoreconnect():
     return await run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": url}, timeout=15)
 
 
+@app.get("/api/scoreconnect/live")
+async def api_scoreconnect_live():
+    """Lightweight live poll of SC III scoreboard data only. A single stateless
+    GET to localhost:5000 — safe to poll every 1-2s. Does NOT touch SC II or
+    enumerate WMI. Drives the live-updating clock/scores on the Score Connect
+    page. SC III is a REST service built for concurrent clients, so this does
+    not interfere with the data stream Pixellot's agent relies on."""
+    settings = load_settings()
+    url = settings.get("scoreConnectUrl", "http://localhost:5000")
+    return await run_ps("Get-ScoreConnectLive.ps1", {"BaseUrl": url}, timeout=6)
+
+
 @app.post("/api/scoreconnect/install-sc3")
 async def api_install_sc3():
     """Kicks off a ScoreConnect III install as an elevated background task.

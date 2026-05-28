@@ -3749,8 +3749,17 @@ function parseRtdScores(rawData, vendor, sport) {
   }
 
   // ── Strategy 2: Vendor-specific positional parsing ──────────────────
-  // Strip trailing metadata (serial/ID blocks like "S:S ..." or MAC addresses)
-  var cleaned = rawData.replace(/\s*S:S\s.*$/, "").replace(/\s+$/, "");
+  // Strip trailing metadata. Daktronics-via-Sportzcast appends a clock-run
+  // status token + MAC/checksum: "... R:S 00D3098DEBCE5DE05B" where the
+  // first char is clock run-state (R=running, S=stopped). Capture that, then
+  // strip from the token onward. Falls back to stripping a trailing hex blob.
+  var clockRunning = null;
+  var statusMatch = rawData.match(/\s+([A-Za-z]):([A-Za-z])\b/);
+  if (statusMatch) clockRunning = (statusMatch[1].toUpperCase() === "R");
+  var cleaned = rawData
+    .replace(/\s+[A-Za-z]:[A-Za-z]\b.*$/, "")   // strip "R:S 00D3..." / "S:S ..."
+    .replace(/\s+[0-9A-Fa-f]{12,}\s*$/, "")     // or a bare trailing MAC/hex
+    .replace(/\s+$/, "");
   if (cleaned.length < 5) { /* fall through to heuristic */ }
   else {
     // Helpers
@@ -3779,7 +3788,8 @@ function parseRtdScores(rawData, vendor, sport) {
     }
 
     var r2 = { clock: null, homeScore: null, guestScore: null, period: null,
-               down: null, toGo: null, ballOn: null, possession: null, _strategy: null };
+               down: null, toGo: null, ballOn: null, possession: null,
+               clockRunning: clockRunning, _strategy: null };
 
     // ── Daktronics All Sport CG ───────────────────────────────────────
     // Clock pos 0-4, Guest 5-7, Home 8-10, Period 11, Poss 12, Down 13-14
@@ -4011,16 +4021,19 @@ function renderScoreConnect() {
       <div class="sc-header">
         <div class="sc-team-home">
           <div class="sc-team-label">${esc(visitorLabel)}</div>
-          <div class="sc-score">${rtdParsed.guestScore != null ? esc(String(rtdParsed.guestScore)) : "—"}</div>
+          <div class="sc-score" id="sc3-guest">${rtdParsed.guestScore != null ? esc(String(rtdParsed.guestScore)) : "—"}</div>
         </div>
         <div class="sc-center">
-          <div class="sc-period-label">${rtdParsed.period ? "Q" + rtdParsed.period : "GAME CLOCK"}</div>
-          <div class="sc-clock">${esc(rtdParsed.clock || "--:--")}</div>
-          ${rtdParsed.down ? `<div class="sc-data-desc">${esc(String(rtdParsed.down))}${rtdParsed.toGo ? " &amp; " + esc(String(rtdParsed.toGo)) : ""}${rtdParsed.ballOn ? " on " + esc(String(rtdParsed.ballOn)) : ""}</div>` : ""}
+          <div class="sc-period-label" id="sc3-period">${rtdParsed.period ? "Q" + rtdParsed.period : "GAME CLOCK"}</div>
+          <div class="sc-clock" id="sc3-clock">${esc(rtdParsed.clock || "--:--")}</div>
+          <div class="sc-data-desc" id="sc3-down">${_sc3DownText(rtdParsed)}</div>
+          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:var(--c-accent-green);display:flex;align-items:center;justify-content:center;gap:0.3rem">
+            <span style="width:6px;height:6px;border-radius:50%;background:var(--c-accent-green);display:inline-block;animation:pulse-live 1.4s ease-in-out infinite"></span>LIVE
+          </div>
         </div>
         <div class="sc-team-away">
           <div class="sc-team-label">${esc(homeLabel)}</div>
-          <div class="sc-score">${rtdParsed.homeScore != null ? esc(String(rtdParsed.homeScore)) : "—"}</div>
+          <div class="sc-score" id="sc3-home">${rtdParsed.homeScore != null ? esc(String(rtdParsed.homeScore)) : "—"}</div>
         </div>
       </div>
       <div class="sc-stats">
@@ -4059,7 +4072,7 @@ function renderScoreConnect() {
       ${data.rawData ? `
       <div class="sc-raw-data">
         <div class="sc-raw-label">RAW SCOREBOARD DATA (SC III)</div>
-        <div class="sc-raw-value">${esc(data.rawData)}</div>
+        <div class="sc-raw-value" id="sc3-raw-value">${esc(data.rawData)}</div>
       </div>` : ""}
       <div class="sc-stats">
         <div class="sc-stat-group">
@@ -4162,6 +4175,72 @@ function renderScoreConnect() {
      : botCard || slCard ? `<div class="mt-4">${botCard}${slCard}</div>`
      : ""}
   `;
+
+  // Start live polling for SC III scores (safe — stateless REST).
+  // Only when SC III is detected and currently receiving data.
+  if (isDetected && dataReceiving) {
+    _sc3StartLivePoll(config.vendor, config.sport);
+  } else {
+    _sc3StopLivePoll();
+  }
+}
+
+// ── SC III Live Score Polling ────────────────────────────────
+// SC III is a stateless REST API — polling get-status repeatedly is safe
+// and does NOT interfere with the data stream (Pixellot's agent reads it
+// the same way). We poll a lightweight endpoint every 1.5s and update the
+// scoreboard values in place, without re-rendering the whole page.
+
+var _sc3LivePoll = null;
+
+function _sc3DownText(p) {
+  if (!p || !p.down) return "";
+  var t = String(p.down);
+  if (p.toGo) t += " & " + p.toGo;
+  if (p.ballOn) t += " on " + p.ballOn;
+  return t;
+}
+
+function _sc3StopLivePoll() {
+  if (_sc3LivePoll) { clearInterval(_sc3LivePoll); _sc3LivePoll = null; }
+}
+
+function _sc3StartLivePoll(vendor, sport) {
+  _sc3StopLivePoll();
+  _sc3LivePoll = setInterval(async function() {
+    // Self-terminate if the user navigated away from the page.
+    if (currentPage !== "scoreconnect" || !document.getElementById("sc3-clock")) {
+      _sc3StopLivePoll();
+      return;
+    }
+    var live = await api("/api/scoreconnect/live");
+    if (!live || !live.reachable || !live.rawData) {
+      // Data stopped — mark the live badge as stale but keep last values.
+      var badge = document.getElementById("sc3-live-badge");
+      if (badge) badge.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:var(--c-dim);display:inline-block"></span>NO DATA';
+      return;
+    }
+    var p = parseRtdScores(live.rawData, vendor, sport);
+    if (!p) return;
+    _sc3SetText("sc3-clock", p.clock || "--:--");
+    _sc3SetText("sc3-period", p.period ? "Q" + p.period : "GAME CLOCK");
+    if (p.guestScore != null) _sc3SetText("sc3-guest", String(p.guestScore));
+    if (p.homeScore != null)  _sc3SetText("sc3-home", String(p.homeScore));
+    _sc3SetText("sc3-down", _sc3DownText(p));
+    // Refresh the raw-data readout too, if present.
+    var rawEl = document.getElementById("sc3-raw-value");
+    if (rawEl) rawEl.textContent = live.rawData;
+    // Restore the LIVE badge if it had gone stale.
+    var badge = document.getElementById("sc3-live-badge");
+    if (badge && badge.textContent.indexOf("NO DATA") !== -1) {
+      badge.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:var(--c-accent-green);display:inline-block;animation:pulse-live 1.4s ease-in-out infinite"></span>LIVE';
+    }
+  }, 1500);
+}
+
+function _sc3SetText(id, text) {
+  var el = document.getElementById(id);
+  if (el && el.textContent !== text) el.textContent = text;
 }
 
 // ── Camera Fault Isolator ────────────────────────────────────

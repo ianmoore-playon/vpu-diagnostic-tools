@@ -39,6 +39,65 @@ def _fmt_uptime(s):
     return f"{d}d {h}h {m}m"
 
 
+# Demo "game" state — chosen once per session so the full fetch and the
+# live polls agree on scores. The clock is derived from wall-clock time so
+# it ticks down realistically across live polls.
+_DEMO_GAME = {
+    "guest": random.randint(0, 35),
+    "home": random.randint(0, 35),
+    "quarter": random.randint(1, 4),
+    "down": random.randint(1, 4),
+    "to_go": random.randint(1, 15),
+    "ball_on": random.randint(10, 50),
+    "period_secs": 12 * 60,  # 12:00 quarters
+    "anchor": time.time(),
+}
+
+
+def _demo_live_clock():
+    """Count down from the period length based on wall-clock elapsed time,
+    wrapping at 0 so the demo clock ticks forever."""
+    elapsed = int(time.time() - _DEMO_GAME["anchor"])
+    remaining = _DEMO_GAME["period_secs"] - (elapsed % _DEMO_GAME["period_secs"])
+    return remaining // 60, remaining % 60
+
+
+def _demo_raw_data():
+    """Build a Daktronics All Sport CG raw string from the demo game state
+    with a live (wall-clock-derived) game clock.
+
+    Daktronics All Sport CG format — fixed-width ASCII fields:
+      Pos 0-4: Clock "MM:SS" | Pos 5-7: Guest Score | Pos 8-10: Home Score
+      Pos 11: Period | Pos 12: Possession | Pos 13-14: Down
+      Pos 15-16: Ball On | Pos 17-18: Yards To Go
+    """
+    g = _DEMO_GAME
+    minutes, seconds = _demo_live_clock()
+    return (
+        f"{minutes:2d}:{seconds:02d}"          # pos 0-4: clock
+        f"{g['guest']:3d}"                      # pos 5-7: guest score
+        f"{g['home']:3d}"                       # pos 8-10: home score
+        f"{g['quarter']}"                       # pos 11: period
+        f"{'>':1}"                              # pos 12: possession
+        f"{g['down']:2d}"                       # pos 13-14: down
+        f"{g['ball_on']:2d}"                    # pos 15-16: ball on
+        f"{g['to_go']:2d}"                      # pos 17-18: to go
+        f"{'':>50}"                             # padding
+        f"R:S             0000008DEBCCA{random.randint(10000,99999):05X}"
+    )
+
+
+def _demo_scoreconnect_live():
+    """Lightweight live-poll demo data — mirrors Get-ScoreConnectLive.ps1."""
+    return {
+        "reachable": True,
+        "rawData": _demo_raw_data(),
+        "dataStatus": "Data is present and in the correct format",
+        "ts": datetime.now().isoformat(),
+        "error": None,
+    }
+
+
 def _demo_scoreconnect():
     """Generate consistent ScoreConnect demo data.
 
@@ -46,43 +105,12 @@ def _demo_scoreconnect():
     scores).  SC II (web-based, has parsed data) and SC I (.exe, has parsed
     data) are different products with different API surfaces.
 
-    dataStatus and rawData must be correlated — when the controller reports
-    "No Scoreboard data", the raw data field should be empty (matching real
-    SC III behaviour).  ~70% chance of active data for a livelier demo.
-
     Bot number is intentionally included but is notoriously stale on real
     hardware — SC III often reports a previous unit's number until reset.
     """
-    has_data = random.random() < 0.7
-    data_status = (
-        "Data is present and in the correct format" if has_data
-        else "No Scoreboard data is being received"
-    )
-    # Daktronics All Sport CG format — fixed-width ASCII fields:
-    #   Pos 0-4: Clock "MM:SS" | Pos 5-7: Guest Score | Pos 8-10: Home Score
-    #   Pos 11: Period | Pos 12: Possession (</>/' ') | Pos 13-14: Down
-    #   Pos 15-16: Ball On | Pos 17-18: Yards To Go
-    guest_score = random.randint(0, 42)
-    home_score = random.randint(0, 42)
-    minutes = random.randint(0, 15)
-    seconds = random.randint(0, 59)
-    quarter = random.randint(1, 4)
-    down = random.randint(1, 4)
-    to_go = random.randint(1, 20)
-    ball_on = random.randint(10, 50)
-    poss = random.choice(["<", ">", " "])
-    raw_data = (
-        f"{minutes:2d}:{seconds:02d}"          # pos 0-4: clock
-        f"{guest_score:3d}"                     # pos 5-7: guest score
-        f"{home_score:3d}"                      # pos 8-10: home score
-        f"{quarter}"                            # pos 11: period
-        f"{poss}"                               # pos 12: possession
-        f"{down:2d}"                            # pos 13-14: down
-        f"{ball_on:2d}"                         # pos 15-16: ball on
-        f"{to_go:2d}"                           # pos 17-18: to go
-        f"{'':>50}"                             # padding
-        f"S:S             0000008DEBCCA{random.randint(10000,99999):05X}"
-    ) if has_data else None
+    has_data = True
+    data_status = "Data is present and in the correct format"
+    raw_data = _demo_raw_data() if has_data else None
 
     bot_id = str(random.randint(10000, 99999))
     bot_connected = random.choice([True, False])
@@ -362,6 +390,7 @@ DEMO = {
         ]
     },
     "Get-ScoreConnectStatus.ps1": lambda **kw: _demo_scoreconnect(),
+    "Get-ScoreConnectLive.ps1": lambda **kw: _demo_scoreconnect_live(),
     "Get-PixellotConfig.ps1": lambda **kw: {
         "cameras": [
             {"section": "Camera1", "ip": "192.168.10.100", "mac": "00:0E:53:AA:01:01", "role": "Main"},
