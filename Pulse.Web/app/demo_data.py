@@ -58,12 +58,29 @@ def _demo_scoreconnect():
         "Data is present and in the correct format" if has_data
         else "No Scoreboard data is being received"
     )
+    # Daktronics All Sport CG format — fixed-width ASCII fields:
+    #   Pos 0-4: Clock "MM:SS" | Pos 5-7: Guest Score | Pos 8-10: Home Score
+    #   Pos 11: Period | Pos 12: Possession (</>/' ') | Pos 13-14: Down
+    #   Pos 15-16: Ball On | Pos 17-18: Yards To Go
+    guest_score = random.randint(0, 42)
+    home_score = random.randint(0, 42)
+    minutes = random.randint(0, 15)
+    seconds = random.randint(0, 59)
+    quarter = random.randint(1, 4)
+    down = random.randint(1, 4)
+    to_go = random.randint(1, 20)
+    ball_on = random.randint(10, 50)
+    poss = random.choice(["<", ">", " "])
     raw_data = (
-        f"0{random.randint(1,4)}{random.randint(10,20):02d}"
-        f"{random.randint(0,59):02d}  {random.randint(18,72)} "
-        f"{random.randint(18,72)} {random.randint(0,9)}  "
-        f"{random.randint(10,40)}     {random.randint(1,4)}"
-        f"{'':>74}"
+        f"{minutes:2d}:{seconds:02d}"          # pos 0-4: clock
+        f"{guest_score:3d}"                     # pos 5-7: guest score
+        f"{home_score:3d}"                      # pos 8-10: home score
+        f"{quarter}"                            # pos 11: period
+        f"{poss}"                               # pos 12: possession
+        f"{down:2d}"                            # pos 13-14: down
+        f"{ball_on:2d}"                         # pos 15-16: ball on
+        f"{to_go:2d}"                           # pos 17-18: to go
+        f"{'':>50}"                             # padding
         f"S:S             0000008DEBCCA{random.randint(10000,99999):05X}"
     ) if has_data else None
 

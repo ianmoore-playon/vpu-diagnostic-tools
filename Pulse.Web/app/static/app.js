@@ -3556,6 +3556,95 @@ function renderReports() {
 
 // ── ScoreConnect ─────────────────────────────────────────────
 
+// Daktronics All Sport CG RTD parser — extracts scores, clock, period
+// from the raw data string SC III provides.  The CG output is a fixed-
+// width ASCII string; field positions vary by sport.  We support the most
+// common Daktronics sports.  Returns null if parsing fails.
+//
+// Field maps: 0-indexed character positions in the raw data string.
+// Positions sourced from Daktronics All Sport 5000 CG documentation.
+// Digit fields are space-padded; we parseInt and treat NaN as null.
+function parseRtdScores(rawData, vendor, sport) {
+  if (!rawData || typeof rawData !== "string") return null;
+  vendor = (vendor || "").toLowerCase();
+  sport  = (sport || "").toLowerCase();
+
+  // Only attempt Daktronics parsing for now
+  if (!vendor.includes("daktronics")) return null;
+
+  // Strip trailing serial/ID block (S:S ... or similar metadata suffix)
+  var cleaned = rawData.replace(/\s*S:S\s.*$/, "").replace(/\s+$/, "");
+  if (cleaned.length < 10) return null;
+
+  // Helper: extract N chars starting at position p, trim, return string or null
+  function chars(p, n) {
+    if (p + n > cleaned.length) return null;
+    var s = cleaned.substring(p, p + n).trim();
+    return s.length ? s : null;
+  }
+  function num(p, n) {
+    var s = chars(p, n);
+    if (!s) return null;
+    var v = parseInt(s, 10);
+    return isNaN(v) ? null : v;
+  }
+
+  // Daktronics All Sport CG field positions by sport.
+  // Clock is typically chars 0-4 in format "MM:SS" or " M:SS" or "SS.T ".
+  // The colon/decimal position varies — we regex-extract the clock instead.
+
+  var result = { clock: null, homeScore: null, guestScore: null, period: null,
+                 down: null, toGo: null, ballOn: null, possession: null };
+
+  // -- Clock extraction: look for MM:SS or M:SS or SS.T pattern in first 8 chars --
+  var clockRegion = cleaned.substring(0, Math.min(12, cleaned.length));
+  var clockMatch = clockRegion.match(/(\d{1,2}:\d{2})/);
+  if (clockMatch) {
+    result.clock = clockMatch[1];
+  } else {
+    // Try SS.T format (tenths of seconds)
+    var tenthsMatch = clockRegion.match(/(\d{1,2}\.\d)/);
+    if (tenthsMatch) result.clock = tenthsMatch[1];
+  }
+
+  // -- Sport-specific field extraction --
+  // Daktronics football: guest score ~pos 7-9, home score ~pos 10-12, period ~pos 13
+  // Daktronics basketball: similar layout but different extended fields
+  // We use a generous extraction strategy that works across multiple sports.
+
+  if (sport.includes("football")) {
+    result.guestScore = num(5, 3);
+    result.homeScore  = num(8, 3);
+    // If 3-digit parse failed, try 2-digit at shifted positions
+    if (result.guestScore === null) result.guestScore = num(5, 2);
+    if (result.homeScore === null)  result.homeScore  = num(7, 2);
+    result.period     = num(11, 1) || num(12, 1);
+    result.possession = chars(13, 1);
+    if (result.possession && result.possession !== "<" && result.possession !== ">") result.possession = null;
+    result.down       = num(14, 2);
+    result.toGo       = num(16, 2);
+    result.ballOn     = num(18, 2);
+  } else if (sport.includes("basketball") || sport.includes("volleyball")) {
+    result.guestScore = num(5, 3);
+    result.homeScore  = num(8, 3);
+    if (result.guestScore === null) result.guestScore = num(5, 2);
+    if (result.homeScore === null)  result.homeScore  = num(7, 2);
+    result.period     = num(11, 1) || num(12, 1);
+  } else {
+    // Generic: try common positions for any Daktronics sport
+    result.guestScore = num(5, 3);
+    result.homeScore  = num(8, 3);
+    if (result.guestScore === null) result.guestScore = num(5, 2);
+    if (result.homeScore === null)  result.homeScore  = num(7, 2);
+    result.period     = num(11, 1) || num(12, 1);
+  }
+
+  // Sanity check: did we get at least a clock or one score?
+  if (result.clock === null && result.homeScore === null && result.guestScore === null) return null;
+
+  return result;
+}
+
 function renderScoreConnect() {
   const data = cached("scoreconnect");
   if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
@@ -3569,10 +3658,16 @@ function renderScoreConnect() {
   const hasData = data.dataStatus && !data.dataStatus.toLowerCase().includes("no scoreboard");
   const dataReceiving = hasData && data.rawData;
 
-  // SC II parsed scoreboard hero panel
-  const sc2HasScores = sc2 && sc2.scores && (sc2.scores.visitor || sc2.scores.home || sc2.scores.clock);
+  // RTD parsed scores from SC III raw data
+  const rtdParsed = dataReceiving ? parseRtdScores(data.rawData, config.vendor, config.sport) : null;
+
+  // SC II config/teams
   const sc2Teams = sc2 && sc2.teamNames || {};
   const sc2HasConfig = sc2 && sc2.reachable && (sc2.vendor || sc2.botNumber || sc2.version);
+
+  // Team name source: SC II settings.json has configured names, use as labels
+  const visitorLabel = sc2Teams.visitor || "GUEST";
+  const homeLabel = sc2Teams.home || "HOME";
 
   // SC II status LED helper: 0=grey 1=yellow 2=green
   function ledClass(val) {
@@ -3666,9 +3761,40 @@ function renderScoreConnect() {
     </div>
     ` : ""}
 
-    <!-- SC III Data Flow — hero panel when only SC III is present, or secondary when SC II is hero -->
+    <!-- SC III Parsed Scoreboard — when RTD parser extracts scores -->
+    ${rtdParsed ? `
+    <div class="sc-board ${sc2HasConfig ? "mt-4" : "sc-board-hero"}">
+      <div class="sc-header">
+        <div class="sc-team-home">
+          <div class="sc-team-label">${esc(visitorLabel)}</div>
+          <div class="sc-score">${rtdParsed.guestScore != null ? esc(String(rtdParsed.guestScore)) : "—"}</div>
+        </div>
+        <div class="sc-center">
+          <div class="sc-period-label">${rtdParsed.period ? "Q" + rtdParsed.period : "GAME CLOCK"}</div>
+          <div class="sc-clock">${esc(rtdParsed.clock || "--:--")}</div>
+          ${rtdParsed.down ? `<div class="sc-data-desc">${esc(String(rtdParsed.down))}${rtdParsed.toGo ? " &amp; " + esc(String(rtdParsed.toGo)) : ""}${rtdParsed.ballOn ? " on " + esc(String(rtdParsed.ballOn)) : ""}</div>` : ""}
+        </div>
+        <div class="sc-team-away">
+          <div class="sc-team-label">${esc(homeLabel)}</div>
+          <div class="sc-score">${rtdParsed.homeScore != null ? esc(String(rtdParsed.homeScore)) : "—"}</div>
+        </div>
+      </div>
+      <div class="sc-stats">
+        <div class="sc-stat-group">
+          ${config.vendor ? `<div class="sc-stat"><span class="sc-stat-val">${esc(config.vendor)}</span><span class="sc-stat-lbl">Vendor</span></div>` : ""}
+          ${config.sport ? `<div class="sc-stat"><span class="sc-stat-val">${esc(config.sport)}</span><span class="sc-stat-lbl">Sport</span></div>` : ""}
+        </div>
+        <div class="sc-stat-group sc-stat-right">
+          ${config.vendorConfigurationName ? `<div class="sc-stat"><span class="sc-stat-val">${esc(config.vendorConfigurationName)}</span><span class="sc-stat-lbl">Connection</span></div>` : ""}
+          ${version ? `<div class="sc-stat"><span class="sc-stat-val">${esc(version)}</span><span class="sc-stat-lbl">SC III Version</span></div>` : ""}
+        </div>
+      </div>
+    </div>
+    ` : ""}
+
+    <!-- SC III Data Flow — shown when SC III detected (raw data + status) -->
     ${isDetected ? `
-    <div class="sc-board ${sc2HasScores ? "" : "sc-board-hero"} ${sc2HasScores ? "mt-4" : ""}">
+    <div class="sc-board ${sc2HasConfig || rtdParsed ? "mt-4" : "sc-board-hero"}">
       <div class="sc-header">
         <div class="sc-team-home">
           <div class="sc-team-label">Vendor</div>
@@ -3702,7 +3828,30 @@ function renderScoreConnect() {
         </div>
       </div>
     </div>
-    ` : !sc2HasScores && !(sc2 && sc2.reachable) ? `<div class="sc-board sc-board-hero sc-board-empty">No ScoreConnect service detected</div>` : ""}
+    ` : !(sc2 && sc2.reachable) ? `<div class="sc-board sc-board-hero sc-board-empty">No ScoreConnect service detected</div>` : ""}
+
+    <!-- SC II → SC III Upgrade Prompt -->
+    ${sc2 && sc2.reachable && !isDetected ? `
+    <div class="card mt-4" style="border:1px solid var(--accent-blue);background:var(--bg-card)">
+      <div style="display:flex;align-items:flex-start;gap:0.75rem">
+        <div style="font-size:1.25rem;margin-top:2px">${svgIcon("refresh", 18)}</div>
+        <div style="flex:1">
+          <div class="font-semibold" style="margin-bottom:0.25rem">Upgrade to ScoreConnect III</div>
+          <div class="text-pulse-muted" style="font-size:0.8rem;line-height:1.5">
+            SC III is the preferred version and provides better compatibility with Pulse.
+            Live scoreboard data, parsed scores, and real-time status are all available
+            through SC III's REST API without interfering with the data stream.
+          </div>
+          <div style="margin-top:0.75rem;padding:0.5rem 0.75rem;background:var(--bg-body);border-radius:6px;font-family:var(--font-mono);font-size:0.72rem;word-break:break-all;color:var(--text-muted)">
+            powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri 'https://canopy-public-packages.nfhsnetwork.com/SC3/Current/installScript3_current.ps1' -OutFile 'C:\\temp\\install-sc3.ps1'; &amp; 'C:\\temp\\install-sc3.ps1'"
+          </div>
+          <div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.35rem">
+            Run the command above in an <strong>Administrator PowerShell</strong> to install SC III.
+          </div>
+        </div>
+      </div>
+    </div>
+    ` : ""}
 
     <!-- SC II Detail Card -->
     ${sc2HasConfig ? `
