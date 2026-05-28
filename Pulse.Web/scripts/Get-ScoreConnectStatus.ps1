@@ -167,64 +167,89 @@ function Probe-ScoreConnectII {
         error       = $null
     }
 
+    # Overall time budget — bail after 8s regardless of where we are.
+    # Individual step timeouts still apply (tighter than the budget) but
+    # this prevents the combined serial chain from exceeding ~8s total.
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $budgetMs = 8000
+
     try {
         # ── 1. TCP pre-check on port 1400 ──────────────────────────────────
         $sc2Uri = [System.Uri]$Sc2Base
         $tcp = New-Object System.Net.Sockets.TcpClient
         try {
             $ct = $tcp.ConnectAsync($sc2Uri.Host, $sc2Uri.Port)
-            if (-not $ct.Wait(2000)) { return $result }
+            if (-not $ct.Wait(1500)) { return $result }
             if ($ct.IsFaulted) { return $result }
         } finally { $tcp.Dispose() }
+
+        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
 
         # ── 2. SignalR negotiate ────────────────────────────────────────────
         $connData = [System.Uri]::EscapeDataString('[{"Name":"ScoreConnectHub"}]')
         $negUrl   = "$Sc2Base/signalr/negotiate?clientProtocol=1.5&connectionData=$connData"
-        $negResp  = Invoke-WebRequest -Uri $negUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+        $negResp  = Invoke-WebRequest -Uri $negUrl -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
         $negJson  = $negResp.Content | ConvertFrom-Json
         $token    = [System.Uri]::EscapeDataString($negJson.ConnectionToken)
 
         $result.reachable = $true
 
+        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+
         # ── 3. Connect (long-polling) ───────────────────────────────────────
         $connUrl  = "$Sc2Base/signalr/connect?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
-        $connResp = Invoke-WebRequest -Uri $connUrl -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        $connResp = Invoke-WebRequest -Uri $connUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
         $initJson = $connResp.Content | ConvertFrom-Json
         $msgId    = $initJson.C  # cursor for next poll
 
+        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+
         # ── 4. Start ────────────────────────────────────────────────────────
         $startUrl = "$Sc2Base/signalr/start?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
-        Invoke-WebRequest -Uri $startUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue | Out-Null
+        Invoke-WebRequest -Uri $startUrl -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
+
+        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
 
         # ── 5. Send hub invocations ─────────────────────────────────────────
         $sendUrl = "$Sc2Base/signalr/send?transport=longPolling&connectionToken=$token&connectionData=$connData"
 
         # getsettings (works pre-login)
         $body = 'data=' + [System.Uri]::EscapeDataString('{"H":"ScoreConnectHub","M":"Getsettings","A":[],"I":0}')
-        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue | Out-Null
+        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
+
+        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
 
         # uidlogin (required for getparms)
         $body = 'data=' + [System.Uri]::EscapeDataString('{"H":"ScoreConnectHub","M":"Uidlogin","A":["Admin"],"I":1}')
-        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue | Out-Null
+        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
+
+        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
 
         # getparms (team names, vendor, bot)
         $body = 'data=' + [System.Uri]::EscapeDataString('{"H":"ScoreConnectHub","M":"Getparms","A":[],"I":2}')
-        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue | Out-Null
+        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
+
+        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
 
         # ── 6. Poll for broadcast messages ──────────────────────────────────
-        # Collect up to 3 poll cycles.  Each poll blocks until the server has
-        # messages or the timeout expires.  We parse getsettings, getparms,
-        # and live score broadcasts.
+        # Collect up to 2 poll cycles (down from 3 — keeps total under budget).
+        # Each poll blocks until the server has messages or the timeout expires.
+        # We parse getsettings, getparms, and live score broadcasts.
         $settings  = $null
         $parms     = $null
         $scores    = @{}
         $leds      = @{}
 
-        for ($poll = 0; $poll -lt 3; $poll++) {
+        for ($poll = 0; $poll -lt 2; $poll++) {
+            if ($sw.ElapsedMilliseconds -ge $budgetMs) { break }
             try {
+                # Dynamic poll timeout: use whatever budget remains, capped at 3s
+                $remainMs = $budgetMs - $sw.ElapsedMilliseconds
+                $pollTimeoutSec = [Math]::Max(1, [Math]::Min(3, [Math]::Floor($remainMs / 1000)))
+
                 $pollUrl = "$Sc2Base/signalr/poll?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
                 if ($msgId) { $pollUrl += "&messageId=$([System.Uri]::EscapeDataString($msgId))" }
-                $pollResp = Invoke-WebRequest -Uri $pollUrl -UseBasicParsing -TimeoutSec 4 -ErrorAction Stop
+                $pollResp = Invoke-WebRequest -Uri $pollUrl -UseBasicParsing -TimeoutSec $pollTimeoutSec -ErrorAction Stop
                 $pollJson = $pollResp.Content | ConvertFrom-Json
 
                 if ($pollJson.C) { $msgId = $pollJson.C }

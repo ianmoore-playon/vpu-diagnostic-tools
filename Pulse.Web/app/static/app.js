@@ -254,7 +254,12 @@ function fetchSection(key) {
   fetchPromises[key] = api(url).then((data) => {
     fetchingKeys.delete(key);
     delete fetchPromises[key];
-    if (data && !data.error) {
+    // Cache ALL responses including errors. Without this, a renderer that
+    // doesn't find cached data falls back to `fetchSection()` which re-fires
+    // the request, the API returns an error again, and the re-render loop
+    // spins at ~140ms intervals (each renderPage → renderAudio → fetchSection).
+    // Renderers check `data.error` themselves and show errorBox.
+    if (data) {
       dataCache[key] = data;
     }
     // Re-render the current page only when the completed fetch is relevant to it.
