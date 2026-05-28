@@ -79,19 +79,39 @@ html, body { height: 100%; margin: 0; }
 .sev-ok { background: var(--c-tint-green); color: var(--c-accent-green); border-left: 3px solid var(--c-accent-green); }
 
 /* ── Sidebar brand ─────────────────────────────────────────── */
+/* Full Pulse wordmark + heartbeat as the brand block.
+   Same theme-aware image swap pattern as the splash screen:
+   html.dark → pulse-splash-dark.png  (white wordmark for dark bg)
+   default   → pulse-splash-light.png (dark wordmark for light bg) */
 .sidebar-brand {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 10px;
-    padding: 14px 16px;
+    gap: 4px;
+    padding: 14px 16px 12px;
     border-bottom: 1px solid var(--c-border);
 }
-.brand-icon {
-    flex-shrink: 0;
-    width: 32px;
-    height: 32px;
-    object-fit: contain;
+.sidebar-brand-logo {
+    width: 100%;
+    height: 44px;
+    background-image: url('/static/img/pulse-splash-light.png');
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
 }
+html.dark .sidebar-brand-logo {
+    background-image: url('/static/img/pulse-splash-dark.png');
+}
+.sidebar-brand-tagline {
+    font-size: 0.625rem;
+    color: var(--c-muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin: 0;
+}
+/* Legacy class — kept defined as a no-op for any external references. */
+.brand-icon { display: none; }
 
 /* ── Splash screen ─────────────────────────────────────────── */
 /* Shown immediately on page load and kept up until every preload
