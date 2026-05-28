@@ -188,8 +188,10 @@ _DEFAULT_MAIN_IPS = {"169.254.16.50", "169.254.16.51"}
 
 # Camera model → (role, expected link speed in Mbps)
 # Used for positive hardware-based identification from CGI Brand.ProdNbr.
+# Prefix-matched, so e.g. "T2SF-B_PX00" matches the "T2SF-B" key.
 _CAMERA_MODELS = {
-    "Z4SF-F": ("Main Camera", 1000),
+    "Z4SF-F": ("Main Camera", 1000),       # 4K main camera head
+    "T2SF-B": ("Main Camera", 1000),       # 4K Bullet Outdoor main head
     "R2SD-G": ("OCR / Scoreboard", 100),
     "S5SD-G": ("OCR / Scoreboard", 100),
     "E8NC-G": ("OCR / Scoreboard", 1000),
@@ -345,11 +347,18 @@ def _collect_camera_ips(ports, ocr_ips):
 
 
 def _cached_probes_by_mac() -> dict:
-    """Return all currently-fresh probe cache entries keyed by MAC."""
-    now = time.monotonic()
+    """Return the last-known probe result for every probed camera, keyed
+    by MAC — regardless of age.
+
+    A camera's CGI identity (model, serial, role) never changes, so we
+    serve the last successful probe even if it's past the re-probe TTL.
+    The TTL only governs WHEN we re-probe in the background, not whether
+    we display what we already learned. This keeps the model badge and
+    identity stable instead of flickering each time an entry ages out
+    between background refreshes."""
     by_mac = {}
     for entry in list(_CGI_PROBE_CACHE.values()):
-        if (now - entry["ts"]) < _CGI_PROBE_TTL and entry.get("mac"):
+        if entry.get("mac"):
             by_mac[entry["mac"]] = entry
     return by_mac
 
@@ -1337,24 +1346,29 @@ def _enrich_ports(
 ) -> list:
     """Enrich raw NIC port data with status flags and camera detection.
 
-    OCR / degraded determination uses a layered approach:
-      1. Camera model number from CGI probe (hardware identity — highest
-         priority).  Known models map to role + expected link speed.
-      2. CGI probe IP match against known OCR/main IPs
-      3. cameras.cfg role mapping (IP/MAC cross-reference)
-      4. Default IP convention
+    Identity resolution, highest authority first (CGI is the source of
+    truth; cameras.cfg is unreliable per field guidance):
+      1. CGI model number → role + expected link speed (actual hardware)
+      2. Pixellot default-IP convention (.50/.51 main, .52/.53/.60 OCR)
+      3. CGI-confirmed Pixellot camera with unknown model → generic label
+      4. cameras.cfg role mapping (last resort — may be inaccurate)
+      5. Pixellot OUI only → vendor known, role unknown
     Degraded = actual speed < expected speed for the camera model. When
     model is unknown, any sub-1 Gbps non-OCR port is treated as degraded.
 
     probe_results: dict keyed by normalized MAC -> {mac, ip, is_ocr, ...}
     from _probe_all_cameras(). Optional — when absent, falls back to
-    cfg-only identification.
+    default-IP / cfg identification.
     """
     cam_sets = _build_camera_sets(pixellot_config)
-    ocr_ips = cam_sets["ocr_ips"]
-    ocr_macs = cam_sets["ocr_macs"]
-    main_ips = cam_sets["main_ips"]
-    main_macs = cam_sets["main_macs"]
+    # cameras.cfg-derived sets ONLY (defaults handled separately below).
+    # Per field guidance the cameras.cfg role data is not always accurate,
+    # so it is used only as a last-resort identity hint — after CGI probe
+    # and the Pixellot default-IP convention.
+    cfg_ocr_ips = cam_sets["ocr_ips"] - _DEFAULT_OCR_IPS
+    cfg_ocr_macs = cam_sets["ocr_macs"]
+    cfg_main_ips = cam_sets["main_ips"]
+    cfg_main_macs = cam_sets["main_macs"]
     probe_results = probe_results or {}
 
     ports = []
@@ -1381,7 +1395,7 @@ def _enrich_ports(
                 probe = probe_results.get(arp_mac)
                 cam_entry = {**arp}
 
-                # Layer 1: CGI probe data (copy all fields)
+                # Copy all CGI probe fields (model, serial, streams, etc.)
                 if probe:
                     cam_entry["cgiConfirmed"] = True
                     cam_entry["cgiMac"] = probe["mac"]
@@ -1392,40 +1406,45 @@ def _enrich_ports(
                         if probe.get(pkey) is not None:
                             cam_entry[pkey] = probe[pkey]
 
-                # Layer 1a: Model number → role + expected speed (highest priority)
+                # ── Identity resolution, highest authority first ──
+                # CGI probe is the source of truth; cameras.cfg is a
+                # last-resort hint because its role data is unreliable.
                 model_role, model_speed = _lookup_camera_model(
                     cam_entry.get("modelNumber")
                 )
                 if model_role:
+                    # 1. CGI model number — actual hardware identity.
                     cam_entry["role"] = model_role
                     cam_entry["identitySource"] = "Camera model"
                     cam_entry["expectedSpeedMbps"] = model_speed
                     expected_speed = model_speed
                     if "OCR" in model_role:
                         is_ocr = True
-                # Layer 2: CGI probe IP-based OCR flag (only flags OCR; we
-                # don't assume "Main Camera" without model or cfg confirmation)
-                elif probe and probe.get("is_ocr"):
+                elif arp_ip in _DEFAULT_OCR_IPS:
+                    # 2. Pixellot default-IP convention (OCR: .52/.53/.60).
                     cam_entry["role"] = "OCR / Scoreboard"
-                    cam_entry["identitySource"] = "CGI probe + OCR IP"
+                    cam_entry["identitySource"] = "Default OCR IP"
                     is_ocr = True
-                # Layer 3: cameras.cfg
-                elif arp_ip in ocr_ips or arp_mac in ocr_macs:
-                    cam_entry["role"] = "OCR / Scoreboard"
-                    cam_entry["identitySource"] = "Matched cameras.cfg"
-                    is_ocr = True
-                elif arp_ip in main_ips or arp_mac in main_macs:
-                    cam_entry["role"] = "Main Camera"
-                    cam_entry["identitySource"] = "Matched cameras.cfg"
-                # Layer 4: Default IP convention
                 elif arp_ip in _DEFAULT_MAIN_IPS:
+                    # 2. Pixellot default-IP convention (main: .50/.51).
                     cam_entry["role"] = "Main Camera"
                     cam_entry["identitySource"] = "Default IP"
-                # Layer 5: CGI probe confirmed a Pixellot camera but no role match
                 elif probe:
+                    # 3. CGI-confirmed Pixellot camera, model not in our
+                    #    table — generic label beats a possibly-wrong
+                    #    cameras.cfg role.
                     cam_entry["role"] = "Pixellot Camera"
                     cam_entry["identitySource"] = "CGI probe"
+                elif arp_ip in cfg_ocr_ips or arp_mac in cfg_ocr_macs:
+                    # 4. cameras.cfg — last resort.
+                    cam_entry["role"] = "OCR / Scoreboard"
+                    cam_entry["identitySource"] = "cameras.cfg"
+                    is_ocr = True
+                elif arp_ip in cfg_main_ips or arp_mac in cfg_main_macs:
+                    cam_entry["role"] = "Main Camera"
+                    cam_entry["identitySource"] = "cameras.cfg"
                 else:
+                    # 5. Pixellot OUI only — vendor known, role unknown.
                     cam_entry["role"] = None
                     cam_entry["identitySource"] = "OUI vendor match"
 
