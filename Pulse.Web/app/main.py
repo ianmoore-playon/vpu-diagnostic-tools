@@ -671,7 +671,7 @@ def _total_ram_gb(hardware, performance) -> float:
     return 0.0
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None) -> list:
     findings = []
 
     # ── NTP allowlist (PDF #9) ───────────────────────────────
@@ -946,9 +946,10 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             # entry on the port uses the Dynacolor OUI (00:D0:89) — main
             # camera heads use the 00:0E:53 / 00:30:53 / 70:B3:D5 OUIs.
             #
-            # Title includes the actual speed so the finding is actionable
-            # at a glance ("NIC Ethernet 2 at 100 Mbps" reads as a real
-            # problem, "Degraded" alone leaves the tech guessing).
+            # Category is "Camera" when the port has Pixellot cameras —
+            # a degraded link on a camera port is fundamentally a camera
+            # problem (the cameras drop frames), not a generic network
+            # one. Routes the finding to the Camera Connectivity tab.
             if port.get("status") == "Up" and speed and speed < 1000:
                 arp = port.get("arpEntries") or []
                 pixellot_arps = [a for a in arp if _is_pixellot_mac(a.get("mac", ""))]
@@ -961,10 +962,12 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     )
                 )
                 if not only_ocr_at_100:
+                    has_cameras = bool(pixellot_arps)
+                    category = "Camera" if has_cameras else "Network"
                     findings.append(
                         {
                             "severity": "warning",
-                            "category": "Network",
+                            "category": category,
                             "title": f"NIC {port['name']} at {speed} Mbps (expected 1 Gbps)",
                             "recommendation": (
                                 f"{port['name']} negotiated to {speed} Mbps instead of 1 Gbps. "
@@ -998,6 +1001,36 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 ),
             }
         )
+
+    # ── Required port blocked ────────────────────────────────
+    # Test-NetworkPorts hits the cloud endpoints Pixellot needs to stream.
+    # A "required" (non-optional) port that fails is almost always a venue
+    # firewall blocking it — surfaces on the Dashboard so the tech sees it
+    # without drilling into the Network tab. Optional ports (RTMP, etc.)
+    # are intentionally skipped — they vary by venue configuration.
+    if port_tests and not port_tests.get("error"):
+        for r in port_tests.get("results", []):
+            if r.get("status") != "fail":
+                continue
+            if r.get("optional"):
+                continue
+            host = r.get("host", "?")
+            port = r.get("port", "?")
+            proto = (r.get("protocol") or "").upper()
+            purpose = r.get("purpose") or "service"
+            err = r.get("errorMessage") or "No response"
+            findings.append(
+                {
+                    "severity": "warning",
+                    "category": "Network",
+                    "title": f"{purpose} port blocked ({proto} {port})",
+                    "recommendation": (
+                        f"{proto} port {port} to {host} is unreachable ({err}). "
+                        f"This is a required Pixellot endpoint — ask the venue's "
+                        f"IT team to open it in the firewall."
+                    ),
+                }
+            )
 
     # Deduplicate by (category, title) — separate checks shouldn't produce
     # the same finding twice on the dashboard.
@@ -1289,7 +1322,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None):
     flat_identity = {}
     if identity and not identity.get("error"):
         flat_identity = {
@@ -1322,7 +1355,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         "identity": flat_identity,
         "performance": performance if not performance.get("error", False) else {},
         "services": services if not services.get("error", False) else {"services": []},
-        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state),
+        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests),
         "networkConfig": net_cfg,
     }
 
@@ -1494,7 +1527,7 @@ async def api_scripts_cancel_all():
 
 @app.get("/api/dashboard")
 async def api_dashboard():
-    identity, performance, services, nics, net_config, hardware, installed_sw, install_state = await asyncio.gather(
+    identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
@@ -1503,8 +1536,12 @@ async def api_dashboard():
         run_ps("Get-Hardware.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
         run_ps("Test-PixellotInstallState.ps1", timeout=15),
+        # 20s timeout (down from 45) for dashboard use — keeps the
+        # Run-All cold start under ~25s while still giving real port
+        # checks time to complete on a healthy connection.
+        run_ps("Test-NetworkPorts.ps1", timeout=20),
     )
-    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw, install_state)
+    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests)
 
 
 def _enrich_identity_lifecycle(identity):
