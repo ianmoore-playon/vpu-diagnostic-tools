@@ -1602,12 +1602,20 @@ def _enrich_ports(
         else:
             p["cameraLabel"] = f"Main Camera {i}"
 
+    # OCR labels. The 1 Gbps OCR variant (E8NC-G) is tagged "OCR-1G" so a
+    # tech seeing it linked at 100 Mbps understands the 1 Gbps expectation
+    # is real (and the degraded flag is correct), not a Pulse data error.
+    # The 1G variant is only known when CGI confirmed the model — otherwise
+    # we conservatively show plain "OCR".
+    def _ocr_base(p):
+        return "OCR-1G" if (p.get("expectedSpeedMbps") or 0) >= 1000 else "OCR"
+
     ocr_ports.sort(key=_ip_sort_key)
     if len(ocr_ports) == 1:
-        ocr_ports[0]["cameraLabel"] = "OCR"
+        ocr_ports[0]["cameraLabel"] = _ocr_base(ocr_ports[0])
     else:
         for i, p in enumerate(ocr_ports, 1):
-            p["cameraLabel"] = f"OCR {i}"
+            p["cameraLabel"] = f"{_ocr_base(p)} {i}"
 
     return ports
 
