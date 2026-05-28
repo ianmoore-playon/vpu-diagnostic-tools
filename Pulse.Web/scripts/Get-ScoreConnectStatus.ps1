@@ -210,77 +210,124 @@ function Probe-ScoreConnectII {
 
         if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
 
-        # ── 5. Send hub invocations ─────────────────────────────────────────
+        # ── 5–6. Two-phase SignalR flow ─────────────────────────────────────
+        # The SC II hub requires sequential authentication.  getsettings works
+        # pre-login, but getparms/getscoreboards only return data AFTER the
+        # uidlogin broadcast confirms success.  Sending them simultaneously
+        # causes getparms to silently fail (server ignores unauthenticated
+        # requests).  Score/LED broadcasts also only flow to logged-in clients.
+        #
+        # Phase 1: getsettings + uidlogin → poll for getsettings + login ack
+        # Phase 2: getparms + getscoreboards → poll for parms + scores/LEDs
+
         $sendUrl = "$Sc2Base/signalr/send?transport=longPolling&connectionToken=$token&connectionData=$connData"
+        $invIdx  = 0   # running invocation ID
 
-        # getsettings (works pre-login)
-        $body = 'data=' + [System.Uri]::EscapeDataString('{"H":"ScoreConnectHub","M":"Getsettings","A":[],"I":0}')
-        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
-
-        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
-
-        # uidlogin (required for getparms)
-        $body = 'data=' + [System.Uri]::EscapeDataString('{"H":"ScoreConnectHub","M":"Uidlogin","A":["Admin"],"I":1}')
-        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
-
-        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
-
-        # getparms (team names, vendor, bot)
-        $body = 'data=' + [System.Uri]::EscapeDataString('{"H":"ScoreConnectHub","M":"Getparms","A":[],"I":2}')
-        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
-
-        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
-
-        # ── 6. Poll for broadcast messages ──────────────────────────────────
-        # Collect up to 2 poll cycles (down from 3 — keeps total under budget).
-        # Each poll blocks until the server has messages or the timeout expires.
-        # We parse getsettings, getparms, and live score broadcasts.
+        # Helper: parse all broadcast messages from a poll response
         $settings  = $null
         $parms     = $null
+        $loginOk   = $false
         $scores    = @{}
         $leds      = @{}
 
-        for ($poll = 0; $poll -lt 2; $poll++) {
-            if ($sw.ElapsedMilliseconds -ge $budgetMs) { break }
-            try {
-                # Dynamic poll timeout: use whatever budget remains, capped at 3s
-                $remainMs = $budgetMs - $sw.ElapsedMilliseconds
-                $pollTimeoutSec = [Math]::Max(1, [Math]::Min(3, [Math]::Floor($remainMs / 1000)))
+        function Parse-PollMessages {
+            param($PollJson)
+            foreach ($msg in $PollJson.M) {
+                if ($msg.M -ne 'broadcastMessage' -or $msg.A.Count -lt 2) { continue }
+                $topic  = $msg.A[0]
+                try { $tdata = $msg.A[1] | ConvertFrom-Json } catch { continue }
 
-                $pollUrl = "$Sc2Base/signalr/poll?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
-                if ($msgId) { $pollUrl += "&messageId=$([System.Uri]::EscapeDataString($msgId))" }
-                $pollResp = Invoke-WebRequest -Uri $pollUrl -UseBasicParsing -TimeoutSec $pollTimeoutSec -ErrorAction Stop
-                $pollJson = $pollResp.Content | ConvertFrom-Json
-
-                if ($pollJson.C) { $msgId = $pollJson.C }
-
-                if ($pollJson.M) {
-                    foreach ($msg in $pollJson.M) {
-                        if ($msg.M -ne 'broadcastMessage' -or $msg.A.Count -lt 2) { continue }
-                        $topic  = $msg.A[0]
-                        try { $tdata = $msg.A[1] | ConvertFrom-Json } catch { continue }
-
-                        switch ($topic) {
-                            'getsettings'          { $settings = $tdata }
-                            'getparms'             { $parms = $tdata }
-                            'status_clock'         { $scores['clock']   = $tdata.status_clock }
-                            'status_vscore'        { $scores['visitor'] = $tdata.status_vscore }
-                            'status_hscore'        { $scores['home']    = $tdata.status_hscore }
-                            'status_text1'         { $scores['text1']   = $tdata.status_text1 }
-                            'status_text2'         { $scores['text2']   = $tdata.status_text2 }
-                            'status_text3'         { $scores['text3']   = $tdata.status_text3 }
-                            'status_scoreboard_led' { $leds['scoreboard'] = [int]$tdata.status_scoreboard_led }
-                            'status_network_led'   { $leds['network']    = [int]$tdata.status_network_led }
-                            'status_cloud_led'     { $leds['cloud']      = [int]$tdata.status_cloud_led }
-                            'status_local_led'     { $leds['local']      = [int]$tdata.status_local_led }
-                            'status_update_led'    { $leds['update']     = [int]$tdata.status_update_led }
-                        }
-                    }
+                switch ($topic) {
+                    'getsettings'           { Set-Variable -Name settings -Value $tdata -Scope 1 }
+                    'uidlogin'              { if ($tdata.login -eq 'true') { Set-Variable -Name loginOk -Value $true -Scope 1 } }
+                    'getparms'              { Set-Variable -Name parms -Value $tdata -Scope 1 }
+                    'status_clock'          { $scores['clock']      = $tdata.status_clock }
+                    'status_vscore'         { $scores['visitor']    = $tdata.status_vscore }
+                    'status_hscore'         { $scores['home']       = $tdata.status_hscore }
+                    'status_text1'          { $scores['text1']      = $tdata.status_text1 }
+                    'status_text2'          { $scores['text2']      = $tdata.status_text2 }
+                    'status_text3'          { $scores['text3']      = $tdata.status_text3 }
+                    'status_scoreboard_led' { $leds['scoreboard']   = [int]$tdata.status_scoreboard_led }
+                    'status_network_led'    { $leds['network']      = [int]$tdata.status_network_led }
+                    'status_cloud_led'      { $leds['cloud']        = [int]$tdata.status_cloud_led }
+                    'status_local_led'      { $leds['local']        = [int]$tdata.status_local_led }
+                    'status_update_led'     { $leds['update']       = [int]$tdata.status_update_led }
                 }
+            }
+        }
 
-                # If we have both settings and parms, and at least one score field, we're done
-                if ($settings -and $parms -and $scores.Count -gt 0) { break }
-            } catch { break }
+        # Helper: run one poll cycle with dynamic timeout
+        function Poll-Once {
+            $remainMs = $budgetMs - $sw.ElapsedMilliseconds
+            if ($remainMs -le 500) { return $null }
+            $tSec = [Math]::Max(1, [Math]::Min(3, [Math]::Floor($remainMs / 1000)))
+
+            $pUrl = "$Sc2Base/signalr/poll?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
+            if ($msgId) { $pUrl += "&messageId=$([System.Uri]::EscapeDataString($msgId))" }
+            $pResp = Invoke-WebRequest -Uri $pUrl -UseBasicParsing -TimeoutSec $tSec -ErrorAction Stop
+            $pJson = $pResp.Content | ConvertFrom-Json
+            if ($pJson.C) { Set-Variable -Name msgId -Value $pJson.C -Scope 1 }
+            return $pJson
+        }
+
+        # ── Phase 1: getsettings + uidlogin ─────────────────────────────────
+        $body = 'data=' + [System.Uri]::EscapeDataString("{`"H`":`"ScoreConnectHub`",`"M`":`"Getsettings`",`"A`":[],`"I`":$invIdx}")
+        $invIdx++
+        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
+
+        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+
+        $body = 'data=' + [System.Uri]::EscapeDataString("{`"H`":`"ScoreConnectHub`",`"M`":`"Uidlogin`",`"A`":[`"Admin`"],`"I`":$invIdx}")
+        $invIdx++
+        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
+
+        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+
+        # Poll once for getsettings + login confirmation
+        try {
+            $p1 = Poll-Once
+            if ($p1 -and $p1.M) { Parse-PollMessages $p1 }
+        } catch {}
+
+        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+
+        # If login didn't confirm on first poll, try one more
+        if (-not $loginOk) {
+            try {
+                $p1b = Poll-Once
+                if ($p1b -and $p1b.M) { Parse-PollMessages $p1b }
+            } catch {}
+        }
+
+        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+
+        # ── Phase 2: getparms + getscoreboards (post-login) ─────────────────
+        # Only send these after login succeeds — the SC II hub ignores them
+        # for unauthenticated connections.  getscoreboards triggers the server
+        # to start broadcasting live score/LED data to our connection.
+        if ($loginOk) {
+            $body = 'data=' + [System.Uri]::EscapeDataString("{`"H`":`"ScoreConnectHub`",`"M`":`"Getparms`",`"A`":[],`"I`":$invIdx}")
+            $invIdx++
+            Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
+
+            if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+
+            $body = 'data=' + [System.Uri]::EscapeDataString("{`"H`":`"ScoreConnectHub`",`"M`":`"Getscoreboards`",`"A`":[],`"I`":$invIdx}")
+            $invIdx++
+            Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
+
+            if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+
+            # Poll for getparms response + score/LED broadcasts
+            for ($poll = 0; $poll -lt 2; $poll++) {
+                if ($sw.ElapsedMilliseconds -ge $budgetMs) { break }
+                try {
+                    $p2 = Poll-Once
+                    if ($p2 -and $p2.M) { Parse-PollMessages $p2 }
+                    # Done once we have parms + at least one score
+                    if ($parms -and $scores.Count -gt 0) { break }
+                } catch { break }
+            }
         }
 
         # ── 7. Populate result ──────────────────────────────────────────────
@@ -294,7 +341,12 @@ function Probe-ScoreConnectII {
                 visitor = $parms.visitor_teamname
                 home    = $parms.home_teamname
             }
-            $result.vendor    = $parms.sbvendorname
+            # SC II sends numeric sbvendor and string sbvendorname (may be absent).
+            # Try the human-readable name first, fall back to the numeric code.
+            $vn = $parms.sbvendorname
+            if (-not $vn) { $vn = $parms.sbvendor }
+            $result.vendor    = $vn
+            $result.sport     = $parms.sbcode
             $result.botNumber = $parms.botnumber
         }
         if ($scores.Count -gt 0) {
