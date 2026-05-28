@@ -1197,6 +1197,34 @@ function renderSystem() {
           ${kvRow("Image Version", pix.imageVersion)}
         </div>
         ${id.isNonVpuHost ? '<div class="info-chip mt-3">Not a VPU host</div>' : ""}
+        ${(() => {
+          const c = pix.compat;
+          if (!c || c.status === "skip") return "";
+          let cls = "sys-lifecycle-ok";
+          let title = "";
+          let detail = "";
+          if (c.status === "ok") {
+            cls = "sys-lifecycle-ok";
+            title = "Version compatible with hardware";
+            const capStr = c.maxVersion ? `max ${c.maxVersion}` : "no cap";
+            detail = `${esc(c.installedVersion)} on ${esc(c.architecture)} GPU · ${esc(capStr)} · ${esc(c.capReason)}`;
+          } else if (c.status === "over") {
+            cls = "sys-lifecycle-crit";
+            title = "Version exceeds hardware compatibility cap";
+            detail = `Installed ${esc(c.installedVersion)} is newer than ${esc(c.maxVersion)} (max for ${esc(c.architecture)}). Downgrade to stay supported.`;
+          } else if (c.status === "no-gpu") {
+            cls = "sys-lifecycle-crit";
+            title = "No NVIDIA GPU detected";
+            detail = "Pixellot requires NVIDIA hardware for encoding.";
+          }
+          return `<div class="sys-lifecycle ${cls} mt-3">
+            ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
+            <div>
+              <div class="font-semibold">${esc(title)}</div>
+              <div class="text-xs mt-1">${detail}</div>
+            </div>
+          </div>`;
+        })()}
       </div>
     </div>
 
@@ -3539,7 +3567,9 @@ function renderScoreConnect() {
         ${kvRowHtml("Connected", botStatus.isConnected
           ? '<span class="status-pass">Yes</span>'
           : '<span class="status-fail">No</span>')}
-        ${kvRow("ScoreConnect ID", botStatus.scoreConnectId)}
+        ${botStatus.scoreConnectId ? kvRowHtml("ScoreConnect ID",
+          `${esc(botStatus.scoreConnectId)} <span class="text-pulse-muted" style="font-size:0.75rem">(may be stale)</span>`)
+          : ""}
         ${kvRow("BOT Server", botStatus.botServerAddress)}
         ${botStatus.lastErrorMessage ? kvRowHtml("Last Error", `<span class="text-pulse-muted">${esc(botStatus.lastErrorMessage)}</span>`) : ""}
       </div>
@@ -3595,7 +3625,7 @@ function renderScoreConnect() {
           ${data.networkStatus ? `<div class="sc-stat"><span class="sc-stat-val">${data.networkStatus.includes("detected") ? "Yes" : "No"}</span><span class="sc-stat-lbl">Internet</span></div>` : ""}
         </div>
         <div class="sc-stat-group sc-stat-right">
-          ${config.vendorConfigurationName ? `<div class="sc-stat"><span class="sc-stat-val">${esc(config.vendorConfigurationName)}</span><span class="sc-stat-lbl">Config</span></div>` : ""}
+          ${config.vendorConfigurationName ? `<div class="sc-stat"><span class="sc-stat-val">${esc(config.vendorConfigurationName)}</span><span class="sc-stat-lbl">Connection</span></div>` : ""}
           ${version ? `<div class="sc-stat"><span class="sc-stat-val">${esc(version)}</span><span class="sc-stat-lbl">Version</span></div>` : ""}
         </div>
       </div>
@@ -3622,14 +3652,15 @@ function renderScoreConnect() {
     <!-- Connected Device / Configuration -->
     ${config.vendor || config.sport ? `
     <div class="card mt-4">
-      ${sectionTitle("cog", "Connected Device")}
+      ${sectionTitle("cog", "Configuration")}
       <div class="kv-grid">
         ${kvRow("Vendor", config.vendor)}
         ${kvRow("Sport", config.sport)}
-        ${kvRow("Configuration", config.vendorConfigurationName)}
-        ${kvRow("Serial Port", config.serialPort)}
-        ${kvRow("Firmware", config.firmware)}
-        ${kvRow("Event Type", config.eventType)}
+        ${config.vendorConfigurationName ? kvRow("Connection Type", config.vendorConfigurationName) : ""}
+        ${config.device ? kvRow("Device", config.device) : ""}
+        ${config.serialPort ? kvRow("Serial Port", config.serialPort) : ""}
+        ${config.firmware ? kvRow("Firmware", config.firmware) : ""}
+        ${config.eventType ? kvRow("Event Type", config.eventType) : ""}
       </div>
     </div>` : ""}
 

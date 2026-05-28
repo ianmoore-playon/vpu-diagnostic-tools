@@ -479,6 +479,162 @@ def _os_lifecycle(build_number) -> Optional[dict]:
 # antivirus blocks agent.exe and forces an RMA. Only Windows Defender is
 # approved. Each entry is matched as a case-insensitive substring against
 # the installed-software displayName.
+# ── Pixellot version × hardware compatibility (field guidance) ──
+# Per Logan T (2026-05-28):
+#   Win 8 hosts                          → max 2.66.17
+#   Win 10 + Pascal GPU (10xx, 6.x cap)  → max 5.2.x
+#   Win 10 + Turing or newer (≥7.5 cap)  → any version
+#
+# Maxwell (5.x) and Volta (7.0/7.2) are PROVISIONAL — capped at 5.2.x
+# pending Logan's clarification. Adjust by editing _ARCH_VERSION_CAPS
+# below; the rest of the logic doesn't change.
+#
+# Pixellot version strings are dotted-numeric (e.g. "5.13.6"). Caps can
+# be exact ("2.66.17") or wildcarded ("5.2.x") — the latter allows any
+# patch under that major.minor.
+
+# arch → max Pixellot version (None means unlimited)
+_ARCH_VERSION_CAPS = {
+    "Maxwell":    "5.2.x",   # PROVISIONAL — confirm with Logan
+    "Pascal":     "5.2.x",
+    "Volta":      "5.2.x",   # PROVISIONAL — confirm with Logan
+    "Turing":     None,
+    "Ampere/Ada": None,
+    "Hopper":     None,
+    "Blackwell":  None,
+    # Unknown/None handled separately
+}
+
+
+def _parse_version(v: str):
+    """Return tuple of ints from a dotted version, ignoring suffixes.
+    "5.13.6" → (5, 13, 6). "2.66.17" → (2, 66, 17). Empty/bad → ()."""
+    if not v:
+        return ()
+    parts = []
+    for piece in str(v).split("."):
+        piece = piece.strip()
+        # Strip non-numeric tail (e.g. "5.13.6-beta" → "5.13.6")
+        num = ""
+        for ch in piece:
+            if ch.isdigit():
+                num += ch
+            else:
+                break
+        if num == "":
+            break
+        parts.append(int(num))
+    return tuple(parts)
+
+
+def _version_exceeds_cap(installed: str, cap: str) -> bool:
+    """True if `installed` is strictly newer than `cap`.
+
+    Cap formats:
+      "2.66.17"   exact maximum (5.13.6 exceeds, 2.66.17 OK, 2.66.16 OK)
+      "5.2.x"     wildcard patch — anything in 5.2.* allowed; 5.3.0+ exceeds
+    """
+    if not installed or not cap:
+        return False
+    iv = _parse_version(installed)
+    if not iv:
+        return False
+
+    # Wildcard form: "5.2.x" → require major.minor match, patch unbounded
+    if cap.lower().endswith(".x"):
+        prefix = cap[:-2]  # "5.2"
+        cv = _parse_version(prefix)
+        if not cv:
+            return False
+        # Out of range if installed major > cap major, or same major + minor > cap minor
+        if iv[0] != cv[0]:
+            return iv[0] > cv[0]
+        if len(iv) < 2 or len(cv) < 2:
+            return False
+        return iv[1] > cv[1]
+
+    # Exact form: pad to same length and compare
+    cv = _parse_version(cap)
+    if not cv:
+        return False
+    max_len = max(len(iv), len(cv))
+    iv_padded = iv + (0,) * (max_len - len(iv))
+    cv_padded = cv + (0,) * (max_len - len(cv))
+    return iv_padded > cv_padded
+
+
+def _check_pixellot_compatibility(identity, gpu_info) -> dict:
+    """Return a status dict describing Pixellot version compatibility
+    with the detected Windows + GPU combination.
+
+    Returns:
+      {
+        status: "ok" | "over" | "no-gpu" | "skip",
+        installedVersion: str | None,
+        maxVersion: str | None,          # None = unlimited
+        capReason: str,                  # which rule applied
+        architecture: str,
+        windowsBuild: str | None,
+      }
+    """
+    out = {
+        "status": "skip",
+        "installedVersion": None,
+        "maxVersion": None,
+        "capReason": "",
+        "architecture": "Unknown",
+        "windowsBuild": None,
+    }
+    if not identity or identity.get("error"):
+        return out
+
+    installed = (identity.get("pixellot") or {}).get("version")
+    out["installedVersion"] = installed
+    if not installed:
+        out["status"] = "skip"
+        out["capReason"] = "Pixellot version not detected — VPU software may not be installed"
+        return out
+
+    os_caption = (identity.get("operatingSystem") or {}).get("caption") or ""
+    os_build = (identity.get("operatingSystem") or {}).get("buildNumber") or ""
+    out["windowsBuild"] = os_build
+
+    # Win 8 / 8.1 binding constraint regardless of GPU
+    is_win8 = "Windows 8" in os_caption
+    if is_win8:
+        out["maxVersion"] = "2.66.17"
+        out["capReason"] = "Windows 8 hosts are capped at Pixellot 2.66.17"
+        out["status"] = "over" if _version_exceeds_cap(installed, "2.66.17") else "ok"
+        return out
+
+    arch = (gpu_info or {}).get("primaryArchitecture") or "Unknown"
+    out["architecture"] = arch
+
+    if arch in ("None", None):
+        out["status"] = "no-gpu"
+        out["capReason"] = "No NVIDIA GPU detected — Pixellot requires NVIDIA hardware for encoding"
+        return out
+
+    cap = _ARCH_VERSION_CAPS.get(arch)
+    if cap is None:
+        # Either an architecture that's unlimited (Turing+) or one we
+        # don't have data for. For Unknown, default to compliant — we
+        # don't want a false-positive critical finding on a strange host.
+        out["maxVersion"] = None
+        if arch in ("Turing", "Ampere/Ada", "Hopper", "Blackwell"):
+            out["capReason"] = f"{arch} architecture — no Pixellot version cap"
+            out["status"] = "ok"
+        else:
+            out["capReason"] = f"Architecture '{arch}' — no cap data, assuming compatible"
+            out["status"] = "ok"
+        return out
+
+    out["maxVersion"] = cap
+    out["capReason"] = f"{arch} GPU caps Pixellot at {cap}"
+    out["status"] = "over" if _version_exceeds_cap(installed, cap) else "ok"
+    return out
+
+
 # ── Concerning software categories ───────────────────────────
 # Each category lists case-insensitive substring patterns that match
 # software displayName. The first matching category wins per row.
@@ -671,7 +827,7 @@ def _total_ram_gb(hardware, performance) -> float:
     return 0.0
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None) -> list:
     findings = []
 
     # ── NTP allowlist (PDF #9) ───────────────────────────────
@@ -820,6 +976,35 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "title": "OS end-of-support approaching",
                     "recommendation": f"{release} end-of-support is {eos} (~{months} months away). Begin planning a re-image to a supported LTSC release.",
                 })
+
+        # ── Pixellot version × hardware compatibility ───────────
+        # Logan T 2026-05-28: Win 8 caps at 2.66.17, Win 10 + Pascal at
+        # 5.2.x, Win 10 + Turing+ unlimited. Critical if installed > cap.
+        compat = _check_pixellot_compatibility(identity, gpu_info)
+        if compat["status"] == "over":
+            arch_str = compat["architecture"] if compat["architecture"] != "Unknown" else "this hardware"
+            findings.append({
+                "severity": "critical",
+                "category": "Pixellot",
+                "title": "Pixellot version exceeds hardware compatibility cap",
+                "recommendation": (
+                    f"Installed Pixellot {compat['installedVersion']} is newer than the maximum "
+                    f"supported version for {arch_str} ({compat['maxVersion']}). "
+                    f"{compat['capReason']}. Downgrade Pixellot to {compat['maxVersion']} or earlier "
+                    f"on this VPU — newer builds will not run correctly on this GPU/OS combination."
+                ),
+            })
+        elif compat["status"] == "no-gpu":
+            findings.append({
+                "severity": "critical",
+                "category": "Hardware",
+                "title": "No NVIDIA GPU detected",
+                "recommendation": (
+                    "Pixellot requires an NVIDIA GPU for video encoding. No NVIDIA hardware was "
+                    "found via nvidia-smi or WMI. If a GPU is physically installed, check driver "
+                    "status; otherwise this VPU cannot run the encoder."
+                ),
+            })
 
     if performance and not performance.get("error"):
         # Use `is not None` instead of truthy checks so a legitimate 0 value
@@ -1322,7 +1507,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None):
     flat_identity = {}
     if identity and not identity.get("error"):
         flat_identity = {
@@ -1355,7 +1540,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         "identity": flat_identity,
         "performance": performance if not performance.get("error", False) else {},
         "services": services if not services.get("error", False) else {"services": []},
-        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests),
+        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info),
         "networkConfig": net_cfg,
     }
 
@@ -1429,6 +1614,7 @@ async def api_preload():
         ntp_peers,
         dns_resolution,
         install_state,
+        gpu_info,
     ) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -1448,6 +1634,7 @@ async def api_preload():
         run_ps("Get-NtpPeers.ps1"),
         run_ps("Test-DnsResolution.ps1"),
         run_ps("Test-PixellotInstallState.ps1", timeout=15),
+        run_ps("Get-GpuInfo.ps1", timeout=15),
     )
     # Audio is deferred — lazy-fetched on tab visit to keep preload lean.
 
@@ -1457,9 +1644,9 @@ async def api_preload():
     probe_results_pre = await _probe_all_cameras(raw_ports_pre, ocr_ips_pre)
 
     return {
-        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state),
+        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info),
         "system": {
-            "identity": _enrich_identity_lifecycle(identity),
+            "identity": _enrich_identity_pixellot_compat(_enrich_identity_lifecycle(identity), gpu_info),
             "hardware": hardware,
             "software": _enrich_software_with_concerns(installed_sw),
         },
@@ -1527,7 +1714,7 @@ async def api_scripts_cancel_all():
 
 @app.get("/api/dashboard")
 async def api_dashboard():
-    identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests = await asyncio.gather(
+    identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
@@ -1540,8 +1727,9 @@ async def api_dashboard():
         # Run-All cold start under ~25s while still giving real port
         # checks time to complete on a healthy connection.
         run_ps("Test-NetworkPorts.ps1", timeout=20),
+        run_ps("Get-GpuInfo.ps1", timeout=15),
     )
-    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests)
+    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info)
 
 
 def _enrich_identity_lifecycle(identity):
@@ -1558,15 +1746,30 @@ def _enrich_identity_lifecycle(identity):
     return identity
 
 
+def _enrich_identity_pixellot_compat(identity, gpu_info):
+    """Attach pixellotCompat = {status, installedVersion, maxVersion, ...}
+    to identity so System Overview can render the GPU/OS-vs-Pixellot banner."""
+    if not identity or identity.get("error"):
+        return identity
+    compat = _check_pixellot_compatibility(identity, gpu_info)
+    pix_block = identity.get("pixellot") or {}
+    pix_block["compat"] = compat
+    identity["pixellot"] = pix_block
+    return identity
+
+
 @app.get("/api/system")
 async def api_system():
-    identity, hardware, software = await asyncio.gather(
+    identity, hardware, software, gpu_info = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
+        run_ps("Get-GpuInfo.ps1", timeout=15),
     )
+    identity = _enrich_identity_lifecycle(identity)
+    identity = _enrich_identity_pixellot_compat(identity, gpu_info)
     return {
-        "identity": _enrich_identity_lifecycle(identity),
+        "identity": identity,
         "hardware": hardware,
         "software": _enrich_software_with_concerns(software),
     }

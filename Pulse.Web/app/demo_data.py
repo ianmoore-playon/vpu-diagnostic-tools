@@ -39,6 +39,64 @@ def _fmt_uptime(s):
     return f"{d}d {h}h {m}m"
 
 
+def _demo_scoreconnect():
+    """Generate consistent ScoreConnect demo data.
+
+    Simulates ScoreConnect III (web-based, raw RTD data only — no parsed
+    scores).  SC II (web-based, has parsed data) and SC I (.exe, has parsed
+    data) are different products with different API surfaces.
+
+    dataStatus and rawData must be correlated — when the controller reports
+    "No Scoreboard data", the raw data field should be empty (matching real
+    SC III behaviour).  ~70% chance of active data for a livelier demo.
+
+    Bot number is intentionally included but is notoriously stale on real
+    hardware — SC III often reports a previous unit's number until reset.
+    """
+    has_data = random.random() < 0.7
+    data_status = (
+        "Data is present and in the correct format" if has_data
+        else "No Scoreboard data is being received"
+    )
+    raw_data = (
+        f"0{random.randint(1,4)}{random.randint(10,20):02d}"
+        f"{random.randint(0,59):02d}  {random.randint(18,72)} "
+        f"{random.randint(18,72)} {random.randint(0,9)}  "
+        f"{random.randint(10,40)}     {random.randint(1,4)}"
+        f"{'':>74}"
+        f"S:S             0000008DEBCCA{random.randint(10000,99999):05X}"
+    ) if has_data else None
+
+    bot_id = str(random.randint(10000, 99999))
+    bot_connected = random.choice([True, False])
+
+    return {
+        "reachable": True,
+        "baseUrl": "http://localhost:5000",
+        "version": "1.4.0.10",
+        "dataStatus": data_status,
+        "rawData": raw_data,
+        "networkStatus": "Internet is detected",
+        "hasLocalStream": has_data,  # local stream tracks data presence
+        "configuration": {
+            "vendor": "Daktronics",
+            "sport": "Daktronics Football",
+            "vendorConfigurationName": "Wireless",
+        },
+        "botStatus": {
+            "isConnected": bot_connected,
+            "scoreConnectId": bot_id,
+            "botServerAddress": None,
+            "lastErrorMessage": None,
+        },
+        "scoreLinkConnected": True,
+        "scoreLinkPort": "COM7",
+        "scoreLinkModel": "ScoreLink",
+        "scoreLinkStatusLabel": "ScoreLink device connected (COM7)",
+        "error": None,
+    }
+
+
 DEMO = {
     "Get-SystemIdentity.ps1": lambda **kw: {
         "computerSystem": {"name": _VENUE["hostname"], "manufacturer": "HP", "model": "HP Z2 Tower G9 Workstation Desktop PC"},
@@ -97,7 +155,7 @@ DEMO = {
         ],
         "gpus": [
             {"name": "Intel(R) UHD Graphics 630", "adapterRAMMB": 1024, "driverVersion": "27.20.100.8935"},
-            {"name": "NVIDIA GeForce GTX 1650", "adapterRAMMB": 4096, "driverVersion": "32.0.15.7628"},
+            {"name": "NVIDIA GeForce GTX 1070", "adapterRAMMB": 8192, "driverVersion": "31.0.15.5212"},
         ],
         "diskDrives": [
             {"model": "Samsung SSD 870 EVO 500GB", "sizeGB": 500, "interfaceType": "SATA", "serialNumber": "S3Z8NB0K901234A"}
@@ -258,34 +316,7 @@ DEMO = {
             {"timeCreated": (datetime.now() - timedelta(hours=24)).isoformat(), "level": "Error", "source": "PixellotEncoder", "eventId": 2001, "message": "Hardware encoder init failed — falling back to software encoding"},
         ]
     },
-    "Get-ScoreConnectStatus.ps1": lambda **kw: {
-        "reachable": True,
-        "baseUrl": "http://localhost:5000",
-        "version": "1.4.0.10",
-        "dataStatus": random.choice([
-            "Data is present and in the correct format",
-            "No Scoreboard data is being received",
-        ]),
-        "rawData": f"0{random.randint(1,4)}{random.randint(10,20):02d}{random.randint(0,59):02d}  {random.randint(18,72)} {random.randint(18,72)} {random.randint(0,9)}  {random.randint(10,40)}     {random.randint(1,4)}                                                                                          S:S             0000008DEBCCA{random.randint(10000,99999):05X}",
-        "networkStatus": "Internet is detected",
-        "hasLocalStream": True,
-        "configuration": {
-            "vendor": "Daktronics",
-            "sport": "Daktronics Auto Detect",
-            "vendorConfigurationName": "Wireless",
-        },
-        "botStatus": {
-            "isConnected": False,
-            "scoreConnectId": None,
-            "botServerAddress": None,
-            "lastErrorMessage": None,
-        },
-        "scoreLinkConnected": True,
-        "scoreLinkPort": "COM7",
-        "scoreLinkModel": "ScoreLink",
-        "scoreLinkStatusLabel": "ScoreLink device connected (COM7)",
-        "error": None,
-    },
+    "Get-ScoreConnectStatus.ps1": lambda **kw: _demo_scoreconnect(),
     "Get-PixellotConfig.ps1": lambda **kw: {
         "cameras": [
             {"section": "Camera1", "ip": "192.168.10.100", "mac": "00:0E:53:AA:01:01", "role": "Main"},
@@ -422,6 +453,19 @@ DEMO = {
         ],
         "cbsLogPath": "C:\\Windows\\Logs\\CBS\\CBS.log",
     })((kw or {}).get("Action", "CheckHealth")),
+    "Get-GpuInfo.ps1": lambda **kw: {
+        # Demo represents a Pascal-era VPU (GTX 1070) so the compat banner
+        # has something to talk about. Combined with Pixellot 5.13.x in the
+        # venue pool, this trips the "Pixellot exceeds cap" critical finding.
+        "gpus": [
+            {"name": "Intel(R) UHD Graphics 630", "computeCap": None, "architecture": "NotNvidia", "source": "wmi"},
+            {"name": "NVIDIA GeForce GTX 1070", "computeCap": "6.1", "architecture": "Pascal", "source": "nvidia-smi"},
+        ],
+        "primaryArchitecture": "Pascal",
+        "primaryComputeCap": "6.1",
+        "nvidiaSmiAvailable": True,
+        "nvidiaSmiError": None,
+    },
     "Test-PixellotInstallState.ps1": lambda **kw: {
         "dirExists": True,
         "dir": "C:\\pixellot\\downloadedversion",
