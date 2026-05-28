@@ -350,15 +350,14 @@ function hideSplash() {
 }
 
 function preloadProgressive(opts) {
-  // Returns a Promise that resolves when EVERY preload section has settled.
-  // The splash screen waits on this so users see the loading state until
-  // every PowerShell-backed endpoint has at least had one chance to respond.
+  // Resolves when every preload section has settled. The splash waits on
+  // this Promise so the user sees a loading state through the whole cold
+  // start, not just the dashboard fetch.
   //
-  // Phasing (preserved from earlier impl to avoid CPU saturation on VPU):
-  //   1. Dashboard first (the visible page).
-  //   2. WS connect once dashboard returns (enables live metrics).
-  //   3. Remaining PAGE_API sections in stagger, 300ms apart.
-  //   4. Version + log endpoints in parallel.
+  // Concurrency is throttled server-side by a 4-slot PowerShell semaphore
+  // + a 25s result cache, so we fire everything in parallel here instead
+  // of staggering by 300ms — the stagger was hand-throttling on top of a
+  // throttle, adding 2–3s of pure waiting to the splash.
   const o = opts || {};
   const verb = o.verb || "Loading diagnostics";
   const deferred = Object.keys(PAGE_API).filter((k) => k !== "dashboard");
@@ -374,7 +373,7 @@ function preloadProgressive(opts) {
   _setSplashSection(null);
   _setSplashPct(0);
 
-  // Phase 4 helpers — run in parallel, not gated on dashboard
+  // Version + log endpoints — run in parallel, not gated on dashboard.
   const versionPromise = api("/api/version").then((data) => {
     if (data?.version) {
       dataCache._version = data.version;
@@ -392,37 +391,39 @@ function preloadProgressive(opts) {
     }
   });
 
-  // Phase 1: dashboard
+  // Dashboard first — its result lets us start the WebSocket for live
+  // metric updates as soon as it returns.
   const dashboardPromise = fetchSection("dashboard").then((res) => {
     tick("dashboard");
-    // Phase 2: WebSocket after dashboard
     connectWS();
     return res;
   });
 
-  // Phase 3: stagger the rest
-  const deferredPromises = deferred.map((key, i) => new Promise((resolve) => {
-    setTimeout(() => {
-      fetchSection(key).then((res) => { tick(key); resolve(res); });
-    }, 500 + i * 300);
-  }));
+  // All other sections fire immediately. Identical-script requests
+  // dedupe server-side, so this doesn't trigger duplicate PS work.
+  const deferredPromises = deferred.map((key) =>
+    fetchSection(key).then((res) => { tick(key); return res; })
+  );
 
-  // Resolve when ALL preload work has finished (or errored — we use
-  // allSettled so a single failing endpoint doesn't trap the splash).
+  // allSettled so one failing endpoint can't trap the splash.
   return Promise.allSettled([
     dashboardPromise, versionPromise, logsPromise, ...deferredPromises,
   ]);
 }
 
 async function refreshAll() {
-  // Full re-run: clear caches, drop the live WS, then re-show the splash
-  // and gate it on a fresh preload — exactly like a cold start. The user
-  // explicitly asked for this on "Run All Diagnostics" so they see the
-  // same branded progress UI as on first launch.
+  // Full re-run: clear local + server caches, drop the live WS, then
+  // re-show the splash and gate it on a fresh preload — exactly like a
+  // cold start. Without the server-side cache clear, "Run All" would
+  // return the same 25-second-cached results that the splash just used.
   dataCache = {};
   fetchingKeys.clear();
   fetchPromises = {};
   if (ws && ws.readyState <= 1) { try { ws.close(); } catch {} }
+  // Fire-and-forget the cache clear — we don't need to wait for the
+  // ack before showing the splash; the next fetches will miss the
+  // cache once the POST completes (sub-second).
+  apiPost("/api/scripts/clear-cache", {}).catch(() => {});
   showSplash("Running diagnostics");
   renderPage(currentPage);
   const preloadPromise = preloadProgressive({ verb: "Running diagnostics" });

@@ -94,9 +94,48 @@ def cancel_all_tasks() -> int:
     return count
 
 
+# ── Short-TTL result cache + in-flight deduplication ─────────
+# During Pulse's initial preload, several endpoints call the same scripts:
+# /api/dashboard runs Get-NicAdapters; /api/cameras then runs it again
+# moments later. With a small TTL on results and a registry of in-flight
+# futures, the second caller either:
+#   - awaits the same future the first call already kicked off, or
+#   - returns the cached payload from the recently-completed first call.
+#
+# A 25-second TTL is long enough for an entire preload burst to share
+# results, short enough that no stale snapshot ever appears in a real
+# refresh action (the user's "Refresh" button clears the client cache
+# and waits 25s+ between successive clicks in practice).
+_RESULT_CACHE: dict = {}                         # cache_key -> (expires_at, result)
+_INFLIGHT: dict = {}                             # cache_key -> asyncio.Future
+_RESULT_TTL = 25.0                               # seconds
+
+
+def _cache_key(script_name: str, args: Optional[dict], timeout: int) -> tuple:
+    """Deterministic cache key. Args dicts must be hashable as a frozenset."""
+    arg_items = tuple(sorted((args or {}).items()))
+    return (script_name, arg_items, timeout)
+
+
 async def run_ps(
     script_name: str, args: Optional[dict] = None, timeout: int = 30
 ) -> dict:
+    key = _cache_key(script_name, args, timeout)
+
+    # 1. Fresh cached result? Return it immediately — no semaphore, no PS.
+    entry = _RESULT_CACHE.get(key)
+    if entry and entry[0] > time.monotonic():
+        return entry[1]
+
+    # 2. Same script already running? Await its future instead of duplicating.
+    inflight = _INFLIGHT.get(key)
+    if inflight and not inflight.done():
+        return await inflight
+
+    # 3. Cache miss + no in-flight call — actually invoke PowerShell.
+    future: asyncio.Future = asyncio.get_event_loop().create_future()
+    _INFLIGHT[key] = future
+
     task_id = uuid.uuid4().hex[:8]
     t0 = time.monotonic()
     cancel_evt = asyncio.Event()
@@ -109,9 +148,28 @@ async def run_ps(
 
     try:
         async with _get_semaphore():
-            return await _run_ps_inner(script_name, args, timeout, task_id, cancel_evt)
+            result = await _run_ps_inner(script_name, args, timeout, task_id, cancel_evt)
+        # Only cache successful results. Errors should retry on next call.
+        if isinstance(result, dict) and not result.get("error"):
+            _RESULT_CACHE[key] = (time.monotonic() + _RESULT_TTL, result)
+        future.set_result(result)
+        return result
+    except Exception as e:
+        if not future.done():
+            future.set_exception(e)
+        raise
     finally:
         RUNNING_TASKS.pop(task_id, None)
+        # Free the in-flight slot once the future is resolved either way.
+        if _INFLIGHT.get(key) is future:
+            _INFLIGHT.pop(key, None)
+
+
+def clear_ps_cache() -> int:
+    """Drop all cached PS results. Used by the global Refresh action."""
+    n = len(_RESULT_CACHE)
+    _RESULT_CACHE.clear()
+    return n
 
 
 async def _run_ps_inner(script_name, args, timeout, task_id, cancel_evt):

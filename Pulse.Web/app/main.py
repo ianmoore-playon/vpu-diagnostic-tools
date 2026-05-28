@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from powershell import (
     run_ps, LOG_BUFFER, DEMO_MODE, _log as ps_log,
     get_running_tasks, cancel_task, cancel_all_tasks,
+    clear_ps_cache,
 )
 
 _web_root = _os.path.dirname(_app_dir)
@@ -1873,6 +1874,15 @@ async def api_scripts_cancel(request: Request):
     body = await request.json()
     task_id = body.get("taskId", "")
     return {"ok": cancel_task(task_id)}
+
+
+@app.post("/api/scripts/clear-cache")
+async def api_scripts_clear_cache():
+    """Clear the server-side PS result cache. Called by the client's
+    Run-All Diagnostics path so a forced refresh actually re-runs
+    every script instead of returning cached results."""
+    count = clear_ps_cache()
+    return {"ok": True, "cleared": count}
 
 
 @app.post("/api/scripts/cancel-all")
