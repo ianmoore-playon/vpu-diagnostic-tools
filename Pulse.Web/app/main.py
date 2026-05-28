@@ -479,46 +479,175 @@ def _os_lifecycle(build_number) -> Optional[dict]:
 # antivirus blocks agent.exe and forces an RMA. Only Windows Defender is
 # approved. Each entry is matched as a case-insensitive substring against
 # the installed-software displayName.
-_BANNED_SECURITY_VENDORS = [
-    "CrowdStrike",
-    "SentinelOne",
-    "Sophos",
-    "Carbon Black",
-    "Bitdefender",
-    "McAfee",
-    "Norton",
-    "Symantec",
-    "Trend Micro",
-    "Kaspersky",
-    "ESET",
-    "Webroot",
-    "Cylance",
-    "Cortex XDR",
-]
+# ── Concerning software categories ───────────────────────────
+# Each category lists case-insensitive substring patterns that match
+# software displayName. The first matching category wins per row.
+# The frontend uses the per-entry `concern` field to badge the
+# Software Inventory table; _compute_findings emits dashboard findings
+# from these as well.
+_CONCERNING_SOFTWARE = {
+    "security": {
+        "severity": "critical",
+        "label": "Unsupported security software",
+        "shortLabel": "AV/EDR",
+        "reason": (
+            "Pixellot VPUs only support Windows Defender. Third-party AV/EDR "
+            "products block agent.exe and force an RMA (PDF #11)."
+        ),
+        "patterns": [
+            "CrowdStrike", "SentinelOne", "Sophos", "Carbon Black", "Bitdefender",
+            "McAfee", "Norton", "Symantec", "Trend Micro", "Kaspersky", "ESET",
+            "Webroot", "Cylance", "Cortex XDR",
+        ],
+    },
+    "crypto_miner": {
+        "severity": "critical",
+        "label": "Cryptocurrency miner",
+        "shortLabel": "Miner",
+        "reason": (
+            "Mining software consumes GPU/CPU resources required for video "
+            "encoding and is never legitimate on a VPU."
+        ),
+        # Be specific — "Claymore" alone risks false positives on common surnames,
+        # but full strings like "Claymore's Miner" / NiceHash are unambiguous.
+        "patterns": [
+            "xmrig", "ethminer", "phoenixminer", "NiceHash", "MinerGate",
+            "Claymore's Miner", "T-Rex Miner", "lolMiner", "Gminer", "TeamRedMiner",
+        ],
+    },
+    "torrent": {
+        "severity": "critical",
+        "label": "Torrent client",
+        "shortLabel": "Torrent",
+        "reason": (
+            "Torrent clients saturate upload bandwidth used for cloud streaming "
+            "and are a common malware vector. Not appropriate on a VPU."
+        ),
+        "patterns": [
+            "BitTorrent", "µTorrent", "uTorrent", "qBittorrent",
+            "Transmission-Qt", "Deluge", "Vuze", "Tixati", "Frostwire",
+        ],
+    },
+    "system_cleaner": {
+        "severity": "critical",
+        "label": "System cleaner / optimizer",
+        "shortLabel": "Cleaner",
+        "reason": (
+            "Registry/system cleaners and driver-updater junkware are known to "
+            "break Pixellot installs by deleting required files or registry keys. "
+            "Uninstall and reimage if a cleaner was recently run."
+        ),
+        "patterns": [
+            "CCleaner", "Advanced SystemCare", "IObit", "MyCleanPC", "PC Cleaner",
+            "Glary Utilities", "Wise Care", "Auslogics BoostSpeed",
+            "Driver Booster", "Driver Easy", "Driver Genius", "Driver Updater",
+        ],
+    },
+    "alt_remote": {
+        "severity": "warning",
+        "label": "Non-standard remote-access tool",
+        "shortLabel": "Alt Remote",
+        "reason": (
+            "LogMeIn is the approved Pixellot remote-access tool. Alternative "
+            "products run their own background telemetry and may compete with "
+            "LogMeIn for ports / system tray. Confirm with field operations "
+            "before relying on these."
+        ),
+        # VNC variants (TightVNC, RealVNC) are often standard on VPUs — left out
+        # to avoid false positives.
+        "patterns": [
+            "TeamViewer", "AnyDesk", "Splashtop", "GoToMyPC",
+            "ConnectWise Control", "ScreenConnect", "Chrome Remote Desktop",
+        ],
+    },
+    "game_platform": {
+        "severity": "warning",
+        "label": "Gaming platform",
+        "shortLabel": "Games",
+        "reason": (
+            "Game launchers run background updates and game-streaming services "
+            "that compete with Pixellot for CPU/GPU and upload bandwidth."
+        ),
+        "patterns": [
+            "Steam", "Epic Games", "Battle.net", "Riot Client", "Riot Games",
+            "GOG Galaxy", "Origin", "Ubisoft Connect", "EA app", "EA Desktop",
+        ],
+    },
+    "consumer_sync": {
+        "severity": "warning",
+        "label": "Consumer cloud-sync client",
+        "shortLabel": "Sync",
+        "reason": (
+            "Consumer-grade file sync can saturate upload bandwidth needed for "
+            "video streams. Disable or pause sync during events."
+        ),
+        # Exclude OneDrive — common on Win 10 IoT and harder to remove cleanly.
+        "patterns": ["Dropbox", "Google Drive", "iCloud", "Box Drive", "MEGAsync"],
+    },
+}
 
 
-def _detect_banned_security(installed_sw) -> list:
-    """Return a list of {name, version, matched} for any installed software
-    matching the banned-vendors list. Empty if clean."""
+def _detect_concerning_software(installed_sw) -> dict:
+    """Categorize installed software into concerning buckets.
+    Returns {category_key: [{name, version, matched}, ...]}.
+    Each software entry is matched against the first category whose
+    patterns hit; subsequent categories are skipped for that entry."""
+    out = {k: [] for k in _CONCERNING_SOFTWARE}
     if not installed_sw or installed_sw.get("error"):
-        return []
-    matches = []
+        return out
     seen_names = set()  # dedupe — installers often appear under multiple keys
     for sw in installed_sw.get("software") or []:
         name = (sw.get("displayName") or "").strip()
         if not name:
             continue
         name_lc = name.lower()
-        for vendor in _BANNED_SECURITY_VENDORS:
-            if vendor.lower() in name_lc and name_lc not in seen_names:
-                seen_names.add(name_lc)
-                matches.append({
-                    "name": name,
-                    "version": (sw.get("displayVersion") or "").strip() or None,
-                    "matched": vendor,
-                })
+        if name_lc in seen_names:
+            continue
+        for cat_key, cat in _CONCERNING_SOFTWARE.items():
+            for pattern in cat["patterns"]:
+                if pattern.lower() in name_lc:
+                    seen_names.add(name_lc)
+                    out[cat_key].append({
+                        "name": name,
+                        "version": (sw.get("displayVersion") or "").strip() or None,
+                        "matched": pattern,
+                    })
+                    break
+            if name_lc in seen_names:
                 break
-    return matches
+    return out
+
+
+def _enrich_software_with_concerns(installed_sw):
+    """Tag each software entry with a `concern` field if it matches a
+    concerning-software pattern. Returns the same dict for chaining."""
+    if not installed_sw or installed_sw.get("error"):
+        return installed_sw
+    for sw in installed_sw.get("software") or []:
+        name_lc = (sw.get("displayName") or "").strip().lower()
+        if not name_lc:
+            continue
+        for cat_key, cat in _CONCERNING_SOFTWARE.items():
+            for pattern in cat["patterns"]:
+                if pattern.lower() in name_lc:
+                    sw["concern"] = {
+                        "category": cat_key,
+                        "severity": cat["severity"],
+                        "label": cat["label"],
+                        "shortLabel": cat["shortLabel"],
+                        "reason": cat["reason"],
+                        "matched": pattern,
+                    }
+                    break
+            if "concern" in sw:
+                break
+    return installed_sw
+
+
+# Backwards-compat shim — _compute_findings still uses this for the
+# critical AV finding with its specific RMA copy.
+def _detect_banned_security(installed_sw) -> list:
+    return _detect_concerning_software(installed_sw).get("security", [])
 
 
 def _total_ram_gb(hardware, performance) -> float:
@@ -567,27 +696,55 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 }
             )
 
-    # ── Unsupported security software (PDF #11) ──────────────
-    # Non-Defender AV/EDR blocks agent.exe and forces an RMA. Only
-    # Windows Defender is approved.
-    banned = _detect_banned_security(installed_sw)
-    if banned:
+    # ── Concerning software (PDF #11 + general VPU hygiene) ──
+    # Walks the installed-software list through the _CONCERNING_SOFTWARE
+    # categories and emits one finding per category that matched anything.
+    # AV/EDR stays critical with PDF #11 copy; miners/torrents/cleaners are
+    # critical with their own reasons; alt-remote / games / cloud-sync are
+    # warnings.
+    concerns = _detect_concerning_software(installed_sw)
+    if concerns.get("security"):
         names_str = ", ".join(
             f"{b['name']}" + (f" {b['version']}" if b.get('version') else "")
-            for b in banned
+            for b in concerns["security"]
         )
-        findings.append(
-            {
-                "severity": "critical",
-                "category": "Hardware",
-                "title": "Unsupported security software detected",
-                "recommendation": (
-                    f"Found: {names_str}. Pixellot VPUs only support Windows Defender — "
-                    f"third-party AV/EDR products block agent.exe and force an RMA. "
-                    f"Uninstall the listed software immediately."
-                ),
-            }
+        findings.append({
+            "severity": "critical",
+            "category": "Hardware",
+            "title": "Unsupported security software detected",
+            "recommendation": (
+                f"Found: {names_str}. Pixellot VPUs only support Windows Defender — "
+                f"third-party AV/EDR products block agent.exe and force an RMA. "
+                f"Uninstall the listed software immediately."
+            ),
+        })
+    for cat_key in ("crypto_miner", "torrent", "system_cleaner"):
+        hits = concerns.get(cat_key) or []
+        if not hits:
+            continue
+        cat = _CONCERNING_SOFTWARE[cat_key]
+        names_str = ", ".join(
+            f"{h['name']}" + (f" {h['version']}" if h.get('version') else "")
+            for h in hits
         )
+        findings.append({
+            "severity": "critical",
+            "category": "Software",
+            "title": f"{cat['label']} installed",
+            "recommendation": f"Found: {names_str}. {cat['reason']} Uninstall this software.",
+        })
+    for cat_key in ("alt_remote", "game_platform", "consumer_sync"):
+        hits = concerns.get(cat_key) or []
+        if not hits:
+            continue
+        cat = _CONCERNING_SOFTWARE[cat_key]
+        names_str = ", ".join(h["name"] for h in hits)
+        findings.append({
+            "severity": "warning",
+            "category": "Software",
+            "title": f"{cat['label']} installed",
+            "recommendation": f"Found: {names_str}. {cat['reason']}",
+        })
 
     # ── Installed RAM ────────────────────────────────────────
     # Pixellot VPUs ship with 32GB of RAM. Anything less suggests an
@@ -1271,7 +1428,7 @@ async def api_preload():
         "system": {
             "identity": _enrich_identity_lifecycle(identity),
             "hardware": hardware,
-            "software": installed_sw,
+            "software": _enrich_software_with_concerns(installed_sw),
         },
         "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers, dns_resolution),
         "cameras": {
@@ -1371,7 +1528,11 @@ async def api_system():
         run_ps("Get-Hardware.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
     )
-    return {"identity": _enrich_identity_lifecycle(identity), "hardware": hardware, "software": software}
+    return {
+        "identity": _enrich_identity_lifecycle(identity),
+        "hardware": hardware,
+        "software": _enrich_software_with_concerns(software),
+    }
 
 
 @app.get("/api/network")

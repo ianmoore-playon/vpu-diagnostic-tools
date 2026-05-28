@@ -1317,17 +1317,48 @@ function renderSystem() {
     <!-- Software Inventory -->
     <div class="card mt-4">
       ${sectionTitle("server", "Software Inventory (" + swList.length + ")")}
+      ${(() => {
+        // Group concerning entries by severity for the summary banner.
+        const flagged = swList.filter(s => s.concern);
+        if (!flagged.length) return "";
+        const critical = flagged.filter(s => s.concern.severity === "critical");
+        const warning  = flagged.filter(s => s.concern.severity === "warning");
+        const parts = [];
+        if (critical.length) parts.push(`<span class="sw-flag-count sw-flag-critical">${critical.length} critical</span>`);
+        if (warning.length)  parts.push(`<span class="sw-flag-count sw-flag-warning">${warning.length} warning</span>`);
+        return `<div class="sw-concern-banner">
+          ${svgIcon("alert", 14)}
+          <span><strong>${flagged.length} concerning entr${flagged.length === 1 ? "y" : "ies"}</strong> ${parts.join(" · ")} — see flagged rows below.</span>
+        </div>`;
+      })()}
       ${swList.length ? `
         <input type="text" id="sw-filter" placeholder="Filter software..." class="sw-filter-input"/>
         <div class="sw-table-wrap">
           <table class="data-table" id="sw-table"><thead><tr>
-            <th>Name</th><th>Version</th><th>Publisher</th>
+            <th>Name</th><th>Version</th><th>Publisher</th><th>Concern</th>
           </tr></thead><tbody>
-          ${swList.map(s => `<tr>
-            <td>${esc(s.displayName)}</td>
-            <td class="font-mono text-xs">${esc(s.displayVersion)}</td>
-            <td class="text-pulse-muted">${esc(s.publisher)}</td>
-          </tr>`).join("")}
+          ${(() => {
+            // Sort concerning entries to the top, critical first
+            const sevRank = { critical: 0, warning: 1 };
+            const sorted = [...swList].sort((a, b) => {
+              const ra = a.concern ? sevRank[a.concern.severity] ?? 9 : 99;
+              const rb = b.concern ? sevRank[b.concern.severity] ?? 9 : 99;
+              return ra - rb;
+            });
+            return sorted.map(s => {
+              const c = s.concern;
+              const rowCls = c ? ` class="sw-row-${esc(c.severity)}"` : "";
+              const concernCell = c
+                ? `<span class="sw-concern-badge sw-concern-${esc(c.severity)}" title="${esc(c.reason)}">${esc(c.shortLabel || c.label)}</span>`
+                : `<span class="text-pulse-muted text-xs">—</span>`;
+              return `<tr${rowCls}>
+                <td>${esc(s.displayName)}</td>
+                <td class="font-mono text-xs">${esc(s.displayVersion)}</td>
+                <td class="text-pulse-muted">${esc(s.publisher)}</td>
+                <td>${concernCell}</td>
+              </tr>`;
+            }).join("");
+          })()}
           </tbody></table>
         </div>
       ` : '<p class="text-pulse-muted text-sm">No software data</p>'}

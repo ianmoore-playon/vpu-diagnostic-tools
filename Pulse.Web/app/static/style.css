@@ -1123,6 +1123,45 @@ html.dark .splash-logo {
 .sw-filter-input:focus { border-color: #3b82f6; }
 .sw-table-wrap { max-height: 400px; overflow-y: auto; }
 
+/* Concerning-software flags in Software Inventory */
+.sw-concern-banner {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; margin-bottom: 12px;
+    background: var(--c-tint-amber); border-left: 3px solid var(--c-accent-amber);
+    border-radius: 6px;
+    color: var(--c-text); font-size: 0.85rem;
+}
+.sw-concern-banner svg { color: var(--c-accent-amber); flex-shrink: 0; }
+.sw-flag-count {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    margin-left: 4px;
+}
+.sw-flag-critical { background: var(--c-accent-red);   color: #fff; }
+.sw-flag-warning  { background: var(--c-accent-amber); color: #fff; }
+
+.sw-concern-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: help;
+    white-space: nowrap;
+}
+.sw-concern-critical { background: var(--c-accent-red);   color: #fff; }
+.sw-concern-warning  { background: var(--c-accent-amber); color: #fff; }
+
+/* Subtle row tinting for flagged entries */
+.sw-row-critical td { background: rgba(239, 68, 68, 0.06); }
+.sw-row-warning  td { background: rgba(217, 119, 6, 0.06); }
+
 /* ── Network page ──────────────────────────────────────────── */
 
 .port-grid {

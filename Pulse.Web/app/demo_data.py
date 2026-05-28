@@ -116,8 +116,17 @@ DEMO = {
             {"displayName": "Intel(R) Network Connections", "displayVersion": "27.2", "publisher": "Intel"},
             {"displayName": "7-Zip 23.01 (x64)", "displayVersion": "23.01", "publisher": "Igor Pavlov"},
             {"displayName": "TightVNC", "displayVersion": "2.8.81", "publisher": "GlavSoft LLC."},
-            # Triggers PDF #11 banned-AV finding on the dashboard.
+            # ── Concerning entries — exercise multiple categories in demo ──
+            # critical: AV/EDR (PDF #11)
             {"displayName": "CrowdStrike Falcon Sensor", "displayVersion": "7.18.16805.0", "publisher": "CrowdStrike, Inc."},
+            # critical: system cleaner — known to break Pixellot installs
+            {"displayName": "CCleaner", "displayVersion": "6.21", "publisher": "Piriform Ltd."},
+            # critical: torrent client
+            {"displayName": "qBittorrent", "displayVersion": "4.6.4", "publisher": "The qBittorrent project"},
+            # warning: non-standard remote access (LogMeIn is the approved one)
+            {"displayName": "TeamViewer", "displayVersion": "15.51.5", "publisher": "TeamViewer Germany GmbH"},
+            # warning: gaming platform — bandwidth + GPU contention
+            {"displayName": "Steam", "displayVersion": "Mar 13 2026", "publisher": "Valve Corporation"},
         ],
     },
     "Get-NetworkConfig.ps1": lambda **kw: {
