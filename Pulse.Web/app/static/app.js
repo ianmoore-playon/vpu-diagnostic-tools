@@ -4002,8 +4002,10 @@ function renderFaultIsolator() {
       // it, the user clicked Check Now without performing the physical
       // swap. Without this check, a healthy test port + unmoved cable
       // would falsely conclude "NIC port fault".
+      // Skipped in demo mode — static demo data can't simulate the ARP change.
       var swapVerified = true;
-      if ((_fi.suspectCameraMacs || []).length > 0) {
+      var isDemo = !!(dataCache.cameras && dataCache.cameras.demoMode);
+      if (!isDemo && (_fi.suspectCameraMacs || []).length > 0) {
         var fresh = dataCache.cameras || {};
         var freshPorts = fresh.ports || [];
         var testPortFresh = freshPorts[_fi.testIdx] || {};

@@ -1522,6 +1522,9 @@ async def api_cameras():
         "ports": ports,
         "pixellotConfig": pix_config,
         "findings": _compute_camera_findings(ports),
+        # Frontend uses this to skip swap-verification in the fault isolator,
+        # since static demo data can't simulate the ARP change after a swap.
+        "demoMode": DEMO_MODE,
     }
 
 
