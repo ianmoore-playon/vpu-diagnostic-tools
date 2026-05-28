@@ -856,8 +856,12 @@ function renderDashboard() {
   const sevLabel = critCount > 0 ? `${critCount} Critical` : warnCount > 0 ? `${warnCount} Warnings` : "All Clear";
   const sevColor = critCount > 0 ? "critical" : warnCount > 0 ? "warn" : "ok";
 
-  const topFindings = findings.slice(0, 3);
-  const moreCount = Math.max(0, findings.length - 3);
+  // Findings are now shown in a single consolidated list in the Command
+  // Center. Cap at 10 to keep the panel from sprawling; if more exist,
+  // surface a "+N more" hint that drills into the relevant tab.
+  const _MAX_FINDINGS_INLINE = 10;
+  const visibleFindings = findings.slice(0, _MAX_FINDINGS_INLINE);
+  const overflowCount = Math.max(0, findings.length - _MAX_FINDINGS_INLINE);
   const subsystems = _subsystemHealth(findings);
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -928,19 +932,22 @@ function renderDashboard() {
         </div>
         <div class="cc-findings">
           <div class="flex justify-between items-center mb-2">
-            <h3 class="card-label mb-0">TOP FINDINGS</h3>
-            ${moreCount > 0 ? `<span class="text-xs text-pulse-muted">${moreCount} more below</span>` : ""}
+            <h3 class="card-label mb-0">FINDINGS</h3>
+            ${totalFindings > 0 ? `<span class="cc-findings-count">${totalFindings} issue${totalFindings === 1 ? "" : "s"}</span>` : ""}
           </div>
-          ${topFindings.length
-            ? topFindings.map((f) => `
-              <a class="finding-item" href="#${esc(_findingPageFor(f.category))}" onclick="event.preventDefault();navigate('${esc(_findingPageFor(f.category))}')">
-                <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
-                <span class="finding-cat">[${esc(f.category)}]</span>
-                <span class="finding-title">${esc(f.title)}</span>
-                <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
-              </a>`).join("")
-            : `<div class="dash-no-findings">${svgIcon("check", 16)} <span>No active findings detected.</span></div>`
-          }
+          <div class="cc-findings-list">
+            ${visibleFindings.length
+              ? visibleFindings.map((f) => `
+                <a class="finding-item" href="#${esc(_findingPageFor(f.category))}" onclick="event.preventDefault();navigate('${esc(_findingPageFor(f.category))}')">
+                  <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
+                  <span class="finding-cat">[${esc(f.category)}]</span>
+                  <span class="finding-title">${esc(f.title)}</span>
+                  <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
+                </a>`).join("")
+              : `<div class="dash-no-findings">${svgIcon("check", 16)} <span>No active findings detected.</span></div>`
+            }
+            ${overflowCount > 0 ? `<div class="cc-findings-overflow">+${overflowCount} more — visit the relevant tab for the full list</div>` : ""}
+          </div>
         </div>
       </div>
       <div class="card subsystems-panel">
@@ -966,26 +973,6 @@ function renderDashboard() {
       <div>
         <div class="font-semibold text-sm">Pixellot software not detected</div>
         <div class="text-xs text-pulse-muted mt-1">This host doesn't appear to be a Pixellot VPU — system metrics are still live, but expect blank values for VPU identity, services, and the diagnostic report.</div>
-      </div>
-    </div>` : ""}
-
-    <!-- Active Findings — only shown when there are more than the Top Findings panel displays -->
-    ${findings.length > 3 ? `
-    <div class="card dash-findings-card">
-      <div class="af-header">
-        <span class="af-icon">${svgIcon("triangle", 18)}</span>
-        <span class="af-label">ACTIVE FINDINGS</span>
-        <span class="af-count-badge">${totalFindings} issue${totalFindings === 1 ? "" : "s"} found</span>
-      </div>
-      <div class="af-list">
-        ${findings.slice(0, 10).map((f) => `
-          <a class="finding-item" href="#${esc(_findingPageFor(f.category))}" onclick="event.preventDefault();navigate('${esc(_findingPageFor(f.category))}')">
-            <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
-            <span class="finding-cat">[${esc(f.category)}]</span>
-            <span class="finding-title">${esc(f.title)}</span>
-            <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
-          </a>`).join("")}
-        ${findings.length > 10 ? `<div class="text-xs text-pulse-muted px-3 py-2">${findings.length - 10} more findings...</div>` : ""}
       </div>
     </div>` : ""}
 
