@@ -782,24 +782,41 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     }
                 )
             speed = port.get("linkSpeedMbps")
-            # Flag links running below gigabit, EXCEPT 100 Mbps — that's the
-            # native speed of Pixellot OCR/scoreboard cameras (R2SD-G, S5SD-G,
-            # see _CAMERA_MODELS above). Anything else (10, 250, 500) is
-            # legitimately degraded auto-negotiation.
-            if (
-                port.get("status") == "Up"
-                and speed
-                and speed < 1000
-                and speed != 100
-            ):
-                findings.append(
-                    {
-                        "severity": "warning",
-                        "category": "Network",
-                        "title": f"NIC {port['name']} Degraded",
-                        "recommendation": f"Running at {speed} Mbps, expected 1 Gbps.",
-                    }
+            # Flag any port running below gigabit. The only legitimate
+            # sub-gigabit case is an OCR/scoreboard camera (R2SD-G, S5SD-G),
+            # which negotiates to 100 Mbps because that's its native rate.
+            # We detect OCR ports by checking whether *every* Pixellot ARP
+            # entry on the port uses the Dynacolor OUI (00:D0:89) — main
+            # camera heads use the 00:0E:53 / 00:30:53 / 70:B3:D5 OUIs.
+            #
+            # Title includes the actual speed so the finding is actionable
+            # at a glance ("NIC Ethernet 2 at 100 Mbps" reads as a real
+            # problem, "Degraded" alone leaves the tech guessing).
+            if port.get("status") == "Up" and speed and speed < 1000:
+                arp = port.get("arpEntries") or []
+                pixellot_arps = [a for a in arp if _is_pixellot_mac(a.get("mac", ""))]
+                only_ocr_at_100 = (
+                    speed == 100
+                    and pixellot_arps
+                    and all(
+                        (a.get("mac", "").upper().startswith("00:D0:89"))
+                        for a in pixellot_arps
+                    )
                 )
+                if not only_ocr_at_100:
+                    findings.append(
+                        {
+                            "severity": "warning",
+                            "category": "Network",
+                            "title": f"NIC {port['name']} at {speed} Mbps (expected 1 Gbps)",
+                            "recommendation": (
+                                f"{port['name']} negotiated to {speed} Mbps instead of 1 Gbps. "
+                                f"Camera streams on this port will drop frames at reduced bandwidth. "
+                                f"Check cable quality (Cat5e+ required), reseat the connector, and "
+                                f"confirm the switch port is set to auto-negotiate."
+                            ),
+                        }
+                    )
 
     # ── Half-finished install (PDF #3) ───────────────────────
     # If part_1/2/3 files exist in c:\pixellot\downloadedversion and the

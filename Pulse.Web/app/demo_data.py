@@ -74,10 +74,11 @@ DEMO = {
             {"name": "Ethernet 1", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection", "status": "Up", "linkSpeedMbps": 1000, "fullDuplex": True, "mac": "A4:4C:C8:12:34:01",
              "rxBytes": 82749103726, "txBytes": 5283910234, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0,
              "arpEntries": [{"ip": "192.168.10.100", "mac": "00:0E:53:AA:01:01"}, {"ip": "192.168.10.101", "mac": "00:0E:53:AA:01:02"}, {"ip": "192.168.10.102", "mac": "00:0E:53:AA:01:03"}]},
-            # Ethernet 2 deliberately negotiated low — triggers the "NIC Degraded"
-            # finding (Up, speed < 1000, speed != 100). The two cameras on this
-            # port stay reachable but stream at reduced bandwidth.
-            {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "linkSpeedMbps": 250, "fullDuplex": True, "mac": "A4:4C:C8:12:34:02",
+            # Ethernet 2 deliberately negotiated to 100 Mbps with main-camera
+            # MACs (00:0E:53 OUI). The new finding logic flags this as
+            # degraded — the OCR-OUI heuristic only spares ports where every
+            # Pixellot MAC is Dynacolor (00:D0:89).
+            {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "linkSpeedMbps": 100, "fullDuplex": True, "mac": "A4:4C:C8:12:34:02",
              "rxBytes": 18238473625, "txBytes": 1283746281, "rxErrors": 187, "txErrors": 2, "rxPacketErrors": 187, "rxDiscards": 14, "txPacketErrors": 2, "txDiscards": 0,
              "arpEntries": [{"ip": "192.168.11.100", "mac": "00:0E:53:BB:02:01"}, {"ip": "192.168.11.101", "mac": "00:0E:53:BB:02:02"}]},
             {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #3", "status": "Up", "linkSpeedMbps": 100, "fullDuplex": True, "mac": "A4:4C:C8:12:34:03",
@@ -123,7 +124,7 @@ DEMO = {
         "adapters": [
             {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #4", "status": "Up", "macAddress": "A0-36-9F-11-22-33", "linkSpeed": "1 Gbps", "interfaceIndex": 4},
             {"name": "Ethernet 1", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection", "status": "Up", "macAddress": "A0-36-9F-AA-BB-CC", "linkSpeed": "100 Mbps", "interfaceIndex": 1},
-            {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "macAddress": "A0-36-9F-DD-EE-FF", "linkSpeed": "250 Mbps", "interfaceIndex": 2},
+            {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "macAddress": "A0-36-9F-DD-EE-FF", "linkSpeed": "100 Mbps", "interfaceIndex": 2},
             {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I350 Gigabit Network Connection", "status": "Down", "macAddress": "A0-36-9F-00-11-22", "linkSpeed": "", "interfaceIndex": 3},
         ],
         "ipConfigurations": [
@@ -135,7 +136,7 @@ DEMO = {
         "uplinkAdapter": {"interfaceAlias": "Ethernet 4 (Uplink)", "gateway": _VENUE["gatewayIp"], "interfaceIndex": 4},
         "uplinkStats": {"fullDuplex": True, "rxBytes": 129384756012, "txBytes": 98273640182, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0},
         "internet": {"reachable": True, "testedHost": "8.8.8.8"},
-        "ntpSource": "time.windows.com",
+        "ntpSource": "0.us.pool.ntp.org",
     },
     "Test-NetworkDomains.ps1": lambda **kw: {
         "results": [
@@ -426,22 +427,18 @@ DEMO = {
     "Test-PixellotInstallState.ps1": lambda **kw: {
         "dirExists": True,
         "dir": "C:\\pixellot\\downloadedversion",
-        "incomplete": True,
-        "rebooting": False,
-        "partFiles": [
-            {"name": "Pixellot-5.2.1.part_1", "sizeMB": 487.3, "lastWrite": (datetime.now() - timedelta(hours=14)).isoformat()},
-            {"name": "Pixellot-5.2.1.part_2", "sizeMB": 487.3, "lastWrite": (datetime.now() - timedelta(hours=14)).isoformat()},
-            {"name": "Pixellot-5.2.1.part_3", "sizeMB": 192.7, "lastWrite": (datetime.now() - timedelta(hours=14)).isoformat()},
-        ],
-        "partCount": 3,
+        "incomplete": False,
+        "rebooting": True,
+        "partFiles": [],
+        "partCount": 0,
         "log": {
             "path": "C:\\pixellot\\downloadedversion\\install_log_2026-05-26.log",
             "name": "install_log_2026-05-26.log",
-            "sizeKB": 38.6,
-            "lastWrite": (datetime.now() - timedelta(hours=14)).isoformat(),
-            "lastLine": "Verifying part_3 integrity — 47% complete",
+            "sizeKB": 42.1,
+            "lastWrite": (datetime.now() - timedelta(days=2, hours=3)).isoformat(),
+            "lastLine": "Install completed successfully. Rebooting...",
         },
-        "message": "Half-finished install: 3 part file(s) present and log does not end with 'Rebooting...'.",
+        "message": "Last install completed cleanly. No part files remain.",
     },
     "Install-PixellotDependencies.ps1": lambda **kw: {
         "success": True,
