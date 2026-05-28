@@ -1382,6 +1382,7 @@ html.dark .splash-logo {
 .nic-led-ok { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.5); }
 .nic-led-warn { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.5); }
 .nic-led-off { background: #64748b; }
+.nic-led-connecting { background: #3b82f6; box-shadow: 0 0 8px rgba(59,130,246,0.6); animation: cam-connecting-pulse 1.1s ease-in-out infinite; }
 .nic-port-label {
     font-size: 0.72rem;
     font-weight: 600;
@@ -1554,6 +1555,8 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .cam-dot-warn { background: #eab308; }
 .cam-dot-info { background: #60a5fa; }
 .cam-dot-muted { background: var(--c-dimmer); }
+.cam-dot-connecting { background: #3b82f6; animation: cam-connecting-pulse 1.1s ease-in-out infinite; }
+@keyframes cam-connecting-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 .cam-port-detail { padding-top: 2px; }
 .kv-mini { display: flex; justify-content: space-between; gap: 8px; font-size: 0.7rem; color: var(--c-muted); padding: 1px 0; }
 .kv-mini span:last-child { color: var(--c-text); white-space: nowrap; }
@@ -1576,6 +1579,16 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .cam-entry-mac { white-space: nowrap; }
 .cam-entry-source { font-size: 0.6rem; flex-basis: 100%; }
 .cam-no-detect { font-size: 0.7rem; color: var(--c-dim); }
+.cam-connecting-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--c-accent-blue);
+}
+.cam-connecting-note svg { animation: cam-spin 1.2s linear infinite; }
+@keyframes cam-spin { to { transform: rotate(360deg); } }
 
 /* ── Camera findings card ──────────────────────────────────── */
 .cam-finding-row { border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; }

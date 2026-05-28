@@ -2539,8 +2539,8 @@ function _camSignature(data) {
       return [c.ip, c.mac, c.cgiMac, c.role, c.identitySource, c.modelNumber, c.cgiConfirmed].join("|");
     }).join(",");
     var errs = (p.rxPacketErrors || 0) + (p.txPacketErrors || 0) + (p.rxDiscards || 0) + (p.txDiscards || 0);
-    return [p.portLabel, p.name, p.isUp, p.isOcr, p.isDegraded, p.cameraLabel,
-            p.linkSpeedMbps, p.expectedSpeedMbps, p.cameraMovedTo, p.fullDuplex,
+    return [p.portLabel, p.name, p.isUp, p.isOcr, p.isDegraded, p.connecting, p.cameraLabel,
+            p.linkSpeedMbps, p.expectedSpeedMbps, p.fullDuplex,
             errs, cams].join("~");
   }).join("||");
   var findSig = ((data && data.findings) || []).map(function(f) {
@@ -2677,6 +2677,7 @@ function _camPortTile(port, index) {
     : "No link";
   let statusLabel, dotCls;
   if (!p.isUp) { statusLabel = "Down"; dotCls = "cam-dot-down"; }
+  else if (p.connecting) { statusLabel = p.linkSpeedMbps ? "Connecting · " + speed : "Connecting…"; dotCls = "cam-dot-connecting"; }
   else if (p.isDegraded) { statusLabel = "Degraded · " + speed; dotCls = "cam-dot-warn"; }
   else { statusLabel = "Linked · " + speed; dotCls = p.isOcr ? "cam-dot-info" : "cam-dot-up"; }
 
@@ -2715,6 +2716,7 @@ function _camPortTile(port, index) {
       </div>
       ${_camDetailsPanel(cams, index, p)}`;
     })()
+    : p.connecting ? '<div class="cam-connecting-note">' + svgIcon("refresh", 12) + ' Establishing link — waiting for camera…</div>'
     : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
   </div>`;
 }
@@ -2746,14 +2748,14 @@ function _camNicDiagramHtml(ports) {
   const count = Math.max(4, ports.length);
   function ledColor(p) {
     if (!p || !p.isUp) return "nic-led-off";
+    if (p.connecting) return "nic-led-connecting";
     if (p.isDegraded) return "nic-led-warn";
-    if (p.isOcr) return "nic-led-ok";
     return "nic-led-ok";
   }
   function ledDotColor(p) {
     if (!p || !p.isUp) return "var(--c-dim)";
+    if (p.connecting) return "#3b82f6";
     if (p.isDegraded) return "#f59e0b";
-    if (p.isOcr) return "#22c55e";
     return "#22c55e";
   }
   // Physical ports: reversed (highest port on left = physical chassis left)

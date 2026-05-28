@@ -181,6 +181,16 @@ _CGI_PROBE_CACHE = {}  # ip -> {mac, ts, is_ocr}
 # the data feel stale.
 _CGI_PROBE_TTL = 10  # seconds
 
+# Per-NIC-port transition tracker (keyed by adapter MAC). Records the last
+# observed link/camera state and when it was first seen, so we can:
+#   1. show a "Connecting…" state while a freshly-changed port settles
+#      (link up but camera not yet resolved), and
+#   2. suppress transient degraded/error findings during that window —
+#      a port mid-negotiation briefly reports 100 Mbps / errors before it
+#      stabilizes, and alarming on that during a cable swap is noise.
+_PORT_STATE_TRACKER = {}  # adapter_mac -> {"key": str, "since": float}
+_PORT_SETTLE_SECONDS = 8
+
 # Known default OCR IPs (from WPF's DefaultOcrIps + Pixellot convention)
 _DEFAULT_OCR_IPS = {"169.254.16.52", "169.254.16.53", "169.254.16.60"}
 # Known default main camera IPs
@@ -1522,6 +1532,33 @@ def _enrich_ports(
                 if _mac_key(c) != m
             ]
 
+    # ── Transition tracking: "connecting" state + finding settle window ──
+    # Compare each port's current link/camera state to what we last saw.
+    # When it changes, reset the settle timer. A freshly-changed port that
+    # is up but hasn't resolved a camera yet is "connecting"; transient
+    # findings are suppressed until it settles (see _compute_camera_findings).
+    now_mono = time.monotonic()
+    for p in ports:
+        cams = p.get("camerasDetected") or []
+        is_up = p.get("isUp")
+        speed = p.get("linkSpeedMbps") or 0
+        cam_macs = ",".join(sorted(_mac_key(c) for c in cams))
+        state_key = f"{is_up}|{speed}|{cam_macs}"
+        adapter_id = p.get("mac") or p.get("name") or p.get("portLabel")
+
+        prev = _PORT_STATE_TRACKER.get(adapter_id)
+        if not prev or prev["key"] != state_key:
+            _PORT_STATE_TRACKER[adapter_id] = {"key": state_key, "since": now_mono}
+            since = now_mono
+        else:
+            since = prev["since"]
+
+        fresh = (now_mono - since) < _PORT_SETTLE_SECONDS
+        p["_fresh"] = fresh
+        # Connecting: link is up but no camera resolved yet, and either the
+        # speed is still negotiating (0) or the port just changed (settling).
+        p["connecting"] = bool(is_up and not cams and (speed == 0 or fresh))
+
     # Second pass: number main cameras and OCR cameras by camera IP so
     # numbering is stable (Main Camera 1 = .50, Main Camera 2 = .51, etc).
     # Only UP ports are numbered — stale ARP on a down port shouldn't
@@ -1585,6 +1622,12 @@ def _compute_camera_findings(ports: list) -> list:
         # Note: down ports carry no cameras (stale ARP is cleared in
         # _enrich_ports), so there's no "camera last detected" finding —
         # it produced constant false alarms while techs moved cables.
+
+        # Skip transient findings for a freshly-changed port. A port that
+        # just had a cable plugged/moved briefly reports 100 Mbps / errors
+        # while it negotiates; we wait for it to settle before alarming.
+        if port.get("_fresh"):
+            continue
 
         if is_up and port.get("isDegraded"):
             speed = port.get("linkSpeedMbps")
