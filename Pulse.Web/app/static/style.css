@@ -2048,6 +2048,69 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .sc-bonus-on  { background: #f97316; color: #fff; }
 .sc-bonus-off { background: #1e2a38; color: #3a4555; }
 
+/* Data status indicator (receiving / no data) */
+.sc-data-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+.sc-data-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.sc-data-dot-on {
+    background: #22c55e;
+    box-shadow: 0 0 10px rgba(34, 197, 94, 0.6);
+    animation: sc-pulse 2s ease-in-out infinite;
+}
+.sc-data-dot-off { background: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
+@keyframes sc-pulse {
+    0%, 100% { box-shadow: 0 0 10px rgba(34, 197, 94, 0.6); }
+    50% { box-shadow: 0 0 18px rgba(34, 197, 94, 0.9); }
+}
+.sc-data-label {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -0.01em;
+}
+.sc-data-desc {
+    font-size: 0.7rem;
+    color: #6b7a8d;
+    text-align: center;
+    margin-top: 2px;
+    font-family: inherit;
+}
+.sc-board-hero .sc-data-label { font-size: 2rem; }
+.sc-board-hero .sc-data-dot { width: 16px; height: 16px; }
+
+/* Raw scoreboard data string (Daktronics RTD etc.) */
+.sc-raw-data {
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    background: #0a0e13;
+    border: 1px solid #1e2a38;
+    border-radius: 6px;
+}
+.sc-raw-label {
+    font-size: 0.5rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #4a5568;
+    margin-bottom: 4px;
+}
+.sc-raw-value {
+    font-size: 0.75rem;
+    font-family: "SF Mono", "Cascadia Mono", "Fira Code", monospace;
+    color: #22c55e;
+    word-break: break-all;
+    line-height: 1.4;
+    white-space: pre-wrap;
+}
+
 /* Make ScoreLink card stretch to match BOT card height in the 2-col grid */
 .sc-sl-card { display: flex; flex-direction: column; }
 .sc-sl-card .sc-scorelink { flex: 1; }

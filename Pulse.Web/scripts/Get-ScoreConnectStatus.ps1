@@ -9,6 +9,11 @@
 
     Configuration fields are normalised to renderer-friendly names (vendor, sport, etc.)
     using the same alias tables as the WPF ScoreConnectService.
+
+    Real SC III get-status shape (v1.4.x):
+      { botNumber, scoreBoardData: {id, messageType, description},
+        network: {id, messageType, description}, isConnectedToBotServer,
+        hasLocalStream, updateInProgress, data, botConfigurationInProgress }
 #>
 [CmdletBinding()]
 param(
@@ -81,6 +86,7 @@ function To-Map {
 
 # Read DEVPKEY_Device_BusReportedDeviceDesc from the PnP property store.
 # Same registry path as the WPF ScoreLinkDetector; value name is empty string (default).
+# NOTE: Requires admin/elevated access on some VPU builds. Returns '' on access-denied.
 function Get-BusReportedDesc {
     param([string]$PnpDeviceId)
     if (-not $PnpDeviceId) { return '' }
@@ -94,7 +100,7 @@ function Get-BusReportedDesc {
 }
 
 # Read FileVersion from the ScoreConnect III executable on disk.
-# WPF uses this fallback because get-status often omits a version field.
+# get-status has no version field — this is the only reliable source.
 function Get-ScoreConnectExeVersion {
     $candidates = @(
         'C:\Program Files (x86)\Sportzcast LLC\ScoreConnectIII\ScoreConnectIII.exe',
@@ -106,7 +112,13 @@ function Get-ScoreConnectExeVersion {
             $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($path)
             $v = $info.ProductVersion
             if (-not $v) { $v = $info.FileVersion }
-            if ($v) { return $v.Trim() }
+            if ($v) {
+                # Trim git commit hash suffix: "1.4.0.10+bf99cfe..." → "1.4.0.10"
+                $v = $v.Trim()
+                $plusIdx = $v.IndexOf('+')
+                if ($plusIdx -gt 0) { $v = $v.Substring(0, $plusIdx) }
+                return $v
+            }
         } catch {}
     }
     return $null
@@ -121,36 +133,74 @@ try {
     $errorMsg   = $null
     $version    = $null
 
-    # WPF probes get-status → get-current-configuration → root, in order.
-    # We try the first two — root is too broad (matches any HTTP server).
-    foreach ($path in @(
-        "$BaseUrl/api/configuration/get-status",
-        "$BaseUrl/api/configuration/get-current-configuration"
-    )) {
-        $sr = Invoke-SafeGet $path
-        if ($sr.ok) {
-            $reachable = $true
-            try { $statusData = $sr.content | ConvertFrom-Json } catch {}
-            break
-        }
+    # get-status is the primary endpoint — it carries BOT status, score data
+    # status, network state, and the raw scoreboard data string.
+    $sr = Invoke-SafeGet "$BaseUrl/api/configuration/get-status"
+    if ($sr.ok) {
+        $reachable = $true
+        try { $statusData = $sr.content | ConvertFrom-Json } catch {}
+    }
+
+    # Fallback: if get-status fails, try get-current-configuration to confirm
+    # reachability (root is too broad — matches any HTTP server).
+    if (-not $reachable) {
+        $sr2 = Invoke-SafeGet "$BaseUrl/api/configuration/get-current-configuration"
+        if ($sr2.ok) { $reachable = $true }
     }
 
     if (-not $reachable) {
         $errorMsg = "ScoreConnect III not reachable at $BaseUrl"
     }
 
-    # Resolve version: response field → exe on disk
+    # Version: get-status has no version field — always use exe on disk.
+    $version = Get-ScoreConnectExeVersion
+
+    # ── 2. Extract status fields ────────────────────────────────────────────
+    # Real get-status shape (v1.4.x):
+    #   { botNumber: 0,
+    #     scoreBoardData: { id, messageType, description },
+    #     network: { id, messageType, description },
+    #     isConnectedToBotServer: bool,
+    #     hasLocalStream: bool,
+    #     data: "raw RTD string",
+    #     updateInProgress: bool,
+    #     botConfigurationInProgress: bool }
+
+    $dataStatus    = $null   # "Data is present..." or "No Scoreboard data..."
+    $rawData       = $null   # Raw RTD protocol string from scoreboard
+    $networkStatus = $null   # "Internet is detected" etc.
+    $hasLocalStream = $null
+    $isConnectedToBotServer = $null
+
     if ($statusData) {
-        $sMap = To-Map $statusData
-        $version = Pick-First $sMap @('version', 'appVersion', 'serviceVersion')
-    }
-    if (-not $version) {
-        $version = Get-ScoreConnectExeVersion
+        # scoreBoardData.description — tells us if data is flowing
+        if ($statusData.PSObject.Properties['scoreBoardData'] -and $statusData.scoreBoardData) {
+            $dataStatus = $statusData.scoreBoardData.description
+        }
+
+        # Raw data string (Daktronics RTD etc.) — trim whitespace padding
+        if ($statusData.PSObject.Properties['data']) {
+            $rawStr = "$($statusData.data)".Trim()
+            if ($rawStr -ne '') { $rawData = $rawStr }
+        }
+
+        # Network status
+        if ($statusData.PSObject.Properties['network'] -and $statusData.network) {
+            $networkStatus = $statusData.network.description
+        }
+
+        # Booleans
+        if ($statusData.PSObject.Properties['hasLocalStream']) {
+            $hasLocalStream = [bool]$statusData.hasLocalStream
+        }
+        if ($statusData.PSObject.Properties['isConnectedToBotServer']) {
+            $isConnectedToBotServer = [bool]$statusData.isConnectedToBotServer
+        }
     }
 
-    # ── 2. Extended configuration ────────────────────────────────────────────
-    # Try extended first (carries firmware / event-type / vendor-config-id),
-    # fall back to plain get-current-configuration like the WPF service does.
+    # ── 3. Extended configuration ────────────────────────────────────────────
+    # Try extended first (carries vendor/sport names), fall back to plain
+    # (only numeric IDs — less useful but confirms the config endpoint works).
     $configuration = $null
     if ($reachable) {
         foreach ($cfgPath in @(
@@ -183,9 +233,9 @@ try {
         }
     }
 
-    # ── 3. BOT status ────────────────────────────────────────────────────────
-    # Try v1 get-bot-number first (returns bare integer or object); fall back to
-    # v2 get-bot-configuration-status for older builds.
+    # ── 4. BOT status ────────────────────────────────────────────────────────
+    # Primary: extract from get-status (botNumber + isConnectedToBotServer).
+    # Fallback: dedicated get-bot-number endpoint (bare integer or JSON object).
     $botStatus = $null
     if ($reachable) {
         $botIsConnected    = $false
@@ -193,36 +243,44 @@ try {
         $botServerAddress  = $null
         $botLastError      = $null
 
-        $br = Invoke-SafeGet "$BaseUrl/api/configuration/get-bot-number"
-        if (-not $br.ok) {
-            $br = Invoke-SafeGet "$BaseUrl/api/v2/configuration/get-bot-configuration-status"
-        }
+        # Prefer get-status fields — already parsed above
+        if ($null -ne $isConnectedToBotServer) {
+            $botIsConnected = $isConnectedToBotServer
+            if ($statusData.PSObject.Properties['botNumber']) {
+                $bn = [long]$statusData.botNumber
+                if ($bn -gt 0) { $botScoreConnectId = "$bn" }
+            }
+        } else {
+            # Fallback to dedicated endpoint
+            $br = Invoke-SafeGet "$BaseUrl/api/configuration/get-bot-number"
+            if (-not $br.ok) {
+                $br = Invoke-SafeGet "$BaseUrl/api/v2/configuration/get-bot-configuration-status"
+            }
 
-        if ($br.ok -and $br.content) {
-            $trimmed = $br.content.Trim()
-            if ($trimmed -match '^\d+$') {
-                # Bare integer — non-zero means paired with Sportzcast cloud
-                $bareNumber        = [long]$trimmed
-                $botIsConnected    = $bareNumber -gt 0
-                $botScoreConnectId = if ($bareNumber -gt 0) { $trimmed } else { $null }
-            } else {
-                try {
-                    $botObj = $trimmed | ConvertFrom-Json
-                    $botMap = To-Map $botObj
+            if ($br.ok -and $br.content) {
+                $trimmed = $br.content.Trim()
+                if ($trimmed -match '^\d+$') {
+                    $bareNumber        = [long]$trimmed
+                    $botIsConnected    = $bareNumber -gt 0
+                    $botScoreConnectId = if ($bareNumber -gt 0) { $trimmed } else { $null }
+                } else {
+                    try {
+                        $botObj = $trimmed | ConvertFrom-Json
+                        $botMap = To-Map $botObj
 
-                    $botNumStr = Pick-First $botMap @('botNumber', 'bot_number')
-                    if ($null -ne $botNumStr) {
-                        $botIsConnected    = ([long]$botNumStr) -gt 0
-                        $botScoreConnectId = if ($botIsConnected) { $botNumStr } else { $null }
-                    } else {
-                        # Legacy shape: explicit boolean field
-                        $connStr        = Pick-First $botMap @('botOnline', 'isConnected', 'cloudConnection', 'isCloudMode')
-                        $botIsConnected = ($connStr -eq 'True' -or $connStr -eq 'true' -or $connStr -eq '1')
-                        $botScoreConnectId = Pick-First $botMap @('scoreConnectId', 'id')
-                    }
-                    $botServerAddress = Pick-First $botMap @('botServerAddress', 'botAddress', 'botServer')
-                    $botLastError     = Pick-First $botMap @('lastErrorMessage', 'lastError', 'errorMessage')
-                } catch {}
+                        $botNumStr = Pick-First $botMap @('botNumber', 'bot_number')
+                        if ($null -ne $botNumStr) {
+                            $botIsConnected    = ([long]$botNumStr) -gt 0
+                            $botScoreConnectId = if ($botIsConnected) { $botNumStr } else { $null }
+                        } else {
+                            $connStr        = Pick-First $botMap @('botOnline', 'isConnected', 'cloudConnection', 'isCloudMode')
+                            $botIsConnected = ($connStr -eq 'True' -or $connStr -eq 'true' -or $connStr -eq '1')
+                            $botScoreConnectId = Pick-First $botMap @('scoreConnectId', 'id')
+                        }
+                        $botServerAddress = Pick-First $botMap @('botServerAddress', 'botAddress', 'botServer')
+                        $botLastError     = Pick-First $botMap @('lastErrorMessage', 'lastError', 'errorMessage')
+                    } catch {}
+                }
             }
         }
 
@@ -234,11 +292,15 @@ try {
         }
     }
 
-    # ── 4. ScoreLink USB detection ───────────────────────────────────────────
-    # Matches bus-reported device description from the PnP property store
-    # (DEVPKEY_Device_BusReportedDeviceDesc) against known ScoreLink needle
-    # strings — mirrors the WPF ScoreLinkDetector logic.  Also checks
-    # Caption and Description as secondary fallback.
+    # ── 5. ScoreLink USB detection ───────────────────────────────────────────
+    # Detection priority:
+    #   1. Bus-reported description (DEVPKEY_Device_BusReportedDeviceDesc) —
+    #      requires admin access, may fail with SecurityException.
+    #   2. Caption / Description / Name string matching — secondary.
+    #   3. VID/PID matching — tertiary fallback when bus-reported is access-
+    #      denied and generic driver names ("USB Serial Device") don't match.
+    #      Known VID/PID pairs for Sportzcast hardware:
+    #        VID_04D8 & PID_00DD = Microchip MCP2221 (ScoreLink / ScoreLinkII)
     #
     # Not cached — runs every poll cycle (~30s).  The WMI USB enumeration is
     # sub-100ms and ScoreLink hardware can be plugged/unplugged between polls.
@@ -253,6 +315,12 @@ try {
         @{ needle = 'mcp2221 usb-i2c/uart combo'; model = 'ScoreLink'   },
         @{ needle = 'mcp2221';                    model = 'ScoreLink'   }
     )
+
+    # VID/PID pairs for Sportzcast hardware — fallback when bus-reported
+    # description is access-denied and Caption is generic ("USB Serial Device").
+    $vidPidMap = @{
+        'VID_04D8&PID_00DD' = 'ScoreLink'
+    }
 
     $comRx = [regex]'\bCOM(\d+)\b'
 
@@ -274,6 +342,7 @@ try {
             $caption     = [string]$dev.Caption
             $name        = [string]$dev.Name
             $description = [string]$dev.Description
+            $pnpId       = [string]$dev.PNPDeviceID
 
             # Must expose a COM port number in Name or Caption
             $pm = $comRx.Match($name)
@@ -281,7 +350,7 @@ try {
             if (-not $pm.Success) { continue }
             $portName = 'COM' + $pm.Groups[1].Value
 
-            # Check bus-reported (primary), Caption, Description (secondary)
+            # Strategy 1: bus-reported + Caption/Description needle matching
             $busDesc = Get-BusReportedDesc $dev.PNPDeviceID
             $busLow  = $busDesc.ToLower()
             $capLow  = $caption.ToLower()
@@ -295,6 +364,19 @@ try {
                     $matched = $entry; break
                 }
             }
+
+            # Strategy 2: VID/PID fallback — needed when bus-reported description
+            # is access-denied and Caption is generic ("USB Serial Device").
+            if ($null -eq $matched) {
+                $pnpUpper = $pnpId.ToUpper()
+                foreach ($vidpid in $vidPidMap.Keys) {
+                    if ($pnpUpper.Contains($vidpid)) {
+                        $matched = @{ needle = $vidpid; model = $vidPidMap[$vidpid] }
+                        break
+                    }
+                }
+            }
+
             if ($null -eq $matched) { continue }
 
             # ScoreLinkII wins over ScoreLink when both are present
@@ -315,12 +397,15 @@ try {
         "$scoreLinkModel device connected ($scoreLinkPort)"
     }
 
-    # ── 5. Output ────────────────────────────────────────────────────────────
+    # ── 6. Output ────────────────────────────────────────────────────────────
     [ordered]@{
         reachable            = $reachable
         baseUrl              = $BaseUrl
         version              = $version
-        status               = $statusData
+        dataStatus           = $dataStatus
+        rawData              = $rawData
+        networkStatus        = $networkStatus
+        hasLocalStream       = $hasLocalStream
         configuration        = $configuration
         botStatus            = $botStatus
         scoreLinkConnected   = $scoreLinkConnected
@@ -335,7 +420,10 @@ catch {
         reachable            = $false
         baseUrl              = $BaseUrl
         version              = $null
-        status               = $null
+        dataStatus           = $null
+        rawData              = $null
+        networkStatus        = $null
+        hasLocalStream       = $null
         configuration        = $null
         botStatus            = $null
         scoreLinkConnected   = $false

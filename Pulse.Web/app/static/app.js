@@ -3523,12 +3523,12 @@ function renderScoreConnect() {
   const data = cached("scoreconnect");
   if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
 
-  const status = data.status || {};
   const config = data.configuration || {};
   const botStatus = data.botStatus || {};
-  const liveScore = data.liveScoreData || {};
-  const isDetected = data.reachable || status.isDetected;
-  const version = data.version || status.version;
+  const isDetected = data.reachable;
+  const version = data.version;
+  const hasData = data.dataStatus && !data.dataStatus.toLowerCase().includes("no scoreboard");
+  const dataReceiving = hasData && data.rawData;
 
   // Build BOT and ScoreLink cards independently — ScoreLink detection
   // is USB-based and works even when SC III is unreachable.
@@ -3564,45 +3564,43 @@ function renderScoreConnect() {
       </button>`
     )}
 
-    <!-- Live Scoreboard — hero panel, first thing you see -->
-    ${liveScore.homeTeam || liveScore.awayTeam ? `
+    <!-- Live Data — hero panel, first thing you see -->
+    ${isDetected ? `
     <div class="sc-board sc-board-hero">
       <div class="sc-header">
         <div class="sc-team-home">
-          <div class="sc-team-label">Home</div>
-          <div class="sc-team-name">${esc(liveScore.homeTeam || "—")}</div>
+          <div class="sc-team-label">Vendor</div>
+          <div class="sc-team-name">${esc(config.vendor || "—")}</div>
         </div>
         <div class="sc-center">
-          <div class="sc-scores">
-            <span class="sc-poss ${liveScore.possession === "home" ? "sc-poss-active" : ""}"></span>
-            <span class="sc-score">${liveScore.homeScore != null ? esc(String(liveScore.homeScore)) : "—"}</span>
-            <span class="sc-score-sep">:</span>
-            <span class="sc-score">${liveScore.awayScore != null ? esc(String(liveScore.awayScore)) : "—"}</span>
-            <span class="sc-poss ${liveScore.possession === "away" ? "sc-poss-active" : ""}"></span>
+          <div class="sc-data-status">
+            <span class="sc-data-dot ${dataReceiving ? "sc-data-dot-on" : "sc-data-dot-off"}"></span>
+            <span class="sc-data-label">${dataReceiving ? "Receiving Data" : "No Data"}</span>
           </div>
-          <div class="sc-period-label">${esc(String(liveScore.period != null ? liveScore.period : ""))}</div>
-          <div class="sc-clock">${esc(String(liveScore.clock || "—"))}</div>
+          ${data.dataStatus ? `<div class="sc-data-desc">${esc(data.dataStatus)}</div>` : ""}
         </div>
         <div class="sc-team-away">
-          <div class="sc-team-label">Away</div>
-          <div class="sc-team-name">${esc(liveScore.awayTeam || "—")}</div>
+          <div class="sc-team-label">Sport</div>
+          <div class="sc-team-name">${esc(config.sport || "—")}</div>
         </div>
       </div>
-      ${liveScore.homeFouls != null || liveScore.homeTimeouts != null || liveScore.homeBonus != null ? `
+      ${data.rawData ? `
+      <div class="sc-raw-data">
+        <div class="sc-raw-label">RAW SCOREBOARD DATA</div>
+        <div class="sc-raw-value">${esc(data.rawData)}</div>
+      </div>` : ""}
       <div class="sc-stats">
         <div class="sc-stat-group">
-          ${liveScore.homeBonus != null ? `<span class="sc-bonus ${liveScore.homeBonus ? "sc-bonus-on" : "sc-bonus-off"}">B</span>` : ""}
-          ${liveScore.homeFouls != null ? `<div class="sc-stat"><span class="sc-stat-val">${esc(String(liveScore.homeFouls))}</span><span class="sc-stat-lbl">Fouls</span></div>` : ""}
-          ${liveScore.homeTimeouts != null ? `<div class="sc-stat"><span class="sc-stat-val">${esc(String(liveScore.homeTimeouts))}</span><span class="sc-stat-lbl">T/O</span></div>` : ""}
+          ${data.hasLocalStream != null ? `<div class="sc-stat"><span class="sc-stat-val">${data.hasLocalStream ? "Yes" : "No"}</span><span class="sc-stat-lbl">Local Stream</span></div>` : ""}
+          ${data.networkStatus ? `<div class="sc-stat"><span class="sc-stat-val">${data.networkStatus.includes("detected") ? "Yes" : "No"}</span><span class="sc-stat-lbl">Internet</span></div>` : ""}
         </div>
         <div class="sc-stat-group sc-stat-right">
-          ${liveScore.awayTimeouts != null ? `<div class="sc-stat"><span class="sc-stat-val">${esc(String(liveScore.awayTimeouts))}</span><span class="sc-stat-lbl">T/O</span></div>` : ""}
-          ${liveScore.awayFouls != null ? `<div class="sc-stat"><span class="sc-stat-val">${esc(String(liveScore.awayFouls))}</span><span class="sc-stat-lbl">Fouls</span></div>` : ""}
-          ${liveScore.awayBonus != null ? `<span class="sc-bonus ${liveScore.awayBonus ? "sc-bonus-on" : "sc-bonus-off"}">B</span>` : ""}
+          ${config.vendorConfigurationName ? `<div class="sc-stat"><span class="sc-stat-val">${esc(config.vendorConfigurationName)}</span><span class="sc-stat-lbl">Config</span></div>` : ""}
+          ${version ? `<div class="sc-stat"><span class="sc-stat-val">${esc(version)}</span><span class="sc-stat-lbl">Version</span></div>` : ""}
         </div>
-      </div>` : ""}
+      </div>
     </div>
-    ` : `<div class="sc-board sc-board-hero sc-board-empty">No active game — scores appear here when ScoreConnect is receiving data</div>`}
+    ` : `<div class="sc-board sc-board-hero sc-board-empty">ScoreConnect III not detected at ${esc(data.baseUrl || "localhost:5000")}</div>`}
 
     <!-- Service Status -->
     <div class="card mt-4">
@@ -3611,8 +3609,12 @@ function renderScoreConnect() {
         ${kvRowHtml("Detected", isDetected
           ? '<span class="status-pass">Yes</span>'
           : '<span class="status-fail">No</span>')}
-        ${kvRow("Base URL", status.baseUrl || data.baseUrl)}
+        ${kvRow("Base URL", data.baseUrl)}
         ${kvRow("Version", version)}
+        ${kvRow("Network", data.networkStatus)}
+        ${kvRowHtml("Local Stream", data.hasLocalStream != null
+          ? (data.hasLocalStream ? '<span class="status-pass">Yes</span>' : '<span class="status-fail">No</span>')
+          : '—')}
         ${data.error && !isDetected ? kvRowHtml("Error", `<span class="status-fail">${esc(typeof data.error === "string" ? data.error : data.message || "Connection failed")}</span>`) : ""}
       </div>
     </div>
@@ -3621,21 +3623,13 @@ function renderScoreConnect() {
     ${config.vendor || config.sport ? `
     <div class="card mt-4">
       ${sectionTitle("cog", "Connected Device")}
-      <div class="dash-2col" style="margin-top:0">
-        <div class="sub-card">
-          <div class="kv-grid">
-            ${kvRow("Vendor", config.vendor)}
-            ${kvRow("Sport", config.sport)}
-            ${kvRow("Configuration", config.vendorConfigurationName || config.device)}
-          </div>
-        </div>
-        <div class="sub-card">
-          <div class="kv-grid">
-            ${kvRow("Serial Port", config.serialPort)}
-            ${kvRow("Firmware", config.firmware)}
-            ${kvRow("Event Type", config.eventType)}
-          </div>
-        </div>
+      <div class="kv-grid">
+        ${kvRow("Vendor", config.vendor)}
+        ${kvRow("Sport", config.sport)}
+        ${kvRow("Configuration", config.vendorConfigurationName)}
+        ${kvRow("Serial Port", config.serialPort)}
+        ${kvRow("Firmware", config.firmware)}
+        ${kvRow("Event Type", config.eventType)}
       </div>
     </div>` : ""}
 
@@ -3643,13 +3637,6 @@ function renderScoreConnect() {
     ${botCard && slCard ? `<div class="dash-2col">${botCard}${slCard}</div>`
      : botCard || slCard ? `<div class="mt-4">${botCard}${slCard}</div>`
      : ""}
-
-    <!-- Raw Data Fallback -->
-    ${!config.vendor && botStatus.isConnected == null && data.scoreLinkConnected == null && (data.status || data.configuration) ? `
-    <div class="card mt-4">
-      ${sectionTitle("file", "Raw Response")}
-      <pre class="text-xs text-pulse-muted overflow-auto max-h-60 p-3 bg-pulse-bg rounded">${esc(JSON.stringify(data, null, 2))}</pre>
-    </div>` : ""}
   `;
 }
 
