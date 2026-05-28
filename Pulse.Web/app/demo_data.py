@@ -81,9 +81,12 @@ def _demo_raw_data():
     minutes, seconds = _demo_live_clock()
     clock = f"{minutes}{seconds:02d}".rjust(4)   # "1225" or " 944"
     chk = f"00D3098DEBCE{random.randint(0, 0xFFFFFF):06X}"
-    # Field widths chosen so HOME lands at 11-12 and VISITOR at 14-15.
+    # Packed down/to-go/ball-on at pos 20-24: down(1) togo(2) ballon(2).
+    dtb = f"{g['down']}{g['to_go']:02d}{g['ball_on']:02d}"
+    # Field widths chosen so HOME lands at 11-12, VISITOR at 14-15,
+    # timeouts at 18-19, down/dist at 20-24, quarter at 25.
     return (
-        f"02{clock}  25 {g['home']:>2} {g['guest']:>2}  33     {g['quarter']}"
+        f"02{clock}  25 {g['home']:>2} {g['guest']:>2}  33{dtb}{g['quarter']}"
         f"Home    Visitor R:S {chk}"
     )
 

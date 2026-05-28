@@ -1915,7 +1915,8 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .sc-board-hero .sc-score      { font-size: 3.5rem; }
 .sc-board-hero .sc-score-sep  { font-size: 2.2rem; }
 .sc-board-hero .sc-clock      { font-size: 1.8rem; }
-.sc-board-hero .sc-period-label { font-size: 0.65rem; }
+.sc-board-hero .sc-period-label { font-size: 1.5rem; font-weight: 800; color: #e8ecf1; letter-spacing: 0.04em; margin-bottom: 0.15rem; }
+.sc-board-hero .sc-data-desc  { font-size: 1.05rem; font-weight: 700; color: #cdd6e0; letter-spacing: 0.06em; margin-top: 0.35rem; }
 .sc-board-hero .sc-poss       { width: 10px; height: 10px; }
 .sc-board-hero .sc-stat-val   { font-size: 1.15rem; }
 .sc-board-hero .sc-stat-lbl   { font-size: 0.55rem; }

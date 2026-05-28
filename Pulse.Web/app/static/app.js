@@ -3765,14 +3765,27 @@ function _parseCG(raw) {
     if (q >= 1 && q <= 9) qtr = q;
   }
 
+  // Down / to-go / ball-on: a 5-char packed field at pos 20-24, right before
+  // the quarter. Matches the support-doc "11025" block (down 1 = 1 char,
+  // to-go 10 = 2 chars, ball-on 25 = 2 chars). Blank (spaces) when the
+  // controller has no down & distance set, so we only surface it when present.
+  var down = null, togo = null, ballon = null;
+  var dtb = raw.substring(20, 25);
+  if (/\d/.test(dtb)) {
+    var dn = parseInt(dtb.substring(0, 1), 10);
+    var tg = parseInt(dtb.substring(1, 3), 10);
+    var bo = parseInt(dtb.substring(3, 5), 10);
+    if (dn >= 1 && dn <= 4) down = dn;
+    if (!isNaN(tg) && tg >= 0 && tg <= 99) togo = tg;
+    if (!isNaN(bo) && bo >= 0 && bo <= 99) ballon = bo;
+  }
+
   return {
     clock: clock,
     homeScore: home,        // pos 11-12 — confirmed by field tech
     guestScore: visitor,    // pos 14-15 — UI shows visitor as "guest"
     period: qtr,
-    // down/distance not reliably locatable in this layout (fields A/B
-    // ambiguous); left null rather than surfacing wrong values.
-    down: null, toGo: null, ballOn: null,
+    down: down, toGo: togo, ballOn: ballon,
     possession: null,
     _strategy: "cg-fixed"
   };
@@ -4191,9 +4204,10 @@ var _sc3LivePoll = null;
 
 function _sc3DownText(p) {
   if (!p || !p.down) return "";
-  var t = String(p.down);
-  if (p.toGo) t += " & " + p.toGo;
-  if (p.ballOn) t += " on " + p.ballOn;
+  var ord = { 1: "1ST", 2: "2ND", 3: "3RD", 4: "4TH" }[p.down] || (p.down + "");
+  var t = ord;
+  if (p.toGo != null) t += " & " + (p.toGo === 0 ? "GOAL" : p.toGo);
+  if (p.ballOn != null) t += " ON " + p.ballOn;
   return t;
 }
 
