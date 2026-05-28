@@ -414,6 +414,11 @@ html.dark .splash-logo {
     color: var(--c-accent-amber);
 }
 .btn-ol-amber:hover { background: var(--c-tint-amber); }
+.btn-ol-red {
+    border: 1px solid var(--c-accent-red);
+    color: var(--c-accent-red);
+}
+.btn-ol-red:hover { background: var(--c-tint-red); }
 
 .dash-sev-pill {
     display: inline-flex;
@@ -1613,8 +1618,29 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     display: flex; align-items: center; justify-content: space-between;
     gap: 1rem; flex-wrap: wrap;
 }
-.svc-quick-action-title { font-weight: 600; font-size: 0.95rem; color: var(--c-text); }
+.svc-quick-action-title { font-weight: 600; font-size: 0.95rem; color: var(--c-text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .svc-quick-action-body  { font-size: 0.8rem; color: var(--c-muted); margin-top: 4px; max-width: 580px; line-height: 1.5; }
+
+/* "Rarely used" tier-2 action card (e.g. Reinstall Dependencies) */
+.svc-rare-action { border-left: 3px solid var(--c-accent-red); }
+.svc-rare-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: var(--c-accent-red);
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+.svc-rare-warn {
+    display: flex; align-items: flex-start; gap: 8px;
+    margin-top: 8px; padding: 8px 12px; max-width: 580px;
+    background: var(--c-tint-red); border-left: 3px solid var(--c-accent-red);
+    border-radius: 4px;
+    font-size: 0.75rem; color: var(--c-text); line-height: 1.5;
+}
+.svc-rare-warn svg { color: var(--c-accent-red); flex-shrink: 0; margin-top: 2px; }
 .svc-quick-action-result {
     margin-top: 0.75rem; padding: 0.75rem 0.875rem; border-radius: 6px;
 }

@@ -2873,16 +2873,25 @@ function renderServices() {
     </div>
 
     <!-- Reinstall Pixellot Dependencies — PDF #2 -->
-    <!-- Hidden by default; revealed if the log scanner found CUDNN/TensorFlow errors. -->
-    <div class="card svc-quick-action hidden" id="svc-reinstall-card">
+    <!-- HIDDEN by default. ONLY revealed if /api/pixellot-logs reports
+         depsErrorDetected=true (CUDNN/TensorFlow patterns found). Never
+         show this as a casual action — it's a tier-2 remedy. -->
+    <div class="card svc-quick-action svc-rare-action hidden" id="svc-reinstall-card">
       <div class="svc-quick-action-row">
         <div>
-          <div class="svc-quick-action-title">Reinstall Pixellot Dependencies</div>
+          <div class="svc-quick-action-title">
+            Reinstall Pixellot Dependencies
+            <span class="svc-rare-pill">RARELY USED</span>
+          </div>
           <div class="svc-quick-action-body" id="svc-reinstall-body">
-            Downloads <span class="font-mono">Pixellot-Installer-Dependencies-5.0.0.exe</span> to <span class="font-mono">C:\\pixellot\\downloadedversion\\</span> and runs it silently. Documented remedy for <span class="font-mono">CUDNN_STATUS_*</span> and TensorFlow errors in the VPU logs.
+            Downloads <span class="font-mono">Pixellot-Installer-Dependencies-5.0.0.exe</span> to <span class="font-mono">C:\\pixellot\\downloadedversion\\</span> and runs it silently — documented remedy per PDF #2.
+          </div>
+          <div class="svc-rare-warn">
+            ${svgIcon("alert", 12)}
+            <span><strong>Do not run unless explicitly directed by Pixellot support or escalation.</strong> This is a last-resort remedy for confirmed CUDNN/TensorFlow dependency failures — recording is paused for 5–15 minutes and a reboot is recommended.</span>
           </div>
         </div>
-        <button class="btn-outline btn-ol-amber" id="svc-reinstall-btn">
+        <button class="btn-outline btn-ol-red" id="svc-reinstall-btn">
           ${svgIcon("download", 14)} Reinstall Dependencies
         </button>
       </div>
@@ -2977,10 +2986,15 @@ function renderServices() {
   // Reinstall Pixellot Dependencies (PDF #2) — confirm + run + show result
   document.getElementById("svc-reinstall-btn")?.addEventListener("click", async () => {
     const ok = confirm(
-      "Reinstall Pixellot Dependencies?\n\n" +
-      "This downloads Pixellot-Installer-Dependencies-5.0.0.exe (~90 MB) and " +
-      "runs it silently. Total time can be 5–15 minutes. Recording will be " +
-      "paused while the installer runs, and a reboot is recommended afterward.\n\n" +
+      "⚠ RARELY USED — Reinstall Pixellot Dependencies?\n\n" +
+      "This is a tier-2 remedy. ONLY run it when:\n" +
+      "  • Pixellot support or an escalation engineer has directed you to, OR\n" +
+      "  • You have confirmed CUDNN_STATUS_* or TensorFlow errors in the VPU logs\n" +
+      "    (see Event Viewer → Pixellot Logs).\n\n" +
+      "Effects:\n" +
+      "  • Downloads ~90 MB installer to C:\\pixellot\\downloadedversion\\\n" +
+      "  • Runs silently — recording is PAUSED for 5–15 minutes\n" +
+      "  • Reboot recommended afterward\n\n" +
       "Proceed?"
     );
     if (!ok) return;
