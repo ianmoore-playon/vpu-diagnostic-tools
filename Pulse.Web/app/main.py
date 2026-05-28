@@ -2268,6 +2268,14 @@ async def api_scoreconnect_live():
         return {"reachable": False, "rawData": None, "dataStatus": None, "error": str(e)}
 
 
+@app.get("/api/scoreconnect/scorelink")
+async def api_scoreconnect_scorelink():
+    """Live check of the ScoreLink USB device (a light WMI query). Polled by
+    the Score Connect page every few seconds to flag a USB disconnect — which
+    drops scoreboard data the same way the controller powering off does."""
+    return await run_ps("Get-ScoreLinkStatus.ps1", timeout=8)
+
+
 @app.post("/api/scoreconnect/install-sc3")
 async def api_install_sc3():
     """Kicks off a ScoreConnect III install as an elevated background task.

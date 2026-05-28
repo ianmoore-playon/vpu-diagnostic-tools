@@ -395,6 +395,10 @@ DEMO = {
     },
     "Get-ScoreConnectStatus.ps1": lambda **kw: _demo_scoreconnect(),
     "Get-ScoreConnectLive.ps1": lambda **kw: _demo_scoreconnect_live(),
+    "Get-ScoreLinkStatus.ps1": lambda **kw: {
+        "connected": True, "port": "COM7", "model": "ScoreLink",
+        "statusLabel": "ScoreLink device connected (COM7)",
+    },
     "Get-PixellotConfig.ps1": lambda **kw: {
         "cameras": [
             {"section": "Camera1", "ip": "192.168.10.100", "mac": "00:0E:53:AA:01:01", "role": "Main"},

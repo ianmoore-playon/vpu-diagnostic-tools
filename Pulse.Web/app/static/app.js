@@ -4042,9 +4042,9 @@ function renderScoreConnect() {
     </div>` : "";
 
   const slCard = data.scoreLinkConnected != null && anySC ? `
-    <div class="card sc-sl-card">
+    <div class="card sc-sl-card mt-4">
       ${sectionTitle("link", "ScoreLink Device")}
-      <div class="sc-scorelink ${data.scoreLinkConnected ? "sc-scorelink-ok" : "sc-scorelink-err"}">
+      <div id="sc3-scorelink" class="sc-scorelink ${data.scoreLinkConnected ? "sc-scorelink-ok" : "sc-scorelink-err"}">
         <span class="sc-scorelink-dot"></span>
         <span class="font-semibold">${esc(data.scoreLinkStatusLabel || (data.scoreLinkConnected ? "ScoreLink Connected" : "ScoreLink Not Detected"))}</span>
       </div>
@@ -4066,7 +4066,7 @@ function renderScoreConnect() {
 
     <!-- HERO: Live Scoreboard (parsed SC III data) -->
     ${isDetected ? `
-    <div class="sc-board sc-board-hero">
+    <div class="sc-board sc-board-hero" id="sc3-hero-board">
       <div class="sc-header">
         <div class="sc-team-home">
           <div class="sc-team-label">${esc(visitorLabel)}</div>
@@ -4076,8 +4076,8 @@ function renderScoreConnect() {
           <div class="sc-period-label" id="sc3-period">${rtdParsed && rtdParsed.period ? "Q" + rtdParsed.period : "GAME CLOCK"}</div>
           <div class="sc-clock" id="sc3-clock">${rtdParsed && rtdParsed.clock ? esc(rtdParsed.clock) : "--:--"}</div>
           <div class="sc-data-desc" id="sc3-down">${rtdParsed ? _sc3DownText(rtdParsed) : ""}</div>
-          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-accent-green)" : "var(--c-dim)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
-            ${_sc3LiveBadge(dataReceiving)}
+          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-accent-green)" : "var(--c-accent-red)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
+            ${_sc3StageBadge(dataReceiving ? "live" : "disconnected", 0)}
           </div>
         </div>
         <div class="sc-team-away">
@@ -4088,6 +4088,9 @@ function renderScoreConnect() {
     </div>
     ` : !(sc2 && sc2.reachable) ? `<div class="sc-board sc-board-hero sc-board-empty">${data.error ? esc(typeof data.error === "string" ? data.error : "No ScoreConnect service detected") : "No ScoreConnect service detected"}</div>` : ""}
 
+    <!-- ScoreLink USB device — directly below the scoreboard hero -->
+    ${slCard}
+
     <!-- Status — demoted running / receiving indicators + raw data -->
     ${anySC ? `
     <div class="card mt-4">
@@ -4095,9 +4098,7 @@ function renderScoreConnect() {
       <div class="kv-grid">
         ${isDetected ? kvRowHtml("ScoreConnect III", _scDot(true) + '<span class="status-pass">Running</span>') : ""}
         ${sc2 && sc2.reachable ? kvRowHtml("ScoreConnect II", _scDot(true) + '<span class="status-pass">Running</span>') : ""}
-        ${isDetected ? kvRowHtml("Scoreboard Data", _scDot(dataReceiving) + (dataReceiving
-          ? `<span class="status-pass">${esc(data.dataStatus || "Receiving data")}</span>`
-          : '<span class="text-pulse-muted">No data received</span>')) : ""}
+        ${isDetected ? kvRowHtml("Scoreboard Data", `<span id="sc3-data-status">${_sc3DataStatusHtml(dataReceiving ? "live" : "disconnected", 0, data.dataStatus)}</span>`) : ""}
       </div>
       ${data.rawData ? `
       <div class="sc-raw-data" style="margin-top:0.85rem">
@@ -4179,10 +4180,8 @@ function renderScoreConnect() {
       </div>
     </div>` : ""}
 
-    <!-- Cloud BOT + ScoreLink -->
-    ${botCard && slCard ? `<div class="dash-2col">${botCard}${slCard}</div>`
-     : botCard || slCard ? `<div class="mt-4">${botCard}${slCard}</div>`
-     : ""}
+    <!-- Cloud BOT (ScoreLink panel moved up under the hero) -->
+    ${botCard ? `<div class="mt-4">${botCard}</div>` : ""}
   `;
 
   // Start live polling whenever SC III is detected — even if not currently
@@ -4221,30 +4220,120 @@ function _scDot(on) {
     + 'background:' + c + ';' + anim + 'margin-right:7px;vertical-align:middle"></span>';
 }
 
-// Markup for the hero LIVE / NO DATA badge (kept in sync with the live poll).
-function _sc3LiveBadge(on) {
-  if (on) {
-    return '<span style="width:6px;height:6px;border-radius:50%;background:var(--c-accent-green);'
-      + 'display:inline-block;animation:pulse-live 1.4s ease-in-out infinite"></span>LIVE';
+// Hero badge per data stage. Mirrors SC III's own behaviour.
+//   live         — data flowing
+//   stale        — frozen briefly; show last data + disconnect countdown
+//   disconnected — frozen past the window / SC III reports no data
+//   offline      — SC III service itself not responding
+function _sc3StageBadge(stage, secs) {
+  var map = {
+    live:         { c: "var(--c-accent-green)", flash: true,  txt: "LIVE" },
+    stale:        { c: "var(--c-accent-amber)", flash: true,  txt: "STALE · " + secs + "s" },
+    disconnected: { c: "var(--c-accent-red)",   flash: false, txt: "NO SIGNAL" },
+    offline:      { c: "var(--c-dim)",          flash: false, txt: "SC III OFFLINE" }
+  };
+  var s = map[stage] || map.offline;
+  var anim = s.flash ? "animation:pulse-live 1.4s ease-in-out infinite;" : "";
+  return '<span style="width:6px;height:6px;border-radius:50%;background:' + s.c + ';'
+    + 'display:inline-block;' + anim + '"></span>' + s.txt;
+}
+var _SC3_STAGE_COLOR = {
+  live: "var(--c-accent-green)", stale: "var(--c-accent-amber)",
+  disconnected: "var(--c-accent-red)", offline: "var(--c-dim)"
+};
+
+// Status-card "Scoreboard Data" cell markup per stage.
+function _sc3DataStatusHtml(stage, secs, statusText) {
+  if (stage === "live") {
+    return _scDot(true) + '<span class="status-pass">' + esc(statusText || "Data is present and in the correct format") + '</span>';
   }
-  return '<span style="width:6px;height:6px;border-radius:50%;background:var(--c-dim);'
-    + 'display:inline-block"></span>NO DATA';
+  if (stage === "stale") {
+    return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c-accent-amber);animation:pulse-live 1.4s ease-in-out infinite;margin-right:7px;vertical-align:middle"></span>'
+      + '<span style="color:var(--c-accent-amber)">Data stale — no new packets (disconnecting in ' + secs + 's)</span>';
+  }
+  if (stage === "offline") {
+    return _scDot(false) + '<span class="status-fail">SC III not responding</span>';
+  }
+  return _scDot(false) + '<span class="status-fail">No scoreboard data is being received</span>';
 }
 
-// Poll cadence: the game clock ticks once per second, so we oversample at
-// ~3x (every 300ms) to never skip a second and to pick up score changes
-// near-instantly. The /live endpoint is a direct HTTP GET (no PowerShell
-// spawn), so this is cheap. Self-scheduling via setTimeout — each poll waits
-// for the previous fetch to finish before scheduling the next, so slow
-// responses never pile up.
+// Stale-data tracking. The per-packet checksum in the raw string changes
+// while the controller (serial or USB) is transmitting, and FREEZES the
+// moment it drops. We track when the raw data last changed and derive the
+// stage from how long it's been frozen — mirroring SC III, which holds the
+// last packet for ~60s before reporting "no scoreboard data".
 var _SC3_POLL_MS = 300;
+var _SC3_STALE_GRACE_MS = 3000;    // brief no-change tolerance before "stale"
+var _SC3_DISCONNECT_MS = 60000;    // frozen this long → disconnected
+var _sc3LastRaw = null;
+var _sc3LastChangeMs = 0;
+
+// Compute the current data stage from a /live response.
+function _sc3ComputeStage(live) {
+  var now = Date.now();
+  if (!live || !live.reachable) return { stage: "offline", secs: 0 };
+  // SC III's own verdict is authoritative for "no data".
+  var scStatus = (live.dataStatus || "").toLowerCase();
+  if (!live.rawData || scStatus.indexOf("no scoreboard") !== -1) {
+    return { stage: "disconnected", secs: 0 };
+  }
+  // Track raw-data changes to measure staleness.
+  if (live.rawData !== _sc3LastRaw) {
+    _sc3LastRaw = live.rawData;
+    _sc3LastChangeMs = now;
+  }
+  var frozenMs = now - _sc3LastChangeMs;
+  if (frozenMs >= _SC3_DISCONNECT_MS) return { stage: "disconnected", secs: 0 };
+  if (frozenMs >= _SC3_STALE_GRACE_MS) {
+    return { stage: "stale", secs: Math.max(0, Math.ceil((_SC3_DISCONNECT_MS - frozenMs) / 1000)) };
+  }
+  return { stage: "live", secs: 0 };
+}
 
 function _sc3StopLivePoll() {
   if (_sc3LivePoll) { clearTimeout(_sc3LivePoll); _sc3LivePoll = null; }
+  _sc3StopUsbPoll();
+}
+
+// ── ScoreLink USB monitor ─────────────────────────────────────
+// A scoreboard's ScoreConnect device (ScoreLink) plugs in over USB. If it's
+// unplugged, the data drop looks identical to the controller being turned
+// off — so the staleness handler above already flags the data loss. This
+// poll additionally pinpoints the CAUSE by watching the USB port (a light
+// WMI check, every 5s) and updating the ScoreLink panel live.
+var _sc3UsbPoll = null;
+var _SC3_USB_POLL_MS = 5000;
+
+function _sc3StopUsbPoll() {
+  if (_sc3UsbPoll) { clearTimeout(_sc3UsbPoll); _sc3UsbPoll = null; }
+}
+
+function _sc3StartUsbPoll() {
+  _sc3StopUsbPoll();
+  async function tick() {
+    if (currentPage !== "scoreconnect" || !document.getElementById("sc3-scorelink")) {
+      _sc3StopUsbPoll();
+      return;
+    }
+    var sl = await api("/api/scoreconnect/scorelink");
+    var el = document.getElementById("sc3-scorelink");
+    if (el && sl && sl.connected != null) {
+      el.className = "sc-scorelink " + (sl.connected ? "sc-scorelink-ok" : "sc-scorelink-err");
+      var label = sl.statusLabel || (sl.connected ? "ScoreLink Connected" : "ScoreLink device disconnected");
+      el.innerHTML = '<span class="sc-scorelink-dot"></span><span class="font-semibold">' + esc(label) + '</span>';
+    }
+    _sc3UsbPoll = setTimeout(tick, _SC3_USB_POLL_MS);
+  }
+  // First check after one interval (initial state already rendered server-side).
+  _sc3UsbPoll = setTimeout(tick, _SC3_USB_POLL_MS);
 }
 
 function _sc3StartLivePoll(vendor, sport) {
   _sc3StopLivePoll();
+  // Reset staleness tracking for a fresh session.
+  _sc3LastRaw = null;
+  _sc3LastChangeMs = Date.now();
+  _sc3StartUsbPoll();
 
   async function tick() {
     // Self-terminate if the user navigated away from the page.
@@ -4261,13 +4350,10 @@ function _sc3StartLivePoll(vendor, sport) {
       return;
     }
 
-    var badge = document.getElementById("sc3-live-badge");
-    if (!live || !live.reachable || !live.rawData) {
-      if (badge && badge.textContent.indexOf("NO DATA") === -1) {
-        badge.style.color = "var(--c-dim)";
-        badge.innerHTML = _sc3LiveBadge(false);
-      }
-    } else {
+    var st = _sc3ComputeStage(live);
+
+    // While live (data flowing) update the parsed scores from the new packet.
+    if (st.stage === "live" && live.rawData) {
       var p = parseRtdScores(live.rawData, vendor, sport);
       if (p) {
         _sc3SetText("sc3-clock", p.clock || "--:--");
@@ -4277,12 +4363,25 @@ function _sc3StartLivePoll(vendor, sport) {
         _sc3SetText("sc3-down", _sc3DownText(p));
         var rawEl = document.getElementById("sc3-raw-value");
         if (rawEl) rawEl.textContent = live.rawData;
-        if (badge && badge.textContent.indexOf("NO DATA") !== -1) {
-          badge.style.color = "var(--c-accent-green)";
-          badge.innerHTML = _sc3LiveBadge(true);
-        }
       }
     }
+    // In stale/disconnected/offline we keep the LAST known scores on screen
+    // (mirroring SC III holding the last packet) — only the status changes.
+
+    // Hero badge.
+    var badge = document.getElementById("sc3-live-badge");
+    if (badge) {
+      badge.style.color = _SC3_STAGE_COLOR[st.stage] || "var(--c-dim)";
+      badge.innerHTML = _sc3StageBadge(st.stage, st.secs);
+    }
+
+    // Dim the scoreboard once disconnected/offline to signal the data is dead.
+    var board = document.getElementById("sc3-hero-board");
+    if (board) board.style.opacity = (st.stage === "disconnected" || st.stage === "offline") ? "0.45" : "1";
+
+    // Status-card "Scoreboard Data" cell.
+    var dataCell = document.getElementById("sc3-data-status");
+    if (dataCell) dataCell.innerHTML = _sc3DataStatusHtml(st.stage, st.secs, live && live.dataStatus);
 
     // Schedule the next poll only after this one completes.
     _sc3LivePoll = setTimeout(tick, _SC3_POLL_MS);
