@@ -1814,34 +1814,6 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution) {
   var gw = (local || {}).gateway;
   var dns = (local || {}).dns;
 
-  // ── DNS comparison vs Google DNS (PDF #10) ──────────────
-  // If 8.8.8.8 resolves but the configured DNS doesn't, the school's
-  // internal resolver is blocking Pixellot infrastructure.
-  if (dnsResolution && !dnsResolution.error) {
-    var sysBlocked = (dnsResolution.results || []).filter(function(r) { return r.discrepancy === "system-blocked"; });
-    if (sysBlocked.length) {
-      issues.push({
-        severity: "critical",
-        title: sysBlocked.length + " domain(s) blocked by configured DNS but reachable via Google DNS (8.8.8.8)",
-        body: "The local DNS resolver is filtering or failing on Pixellot infrastructure. Change the VPU's DNS servers to 8.8.8.8 / 8.8.4.4, or ask the venue's network admin to whitelist these hostnames.",
-        details: sysBlocked.map(function(r) {
-          return r.host + " — system: " + (r.system.error || "no answer") + "; google: " + (r.google.resolvedTo || "—");
-        }),
-      });
-    }
-    var mismatches = (dnsResolution.results || []).filter(function(r) { return r.discrepancy === "mismatch"; });
-    if (mismatches.length) {
-      issues.push({
-        severity: "warning",
-        title: mismatches.length + " domain(s) resolve to different IPs via system vs Google DNS",
-        body: "Could indicate a captive portal, school filter, or internal mirror. Verify the resolved IP matches Pixellot's expected ranges.",
-        details: mismatches.map(function(r) {
-          return r.host + " — system: " + r.system.resolvedTo + "; google: " + r.google.resolvedTo;
-        }),
-      });
-    }
-  }
-
   // ── Critical: Gateway ────────────────────────────────────
   if (gw && !gw.reachable) {
     if (!gw.target)
@@ -1878,6 +1850,10 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution) {
   }
 
   // ── Ports: required failures ─────────────────────────────
+  // Pushed before DNS-comparison findings so that within the Critical
+  // severity bucket, port blockages rank above DNS issues. The Network
+  // tab's sort is stable on severity, so insertion order is the
+  // tie-breaker within a bucket.
   var reqFailed = (ports || []).filter(function(p) { return !p.optional && (p.status || "").toLowerCase() !== "pass"; });
   var reqPass = (ports || []).filter(function(p) { return !p.optional && (p.status || "").toLowerCase() === "pass"; });
   if (reqFailed.length > 0) {
@@ -1890,6 +1866,35 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution) {
     issues.push({ severity: "critical", title: reqFailed.length + " of " + (reqFailed.length + reqPass.length) + " required ports blocked",
       body: "Ensure these ports are allowed by the venue firewall and VLAN policy.",
       details: portDetails });
+  }
+
+  // ── DNS comparison vs Google DNS (PDF #10) ──────────────
+  // If 8.8.8.8 resolves but the configured DNS doesn't, the school's
+  // internal resolver is blocking Pixellot infrastructure. Pushed AFTER
+  // required-ports so the port critical sorts above the DNS critical.
+  if (dnsResolution && !dnsResolution.error) {
+    var sysBlocked = (dnsResolution.results || []).filter(function(r) { return r.discrepancy === "system-blocked"; });
+    if (sysBlocked.length) {
+      issues.push({
+        severity: "critical",
+        title: sysBlocked.length + " domain(s) blocked by configured DNS but reachable via Google DNS (8.8.8.8)",
+        body: "The local DNS resolver is filtering or failing on Pixellot infrastructure. Change the VPU's DNS servers to 8.8.8.8 / 8.8.4.4, or ask the venue's network admin to whitelist these hostnames.",
+        details: sysBlocked.map(function(r) {
+          return r.host + " — system: " + (r.system.error || "no answer") + "; google: " + (r.google.resolvedTo || "—");
+        }),
+      });
+    }
+    var mismatches = (dnsResolution.results || []).filter(function(r) { return r.discrepancy === "mismatch"; });
+    if (mismatches.length) {
+      issues.push({
+        severity: "warning",
+        title: mismatches.length + " domain(s) resolve to different IPs via system vs Google DNS",
+        body: "Could indicate a captive portal, school filter, or internal mirror. Verify the resolved IP matches Pixellot's expected ranges.",
+        details: mismatches.map(function(r) {
+          return r.host + " — system: " + r.system.resolvedTo + "; google: " + r.google.resolvedTo;
+        }),
+      });
+    }
   }
 
   // ── Ports: optional failures ─────────────────────────────
