@@ -1216,6 +1216,10 @@ function renderSystem() {
             cls = "sys-lifecycle-crit";
             title = "No NVIDIA GPU detected";
             detail = "Pixellot requires NVIDIA hardware for encoding.";
+          } else if (c.status === "anomaly") {
+            cls = "sys-lifecycle-crit";
+            title = "Unexpected GPU architecture";
+            detail = `${esc(c.architecture)} is not a known Pixellot deployment — escalate to support.`;
           }
           return `<div class="sys-lifecycle ${cls} mt-3">
             ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}

@@ -482,22 +482,22 @@ def _os_lifecycle(build_number) -> Optional[dict]:
 # ── Pixellot version × hardware compatibility (field guidance) ──
 # Per Logan T (2026-05-28):
 #   Win 8 hosts                          → max 2.66.17
+#   Maxwell GPU (5.x cap, GTX 9xx, M-)   → max 2.66.17 (these are all Win 8 hosts)
 #   Win 10 + Pascal GPU (10xx, 6.x cap)  → max 5.2.x
 #   Win 10 + Turing or newer (≥7.5 cap)  → any version
-#
-# Maxwell (5.x) and Volta (7.0/7.2) are PROVISIONAL — capped at 5.2.x
-# pending Logan's clarification. Adjust by editing _ARCH_VERSION_CAPS
-# below; the rest of the logic doesn't change.
+#   Volta GPU (7.0/7.2 — V100, Titan V)  → ANOMALY: never deployed; if detected,
+#                                          flag as a hardware configuration error
 #
 # Pixellot version strings are dotted-numeric (e.g. "5.13.6"). Caps can
 # be exact ("2.66.17") or wildcarded ("5.2.x") — the latter allows any
 # patch under that major.minor.
 
-# arch → max Pixellot version (None means unlimited)
+# arch → max Pixellot version (None means unlimited, "__ANOMALY__" means
+# not a known-deployed configuration)
 _ARCH_VERSION_CAPS = {
-    "Maxwell":    "5.2.x",   # PROVISIONAL — confirm with Logan
+    "Maxwell":    "2.66.17",
     "Pascal":     "5.2.x",
-    "Volta":      "5.2.x",   # PROVISIONAL — confirm with Logan
+    "Volta":      "__ANOMALY__",
     "Turing":     None,
     "Ampere/Ada": None,
     "Hopper":     None,
@@ -616,6 +616,19 @@ def _check_pixellot_compatibility(identity, gpu_info) -> dict:
         return out
 
     cap = _ARCH_VERSION_CAPS.get(arch)
+
+    # Anomaly: architecture not deployed in the Pixellot field — flag as
+    # a hardware configuration error so support can investigate.
+    if cap == "__ANOMALY__":
+        out["status"] = "anomaly"
+        out["maxVersion"] = None
+        out["capReason"] = (
+            f"{arch} GPUs are not a deployed Pixellot configuration. "
+            f"Verify this host's hardware roster — Volta cards were never "
+            f"shipped in production VPUs."
+        )
+        return out
+
     if cap is None:
         # Either an architecture that's unlimited (Turing+) or one we
         # don't have data for. For Unknown, default to compliant — we
@@ -1003,6 +1016,19 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "Pixellot requires an NVIDIA GPU for video encoding. No NVIDIA hardware was "
                     "found via nvidia-smi or WMI. If a GPU is physically installed, check driver "
                     "status; otherwise this VPU cannot run the encoder."
+                ),
+            })
+        elif compat["status"] == "anomaly":
+            # Volta hardware shouldn't exist in the Pixellot field — escalate.
+            findings.append({
+                "severity": "critical",
+                "category": "Hardware",
+                "title": "Unexpected GPU architecture",
+                "recommendation": (
+                    f"{compat['architecture']} GPU detected, which is not a known Pixellot "
+                    f"deployment configuration. Escalate to support — this host may be "
+                    f"mis-imaged or the hardware roster needs review. "
+                    f"Installed Pixellot: {compat['installedVersion']}."
                 ),
             })
 
