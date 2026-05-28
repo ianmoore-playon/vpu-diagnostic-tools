@@ -1796,6 +1796,19 @@ function _prefixToMask(prefix) {
   return [24, 16, 8, 0].map(function(s) { return (mask >>> s) & 0xFF; }).join(".");
 }
 
+// Severity ordering for Network tab issues. Returns a stable rank where
+// critical comes first. The previous inline `(o[severity] || 3)` form
+// treated critical as falsy (rank 0) and silently fell through to 3,
+// which is why issues rendered in the wrong order.
+function _netIssueRank(severity) {
+  switch (severity) {
+    case "critical": return 0;
+    case "warning":  return 1;
+    case "info":     return 2;
+    default:         return 3;
+  }
+}
+
 function _buildNetIssues(cfg, ports, domains, local, dnsResolution) {
   var issues = [];
   var gw = (local || {}).gateway;
@@ -1860,7 +1873,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution) {
     issues.push({ severity: "critical", title: "VPU has no internet connection",
       body: "Verify the uplink cable and the gateway’s WAN status before further triage." });
     // Sort and return early — no point checking ports/domains
-    issues.sort(function(a, b) { var o = { critical: 0, warning: 1, info: 2 }; return (o[a.severity] || 3) - (o[b.severity] || 3); });
+    issues.sort(function(a, b) { return _netIssueRank(a.severity) - _netIssueRank(b.severity); });
     return issues;
   }
 
@@ -1927,7 +1940,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution) {
             ". Try replacing the cable, switching ports, or updating the NIC driver." });
 
   // Sort by severity: critical → warning → info
-  issues.sort(function(a, b) { var o = { critical: 0, warning: 1, info: 2 }; return (o[a.severity] || 3) - (o[b.severity] || 3); });
+  issues.sort(function(a, b) { return _netIssueRank(a.severity) - _netIssueRank(b.severity); });
   return issues;
 }
 
