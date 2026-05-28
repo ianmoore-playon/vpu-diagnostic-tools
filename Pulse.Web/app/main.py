@@ -1468,36 +1468,42 @@ def _enrich_ports(
                 }
             )
 
-    # ── Dedupe duplicate camera MACs across UP ports ──
-    # When a tech physically moves a camera between NIC ports, the
-    # Windows ARP cache keeps the old entry around for several minutes.
-    # That makes the same camera appear on two ports until ARP refreshes.
-    # Resolve the duplicate by attributing the camera to the port with
-    # the most RX traffic — the live connection — and stripping it from
-    # the stale one.
+    # ── Dedupe duplicate camera MACs across ALL ports ──
+    # When a tech physically moves a camera between NIC ports, the Windows
+    # ARP cache keeps the old entry around for several minutes — so the
+    # same camera MAC shows on both the old port (now Down, or just stale)
+    # and the new port (live link). A camera physically lives on exactly
+    # one port at a time, so we attribute it to the live connection and
+    # strip the stale copy.
+    #
+    # Winner priority: an UP port beats a Down port; among UP ports the
+    # one with the most RX traffic wins (the active stream). Down ports
+    # that lose are flagged with cameraMovedTo so the UI can show "camera
+    # moved to Port N" instead of a false "camera last detected" alarm.
     def _mac_key(c):
         return str(c.get("cgiMac") or c.get("mac") or "").upper().replace("-", ":")
 
-    mac_owners = {}  # mac → [(port, rxBytes), ...]
+    mac_owners = {}  # mac → [port, ...]
     for p in ports:
-        if not p.get("isUp"):
-            continue
         for c in p.get("camerasDetected") or []:
             m = _mac_key(c)
-            if not m:
-                continue
-            mac_owners.setdefault(m, []).append((p, p.get("rxBytes") or 0))
+            if m:
+                mac_owners.setdefault(m, []).append(p)
 
     for m, owners in mac_owners.items():
         if len(owners) <= 1:
             continue
-        # Highest RX wins — most likely the active connection.
-        owners.sort(key=lambda t: -t[1])
-        for losing_port, _ in owners[1:]:
+        # Sort so the live connection wins: UP before Down, then highest RX.
+        owners.sort(key=lambda p: (0 if p.get("isUp") else 1, -(p.get("rxBytes") or 0)))
+        winner = owners[0]
+        for losing_port in owners[1:]:
             losing_port["camerasDetected"] = [
                 c for c in losing_port.get("camerasDetected") or []
                 if _mac_key(c) != m
             ]
+            # Record where the camera went so the UI can reassure the tech
+            # the camera didn't fail — it just moved to a different port.
+            losing_port["cameraMovedTo"] = winner.get("portLabel")
 
     # Second pass: number main cameras and OCR cameras by camera IP so
     # numbering is stable (Main Camera 1 = .50, Main Camera 2 = .51, etc).

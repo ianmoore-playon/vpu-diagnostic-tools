@@ -1576,6 +1576,17 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .cam-entry-mac { white-space: nowrap; }
 .cam-entry-source { font-size: 0.6rem; flex-basis: 100%; }
 .cam-no-detect { font-size: 0.7rem; color: var(--c-dim); }
+.cam-moved {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--c-accent-blue);
+    background: var(--c-tint-blue);
+    border-radius: 4px;
+    padding: 4px 8px;
+}
 
 /* ── Camera findings card ──────────────────────────────────── */
 .cam-finding-row { border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; }

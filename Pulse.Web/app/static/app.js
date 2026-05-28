@@ -2692,6 +2692,8 @@ function _camPortTile(port, index) {
       </div>
       ${_camDetailsPanel(cams, index, p)}`;
     })()
+    : p.cameraMovedTo
+      ? '<div class="cam-moved">' + svgIcon("arrow-right", 12) + ' Camera moved to ' + esc(p.cameraMovedTo) + '</div>'
     : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
   </div>`;
 }
