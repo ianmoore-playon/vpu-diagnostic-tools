@@ -3739,18 +3739,27 @@ function _fmtClock(d) {
 // down/distance block is only read when packed (all fields present),
 // otherwise left null rather than guessed.
 function _parseCG(raw) {
-  // The numeric data is at the start, before the alphabetic team labels.
-  var lead = raw.match(/^[\s]*[\d.][\d.\s]*/);
-  if (!lead) return null;
-  var toks = lead[0].trim().split(/\s+/);
-  if (toks.length < 3) return null;          // need header+clock, home, visitor
+  if (raw.length < 6) return null;
 
-  var head = toks[0];
-  if (head.length < 3) return null;          // "02" + at least 1 clock digit
-  var clock = _fmtClock(head.substring(2));  // strip 2-char header → clock digits
+  // FIXED-WIDTH layout (confirmed against exact VPU captures):
+  //   [0-1] header "02"   [2-5] clock (4 chars, right-justified)   [6+] rest
+  // The clock field is a fixed 4 chars: "1225" (12:25) when >= 10:00, or
+  // " 944" (9:44) when under 10 minutes. That leading space is why a naive
+  // token split breaks once the clock drops below 10:00.
+  var header = raw.substring(0, 2);
+  if (!/^\d{2}$/.test(header)) return null;   // not the CG header → not this format
+  var clock = _fmtClock(raw.substring(2, 6).trim());
 
-  var home    = parseInt(toks[1], 10);
-  var visitor = parseInt(toks[2], 10);
+  // Rest of the numeric block (scores, timeouts, down/dist, qtr) up to the
+  // alphabetic team labels. These ARE space-delimited tokens.
+  var rest = raw.substring(6);
+  var leadNum = rest.match(/^[\d.\s]+/);
+  if (!leadNum) return null;
+  var toks = leadNum[0].trim().split(/\s+/).filter(Boolean);
+  if (toks.length < 2) return null;           // need at least home + visitor
+
+  var home    = parseInt(toks[0], 10);   // data order: Home first, then Visitor
+  var visitor = parseInt(toks[1], 10);
   if (isNaN(home) || isNaN(visitor)) return null;
   if (home > 199 || visitor > 199) return null;  // sanity — not a score line
 
@@ -3758,13 +3767,13 @@ function _parseCG(raw) {
   var lastTok = toks[toks.length - 1];
   var qtr = parseInt(lastTok.charAt(lastTok.length - 1), 10);
 
-  // Down / distance / ball-on — only when the trailing block is packed into
-  // a single 8-char token (TO:2 down:1 togo:2 ballon:2 qtr:1). When fields
-  // are blank the controller emits spaces, breaking the token; we skip it
-  // rather than misread.
+  // Down / distance / ball-on — only when the trailing block is packed into a
+  // single 8-char token (TO:2 down:1 togo:2 ballon:2 qtr:1). When fields are
+  // blank the controller emits spaces, breaking the token; skip rather than
+  // misread.
   var down = null, togo = null, ballon = null;
-  if (toks.length === 4 && toks[3].length === 8) {
-    var t  = toks[3];
+  if (toks.length === 3 && toks[2].length === 8) {
+    var t  = toks[2];
     var d  = parseInt(t.substring(2, 3), 10);
     var tg = parseInt(t.substring(3, 5), 10);
     var bo = parseInt(t.substring(5, 7), 10);
@@ -4295,41 +4304,60 @@ function _sc3DownText(p) {
   return t;
 }
 
+// Poll cadence: the game clock ticks once per second, so we sample faster
+// than that (sub-second) to avoid skipped seconds. The /live endpoint is a
+// direct HTTP GET (no PowerShell spawn), so this is cheap. Self-scheduling
+// via setTimeout — each poll waits for the previous fetch to finish before
+// scheduling the next, so slow responses never pile up.
+var _SC3_POLL_MS = 600;
+
 function _sc3StopLivePoll() {
-  if (_sc3LivePoll) { clearInterval(_sc3LivePoll); _sc3LivePoll = null; }
+  if (_sc3LivePoll) { clearTimeout(_sc3LivePoll); _sc3LivePoll = null; }
 }
 
 function _sc3StartLivePoll(vendor, sport) {
   _sc3StopLivePoll();
-  _sc3LivePoll = setInterval(async function() {
+
+  async function tick() {
     // Self-terminate if the user navigated away from the page.
     if (currentPage !== "scoreconnect" || !document.getElementById("sc3-clock")) {
       _sc3StopLivePoll();
       return;
     }
+
     var live = await api("/api/scoreconnect/live");
-    if (!live || !live.reachable || !live.rawData) {
-      // Data stopped — mark the live badge as stale but keep last values.
-      var badge = document.getElementById("sc3-live-badge");
-      if (badge) badge.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:var(--c-dim);display:inline-block"></span>NO DATA';
+
+    // Re-check after the await — user may have navigated during the fetch.
+    if (currentPage !== "scoreconnect" || !document.getElementById("sc3-clock")) {
+      _sc3StopLivePoll();
       return;
     }
-    var p = parseRtdScores(live.rawData, vendor, sport);
-    if (!p) return;
-    _sc3SetText("sc3-clock", p.clock || "--:--");
-    _sc3SetText("sc3-period", p.period ? "Q" + p.period : "GAME CLOCK");
-    if (p.guestScore != null) _sc3SetText("sc3-guest", String(p.guestScore));
-    if (p.homeScore != null)  _sc3SetText("sc3-home", String(p.homeScore));
-    _sc3SetText("sc3-down", _sc3DownText(p));
-    // Refresh the raw-data readout too, if present.
-    var rawEl = document.getElementById("sc3-raw-value");
-    if (rawEl) rawEl.textContent = live.rawData;
-    // Restore the LIVE badge if it had gone stale.
-    var badge = document.getElementById("sc3-live-badge");
-    if (badge && badge.textContent.indexOf("NO DATA") !== -1) {
-      badge.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:var(--c-accent-green);display:inline-block;animation:pulse-live 1.4s ease-in-out infinite"></span>LIVE';
+
+    if (!live || !live.reachable || !live.rawData) {
+      var badgeOff = document.getElementById("sc3-live-badge");
+      if (badgeOff) badgeOff.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:var(--c-dim);display:inline-block"></span>NO DATA';
+    } else {
+      var p = parseRtdScores(live.rawData, vendor, sport);
+      if (p) {
+        _sc3SetText("sc3-clock", p.clock || "--:--");
+        _sc3SetText("sc3-period", p.period ? "Q" + p.period : "GAME CLOCK");
+        if (p.guestScore != null) _sc3SetText("sc3-guest", String(p.guestScore));
+        if (p.homeScore != null)  _sc3SetText("sc3-home", String(p.homeScore));
+        _sc3SetText("sc3-down", _sc3DownText(p));
+        var rawEl = document.getElementById("sc3-raw-value");
+        if (rawEl) rawEl.textContent = live.rawData;
+        var badge = document.getElementById("sc3-live-badge");
+        if (badge && badge.textContent.indexOf("NO DATA") !== -1) {
+          badge.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:var(--c-accent-green);display:inline-block;animation:pulse-live 1.4s ease-in-out infinite"></span>LIVE';
+        }
+      }
     }
-  }, 1500);
+
+    // Schedule the next poll only after this one completes.
+    _sc3LivePoll = setTimeout(tick, _SC3_POLL_MS);
+  }
+
+  tick();
 }
 
 function _sc3SetText(id, text) {

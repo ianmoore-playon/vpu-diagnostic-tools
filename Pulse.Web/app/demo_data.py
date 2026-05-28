@@ -78,7 +78,9 @@ def _demo_raw_data():
     """
     g = _DEMO_GAME
     minutes, seconds = _demo_live_clock()
-    clock = f"{minutes:02d}{seconds:02d}"            # MMSS, no colon
+    # Clock is a fixed 4-char field, right-justified like real hardware:
+    # "1225" at 12:25, " 944" at 9:44 (leading space under 10:00).
+    clock = f"{minutes}{seconds:02d}".rjust(4)
     # Packed trailing block: timeouts(2) down(1) togo(2) ballon(2) qtr(1)
     packed = f"55{g['down']}{g['to_go']:02d}{g['ball_on']:02d}{g['quarter']}"
     return (

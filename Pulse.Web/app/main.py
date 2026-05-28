@@ -2217,16 +2217,45 @@ async def api_scoreconnect():
     return await run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": url}, timeout=15)
 
 
+def _fetch_sc3_status(url: str) -> dict:
+    """Blocking GET of SC III get-status via stdlib urllib (no PowerShell
+    spawn, no extra deps). Runs in a thread so the event loop stays free."""
+    import urllib.request
+    req = urllib.request.Request(
+        f"{url}/api/configuration/get-status",
+        headers={"Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=2) as resp:
+        return json.loads(resp.read().decode("utf-8", "replace"))
+
+
 @app.get("/api/scoreconnect/live")
 async def api_scoreconnect_live():
-    """Lightweight live poll of SC III scoreboard data only. A single stateless
-    GET to localhost:5000 — safe to poll every 1-2s. Does NOT touch SC II or
-    enumerate WMI. Drives the live-updating clock/scores on the Score Connect
-    page. SC III is a REST service built for concurrent clients, so this does
-    not interfere with the data stream Pixellot's agent relies on."""
+    """High-frequency live poll of SC III scoreboard data only. Uses a direct
+    stdlib HTTP GET to localhost:5000 (NOT a PowerShell spawn) so it's cheap
+    enough to poll multiple times per second — the clock ticks every second,
+    so sub-second sampling avoids skipped seconds.
+
+    Single stateless GET. Does NOT touch SC II or enumerate WMI. SC III is a
+    REST service built for concurrent clients, so this does not interfere with
+    the data stream Pixellot's agent relies on."""
+    if DEMO_MODE:
+        from demo_data import _demo_scoreconnect_live
+        return _demo_scoreconnect_live()
+
     settings = load_settings()
-    url = settings.get("scoreConnectUrl", "http://localhost:5000")
-    return await run_ps("Get-ScoreConnectLive.ps1", {"BaseUrl": url}, timeout=6)
+    url = settings.get("scoreConnectUrl", "http://localhost:5000").rstrip("/")
+    try:
+        data = await asyncio.to_thread(_fetch_sc3_status, url)
+        raw = str(data.get("data", "") or "").strip() or None
+        sb = data.get("scoreBoardData") or {}
+        return {
+            "reachable": True,
+            "rawData": raw,
+            "dataStatus": sb.get("description") if isinstance(sb, dict) else None,
+        }
+    except Exception as e:
+        return {"reachable": False, "rawData": None, "dataStatus": None, "error": str(e)}
 
 
 @app.post("/api/scoreconnect/install-sc3")
