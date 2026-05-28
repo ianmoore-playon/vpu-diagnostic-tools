@@ -152,22 +152,16 @@ function Get-ScoreConnectExeVersion {
 function Probe-ScoreConnectII {
     param([string]$Sc2Base = 'http://localhost:1400')
 
-    # ── SAFETY: PASSIVE-ONLY PROBE ──────────────────────────────────────
-    # SC II uses a single-session login model.  Calling uidlogin("Admin")
-    # from our probe KICKS the existing SC II web UI session, which kills
-    # the live score data stream.  Pixellot's agent relies on that stream
-    # for cloud scoring — we must NEVER disrupt it.
+    # ── SAFETY: HIT-AND-RUN PROBE ──────────────────────────────────────
+    # SC II is single-threaded.  A long-polling connection that lingers
+    # blocks the server from servicing the REAL client (SC II web UI /
+    # Pixellot agent), freezing their live data stream.
     #
-    # Safe operations (no login required):
-    #   getsettings  → hardware, version, UID, slot info
+    # Strategy: connect → send getsettings → ONE quick poll → ABORT.
+    # Total wall time target: < 4 s.  The abort in the finally block
+    # frees the server's connection slot immediately.
     #
-    # Passive listening:
-    #   Score/LED broadcasts (status_clock, status_vscore, etc.) are sent
-    #   to ALL connected SignalR clients via Clients.All.broadcastMessage.
-    #   We connect, call getsettings, then passively poll for whatever
-    #   broadcasts the server is already sending.
-    #
-    # Off-limits (require login, destructive):
+    # Off-limits (destructive — never call):
     #   uidlogin, getparms, getscoreboards, setparms, commit, setstate
 
     $result = @{
@@ -187,11 +181,13 @@ function Probe-ScoreConnectII {
     }
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $budgetMs = 8000
+    $budgetMs = 5000
 
     $scores = @{}
     $leds   = @{}
     $topics = [System.Collections.ArrayList]@()
+    $token    = $null
+    $connData = $null
 
     try {
         # ── 1. TCP pre-check on port 1400 ──────────────────────────────────
@@ -218,7 +214,7 @@ function Probe-ScoreConnectII {
 
         # ── 3. Connect (long-polling) ───────────────────────────────────────
         $connUrl  = "$Sc2Base/signalr/connect?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
-        $connResp = Invoke-WebRequest -Uri $connUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+        $connResp = Invoke-WebRequest -Uri $connUrl -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
         $initJson = $connResp.Content | ConvertFrom-Json
         $script:_pollCursor = $initJson.C
 
@@ -230,8 +226,8 @@ function Probe-ScoreConnectII {
 
         if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
 
-        # ── 5. Getsettings (safe, pre-login) ───────────────────────────────
-        $sendUrl = "$Sc2Base/signalr/send?transport=longPolling&connectionToken=$token&connectionData=$connData"
+        # ── 5. Send getsettings + ONE quick poll ───────────────────────────
+        $sendUrl  = "$Sc2Base/signalr/send?transport=longPolling&connectionToken=$token&connectionData=$connData"
         $pollBase = "$Sc2Base/signalr/poll?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
 
         $body = 'data=' + [System.Uri]::EscapeDataString('{"H":"ScoreConnectHub","M":"Getsettings","A":[],"I":0}')
@@ -239,67 +235,49 @@ function Probe-ScoreConnectII {
 
         if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
 
-        # Scriptblock to process one poll response
+        # Single poll — short timeout so we don't block the server long.
+        # getsettings response is queued server-side, so it should return
+        # immediately.  Any score/LED broadcasts in flight come as a bonus.
         $script:_settings = $null
-        $processPoll = {
-            param($json)
-            if (-not $json -or -not $json.M) { return }
-            if ($json.C) { $script:_pollCursor = $json.C }
-            foreach ($msg in $json.M) {
-                if ($msg.M -ne 'broadcastMessage' -or -not $msg.A -or $msg.A.Count -lt 2) { continue }
-                $topic = $msg.A[0]
-                $topics.Add($topic) | Out-Null
-                try { $tdata = $msg.A[1] | ConvertFrom-Json } catch { continue }
+        $script:_parms    = $null
+        try {
+            $pUrl = $pollBase
+            if ($script:_pollCursor) { $pUrl += "&messageId=$([System.Uri]::EscapeDataString($script:_pollCursor))" }
+            $pResp = Invoke-WebRequest -Uri $pUrl -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+            $pJson = $pResp.Content | ConvertFrom-Json
+            if ($pJson.C) { $script:_pollCursor = $pJson.C }
+            if ($pJson.M) {
+                foreach ($msg in $pJson.M) {
+                    if ($msg.M -ne 'broadcastMessage' -or -not $msg.A -or $msg.A.Count -lt 2) { continue }
+                    $topic = $msg.A[0]
+                    $topics.Add($topic) | Out-Null
+                    try { $tdata = $msg.A[1] | ConvertFrom-Json } catch { continue }
 
-                switch ($topic) {
-                    'getsettings'           { $script:_settings = $tdata }
-                    # Passively catch getparms if another client triggered it
-                    'getparms'              { $script:_parms = $tdata }
-                    'status_clock'          { $scores['clock']      = $tdata.status_clock }
-                    'status_vscore'         { $scores['visitor']    = $tdata.status_vscore }
-                    'status_hscore'         { $scores['home']       = $tdata.status_hscore }
-                    'status_text1'          { $scores['text1']      = $tdata.status_text1 }
-                    'status_text2'          { $scores['text2']      = $tdata.status_text2 }
-                    'status_text3'          { $scores['text3']      = $tdata.status_text3 }
-                    'status_scoreboard_led' { $leds['scoreboard']   = [int]$tdata.status_scoreboard_led }
-                    'status_network_led'    { $leds['network']      = [int]$tdata.status_network_led }
-                    'status_cloud_led'      { $leds['cloud']        = [int]$tdata.status_cloud_led }
-                    'status_local_led'      { $leds['local']        = [int]$tdata.status_local_led }
-                    'status_update_led'     { $leds['update']       = [int]$tdata.status_update_led }
+                    switch ($topic) {
+                        'getsettings'           { $script:_settings = $tdata }
+                        'getparms'              { $script:_parms = $tdata }
+                        'status_clock'          { $scores['clock']      = $tdata.status_clock }
+                        'status_vscore'         { $scores['visitor']    = $tdata.status_vscore }
+                        'status_hscore'         { $scores['home']       = $tdata.status_hscore }
+                        'status_text1'          { $scores['text1']      = $tdata.status_text1 }
+                        'status_text2'          { $scores['text2']      = $tdata.status_text2 }
+                        'status_text3'          { $scores['text3']      = $tdata.status_text3 }
+                        'status_scoreboard_led' { $leds['scoreboard']   = [int]$tdata.status_scoreboard_led }
+                        'status_network_led'    { $leds['network']      = [int]$tdata.status_network_led }
+                        'status_cloud_led'      { $leds['cloud']        = [int]$tdata.status_cloud_led }
+                        'status_local_led'      { $leds['local']        = [int]$tdata.status_local_led }
+                        'status_update_led'     { $leds['update']       = [int]$tdata.status_update_led }
+                    }
                 }
             }
-        }
+        } catch { <# poll failed or timed out — we still have reachable=true #> }
 
-        # ── 6. Passive poll — getsettings + any score/LED broadcasts ───────
-        # Poll up to 3 cycles.  The first should return getsettings.
-        # Subsequent polls passively catch any score/LED broadcasts the
-        # server is already sending to all connected clients.
-        $script:_parms = $null
-        for ($p = 0; $p -lt 3; $p++) {
-            if ($sw.ElapsedMilliseconds -ge $budgetMs) { break }
-            $remainMs = $budgetMs - $sw.ElapsedMilliseconds
-            if ($remainMs -le 500) { break }
-            $tSec = [Math]::Max(1, [Math]::Min(3, [Math]::Floor($remainMs / 1000)))
-
-            try {
-                $pUrl = $pollBase
-                if ($script:_pollCursor) { $pUrl += "&messageId=$([System.Uri]::EscapeDataString($script:_pollCursor))" }
-                $pResp = Invoke-WebRequest -Uri $pUrl -UseBasicParsing -TimeoutSec $tSec -ErrorAction Stop
-                $pJson = $pResp.Content | ConvertFrom-Json
-                & $processPoll $pJson
-            } catch { break }
-
-            # Early exit once we have settings + at least one score field
-            if ($script:_settings -and $scores.Count -gt 0) { break }
-        }
-
-        # ── 7. Populate result ──────────────────────────────────────────────
+        # ── 6. Populate result ──────────────────────────────────────────────
         if ($script:_settings) {
             $result.version  = $script:_settings.version
             $result.hardware = $script:_settings.hardware
             $result.uid      = $script:_settings.instance_uid
         }
-        # Passively caught getparms (if SC II web UI triggered it)
         if ($script:_parms) {
             $result.teamNames = @{
                 visitor = $script:_parms.visitor_teamname
@@ -311,12 +289,8 @@ function Probe-ScoreConnectII {
             $result.sport     = $script:_parms.sbcode
             $result.botNumber = $script:_parms.botnumber
         }
-        if ($scores.Count -gt 0) {
-            $result.scores = $scores
-        }
-        if ($leds.Count -gt 0) {
-            $result.statusLeds = $leds
-        }
+        if ($scores.Count -gt 0) { $result.scores = $scores }
+        if ($leds.Count   -gt 0) { $result.statusLeds = $leds }
 
         $result._diag = @{
             mode        = 'passive'
@@ -326,6 +300,15 @@ function Probe-ScoreConnectII {
     }
     catch {
         $result.error = $_.Exception.Message
+    }
+    finally {
+        # ── ALWAYS abort the SignalR connection ─────────────────────────────
+        # This tells the server to release our connection slot immediately
+        # instead of holding it until its own timeout expires.
+        if ($token -and $connData) {
+            $abortUrl = "$Sc2Base/signalr/abort?transport=longPolling&connectionToken=$token&connectionData=$connData"
+            try { Invoke-WebRequest -Uri $abortUrl -Method POST -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue | Out-Null } catch {}
+        }
     }
 
     return $result
