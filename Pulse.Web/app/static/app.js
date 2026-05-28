@@ -3533,40 +3533,62 @@ function renderScoreConnect() {
       </button>`
     )}
 
-    <!-- Service Status + Live Scoreboard -->
-    <div class="dash-2col">
-      <div class="card">
-        ${sectionTitle("server", "Service Status")}
-        <div class="kv-grid">
-          ${kvRowHtml("Detected", isDetected
-            ? '<span class="status-pass">Yes</span>'
-            : '<span class="status-fail">No</span>')}
-          ${kvRow("Base URL", status.baseUrl || data.baseUrl)}
-          ${kvRow("Version", version)}
-          ${data.error && !isDetected ? kvRowHtml("Error", `<span class="status-fail">${esc(typeof data.error === "string" ? data.error : data.message || "Connection failed")}</span>`) : ""}
-        </div>
+    <!-- Service Status -->
+    <div class="card">
+      ${sectionTitle("server", "Service Status")}
+      <div class="kv-grid">
+        ${kvRowHtml("Detected", isDetected
+          ? '<span class="status-pass">Yes</span>'
+          : '<span class="status-fail">No</span>')}
+        ${kvRow("Base URL", status.baseUrl || data.baseUrl)}
+        ${kvRow("Version", version)}
+        ${data.error && !isDetected ? kvRowHtml("Error", `<span class="status-fail">${esc(typeof data.error === "string" ? data.error : data.message || "Connection failed")}</span>`) : ""}
       </div>
-      <div class="card">
+    </div>
+
+    <!-- Live Scoreboard — dark broadcast-style overlay -->
+    <div class="card mt-4" style="padding:0;overflow:hidden">
+      <div style="padding:1rem 1.25rem 0.5rem">
         ${sectionTitle("monitor", "Live Scoreboard")}
-        ${liveScore.homeTeam || liveScore.awayTeam ? `
-          <div class="sc-teams">
-            <div class="sc-team-card">
-              <div class="sc-team-label">HOME</div>
-              <div class="sc-team-name">${esc(liveScore.homeTeam || "—")}</div>
-              ${liveScore.homeScore != null ? `<div class="sc-team-score">${esc(String(liveScore.homeScore))}</div>` : ""}
-            </div>
-            <div class="sc-team-card">
-              <div class="sc-team-label">AWAY</div>
-              <div class="sc-team-name">${esc(liveScore.awayTeam || "—")}</div>
-              ${liveScore.awayScore != null ? `<div class="sc-team-score">${esc(String(liveScore.awayScore))}</div>` : ""}
-            </div>
-          </div>
-          <div class="sc-game-info">
-            <div><span class="text-pulse-muted">Period</span> <span class="font-mono">${esc(String(liveScore.period != null ? liveScore.period : "—"))}</span></div>
-            <div><span class="text-pulse-muted">Clock</span> <span class="font-mono">${esc(String(liveScore.clock || "—"))}</span></div>
-          </div>
-        ` : `<div class="kv-grid"><div class="text-sm text-pulse-muted" style="grid-column:1/-1">No active game — scores appear here when ScoreConnect is receiving data</div></div>`}
       </div>
+      ${liveScore.homeTeam || liveScore.awayTeam ? `
+      <div class="sc-board">
+        <div class="sc-header">
+          <div class="sc-team-home">
+            <div class="sc-team-label">Home</div>
+            <div class="sc-team-name">${esc(liveScore.homeTeam || "—")}</div>
+          </div>
+          <div class="sc-center">
+            <div class="sc-scores">
+              <span class="sc-poss ${liveScore.possession === "home" ? "sc-poss-active" : ""}"></span>
+              <span class="sc-score">${liveScore.homeScore != null ? esc(String(liveScore.homeScore)) : "—"}</span>
+              <span class="sc-score-sep">:</span>
+              <span class="sc-score">${liveScore.awayScore != null ? esc(String(liveScore.awayScore)) : "—"}</span>
+              <span class="sc-poss ${liveScore.possession === "away" ? "sc-poss-active" : ""}"></span>
+            </div>
+            <div class="sc-period-label">${esc(String(liveScore.period != null ? liveScore.period : ""))}</div>
+            <div class="sc-clock">${esc(String(liveScore.clock || "—"))}</div>
+          </div>
+          <div class="sc-team-away">
+            <div class="sc-team-label">Away</div>
+            <div class="sc-team-name">${esc(liveScore.awayTeam || "—")}</div>
+          </div>
+        </div>
+        ${liveScore.homeFouls != null || liveScore.homeTimeouts != null || liveScore.homeBonus != null ? `
+        <div class="sc-stats">
+          <div class="sc-stat-group">
+            ${liveScore.homeBonus != null ? `<span class="sc-bonus ${liveScore.homeBonus ? "sc-bonus-on" : "sc-bonus-off"}">B</span>` : ""}
+            ${liveScore.homeFouls != null ? `<div class="sc-stat"><span class="sc-stat-val">${esc(String(liveScore.homeFouls))}</span><span class="sc-stat-lbl">Fouls</span></div>` : ""}
+            ${liveScore.homeTimeouts != null ? `<div class="sc-stat"><span class="sc-stat-val">${esc(String(liveScore.homeTimeouts))}</span><span class="sc-stat-lbl">T/O</span></div>` : ""}
+          </div>
+          <div class="sc-stat-group sc-stat-right">
+            ${liveScore.awayTimeouts != null ? `<div class="sc-stat"><span class="sc-stat-val">${esc(String(liveScore.awayTimeouts))}</span><span class="sc-stat-lbl">T/O</span></div>` : ""}
+            ${liveScore.awayFouls != null ? `<div class="sc-stat"><span class="sc-stat-val">${esc(String(liveScore.awayFouls))}</span><span class="sc-stat-lbl">Fouls</span></div>` : ""}
+            ${liveScore.awayBonus != null ? `<span class="sc-bonus ${liveScore.awayBonus ? "sc-bonus-on" : "sc-bonus-off"}">B</span>` : ""}
+          </div>
+        </div>` : ""}
+      </div>
+      ` : `<div class="sc-board sc-board-empty">No active game — scores appear here when ScoreConnect is receiving data</div>`}
     </div>
 
     <!-- Connected Device / Configuration -->

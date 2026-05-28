@@ -1845,18 +1845,151 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 
 /* ── ScoreConnect page ─────────────────────────────────────── */
 
-.sc-teams { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem; }
-.sc-team-card {
-    background: var(--c-surface-2);
-    border: 1px solid var(--c-border);
-    border-radius: 6px;
-    padding: 12px;
+/* Scoreboard — dark themed card that mimics a real broadcast overlay */
+.sc-board {
+    background: #0f1419;
+    border: 1px solid #2a3040;
+    border-radius: 10px;
+    padding: 1.25rem 1.5rem;
+    color: #e8ecf1;
+    font-family: "SF Mono", "Cascadia Mono", "Fira Code", monospace;
 }
-.sc-team-label { font-size: 0.65rem; font-weight: 600; color: var(--c-dim); letter-spacing: 0.06em; margin-bottom: 6px; }
-.sc-team-name { font-size: 0.85rem; font-weight: 600; color: var(--c-text); }
-.sc-team-score { font-size: 2.2rem; font-weight: 700; color: var(--c-text); margin-top: 4px; }
-.sc-game-info { display: flex; gap: 2rem; font-size: 0.85rem; color: var(--c-text); }
-.sc-game-info span.font-mono { font-size: 0.9rem; }
+.sc-board-empty {
+    padding: 2rem 1.5rem;
+    text-align: center;
+    color: #6b7a8d;
+    font-family: inherit;
+    font-size: 0.82rem;
+}
+
+/* Top row: team names + score */
+.sc-header {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 1rem;
+}
+.sc-team-home, .sc-team-away { display: flex; flex-direction: column; gap: 2px; }
+.sc-team-away { text-align: right; align-items: flex-end; }
+.sc-team-label {
+    font-size: 0.55rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #6b7a8d;
+    text-transform: uppercase;
+}
+.sc-team-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #e8ecf1;
+    line-height: 1.2;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Center score cluster */
+.sc-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 0 1.25rem;
+    min-width: 160px;
+}
+.sc-scores {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.sc-score {
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: #fff;
+    min-width: 2ch;
+    text-align: center;
+}
+.sc-score-sep {
+    font-size: 1.6rem;
+    font-weight: 300;
+    color: #3a4555;
+    margin: 0 2px;
+}
+/* Possession arrow (green dot next to score) */
+.sc-poss {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: transparent;
+    flex-shrink: 0;
+}
+.sc-poss-active { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.5); }
+
+/* Period + clock */
+.sc-period-label {
+    font-size: 0.55rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: #6b7a8d;
+    text-transform: uppercase;
+}
+.sc-clock {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #e8ecf1;
+    letter-spacing: 0.04em;
+}
+
+/* Stat row (fouls, timeouts, bonus) */
+.sc-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #1e2a38;
+}
+.sc-stat-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.sc-stat-group.sc-stat-right { justify-content: flex-end; }
+.sc-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+.sc-stat-val {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #e8ecf1;
+    line-height: 1;
+}
+.sc-stat-lbl {
+    font-size: 0.5rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: #4a5568;
+    text-transform: uppercase;
+}
+
+/* Bonus badge */
+.sc-bonus {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    line-height: 1;
+}
+.sc-bonus-on  { background: #f97316; color: #fff; }
+.sc-bonus-off { background: #1e2a38; color: #3a4555; }
 
 /* Make ScoreLink card stretch to match BOT card height in the 2-col grid */
 .sc-sl-card { display: flex; flex-direction: column; }
