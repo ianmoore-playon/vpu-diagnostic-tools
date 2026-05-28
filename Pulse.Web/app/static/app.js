@@ -4011,14 +4011,6 @@ function renderScoreConnect() {
   const visitorLabel = sc2Teams.visitor || "GUEST";
   const homeLabel = sc2Teams.home || "HOME";
 
-  // SC II status LED helper: 0=grey 1=yellow 2=green
-  function ledClass(val) {
-    return val === 2 ? "status-pass" : val === 1 ? "status-warn" : "text-pulse-muted";
-  }
-  function ledLabel(val) {
-    return val === 2 ? "OK" : val === 1 ? "Warning" : "Off";
-  }
-
   // Build BOT and ScoreLink cards independently
   const botCard = botStatus.isConnected != null ? `
     <div class="card">
@@ -4058,122 +4050,47 @@ function renderScoreConnect() {
       </button>`
     )}
 
-    <!-- SC II hero — config from settings.json on disk -->
-    ${sc2HasConfig ? `
+    <!-- HERO: Live Scoreboard (parsed SC III data) -->
+    ${isDetected ? `
     <div class="sc-board sc-board-hero">
-      <div class="sc-header">
-        <div class="sc-team-home">
-          <div class="sc-team-label">${esc(sc2Teams.visitor || "VISITOR")}</div>
-          <div class="sc-team-name" style="font-size:1.1rem">${esc(sc2.vendor || "—")}</div>
-        </div>
-        <div class="sc-center">
-          <div class="sc-data-status">
-            <span class="sc-data-dot sc-data-dot-on"></span>
-            <span class="sc-data-label">SC II Running</span>
-          </div>
-          <div class="sc-data-desc">${esc(sc2.hardware || "ScoreConnect II")} v${esc(sc2.version || "?")}</div>
-        </div>
-        <div class="sc-team-away">
-          <div class="sc-team-label">${esc(sc2Teams.home || "HOME")}</div>
-          <div class="sc-team-name" style="font-size:1.1rem">Bot# ${esc(String(sc2.botNumber || "—"))}</div>
-        </div>
-      </div>
-      <div class="sc-stats">
-        <div class="sc-stat-group">
-          ${sc2.uid ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.uid)}</span><span class="sc-stat-lbl">UID</span></div>` : ""}
-          ${sc2.license ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.license)}</span><span class="sc-stat-lbl">License Exp</span></div>` : ""}
-        </div>
-        <div class="sc-stat-group sc-stat-right">
-          ${sc2.scoreLink ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.scoreLink.description || "—")}</span><span class="sc-stat-lbl">ScoreLink</span></div>` : ""}
-          ${sc2.scoreLink && sc2.scoreLink.serial ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.scoreLink.serial)}</span><span class="sc-stat-lbl">Serial</span></div>` : ""}
-        </div>
-      </div>
-    </div>
-    ` : sc2 && sc2.reachable ? `
-    <div class="sc-board sc-board-hero">
-      <div class="sc-header">
-        <div class="sc-center">
-          <div class="sc-data-status">
-            <span class="sc-data-dot sc-data-dot-on"></span>
-            <span class="sc-data-label">SC II Running</span>
-          </div>
-          <div class="sc-data-desc">Service detected on port 1400</div>
-        </div>
-      </div>
-    </div>
-    ` : ""}
-
-    <!-- SC III Parsed Scoreboard — when RTD parser extracts scores -->
-    ${rtdParsed ? `
-    <div class="sc-board ${sc2HasConfig ? "mt-4" : "sc-board-hero"}">
       <div class="sc-header">
         <div class="sc-team-home">
           <div class="sc-team-label">${esc(visitorLabel)}</div>
-          <div class="sc-score" id="sc3-guest">${rtdParsed.guestScore != null ? esc(String(rtdParsed.guestScore)) : "—"}</div>
+          <div class="sc-score" id="sc3-guest">${rtdParsed && rtdParsed.guestScore != null ? esc(String(rtdParsed.guestScore)) : "—"}</div>
         </div>
         <div class="sc-center">
-          <div class="sc-period-label" id="sc3-period">${rtdParsed.period ? "Q" + rtdParsed.period : "GAME CLOCK"}</div>
-          <div class="sc-clock" id="sc3-clock">${esc(rtdParsed.clock || "--:--")}</div>
-          <div class="sc-data-desc" id="sc3-down">${_sc3DownText(rtdParsed)}</div>
-          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:var(--c-accent-green);display:flex;align-items:center;justify-content:center;gap:0.3rem">
-            <span style="width:6px;height:6px;border-radius:50%;background:var(--c-accent-green);display:inline-block;animation:pulse-live 1.4s ease-in-out infinite"></span>LIVE
+          <div class="sc-period-label" id="sc3-period">${rtdParsed && rtdParsed.period ? "Q" + rtdParsed.period : "GAME CLOCK"}</div>
+          <div class="sc-clock" id="sc3-clock">${rtdParsed && rtdParsed.clock ? esc(rtdParsed.clock) : "--:--"}</div>
+          <div class="sc-data-desc" id="sc3-down">${rtdParsed ? _sc3DownText(rtdParsed) : ""}</div>
+          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-accent-green)" : "var(--c-dim)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
+            ${_sc3LiveBadge(dataReceiving)}
           </div>
         </div>
         <div class="sc-team-away">
           <div class="sc-team-label">${esc(homeLabel)}</div>
-          <div class="sc-score" id="sc3-home">${rtdParsed.homeScore != null ? esc(String(rtdParsed.homeScore)) : "—"}</div>
-        </div>
-      </div>
-      <div class="sc-stats">
-        <div class="sc-stat-group">
-          ${config.vendor ? `<div class="sc-stat"><span class="sc-stat-val">${esc(config.vendor)}</span><span class="sc-stat-lbl">Vendor</span></div>` : ""}
-          ${config.sport ? `<div class="sc-stat"><span class="sc-stat-val">${esc(config.sport)}</span><span class="sc-stat-lbl">Sport</span></div>` : ""}
-        </div>
-        <div class="sc-stat-group sc-stat-right">
-          ${config.vendorConfigurationName ? `<div class="sc-stat"><span class="sc-stat-val">${esc(config.vendorConfigurationName)}</span><span class="sc-stat-lbl">Connection</span></div>` : ""}
-          ${version ? `<div class="sc-stat"><span class="sc-stat-val">${esc(version)}</span><span class="sc-stat-lbl">SC III Version</span></div>` : ""}
+          <div class="sc-score" id="sc3-home">${rtdParsed && rtdParsed.homeScore != null ? esc(String(rtdParsed.homeScore)) : "—"}</div>
         </div>
       </div>
     </div>
-    ` : ""}
+    ` : !(sc2 && sc2.reachable) ? `<div class="sc-board sc-board-hero sc-board-empty">${data.error ? esc(typeof data.error === "string" ? data.error : "No ScoreConnect service detected") : "No ScoreConnect service detected"}</div>` : ""}
 
-    <!-- SC III Data Flow — shown when SC III detected (raw data + status) -->
-    ${isDetected ? `
-    <div class="sc-board ${sc2HasConfig || rtdParsed ? "mt-4" : "sc-board-hero"}">
-      <div class="sc-header">
-        <div class="sc-team-home">
-          <div class="sc-team-label">Vendor</div>
-          <div class="sc-team-name">${esc(config.vendor || "—")}</div>
-        </div>
-        <div class="sc-center">
-          <div class="sc-data-status">
-            <span class="sc-data-dot ${dataReceiving ? "sc-data-dot-on" : "sc-data-dot-off"}"></span>
-            <span class="sc-data-label">${dataReceiving ? "Receiving Data" : "No Data"}</span>
-          </div>
-          ${data.dataStatus ? `<div class="sc-data-desc">${esc(data.dataStatus)}</div>` : ""}
-        </div>
-        <div class="sc-team-away">
-          <div class="sc-team-label">Sport</div>
-          <div class="sc-team-name">${esc(config.sport || "—")}</div>
-        </div>
+    <!-- Status — demoted running / receiving indicators + raw data -->
+    ${anySC ? `
+    <div class="card mt-4">
+      ${sectionTitle("heartbeat", "Status")}
+      <div class="kv-grid">
+        ${isDetected ? kvRowHtml("ScoreConnect III", _scDot(true) + '<span class="status-pass">Running</span>') : ""}
+        ${sc2 && sc2.reachable ? kvRowHtml("ScoreConnect II", _scDot(true) + '<span class="status-pass">Running</span>') : ""}
+        ${isDetected ? kvRowHtml("Scoreboard Data", _scDot(dataReceiving) + (dataReceiving
+          ? `<span class="status-pass">${esc(data.dataStatus || "Receiving data")}</span>`
+          : '<span class="text-pulse-muted">No data received</span>')) : ""}
       </div>
       ${data.rawData ? `
-      <div class="sc-raw-data">
+      <div class="sc-raw-data" style="margin-top:0.85rem">
         <div class="sc-raw-label">RAW SCOREBOARD DATA (SC III)</div>
         <div class="sc-raw-value" id="sc3-raw-value">${esc(data.rawData)}</div>
       </div>` : ""}
-      <div class="sc-stats">
-        <div class="sc-stat-group">
-          ${data.hasLocalStream != null ? `<div class="sc-stat"><span class="sc-stat-val">${data.hasLocalStream ? "Yes" : "No"}</span><span class="sc-stat-lbl">Local Stream</span></div>` : ""}
-          ${data.networkStatus ? `<div class="sc-stat"><span class="sc-stat-val">${data.networkStatus.includes("detected") ? "Yes" : "No"}</span><span class="sc-stat-lbl">Internet</span></div>` : ""}
-        </div>
-        <div class="sc-stat-group sc-stat-right">
-          ${config.vendorConfigurationName ? `<div class="sc-stat"><span class="sc-stat-val">${esc(config.vendorConfigurationName)}</span><span class="sc-stat-lbl">Connection</span></div>` : ""}
-          ${version ? `<div class="sc-stat"><span class="sc-stat-val">${esc(version)}</span><span class="sc-stat-lbl">Version</span></div>` : ""}
-        </div>
-      </div>
-    </div>
-    ` : !(sc2 && sc2.reachable) ? `<div class="sc-board sc-board-hero sc-board-empty">No ScoreConnect service detected</div>` : ""}
+    </div>` : ""}
 
     <!-- SC II → SC III Upgrade Prompt -->
     ${sc2 && sc2.reachable && !isDetected ? `
@@ -4227,34 +4144,24 @@ function renderScoreConnect() {
       </div>` : ""}
     </div>` : ""}
 
-    <!-- SC III Service Status -->
+    <!-- SC III Details — service + configuration (merged, no duplicates) -->
     ${isDetected ? `
     <div class="card mt-4">
-      ${sectionTitle("server", "SC III Service Status")}
+      ${sectionTitle("server", "ScoreConnect III")}
       <div class="kv-grid">
-        ${kvRowHtml("Detected", '<span class="status-pass">Yes</span>')}
-        ${kvRow("Base URL", data.baseUrl)}
         ${kvRow("Version", version)}
-        ${kvRow("Network", data.networkStatus)}
-        ${kvRowHtml("Local Stream", data.hasLocalStream != null
-          ? (data.hasLocalStream ? '<span class="status-pass">Yes</span>' : '<span class="status-fail">No</span>')
-          : '—')}
-        ${data.error && !isDetected ? kvRowHtml("Error", `<span class="status-fail">${esc(typeof data.error === "string" ? data.error : data.message || "Connection failed")}</span>`) : ""}
-      </div>
-    </div>` : ""}
-
-    <!-- Configuration -->
-    ${config.vendor || config.sport ? `
-    <div class="card mt-4">
-      ${sectionTitle("cog", "Configuration")}
-      <div class="kv-grid">
-        ${kvRow("Vendor", config.vendor)}
-        ${kvRow("Sport", config.sport)}
+        ${kvRow("Base URL", data.baseUrl)}
+        ${config.vendor ? kvRow("Vendor", config.vendor) : ""}
+        ${config.sport ? kvRow("Sport", config.sport) : ""}
         ${config.vendorConfigurationName ? kvRow("Connection Type", config.vendorConfigurationName) : ""}
         ${config.device ? kvRow("Device", config.device) : ""}
         ${config.serialPort ? kvRow("Serial Port", config.serialPort) : ""}
         ${config.firmware ? kvRow("Firmware", config.firmware) : ""}
         ${config.eventType ? kvRow("Event Type", config.eventType) : ""}
+        ${kvRow("Network", data.networkStatus)}
+        ${kvRowHtml("Local Stream", data.hasLocalStream != null
+          ? (data.hasLocalStream ? '<span class="status-pass">Yes</span>' : '<span class="status-fail">No</span>')
+          : '—')}
       </div>
     </div>` : ""}
 
@@ -4264,9 +4171,10 @@ function renderScoreConnect() {
      : ""}
   `;
 
-  // Start live polling for SC III scores (safe — stateless REST).
-  // Only when SC III is detected and currently receiving data.
-  if (isDetected && dataReceiving) {
+  // Start live polling whenever SC III is detected — even if not currently
+  // receiving data, so the hero updates the moment the feed starts. Safe:
+  // stateless REST, no SC II contact, no WMI.
+  if (isDetected) {
     _sc3StartLivePoll(config.vendor, config.sport);
   } else {
     _sc3StopLivePoll();
@@ -4287,6 +4195,25 @@ function _sc3DownText(p) {
   if (p.toGo) t += " & " + p.toGo;
   if (p.ballOn) t += " on " + p.ballOn;
   return t;
+}
+
+// Status dot for the demoted indicators: green + flashing when active,
+// grey + static when off. Matches the hero LIVE badge animation.
+function _scDot(on) {
+  var c = on ? "var(--c-accent-green)" : "var(--c-dim)";
+  var anim = on ? "animation:pulse-live 1.4s ease-in-out infinite;" : "";
+  return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'
+    + 'background:' + c + ';' + anim + 'margin-right:7px;vertical-align:middle"></span>';
+}
+
+// Markup for the hero LIVE / NO DATA badge (kept in sync with the live poll).
+function _sc3LiveBadge(on) {
+  if (on) {
+    return '<span style="width:6px;height:6px;border-radius:50%;background:var(--c-accent-green);'
+      + 'display:inline-block;animation:pulse-live 1.4s ease-in-out infinite"></span>LIVE';
+  }
+  return '<span style="width:6px;height:6px;border-radius:50%;background:var(--c-dim);'
+    + 'display:inline-block"></span>NO DATA';
 }
 
 // Poll cadence: the game clock ticks once per second, so we oversample at
@@ -4319,9 +4246,12 @@ function _sc3StartLivePoll(vendor, sport) {
       return;
     }
 
+    var badge = document.getElementById("sc3-live-badge");
     if (!live || !live.reachable || !live.rawData) {
-      var badgeOff = document.getElementById("sc3-live-badge");
-      if (badgeOff) badgeOff.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:var(--c-dim);display:inline-block"></span>NO DATA';
+      if (badge && badge.textContent.indexOf("NO DATA") === -1) {
+        badge.style.color = "var(--c-dim)";
+        badge.innerHTML = _sc3LiveBadge(false);
+      }
     } else {
       var p = parseRtdScores(live.rawData, vendor, sport);
       if (p) {
@@ -4332,9 +4262,9 @@ function _sc3StartLivePoll(vendor, sport) {
         _sc3SetText("sc3-down", _sc3DownText(p));
         var rawEl = document.getElementById("sc3-raw-value");
         if (rawEl) rawEl.textContent = live.rawData;
-        var badge = document.getElementById("sc3-live-badge");
         if (badge && badge.textContent.indexOf("NO DATA") !== -1) {
-          badge.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:var(--c-accent-green);display:inline-block;animation:pulse-live 1.4s ease-in-out infinite"></span>LIVE';
+          badge.style.color = "var(--c-accent-green)";
+          badge.innerHTML = _sc3LiveBadge(true);
         }
       }
     }
