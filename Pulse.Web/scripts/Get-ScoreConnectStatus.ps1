@@ -152,45 +152,40 @@ function Get-ScoreConnectExeVersion {
 function Probe-ScoreConnectII {
     param([string]$Sc2Base = 'http://localhost:1400')
 
-    # ── SAFETY: HIT-AND-RUN PROBE ──────────────────────────────────────
-    # SC II is single-threaded.  A long-polling connection that lingers
-    # blocks the server from servicing the REAL client (SC II web UI /
-    # Pixellot agent), freezing their live data stream.
+    # ── ZERO-IMPACT PROBE ──────────────────────────────────────────────
+    # SC II is single-threaded.  ANY SignalR connection (even short-lived)
+    # blocks the server from servicing the real client, freezing live data.
     #
-    # Strategy: connect → send getsettings → ONE quick poll → ABORT.
-    # Total wall time target: < 4 s.  The abort in the finally block
-    # frees the server's connection slot immediately.
+    # Strategy: TCP check (is it running?) + read settings.json from disk.
+    # No HTTP requests to SC II at all — zero impact on the data stream.
     #
-    # Off-limits (destructive — never call):
-    #   uidlogin, getparms, getscoreboards, setparms, commit, setstate
+    # settings.json contains: version, hardware, UID, team names, vendor,
+    # sport, bot#, license, scorelink device, network interfaces.
+    # Live scores (clock, vscore, hscore) are NOT available without SignalR.
 
     $result = @{
-        reachable   = $false
-        baseUrl     = $Sc2Base
-        version     = $null
-        hardware    = $null
-        uid         = $null
-        scores      = $null
-        teamNames   = $null
-        vendor      = $null
-        sport       = $null
-        botNumber   = $null
-        statusLeds  = $null
-        error       = $null
-        _diag       = $null
+        reachable    = $false
+        baseUrl      = $Sc2Base
+        version      = $null
+        hardware     = $null
+        uid          = $null
+        scores       = $null
+        teamNames    = $null
+        vendor       = $null
+        sport        = $null
+        botNumber    = $null
+        statusLeds   = $null
+        license      = $null
+        scoreLink    = $null
+        networkIfaces = $null
+        error        = $null
+        _diag        = $null
     }
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $budgetMs = 5000
-
-    $scores = @{}
-    $leds   = @{}
-    $topics = [System.Collections.ArrayList]@()
-    $token    = $null
-    $connData = $null
 
     try {
-        # ── 1. TCP pre-check on port 1400 ──────────────────────────────────
+        # ── 1. TCP check on port 1400 — is SC II running? ──────────────────
         $sc2Uri = [System.Uri]$Sc2Base
         $tcp = New-Object System.Net.Sockets.TcpClient
         try {
@@ -199,116 +194,80 @@ function Probe-ScoreConnectII {
             if ($ct.IsFaulted) { return $result }
         } finally { $tcp.Dispose() }
 
-        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
-
-        # ── 2. SignalR negotiate ────────────────────────────────────────────
-        $connData = [System.Uri]::EscapeDataString('[{"Name":"ScoreConnectHub"}]')
-        $negUrl   = "$Sc2Base/signalr/negotiate?clientProtocol=1.5&connectionData=$connData"
-        $negResp  = Invoke-WebRequest -Uri $negUrl -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
-        $negJson  = $negResp.Content | ConvertFrom-Json
-        $token    = [System.Uri]::EscapeDataString($negJson.ConnectionToken)
-
         $result.reachable = $true
 
-        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+        # ── 2. Read settings.json from disk ─────────────────────────────────
+        $settingsPath = $null
+        $searchPaths = @(
+            'C:\Program Files (x86)\Sportzcast\ScoreConnectII\Files\settings.json',
+            'C:\Program Files\Sportzcast\ScoreConnectII\Files\settings.json'
+        )
+        foreach ($p in $searchPaths) {
+            if (Test-Path $p) { $settingsPath = $p; break }
+        }
 
-        # ── 3. Connect (long-polling) ───────────────────────────────────────
-        $connUrl  = "$Sc2Base/signalr/connect?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
-        $connResp = Invoke-WebRequest -Uri $connUrl -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
-        $initJson = $connResp.Content | ConvertFrom-Json
-        $script:_pollCursor = $initJson.C
+        if (-not $settingsPath) {
+            # Fallback: search common install roots
+            $found = Get-ChildItem 'C:\Program Files*\Sportzcast' -Recurse -Filter 'settings.json' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $settingsPath = $found.FullName }
+        }
 
-        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+        if ($settingsPath) {
+            $json = Get-Content $settingsPath -Raw -ErrorAction Stop | ConvertFrom-Json
 
-        # ── 4. Start ────────────────────────────────────────────────────────
-        $startUrl = "$Sc2Base/signalr/start?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
-        Invoke-WebRequest -Uri $startUrl -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
+            $result.version  = $json.version
+            $result.hardware = $json.hardware
+            $result.uid      = $json.instance_uid
 
-        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+            # parms array — first slot has the active config
+            $parms = $null
+            if ($json.parms -and $json.parms.Count -gt 0) {
+                $parms = $json.parms[0]
+            }
 
-        # ── 5. Send getsettings + ONE quick poll ───────────────────────────
-        $sendUrl  = "$Sc2Base/signalr/send?transport=longPolling&connectionToken=$token&connectionData=$connData"
-        $pollBase = "$Sc2Base/signalr/poll?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
+            if ($parms) {
+                $result.teamNames = @{
+                    visitor = $parms.visitor_teamname
+                    home    = $parms.home_teamname
+                }
+                $vn = $parms.sbvendorname
+                if (-not $vn) { $vn = $parms.sbvendor }
+                $result.vendor    = $vn
+                $result.sport     = $parms.sbcode
+                $result.botNumber = $parms.botnumber
+                $result.license   = $parms.licenseexp
 
-        $body = 'data=' + [System.Uri]::EscapeDataString('{"H":"ScoreConnectHub","M":"Getsettings","A":[],"I":0}')
-        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
-
-        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
-
-        # Single poll — short timeout so we don't block the server long.
-        # getsettings response is queued server-side, so it should return
-        # immediately.  Any score/LED broadcasts in flight come as a bonus.
-        $script:_settings = $null
-        $script:_parms    = $null
-        try {
-            $pUrl = $pollBase
-            if ($script:_pollCursor) { $pUrl += "&messageId=$([System.Uri]::EscapeDataString($script:_pollCursor))" }
-            $pResp = Invoke-WebRequest -Uri $pUrl -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
-            $pJson = $pResp.Content | ConvertFrom-Json
-            if ($pJson.C) { $script:_pollCursor = $pJson.C }
-            if ($pJson.M) {
-                foreach ($msg in $pJson.M) {
-                    if ($msg.M -ne 'broadcastMessage' -or -not $msg.A -or $msg.A.Count -lt 2) { continue }
-                    $topic = $msg.A[0]
-                    $topics.Add($topic) | Out-Null
-                    try { $tdata = $msg.A[1] | ConvertFrom-Json } catch { continue }
-
-                    switch ($topic) {
-                        'getsettings'           { $script:_settings = $tdata }
-                        'getparms'              { $script:_parms = $tdata }
-                        'status_clock'          { $scores['clock']      = $tdata.status_clock }
-                        'status_vscore'         { $scores['visitor']    = $tdata.status_vscore }
-                        'status_hscore'         { $scores['home']       = $tdata.status_hscore }
-                        'status_text1'          { $scores['text1']      = $tdata.status_text1 }
-                        'status_text2'          { $scores['text2']      = $tdata.status_text2 }
-                        'status_text3'          { $scores['text3']      = $tdata.status_text3 }
-                        'status_scoreboard_led' { $leds['scoreboard']   = [int]$tdata.status_scoreboard_led }
-                        'status_network_led'    { $leds['network']      = [int]$tdata.status_network_led }
-                        'status_cloud_led'      { $leds['cloud']        = [int]$tdata.status_cloud_led }
-                        'status_local_led'      { $leds['local']        = [int]$tdata.status_local_led }
-                        'status_update_led'     { $leds['update']       = [int]$tdata.status_update_led }
-                    }
+                $result.scoreLink = @{
+                    description = $parms.scorelink_desc
+                    type        = $parms.scorelink_typ
+                    address     = $parms.scorelink_address
+                    serial      = $parms.usbserial
                 }
             }
-        } catch { <# poll failed or timed out — we still have reachable=true #> }
 
-        # ── 6. Populate result ──────────────────────────────────────────────
-        if ($script:_settings) {
-            $result.version  = $script:_settings.version
-            $result.hardware = $script:_settings.hardware
-            $result.uid      = $script:_settings.instance_uid
-        }
-        if ($script:_parms) {
-            $result.teamNames = @{
-                visitor = $script:_parms.visitor_teamname
-                home    = $script:_parms.home_teamname
+            # Network interfaces
+            if ($json.nics -and $json.nics.Count -gt 0) {
+                $result.networkIfaces = @($json.nics | ForEach-Object {
+                    @{ name = $_.name; address = $_.address; type = $_.type }
+                })
             }
-            $vn = $script:_parms.sbvendorname
-            if (-not $vn) { $vn = $script:_parms.sbvendor }
-            $result.vendor    = $vn
-            $result.sport     = $script:_parms.sbcode
-            $result.botNumber = $script:_parms.botnumber
-        }
-        if ($scores.Count -gt 0) { $result.scores = $scores }
-        if ($leds.Count   -gt 0) { $result.statusLeds = $leds }
 
-        $result._diag = @{
-            mode        = 'passive'
-            topicsSeen  = ($topics -join ',')
-            elapsedMs   = [int]$sw.ElapsedMilliseconds
+            $result._diag = @{
+                mode         = 'file'
+                settingsPath = $settingsPath
+                elapsedMs    = [int]$sw.ElapsedMilliseconds
+            }
+        }
+        else {
+            $result._diag = @{
+                mode      = 'tcp-only'
+                elapsedMs = [int]$sw.ElapsedMilliseconds
+                note      = 'settings.json not found on disk'
+            }
         }
     }
     catch {
         $result.error = $_.Exception.Message
-    }
-    finally {
-        # ── ALWAYS abort the SignalR connection ─────────────────────────────
-        # This tells the server to release our connection slot immediately
-        # instead of holding it until its own timeout expires.
-        if ($token -and $connData) {
-            $abortUrl = "$Sc2Base/signalr/abort?transport=longPolling&connectionToken=$token&connectionData=$connData"
-            try { Invoke-WebRequest -Uri $abortUrl -Method POST -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue | Out-Null } catch {}
-        }
     }
 
     return $result

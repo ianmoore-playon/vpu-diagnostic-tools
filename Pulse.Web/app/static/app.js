@@ -3560,7 +3560,7 @@ function renderScoreConnect() {
   const data = cached("scoreconnect");
   if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
 
-  const sc2 = data.sc2;  // SC II data (parsed scores, SignalR)
+  const sc2 = data.sc2;  // SC II data (from settings.json on disk)
   const config = data.configuration || {};
   const botStatus = data.botStatus || {};
   const isDetected = data.reachable;  // SC III
@@ -3572,6 +3572,7 @@ function renderScoreConnect() {
   // SC II parsed scoreboard hero panel
   const sc2HasScores = sc2 && sc2.scores && (sc2.scores.visitor || sc2.scores.home || sc2.scores.clock);
   const sc2Teams = sc2 && sc2.teamNames || {};
+  const sc2HasConfig = sc2 && sc2.reachable && (sc2.vendor || sc2.botNumber || sc2.version);
 
   // SC II status LED helper: 0=grey 1=yellow 2=green
   function ledClass(val) {
@@ -3608,9 +3609,9 @@ function renderScoreConnect() {
 
   // Determine page subtitle based on what's detected
   const subtitle = sc2 && sc2.reachable && isDetected
-    ? "ScoreConnect II + III detected — parsed scores from SC II, raw data from SC III"
+    ? "ScoreConnect II + III detected"
     : sc2 && sc2.reachable
-    ? "ScoreConnect II — parsed scoreboard data via SignalR"
+    ? "ScoreConnect II — configuration from device"
     : "ScoreConnect III — service, configuration, and live data";
 
   $page().innerHTML = `
@@ -3620,59 +3621,46 @@ function renderScoreConnect() {
       </button>`
     )}
 
-    <!-- SC II Live Scoreboard — hero panel when SC II has parsed scores -->
-    ${sc2HasScores ? `
+    <!-- SC II hero — config from settings.json on disk -->
+    ${sc2HasConfig ? `
     <div class="sc-board sc-board-hero">
       <div class="sc-header">
         <div class="sc-team-home">
           <div class="sc-team-label">${esc(sc2Teams.visitor || "VISITOR")}</div>
-          <div class="sc-score">${esc(sc2.scores.visitor || "0")}</div>
+          <div class="sc-team-name" style="font-size:1.1rem">${esc(sc2.vendor || "—")}</div>
         </div>
         <div class="sc-center">
-          <div class="sc-period-label">GAME CLOCK</div>
-          <div class="sc-clock">${esc(sc2.scores.clock || "--:--")}</div>
-          ${sc2.scores.text1 ? `<div class="sc-data-desc">${esc(sc2.scores.text1)}</div>` : ""}
+          <div class="sc-data-status">
+            <span class="sc-data-dot sc-data-dot-on"></span>
+            <span class="sc-data-label">SC II Running</span>
+          </div>
+          <div class="sc-data-desc">${esc(sc2.hardware || "ScoreConnect II")} v${esc(sc2.version || "?")}</div>
         </div>
         <div class="sc-team-away">
           <div class="sc-team-label">${esc(sc2Teams.home || "HOME")}</div>
-          <div class="sc-score">${esc(sc2.scores.home || "0")}</div>
+          <div class="sc-team-name" style="font-size:1.1rem">Bot# ${esc(String(sc2.botNumber || "—"))}</div>
         </div>
       </div>
-      ${sc2.scores.text2 || sc2.scores.text3 ? `
-      <div class="sc-stats" style="justify-content:center">
-        <div class="sc-stat-group" style="justify-content:center">
-          ${sc2.scores.text2 ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.scores.text2)}</span><span class="sc-stat-lbl">Info</span></div>` : ""}
-          ${sc2.scores.text3 ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.scores.text3)}</span><span class="sc-stat-lbl">Info</span></div>` : ""}
-        </div>
-      </div>` : ""}
       <div class="sc-stats">
         <div class="sc-stat-group">
-          ${sc2.vendor ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.vendor)}</span><span class="sc-stat-lbl">Vendor</span></div>` : ""}
-          ${sc2.hardware ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.hardware)}</span><span class="sc-stat-lbl">Hardware</span></div>` : ""}
+          ${sc2.uid ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.uid)}</span><span class="sc-stat-lbl">UID</span></div>` : ""}
+          ${sc2.license ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.license)}</span><span class="sc-stat-lbl">License Exp</span></div>` : ""}
         </div>
         <div class="sc-stat-group sc-stat-right">
-          ${sc2.uid ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.uid)}</span><span class="sc-stat-lbl">UID</span></div>` : ""}
-          ${sc2.version ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.version)}</span><span class="sc-stat-lbl">Version</span></div>` : ""}
+          ${sc2.scoreLink ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.scoreLink.description || "—")}</span><span class="sc-stat-lbl">ScoreLink</span></div>` : ""}
+          ${sc2.scoreLink && sc2.scoreLink.serial ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.scoreLink.serial)}</span><span class="sc-stat-lbl">Serial</span></div>` : ""}
         </div>
       </div>
     </div>
     ` : sc2 && sc2.reachable ? `
     <div class="sc-board sc-board-hero">
       <div class="sc-header">
-        <div class="sc-team-home">
-          <div class="sc-team-label">Hardware</div>
-          <div class="sc-team-name">${esc(sc2.hardware || "ScoreConnect II")}</div>
-        </div>
         <div class="sc-center">
           <div class="sc-data-status">
             <span class="sc-data-dot sc-data-dot-on"></span>
-            <span class="sc-data-label">Connected</span>
+            <span class="sc-data-label">SC II Running</span>
           </div>
-          <div class="sc-data-desc">Waiting for score data...</div>
-        </div>
-        <div class="sc-team-away">
-          <div class="sc-team-label">Version</div>
-          <div class="sc-team-name">${esc(sc2.version || "—")}</div>
+          <div class="sc-data-desc">Service detected on port 1400</div>
         </div>
       </div>
     </div>
@@ -3716,17 +3704,31 @@ function renderScoreConnect() {
     </div>
     ` : !sc2HasScores && !(sc2 && sc2.reachable) ? `<div class="sc-board sc-board-hero sc-board-empty">No ScoreConnect service detected</div>` : ""}
 
-    <!-- SC II Status LEDs -->
-    ${sc2 && sc2.statusLeds ? `
+    <!-- SC II Detail Card -->
+    ${sc2HasConfig ? `
     <div class="card mt-4">
-      ${sectionTitle("heartbeat", "SC II Status")}
+      ${sectionTitle("heartbeat", "SC II Details")}
       <div class="kv-grid">
-        ${sc2.statusLeds.scoreboard != null ? kvRowHtml("Scoreboard Data", `<span class="${ledClass(sc2.statusLeds.scoreboard)}">${ledLabel(sc2.statusLeds.scoreboard)}</span>`) : ""}
-        ${sc2.statusLeds.network != null ? kvRowHtml("Network", `<span class="${ledClass(sc2.statusLeds.network)}">${ledLabel(sc2.statusLeds.network)}</span>`) : ""}
-        ${sc2.statusLeds.cloud != null ? kvRowHtml("Cloud", `<span class="${ledClass(sc2.statusLeds.cloud)}">${ledLabel(sc2.statusLeds.cloud)}</span>`) : ""}
-        ${sc2.statusLeds.local != null ? kvRowHtml("Local", `<span class="${ledClass(sc2.statusLeds.local)}">${ledLabel(sc2.statusLeds.local)}</span>`) : ""}
-        ${sc2.statusLeds.update != null ? kvRowHtml("Update", `<span class="${ledClass(sc2.statusLeds.update)}">${ledLabel(sc2.statusLeds.update)}</span>`) : ""}
+        ${kvRowHtml("Status", '<span class="status-pass">Running</span>')}
+        ${kvRow("Version", sc2.version)}
+        ${kvRow("Hardware", sc2.hardware)}
+        ${kvRow("UID", sc2.uid)}
+        ${sc2.botNumber ? kvRow("Bot Number", sc2.botNumber) : ""}
+        ${sc2.vendor ? kvRow("Vendor", sc2.vendor) : ""}
+        ${sc2.sport ? kvRow("Sport Code", sc2.sport) : ""}
+        ${sc2.license ? kvRow("License Expires", sc2.license) : ""}
+        ${sc2.scoreLink ? kvRow("ScoreLink", sc2.scoreLink.description) : ""}
+        ${sc2.scoreLink && sc2.scoreLink.serial ? kvRow("ScoreLink Serial", sc2.scoreLink.serial) : ""}
+        ${sc2Teams.visitor ? kvRow("Visitor Name", sc2Teams.visitor) : ""}
+        ${sc2Teams.home ? kvRow("Home Name", sc2Teams.home) : ""}
       </div>
+      ${sc2.networkIfaces && sc2.networkIfaces.length ? `
+      <div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
+        <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.5rem">Network Interfaces</div>
+        <div class="kv-grid">
+          ${sc2.networkIfaces.map(n => kvRow(n.name, n.address)).join("")}
+        </div>
+      </div>` : ""}
     </div>` : ""}
 
     <!-- SC III Service Status -->
