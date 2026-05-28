@@ -2525,6 +2525,29 @@ function renderNetwork() {
 
 var _camerasRefreshTimer = null;
 var _camerasFailCount = 0;  // consecutive /api/cameras failures during live refresh
+var _camLastSignature = null;  // structural fingerprint of last rendered cameras
+
+// Structural fingerprint of the camera data — everything that affects the
+// rendered layout EXCEPT the volatile RX/TX byte counters (which tick every
+// few seconds). The live refresh only does a full DOM rebuild when this
+// changes; otherwise it surgically updates the byte counters in place, so
+// an open Details panel never flickers during steady-state polling.
+function _camSignature(data) {
+  var ports = (data && data.ports) || [];
+  var portSig = ports.map(function(p) {
+    var cams = (p.camerasDetected || []).map(function(c) {
+      return [c.ip, c.mac, c.cgiMac, c.role, c.identitySource, c.modelNumber, c.cgiConfirmed].join("|");
+    }).join(",");
+    var errs = (p.rxPacketErrors || 0) + (p.txPacketErrors || 0) + (p.rxDiscards || 0) + (p.txDiscards || 0);
+    return [p.portLabel, p.name, p.isUp, p.isOcr, p.isDegraded, p.cameraLabel,
+            p.linkSpeedMbps, p.expectedSpeedMbps, p.cameraMovedTo, p.fullDuplex,
+            errs, cams].join("~");
+  }).join("||");
+  var findSig = ((data && data.findings) || []).map(function(f) {
+    return f.severity + ":" + f.title;
+  }).join(";");
+  return portSig + "##" + findSig;
+}
 
 function _camDetailKv(label, val) {
   if (!val && val !== 0) return '';
@@ -2676,7 +2699,7 @@ function _camPortTile(port, index) {
       <span class="text-sm">${esc(statusLabel)}</span>
     </div>
     <div class="cam-port-detail">
-      <div class="kv-mini"><span>RX / TX</span><span>${formatBytes(p.rxBytes)} / ${formatBytes(p.txBytes)}</span></div>
+      <div class="kv-mini"><span>RX / TX</span><span id="cam-rxtx-${index}">${formatBytes(p.rxBytes)} / ${formatBytes(p.txBytes)}</span></div>
     </div>
     ${cams.length > 0 ? (() => {
       var c = cams[0];
@@ -2852,6 +2875,9 @@ function renderCameras() {
   `;
 
   // ── Live refresh: poll /api/cameras every 3s and update port grid + findings ──
+  // Seed the signature from what we just rendered so the first tick can
+  // tell whether anything structural actually changed.
+  _camLastSignature = _camSignature(data);
   if (_camerasRefreshTimer) clearInterval(_camerasRefreshTimer);
   _camerasFailCount = 0;
   _camerasRefreshTimer = setInterval(function() {
@@ -2868,23 +2894,40 @@ function renderCameras() {
       if (!fresh || fresh.error || currentPage !== "cameras") { markStale(); return; }
       _camerasFailCount = 0;
       dataCache.cameras = fresh;
-      var grid = document.getElementById("cam-port-grid");
-      // Preserve open Details panels across refresh
-      var openDetails = {};
-      if (grid) {
-        grid.querySelectorAll('details[open][data-port-idx]').forEach(function(d) {
-          openDetails[d.dataset.portIdx] = true;
+      var freshPorts = fresh.ports || [];
+
+      var newSig = _camSignature(fresh);
+      if (newSig === _camLastSignature) {
+        // Steady state — nothing structural changed. Update only the
+        // volatile RX/TX counters in place so open Details panels and
+        // the rest of the DOM stay untouched (no flicker).
+        freshPorts.forEach(function(p, i) {
+          var el = document.getElementById("cam-rxtx-" + i);
+          if (el) el.textContent = formatBytes(p.rxBytes) + " / " + formatBytes(p.txBytes);
         });
-        grid.innerHTML = _camPortGridHtml(fresh.ports || []);
-        Object.keys(openDetails).forEach(function(idx) {
-          var d = grid.querySelector('details[data-port-idx="' + idx + '"]');
-          if (d) d.setAttribute('open', '');
-        });
+      } else {
+        // Structural change (port up/down, camera moved, speed, findings…)
+        // — do a full rebuild. A brief flicker here is acceptable and even
+        // useful: it signals a real change the tech should notice.
+        _camLastSignature = newSig;
+        var grid = document.getElementById("cam-port-grid");
+        if (grid) {
+          var openDetails = {};
+          grid.querySelectorAll('details[open][data-port-idx]').forEach(function(d) {
+            openDetails[d.dataset.portIdx] = true;
+          });
+          grid.innerHTML = _camPortGridHtml(freshPorts);
+          Object.keys(openDetails).forEach(function(idx) {
+            var d = grid.querySelector('details[data-port-idx="' + idx + '"]');
+            if (d) d.setAttribute('open', '');
+          });
+        }
+        var diag = document.getElementById("cam-nic-diagram");
+        if (diag) diag.innerHTML = _camNicDiagramHtml(freshPorts);
+        var fw = document.getElementById("cam-findings-wrap");
+        if (fw) fw.innerHTML = _camFindingsHtml(fresh.findings || []);
       }
-      var diag = document.getElementById("cam-nic-diagram");
-      if (diag) diag.innerHTML = _camNicDiagramHtml(fresh.ports || []);
-      var fw = document.getElementById("cam-findings-wrap");
-      if (fw) fw.innerHTML = _camFindingsHtml(fresh.findings || []);
+
       // Pulse the live badge to show the tick happened and clear any stale state
       var badge = document.getElementById("cam-live-badge");
       if (badge) {
