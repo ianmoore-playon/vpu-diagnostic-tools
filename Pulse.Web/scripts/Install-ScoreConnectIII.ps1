@@ -48,11 +48,16 @@ try {
     # ── 2. Download the install script ──────────────────────────────────
     $dlStart = $sw.ElapsedMilliseconds
     try {
-        # Try curl.exe first (fastest, shows progress)
+        # Try curl.exe first — temporarily relax ErrorActionPreference so
+        # curl's stderr output doesn't trigger a terminating error.
         $curlPath = (Get-Command curl.exe -ErrorAction SilentlyContinue).Source
         if ($curlPath) {
-            & $curlPath -L -o $scriptFile $ScriptUrl --connect-timeout 15 --max-time 60 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "curl exit code $LASTEXITCODE" }
+            $prevEAP = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            & $curlPath -sSL --fail -o $scriptFile $ScriptUrl --connect-timeout 15 --max-time 60 2>$null
+            $curlExit = $LASTEXITCODE
+            $ErrorActionPreference = $prevEAP
+            if ($curlExit -ne 0) { throw "curl failed (exit code $curlExit)" }
         } else {
             Invoke-WebRequest -Uri $ScriptUrl -OutFile $scriptFile -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
         }
