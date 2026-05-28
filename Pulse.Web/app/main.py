@@ -175,7 +175,11 @@ import urllib.error
 from typing import Optional
 
 _CGI_PROBE_CACHE = {}  # ip -> {mac, ts, is_ocr}
-_CGI_PROBE_TTL = 30  # seconds
+# Short TTL so on-site troubleshooting (cable swaps, port moves) reflects
+# quickly. The cache mainly protects cameras from being hammered by the
+# 3-second live-refresh polling — 10s is enough for that without making
+# the data feel stale.
+_CGI_PROBE_TTL = 10  # seconds
 
 # Known default OCR IPs (from WPF's DefaultOcrIps + Pixellot convention)
 _DEFAULT_OCR_IPS = {"169.254.16.52", "169.254.16.53", "169.254.16.60"}
@@ -1435,14 +1439,46 @@ def _enrich_ports(
                 }
             )
 
+    # ── Dedupe duplicate camera MACs across UP ports ──
+    # When a tech physically moves a camera between NIC ports, the
+    # Windows ARP cache keeps the old entry around for several minutes.
+    # That makes the same camera appear on two ports until ARP refreshes.
+    # Resolve the duplicate by attributing the camera to the port with
+    # the most RX traffic — the live connection — and stripping it from
+    # the stale one.
+    def _mac_key(c):
+        return str(c.get("cgiMac") or c.get("mac") or "").upper().replace("-", ":")
+
+    mac_owners = {}  # mac → [(port, rxBytes), ...]
+    for p in ports:
+        if not p.get("isUp"):
+            continue
+        for c in p.get("camerasDetected") or []:
+            m = _mac_key(c)
+            if not m:
+                continue
+            mac_owners.setdefault(m, []).append((p, p.get("rxBytes") or 0))
+
+    for m, owners in mac_owners.items():
+        if len(owners) <= 1:
+            continue
+        # Highest RX wins — most likely the active connection.
+        owners.sort(key=lambda t: -t[1])
+        for losing_port, _ in owners[1:]:
+            losing_port["camerasDetected"] = [
+                c for c in losing_port.get("camerasDetected") or []
+                if _mac_key(c) != m
+            ]
+
     # Second pass: number main cameras and OCR cameras by camera IP so
     # numbering is stable (Main Camera 1 = .50, Main Camera 2 = .51, etc).
-    # Collect per-role, sort, then assign numeric suffixes.
+    # Only UP ports are numbered — stale ARP on a down port shouldn't
+    # produce a spurious "Main Camera 3" label.
     main_ports = []
     ocr_ports = []
     for p in ports:
         cams = p.get("camerasDetected") or []
-        if not cams:
+        if not cams or not p.get("isUp"):
             p["cameraLabel"] = None
             continue
         role = cams[0].get("role") or ""
@@ -1463,9 +1499,19 @@ def _enrich_ports(
         except (ValueError, AttributeError):
             return (999, 999, 999, 999)
 
+    # Windows VPUs support a maximum of 2 main cameras. Anything beyond
+    # that is stale data — cap labels at "Main Camera 2" and downgrade
+    # extras to a generic "Camera" so we don't show "Main Camera 3".
+    # Linux VPUs can have more main cameras; skip the cap there.
+    import platform as _platform
+    main_cap = 2 if _platform.system().lower() == "windows" else None
+
     main_ports.sort(key=_ip_sort_key)
     for i, p in enumerate(main_ports, 1):
-        p["cameraLabel"] = f"Main Camera {i}"
+        if main_cap is not None and i > main_cap:
+            p["cameraLabel"] = "Camera"
+        else:
+            p["cameraLabel"] = f"Main Camera {i}"
 
     ocr_ports.sort(key=_ip_sort_key)
     if len(ocr_ports) == 1:
@@ -1934,7 +1980,12 @@ async def api_speedtest(result_id: str = ""):
 
 
 @app.get("/api/cameras")
-async def api_cameras():
+async def api_cameras(refresh: bool = False):
+    # Manual Refresh button clears the CGI probe cache + forces a blocking
+    # re-probe so on-site troubleshooting sees fresh data immediately
+    # instead of waiting up to TTL for the cache to expire.
+    if refresh:
+        _CGI_PROBE_CACHE.clear()
     nics, pix_config = await asyncio.gather(
         run_ps("Get-NicAdapters.ps1"),
         run_ps("Get-PixellotConfig.ps1"),
@@ -1942,8 +1993,10 @@ async def api_cameras():
     ocr_ips, _ = _build_ocr_sets(pix_config)
     # First paint: use cached probes only; warm the cache in the background
     # so the next live-refresh tick picks up fresh camera identification.
+    # Manual refresh blocks until probes complete so the user sees the
+    # update immediately.
     raw_ports = nics.get("ports", []) if nics and not nics.get("error") else []
-    probe_results = await _probe_all_cameras(raw_ports, ocr_ips, block=False)
+    probe_results = await _probe_all_cameras(raw_ports, ocr_ips, block=refresh)
     ports = _enrich_ports(nics, pix_config, probe_results)
     return {
         "ports": ports,

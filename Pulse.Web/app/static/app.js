@@ -2784,6 +2784,22 @@ function _camNicDiagramHtml(ports) {
   '</div>' + note;
 }
 
+// Force a fresh camera probe — clears the backend CGI cache and re-polls.
+// Used by the manual Refresh button so on-site troubleshooting can override
+// any stale ARP/probe data instead of waiting for the TTL.
+function _camForceRefresh() {
+  var btn = document.querySelector('[onclick*="_camForceRefresh"]');
+  if (btn) { btn.disabled = true; btn.style.opacity = "0.5"; }
+  api("/api/cameras?refresh=true").then(function(fresh) {
+    if (fresh && !fresh.error) {
+      dataCache.cameras = fresh;
+      if (currentPage === "cameras") renderCameras();
+    }
+  }).finally(function() {
+    if (btn) { btn.disabled = false; btn.style.opacity = ""; }
+  });
+}
+
 function renderCameras() {
   const data = cached("cameras");
   if (!data) { $page().innerHTML = sectionLoading("Camera Connectivity"); fetchSection("cameras"); return; }
@@ -2800,7 +2816,7 @@ function renderCameras() {
 
   $page().innerHTML = `
     ${pageHeader("Camera Connectivity", "NIC ports, link status, speed, and Pixellot camera detection",
-      `<button class="btn-outline btn-ol-blue" onclick="dataCache.cameras=null;renderCameras()">
+      `<button class="btn-outline btn-ol-blue" onclick="_camForceRefresh()">
         ${svgIcon("refresh", 14)} Refresh
       </button>
       <button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
