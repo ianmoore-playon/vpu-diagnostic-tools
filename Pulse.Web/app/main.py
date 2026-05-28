@@ -1304,6 +1304,32 @@ def _build_ocr_sets(pixellot_config=None):
     return s["ocr_ips"], s["ocr_macs"]
 
 
+def _mac_to_int(mac) -> int:
+    """Normalize a MAC string to an int for sorting. Unknown → very large
+    so MAC-less adapters sort last in ascending order."""
+    try:
+        return int(str(mac).upper().replace("-", "").replace(":", ""), 16)
+    except (ValueError, AttributeError, TypeError):
+        return 1 << 64
+
+
+def _order_ports_physically(raw_ports):
+    """Return NIC ports in stable physical order (Port 1 = lowest MAC).
+
+    Windows `Get-NetAdapter` enumerates adapters in discovery order, which
+    is effectively arbitrary and NOT stable between reads — that's why the
+    Port N labels would shuffle when re-checked on-site. On Intel multiport
+    camera NICs the per-port MACs are burned in sequentially in physical
+    port order, so sorting by MAC restores a deterministic, physically
+    meaningful order.
+
+    Convention: lowest MAC = Port 1 (matches the demo data layout and the
+    standard Intel base-MAC-on-port-1 assignment). If a chassis is found
+    to label ports in the opposite direction, flip `reverse=` here.
+    """
+    return sorted(list(raw_ports or []), key=lambda p: _mac_to_int(p.get("mac")))
+
+
 def _enrich_ports(
     nics: dict,
     pixellot_config: dict = None,
@@ -1333,7 +1359,10 @@ def _enrich_ports(
 
     ports = []
     if nics and not nics.get("error"):
-        for port_idx, port in enumerate(nics.get("ports", [])):
+        # Sort into stable physical order before assigning Port N labels —
+        # raw Windows enumeration order is arbitrary and unstable.
+        ordered = _order_ports_physically(nics.get("ports", []))
+        for port_idx, port in enumerate(ordered):
             speed = port.get("linkSpeedMbps")
             is_up = port.get("status") == "Up"
 
