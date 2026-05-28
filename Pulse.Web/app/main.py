@@ -2122,10 +2122,20 @@ async def api_scoreconnect():
 
 @app.post("/api/scoreconnect/install-sc3")
 async def api_install_sc3():
-    """Download and launch the SC III installer from the Canopy CDN.
-    Runs the official install script (same one Logan's bat uses).
-    The installer itself handles UAC elevation."""
-    return await run_ps("Install-ScoreConnectIII.ps1", timeout=300)
+    """Kicks off a ScoreConnect III install as an elevated background task.
+    Returns immediately — the install runs in the background, hidden, with
+    stdin piped to bypass the Canopy script's interactive 'Press Enter'
+    prompts. Frontend polls /api/scoreconnect/install-sc3/status for progress.
+    """
+    return await run_ps("Install-ScoreConnectIII.ps1", timeout=30)
+
+
+@app.get("/api/scoreconnect/install-sc3/status")
+async def api_install_sc3_status():
+    """Polls the SC III install status file written by the elevated
+    background process. Returns stage, percent, message, error.
+    Frontend should poll this every 1.5–2s while an install is in progress."""
+    return await run_ps("Get-Sc3InstallStatus.ps1", timeout=5)
 
 
 @app.get("/api/settings")

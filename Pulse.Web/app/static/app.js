@@ -3574,28 +3574,87 @@ function renderReports() {
 
 // ── SC III Installer ─────────────────────────────────────────
 
-async function installSc3(btn) {
-  btn.disabled = true;
-  btn.textContent = "Installing…";
-  var status = document.getElementById("sc3-install-status");
-  if (status) status.textContent = "Downloading installer…";
+var _sc3InstallPoll = null;  // polling interval handle
 
-  try {
-    var result = await apiPost("/api/scoreconnect/install-sc3");
-    if (result.ok) {
-      btn.textContent = "Launched";
-      btn.classList.add("btn-ol-green");
-      if (status) status.innerHTML = '<span class="status-pass">Installer launched — accept the UAC prompt on the VPU desktop</span>';
-    } else {
-      btn.disabled = false;
-      btn.textContent = "Retry Install";
-      if (status) status.innerHTML = '<span class="status-fail">' + esc(result.error || result.message || "Install failed") + '</span>';
-    }
-  } catch (e) {
-    btn.disabled = false;
-    btn.textContent = "Retry Install";
-    if (status) status.innerHTML = '<span class="status-fail">' + esc(e.message) + '</span>';
+async function installSc3(btn) {
+  // Replace the upgrade banner contents with a progress UI
+  var card = btn.closest(".card");
+  if (!card) return;
+  _renderSc3Progress(card, { stage: "starting", percent: 2, message: "Requesting elevation…" });
+
+  // Kick off the install — backend returns immediately
+  var result = await apiPost("/api/scoreconnect/install-sc3");
+  if (!result || !result.ok) {
+    _renderSc3Progress(card, {
+      stage: "failed", percent: 0,
+      message: "Failed to start install",
+      error: (result && (result.error || result.message)) || "Unknown error"
+    });
+    return;
   }
+
+  // Begin polling for progress every 1.5s
+  if (_sc3InstallPoll) clearInterval(_sc3InstallPoll);
+  _sc3InstallPoll = setInterval(async function() {
+    var s = await api("/api/scoreconnect/install-sc3/status");
+    _renderSc3Progress(card, s);
+
+    if (s.stage === "complete") {
+      clearInterval(_sc3InstallPoll); _sc3InstallPoll = null;
+      // Refresh the SC data after a moment so the user sees SC III detected
+      setTimeout(function() {
+        dataCache.scoreconnect = null;
+        if (window.location.hash === "#scoreconnect") renderScoreConnect();
+      }, 3000);
+    } else if (s.stage === "failed" || s.stale) {
+      clearInterval(_sc3InstallPoll); _sc3InstallPoll = null;
+    }
+  }, 1500);
+}
+
+function _renderSc3Progress(card, status) {
+  var stage = status.stage || "unknown";
+  var pct = Math.max(0, Math.min(100, status.percent || 0));
+  var msg = status.message || "";
+  var err = status.error || null;
+  var stale = status.stale;
+
+  var stageLabel = {
+    starting:    "Starting…",
+    downloading: "Downloading",
+    installing:  "Installing",
+    verifying:   "Verifying",
+    complete:    "Complete",
+    failed:      "Failed",
+    idle:        "Idle"
+  }[stage] || stage;
+
+  var barColor = stage === "failed" ? "var(--c-accent-red)"
+    : stage === "complete" ? "var(--c-accent-green)"
+    : "var(--c-accent-blue)";
+
+  var iconName = stage === "complete" ? "check"
+    : stage === "failed" ? "x"
+    : "refresh";
+
+  card.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:0.75rem">
+      <div style="margin-top:2px;color:${barColor}">${svgIcon(iconName, 18)}</div>
+      <div style="flex:1">
+        <div class="font-semibold" style="margin-bottom:0.25rem">
+          ScoreConnect III Install — ${esc(stageLabel)}${pct ? ' <span class="text-pulse-muted" style="font-weight:normal">(' + pct + '%)</span>' : ''}
+        </div>
+        <div class="text-pulse-muted" style="font-size:0.8rem;line-height:1.5">${esc(msg)}</div>
+        <div style="margin-top:0.6rem;height:8px;background:var(--c-deep-bg);border-radius:4px;overflow:hidden;border:1px solid var(--c-border)">
+          <div style="height:100%;width:${pct}%;background:${barColor};transition:width 0.5s ease-out"></div>
+        </div>
+        ${err ? `<div class="status-fail" style="font-size:0.75rem;margin-top:0.5rem">${esc(err)}</div>` : ""}
+        ${stale ? `<div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.35rem">Install appears stalled — the UAC prompt may have been declined.</div>` : ""}
+        ${(stage === "failed" || stale) ? `<button class="btn-outline btn-ol-blue" style="margin-top:0.6rem" onclick="installSc3(this)">${svgIcon("refresh", 14)} Retry Install</button>` : ""}
+        ${stage === "complete" ? `<div class="status-pass" style="font-size:0.8rem;margin-top:0.5rem">ScoreConnect III is now installed. Refreshing data…</div>` : ""}
+      </div>
+    </div>
+  `;
 }
 
 // ── RTD Score Parser ─────────────────────────────────────────
@@ -3974,9 +4033,9 @@ function renderScoreConnect() {
 
     <!-- SC II → SC III Upgrade Prompt -->
     ${sc2 && sc2.reachable && !isDetected ? `
-    <div class="card mt-4" style="border:1px solid var(--accent-blue);background:var(--bg-card)">
+    <div class="card mt-4" style="border:1px solid var(--c-accent-blue)">
       <div style="display:flex;align-items:flex-start;gap:0.75rem">
-        <div style="font-size:1.25rem;margin-top:2px">${svgIcon("refresh", 18)}</div>
+        <div style="margin-top:2px;color:var(--c-accent-blue)">${svgIcon("refresh", 18)}</div>
         <div style="flex:1">
           <div class="font-semibold" style="margin-bottom:0.25rem">Upgrade to ScoreConnect III</div>
           <div class="text-pulse-muted" style="font-size:0.8rem;line-height:1.5">
@@ -3987,10 +4046,10 @@ function renderScoreConnect() {
             <button class="btn-outline btn-ol-blue" id="btn-install-sc3" onclick="installSc3(this)">
               ${svgIcon("download", 14)} Install ScoreConnect III
             </button>
-            <span id="sc3-install-status" class="text-pulse-muted" style="font-size:0.8rem;margin-left:0.75rem"></span>
           </div>
           <div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.5rem">
-            Downloads the official installer from the Canopy CDN. A UAC prompt will appear on the VPU desktop.
+            Downloads the official installer from the Canopy CDN and runs it in the background.
+            A UAC prompt will appear on the VPU desktop to approve elevation.
           </div>
         </div>
       </div>
