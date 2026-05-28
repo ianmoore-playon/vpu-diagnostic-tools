@@ -1845,7 +1845,7 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 
 /* ── ScoreConnect page ─────────────────────────────────────── */
 
-/* Scoreboard — dark themed card that mimics a real broadcast overlay */
+/* Scoreboard — dark themed panel that mimics a real broadcast overlay */
 .sc-board {
     background: #0f1419;
     border: 1px solid #2a3040;
@@ -1854,12 +1854,30 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     color: #e8ecf1;
     font-family: "SF Mono", "Cascadia Mono", "Fira Code", monospace;
 }
+/* Hero variant — top of page, larger everything */
+.sc-board-hero {
+    border-radius: 12px;
+    padding: 1.75rem 2rem 1.5rem;
+}
+.sc-board-hero .sc-team-name  { font-size: 1.15rem; }
+.sc-board-hero .sc-team-label { font-size: 0.6rem; }
+.sc-board-hero .sc-score      { font-size: 3.5rem; }
+.sc-board-hero .sc-score-sep  { font-size: 2.2rem; }
+.sc-board-hero .sc-clock      { font-size: 1.8rem; }
+.sc-board-hero .sc-period-label { font-size: 0.65rem; }
+.sc-board-hero .sc-poss       { width: 10px; height: 10px; }
+.sc-board-hero .sc-stat-val   { font-size: 1.15rem; }
+.sc-board-hero .sc-stat-lbl   { font-size: 0.55rem; }
+.sc-board-hero .sc-bonus      { width: 24px; height: 24px; font-size: 0.7rem; }
+.sc-board-hero .sc-center     { min-width: 200px; padding: 0 1.75rem; }
+.sc-board-hero .sc-stats      { margin-top: 1rem; padding-top: 1rem; }
+
 .sc-board-empty {
-    padding: 2rem 1.5rem;
+    padding: 2.5rem 1.5rem;
     text-align: center;
     color: #6b7a8d;
     font-family: inherit;
-    font-size: 0.82rem;
+    font-size: 0.85rem;
 }
 
 /* Top row: team names + score */
