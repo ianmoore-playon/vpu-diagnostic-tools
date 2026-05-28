@@ -63,27 +63,27 @@ def _demo_live_clock():
 
 
 def _demo_raw_data():
-    """Build a Daktronics All Sport CG raw string from the demo game state
-    with a live (wall-clock-derived) game clock.
+    """Build a ScoreConnect CG raw string from the demo game state with a
+    live (wall-clock-derived) game clock — matching real SC III output:
 
-    Daktronics All Sport CG format — fixed-width ASCII fields:
-      Pos 0-4: Clock "MM:SS" | Pos 5-7: Guest Score | Pos 8-10: Home Score
-      Pos 11: Period | Pos 12: Possession | Pos 13-14: Down
-      Pos 15-16: Ball On | Pos 17-18: Yards To Go
+        02<clock> <home> <visitor> <TO><down><togo><ballon><qtr>Home Visitor R:S <chk>
+
+    e.g. "021225 25 23 55110252Home Visitor R:S 0000008DEBCCA1A2B3"
+      02      header
+      1225    clock 12:25 (no colon in the raw — fused to the header)
+      25 / 23 Home / Visitor score (space-delimited)
+      55      timeouts (5 + 5)
+      1 10 25 down / to-go / ball-on (packed)
+      2       quarter
     """
     g = _DEMO_GAME
     minutes, seconds = _demo_live_clock()
+    clock = f"{minutes:02d}{seconds:02d}"            # MMSS, no colon
+    # Packed trailing block: timeouts(2) down(1) togo(2) ballon(2) qtr(1)
+    packed = f"55{g['down']}{g['to_go']:02d}{g['ball_on']:02d}{g['quarter']}"
     return (
-        f"{minutes:2d}:{seconds:02d}"          # pos 0-4: clock
-        f"{g['guest']:3d}"                      # pos 5-7: guest score
-        f"{g['home']:3d}"                       # pos 8-10: home score
-        f"{g['quarter']}"                       # pos 11: period
-        f"{'>':1}"                              # pos 12: possession
-        f"{g['down']:2d}"                       # pos 13-14: down
-        f"{g['ball_on']:2d}"                    # pos 15-16: ball on
-        f"{g['to_go']:2d}"                      # pos 17-18: to go
-        f"{'':>50}"                             # padding
-        f"R:S             0000008DEBCCA{random.randint(10000,99999):05X}"
+        f"02{clock} {g['home']} {g['guest']} {packed}"
+        f"Home Visitor R:S 0000008DEBCCA{random.randint(10000,99999):05X}"
     )
 
 
