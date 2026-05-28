@@ -3722,75 +3722,59 @@ function _fmtClock(d) {
   return d.length ? d : null;
 }
 
-// ScoreConnect CG token parser. ScoreConnect decodes scoreboard controllers
-// into a common ASCII layout (confirmed against Daktronics support docs):
+// ScoreConnect CG parser. SC III decodes scoreboard controllers into a
+// FIXED-WIDTH ASCII layout. Confirmed byte-for-byte against live VPU captures
+// (Daktronics Football, SC III 1.3.0.19) with field meanings verified by a
+// field tech reading the physical controller:
 //
-//   02<clock> <home> <visitor> <TO><down><togo><ballon><qtr>Home Visitor <X>:S <chk>
+//   "025728  25 38 42  33     3Home    Visitor R:S 00D3098DEBCEEA969B"
+//    01234567890123456789012345
+//    └┘                                 header  (pos 0-1, "02")
+//      └──┘                             clock   (pos 2-5, right-justified)
+//          └┘                           field A (pos 8-9)  — not surfaced
+//             └┘                        HOME    (pos 11-12)
+//                └┘                     VISITOR (pos 14-15)
+//                   └┘                  field B (pos 18-19) — not surfaced
+//                        │              quarter (last digit before labels)
+//                         Home Visitor  team labels (alphabetic anchor)
 //
-// e.g.  "021951 7 3 55110251Home Visitor S:S 0000008DC8010EECD8"
-//   02      = header
-//   1951    = clock (19:51)   — fused to the header, NO colon in the raw
-//   7 / 3   = Home / Visitor score (space-delimited)
-//   55      = timeouts (5 + 5)
-//   11025   = down(1) toGo(10) ballOn(25)
-//   1       = quarter
-//   Home Visitor = team labels (may be custom names) — alphabetic anchor
-//
-// Returns a parsed object or null. Scores parse reliably; the trailing
-// down/distance block is only read when packed (all fields present),
-// otherwise left null rather than guessed.
+// Scores are read from FIXED positions (a token split fails because field A
+// sits before HOME and the clock gains a leading space under 10:00). Each
+// score field is read with a 3-char window so 1-3 digit scores all parse.
 function _parseCG(raw) {
-  if (raw.length < 6) return null;
+  if (raw.length < 16) return null;
 
-  // FIXED-WIDTH layout (confirmed against exact VPU captures):
-  //   [0-1] header "02"   [2-5] clock (4 chars, right-justified)   [6+] rest
-  // The clock field is a fixed 4 chars: "1225" (12:25) when >= 10:00, or
-  // " 944" (9:44) when under 10 minutes. That leading space is why a naive
-  // token split breaks once the clock drops below 10:00.
   var header = raw.substring(0, 2);
   if (!/^\d{2}$/.test(header)) return null;   // not the CG header → not this format
+
   var clock = _fmtClock(raw.substring(2, 6).trim());
 
-  // Rest of the numeric block (scores, timeouts, down/dist, qtr) up to the
-  // alphabetic team labels. These ARE space-delimited tokens.
-  var rest = raw.substring(6);
-  var leadNum = rest.match(/^[\d.\s]+/);
-  if (!leadNum) return null;
-  var toks = leadNum[0].trim().split(/\s+/).filter(Boolean);
-  if (toks.length < 2) return null;           // need at least home + visitor
-
-  var home    = parseInt(toks[0], 10);   // data order: Home first, then Visitor
-  var visitor = parseInt(toks[1], 10);
+  // HOME at pos 11-12, VISITOR at pos 14-15 (each a right-justified field).
+  // The 3-char windows include the leading separator and tolerate 1-3 digits.
+  var home    = parseInt(raw.substring(10, 13).trim(), 10);
+  var visitor = parseInt(raw.substring(13, 16).trim(), 10);
   if (isNaN(home) || isNaN(visitor)) return null;
   if (home > 199 || visitor > 199) return null;  // sanity — not a score line
 
-  // Quarter = the last digit of the numeric block (right before the labels).
-  var lastTok = toks[toks.length - 1];
-  var qtr = parseInt(lastTok.charAt(lastTok.length - 1), 10);
-
-  // Down / distance / ball-on — only when the trailing block is packed into a
-  // single 8-char token (TO:2 down:1 togo:2 ballon:2 qtr:1). When fields are
-  // blank the controller emits spaces, breaking the token; skip rather than
-  // misread.
-  var down = null, togo = null, ballon = null;
-  if (toks.length === 3 && toks[2].length === 8) {
-    var t  = toks[2];
-    var d  = parseInt(t.substring(2, 3), 10);
-    var tg = parseInt(t.substring(3, 5), 10);
-    var bo = parseInt(t.substring(5, 7), 10);
-    if (d >= 1 && d <= 4) down = d;
-    if (!isNaN(tg) && tg <= 99) togo = tg;
-    if (!isNaN(bo) && bo <= 99) ballon = bo;
+  // Quarter = the last digit of the numeric block, right before the labels.
+  var qtr = null;
+  var prefix = raw.match(/^[\d.\s]+/);
+  if (prefix) {
+    var pd = prefix[0].replace(/\s+$/, "");
+    var q = parseInt(pd.charAt(pd.length - 1), 10);
+    if (q >= 1 && q <= 9) qtr = q;
   }
 
   return {
     clock: clock,
-    homeScore: home,
-    guestScore: visitor,    // data order is Home then Visitor; UI shows visitor as "guest"
-    period: (qtr >= 1 && qtr <= 9) ? qtr : null,
-    down: down, toGo: togo, ballOn: ballon,
+    homeScore: home,        // pos 11-12 — confirmed by field tech
+    guestScore: visitor,    // pos 14-15 — UI shows visitor as "guest"
+    period: qtr,
+    // down/distance not reliably locatable in this layout (fields A/B
+    // ambiguous); left null rather than surfacing wrong values.
+    down: null, toGo: null, ballOn: null,
     possession: null,
-    _strategy: "cg-tokens"
+    _strategy: "cg-fixed"
   };
 }
 
@@ -4305,12 +4289,13 @@ function _sc3DownText(p) {
   return t;
 }
 
-// Poll cadence: the game clock ticks once per second, so we sample faster
-// than that (sub-second) to avoid skipped seconds. The /live endpoint is a
-// direct HTTP GET (no PowerShell spawn), so this is cheap. Self-scheduling
-// via setTimeout — each poll waits for the previous fetch to finish before
-// scheduling the next, so slow responses never pile up.
-var _SC3_POLL_MS = 600;
+// Poll cadence: the game clock ticks once per second, so we oversample at
+// ~3x (every 300ms) to never skip a second and to pick up score changes
+// near-instantly. The /live endpoint is a direct HTTP GET (no PowerShell
+// spawn), so this is cheap. Self-scheduling via setTimeout — each poll waits
+// for the previous fetch to finish before scheduling the next, so slow
+// responses never pile up.
+var _SC3_POLL_MS = 300;
 
 function _sc3StopLivePoll() {
   if (_sc3LivePoll) { clearTimeout(_sc3LivePoll); _sc3LivePoll = null; }

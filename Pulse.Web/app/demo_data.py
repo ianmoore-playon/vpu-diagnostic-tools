@@ -64,28 +64,27 @@ def _demo_live_clock():
 
 def _demo_raw_data():
     """Build a ScoreConnect CG raw string from the demo game state with a
-    live (wall-clock-derived) game clock — matching real SC III output:
+    live (wall-clock-derived) game clock. Reproduces the real SC III
+    FIXED-WIDTH byte layout exactly (verified against live VPU captures):
 
-        02<clock> <home> <visitor> <TO><down><togo><ballon><qtr>Home Visitor R:S <chk>
-
-    e.g. "021225 25 23 55110252Home Visitor R:S 0000008DEBCCA1A2B3"
-      02      header
-      1225    clock 12:25 (no colon in the raw — fused to the header)
-      25 / 23 Home / Visitor score (space-delimited)
-      55      timeouts (5 + 5)
-      1 10 25 down / to-go / ball-on (packed)
-      2       quarter
+        "025728  25 38 42  33     3Home    Visitor R:S <chk>"
+         pos 0-1  header "02"
+         pos 2-5  clock (right-justified: "5728" or " 944" under 10:00)
+         pos 8-9  field A (constant in tests)
+         pos 11-12 HOME score
+         pos 14-15 VISITOR score
+         pos 18-19 field B (constant in tests)
+         pos 25   quarter
+         then Home/Visitor labels + clock-run flag + checksum
     """
     g = _DEMO_GAME
     minutes, seconds = _demo_live_clock()
-    # Clock is a fixed 4-char field, right-justified like real hardware:
-    # "1225" at 12:25, " 944" at 9:44 (leading space under 10:00).
-    clock = f"{minutes}{seconds:02d}".rjust(4)
-    # Packed trailing block: timeouts(2) down(1) togo(2) ballon(2) qtr(1)
-    packed = f"55{g['down']}{g['to_go']:02d}{g['ball_on']:02d}{g['quarter']}"
+    clock = f"{minutes}{seconds:02d}".rjust(4)   # "1225" or " 944"
+    chk = f"00D3098DEBCE{random.randint(0, 0xFFFFFF):06X}"
+    # Field widths chosen so HOME lands at 11-12 and VISITOR at 14-15.
     return (
-        f"02{clock} {g['home']} {g['guest']} {packed}"
-        f"Home Visitor R:S 0000008DEBCCA{random.randint(10000,99999):05X}"
+        f"02{clock}  25 {g['home']:>2} {g['guest']:>2}  33     {g['quarter']}"
+        f"Home    Visitor R:S {chk}"
     )
 
 
