@@ -3556,93 +3556,219 @@ function renderReports() {
 
 // ── ScoreConnect ─────────────────────────────────────────────
 
-// Daktronics All Sport CG RTD parser — extracts scores, clock, period
-// from the raw data string SC III provides.  The CG output is a fixed-
-// width ASCII string; field positions vary by sport.  We support the most
-// common Daktronics sports.  Returns null if parsing fails.
+// ── SC III Installer ─────────────────────────────────────────
+
+async function installSc3(btn) {
+  btn.disabled = true;
+  btn.textContent = "Installing…";
+  var status = document.getElementById("sc3-install-status");
+  if (status) status.textContent = "Downloading installer…";
+
+  try {
+    var result = await apiPost("/api/scoreconnect/install-sc3");
+    if (result.ok) {
+      btn.textContent = "Launched";
+      btn.classList.add("btn-ol-green");
+      if (status) status.innerHTML = '<span class="status-pass">Installer launched — accept the UAC prompt on the VPU desktop</span>';
+    } else {
+      btn.disabled = false;
+      btn.textContent = "Retry Install";
+      if (status) status.innerHTML = '<span class="status-fail">' + esc(result.error || result.message || "Install failed") + '</span>';
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "Retry Install";
+    if (status) status.innerHTML = '<span class="status-fail">' + esc(e.message) + '</span>';
+  }
+}
+
+// ── RTD Score Parser ─────────────────────────────────────────
+// Multi-strategy parser for scoreboard data from SC III.
+// Supports all major vendors: Daktronics, Fairplay, Nevco,
+// Electro-Mech, Spectrum/Sportable/Varsity.
 //
-// Field maps: 0-indexed character positions in the raw data string.
-// Positions sourced from Daktronics All Sport 5000 CG documentation.
-// Digit fields are space-padded; we parseInt and treat NaN as null.
+// Strategy order:
+//   1. JSON — if raw data is a JSON string with named fields, parse it.
+//      (Sportzcast TCP socket format uses JSON; SC III may pass it through.)
+//   2. Vendor-specific positional — fixed-width field maps per vendor.
+//   3. Heuristic — regex pattern matching for clock/score/period in any string.
+//
+// Returns { clock, homeScore, guestScore, period, down, toGo, ballOn,
+//           possession, _strategy } or null if nothing extractable.
 function parseRtdScores(rawData, vendor, sport) {
   if (!rawData || typeof rawData !== "string") return null;
-  vendor = (vendor || "").toLowerCase();
-  sport  = (sport || "").toLowerCase();
+  var vLower = (vendor || "").toLowerCase();
+  var sLower = (sport  || "").toLowerCase();
 
-  // Only attempt Daktronics parsing for now
-  if (!vendor.includes("daktronics")) return null;
+  // ── Strategy 1: JSON parse ──────────────────────────────────────────
+  // Sportzcast data may arrive as JSON: {"homeScore":"14","awayScore":"7",...}
+  var trimmed = rawData.trim();
+  if (trimmed.charAt(0) === "{") {
+    try {
+      var j = JSON.parse(trimmed);
+      // Normalize field names (Sportzcast uses multiple conventions)
+      var _jv = function() { for (var i=0;i<arguments.length;i++) { var v=j[arguments[i]]; if (v!=null&&v!=="") return v; } return null; };
+      var r = {
+        clock:      _jv("clock","Clock","time","Time","gameTime","gameClock"),
+        homeScore:  _jv("homeScore","HomeScore","scoreHome","home_score","hScore"),
+        guestScore: _jv("awayScore","AwayScore","guestScore","GuestScore","scoreAway","away_score","vScore","visitor_score"),
+        period:     _jv("period","Period","quarter","Quarter","half","Half","inning","Inning"),
+        down:       _jv("down","Down"),
+        toGo:       _jv("toGo","ToGo","yardsToGo"),
+        ballOn:     _jv("ballOn","BallOn"),
+        possession: _jv("possession","Possession","poss"),
+        _strategy:  "json"
+      };
+      // Coerce scores to numbers
+      if (r.homeScore  != null) r.homeScore  = parseInt(r.homeScore, 10);
+      if (r.guestScore != null) r.guestScore = parseInt(r.guestScore, 10);
+      if (r.period     != null && !isNaN(parseInt(r.period,10))) r.period = parseInt(r.period, 10);
+      if (r.down       != null) r.down = parseInt(r.down, 10);
+      if (r.toGo       != null) r.toGo = parseInt(r.toGo, 10);
+      if (r.ballOn     != null) r.ballOn = parseInt(r.ballOn, 10);
+      if (r.clock || r.homeScore != null || r.guestScore != null) return r;
+    } catch(e) { /* not JSON, continue */ }
+  }
 
-  // Strip trailing serial/ID block (S:S ... or similar metadata suffix)
+  // ── Strategy 2: Vendor-specific positional parsing ──────────────────
+  // Strip trailing metadata (serial/ID blocks like "S:S ..." or MAC addresses)
   var cleaned = rawData.replace(/\s*S:S\s.*$/, "").replace(/\s+$/, "");
-  if (cleaned.length < 10) return null;
+  if (cleaned.length < 5) { /* fall through to heuristic */ }
+  else {
+    // Helpers
+    function chars(p, n) {
+      if (p + n > cleaned.length) return null;
+      var s = cleaned.substring(p, p + n).trim();
+      return s.length ? s : null;
+    }
+    function num(p, n) {
+      var s = chars(p, n);
+      if (!s) return null;
+      var v = parseInt(s, 10);
+      return isNaN(v) ? null : v;
+    }
+    function numFlex(p, n) {
+      // Try n chars, then n-1 at same position
+      var v = num(p, n);
+      if (v !== null) return v;
+      return n > 1 ? num(p, n - 1) : null;
+    }
+    function extractClock(region) {
+      var m = region.match(/(\d{1,2}:\d{2})/);
+      if (m) return m[1];
+      m = region.match(/(\d{1,2}\.\d)/);
+      return m ? m[1] : null;
+    }
 
-  // Helper: extract N chars starting at position p, trim, return string or null
-  function chars(p, n) {
-    if (p + n > cleaned.length) return null;
-    var s = cleaned.substring(p, p + n).trim();
-    return s.length ? s : null;
+    var r2 = { clock: null, homeScore: null, guestScore: null, period: null,
+               down: null, toGo: null, ballOn: null, possession: null, _strategy: null };
+
+    // ── Daktronics All Sport CG ───────────────────────────────────────
+    // Clock pos 0-4, Guest 5-7, Home 8-10, Period 11, Poss 12, Down 13-14
+    if (vLower.includes("daktronics")) {
+      r2._strategy = "daktronics";
+      r2.clock = extractClock(cleaned.substring(0, 12));
+      r2.guestScore = numFlex(5, 3);
+      r2.homeScore  = numFlex(8, 3);
+      r2.period     = num(11, 1);
+      if (sLower.includes("football")) {
+        var pChar = chars(12, 1);
+        if (pChar === "<" || pChar === ">") r2.possession = pChar;
+        r2.down   = numFlex(13, 2);
+        r2.ballOn = numFlex(15, 2);
+        r2.toGo   = numFlex(17, 2);
+      }
+    }
+
+    // ── Fairplay (MP-69, MP-80, Proline) ──────────────────────────────
+    // BCD-decoded output: clock first, then digit-pair scores.
+    // Format: Clock(5) Guest(3) Home(3) Period(1) — similar to Daktronics
+    // but score digits are BCD-decoded pairs (Tens+Ones).
+    else if (vLower.includes("fairplay") || vLower.includes("fair play") || vLower.includes("fair-play")) {
+      r2._strategy = "fairplay";
+      r2.clock = extractClock(cleaned.substring(0, 12));
+      r2.guestScore = numFlex(5, 3);
+      r2.homeScore  = numFlex(8, 3);
+      r2.period     = num(11, 1);
+    }
+
+    // ── Nevco ─────────────────────────────────────────────────────────
+    // BCD-decoded output via NevcoDigit/NevcoShotclockBcd.
+    // Decoded layout follows similar positional convention.
+    else if (vLower.includes("nevco")) {
+      r2._strategy = "nevco";
+      r2.clock = extractClock(cleaned.substring(0, 12));
+      r2.guestScore = numFlex(5, 3);
+      r2.homeScore  = numFlex(8, 3);
+      r2.period     = num(11, 1);
+    }
+
+    // ── Electro-Mech ──────────────────────────────────────────────────
+    // Multiple controller models (ElectromechModel enum).
+    // Try common positional layout.
+    else if (vLower.includes("electro") && vLower.includes("mech")) {
+      r2._strategy = "electromech";
+      r2.clock = extractClock(cleaned.substring(0, 12));
+      r2.guestScore = numFlex(5, 3);
+      r2.homeScore  = numFlex(8, 3);
+      r2.period     = num(11, 1);
+    }
+
+    // ── Spectrum / Sportable / Varsity ────────────────────────────────
+    // Multiple protocol generations (V2E, V2W, Gen2).
+    // Try common positional layout.
+    else if (vLower.includes("spectrum") || vLower.includes("sportable") || vLower.includes("varsity")) {
+      r2._strategy = "spectrum";
+      r2.clock = extractClock(cleaned.substring(0, 12));
+      r2.guestScore = numFlex(5, 3);
+      r2.homeScore  = numFlex(8, 3);
+      r2.period     = num(11, 1);
+    }
+
+    // ── Unknown vendor — still try positional ─────────────────────────
+    else if (cleaned.length >= 10) {
+      r2._strategy = "positional-generic";
+      r2.clock = extractClock(cleaned.substring(0, 12));
+      r2.guestScore = numFlex(5, 3);
+      r2.homeScore  = numFlex(8, 3);
+      r2.period     = num(11, 1);
+    }
+
+    // Did positional parsing find anything?
+    if (r2._strategy && (r2.clock || r2.homeScore != null || r2.guestScore != null)) {
+      return r2;
+    }
   }
-  function num(p, n) {
-    var s = chars(p, n);
-    if (!s) return null;
-    var v = parseInt(s, 10);
-    return isNaN(v) ? null : v;
+
+  // ── Strategy 3: Heuristic regex extraction ──────────────────────────
+  // Last resort — try to pull recognizable patterns from any data string.
+  var h = { clock: null, homeScore: null, guestScore: null, period: null,
+            down: null, toGo: null, ballOn: null, possession: null, _strategy: "heuristic" };
+
+  // Clock: look for MM:SS or M:SS or SS.T anywhere in the string
+  var cm = rawData.match(/\b(\d{1,2}:\d{2})\b/);
+  if (cm) h.clock = cm[1];
+  else { cm = rawData.match(/\b(\d{1,2}\.\d)\b/); if (cm) h.clock = cm[1]; }
+
+  // Scores: look for two small numbers (0-199) separated by whitespace
+  // near the clock, skipping the clock digits themselves.
+  var afterClock = h.clock ? rawData.substring(rawData.indexOf(h.clock) + h.clock.length) : rawData;
+  var scoreNums = [];
+  var numRe = /\b(\d{1,3})\b/g;
+  var nm;
+  while ((nm = numRe.exec(afterClock)) !== null) {
+    var v = parseInt(nm[1], 10);
+    if (v <= 199) scoreNums.push(v);
+    if (scoreNums.length >= 3) break;
+  }
+  if (scoreNums.length >= 2) {
+    h.guestScore = scoreNums[0];
+    h.homeScore  = scoreNums[1];
+    if (scoreNums.length >= 3 && scoreNums[2] <= 9) h.period = scoreNums[2];
   }
 
-  // Daktronics All Sport CG field positions by sport.
-  // Clock is typically chars 0-4 in format "MM:SS" or " M:SS" or "SS.T ".
-  // The colon/decimal position varies — we regex-extract the clock instead.
-
-  var result = { clock: null, homeScore: null, guestScore: null, period: null,
-                 down: null, toGo: null, ballOn: null, possession: null };
-
-  // -- Clock extraction: look for MM:SS or M:SS or SS.T pattern in first 8 chars --
-  var clockRegion = cleaned.substring(0, Math.min(12, cleaned.length));
-  var clockMatch = clockRegion.match(/(\d{1,2}:\d{2})/);
-  if (clockMatch) {
-    result.clock = clockMatch[1];
-  } else {
-    // Try SS.T format (tenths of seconds)
-    var tenthsMatch = clockRegion.match(/(\d{1,2}\.\d)/);
-    if (tenthsMatch) result.clock = tenthsMatch[1];
-  }
-
-  // -- Sport-specific field extraction --
-  // Daktronics football: guest score ~pos 7-9, home score ~pos 10-12, period ~pos 13
-  // Daktronics basketball: similar layout but different extended fields
-  // We use a generous extraction strategy that works across multiple sports.
-
-  if (sport.includes("football")) {
-    result.guestScore = num(5, 3);
-    result.homeScore  = num(8, 3);
-    // If 3-digit parse failed, try 2-digit at shifted positions
-    if (result.guestScore === null) result.guestScore = num(5, 2);
-    if (result.homeScore === null)  result.homeScore  = num(7, 2);
-    result.period     = num(11, 1) || num(12, 1);
-    result.possession = chars(13, 1);
-    if (result.possession && result.possession !== "<" && result.possession !== ">") result.possession = null;
-    result.down       = num(14, 2);
-    result.toGo       = num(16, 2);
-    result.ballOn     = num(18, 2);
-  } else if (sport.includes("basketball") || sport.includes("volleyball")) {
-    result.guestScore = num(5, 3);
-    result.homeScore  = num(8, 3);
-    if (result.guestScore === null) result.guestScore = num(5, 2);
-    if (result.homeScore === null)  result.homeScore  = num(7, 2);
-    result.period     = num(11, 1) || num(12, 1);
-  } else {
-    // Generic: try common positions for any Daktronics sport
-    result.guestScore = num(5, 3);
-    result.homeScore  = num(8, 3);
-    if (result.guestScore === null) result.guestScore = num(5, 2);
-    if (result.homeScore === null)  result.homeScore  = num(7, 2);
-    result.period     = num(11, 1) || num(12, 1);
-  }
-
-  // Sanity check: did we get at least a clock or one score?
-  if (result.clock === null && result.homeScore === null && result.guestScore === null) return null;
-
-  return result;
+  if (h.clock || h.homeScore != null || h.guestScore != null) return h;
+  return null;
 }
 
 function renderScoreConnect() {
@@ -3838,15 +3964,17 @@ function renderScoreConnect() {
         <div style="flex:1">
           <div class="font-semibold" style="margin-bottom:0.25rem">Upgrade to ScoreConnect III</div>
           <div class="text-pulse-muted" style="font-size:0.8rem;line-height:1.5">
-            SC III is the preferred version and provides better compatibility with Pulse.
-            Live scoreboard data, parsed scores, and real-time status are all available
-            through SC III's REST API without interfering with the data stream.
+            SC III is the preferred version. It provides live scoreboard data, parsed scores,
+            and real-time status through a REST API — no interference with the data stream.
           </div>
-          <div style="margin-top:0.75rem;padding:0.5rem 0.75rem;background:var(--bg-body);border-radius:6px;font-family:var(--font-mono);font-size:0.72rem;word-break:break-all;color:var(--text-muted)">
-            powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri 'https://canopy-public-packages.nfhsnetwork.com/SC3/Current/installScript3_current.ps1' -OutFile 'C:\\temp\\install-sc3.ps1'; &amp; 'C:\\temp\\install-sc3.ps1'"
+          <div style="margin-top:0.75rem">
+            <button class="btn-outline btn-ol-blue" id="btn-install-sc3" onclick="installSc3(this)">
+              ${svgIcon("download", 14)} Install ScoreConnect III
+            </button>
+            <span id="sc3-install-status" class="text-pulse-muted" style="font-size:0.8rem;margin-left:0.75rem"></span>
           </div>
-          <div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.35rem">
-            Run the command above in an <strong>Administrator PowerShell</strong> to install SC III.
+          <div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.5rem">
+            Downloads the official installer from the Canopy CDN. A UAC prompt will appear on the VPU desktop.
           </div>
         </div>
       </div>

@@ -2063,10 +2063,16 @@ async def api_audio_volume(request: Request):
 async def api_scoreconnect():
     settings = load_settings()
     url = settings.get("scoreConnectUrl", "http://localhost:5000")
-    # 20s timeout — SC III probe ~2-4s + SC II probe budgeted to 10s max.
-    # Prevents the page from hanging if SC II SignalR is partially reachable
-    # but slow (port open, server unresponsive).
-    return await run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": url}, timeout=20)
+    # 15s timeout — SC III REST probes ~2-4s, SC II file-based probe < 2s.
+    return await run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": url}, timeout=15)
+
+
+@app.post("/api/scoreconnect/install-sc3")
+async def api_install_sc3():
+    """Download and launch the SC III installer from the Canopy CDN.
+    Runs the official install script (same one Logan's bat uses).
+    The installer itself handles UAC elevation."""
+    return await run_ps("Install-ScoreConnectIII.ps1", timeout=300)
 
 
 @app.get("/api/settings")
