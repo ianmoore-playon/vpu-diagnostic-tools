@@ -7,6 +7,21 @@ Pulse — diagnostic tools for Pixellot VPU field support. Two variants:
 - **Pulse.WPF** (`Pulse.WPF/`) — C# / WPF / .NET Framework 4.8 desktop app
 - **Pulse.Web** (`Pulse.Web/`) — Python + vanilla JS web app (FastAPI + Uvicorn)
 
+## Multi-Session Etiquette
+
+Multiple Claude Code sessions often work this repo at once on the same checkout (`dev`). Uncommitted changes are visible to every session, so a careless commit can sweep up another session's in-progress work. Follow these:
+
+1. **Stage explicitly — never broadly.** Use `git add <specific files you personally edited>`. Never `git add -A`, `git add .`, or `git commit -am` — they grab everything in the tree, including other sessions' WIP.
+2. **Review the staged diff before every commit.** Run `git diff --cached --stat` first. If it lists files you didn't touch — or the line count is bigger than your change — stop; another session's work is mixed in. Unstage with `git restore --staged <file>`.
+3. **Commit small and often.** Land your own work the moment a change is coherent. WIP left sitting in a shared file is what gets swept up. The less you leave floating, the safer everyone is.
+4. **The big shared files are the hazard:** `Pulse.Web/app/static/app.js`, `Pulse.Web/app/main.py`, `Pulse.Web/app/static/style.css`. Several areas edit them. Edits rarely *conflict* (different functions), but `git add app.js` grabs everyone's uncommitted lines. If you must commit one while another session has WIP in it, coordinate first or expect to co-commit their lines — and name it honestly in the message.
+5. **Pull before you push:** `git pull --rebase origin dev`.
+6. **Never rewrite pushed `dev` history** — no `commit --amend`, `rebase`, or force-push on `dev`; other sessions are actively pulling it.
+
+**Lanes:** Camera Connectivity · ScoreConnect · Network · System · Setup · Audio · Pixellot Cloud. Edit your area's render function and scripts; treat the others' as read-only.
+
+The single most important habit is **#2 — check `git diff --cached --stat` before committing.**
+
 ## Build
 
 ```bash
