@@ -93,18 +93,23 @@ html, body { height: 100%; margin: 0; }
 }
 .sidebar-brand-logo {
     width: 100%;
-    /* Both images are now normalized to 1428x442 with identical content
-       sizing — height is derived from aspect-ratio so light and dark
-       render at the exact same on-screen size. */
+    /* Use a single normalized image for both themes so light + dark
+       render at identical size and use identical typography. The light
+       splash variant was a stylistically different wordmark (mixed-case
+       "Pulse" vs the dark "PULSE" all-caps) which made theme swaps
+       visually inconsistent — solve by using one image and filtering
+       in light mode: invert flips white→black, then hue-rotate keeps
+       the blue heartbeat icon blue instead of orange. */
     aspect-ratio: 1428 / 442;
-    background-image: url('/static/img/pulse-splash-light.png');
+    background-image: url('/static/img/pulse-splash-dark.png');
     background-repeat: no-repeat;
     background-position: center;
     background-size: contain;
     margin-bottom: 6px;
+    filter: invert(1) hue-rotate(180deg);
 }
 html.dark .sidebar-brand-logo {
-    background-image: url('/static/img/pulse-splash-dark.png');
+    filter: none;
 }
 .sidebar-brand-tagline {
     font-size: 0.625rem;
@@ -138,15 +143,19 @@ html.dark .sidebar-brand-logo {
 .splash-logo {
     width: 65vmin;
     max-width: 480px;
-    aspect-ratio: 3 / 2;
-    background-image: url('/static/img/pulse-splash-light.png');
+    /* Use the same single-image + filter approach as the sidebar brand
+       so light and dark splash variants render identically (same
+       typography, same size). */
+    aspect-ratio: 1428 / 442;
+    background-image: url('/static/img/pulse-splash-dark.png');
     background-repeat: no-repeat;
     background-position: center;
     background-size: contain;
     animation: pulse-fade 1.6s ease-in-out infinite;
+    filter: invert(1) hue-rotate(180deg);
 }
 html.dark .splash-logo {
-    background-image: url('/static/img/pulse-splash-dark.png');
+    filter: none;
 }
 .splash-progress {
     width: min(420px, 60vmin);
