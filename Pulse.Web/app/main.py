@@ -1650,7 +1650,7 @@ async def api_preload():
         run_ps("Get-Services.ps1"),
         run_ps("Get-DiskHealth.ps1"),
         run_ps("Get-EventLogs.ps1"),
-        run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": sc_url}, timeout=15),
+        run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": sc_url}, timeout=20),
         run_ps("Get-PixellotConfig.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
         run_ps("Test-NetworkDomains.ps1"),
@@ -2063,10 +2063,10 @@ async def api_audio_volume(request: Request):
 async def api_scoreconnect():
     settings = load_settings()
     url = settings.get("scoreConnectUrl", "http://localhost:5000")
-    # 15s timeout — SC III probe ~2-4s + SC II probe budgeted to 8s max.
+    # 20s timeout — SC III probe ~2-4s + SC II probe budgeted to 10s max.
     # Prevents the page from hanging if SC II SignalR is partially reachable
     # but slow (port open, server unresponsive).
-    return await run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": url}, timeout=15)
+    return await run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": url}, timeout=20)
 
 
 @app.get("/api/settings")
@@ -2115,7 +2115,7 @@ async def api_export():
         run_ps("Get-Services.ps1"),
         run_ps("Get-DiskHealth.ps1"),
         run_ps("Get-EventLogs.ps1"),
-        run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": sc_url}, timeout=15),
+        run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": sc_url}, timeout=20),
         run_ps("Get-PixellotConfig.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
         run_ps("Test-NetworkDomains.ps1"),

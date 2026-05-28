@@ -165,13 +165,23 @@ function Probe-ScoreConnectII {
         botNumber   = $null
         statusLeds  = $null
         error       = $null
+        _diag       = $null   # diagnostic breadcrumbs — stripped before output
     }
 
-    # Overall time budget — bail after 8s regardless of where we are.
-    # Individual step timeouts still apply (tighter than the budget) but
-    # this prevents the combined serial chain from exceeding ~8s total.
+    # Overall time budget — bail after 10s regardless of where we are.
+    # The two-phase flow (login confirmation → getparms → score poll) needs
+    # enough room for 3-4 poll cycles of ~2-3s each.
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $budgetMs = 8000
+    $budgetMs = 10000
+
+    # Accumulator variables — NO nested functions, all inline to avoid
+    # PowerShell Set-Variable scoping issues.
+    $settings  = $null
+    $parms     = $null
+    $loginOk   = $false
+    $scores    = @{}
+    $leds      = @{}
+    $topics    = [System.Collections.ArrayList]@()  # diagnostic: all topics seen
 
     try {
         # ── 1. TCP pre-check on port 1400 ──────────────────────────────────
@@ -210,67 +220,66 @@ function Probe-ScoreConnectII {
 
         if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
 
-        # ── 5–6. Two-phase SignalR flow ─────────────────────────────────────
-        # The SC II hub requires sequential authentication.  getsettings works
-        # pre-login, but getparms/getscoreboards only return data AFTER the
-        # uidlogin broadcast confirms success.  Sending them simultaneously
-        # causes getparms to silently fail (server ignores unauthenticated
-        # requests).  Score/LED broadcasts also only flow to logged-in clients.
-        #
-        # Phase 1: getsettings + uidlogin → poll for getsettings + login ack
-        # Phase 2: getparms + getscoreboards → poll for parms + scores/LEDs
-
+        # ── 5. Send + poll — all inline (no nested functions) ──────────────
+        # SignalR URLs used repeatedly
         $sendUrl = "$Sc2Base/signalr/send?transport=longPolling&connectionToken=$token&connectionData=$connData"
-        $invIdx  = 0   # running invocation ID
+        $pollBase = "$Sc2Base/signalr/poll?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
 
-        # Helper: parse all broadcast messages from a poll response
-        $settings  = $null
-        $parms     = $null
-        $loginOk   = $false
-        $scores    = @{}
-        $leds      = @{}
+        # -- Inline helper: process one poll response's messages ----------
+        #    Updates $settings, $parms, $loginOk, $scores, $leds, $topics
+        #    directly in this scope. No child function = no scoping issues.
+        $processPoll = {
+            param($json)
+            if (-not $json -or -not $json.M) { return }
+            if ($json.C) { $script:_pollCursor = $json.C }
+            foreach ($msg in $json.M) {
+                # ── Broadcasts: {H:.., M:"broadcastMessage", A:[topic, data]}
+                if ($msg.M -eq 'broadcastMessage' -and $msg.A -and $msg.A.Count -ge 2) {
+                    $topic = $msg.A[0]
+                    $topics.Add($topic) | Out-Null
+                    try { $tdata = $msg.A[1] | ConvertFrom-Json } catch { continue }
 
-        function Parse-PollMessages {
-            param($PollJson)
-            foreach ($msg in $PollJson.M) {
-                if ($msg.M -ne 'broadcastMessage' -or $msg.A.Count -lt 2) { continue }
-                $topic  = $msg.A[0]
-                try { $tdata = $msg.A[1] | ConvertFrom-Json } catch { continue }
-
-                switch ($topic) {
-                    'getsettings'           { Set-Variable -Name settings -Value $tdata -Scope 1 }
-                    'uidlogin'              { if ($tdata.login -eq 'true') { Set-Variable -Name loginOk -Value $true -Scope 1 } }
-                    'getparms'              { Set-Variable -Name parms -Value $tdata -Scope 1 }
-                    'status_clock'          { $scores['clock']      = $tdata.status_clock }
-                    'status_vscore'         { $scores['visitor']    = $tdata.status_vscore }
-                    'status_hscore'         { $scores['home']       = $tdata.status_hscore }
-                    'status_text1'          { $scores['text1']      = $tdata.status_text1 }
-                    'status_text2'          { $scores['text2']      = $tdata.status_text2 }
-                    'status_text3'          { $scores['text3']      = $tdata.status_text3 }
-                    'status_scoreboard_led' { $leds['scoreboard']   = [int]$tdata.status_scoreboard_led }
-                    'status_network_led'    { $leds['network']      = [int]$tdata.status_network_led }
-                    'status_cloud_led'      { $leds['cloud']        = [int]$tdata.status_cloud_led }
-                    'status_local_led'      { $leds['local']        = [int]$tdata.status_local_led }
-                    'status_update_led'     { $leds['update']       = [int]$tdata.status_update_led }
+                    switch ($topic) {
+                        'getsettings'           { $script:_settings = $tdata }
+                        'uidlogin'              { if ($tdata.login -eq 'true') { $script:_loginOk = $true } }
+                        'getparms'              { $script:_parms = $tdata }
+                        'status_clock'          { $scores['clock']      = $tdata.status_clock }
+                        'status_vscore'         { $scores['visitor']    = $tdata.status_vscore }
+                        'status_hscore'         { $scores['home']       = $tdata.status_hscore }
+                        'status_text1'          { $scores['text1']      = $tdata.status_text1 }
+                        'status_text2'          { $scores['text2']      = $tdata.status_text2 }
+                        'status_text3'          { $scores['text3']      = $tdata.status_text3 }
+                        'status_scoreboard_led' { $leds['scoreboard']   = [int]$tdata.status_scoreboard_led }
+                        'status_network_led'    { $leds['network']      = [int]$tdata.status_network_led }
+                        'status_cloud_led'      { $leds['cloud']        = [int]$tdata.status_cloud_led }
+                        'status_local_led'      { $leds['local']        = [int]$tdata.status_local_led }
+                        'status_update_led'     { $leds['update']       = [int]$tdata.status_update_led }
+                    }
                 }
             }
         }
 
-        # Helper: run one poll cycle with dynamic timeout
-        function Poll-Once {
+        # -- Inline helper: one poll cycle with dynamic timeout -----------
+        $doPoll = {
             $remainMs = $budgetMs - $sw.ElapsedMilliseconds
-            if ($remainMs -le 500) { return $null }
+            if ($remainMs -le 500) { return }
             $tSec = [Math]::Max(1, [Math]::Min(3, [Math]::Floor($remainMs / 1000)))
-
-            $pUrl = "$Sc2Base/signalr/poll?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
-            if ($msgId) { $pUrl += "&messageId=$([System.Uri]::EscapeDataString($msgId))" }
+            $pUrl = $pollBase
+            if ($script:_pollCursor) { $pUrl += "&messageId=$([System.Uri]::EscapeDataString($script:_pollCursor))" }
             $pResp = Invoke-WebRequest -Uri $pUrl -UseBasicParsing -TimeoutSec $tSec -ErrorAction Stop
             $pJson = $pResp.Content | ConvertFrom-Json
-            if ($pJson.C) { Set-Variable -Name msgId -Value $pJson.C -Scope 1 }
-            return $pJson
+            & $processPoll $pJson
         }
 
+        # Cursor relay — script-scope vars used by the scriptblocks
+        $script:_pollCursor = $msgId
+        $script:_settings   = $null
+        $script:_parms      = $null
+        $script:_loginOk    = $false
+
         # ── Phase 1: getsettings + uidlogin ─────────────────────────────────
+        $invIdx = 0
+
         $body = 'data=' + [System.Uri]::EscapeDataString("{`"H`":`"ScoreConnectHub`",`"M`":`"Getsettings`",`"A`":[],`"I`":$invIdx}")
         $invIdx++
         Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
@@ -283,54 +292,49 @@ function Probe-ScoreConnectII {
 
         if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
 
-        # Poll once for getsettings + login confirmation
-        try {
-            $p1 = Poll-Once
-            if ($p1 -and $p1.M) { Parse-PollMessages $p1 }
-        } catch {}
-
-        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
-
-        # If login didn't confirm on first poll, try one more
-        if (-not $loginOk) {
-            try {
-                $p1b = Poll-Once
-                if ($p1b -and $p1b.M) { Parse-PollMessages $p1b }
-            } catch {}
+        # Poll for getsettings + login confirmation (up to 2 cycles)
+        for ($p = 0; $p -lt 2; $p++) {
+            if ($sw.ElapsedMilliseconds -ge $budgetMs) { break }
+            try { & $doPoll } catch {}
+            if ($script:_loginOk) { break }
         }
 
-        if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+        $settings = $script:_settings
+        $loginOk  = $script:_loginOk
 
-        # ── Phase 2: getparms + getscoreboards (post-login) ─────────────────
-        # Only send these after login succeeds — the SC II hub ignores them
-        # for unauthenticated connections.  getscoreboards triggers the server
-        # to start broadcasting live score/LED data to our connection.
-        if ($loginOk) {
+        # ── Phase 2: getparms + getscoreboards ──────────────────────────────
+        # Wrapped in do/while($false) so `break` on budget exhaustion falls
+        # through to result population instead of exiting the function.
+        # Send regardless of login status — best-effort.  If login failed,
+        # the server may still respond to getparms (observed on some SC II
+        # builds).  This guarantees we try even if the uidlogin broadcast
+        # was missed due to transport quirks.
+        do {
+            if ($sw.ElapsedMilliseconds -ge $budgetMs) { break }
+
             $body = 'data=' + [System.Uri]::EscapeDataString("{`"H`":`"ScoreConnectHub`",`"M`":`"Getparms`",`"A`":[],`"I`":$invIdx}")
             $invIdx++
             Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
 
-            if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+            if ($sw.ElapsedMilliseconds -ge $budgetMs) { break }
 
             $body = 'data=' + [System.Uri]::EscapeDataString("{`"H`":`"ScoreConnectHub`",`"M`":`"Getscoreboards`",`"A`":[],`"I`":$invIdx}")
             $invIdx++
             Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
 
-            if ($sw.ElapsedMilliseconds -ge $budgetMs) { return $result }
+            if ($sw.ElapsedMilliseconds -ge $budgetMs) { break }
 
-            # Poll for getparms response + score/LED broadcasts
-            for ($poll = 0; $poll -lt 2; $poll++) {
+            # Poll for getparms + score/LED broadcasts (up to 2 cycles)
+            for ($p = 0; $p -lt 2; $p++) {
                 if ($sw.ElapsedMilliseconds -ge $budgetMs) { break }
-                try {
-                    $p2 = Poll-Once
-                    if ($p2 -and $p2.M) { Parse-PollMessages $p2 }
-                    # Done once we have parms + at least one score
-                    if ($parms -and $scores.Count -gt 0) { break }
-                } catch { break }
+                try { & $doPoll } catch { break }
+                if ($script:_parms -and $scores.Count -gt 0) { break }
             }
-        }
+        } while ($false)
 
-        # ── 7. Populate result ──────────────────────────────────────────────
+        $parms = $script:_parms
+
+        # ── 6. Populate result ──────────────────────────────────────────────
         if ($settings) {
             $result.version  = $settings.version
             $result.hardware = $settings.hardware
@@ -354,6 +358,15 @@ function Probe-ScoreConnectII {
         }
         if ($leds.Count -gt 0) {
             $result.statusLeds = $leds
+        }
+
+        # Diagnostic breadcrumbs — helps debug SignalR data flow on VPU.
+        # Includes: login status, topics received, budget usage.
+        $result._diag = @{
+            loginOk     = $loginOk
+            topicsSeen  = ($topics -join ',')
+            elapsedMs   = [int]$sw.ElapsedMilliseconds
+            pollCursor  = $script:_pollCursor
         }
     }
     catch {
