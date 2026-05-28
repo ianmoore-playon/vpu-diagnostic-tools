@@ -2732,7 +2732,10 @@ function renderCameras() {
 
   $page().innerHTML = `
     ${pageHeader("Camera Connectivity", "NIC ports, link status, speed, and Pixellot camera detection",
-      `<button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.cameras=null;renderCameras()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>
+      <button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
         ${svgIcon("zap", 14)} Fault Isolator
       </button>`
     )}
