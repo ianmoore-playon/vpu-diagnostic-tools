@@ -2679,7 +2679,10 @@ function _camPortTile(port, index) {
   if (!p.isUp) { statusLabel = "Down"; dotCls = "cam-dot-down"; }
   else if (p.connecting) { statusLabel = p.linkSpeedMbps ? "Connecting · " + speed : "Connecting…"; dotCls = "cam-dot-connecting"; }
   else if (p.isDegraded) { statusLabel = "Degraded · " + speed; dotCls = "cam-dot-warn"; }
-  else { statusLabel = "Linked · " + speed; dotCls = p.isOcr ? "cam-dot-info" : "cam-dot-up"; }
+  // Fully linked → always green. OCR vs Main is shown by the badge, so the
+  // status dot just signals link health (green = established) and never
+  // lingers blue, which reads as "still connecting".
+  else { statusLabel = "Linked · " + speed; dotCls = "cam-dot-up"; }
 
   const cams = p.camerasDetected || [];
   var camLabel = p.cameraLabel;
@@ -3702,6 +3705,85 @@ function _renderSc3Progress(card, status) {
   `;
 }
 
+// Format a Daktronics clock digit-run (no colon in the raw) into MM:SS.
+// "1225" → "12:25", "0951" → "9:51", "5000" → "50:00". A "." means the
+// controller is sending seconds.tenths (sub-minute) — show as-is.
+function _fmtClock(d) {
+  if (!d) return null;
+  if (d.indexOf(".") >= 0) return d;        // SS.T seconds.tenths
+  d = d.replace(/\D/g, "");
+  if (d.length >= 4) {
+    var mm = parseInt(d.substring(0, d.length - 2), 10);
+    return mm + ":" + d.substring(d.length - 2);
+  }
+  if (d.length === 3) return d.charAt(0) + ":" + d.substring(1);
+  if (d.length === 2) return "0:" + d;
+  return d.length ? d : null;
+}
+
+// ScoreConnect CG token parser. ScoreConnect decodes scoreboard controllers
+// into a common ASCII layout (confirmed against Daktronics support docs):
+//
+//   02<clock> <home> <visitor> <TO><down><togo><ballon><qtr>Home Visitor <X>:S <chk>
+//
+// e.g.  "021951 7 3 55110251Home Visitor S:S 0000008DC8010EECD8"
+//   02      = header
+//   1951    = clock (19:51)   — fused to the header, NO colon in the raw
+//   7 / 3   = Home / Visitor score (space-delimited)
+//   55      = timeouts (5 + 5)
+//   11025   = down(1) toGo(10) ballOn(25)
+//   1       = quarter
+//   Home Visitor = team labels (may be custom names) — alphabetic anchor
+//
+// Returns a parsed object or null. Scores parse reliably; the trailing
+// down/distance block is only read when packed (all fields present),
+// otherwise left null rather than guessed.
+function _parseCG(raw) {
+  // The numeric data is at the start, before the alphabetic team labels.
+  var lead = raw.match(/^[\s]*[\d.][\d.\s]*/);
+  if (!lead) return null;
+  var toks = lead[0].trim().split(/\s+/);
+  if (toks.length < 3) return null;          // need header+clock, home, visitor
+
+  var head = toks[0];
+  if (head.length < 3) return null;          // "02" + at least 1 clock digit
+  var clock = _fmtClock(head.substring(2));  // strip 2-char header → clock digits
+
+  var home    = parseInt(toks[1], 10);
+  var visitor = parseInt(toks[2], 10);
+  if (isNaN(home) || isNaN(visitor)) return null;
+  if (home > 199 || visitor > 199) return null;  // sanity — not a score line
+
+  // Quarter = the last digit of the numeric block (right before the labels).
+  var lastTok = toks[toks.length - 1];
+  var qtr = parseInt(lastTok.charAt(lastTok.length - 1), 10);
+
+  // Down / distance / ball-on — only when the trailing block is packed into
+  // a single 8-char token (TO:2 down:1 togo:2 ballon:2 qtr:1). When fields
+  // are blank the controller emits spaces, breaking the token; we skip it
+  // rather than misread.
+  var down = null, togo = null, ballon = null;
+  if (toks.length === 4 && toks[3].length === 8) {
+    var t  = toks[3];
+    var d  = parseInt(t.substring(2, 3), 10);
+    var tg = parseInt(t.substring(3, 5), 10);
+    var bo = parseInt(t.substring(5, 7), 10);
+    if (d >= 1 && d <= 4) down = d;
+    if (!isNaN(tg) && tg <= 99) togo = tg;
+    if (!isNaN(bo) && bo <= 99) ballon = bo;
+  }
+
+  return {
+    clock: clock,
+    homeScore: home,
+    guestScore: visitor,    // data order is Home then Visitor; UI shows visitor as "guest"
+    period: (qtr >= 1 && qtr <= 9) ? qtr : null,
+    down: down, toGo: togo, ballOn: ballon,
+    possession: null,
+    _strategy: "cg-tokens"
+  };
+}
+
 // ── RTD Score Parser ─────────────────────────────────────────
 // Multi-strategy parser for scoreboard data from SC III.
 // Supports all major vendors: Daktronics, Fairplay, Nevco,
@@ -3710,8 +3792,9 @@ function _renderSc3Progress(card, status) {
 // Strategy order:
 //   1. JSON — if raw data is a JSON string with named fields, parse it.
 //      (Sportzcast TCP socket format uses JSON; SC III may pass it through.)
-//   2. Vendor-specific positional — fixed-width field maps per vendor.
-//   3. Heuristic — regex pattern matching for clock/score/period in any string.
+//   2. ScoreConnect CG token format (_parseCG) — the common decoded layout.
+//   3. Vendor-specific positional — legacy fixed-width fallback.
+//   4. Heuristic — regex pattern matching for clock/score/period.
 //
 // Returns { clock, homeScore, guestScore, period, down, toGo, ballOn,
 //           possession, _strategy } or null if nothing extractable.
@@ -3750,14 +3833,23 @@ function parseRtdScores(rawData, vendor, sport) {
     } catch(e) { /* not JSON, continue */ }
   }
 
-  // ── Strategy 2: Vendor-specific positional parsing ──────────────────
-  // Strip trailing metadata. Daktronics-via-Sportzcast appends a clock-run
-  // status token + MAC/checksum: "... R:S 00D3098DEBCE5DE05B" where the
-  // first char is clock run-state (R=running, S=stopped). Capture that, then
-  // strip from the token onward. Falls back to stripping a trailing hex blob.
+  // Capture clock run-state from the status token "R:S"/"S:S" — first char
+  // is R (running) or S (stopped). Useful as a "clock live" hint.
   var clockRunning = null;
   var statusMatch = rawData.match(/\s+([A-Za-z]):([A-Za-z])\b/);
   if (statusMatch) clockRunning = (statusMatch[1].toUpperCase() === "R");
+
+  // ── Strategy 2: ScoreConnect CG token format (all vendors) ──────────
+  // The common decoded layout ScoreConnect produces. Try this first — it's
+  // the format confirmed against real hardware + Daktronics support docs.
+  var cg = _parseCG(rawData);
+  if (cg && (cg.clock || cg.homeScore != null || cg.guestScore != null)) {
+    cg.clockRunning = clockRunning;
+    return cg;
+  }
+
+  // ── Strategy 3: Vendor-specific positional fallback (legacy) ────────
+  // Strip the trailing status token + MAC/checksum, then read fixed offsets.
   var cleaned = rawData
     .replace(/\s+[A-Za-z]:[A-Za-z]\b.*$/, "")   // strip "R:S 00D3..." / "S:S ..."
     .replace(/\s+[0-9A-Fa-f]{12,}\s*$/, "")     // or a bare trailing MAC/hex
