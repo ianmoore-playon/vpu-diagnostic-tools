@@ -2747,7 +2747,8 @@ function _camPortGridHtml(ports) {
   return portSlots.slice().reverse().map((p, ri) => _camPortTile(p, portSlots.length - 1 - ri)).join("");
 }
 
-function _camNicDiagramHtml(ports) {
+function _camNicDiagramHtml(ports, showLiveBadge) {
+  if (showLiveBadge === undefined) showLiveBadge = true;
   const count = Math.max(4, ports.length);
   function ledColor(p) {
     if (!p || !p.isUp) return "nic-led-off";
@@ -2799,7 +2800,7 @@ function _camNicDiagramHtml(ports) {
   else headerLabel = svgIcon("cpu", 16) + ' No NIC ports detected';
   var nicHeader = '<div class="nic-diagram-header">' +
     headerLabel +
-    '<span id="cam-live-badge" class="cam-live-badge">Auto-Refresh</span>' +
+    (showLiveBadge ? '<span id="cam-live-badge" class="cam-live-badge">Auto-Refresh</span>' : '') +
   '</div>';
   // Only show the physical-order note when we actually have NIC data;
   // otherwise it reads misleadingly on an empty system.
@@ -4559,11 +4560,18 @@ function renderFaultIsolator() {
       "</div>";
   }
 
+  // Reference NIC port diagram (static snapshot — no live badge here since
+  // this page doesn't continuously poll). Lets the tech keep the physical
+  // port layout in view while running the swap test.
+  var diagramCard = ports.length
+    ? '<div class="card" style="margin-bottom:1rem">' + _camNicDiagramHtml(ports, false) + '</div>'
+    : '';
+
   $page().innerHTML = pageHeader(
     "Camera Fault Isolator",
     "Process-of-elimination swap test — isolate a camera fault to NIC port, cable, or camera (CHU).",
     '<button class="btn-outline btn-ol-blue" onclick="navigate(\'cameras\')">' + svgIcon("arrow-left", 14) + " Back to Camera Connectivity</button>"
-  ) + '<div class="card">' + stepDots() + inner + historyTable() + "</div>";
+  ) + diagramCard + '<div class="card">' + stepDots() + inner + historyTable() + "</div>";
 
   // ── event wiring ─────────────────────────────────────────────
   var suspectSel = document.getElementById("fi-suspect");
@@ -4863,7 +4871,7 @@ function renderFaultIsolator() {
         addHistory("Phase 3 - Cable Test", cfg2, sl2, v2, "Pass");
         showResult("Phase 3: " + sl2 + " — Fault follows the cable.", v2, "pass");
         conclude("Cable", "CONCLUSION — FAULTY CABLE",
-          "Replacing the cable restored the link. The original cable (or its termination) is the source of the fault. Replace the cable end-to-end.");
+          "Replacing the cable restored the link. The original cable (or its termination) is the source of the fault. Re-terminate both ends or replace the cable end-to-end. Inspect the cable run for physical damage (kinks, crushing, pinch points), and verify with a cable tester if one is available.");
         renderFaultIsolator();
         return;
       }
