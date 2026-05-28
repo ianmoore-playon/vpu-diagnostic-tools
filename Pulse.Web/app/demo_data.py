@@ -4,7 +4,62 @@ import random
 import time
 from datetime import datetime, timedelta
 
-_BOOT = time.time() - 4 * 86400 - 7 * 3600
+# ── Demo venue identity ──────────────────────────────────────
+# Picked once at module load so all scripts return consistent data
+# for a single Pulse session. Each session re-imports → fresh pick.
+# The pool is small + curated so demos look like real Pixellot
+# venues without ever showing actual customer data.
+_DEMO_VENUES = [
+    {
+        "hostname":     "PXLS2-31402",
+        "vpuName":      "PXLS2_31402 Westfield Academy (TX) - Gymnasium",
+        "serial":       "CZC8847PQR",
+        "city":         "Houston",
+        "state":        "TX",
+        "uplinkIp":     "10.40.16.50",
+        "gatewayIp":    "10.40.16.1",
+        "swVersion":    "5.13.6",
+        "imageVersion": "26.04.001",
+    },
+    {
+        "hostname":     "PXLS2-22158",
+        "vpuName":      "PXLS2_22158 Roosevelt High School (CA) - Main Court",
+        "serial":       "CZC7235HXM",
+        "city":         "Riverside",
+        "state":        "CA",
+        "uplinkIp":     "10.22.8.50",
+        "gatewayIp":    "10.22.8.1",
+        "swVersion":    "5.13.6",
+        "imageVersion": "26.04.001",
+    },
+    {
+        "hostname":     "PXLS2-19844",
+        "vpuName":      "PXLS2_19844 Lincoln Memorial (FL) - Sports Complex",
+        "serial":       "CZC9912NTL",
+        "city":         "Orlando",
+        "state":        "FL",
+        "uplinkIp":     "10.18.4.50",
+        "gatewayIp":    "10.18.4.1",
+        "swVersion":    "5.13.4",
+        "imageVersion": "26.02.003",
+    },
+    {
+        "hostname":     "PXLS2-27619",
+        "vpuName":      "PXLS2_27619 Northridge Prep (IL) - Fieldhouse",
+        "serial":       "CZC8104WBQ",
+        "city":         "Chicago",
+        "state":        "IL",
+        "uplinkIp":     "10.31.12.50",
+        "gatewayIp":    "10.31.12.1",
+        "swVersion":    "5.13.6",
+        "imageVersion": "26.04.001",
+    },
+]
+_VENUE = random.choice(_DEMO_VENUES)
+
+# Uptime varies between 1-12 days for that "real VPU" feel — long enough
+# to look stable, short enough not to trip the >30-day high-uptime finding.
+_BOOT = time.time() - random.randint(1, 12) * 86400 - random.randint(0, 23) * 3600
 
 
 def _uptime_secs():
@@ -20,11 +75,15 @@ def _fmt_uptime(s):
 
 DEMO = {
     "Get-SystemIdentity.ps1": lambda **kw: {
-        "computerSystem": {"name": "VPU-DEMO-DATA", "manufacturer": "Demo HP VPU", "model": "TESTING-1-2-3-ABC"},
-        "bios": {"serialNumber": "6767676767"},
+        "computerSystem": {"name": _VENUE["hostname"], "manufacturer": "HP", "model": "HP Z2 Tower G9 Workstation Desktop PC"},
+        "bios": {"serialNumber": _VENUE["serial"]},
         "uptime": {"formatted": _fmt_uptime(_uptime_secs()), "totalSeconds": _uptime_secs()},
         "operatingSystem": {"caption": "Microsoft Windows 10 IoT Enterprise LTSC", "version": "10.0.19044", "buildNumber": "19044", "osArchitecture": "64-bit"},
-        "pixellot": {"version": "5.2.1.3842", "imageVersion": "23.04.002"},
+        "pixellot": {
+            "version": _VENUE["swVersion"],
+            "imageVersion": _VENUE["imageVersion"],
+            "vpuName": _VENUE["vpuName"],
+        },
         "isNonVpuHost": False,
         "timezone": "(UTC-05:00) Eastern Time (US & Canada)",
         "timezoneId": "Eastern Standard Time",
@@ -57,25 +116,28 @@ DEMO = {
              "arpEntries": [{"ip": "192.168.12.50", "mac": "00:D0:89:1B:03:01"}]},
             {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) I211 Gigabit Network Connection", "status": "Up", "linkSpeedMbps": 1000, "fullDuplex": True, "mac": "A4:4C:C8:12:34:04",
              "rxBytes": 129384756012, "txBytes": 98273640182, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0,
-             "arpEntries": [{"ip": "10.0.1.1", "mac": "00:1A:2B:3C:4D:5E"}]},
+             "arpEntries": [{"ip": _VENUE["gatewayIp"], "mac": "00:1A:2B:3C:4D:5E"}]},
         ]
     },
     "Get-Hardware.ps1": lambda **kw: {
-        "processors": [{"name": "Intel(R) Core(TM) i7-8700T CPU @ 2.40GHz", "numberOfCores": 6, "numberOfLogicalProcessors": 12, "maxClockSpeedMHz": 2400}],
+        "processors": [{"name": "Intel(R) Core(TM) i5-10500 CPU @ 3.10GHz", "numberOfCores": 6, "numberOfLogicalProcessors": 12, "maxClockSpeedMHz": 3100}],
         "memory": [
-            {"capacityGB": 16, "speedMHz": 2666, "memoryType": "DDR4", "deviceLocator": "DIMM_A1"},
-            {"capacityGB": 16, "speedMHz": 2666, "memoryType": "DDR4", "deviceLocator": "DIMM_B1"},
+            {"capacityGB": 16, "speedMHz": 3200, "memoryType": "DDR4", "deviceLocator": "DIMM_A1"},
+            {"capacityGB": 16, "speedMHz": 3200, "memoryType": "DDR4", "deviceLocator": "DIMM_B1"},
         ],
-        "gpus": [{"name": "Intel(R) UHD Graphics 630", "adapterRAMMB": 1024, "driverVersion": "27.20.100.8935"}],
+        "gpus": [
+            {"name": "Intel(R) UHD Graphics 630", "adapterRAMMB": 1024, "driverVersion": "27.20.100.8935"},
+            {"name": "NVIDIA GeForce GTX 1650", "adapterRAMMB": 4096, "driverVersion": "32.0.15.7628"},
+        ],
         "diskDrives": [
-            {"model": "Generic HDD", "sizeGB": 500, "interfaceType": "SATA", "serialNumber": "S3Z8NB0K901234A"}
+            {"model": "Samsung SSD 870 EVO 500GB", "sizeGB": 500, "interfaceType": "SATA", "serialNumber": "S3Z8NB0K901234A"}
         ],
     },
     "Get-InstalledSoftware.ps1": lambda **kw: {
         "count": 18,
         "software": [
-            {"displayName": "Pixellot VPU Agent", "displayVersion": "5.2.1.3842", "publisher": "Pixellot Ltd."},
-            {"displayName": "Pixellot VPU Engine", "displayVersion": "5.2.1.3842", "publisher": "Pixellot Ltd."},
+            {"displayName": "Pixellot VPU Agent", "displayVersion": _VENUE["swVersion"], "publisher": "Pixellot Ltd."},
+            {"displayName": "Pixellot VPU Engine", "displayVersion": _VENUE["swVersion"], "publisher": "Pixellot Ltd."},
             {"displayName": "Pixellot Encoder", "displayVersion": "3.8.0", "publisher": "Pixellot Ltd."},
             {"displayName": "Google Chrome", "displayVersion": "120.0.6099.130", "publisher": "Google LLC"},
             {"displayName": "LogMeIn", "displayVersion": "4.1.0.14083", "publisher": "LogMeIn, Inc."},
@@ -96,12 +158,12 @@ DEMO = {
             {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I350 Gigabit Network Connection", "status": "Down", "macAddress": "A0-36-9F-00-11-22", "linkSpeed": "", "interfaceIndex": 3},
         ],
         "ipConfigurations": [
-            {"interfaceAlias": "Ethernet 4 (Uplink)", "interfaceIndex": 4, "ipv4Address": ["10.0.1.50"], "ipv4DefaultGateway": ["10.0.1.1"], "dnsServers": ["8.8.8.8", "8.8.4.4"], "dhcpEnabled": True, "prefixLength": 24},
+            {"interfaceAlias": "Ethernet 4 (Uplink)", "interfaceIndex": 4, "ipv4Address": [_VENUE["uplinkIp"]], "ipv4DefaultGateway": [_VENUE["gatewayIp"]], "dnsServers": ["8.8.8.8", "8.8.4.4"], "dhcpEnabled": True, "prefixLength": 24},
             {"interfaceAlias": "Ethernet 1", "interfaceIndex": 1, "ipv4Address": ["192.168.10.1"], "ipv4DefaultGateway": [], "dnsServers": [], "dhcpEnabled": False, "prefixLength": 24},
             {"interfaceAlias": "Ethernet 2", "interfaceIndex": 2, "ipv4Address": ["192.168.11.1"], "ipv4DefaultGateway": [], "dnsServers": [], "dhcpEnabled": False, "prefixLength": 24},
             {"interfaceAlias": "Ethernet 3", "interfaceIndex": 3, "ipv4Address": ["192.168.12.1"], "ipv4DefaultGateway": [], "dnsServers": [], "dhcpEnabled": False, "prefixLength": 24},
         ],
-        "uplinkAdapter": {"interfaceAlias": "Ethernet 4 (Uplink)", "gateway": "10.0.1.1", "interfaceIndex": 4},
+        "uplinkAdapter": {"interfaceAlias": "Ethernet 4 (Uplink)", "gateway": _VENUE["gatewayIp"], "interfaceIndex": 4},
         "uplinkStats": {"fullDuplex": True, "rxBytes": 129384756012, "txBytes": 98273640182, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0},
         "internet": {"reachable": True, "testedHost": "8.8.8.8"},
         "ntpSource": "time.windows.com",
@@ -192,7 +254,7 @@ DEMO = {
         ],
     },
     "Test-LocalNetwork.ps1": lambda **kw: {
-        "gateway": {"target": "10.0.1.1", "label": "Gateway", "reachable": True, "sent": 4, "received": 4, "lossPercent": 0, "minMs": 1, "avgMs": 2, "maxMs": 4, "status": "pass"},
+        "gateway": {"target": _VENUE["gatewayIp"], "label": "Gateway", "reachable": True, "sent": 4, "received": 4, "lossPercent": 0, "minMs": 1, "avgMs": 2, "maxMs": 4, "status": "pass"},
         "dns": {"target": "8.8.8.8", "label": "DNS Server", "reachable": True, "sent": 4, "received": 4, "lossPercent": 0, "minMs": 8, "avgMs": 12, "maxMs": 18, "status": "pass"},
     },
     "Get-DiskHealth.ps1": lambda **kw: {
@@ -240,12 +302,12 @@ DEMO = {
             "lastErrorMessage": None,
         },
         "liveScoreData": {
-            "homeTeam": "Eagles",
-            "awayTeam": "Panthers",
-            "homeScore": 24,
-            "awayScore": 17,
-            "period": "Q3",
-            "clock": "04:22",
+            "homeTeam": random.choice(["Eagles", "Wildcats", "Lions", "Hawks", "Tigers", "Cougars"]),
+            "awayTeam": random.choice(["Panthers", "Bears", "Falcons", "Spartans", "Knights", "Bulldogs"]),
+            "homeScore": random.randint(18, 72),
+            "awayScore": random.randint(18, 72),
+            "period": random.choice(["Q2", "Q3", "Q4", "H2"]),
+            "clock": f"{random.randint(0, 9):02d}:{random.randint(0, 59):02d}",
         },
         "scoreLinkConnected": True,
         "scoreLinkPort": "COM4",
@@ -315,7 +377,7 @@ DEMO = {
         "targetIp": "52.20.181.44",
         "reached": True,
         "hops": [
-            {"hop": 1, "ip": "10.0.1.1", "hostname": "gateway.local", "rttMs": 1, "status": "transit"},
+            {"hop": 1, "ip": _VENUE["gatewayIp"], "hostname": "gateway.local", "rttMs": 1, "status": "transit"},
             {"hop": 2, "ip": "172.16.0.1", "hostname": None, "rttMs": 3, "status": "transit"},
             {"hop": 3, "ip": "10.200.0.1", "hostname": "core-rtr-1.isp.net", "rttMs": 8, "status": "transit"},
             {"hop": 4, "ip": None, "hostname": None, "rttMs": None, "status": "timeout"},
