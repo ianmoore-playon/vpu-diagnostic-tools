@@ -1487,21 +1487,24 @@ def _enrich_ports(
                 }
             )
 
-    # ── Dedupe duplicate camera MACs across ALL ports ──
-    # When a tech physically moves a camera between NIC ports, the Windows
-    # ARP cache keeps the old entry around for several minutes — so the
-    # same camera MAC shows on both the old port (now Down, or just stale)
-    # and the new port (live link). A camera physically lives on exactly
-    # one port at a time, so we attribute it to the live connection and
-    # strip the stale copy.
-    #
-    # Winner priority: an UP port beats a Down port; among UP ports the
-    # one with the most RX traffic wins (the active stream). Down ports
-    # that lose are flagged with cameraMovedTo so the UI can show "camera
-    # moved to Port N" instead of a false "camera last detected" alarm.
     def _mac_key(c):
         return str(c.get("cgiMac") or c.get("mac") or "").upper().replace("-", ":")
 
+    # ── A Down port has no live camera ──
+    # No link means nothing is physically connected right now; any camera
+    # in a down port's ARP table is a stale entry left over from before the
+    # cable was unplugged/moved. During on-site troubleshooting techs plug
+    # and unplug constantly, so trusting stale ARP on a dead port produced
+    # phantom cameras and false "camera last detected" alarms. Clear them.
+    for p in ports:
+        if not p.get("isUp"):
+            p["camerasDetected"] = []
+
+    # ── Dedupe duplicate camera MACs across UP ports ──
+    # Briefly, ARP lag can show the same camera MAC on two live ports right
+    # after a move. A camera lives on exactly one port, so attribute it to
+    # the port carrying the most RX traffic (the active stream) and strip
+    # the stale copy from the other.
     mac_owners = {}  # mac → [port, ...]
     for p in ports:
         for c in p.get("camerasDetected") or []:
@@ -1512,17 +1515,12 @@ def _enrich_ports(
     for m, owners in mac_owners.items():
         if len(owners) <= 1:
             continue
-        # Sort so the live connection wins: UP before Down, then highest RX.
-        owners.sort(key=lambda p: (0 if p.get("isUp") else 1, -(p.get("rxBytes") or 0)))
-        winner = owners[0]
+        owners.sort(key=lambda p: -(p.get("rxBytes") or 0))
         for losing_port in owners[1:]:
             losing_port["camerasDetected"] = [
                 c for c in losing_port.get("camerasDetected") or []
                 if _mac_key(c) != m
             ]
-            # Record where the camera went so the UI can reassure the tech
-            # the camera didn't fail — it just moved to a different port.
-            losing_port["cameraMovedTo"] = winner.get("portLabel")
 
     # Second pass: number main cameras and OCR cameras by camera IP so
     # numbering is stable (Main Camera 1 = .50, Main Camera 2 = .51, etc).
@@ -1583,16 +1581,10 @@ def _compute_camera_findings(ports: list) -> list:
         label = port.get("portLabel", port.get("name", "Port"))
         adapter = port.get("name", "")
         is_up = port.get("isUp")
-        cams = port.get("camerasDetected") or []
 
-        if not is_up and cams:
-            findings.append(
-                {
-                    "severity": "critical",
-                    "title": f"{label} down — camera last detected",
-                    "body": f"{adapter}. Port is down but a Pixellot camera was recently in the ARP table. Check the cable or use Fault Isolator.",
-                }
-            )
+        # Note: down ports carry no cameras (stale ARP is cleared in
+        # _enrich_ports), so there's no "camera last detected" finding —
+        # it produced constant false alarms while techs moved cables.
 
         if is_up and port.get("isDegraded"):
             speed = port.get("linkSpeedMbps")
