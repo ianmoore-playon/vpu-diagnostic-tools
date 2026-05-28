@@ -3555,15 +3555,28 @@ function renderScoreConnect() {
   const data = cached("scoreconnect");
   if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
 
+  const sc2 = data.sc2;  // SC II data (parsed scores, SignalR)
   const config = data.configuration || {};
   const botStatus = data.botStatus || {};
-  const isDetected = data.reachable;
+  const isDetected = data.reachable;  // SC III
+  const anySC = isDetected || (sc2 && sc2.reachable);
   const version = data.version;
   const hasData = data.dataStatus && !data.dataStatus.toLowerCase().includes("no scoreboard");
   const dataReceiving = hasData && data.rawData;
 
-  // Build BOT and ScoreLink cards independently — ScoreLink detection
-  // is USB-based and works even when SC III is unreachable.
+  // SC II parsed scoreboard hero panel
+  const sc2HasScores = sc2 && sc2.scores && (sc2.scores.visitor || sc2.scores.home || sc2.scores.clock);
+  const sc2Teams = sc2 && sc2.teamNames || {};
+
+  // SC II status LED helper: 0=grey 1=yellow 2=green
+  function ledClass(val) {
+    return val === 2 ? "status-pass" : val === 1 ? "status-warn" : "text-pulse-muted";
+  }
+  function ledLabel(val) {
+    return val === 2 ? "OK" : val === 1 ? "Warning" : "Off";
+  }
+
+  // Build BOT and ScoreLink cards independently
   const botCard = botStatus.isConnected != null ? `
     <div class="card">
       ${sectionTitle("globe", "Cloud (BOT) Status")}
@@ -3579,10 +3592,7 @@ function renderScoreConnect() {
       </div>
     </div>` : "";
 
-  // Hide ScoreLink card when SC III isn't reachable — showing "Not Detected"
-  // for USB hardware is misleading when the service itself is absent.
-  // sc-sl-card class enables flex-stretch to match BOT card height.
-  const slCard = data.scoreLinkConnected != null && isDetected ? `
+  const slCard = data.scoreLinkConnected != null && anySC ? `
     <div class="card sc-sl-card">
       ${sectionTitle("link", "ScoreLink Device")}
       <div class="sc-scorelink ${data.scoreLinkConnected ? "sc-scorelink-ok" : "sc-scorelink-err"}">
@@ -3591,16 +3601,81 @@ function renderScoreConnect() {
       </div>
     </div>` : "";
 
+  // Determine page subtitle based on what's detected
+  const subtitle = sc2 && sc2.reachable && isDetected
+    ? "ScoreConnect II + III detected — parsed scores from SC II, raw data from SC III"
+    : sc2 && sc2.reachable
+    ? "ScoreConnect II — parsed scoreboard data via SignalR"
+    : "ScoreConnect III — service, configuration, and live data";
+
   $page().innerHTML = `
-    ${pageHeader("Score Connect", "ScoreConnect III scoreboard integration — service, configuration, and live data",
+    ${pageHeader("Score Connect", subtitle,
       `<button class="btn-outline btn-ol-blue" onclick="dataCache.scoreconnect=null;renderScoreConnect()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
     )}
 
-    <!-- Live Data — hero panel, first thing you see -->
-    ${isDetected ? `
+    <!-- SC II Live Scoreboard — hero panel when SC II has parsed scores -->
+    ${sc2HasScores ? `
     <div class="sc-board sc-board-hero">
+      <div class="sc-header">
+        <div class="sc-team-home">
+          <div class="sc-team-label">${esc(sc2Teams.visitor || "VISITOR")}</div>
+          <div class="sc-score">${esc(sc2.scores.visitor || "0")}</div>
+        </div>
+        <div class="sc-center">
+          <div class="sc-period-label">GAME CLOCK</div>
+          <div class="sc-clock">${esc(sc2.scores.clock || "--:--")}</div>
+          ${sc2.scores.text1 ? `<div class="sc-data-desc">${esc(sc2.scores.text1)}</div>` : ""}
+        </div>
+        <div class="sc-team-away">
+          <div class="sc-team-label">${esc(sc2Teams.home || "HOME")}</div>
+          <div class="sc-score">${esc(sc2.scores.home || "0")}</div>
+        </div>
+      </div>
+      ${sc2.scores.text2 || sc2.scores.text3 ? `
+      <div class="sc-stats" style="justify-content:center">
+        <div class="sc-stat-group" style="justify-content:center">
+          ${sc2.scores.text2 ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.scores.text2)}</span><span class="sc-stat-lbl">Info</span></div>` : ""}
+          ${sc2.scores.text3 ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.scores.text3)}</span><span class="sc-stat-lbl">Info</span></div>` : ""}
+        </div>
+      </div>` : ""}
+      <div class="sc-stats">
+        <div class="sc-stat-group">
+          ${sc2.vendor ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.vendor)}</span><span class="sc-stat-lbl">Vendor</span></div>` : ""}
+          ${sc2.hardware ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.hardware)}</span><span class="sc-stat-lbl">Hardware</span></div>` : ""}
+        </div>
+        <div class="sc-stat-group sc-stat-right">
+          ${sc2.uid ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.uid)}</span><span class="sc-stat-lbl">UID</span></div>` : ""}
+          ${sc2.version ? `<div class="sc-stat"><span class="sc-stat-val">${esc(sc2.version)}</span><span class="sc-stat-lbl">Version</span></div>` : ""}
+        </div>
+      </div>
+    </div>
+    ` : sc2 && sc2.reachable ? `
+    <div class="sc-board sc-board-hero">
+      <div class="sc-header">
+        <div class="sc-team-home">
+          <div class="sc-team-label">Hardware</div>
+          <div class="sc-team-name">${esc(sc2.hardware || "ScoreConnect II")}</div>
+        </div>
+        <div class="sc-center">
+          <div class="sc-data-status">
+            <span class="sc-data-dot sc-data-dot-on"></span>
+            <span class="sc-data-label">Connected</span>
+          </div>
+          <div class="sc-data-desc">Waiting for score data...</div>
+        </div>
+        <div class="sc-team-away">
+          <div class="sc-team-label">Version</div>
+          <div class="sc-team-name">${esc(sc2.version || "—")}</div>
+        </div>
+      </div>
+    </div>
+    ` : ""}
+
+    <!-- SC III Data Flow — hero panel when only SC III is present, or secondary when SC II is hero -->
+    ${isDetected ? `
+    <div class="sc-board ${sc2HasScores ? "" : "sc-board-hero"} ${sc2HasScores ? "mt-4" : ""}">
       <div class="sc-header">
         <div class="sc-team-home">
           <div class="sc-team-label">Vendor</div>
@@ -3620,7 +3695,7 @@ function renderScoreConnect() {
       </div>
       ${data.rawData ? `
       <div class="sc-raw-data">
-        <div class="sc-raw-label">RAW SCOREBOARD DATA</div>
+        <div class="sc-raw-label">RAW SCOREBOARD DATA (SC III)</div>
         <div class="sc-raw-value">${esc(data.rawData)}</div>
       </div>` : ""}
       <div class="sc-stats">
@@ -3634,15 +3709,27 @@ function renderScoreConnect() {
         </div>
       </div>
     </div>
-    ` : `<div class="sc-board sc-board-hero sc-board-empty">ScoreConnect III not detected at ${esc(data.baseUrl || "localhost:5000")}</div>`}
+    ` : !sc2HasScores && !(sc2 && sc2.reachable) ? `<div class="sc-board sc-board-hero sc-board-empty">No ScoreConnect service detected</div>` : ""}
 
-    <!-- Service Status -->
+    <!-- SC II Status LEDs -->
+    ${sc2 && sc2.statusLeds ? `
     <div class="card mt-4">
-      ${sectionTitle("server", "Service Status")}
+      ${sectionTitle("heartbeat", "SC II Status")}
       <div class="kv-grid">
-        ${kvRowHtml("Detected", isDetected
-          ? '<span class="status-pass">Yes</span>'
-          : '<span class="status-fail">No</span>')}
+        ${sc2.statusLeds.scoreboard != null ? kvRowHtml("Scoreboard Data", `<span class="${ledClass(sc2.statusLeds.scoreboard)}">${ledLabel(sc2.statusLeds.scoreboard)}</span>`) : ""}
+        ${sc2.statusLeds.network != null ? kvRowHtml("Network", `<span class="${ledClass(sc2.statusLeds.network)}">${ledLabel(sc2.statusLeds.network)}</span>`) : ""}
+        ${sc2.statusLeds.cloud != null ? kvRowHtml("Cloud", `<span class="${ledClass(sc2.statusLeds.cloud)}">${ledLabel(sc2.statusLeds.cloud)}</span>`) : ""}
+        ${sc2.statusLeds.local != null ? kvRowHtml("Local", `<span class="${ledClass(sc2.statusLeds.local)}">${ledLabel(sc2.statusLeds.local)}</span>`) : ""}
+        ${sc2.statusLeds.update != null ? kvRowHtml("Update", `<span class="${ledClass(sc2.statusLeds.update)}">${ledLabel(sc2.statusLeds.update)}</span>`) : ""}
+      </div>
+    </div>` : ""}
+
+    <!-- SC III Service Status -->
+    ${isDetected ? `
+    <div class="card mt-4">
+      ${sectionTitle("server", "SC III Service Status")}
+      <div class="kv-grid">
+        ${kvRowHtml("Detected", '<span class="status-pass">Yes</span>')}
         ${kvRow("Base URL", data.baseUrl)}
         ${kvRow("Version", version)}
         ${kvRow("Network", data.networkStatus)}
@@ -3651,9 +3738,9 @@ function renderScoreConnect() {
           : '—')}
         ${data.error && !isDetected ? kvRowHtml("Error", `<span class="status-fail">${esc(typeof data.error === "string" ? data.error : data.message || "Connection failed")}</span>`) : ""}
       </div>
-    </div>
+    </div>` : ""}
 
-    <!-- Connected Device / Configuration -->
+    <!-- Configuration -->
     ${config.vendor || config.sport ? `
     <div class="card mt-4">
       ${sectionTitle("cog", "Configuration")}

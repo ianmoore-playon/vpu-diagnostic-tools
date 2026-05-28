@@ -94,6 +94,36 @@ def _demo_scoreconnect():
         "scoreLinkModel": "ScoreLink",
         "scoreLinkStatusLabel": "ScoreLink device connected (COM7)",
         "error": None,
+        "sc2": {
+            "reachable": True,
+            "baseUrl": "http://localhost:1400",
+            "version": "2.0.3.11",
+            "hardware": "ScoreConnectII",
+            "uid": "6C02E069700E",
+            "scores": {
+                "visitor": str(random.randint(0, 42)),
+                "home": str(random.randint(0, 42)),
+                "clock": f"{random.randint(0, 20):02d}:{random.randint(0, 59):02d}",
+                "text1": None,
+                "text2": None,
+                "text3": None,
+            },
+            "teamNames": {
+                "visitor": random.choice(["Eagles", "Warriors", "Knights", "Bulldogs"]),
+                "home": random.choice(["Tigers", "Panthers", "Hawks", "Bears"]),
+            },
+            "vendor": "Daktronics",
+            "sport": None,
+            "botNumber": 0,
+            "statusLeds": {
+                "scoreboard": 2,
+                "network": 2,
+                "cloud": random.choice([0, 2]),
+                "local": 2,
+                "update": 0,
+            },
+            "error": None,
+        },
     }
 
 

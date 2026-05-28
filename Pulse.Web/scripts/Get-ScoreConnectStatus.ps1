@@ -10,10 +10,23 @@
     Configuration fields are normalised to renderer-friendly names (vendor, sport, etc.)
     using the same alias tables as the WPF ScoreConnectService.
 
+    ScoreConnect product versions:
+      SC III  — web-based (localhost:5000), raw RTD data only, no parsed scores.
+                This script targets SC III.
+      SC II   — web-based, has parsed scoreboard data (team names, scores, clock).
+      SC I    — standalone .exe, has parsed data but no HTTP API.
+
     Real SC III get-status shape (v1.4.x):
       { botNumber, scoreBoardData: {id, messageType, description},
         network: {id, messageType, description}, isConnectedToBotServer,
         hasLocalStream, updateInProgress, data, botConfigurationInProgress }
+
+    Known issues:
+      - botNumber from get-status and get-bot-number is notoriously stale on
+        SC III — often shows a previous unit's number until a service reset.
+        Surfaced as best-effort, not authoritative.
+      - Bus-reported device description (DEVPKEY) requires admin access on some
+        VPU builds. VID/PID fallback (04D8/00DD) covers ScoreLink detection.
 #>
 [CmdletBinding()]
 param(
@@ -122,6 +135,155 @@ function Get-ScoreConnectExeVersion {
         } catch {}
     }
     return $null
+}
+
+# ── SC II probe (SignalR long-polling) ───────────────────────────────────────
+# SC II uses SignalR 2.x on localhost:1400.  No REST API — all data flows
+# through the ScoreConnectHub hub.  We use the long-polling transport so we
+# don't need a WebSocket library.
+#
+# Flow: negotiate → connect → start → send getsettings → send uidlogin →
+#       send getparms → poll for broadcasts → parse and return.
+#
+# Parsed score data is broadcast as individual topics:
+#   status_vscore, status_hscore, status_clock, status_text1/2/3
+# Status LEDs: status_scoreboard_led, status_network_led, etc.  (0=off 1=yellow 2=green)
+
+function Probe-ScoreConnectII {
+    param([string]$Sc2Base = 'http://localhost:1400')
+
+    $result = @{
+        reachable   = $false
+        baseUrl     = $Sc2Base
+        version     = $null
+        hardware    = $null
+        uid         = $null
+        scores      = $null
+        teamNames   = $null
+        vendor      = $null
+        sport       = $null
+        botNumber   = $null
+        statusLeds  = $null
+        error       = $null
+    }
+
+    try {
+        # ── 1. TCP pre-check on port 1400 ──────────────────────────────────
+        $sc2Uri = [System.Uri]$Sc2Base
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        try {
+            $ct = $tcp.ConnectAsync($sc2Uri.Host, $sc2Uri.Port)
+            if (-not $ct.Wait(2000)) { return $result }
+            if ($ct.IsFaulted) { return $result }
+        } finally { $tcp.Dispose() }
+
+        # ── 2. SignalR negotiate ────────────────────────────────────────────
+        $connData = [System.Uri]::EscapeDataString('[{"Name":"ScoreConnectHub"}]')
+        $negUrl   = "$Sc2Base/signalr/negotiate?clientProtocol=1.5&connectionData=$connData"
+        $negResp  = Invoke-WebRequest -Uri $negUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+        $negJson  = $negResp.Content | ConvertFrom-Json
+        $token    = [System.Uri]::EscapeDataString($negJson.ConnectionToken)
+
+        $result.reachable = $true
+
+        # ── 3. Connect (long-polling) ───────────────────────────────────────
+        $connUrl  = "$Sc2Base/signalr/connect?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
+        $connResp = Invoke-WebRequest -Uri $connUrl -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        $initJson = $connResp.Content | ConvertFrom-Json
+        $msgId    = $initJson.C  # cursor for next poll
+
+        # ── 4. Start ────────────────────────────────────────────────────────
+        $startUrl = "$Sc2Base/signalr/start?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
+        Invoke-WebRequest -Uri $startUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue | Out-Null
+
+        # ── 5. Send hub invocations ─────────────────────────────────────────
+        $sendUrl = "$Sc2Base/signalr/send?transport=longPolling&connectionToken=$token&connectionData=$connData"
+
+        # getsettings (works pre-login)
+        $body = 'data=' + [System.Uri]::EscapeDataString('{"H":"ScoreConnectHub","M":"Getsettings","A":[],"I":0}')
+        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue | Out-Null
+
+        # uidlogin (required for getparms)
+        $body = 'data=' + [System.Uri]::EscapeDataString('{"H":"ScoreConnectHub","M":"Uidlogin","A":["Admin"],"I":1}')
+        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue | Out-Null
+
+        # getparms (team names, vendor, bot)
+        $body = 'data=' + [System.Uri]::EscapeDataString('{"H":"ScoreConnectHub","M":"Getparms","A":[],"I":2}')
+        Invoke-WebRequest -Uri $sendUrl -Method POST -Body $body -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue | Out-Null
+
+        # ── 6. Poll for broadcast messages ──────────────────────────────────
+        # Collect up to 3 poll cycles.  Each poll blocks until the server has
+        # messages or the timeout expires.  We parse getsettings, getparms,
+        # and live score broadcasts.
+        $settings  = $null
+        $parms     = $null
+        $scores    = @{}
+        $leds      = @{}
+
+        for ($poll = 0; $poll -lt 3; $poll++) {
+            try {
+                $pollUrl = "$Sc2Base/signalr/poll?transport=longPolling&clientProtocol=1.5&connectionToken=$token&connectionData=$connData"
+                if ($msgId) { $pollUrl += "&messageId=$([System.Uri]::EscapeDataString($msgId))" }
+                $pollResp = Invoke-WebRequest -Uri $pollUrl -UseBasicParsing -TimeoutSec 4 -ErrorAction Stop
+                $pollJson = $pollResp.Content | ConvertFrom-Json
+
+                if ($pollJson.C) { $msgId = $pollJson.C }
+
+                if ($pollJson.M) {
+                    foreach ($msg in $pollJson.M) {
+                        if ($msg.M -ne 'broadcastMessage' -or $msg.A.Count -lt 2) { continue }
+                        $topic  = $msg.A[0]
+                        try { $tdata = $msg.A[1] | ConvertFrom-Json } catch { continue }
+
+                        switch ($topic) {
+                            'getsettings'          { $settings = $tdata }
+                            'getparms'             { $parms = $tdata }
+                            'status_clock'         { $scores['clock']   = $tdata.status_clock }
+                            'status_vscore'        { $scores['visitor'] = $tdata.status_vscore }
+                            'status_hscore'        { $scores['home']    = $tdata.status_hscore }
+                            'status_text1'         { $scores['text1']   = $tdata.status_text1 }
+                            'status_text2'         { $scores['text2']   = $tdata.status_text2 }
+                            'status_text3'         { $scores['text3']   = $tdata.status_text3 }
+                            'status_scoreboard_led' { $leds['scoreboard'] = [int]$tdata.status_scoreboard_led }
+                            'status_network_led'   { $leds['network']    = [int]$tdata.status_network_led }
+                            'status_cloud_led'     { $leds['cloud']      = [int]$tdata.status_cloud_led }
+                            'status_local_led'     { $leds['local']      = [int]$tdata.status_local_led }
+                            'status_update_led'    { $leds['update']     = [int]$tdata.status_update_led }
+                        }
+                    }
+                }
+
+                # If we have both settings and parms, and at least one score field, we're done
+                if ($settings -and $parms -and $scores.Count -gt 0) { break }
+            } catch { break }
+        }
+
+        # ── 7. Populate result ──────────────────────────────────────────────
+        if ($settings) {
+            $result.version  = $settings.version
+            $result.hardware = $settings.hardware
+            $result.uid      = $settings.instance_uid
+        }
+        if ($parms) {
+            $result.teamNames = @{
+                visitor = $parms.visitor_teamname
+                home    = $parms.home_teamname
+            }
+            $result.vendor    = $parms.sbvendorname
+            $result.botNumber = $parms.botnumber
+        }
+        if ($scores.Count -gt 0) {
+            $result.scores = $scores
+        }
+        if ($leds.Count -gt 0) {
+            $result.statusLeds = $leds
+        }
+    }
+    catch {
+        $result.error = $_.Exception.Message
+    }
+
+    return $result
 }
 
 try {
@@ -234,8 +396,14 @@ try {
     }
 
     # ── 4. BOT status ────────────────────────────────────────────────────────
-    # Primary: extract from get-status (botNumber + isConnectedToBotServer).
-    # Fallback: dedicated get-bot-number endpoint (bare integer or JSON object).
+    # NOTE: The bot number reported by SC III is notoriously stale — it often
+    # shows a previous unit's number and only corrects after a service reset.
+    # Do NOT treat it as authoritative.  We still surface it ("best-effort")
+    # because _some_ value is better than none for field triage, but the UI
+    # should not emphasize it.
+    #
+    # isConnectedToBotServer from get-status is the most trustworthy boolean
+    # for cloud connection state.
     $botStatus = $null
     if ($reachable) {
         $botIsConnected    = $false
@@ -243,39 +411,43 @@ try {
         $botServerAddress  = $null
         $botLastError      = $null
 
-        # Prefer get-status fields — already parsed above
+        # get-status fields (already parsed above)
         if ($null -ne $isConnectedToBotServer) {
             $botIsConnected = $isConnectedToBotServer
-            if ($statusData.PSObject.Properties['botNumber']) {
-                $bn = [long]$statusData.botNumber
-                if ($bn -gt 0) { $botScoreConnectId = "$bn" }
-            }
-        } else {
-            # Fallback to dedicated endpoint
+        }
+        if ($statusData -and $statusData.PSObject.Properties['botNumber']) {
+            $bn = [long]$statusData.botNumber
+            if ($bn -gt 0) { $botScoreConnectId = "$bn" }
+        }
+
+        # Fallback: dedicated get-bot-number endpoint
+        if (-not $botScoreConnectId) {
             $br = Invoke-SafeGet "$BaseUrl/api/configuration/get-bot-number"
             if (-not $br.ok) {
                 $br = Invoke-SafeGet "$BaseUrl/api/v2/configuration/get-bot-configuration-status"
             }
-
             if ($br.ok -and $br.content) {
                 $trimmed = $br.content.Trim()
                 if ($trimmed -match '^\d+$') {
-                    $bareNumber        = [long]$trimmed
-                    $botIsConnected    = $bareNumber -gt 0
-                    $botScoreConnectId = if ($bareNumber -gt 0) { $trimmed } else { $null }
+                    $bareNumber = [long]$trimmed
+                    if ($bareNumber -gt 0) { $botScoreConnectId = $trimmed }
+                    if (-not $botIsConnected -and $bareNumber -gt 0) { $botIsConnected = $true }
                 } else {
                     try {
                         $botObj = $trimmed | ConvertFrom-Json
                         $botMap = To-Map $botObj
 
                         $botNumStr = Pick-First $botMap @('botNumber', 'bot_number')
-                        if ($null -ne $botNumStr) {
-                            $botIsConnected    = ([long]$botNumStr) -gt 0
-                            $botScoreConnectId = if ($botIsConnected) { $botNumStr } else { $null }
-                        } else {
-                            $connStr        = Pick-First $botMap @('botOnline', 'isConnected', 'cloudConnection', 'isCloudMode')
+                        if ($null -ne $botNumStr -and ([long]$botNumStr) -gt 0) {
+                            $botScoreConnectId = $botNumStr
+                        }
+                        if (-not $botIsConnected) {
+                            $connStr = Pick-First $botMap @('botOnline', 'isConnected', 'cloudConnection', 'isCloudMode')
                             $botIsConnected = ($connStr -eq 'True' -or $connStr -eq 'true' -or $connStr -eq '1')
-                            $botScoreConnectId = Pick-First $botMap @('scoreConnectId', 'id')
+                        }
+                        if (-not $botScoreConnectId) {
+                            $idStr = Pick-First $botMap @('scoreConnectId', 'id')
+                            if ($idStr) { $botScoreConnectId = $idStr }
                         }
                         $botServerAddress = Pick-First $botMap @('botServerAddress', 'botAddress', 'botServer')
                         $botLastError     = Pick-First $botMap @('lastErrorMessage', 'lastError', 'errorMessage')
@@ -397,7 +569,14 @@ try {
         "$scoreLinkModel device connected ($scoreLinkPort)"
     }
 
-    # ── 6. Output ────────────────────────────────────────────────────────────
+    # ── 6. SC II probe ──────────────────────────────────────────────────────
+    # SC II runs on port 1400 — probe independently of SC III.
+    # Derive SC II URL from the same host as SC III BaseUrl.
+    $sc2BaseUri = [System.Uri]$BaseUrl
+    $sc2Url     = "http://$($sc2BaseUri.Host):1400"
+    $sc2Data    = Probe-ScoreConnectII -Sc2Base $sc2Url
+
+    # ── 7. Output ────────────────────────────────────────────────────────────
     [ordered]@{
         reachable            = $reachable
         baseUrl              = $BaseUrl
@@ -413,6 +592,7 @@ try {
         scoreLinkModel       = $scoreLinkModel
         scoreLinkStatusLabel = $scoreLinkLabel
         error                = $errorMsg
+        sc2                  = if ($sc2Data.reachable) { $sc2Data } else { $null }
     } | ConvertTo-Json -Depth 10 -Compress
 }
 catch {
@@ -431,5 +611,6 @@ catch {
         scoreLinkModel       = ''
         scoreLinkStatusLabel = 'ScoreLink not connected'
         error                = $_.Exception.Message
+        sc2                  = $null
     } | ConvertTo-Json -Compress
 }
