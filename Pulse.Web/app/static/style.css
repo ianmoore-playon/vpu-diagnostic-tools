@@ -1553,11 +1553,15 @@ html.dark .splash-logo {
 .orient-fig-label { font-size: 0.62rem; font-weight: 600; color: var(--c-muted); }
 .orient-svg { display: block; }
 .orient-chassis { fill: var(--c-surface-2, rgba(148,163,184,0.08)); stroke: var(--c-dim); stroke-width: 1.5; }
+.orient-iozone { fill: rgba(148,163,184,0.06); stroke: var(--c-border); stroke-width: 0.75; }
 .orient-io { fill: var(--c-dimmer); }
-.orient-portbank { fill: rgba(59,130,246,0.12); stroke: #3b82f6; stroke-width: 1; }
+.orient-eth { fill: var(--c-muted); }
+.orient-fan { fill: none; stroke: var(--c-dim); stroke-width: 1; }
+.orient-portbank { fill: rgba(59,130,246,0.14); stroke: #3b82f6; stroke-width: 1.2; }
 .orient-port { fill: #3b82f6; }
-.orient-port-num { fill: #fff; font-size: 8px; font-weight: 700; text-anchor: middle; }
-.orient-ac { fill: none; stroke: var(--c-dim); stroke-width: 1.5; }
+.orient-port-num { fill: #fff; font-size: 9px; font-weight: 700; text-anchor: middle; }
+.orient-acbox { fill: none; stroke: var(--c-dim); stroke-width: 1.2; }
+.orient-acpin { fill: var(--c-dim); }
 .orient-caption { font-size: 0.66rem; line-height: 1.5; color: var(--c-muted); }
 .orient-caption strong { color: var(--c-text); font-weight: 600; }
 .nic-diagram-ports {

@@ -3117,36 +3117,57 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
 // camera (POE) port bank highlighted — it sits just above the AC power
 // inlet on the back, which is the orientation-independent anchor.
 function _camOrientationPanelHtml() {
-  // Helper: a port rect + its number, centered.
-  function hPort(x, num) {  // horizontal row (upright)
-    return '<rect x="' + x + '" y="72" width="11" height="13" rx="1.5" class="orient-port"/>' +
-           '<text x="' + (x + 5.5) + '" y="81.5" class="orient-port-num">' + num + '</text>';
-  }
-  function vPort(y, num) {  // vertical column (on its side)
-    return '<rect x="78" y="' + y + '" width="13" height="11" rx="1.5" class="orient-port"/>' +
-           '<text x="84.5" y="' + (y + 8) + '" class="orient-port-num">' + num + '</text>';
-  }
-  // Upright tower, viewed from the back: POE bank is a horizontal row above
-  // the round AC power inlet. Ports numbered 4→1 left-to-right (Port 4 left).
+  // Stylized HP Z2 tower BACK panel, top → bottom on a real unit:
+  //   motherboard I/O cluster (DisplayPorts, onboard RJ-45, USB stack),
+  //   a cooling fan grille, the PCIe camera card with the 4 POE ports
+  //   (highlighted + numbered), a lower fan, and the AC power inlet.
+  // Ports numbered 4→1 (Port 4 leftmost, matching the diagram above).
   var upright =
-    '<svg viewBox="0 0 88 128" width="92" height="134" class="orient-svg">' +
-      '<rect x="16" y="6" width="56" height="116" rx="5" class="orient-chassis"/>' +
-      '<rect x="24" y="16" width="40" height="5" rx="1.5" class="orient-io"/>' +
-      '<rect x="46" y="27" width="18" height="5" rx="1.5" class="orient-io"/>' +
-      '<rect x="18" y="68" width="52" height="22" rx="3" class="orient-portbank"/>' +
-      hPort(20, "4") + hPort(32, "3") + hPort(44, "2") + hPort(56, "1") +
-      '<circle cx="44" cy="106" r="5.5" class="orient-ac"/>' +
+    '<svg viewBox="0 0 104 156" width="98" height="147" class="orient-svg">' +
+      '<rect x="12" y="4" width="80" height="148" rx="6" class="orient-chassis"/>' +
+      // motherboard I/O zone
+      '<rect x="18" y="10" width="68" height="44" rx="2" class="orient-iozone"/>' +
+      '<rect x="23" y="13" width="22" height="3" rx="1" class="orient-io"/>' +       // top legacy/USB strip
+      '<rect x="23" y="19" width="17" height="5" rx="1" class="orient-io"/>' +       // DisplayPort 1
+      '<rect x="23" y="26" width="17" height="5" rx="1" class="orient-io"/>' +       // DisplayPort 2
+      '<rect x="23" y="34" width="13" height="11" rx="1" class="orient-eth"/>' +     // onboard RJ-45
+      '<rect x="45" y="19" width="9" height="6" rx="1" class="orient-io"/>' +        // USB stack
+      '<rect x="45" y="27" width="9" height="6" rx="1" class="orient-io"/>' +
+      '<rect x="45" y="35" width="9" height="6" rx="1" class="orient-io"/>' +
+      '<circle cx="71" cy="32" r="13" class="orient-fan"/><circle cx="71" cy="32" r="7" class="orient-fan"/>' +
+      // PCIe camera card — POE ports (highlighted), Port 4→1 left to right
+      '<rect x="18" y="80" width="68" height="25" rx="3" class="orient-portbank"/>' +
+      _orientPort(22, 85, 12, 15, "4", true) + _orientPort(37, 85, 12, 15, "3", true) +
+      _orientPort(52, 85, 12, 15, "2", true) + _orientPort(67, 85, 12, 15, "1", true) +
+      // lower fan + AC inlet
+      '<circle cx="34" cy="130" r="12" class="orient-fan"/><circle cx="34" cy="130" r="6.5" class="orient-fan"/>' +
+      '<rect x="56" y="122" width="28" height="17" rx="2" class="orient-acbox"/>' +
+      '<circle cx="64" cy="130.5" r="1.6" class="orient-acpin"/>' +
+      '<circle cx="76" cy="127" r="1.6" class="orient-acpin"/>' +
+      '<circle cx="76" cy="134" r="1.6" class="orient-acpin"/>' +
     '</svg>';
-  // Same tower laid on its side: the bank becomes a vertical column, AC inlet
-  // beside it. Ports numbered 4→1 top-to-bottom.
+  // Same back panel laid on its side (tower rotated): I/O cluster to the
+  // left, AC inlet to the right, POE bank a vertical column. Numbered
+  // 1→4 TOP-to-bottom (Port 4 ends up at the bottom when laid down).
   var onside =
-    '<svg viewBox="0 0 128 88" width="134" height="92" class="orient-svg">' +
-      '<rect x="6" y="16" width="116" height="56" rx="5" class="orient-chassis"/>' +
-      '<rect x="16" y="24" width="5" height="40" rx="1.5" class="orient-io"/>' +
-      '<rect x="27" y="24" width="5" height="18" rx="1.5" class="orient-io"/>' +
-      '<rect x="74" y="18" width="22" height="52" rx="3" class="orient-portbank"/>' +
-      vPort(20, "4") + vPort(32, "3") + vPort(44, "2") + vPort(56, "1") +
-      '<circle cx="110" cy="44" r="5.5" class="orient-ac"/>' +
+    '<svg viewBox="0 0 156 104" width="135" height="90" class="orient-svg">' +
+      '<rect x="4" y="12" width="148" height="80" rx="6" class="orient-chassis"/>' +
+      '<rect x="10" y="18" width="44" height="68" rx="2" class="orient-iozone"/>' +
+      '<rect x="13" y="22" width="3" height="22" rx="1" class="orient-io"/>' +
+      '<rect x="19" y="22" width="5" height="17" rx="1" class="orient-io"/>' +
+      '<rect x="26" y="22" width="5" height="17" rx="1" class="orient-io"/>' +
+      '<rect x="34" y="22" width="11" height="13" rx="1" class="orient-eth"/>' +
+      '<rect x="19" y="45" width="6" height="9" rx="1" class="orient-io"/>' +
+      '<rect x="27" y="45" width="6" height="9" rx="1" class="orient-io"/>' +
+      '<rect x="35" y="45" width="6" height="9" rx="1" class="orient-io"/>' +
+      '<circle cx="32" cy="70" r="11" class="orient-fan"/><circle cx="32" cy="70" r="6" class="orient-fan"/>' +
+      '<rect x="78" y="16" width="25" height="72" rx="3" class="orient-portbank"/>' +
+      _orientPort(82, 20, 15, 12, "1", false) + _orientPort(82, 35, 15, 12, "2", false) +
+      _orientPort(82, 50, 15, 12, "3", false) + _orientPort(82, 65, 15, 12, "4", false) +
+      '<rect x="116" y="44" width="28" height="17" rx="2" class="orient-acbox"/>' +
+      '<circle cx="124" cy="52.5" r="1.6" class="orient-acpin"/>' +
+      '<circle cx="136" cy="49" r="1.6" class="orient-acpin"/>' +
+      '<circle cx="136" cy="56" r="1.6" class="orient-acpin"/>' +
     '</svg>';
   return '<div class="nic-orient-panel">' +
     '<div class="nic-orient-title">VPU orientation</div>' +
@@ -3155,11 +3176,18 @@ function _camOrientationPanelHtml() {
       '<div class="orient-fig">' + onside + '<div class="orient-fig-label">On its side</div></div>' +
     '</div>' +
     '<div class="orient-caption">' +
-      'The 4 camera ports (POE) are the row just above the round <strong>AC power inlet</strong> on the back. ' +
-      'They map Port 4 → Port 1 as shown left. ' +
+      'The 4 camera ports (POE) are the highlighted bank on the back, just above the ' +
+      '<strong>AC power inlet</strong> — numbered Port 4 → Port 1 (Port 4 leftmost). ' +
       '<strong>Tip:</strong> a lit link light on a jack matches the linked port above — use it to confirm regardless of mounting.' +
     '</div>' +
   '</div>';
+}
+
+// A POE port rectangle + centered number. center=true centers the number
+// for the rect's own size (used in both orientations).
+function _orientPort(x, y, w, h, num, _h) {
+  return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="1.5" class="orient-port"/>' +
+         '<text x="' + (x + w / 2) + '" y="' + (y + h / 2 + 3) + '" class="orient-port-num">' + num + '</text>';
 }
 
 // Force a fresh camera probe — clears the backend CGI cache and re-polls.
