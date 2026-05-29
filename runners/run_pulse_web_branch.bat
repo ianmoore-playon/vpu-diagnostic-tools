@@ -1,182 +1,177 @@
 @echo off
-title Pulse Web BRANCH ^| VPU Diagnostics
-color 0E
+setlocal EnableDelayedExpansion
+title Pulse  -  updating
 
-echo.
-echo  .-----------------------------------------------------.
-echo  ^|                                                     ^|
-echo  ^| __________ ____ ___.____       ____________________ ^|
-echo  ^| \______   \    ^|   \    ^|     /   _____/\_   _____/ ^|
-echo  ^|  ^|     ___/    ^|   /    ^|     \_____  \  ^|    __)_  ^|
-echo  ^|  ^|    ^|   ^|    ^|  /^|    ^|___  /        \ ^|        \ ^|
-echo  ^|  ^|____^|   ^|______/ ^|_______ \/_______  //_______  / ^|
-echo  ^|                            \/        \/         \/  ^|
-echo  ^|                      [ BRANCH ]                     ^|
-echo  '-----------------------------------------------------'
-echo                    VPU Diagnostic Tools
-echo.
+:: ════════════════════════════════════════════════════════════════
+::  Pulse updater / launcher  (branch channel — defaults to dev)
+::
+::  - Installs to C:\Pulse
+::  - Checks GitHub for the latest build; if offline or the download
+::    fails, launches the already-installed copy instead
+::  - Creates a desktop shortcut on first run
+::  - Hands off to run.bat, which starts the server hidden and closes
+::    this window
+:: ════════════════════════════════════════════════════════════════
 
 :: -- Config ---------------------------------------------------------------
-:: Change BRANCH to test any branch directly on the VPU.
 set "BRANCH=dev"
 if not "%~1"=="" set "BRANCH=%~1"
 
-set "INSTALL_DIR=%LOCALAPPDATA%\PulseWeb-branch"
+set "INSTALL_DIR=C:\Pulse"
 set "REPO=ianmoore-playon/vpu-diagnostic-tools"
-set "ZIPFILE=%TEMP%\pulse-web-branch-dl.zip"
-set "EXTRACT=%TEMP%\pulse-web-branch-extract"
+set "ZIPFILE=%TEMP%\pulse-dl.zip"
+set "EXTRACT=%TEMP%\pulse-extract"
 
-echo  [INFO] Branch: %BRANCH%
+echo.
+echo   Pulse  -  VPU Diagnostics
+echo   --------------------------------------------------------
+echo   Channel : branch (%BRANCH%)
+echo   Install : %INSTALL_DIR%
 echo.
 
-:: -- Install Chrome if missing --------------------------------------------
+:: -- Chrome (install if missing) ------------------------------------------
 reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe" >nul 2>&1
 if %errorlevel% NEQ 0 (
-    echo  [INFO] Chrome not found — installing...
-    powershell -Command "Invoke-WebRequest -Uri 'https://dl.google.com/chrome/install/latest/chrome_installer.exe' -OutFile '%TEMP%\chrome_installer.exe'"
-    echo  [INFO] Running Chrome installer...
+    echo   Chrome ......................... installing
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://dl.google.com/chrome/install/latest/chrome_installer.exe' -OutFile '%TEMP%\chrome_installer.exe'"
     start /wait "" "%TEMP%\chrome_installer.exe" /silent /install
-    del "%TEMP%\chrome_installer.exe"
-    echo  [INFO] Chrome installed.
+    del "%TEMP%\chrome_installer.exe" 2>nul
+    echo   Chrome ......................... installed
 ) else (
-    echo  [INFO] Chrome already installed.
+    echo   Chrome ......................... ok
 )
-echo.
 
-:: -- Resolve latest commit SHA (used for cache-bust download) -------------
-echo  [INFO] Resolving latest commit on '%BRANCH%'...
-set "COMMIT_SHA=unknown"
+:: -- Offline fast-path ----------------------------------------------------
+:: If Pulse is already installed and we can't reach GitHub, skip the update
+:: entirely and launch the installed copy. A tech on a downed venue network
+:: should get Pulse immediately, not after a download timeout.
+if exist "%INSTALL_DIR%\run.bat" (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $c = New-Object Net.Sockets.TcpClient; $iar = $c.BeginConnect('github.com',443,$null,$null); if ($iar.AsyncWaitHandle.WaitOne(3000) -and $c.Connected) { $c.Close(); exit 0 } else { exit 1 } } catch { exit 1 }"
+    if errorlevel 1 (
+        echo   Network ........................ offline - using installed build
+        goto :shortcut
+    )
+)
+echo   Network ........................ online
+
+:: -- Resolve latest commit SHA (cache-bust download) ----------------------
+set "COMMIT_SHA="
 for /f "usebackq delims=" %%S in (`
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "try { " ^
-        "  [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; " ^
-        "  $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/commits/%BRANCH%' -TimeoutSec 10; " ^
-        "  $r.sha " ^
-        "} catch { '' }"
+        "try { [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; (Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/commits/%BRANCH%' -TimeoutSec 10).sha } catch { '' }"
 `) do set "COMMIT_SHA=%%S"
 
-:: -- Download branch zip (commit-specific to bypass CDN cache) -----------
-:: If we couldn't resolve a SHA (offline, rate-limited, deleted branch), fall
-:: back to the named-branch archive — accept that it may be CDN-cached.
-if "%COMMIT_SHA%"=="" goto :use_branch_url
-if "%COMMIT_SHA%"=="unknown" goto :use_branch_url
-set "ASSET_URL=https://github.com/%REPO%/archive/%COMMIT_SHA%.zip"
-goto :url_resolved
-:use_branch_url
-echo  [WARN] No commit SHA resolved — using branch archive (may be CDN-cached).
-set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/%BRANCH%.zip"
-:url_resolved
-echo  [INFO] SHA: %COMMIT_SHA%
-echo  [INFO] URL: %ASSET_URL%
-echo  [INFO] Downloading branch '%BRANCH%'...
+:: Already up to date? Skip the download entirely. Don't re-stream a build
+:: that's already installed — just go straight to launch.
+if defined COMMIT_SHA if exist "%INSTALL_DIR%\VERSION" (
+    set "SHORT_SHA=!COMMIT_SHA:~0,7!"
+    set "INSTALLED_VER="
+    set /p INSTALLED_VER=<"%INSTALL_DIR%\VERSION"
+    if "!INSTALLED_VER!"=="%BRANCH%-!SHORT_SHA!" (
+        echo   Update ......................... already up to date ^(!INSTALLED_VER!^)
+        goto :shortcut
+    )
+)
 
-:: -- Check for curl (some VPUs don't have it) --
-set "HAS_CURL="
-where curl.exe >nul 2>&1 && set "HAS_CURL=1"
-
-if defined HAS_CURL (
-    curl.exe -L --progress-bar -o "%ZIPFILE%" "%ASSET_URL%"
+if defined COMMIT_SHA (
+    set "ASSET_URL=https://github.com/%REPO%/archive/!COMMIT_SHA!.zip"
 ) else (
-    echo  [INFO] curl not found, using PowerShell...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%ASSET_URL%' -OutFile '%ZIPFILE%'"
+    set "ASSET_URL=https://github.com/%REPO%/archive/refs/heads/%BRANCH%.zip"
+)
+
+:: -- Download -------------------------------------------------------------
+echo   Update ......................... downloading %BRANCH%
+where curl.exe >nul 2>&1 && (set "HAS_CURL=1") || (set "HAS_CURL=")
+if defined HAS_CURL (
+    curl.exe -L --progress-bar -o "%ZIPFILE%" "!ASSET_URL!"
+) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '!ASSET_URL!' -OutFile '%ZIPFILE%'"
 )
 
 if not exist "%ZIPFILE%" goto :dl_failed
-for %%A in ("%ZIPFILE%") do (
-    echo  [INFO] Downloaded %ZIPFILE% (%%~zA bytes^)
-    if %%~zA LSS 1000 goto :dl_failed
-)
+for %%A in ("%ZIPFILE%") do if %%~zA LSS 1000 goto :dl_failed
 goto :dl_ok
 
 :dl_failed
 if exist "%ZIPFILE%" del "%ZIPFILE%"
 if exist "%INSTALL_DIR%\run.bat" (
-    echo  [WARN] Download failed — launching cached version.
-    goto :launch
+    echo   Update ......................... failed - using installed build
+    goto :shortcut
 )
-echo  [ERROR] Download failed. Check your internet connection or branch name.
+echo   [ERROR] Download failed and no installed build to fall back on.
+echo           Check the internet connection and try again.
 goto :fatal
 
 :dl_ok
-
-:: -- Extract --------------------------------------------------------------
-echo  [INFO] Extracting to %EXTRACT%...
+echo   Update ......................... extracting
 if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "Expand-Archive -Path '%ZIPFILE%' -DestinationPath '%EXTRACT%' -Force"
-echo  [INFO] Extraction complete.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -Path '%ZIPFILE%' -DestinationPath '%EXTRACT%' -Force"
 del "%ZIPFILE%"
 
-:: Find Pulse.Web content — branch zip layout: repo-BRANCH\Pulse.Web\run.bat
-echo  [INFO] Searching for Pulse.Web in extracted files...
+:: Find the Pulse.Web folder inside the extracted archive.
 set "SRC="
-if exist "%EXTRACT%\run.bat" (
-    echo  [INFO] Found run.bat at extract root.
-    set "SRC=%EXTRACT%"
-)
-if not defined SRC for /d %%d in ("%EXTRACT%\*") do (
-    if exist "%%d\run.bat" (
-        echo  [INFO] Found run.bat at %%d
-        set "SRC=%%d"
-    )
-)
-if not defined SRC for /d %%d in ("%EXTRACT%\*") do (
-    if exist "%%d\Pulse.Web\run.bat" (
-        echo  [INFO] Found Pulse.Web at %%d\Pulse.Web
-        set "SRC=%%d\Pulse.Web"
-    )
-)
+if exist "%EXTRACT%\run.bat" set "SRC=%EXTRACT%"
+if not defined SRC for /d %%d in ("%EXTRACT%\*") do if exist "%%d\run.bat" set "SRC=%%d"
+if not defined SRC for /d %%d in ("%EXTRACT%\*") do if exist "%%d\Pulse.Web\run.bat" set "SRC=%%d\Pulse.Web"
 
 if not defined SRC (
-    echo  [ERROR] Pulse.Web not found in downloaded archive.
-    echo  [ERROR] Full directory listing:
-    dir /b /s /ad "%EXTRACT%" 2>nul
+    echo   [ERROR] Downloaded archive did not contain Pulse.Web.
     if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
     goto :fatal
 )
-echo  [INFO] Source: %SRC%
 
-:: -- Copy to install dir (preserves app\python\ and settings) -------------
-echo  [INFO] Copying to %INSTALL_DIR%...
-if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
-xcopy "%SRC%\*" "%INSTALL_DIR%\" /s /e /y /q >nul
-if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
-echo  [INFO] Copy complete.
-
-:: -- Stamp VERSION with branch + commit SHA --------------------------------
-set "SHORT_SHA=%COMMIT_SHA:~0,7%"
-if "%SHORT_SHA%"=="" set "SHORT_SHA=unknown"
-echo %BRANCH%-%SHORT_SHA%> "%INSTALL_DIR%\VERSION"
-echo  [INFO] Version: %BRANCH%-%SHORT_SHA%
-
-echo  [INFO] Updated to latest '%BRANCH%' branch.
-echo.
-
-:: -- Launch ---------------------------------------------------------------
-:launch
-if not exist "%INSTALL_DIR%\run.bat" (
-    echo  [ERROR] Pulse Web not found at %INSTALL_DIR%
+echo   Update ......................... installing to %INSTALL_DIR%
+if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%" 2>nul
+if not exist "%INSTALL_DIR%" (
+    echo   [ERROR] Could not create %INSTALL_DIR%.
+    echo           Run this launcher as Administrator.
+    if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
     goto :fatal
 )
+:: /s /e copies subdirs incl. the app\python\ runtime and settings,
+:: which are preserved across updates (xcopy only overwrites shipped files).
+xcopy "%SRC%\*" "%INSTALL_DIR%\" /s /e /y /q >nul
+if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
 
-echo  [INFO] Launching from %INSTALL_DIR%...
+:: Stamp the installed version.
+set "SHORT_SHA=unknown"
+if defined COMMIT_SHA set "SHORT_SHA=!COMMIT_SHA:~0,7!"
+echo %BRANCH%-!SHORT_SHA!> "%INSTALL_DIR%\VERSION"
+echo   Version ........................ %BRANCH%-!SHORT_SHA!
+
+:shortcut
+:: -- Self-copy + desktop shortcut -----------------------------------------
+:: Copy this launcher into the install dir so the desktop shortcut has a
+:: stable target. Guard against copying onto itself (when launched FROM
+:: the shortcut, %~f0 already IS the install copy).
+if /I not "%~f0"=="%INSTALL_DIR%\Pulse.bat" copy /y "%~f0" "%INSTALL_DIR%\Pulse.bat" >nul 2>&1
+
+set "ICON=%INSTALL_DIR%\app\static\img\pulse.ico"
+if not exist "%ICON%" set "ICON=%INSTALL_DIR%\Pulse.bat"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$d=[Environment]::GetFolderPath('DesktopDirectory'); $s=(New-Object -ComObject WScript.Shell).CreateShortcut(\"$d\Pulse.lnk\"); $s.TargetPath='%INSTALL_DIR%\Pulse.bat'; $s.WorkingDirectory='%INSTALL_DIR%'; $s.IconLocation='%ICON%'; $s.Description='Pulse - VPU Diagnostics'; $s.Save()" 2>nul
+echo   Desktop shortcut ............... ready
+
+:: -- Hand off to the runtime launcher -------------------------------------
+echo.
+if not exist "%INSTALL_DIR%\run.bat" (
+    echo   [ERROR] %INSTALL_DIR%\run.bat not found — install incomplete.
+    goto :fatal
+)
 cd /d "%INSTALL_DIR%"
 call run.bat
-goto :done
+:: run.bat starts the hidden server and closes this window on success,
+:: or pauses on its own error. Nothing left to do here.
+endlocal
+exit /b 0
 
-:: -- Error handler --------------------------------------------------------
+:: -- Update-phase error handler -------------------------------------------
 :fatal
 echo.
 echo  ============================================
-echo   PULSE WEB FAILED — see errors above.
-echo   Press any key to close.
+echo    PULSE UPDATE FAILED — see messages above.
+echo    Press any key to close.
 echo  ============================================
 pause >nul
+endlocal
 exit /b 1
-
-:done
-
-:: If we get here, run.bat exited — keep window open so errors are visible
-echo.
-echo  [INFO] Pulse Web exited. Press any key to close.
-pause >nul

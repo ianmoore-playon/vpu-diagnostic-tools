@@ -22,7 +22,7 @@ while ($elapsed -lt $TimeoutSec) {
         if ($ok -and $client.Connected) {
             $client.Close()
             Start-Process $Url
-            exit 0
+            exit 0   # server is up, browser opened
         }
         $client.Close()
     } catch {
@@ -32,6 +32,7 @@ while ($elapsed -lt $TimeoutSec) {
     $elapsed += 1
 }
 
-# Timeout — try launching anyway so the user at least sees the browser
-Start-Process $Url
+# Timed out — the server never came up. Do NOT open the browser (it would
+# just show a connection error); exit non-zero so run.bat surfaces the
+# failure and points the user at pulse-server.log.
 exit 1
