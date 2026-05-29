@@ -20,9 +20,21 @@ try {
     #  - scorebot.sportzcast.net binds to TCP 1400–1405 for ScoreConnect; the
     #    range is venue-dependent so every port is marked optional. Not all
     #    schools have ScoreConnect.
+    # Discover the VPU's configured DNS server so the DNS check tests the
+    # resolver the box actually uses — not a hardcoded public IP like 8.8.8.8,
+    # which locked-down venue networks block by design (the VPU resolves names
+    # through the venue's internal DNS instead).
+    $primaryDns = $null
+    try {
+        $primaryDns = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction Stop |
+            ForEach-Object { $_.ServerAddresses } |
+            Where-Object { $_ -and -not $_.StartsWith('127.') -and -not $_.StartsWith('169.254.') } |
+            Select-Object -First 1
+    }
+    catch { }
+
     $portTests = @(
         # Required — core Pixellot streaming + cloud services
-        @{ protocol = 'UDP'; port = 53;   host = '8.8.8.8';                purpose = 'DNS';               optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'pixellot.tv';            purpose = 'Pixellot';          optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'prod-echo.pixellot.tv';  purpose = 'Pixellot Echo';     optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'nfhsnetwork.com';        purpose = 'NFHS Network';      optional = $false }
@@ -42,6 +54,15 @@ try {
         @{ protocol = 'TCP'; port = 1404; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
         @{ protocol = 'TCP'; port = 1405; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
     )
+
+    # DNS reachability against the *configured* resolver (prepended so it
+    # leads the list). Skipped — not failed — when no resolver is configured;
+    # a missing/broken resolver still surfaces via the domain-resolution tests.
+    if ($primaryDns) {
+        $portTests = @(
+            @{ protocol = 'UDP'; port = 53; host = $primaryDns; purpose = 'DNS'; optional = $false }
+        ) + $portTests
+    }
 
     $results = foreach ($test in $portTests) {
         $status = 'fail'
