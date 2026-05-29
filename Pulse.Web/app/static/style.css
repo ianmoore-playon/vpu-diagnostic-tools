@@ -1807,8 +1807,8 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 /* Verify Video — captured-frame thumbnail grid */
 .cam-frame-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 14px;
 }
 .cam-frame {
     border: 1px solid var(--c-border);

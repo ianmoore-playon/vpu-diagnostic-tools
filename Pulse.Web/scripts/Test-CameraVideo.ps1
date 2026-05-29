@@ -12,17 +12,26 @@
     a tech can see at a glance whether the image is black, lens-capped, or
     pointed wrong, not just whether bytes flow.
 
+    RTSP auth: Dynacolor/Pixellot cameras require credentials on the RTSP
+    stream (same Admin/1234 as the CGI probe), so they're baked into the URL.
+
     ffmpeg/ffprobe ship with Pixellot at C:\Pixellot\Bin\ffmpeg. If they're
-    missing we report available=false rather than erroring. Adapted from
-    Canopy videoTest.ps1 (60s clip -> single frame; localhost POST stripped).
+    missing we report available=false. -hide_banner keeps the version banner
+    out of the output; stderr is captured to a file so a real failure reason
+    (401, timeout, no route) surfaces instead of noise.
+
+    Adapted from Canopy videoTest.ps1 (60s clip -> single frame; localhost
+    POST stripped).
 .PARAMETER CameraIps
     Comma-separated camera IPs, e.g. "169.254.16.50,169.254.16.51".
 .PARAMETER Labels
     Optional comma-separated labels parallel to CameraIps.
 .PARAMETER StreamPath
     RTSP stream path. Default "stream1" (Pixellot/Dynacolor primary).
+.PARAMETER RtspUser / RtspPass
+    RTSP credentials. Default Admin / 1234 (Pixellot factory default).
 .PARAMETER MaxWidth
-    Thumbnail width in px (height auto). Default 480 — small payload, legible.
+    Thumbnail width in px (height auto). Default 640.
 .OUTPUTS
     { available, results: [ { ip, label, ok, codec, frameRate, resolution,
       image, error } ] }   # image = "data:image/jpeg;base64,..." or null
@@ -32,15 +41,31 @@ param(
     [string] $CameraIps  = "",
     [string] $Labels     = "",
     [string] $StreamPath  = "stream1",
-    [int]    $MaxWidth     = 480
+    [string] $RtspUser    = "Admin",
+    [string] $RtspPass    = "1234",
+    [int]    $MaxWidth     = 640
 )
 
-$ErrorActionPreference = 'Stop'
+# Native ffmpeg/ffprobe write to stderr and return non-zero on a dead camera;
+# that's expected, not a script failure — don't let it abort the run.
+$ErrorActionPreference = 'Continue'
 
 $ffmpeg  = 'C:\Pixellot\Bin\ffmpeg\ffmpeg.exe'
 $ffprobe = 'C:\Pixellot\Bin\ffmpeg\ffprobe.exe'
 
 function Out-Json($obj) { $obj | ConvertTo-Json -Depth 6 -Compress }
+
+# Concise, single-line failure reason from an ffmpeg/ffprobe stderr file —
+# the last meaningful line, never the version banner.
+function Get-FailReason($errFile) {
+    if (-not (Test-Path $errFile)) { return $null }
+    $lines = Get-Content $errFile -ErrorAction SilentlyContinue |
+        Where-Object { $_ -and $_.Trim() -ne "" -and $_ -notmatch '^ffmpeg version|^ffprobe version|^\s*built with|^\s*configuration:|^\s*lib' }
+    if (-not $lines) { return $null }
+    $last = ($lines | Select-Object -Last 1).Trim()
+    if ($last.Length -gt 180) { $last = $last.Substring(0, 180) + "…" }
+    return $last
+}
 
 try {
     if (-not (Test-Path $ffmpeg) -or -not (Test-Path $ffprobe)) {
@@ -75,8 +100,9 @@ try {
     for ($i = 0; $i -lt $ips.Count; $i++) {
         $ip    = $ips[$i]
         $label = if ($i -lt $lbls.Count -and $lbls[$i]) { $lbls[$i] } else { $ip }
-        $frame = Join-Path $tmpDir ("cam_" + ($ip -replace '[^0-9A-Za-z]', '_') + ".jpg")
-        $url   = "rtsp://$ip/$StreamPath"
+        $frame   = Join-Path $tmpDir ("cam_" + ($ip -replace '[^0-9A-Za-z]', '_') + ".jpg")
+        $errFile = Join-Path $tmpDir ("cam_" + ($ip -replace '[^0-9A-Za-z]', '_') + ".err")
+        $url     = "rtsp://$($RtspUser):$($RtspPass)@$ip/$StreamPath"
 
         $entry = [ordered]@{
             ip = $ip; label = $label; ok = $false
@@ -86,12 +112,13 @@ try {
 
         try {
             # Stream metadata (fast header read; -stimeout bounds a hung camera).
-            $probeRaw = & $ffprobe -rtsp_transport tcp -stimeout 6000000 -v quiet `
+            $probeRaw = & $ffprobe -hide_banner -loglevel error -rtsp_transport tcp `
+                -stimeout 6000000 `
                 -show_entries "stream=codec_type,codec_name,avg_frame_rate,width,height" `
-                -of json -i $url 2>$null
+                -of json -i $url 2>$errFile
             if ($probeRaw) {
-                $vstream = ($probeRaw | ConvertFrom-Json).streams |
-                    Where-Object { $_.codec_type -eq 'video' } | Select-Object -First 1
+                $probe = $probeRaw | ConvertFrom-Json
+                $vstream = $probe.streams | Where-Object { $_.codec_type -eq 'video' } | Select-Object -First 1
                 if ($vstream) {
                     $entry.codec     = $vstream.codec_name
                     $entry.frameRate = Convert-FrameRate $vstream.avg_frame_rate
@@ -103,22 +130,24 @@ try {
 
             # Grab a single decoded frame, scaled down for a thumbnail.
             if (Test-Path $frame) { Remove-Item $frame -Force -ErrorAction SilentlyContinue }
-            & $ffmpeg -rtsp_transport tcp -stimeout 8000000 -y -i $url `
-                -frames:v 1 -an -vf "scale=$($MaxWidth):-1" -q:v 5 $frame *>$null
+            & $ffmpeg -hide_banner -loglevel error -rtsp_transport tcp -stimeout 8000000 `
+                -y -i $url -frames:v 1 -an -vf "scale=$($MaxWidth):-1" -q:v 4 $frame 2>$errFile 1>$null
 
             if ((Test-Path $frame) -and (Get-Item $frame).Length -gt 0) {
                 $bytes = [System.IO.File]::ReadAllBytes($frame)
                 $entry.image = "data:image/jpeg;base64," + [System.Convert]::ToBase64String($bytes)
                 $entry.ok = $true
             } else {
-                $entry.error = "No frame captured (camera not streaming on $url)."
+                $reason = Get-FailReason $errFile
+                $entry.error = if ($reason) { $reason } else { "No frame captured (camera not streaming)." }
             }
         }
         catch {
             $entry.error = $_.Exception.Message
         }
         finally {
-            if (Test-Path $frame) { Remove-Item $frame -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $frame)   { Remove-Item $frame -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $errFile) { Remove-Item $errFile -Force -ErrorAction SilentlyContinue }
         }
         $results += $entry
     }

@@ -2323,6 +2323,20 @@ async def api_cameras_video_test():
     if not cams:
         return {"available": True, "results": [], "reason": "No cameras detected to test."}
 
+    # Order: Main cameras first (by number), then OCRs, then anything else.
+    def _cam_order(c):
+        label = c[1] or ""
+        grp = 0 if label.startswith("Main") else 1 if "OCR" in label else 2
+        # Trailing number (regex-free — re isn't imported at this scope).
+        digits = ""
+        for ch in reversed(label.strip()):
+            if ch.isdigit():
+                digits = ch + digits
+            elif digits:
+                break
+        return (grp, int(digits) if digits else 0, label)
+    cams.sort(key=_cam_order)
+
     ips = ",".join(c[0] for c in cams)
     labels = ",".join(c[1] for c in cams)
     # Single-frame grab is fast: a probe + frame capture is bounded by the

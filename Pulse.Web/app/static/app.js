@@ -3198,16 +3198,16 @@ function _camVerifyVideo() {
 
 function _camVideoResultsHtml(res) {
   if (!res || res.error) {
-    return '<div class="card">' + sectionTitle("play", "Video Verification") +
+    return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
       '<div class="cam-video-err">Error: ' + esc((res && res.message) || "unknown") + '</div></div>';
   }
   if (res.available === false) {
-    return '<div class="card">' + sectionTitle("play", "Video Verification") +
+    return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
       '<div class="cam-no-detect">' + esc(res.reason || "ffmpeg/ffprobe not available on this VPU.") + '</div></div>';
   }
   var results = res.results || [];
   if (!results.length) {
-    return '<div class="card">' + sectionTitle("play", "Video Verification") +
+    return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
       '<div class="cam-no-detect">' + esc(res.reason || "No cameras detected to test.") + '</div></div>';
   }
   var cards = results.map(function(r) {
@@ -3228,7 +3228,7 @@ function _camVideoResultsHtml(res) {
         '<div class="cam-frame-detail">' + meta + '</div>' +
       '</div></div>';
   }).join("");
-  return '<div class="card">' + sectionTitle("play", "Video Verification — camera frames") +
+  return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
     '<div class="cam-frame-grid">' + cards + '</div></div>';
 }
 
@@ -3277,7 +3277,7 @@ function renderCameras() {
         ${svgIcon("refresh", 14)} Refresh
       </button>
       <button class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()" title="Grabs a single frame from each camera to confirm it is streaming and show what it sees.">
-        ${svgIcon("play", 14)} Verify Video
+        ${svgIcon("camera", 14)} Get Camera Frames
       </button>
       <button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
         ${svgIcon("zap", 14)} Fault Isolator
