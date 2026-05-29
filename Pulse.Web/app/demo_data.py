@@ -441,6 +441,12 @@ DEMO = {
             {"section": "OCR", "ip": "192.168.12.50", "mac": "00:D0:89:1B:03:01", "role": "OCR"},
         ],
     },
+    # Expected main-camera count from the Coordinator log. Demo box is an
+    # S2 (2 main cameras + 1 OCR), matching the Get-PixellotConfig demo.
+    "Get-CameraExpectations.ps1": lambda **kw: {
+        "expectedMainCameras": 2,
+        "systemType": "S2",
+    },
     # JAI S1 camera discovery. The demo box is a standard Dynacolor system,
     # so no S1 cameras — mirror what a non-S1 VPU returns (SDK absent).
     "Get-S1Cameras.ps1": lambda **kw: {

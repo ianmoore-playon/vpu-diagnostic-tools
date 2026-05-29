@@ -1403,6 +1403,14 @@ html.dark .splash-logo {
     border-bottom: 1px solid var(--c-border);
     margin-bottom: 8px;
 }
+.nic-sys-chip {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--c-accent-blue);
+    background: var(--c-tint-blue);
+    border-radius: 999px;
+    padding: 2px 9px;
+}
 .nic-diagram-note {
     font-size: 0.7rem;
     color: var(--c-dim);

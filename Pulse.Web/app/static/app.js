@@ -2920,7 +2920,7 @@ function _camPortGridHtml(ports) {
   return portSlots.slice().reverse().map((p, ri) => _camPortTile(p, portSlots.length - 1 - ri)).join("");
 }
 
-function _camNicDiagramHtml(ports, showLiveBadge) {
+function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
   if (showLiveBadge === undefined) showLiveBadge = true;
   const count = Math.max(4, ports.length);
   function ledColor(p) {
@@ -2971,8 +2971,16 @@ function _camNicDiagramHtml(ports, showLiveBadge) {
   if (nicDesc) headerLabel = svgIcon("cpu", 16) + ' ' + esc(nicDesc) + ' · ' + count + ' ports';
   else if (hasRealPorts) headerLabel = count + ' ports';
   else headerLabel = svgIcon("cpu", 16) + ' No NIC ports detected';
+  // System-type chip (S1/S2/S2S) + expected main-camera count, when known.
+  var sysChip = "";
+  if (sysInfo && sysInfo.expectedMainCameras) {
+    var sysName = sysInfo.systemType ? esc(sysInfo.systemType) + " · " : "";
+    var n = sysInfo.expectedMainCameras;
+    sysChip = '<span class="nic-sys-chip">' + sysName + n +
+      ' main camera' + (n === 1 ? '' : 's') + ' expected</span>';
+  }
   var nicHeader = '<div class="nic-diagram-header">' +
-    headerLabel +
+    headerLabel + sysChip +
     (showLiveBadge ? '<span id="cam-live-badge" class="cam-live-badge">Auto-Refresh</span>' : '') +
   '</div>';
   // Only show the physical-order note when we actually have NIC data;
@@ -3159,7 +3167,7 @@ function renderCameras() {
 
     <div id="cam-s1-wrap"></div>
 
-    <div class="card" id="cam-nic-diagram">${_camNicDiagramHtml(ports)}</div>
+    <div class="card" id="cam-nic-diagram">${_camNicDiagramHtml(ports, true, {systemType: data.systemType, expectedMainCameras: data.expectedMainCameras})}</div>
 
     <div class="cam-port-grid" id="cam-port-grid">
       ${_camPortGridHtml(ports)}
@@ -3234,7 +3242,7 @@ function renderCameras() {
           });
         }
         var diag = document.getElementById("cam-nic-diagram");
-        if (diag) diag.innerHTML = _camNicDiagramHtml(freshPorts);
+        if (diag) diag.innerHTML = _camNicDiagramHtml(freshPorts, true, {systemType: fresh.systemType, expectedMainCameras: fresh.expectedMainCameras});
         var fw = document.getElementById("cam-findings-wrap");
         if (fw) fw.innerHTML = _camFindingsHtml(fresh.findings || []);
       }

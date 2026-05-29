@@ -1430,6 +1430,7 @@ def _enrich_ports(
     nics: dict,
     pixellot_config: dict = None,
     probe_results=None,
+    expected_main_cameras=None,
 ) -> list:
     """Enrich raw NIC port data with status flags and camera detection.
 
@@ -1619,19 +1620,39 @@ def _enrich_ports(
         cams = p.get("camerasDetected") or []
         is_up = p.get("isUp")
         speed = p.get("linkSpeedMbps") or 0
+        has_cam = bool(cams)
         cam_macs = ",".join(sorted(_mac_key(c) for c in cams))
         state_key = f"{is_up}|{speed}|{cam_macs}"
         adapter_id = p.get("mac") or p.get("name") or p.get("portLabel")
 
         prev = _PORT_STATE_TRACKER.get(adapter_id)
         if not prev or prev["key"] != state_key:
-            _PORT_STATE_TRACKER[adapter_id] = {"key": state_key, "since": now_mono}
-            since = now_mono
+            # State changed — reset the settle timer but carry forward the
+            # "this port has hosted a camera" memory used for drop detection.
+            entry = {
+                "key": state_key,
+                "since": now_mono,
+                "everHadCamera": (prev or {}).get("everHadCamera", False),
+                "lastCam": (prev or {}).get("lastCam"),
+            }
+            _PORT_STATE_TRACKER[adapter_id] = entry
         else:
-            since = prev["since"]
+            entry = prev
+        # When a Pixellot camera is actively present, remember it so that if
+        # it later disappears we can tell what dropped (and from where).
+        if is_up and has_cam:
+            entry["everHadCamera"] = True
+            entry["lastCam"] = {
+                "ip": cams[0].get("ip"),
+                "mac": (cams[0].get("cgiMac") or cams[0].get("mac")),
+            }
 
+        since = entry["since"]
         fresh = (now_mono - since) < _PORT_SETTLE_SECONDS
         p["_fresh"] = fresh
+        p["_settled"] = not fresh
+        p["_everHadCamera"] = entry["everHadCamera"]
+        p["_lastCam"] = entry["lastCam"]
         # Connecting: link is up but no camera resolved yet, and either the
         # speed is still negotiating (0) or the port just changed (settling).
         p["connecting"] = bool(is_up and not cams and (speed == 0 or fresh))
@@ -1665,12 +1686,18 @@ def _enrich_ports(
         except (ValueError, AttributeError):
             return (999, 999, 999, 999)
 
-    # Windows VPUs support a maximum of 2 main cameras. Anything beyond
-    # that is stale data — cap labels at "Main Camera 2" and downgrade
-    # extras to a generic "Camera" so we don't show "Main Camera 3".
-    # Linux VPUs can have more main cameras; skip the cap there.
+    # Cap the number of "Main Camera N" labels so stale ARP can't invent a
+    # phantom "Main Camera 3". The authoritative limit is the system's
+    # configured main-camera count from the Coordinator log (S1=4, S2=2,
+    # S2S=1). When that's unknown, fall back to 2 on Windows — the common
+    # Dynacolor 2-cam (S2) head — and leave Linux uncapped.
     import platform as _platform
-    main_cap = 2 if _platform.system().lower() == "windows" else None
+    if expected_main_cameras and expected_main_cameras > 0:
+        main_cap = expected_main_cameras
+    elif _platform.system().lower() == "windows":
+        main_cap = 2
+    else:
+        main_cap = None
 
     main_ports.sort(key=_ip_sort_key)
     for i, p in enumerate(main_ports, 1):
@@ -1699,14 +1726,41 @@ def _enrich_ports(
 
 def _compute_camera_findings(ports: list) -> list:
     findings = []
+
+    # Every camera MAC currently present on any port — used to tell a true
+    # drop from a move (a camera that reappears elsewhere didn't drop).
+    present_macs = set()
+    for port in ports:
+        for c in port.get("camerasDetected") or []:
+            m = str(c.get("cgiMac") or c.get("mac") or "").upper().replace("-", ":")
+            if m:
+                present_macs.add(m)
+
     for port in ports:
         label = port.get("portLabel", port.get("name", "Port"))
         adapter = port.get("name", "")
         is_up = port.get("isUp")
+        cams = port.get("camerasDetected") or []
 
-        # Note: down ports carry no cameras (stale ARP is cleared in
-        # _enrich_ports), so there's no "camera last detected" finding —
-        # it produced constant false alarms while techs moved cables.
+        # Session-relative camera drop. A port that hosted a streaming
+        # Pixellot camera earlier this session, now has none, and has
+        # settled is a real "camera went away" — UNLESS that camera's MAC
+        # reappeared on another port (it moved, not dropped). This replaces
+        # the old stale-ARP "camera last detected" alarm, which fired on
+        # ports that never had a confirmed camera. Needs no cameras.cfg.
+        if (port.get("_everHadCamera") and not cams and port.get("_settled")):
+            last = port.get("_lastCam") or {}
+            last_mac = str(last.get("mac") or "").upper().replace("-", ":")
+            moved = bool(last_mac and last_mac in present_macs)
+            if not moved:
+                ipinfo = f" ({last.get('ip')})" if last.get("ip") else ""
+                findings.append({
+                    "severity": "critical",
+                    "title": f"{label} — camera dropped",
+                    "body": f"{adapter}. A camera{ipinfo} was streaming on this port "
+                            "earlier this session and is no longer detected. Check the "
+                            "cable and camera power, or use Fault Isolator.",
+                })
 
         # Skip transient findings for a freshly-changed port. A port that
         # just had a cable plugged/moved briefly reports 100 Mbps / errors
@@ -2174,22 +2228,32 @@ async def api_cameras(refresh: bool = False):
     # instead of waiting up to TTL for the cache to expire.
     if refresh:
         _CGI_PROBE_CACHE.clear()
-    nics, pix_config = await asyncio.gather(
+    nics, pix_config, expectations = await asyncio.gather(
         run_ps("Get-NicAdapters.ps1"),
         run_ps("Get-PixellotConfig.ps1"),
+        run_ps("Get-CameraExpectations.ps1", timeout=10),
     )
     ocr_ips, _ = _build_ocr_sets(pix_config)
+    # Expected main-camera count from the Coordinator log (S1=4/S2=2/S2S=1).
+    # Authoritative — drives the main-camera cap and the system-type label.
+    expected_main = None
+    system_type = None
+    if expectations and not expectations.get("error"):
+        expected_main = expectations.get("expectedMainCameras")
+        system_type = expectations.get("systemType")
     # First paint: use cached probes only; warm the cache in the background
     # so the next live-refresh tick picks up fresh camera identification.
     # Manual refresh blocks until probes complete so the user sees the
     # update immediately.
     raw_ports = nics.get("ports", []) if nics and not nics.get("error") else []
     probe_results = await _probe_all_cameras(raw_ports, ocr_ips, block=refresh)
-    ports = _enrich_ports(nics, pix_config, probe_results)
+    ports = _enrich_ports(nics, pix_config, probe_results, expected_main_cameras=expected_main)
     return {
         "ports": ports,
         "pixellotConfig": pix_config,
         "findings": _compute_camera_findings(ports),
+        "systemType": system_type,
+        "expectedMainCameras": expected_main,
         # Frontend uses this to skip swap-verification in the fault isolator,
         # since static demo data can't simulate the ARP change after a swap.
         "demoMode": DEMO_MODE,
