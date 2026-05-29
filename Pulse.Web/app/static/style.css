@@ -1246,17 +1246,14 @@ html.dark .splash-logo {
     letter-spacing: 0.04em;
 }
 
-/* Port-range card (byHost, e.g. Scorebot 1400–1405): lay the per-port
-   indicators out as a wrapping row of chips instead of a vertical list. */
-.port-card-ports {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 4px 12px;
-    margin-top: 6px;
-}
-.port-card-ports li {
-    grid-template-columns: 8px auto;
-    gap: 5px;
+/* Port-range card (byHost, e.g. Scorebot 1400–1405): per-port rows stack
+   vertically like the 443 card — port number left, Pass/Fail status right. */
+.port-card-port-status {
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-align: right;
 }
 
 .port-section-label {

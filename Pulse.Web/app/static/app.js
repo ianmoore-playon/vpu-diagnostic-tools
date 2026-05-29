@@ -2331,16 +2331,21 @@ function renderNetwork() {
     const contiguous = ports[ports.length - 1] - ports[0] + 1 === ports.length;
     const rangeLabel = contiguous ? ports[0] + "–" + ports[ports.length - 1] : ports.join(", ");
     const purpose = group[0].purpose || ((group[0].protocol || "").toUpperCase() + " ports");
-    const portChips = sorted.map(function(p) {
+    // Stack the per-port rows vertically like the 443 HTTPS Endpoints card:
+    // port number on the left, Pass/Fail status on the right.
+    const portRows = sorted.map(function(p) {
+      const ok = (p.status || "").toLowerCase() === "pass";
+      const statusCls = ok ? "status-pass" : (p.optional ? "status-warn" : "status-fail");
       return `<li><span class="port-card-host-dot" style="background:${_portDotColor(p)}"></span>` +
-             `<span class="port-card-host-name">${esc(String(p.port))}</span></li>`;
+             `<span class="port-card-host-name">${esc(String(p.port))}</span>` +
+             `<span class="port-card-port-status ${statusCls}">${ok ? "Pass" : "Fail"}</span></li>`;
     }).join("");
     return `<div class="port-card port-card-multi ${_portGroupClass(group)}">
       <div class="port-card-num">${esc(rangeLabel)}</div>
       <div class="port-card-name">${esc(purpose)}</div>
       <div class="port-card-host">${esc(group[0].host)}</div>
       <div class="port-card-summary">${_portGroupPassCount(group)} of ${group.length} passing</div>
-      <ul class="port-card-hosts port-card-ports">${portChips}</ul>
+      <ul class="port-card-hosts">${portRows}</ul>
       ${group[0].optional ? '<div class="port-card-opt">Optional</div>' : ""}
     </div>`;
   }
