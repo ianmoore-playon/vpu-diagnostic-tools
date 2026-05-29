@@ -22,6 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-29
+
 ### Added
 - **Check for Update** in Settings — Pulse can now detect a newer build on its
   channel, install it, and restart on its own, with this changelog shown
