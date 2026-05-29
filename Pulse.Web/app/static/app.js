@@ -1993,17 +1993,10 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     }
   }
 
-  // ── Ports: optional failures ─────────────────────────────
-  var optFailed = (ports || []).filter(function(p) { return p.optional && (p.status || "").toLowerCase() !== "pass"; });
-  if (optFailed.length > 0) {
-    var optDetails = optFailed.map(function(p) {
-      var proto = (p.protocol || "TCP").toUpperCase();
-      return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote");
-    });
-    issues.push({ severity: "info", title: optFailed.length + " optional port(s) blocked",
-      body: "These aren’t required at every venue — only act if streaming is failing.",
-      details: optDetails });
-  }
+  // Optional-port failures are intentionally NOT surfaced as an issue.
+  // They're informational only ("only act if streaming is failing") and were
+  // crowding the panel with one bullet per port. The Port Connectivity grid
+  // still shows their status; we just don't raise a finding for them.
 
   // ── Domains: failures ────────────────────────────────────
   var domFailed = (domains || []).filter(function(d) { return (d.status || "").toLowerCase() !== "pass"; });
@@ -2331,22 +2324,29 @@ function renderNetwork() {
     const contiguous = ports[ports.length - 1] - ports[0] + 1 === ports.length;
     const rangeLabel = contiguous ? ports[0] + "–" + ports[ports.length - 1] : ports.join(", ");
     const purpose = group[0].purpose || ((group[0].protocol || "").toUpperCase() + " ports");
-    // Stack the per-port rows vertically like the 443 HTTPS Endpoints card:
-    // port number on the left, Pass/Fail status on the right.
-    const portRows = sorted.map(function(p) {
-      const ok = (p.status || "").toLowerCase() === "pass";
-      const statusCls = ok ? "status-pass" : (p.optional ? "status-warn" : "status-fail");
-      return `<li><span class="port-card-host-dot" style="background:${_portDotColor(p)}"></span>` +
-             `<span class="port-card-host-name">${esc(String(p.port))}</span>` +
-             `<span class="port-card-port-status ${statusCls}">${ok ? "Pass" : "Fail"}</span></li>`;
-    }).join("");
-    return `<div class="port-card port-card-multi ${_portGroupClass(group)}">
+    const isOptional = group.every(function(p) { return p.optional; });
+
+    // Optional groups stay compact — just the range + "X of N passing".
+    // The per-port PASS/FAIL breakdown is reserved for required groups,
+    // where knowing exactly which port is blocked is actionable.
+    const portList = isOptional ? "" :
+      '<ul class="port-card-hosts">' +
+      sorted.map(function(p) {
+        const ok = (p.status || "").toLowerCase() === "pass";
+        const statusCls = ok ? "status-pass" : "status-fail";
+        return `<li><span class="port-card-host-dot" style="background:${_portDotColor(p)}"></span>` +
+               `<span class="port-card-host-name">${esc(String(p.port))}</span>` +
+               `<span class="port-card-port-status ${statusCls}">${ok ? "Pass" : "Fail"}</span></li>`;
+      }).join("") +
+      '</ul>';
+
+    return `<div class="port-card port-card-multi ${isOptional ? "port-card-compact " : ""}${_portGroupClass(group)}">
       <div class="port-card-num">${esc(rangeLabel)}</div>
       <div class="port-card-name">${esc(purpose)}</div>
       <div class="port-card-host">${esc(group[0].host)}</div>
       <div class="port-card-summary">${_portGroupPassCount(group)} of ${group.length} passing</div>
-      <ul class="port-card-hosts">${portRows}</ul>
-      ${group[0].optional ? '<div class="port-card-opt">Optional</div>' : ""}
+      ${portList}
+      ${isOptional ? '<div class="port-card-opt">Optional</div>' : ""}
     </div>`;
   }
 

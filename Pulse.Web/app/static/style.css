@@ -1212,6 +1212,12 @@ html.dark .splash-logo {
     color: var(--c-dim);
     margin-bottom: 4px;
 }
+/* Optional port-range card: no per-port list, so it packs tighter and
+   reads as secondary next to the required tiles. */
+.port-card-compact {
+    min-width: 170px;
+}
+.port-card-compact .port-card-summary { margin-bottom: 0; }
 .port-card-hosts {
     list-style: none;
     margin: 0;
