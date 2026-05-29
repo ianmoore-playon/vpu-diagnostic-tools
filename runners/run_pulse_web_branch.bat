@@ -2,6 +2,22 @@
 setlocal EnableDelayedExpansion
 title Pulse  -  updating
 
+:: -- Run as Administrator -------------------------------------------------
+::   Pulse's checks read HKLM, query WMI/CIM, and inspect Windows services
+::   and the Pixellot install -- all most reliable with admin rights.
+::   Self-elevate via UAC so the launcher, the hidden server, and every
+::   PowerShell probe it spawns run at full capability. The /elevated
+::   sentinel breaks any relaunch loop; if UAC is declined we continue with
+::   limited diagnostics rather than failing outright.
+if /I "%~1"=="/elevated" goto :gotadmin
+net session >nul 2>&1
+if %errorlevel% EQU 0 goto :gotadmin
+echo   Requesting administrator access ...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -ArgumentList '/elevated' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+if not errorlevel 1 exit /b
+echo   Administrator access declined - continuing with limited diagnostics.
+:gotadmin
+
 :: ════════════════════════════════════════════════════════════════
 ::  Pulse updater / launcher  (branch channel — defaults to dev)
 ::
