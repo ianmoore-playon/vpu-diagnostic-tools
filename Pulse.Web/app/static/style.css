@@ -1502,23 +1502,37 @@ html.dark .splash-logo {
     border-top: 1px solid var(--c-border);
     margin-top: 4px;
 }
+/* Even vertical spacing between Camera Connectivity panel sections.
+   Flex gap spaces only between visible children — empty async wraps
+   (video/s1/findings before they populate) are hidden so they add no
+   phantom gaps. */
+.cam-page-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    margin-top: 1.25rem;
+}
+.cam-page-body > *:empty { display: none; }
+
 .nic-diagram-wrap {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 24px;
+    gap: 48px;
     padding: 28px 24px;
     flex-wrap: wrap;
 }
 
-/* VPU orientation reference panel (beside the port diagram) */
+/* VPU orientation reference panel (beside the port diagram). Extra left
+   separation so it reads as a distinct reference, not part of the port row. */
 .nic-orient-panel {
-    max-width: 280px;
-    padding: 12px 14px;
+    max-width: 320px;
+    padding: 14px 16px;
     border: 1px solid var(--c-border);
     border-radius: 8px;
     background: var(--c-surface);
     align-self: stretch;
+    margin-left: 16px;
 }
 .nic-orient-title {
     font-size: 0.65rem;
@@ -1542,6 +1556,7 @@ html.dark .splash-logo {
 .orient-io { fill: var(--c-dimmer); }
 .orient-portbank { fill: rgba(59,130,246,0.12); stroke: #3b82f6; stroke-width: 1; }
 .orient-port { fill: #3b82f6; }
+.orient-port-num { fill: #fff; font-size: 8px; font-weight: 700; text-anchor: middle; }
 .orient-ac { fill: none; stroke: var(--c-dim); stroke-width: 1.5; }
 .orient-caption { font-size: 0.66rem; line-height: 1.5; color: var(--c-muted); }
 .orient-caption strong { color: var(--c-text); font-weight: 600; }
@@ -1730,7 +1745,6 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 1rem;
-    margin-bottom: 1rem;
 }
 @media (max-width: 900px) { .cam-port-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 600px) { .cam-port-grid { grid-template-columns: 1fr; } }

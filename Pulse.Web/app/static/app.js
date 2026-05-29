@@ -3117,33 +3117,36 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
 // camera (POE) port bank highlighted — it sits just above the AC power
 // inlet on the back, which is the orientation-independent anchor.
 function _camOrientationPanelHtml() {
+  // Helper: a port rect + its number, centered.
+  function hPort(x, num) {  // horizontal row (upright)
+    return '<rect x="' + x + '" y="72" width="11" height="13" rx="1.5" class="orient-port"/>' +
+           '<text x="' + (x + 5.5) + '" y="81.5" class="orient-port-num">' + num + '</text>';
+  }
+  function vPort(y, num) {  // vertical column (on its side)
+    return '<rect x="78" y="' + y + '" width="13" height="11" rx="1.5" class="orient-port"/>' +
+           '<text x="84.5" y="' + (y + 8) + '" class="orient-port-num">' + num + '</text>';
+  }
   // Upright tower, viewed from the back: POE bank is a horizontal row above
-  // the round AC power inlet.
+  // the round AC power inlet. Ports numbered 4→1 left-to-right (Port 4 left).
   var upright =
-    '<svg viewBox="0 0 64 96" width="58" height="86" class="orient-svg">' +
-      '<rect x="12" y="4" width="40" height="86" rx="4" class="orient-chassis"/>' +
-      '<rect x="18" y="11" width="28" height="4" rx="1" class="orient-io"/>' +
-      '<rect x="34" y="19" width="12" height="4" rx="1" class="orient-io"/>' +
-      '<rect x="14" y="58" width="36" height="15" rx="2" class="orient-portbank"/>' +
-      '<rect x="18" y="62" width="6" height="7" class="orient-port"/>' +
-      '<rect x="26" y="62" width="6" height="7" class="orient-port"/>' +
-      '<rect x="34" y="62" width="6" height="7" class="orient-port"/>' +
-      '<rect x="42" y="62" width="6" height="7" class="orient-port"/>' +
-      '<circle cx="32" cy="82" r="4" class="orient-ac"/>' +
+    '<svg viewBox="0 0 88 128" width="92" height="134" class="orient-svg">' +
+      '<rect x="16" y="6" width="56" height="116" rx="5" class="orient-chassis"/>' +
+      '<rect x="24" y="16" width="40" height="5" rx="1.5" class="orient-io"/>' +
+      '<rect x="46" y="27" width="18" height="5" rx="1.5" class="orient-io"/>' +
+      '<rect x="18" y="68" width="52" height="22" rx="3" class="orient-portbank"/>' +
+      hPort(20, "4") + hPort(32, "3") + hPort(44, "2") + hPort(56, "1") +
+      '<circle cx="44" cy="106" r="5.5" class="orient-ac"/>' +
     '</svg>';
   // Same tower laid on its side: the bank becomes a vertical column, AC inlet
-  // beside it.
+  // beside it. Ports numbered 4→1 top-to-bottom.
   var onside =
-    '<svg viewBox="0 0 96 64" width="86" height="58" class="orient-svg">' +
-      '<rect x="4" y="12" width="86" height="40" rx="4" class="orient-chassis"/>' +
-      '<rect x="11" y="18" width="4" height="28" rx="1" class="orient-io"/>' +
-      '<rect x="19" y="18" width="4" height="12" rx="1" class="orient-io"/>' +
-      '<rect x="55" y="14" width="15" height="36" rx="2" class="orient-portbank"/>' +
-      '<rect x="59" y="18" width="7" height="6" class="orient-port"/>' +
-      '<rect x="59" y="26" width="7" height="6" class="orient-port"/>' +
-      '<rect x="59" y="34" width="7" height="6" class="orient-port"/>' +
-      '<rect x="59" y="42" width="7" height="6" class="orient-port"/>' +
-      '<circle cx="82" cy="32" r="4" class="orient-ac"/>' +
+    '<svg viewBox="0 0 128 88" width="134" height="92" class="orient-svg">' +
+      '<rect x="6" y="16" width="116" height="56" rx="5" class="orient-chassis"/>' +
+      '<rect x="16" y="24" width="5" height="40" rx="1.5" class="orient-io"/>' +
+      '<rect x="27" y="24" width="5" height="18" rx="1.5" class="orient-io"/>' +
+      '<rect x="74" y="18" width="22" height="52" rx="3" class="orient-portbank"/>' +
+      vPort(20, "4") + vPort(32, "3") + vPort(44, "2") + vPort(56, "1") +
+      '<circle cx="110" cy="44" r="5.5" class="orient-ac"/>' +
     '</svg>';
   return '<div class="nic-orient-panel">' +
     '<div class="nic-orient-title">VPU orientation</div>' +
@@ -3181,13 +3184,13 @@ function _camVerifyVideo() {
   var wrap = document.getElementById("cam-video-wrap");
   if (!wrap) return;
   if (btn) { btn.disabled = true; btn.style.opacity = "0.5"; }
-  wrap.innerHTML = '<div class="card mt-4"><div class="cam-video-running">' +
+  wrap.innerHTML = '<div class="card"><div class="cam-video-running">' +
     svgIcon("refresh", 14) +
     ' Grabbing a frame from each camera to confirm it is streaming…</div></div>';
   apiPost("/api/cameras/video-test", {}).then(function(res) {
     if (currentPage === "cameras") wrap.innerHTML = _camVideoResultsHtml(res);
   }).catch(function() {
-    wrap.innerHTML = '<div class="card mt-4"><div class="cam-video-err">Video test failed to run.</div></div>';
+    wrap.innerHTML = '<div class="card"><div class="cam-video-err">Video test failed to run.</div></div>';
   }).finally(function() {
     if (btn) { btn.disabled = false; btn.style.opacity = ""; }
   });
@@ -3195,16 +3198,16 @@ function _camVerifyVideo() {
 
 function _camVideoResultsHtml(res) {
   if (!res || res.error) {
-    return '<div class="card mt-4">' + sectionTitle("play", "Video Verification") +
+    return '<div class="card">' + sectionTitle("play", "Video Verification") +
       '<div class="cam-video-err">Error: ' + esc((res && res.message) || "unknown") + '</div></div>';
   }
   if (res.available === false) {
-    return '<div class="card mt-4">' + sectionTitle("play", "Video Verification") +
+    return '<div class="card">' + sectionTitle("play", "Video Verification") +
       '<div class="cam-no-detect">' + esc(res.reason || "ffmpeg/ffprobe not available on this VPU.") + '</div></div>';
   }
   var results = res.results || [];
   if (!results.length) {
-    return '<div class="card mt-4">' + sectionTitle("play", "Video Verification") +
+    return '<div class="card">' + sectionTitle("play", "Video Verification") +
       '<div class="cam-no-detect">' + esc(res.reason || "No cameras detected to test.") + '</div></div>';
   }
   var cards = results.map(function(r) {
@@ -3225,7 +3228,7 @@ function _camVideoResultsHtml(res) {
         '<div class="cam-frame-detail">' + meta + '</div>' +
       '</div></div>';
   }).join("");
-  return '<div class="card mt-4">' + sectionTitle("play", "Video Verification — camera frames") +
+  return '<div class="card">' + sectionTitle("play", "Video Verification — camera frames") +
     '<div class="cam-frame-grid">' + cards + '</div></div>';
 }
 
@@ -3249,7 +3252,7 @@ function _camS1Html(res) {
       '<td class="font-mono">' + esc(c.ip || "") + "</td>" +
       "<td>" + esc(c.model || "") + "</td></tr>";
   }).join("");
-  return '<div class="card mt-4">' + sectionTitle("camera", "S1 Cameras (JAI) · " + res.count + " detected") +
+  return '<div class="card">' + sectionTitle("camera", "S1 Cameras (JAI) · " + res.count + " detected") +
     '<table class="data-table"><thead><tr><th>Serial Number</th><th>IP</th><th>Model</th></tr></thead>' +
     "<tbody>" + rows + "</tbody></table></div>";
 }
@@ -3281,32 +3284,34 @@ function renderCameras() {
       </button>`
     )}
 
-    <div id="cam-findings-wrap">${_camFindingsHtml(findings)}</div>
+    <div class="cam-page-body">
+      <div id="cam-findings-wrap">${_camFindingsHtml(findings)}</div>
 
-    <div id="cam-video-wrap"></div>
+      <div id="cam-video-wrap"></div>
 
-    <div id="cam-s1-wrap"></div>
+      <div id="cam-s1-wrap"></div>
 
-    <div class="card" id="cam-nic-diagram">${_camNicDiagramHtml(ports, true, {systemType: data.systemType, expectedMainCameras: data.expectedMainCameras})}</div>
+      <div class="card" id="cam-nic-diagram">${_camNicDiagramHtml(ports, true, {systemType: data.systemType, expectedMainCameras: data.expectedMainCameras})}</div>
 
-    <div class="cam-port-grid" id="cam-port-grid">
-      ${_camPortGridHtml(ports)}
+      <div class="cam-port-grid" id="cam-port-grid">
+        ${_camPortGridHtml(ports)}
+      </div>
+
+      ${cfgCameras.length ? `
+      <div class="card">
+        ${sectionTitle("file", "cameras.cfg")}
+        <table class="data-table"><thead><tr>
+          <th>Section</th><th>IP</th><th>MAC</th><th>Role</th>
+        </tr></thead><tbody>
+        ${cfgCameras.map(c => `<tr>
+          <td>${esc(c.section)}</td>
+          <td class="font-mono">${esc(c.ip)}</td>
+          <td class="font-mono">${esc(c.mac)}</td>
+          <td>${esc(c.role)}</td>
+        </tr>`).join("")}
+        </tbody></table>
+      </div>` : ""}
     </div>
-
-    ${cfgCameras.length ? `
-    <div class="card mt-4">
-      ${sectionTitle("file", "cameras.cfg")}
-      <table class="data-table"><thead><tr>
-        <th>Section</th><th>IP</th><th>MAC</th><th>Role</th>
-      </tr></thead><tbody>
-      ${cfgCameras.map(c => `<tr>
-        <td>${esc(c.section)}</td>
-        <td class="font-mono">${esc(c.ip)}</td>
-        <td class="font-mono">${esc(c.mac)}</td>
-        <td>${esc(c.role)}</td>
-      </tr>`).join("")}
-      </tbody></table>
-    </div>` : ""}
 
   `;
 
