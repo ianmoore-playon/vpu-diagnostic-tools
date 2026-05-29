@@ -1014,6 +1014,9 @@ html.dark .splash-logo {
 
 /* Network config with dots */
 .dash-net-kv { display: flex; flex-direction: column; gap: 2px; }
+/* Raw OS adapter alias shown after a friendly role label, e.g.
+   "Motherboard Network Port (Ethernet 13)". */
+.dash-net-sub { color: var(--c-dim); font-weight: 400; font-size: 0.72rem; }
 .dash-net-row {
     display: grid;
     grid-template-columns: 18px 110px 1fr;

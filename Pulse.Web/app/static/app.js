@@ -996,6 +996,15 @@ function renderDashboard() {
   // Network config — prefer dashboard-embedded data, fall back to full network cache
   const netCfg = dash.networkConfig || net.config || {};
   const uplinkName = netCfg.uplinkAdapter?.interfaceAlias || "—";
+  // On a Pixellot VPU the uplink/gateway-bearing NIC is the motherboard's
+  // onboard port (cameras live on the dedicated multiport NIC card with
+  // link-local IPs and no gateway). Call it out by its real-world role
+  // rather than the opaque Windows alias ("Ethernet 13"), keeping the raw
+  // alias as a parenthetical for cross-reference. Only on actual VPUs.
+  const _uplinkIsOnboard = !id.isNonVpuHost && uplinkName !== "—";
+  const uplinkDisplay = _uplinkIsOnboard
+    ? `Motherboard Network Port <span class="dash-net-sub">(${esc(uplinkName)})</span>`
+    : esc(uplinkName);
   const ipConfigs = netCfg.ipConfig || netCfg.ipConfigurations || [];
   const uplinkIp = ipConfigs.find((ip) => ip.interfaceAlias === uplinkName);
   const ipAddr = _first(uplinkIp?.ipv4Address) || "—";
@@ -1203,7 +1212,7 @@ function renderDashboard() {
           <h3 class="card-label mb-0">NETWORK</h3>
         </div>
         <div class="dash-net-kv">
-          <div class="dash-net-row"><span></span><span class="dash-kv-l">Uplink Adapter</span><span class="dash-kv-v">${esc(uplinkName)}</span></div>
+          <div class="dash-net-row"><span></span><span class="dash-kv-l">Uplink Adapter</span><span class="dash-kv-v">${uplinkDisplay}</span></div>
           <div class="dash-net-row"><span class="dash-net-dot" style="background:${ipAddr !== "—" ? "var(--c-accent-green)" : "var(--c-dimmer)"}"></span><span class="dash-kv-l">IP Address</span><span class="dash-kv-v font-mono">${esc(ipAddr)}</span></div>
           <div class="dash-net-row"><span class="dash-net-dot" style="background:${gw !== "—" ? "var(--c-accent-green)" : "var(--c-dimmer)"}"></span><span class="dash-kv-l">Gateway</span><span class="dash-kv-v font-mono">${esc(gw)}</span></div>
           <div class="dash-net-row"><span class="dash-net-dot" style="background:${dns !== "—" ? "var(--c-accent-green)" : "var(--c-dimmer)"}"></span><span class="dash-kv-l">DNS Servers</span><span class="dash-kv-v font-mono">${esc(dns)}</span></div>

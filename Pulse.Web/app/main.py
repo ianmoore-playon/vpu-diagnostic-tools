@@ -1234,60 +1234,61 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 )
 
     if nics and not nics.get("error"):
-        for port in nics.get("ports", []):
-            if port.get("status") != "Up":
-                # Only flag NICs that have Pixellot cameras in their ARP table.
-                # Ports with no camera MACs are unused hardware — not a finding.
-                arp = port.get("arpEntries") or []
-                has_cameras = any(
-                    _is_pixellot_mac(a.get("mac", "")) for a in arp
-                )
-                if not has_cameras:
-                    continue
-                findings.append(
-                    {
-                        "severity": "warning",
-                        "category": "Network",
-                        "title": f"NIC {port['name']} Down",
-                        "recommendation": f"{port['name']} is {port.get('status', 'unknown')}. Check cable.",
-                    }
-                )
+        # Sort into stable physical order and label "Port N" — matching the
+        # Camera Connectivity tab and the dashboard NIC table. The raw Windows
+        # adapter name ("Ethernet 30") is meaningless to a field tech; the
+        # physical port number is what they need to check.
+        ordered_ports = _order_ports_physically(nics.get("ports", []))
+        for idx, port in enumerate(ordered_ports):
+            label = f"Port {idx + 1}"
+            is_up = port.get("status") == "Up"
             speed = port.get("linkSpeedMbps")
-            # Flag any port running below gigabit. The only legitimate
+
+            # NOTE: We deliberately do NOT emit a "port down" finding here.
+            # A down port's ARP is stale (a live camera keeps its link up),
+            # so flagging down ports on ARP alone produces false positives on
+            # unused NIC ports. Genuine missing-camera detection belongs on
+            # the Camera Connectivity tab via expected-vs-detected count,
+            # which has the Pixellot config context to do it correctly.
+
+            # Cameras only count on an UP link (stale-ARP guard, as above).
+            pixellot_arps = []
+            if is_up:
+                pixellot_arps = [
+                    a for a in (port.get("arpEntries") or [])
+                    if _is_pixellot_mac(a.get("mac", ""))
+                ]
+
+            # Flag a camera port running below gigabit. The only legitimate
             # sub-gigabit case is an OCR/scoreboard camera (R2SD-G, S5SD-G),
-            # which negotiates to 100 Mbps because that's its native rate.
-            # We detect OCR ports by checking whether *every* Pixellot ARP
-            # entry on the port uses the Dynacolor OUI (00:D0:89) — main
-            # camera heads use the 00:0E:53 / 00:30:53 / 70:B3:D5 OUIs.
-            #
-            # Category is "Camera" when the port has Pixellot cameras —
-            # a degraded link on a camera port is fundamentally a camera
-            # problem (the cameras drop frames), not a generic network
-            # one. Routes the finding to the Camera Connectivity tab.
-            if port.get("status") == "Up" and speed and speed < 1000:
-                arp = port.get("arpEntries") or []
-                pixellot_arps = [a for a in arp if _is_pixellot_mac(a.get("mac", ""))]
+            # which is natively 100 Mbps — detected when *every* Pixellot ARP
+            # on the port uses the Dynacolor OUI (00:D0:89). Main camera heads
+            # use 00:0E:53 / 00:30:53 / 70:B3:D5 and should be at 1 Gbps.
+            if is_up and speed and speed < 1000:
                 only_ocr_at_100 = (
                     speed == 100
                     and pixellot_arps
                     and all(
-                        (a.get("mac", "").upper().startswith("00:D0:89"))
+                        a.get("mac", "").upper().startswith("00:D0:89")
                         for a in pixellot_arps
                     )
                 )
                 if not only_ocr_at_100:
                     has_cameras = bool(pixellot_arps)
+                    # A degraded link on a camera port is a Camera problem
+                    # (frames drop); a bare NIC at low speed is Network.
                     category = "Camera" if has_cameras else "Network"
                     findings.append(
                         {
                             "severity": "warning",
                             "category": category,
-                            "title": f"NIC {port['name']} at {speed} Mbps (expected 1 Gbps)",
+                            "title": f"NIC {label} at {speed} Mbps (expected 1 Gbps)",
                             "recommendation": (
-                                f"{port['name']} negotiated to {speed} Mbps instead of 1 Gbps. "
-                                f"Camera streams on this port will drop frames at reduced bandwidth. "
-                                f"Check cable quality (Cat5e+ required), reseat the connector, and "
-                                f"confirm the switch port is set to auto-negotiate."
+                                f"{label} ({port.get('name', 'unknown')}) negotiated to "
+                                f"{speed} Mbps instead of 1 Gbps. Camera streams on this port "
+                                f"will drop frames at reduced bandwidth. Check cable quality "
+                                f"(Cat5e+ required), reseat the connector, and confirm the "
+                                f"switch port is set to auto-negotiate."
                             ),
                         }
                     )
@@ -1471,11 +1472,17 @@ def _enrich_ports(
             speed = port.get("linkSpeedMbps")
             is_up = port.get("status") == "Up"
 
-            # Build enriched camera list from ARP entries
+            # Build enriched camera list from ARP entries.
+            # A camera only communicates over an UP link. ARP entries linger
+            # in the OS cache after a camera is unplugged or a link drops, so
+            # a DOWN port's ARP is stale and must NOT be treated as a live
+            # camera — otherwise an empty, never-used port shows a phantom
+            # "OCR" badge and triggers a false "camera down" finding.
             cameras = []
             is_ocr = False
             expected_speed = None  # from camera model lookup
-            for arp in port.get("arpEntries", []):
+            arp_entries = port.get("arpEntries", []) if is_up else []
+            for arp in arp_entries:
                 arp_mac_raw = arp.get("mac", "")
                 if not _is_pixellot_mac(arp_mac_raw):
                     continue
