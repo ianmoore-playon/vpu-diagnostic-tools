@@ -4639,7 +4639,10 @@ function renderScoreConnect() {
 
   $page().innerHTML = `
     ${pageHeader("Score Connect", subtitle,
-      `<button class="btn-outline btn-ol-blue" onclick="dataCache.scoreconnect=null;renderScoreConnect()">
+      `${isDetected ? `<button class="btn-outline btn-ol-blue" onclick="window.open('${esc(data.baseUrl || "http://localhost:5000")}','_blank','noopener')">
+        ${svgIcon("globe", 14)} Open SC III
+      </button>` : ""}
+      <button class="btn-outline btn-ol-blue" onclick="dataCache.scoreconnect=null;renderScoreConnect()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
     )}
