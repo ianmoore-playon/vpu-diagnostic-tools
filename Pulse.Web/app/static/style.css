@@ -1627,6 +1627,15 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .cam-entry-mac { white-space: nowrap; }
 .cam-entry-source { font-size: 0.6rem; flex-basis: 100%; }
 .cam-no-detect { font-size: 0.7rem; color: var(--c-dim); }
+.cam-video-running {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: var(--c-accent-blue);
+}
+.cam-video-running svg { animation: cam-spin 1.2s linear infinite; flex-shrink: 0; }
+.cam-video-err { font-size: 0.82rem; color: var(--c-accent-red); }
 .cam-connecting-note {
     display: inline-flex;
     align-items: center;

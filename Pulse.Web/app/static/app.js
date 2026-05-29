@@ -2656,6 +2656,15 @@ function _camDetailKv(label, val) {
   return '<div class="kv-mini"><span>' + esc(String(label)) + '</span><span class="font-mono">' + esc(String(val)) + '</span></div>';
 }
 
+// Camera TV mode (CGI ImageSource.I0.Video.DetectedType) → friendly label.
+// e.g. "ntsc_60" → "NTSC · 60 Hz", "pal_50" → "PAL · 50 Hz".
+function _fmtTvMode(tv) {
+  if (!tv) return null;
+  var m = String(tv).toLowerCase().match(/^(ntsc|pal)[_-]?(\d+)?/);
+  if (!m) return tv;
+  return m[1].toUpperCase() + (m[2] ? " · " + m[2] + " Hz" : "");
+}
+
 function _camStreamBlock(label, s) {
   if (!s || (!s.codec && !s.resolution && !s.framerate)) return '';
   var enabled = s.enabled !== undefined ? (s.enabled === "yes" || s.enabled === true) : true;
@@ -2714,6 +2723,7 @@ function _camDetailsPanel(cams, portIdx, portData) {
         _camDetailKv("Model No.", c.modelNumber) +
         _camDetailKv("Serial", c.serialNumber) +
         _camDetailKv("Firmware", c.firmwareVersion) +
+        _camDetailKv("TV Mode", _fmtTvMode(c.tvMode)) +
         _camDetailKv("Brand", c.brand) +
         _camDetailKv("Type", c.productType);
     }
@@ -2981,6 +2991,80 @@ function _camForceRefresh() {
   });
 }
 
+// ── Verify Video (slow ffmpeg/ffprobe RTSP validation) ──
+function _camVerifyVideo() {
+  var btn = document.querySelector('[onclick*="_camVerifyVideo"]');
+  var wrap = document.getElementById("cam-video-wrap");
+  if (!wrap) return;
+  if (btn) { btn.disabled = true; btn.style.opacity = "0.5"; }
+  wrap.innerHTML = '<div class="card mt-4"><div class="cam-video-running">' +
+    svgIcon("refresh", 14) +
+    ' Capturing a video clip from each camera to confirm it is streaming — ' +
+    'this can take up to ~60s per camera. Please wait…</div></div>';
+  apiPost("/api/cameras/video-test", {}).then(function(res) {
+    if (currentPage === "cameras") wrap.innerHTML = _camVideoResultsHtml(res);
+  }).catch(function() {
+    wrap.innerHTML = '<div class="card mt-4"><div class="cam-video-err">Video test failed to run.</div></div>';
+  }).finally(function() {
+    if (btn) { btn.disabled = false; btn.style.opacity = ""; }
+  });
+}
+
+function _camVideoResultsHtml(res) {
+  if (!res || res.error) {
+    return '<div class="card mt-4">' + sectionTitle("play", "Video Verification") +
+      '<div class="cam-video-err">Error: ' + esc((res && res.message) || "unknown") + '</div></div>';
+  }
+  if (res.available === false) {
+    return '<div class="card mt-4">' + sectionTitle("play", "Video Verification") +
+      '<div class="cam-no-detect">' + esc(res.reason || "ffmpeg/ffprobe not available on this VPU.") + '</div></div>';
+  }
+  var results = res.results || [];
+  if (!results.length) {
+    return '<div class="card mt-4">' + sectionTitle("play", "Video Verification") +
+      '<div class="cam-no-detect">' + esc(res.reason || "No cameras detected to test.") + '</div></div>';
+  }
+  var rows = results.map(function(r) {
+    var statusCls = r.ok ? "status-pass" : "status-fail";
+    var detail = r.ok
+      ? (esc(r.codec || "?") + " · " + (r.frameRate != null ? r.frameRate + " fps" : "? fps") + (r.resolution ? " · " + esc(r.resolution) : ""))
+      : esc(r.error || "No video");
+    return "<tr><td>" + esc(r.label || r.ip) + "</td>" +
+      '<td class="font-mono">' + esc(r.ip) + "</td>" +
+      '<td><span class="' + statusCls + '">' + (r.ok ? "Streaming" : "No video") + "</span></td>" +
+      '<td class="text-pulse-muted" style="font-size:0.78rem">' + detail + "</td></tr>";
+  }).join("");
+  var title = "Video Verification" + (res.durationSec ? " · " + res.durationSec + "s capture" : "");
+  return '<div class="card mt-4">' + sectionTitle("play", title) +
+    '<table class="data-table"><thead><tr><th>Camera</th><th>IP</th><th>Result</th><th>Stream</th></tr></thead>' +
+    "<tbody>" + rows + "</tbody></table></div>";
+}
+
+// ── S1 (JAI) camera discovery — only renders on S1 systems ──
+function _camLoadS1() {
+  api("/api/cameras/s1").then(function(res) {
+    var wrap = document.getElementById("cam-s1-wrap");
+    if (!wrap || currentPage !== "cameras") return;
+    if (res && res.available && (res.cameras || []).length) {
+      wrap.innerHTML = _camS1Html(res);
+    } else {
+      wrap.innerHTML = "";  // not an S1 system (or none found) → show nothing
+    }
+  }).catch(function() {});
+}
+
+function _camS1Html(res) {
+  var rows = (res.cameras || []).map(function(c) {
+    return "<tr>" +
+      '<td class="font-mono">' + esc(c.serialNumber || "") + "</td>" +
+      '<td class="font-mono">' + esc(c.ip || "") + "</td>" +
+      "<td>" + esc(c.model || "") + "</td></tr>";
+  }).join("");
+  return '<div class="card mt-4">' + sectionTitle("camera", "S1 Cameras (JAI) · " + res.count + " detected") +
+    '<table class="data-table"><thead><tr><th>Serial Number</th><th>IP</th><th>Model</th></tr></thead>' +
+    "<tbody>" + rows + "</tbody></table></div>";
+}
+
 function renderCameras() {
   const data = cached("cameras");
   if (!data) { $page().innerHTML = sectionLoading("Camera Connectivity"); fetchSection("cameras"); return; }
@@ -3000,12 +3084,19 @@ function renderCameras() {
       `<button class="btn-outline btn-ol-blue" onclick="_camForceRefresh()">
         ${svgIcon("refresh", 14)} Refresh
       </button>
+      <button class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()" title="Captures a short RTSP clip from each camera to confirm it is actually streaming video. Slow (~60s per camera).">
+        ${svgIcon("play", 14)} Verify Video
+      </button>
       <button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
         ${svgIcon("zap", 14)} Fault Isolator
       </button>`
     )}
 
     <div id="cam-findings-wrap">${_camFindingsHtml(findings)}</div>
+
+    <div id="cam-video-wrap"></div>
+
+    <div id="cam-s1-wrap"></div>
 
     <div class="card" id="cam-nic-diagram">${_camNicDiagramHtml(ports)}</div>
 
@@ -3029,6 +3120,9 @@ function renderCameras() {
     </div>` : ""}
 
   `;
+
+  // S1 (JAI) discovery — one-shot per full render; renders only on S1 systems.
+  _camLoadS1();
 
   // ── Live refresh: poll /api/cameras every 3s and update port grid + findings ──
   // Seed the signature from what we just rendered so the first tick can

@@ -276,6 +276,11 @@ def _cgi_probe_sync(ip: str, timeout: float = 2.0) -> Optional[dict]:
     # Request 6: Image sensor / exposure settings
     sensor = _cgi_fetch_group(ip, "ImageSource.I0.Sensor", headers, timeout)
 
+    # Request 7: Detected TV mode (ntsc_60 / pal_50). Drives frame-rate
+    # expectations — a US venue camera reporting pal_50 is misconfigured.
+    # (From Canopy getFirmwareAndTvMode.ps1 — same CGI endpoint as firmware.)
+    video = _cgi_fetch_group(ip, "ImageSource.I0.Video.DetectedType", headers, timeout)
+
     def _v(d, k):
         """Get a value, return None if empty."""
         val = d.get(k, "")
@@ -290,6 +295,7 @@ def _cgi_probe_sync(ip: str, timeout: float = 2.0) -> Optional[dict]:
         "productType": _v(brand, "Brand.ProdType"),
         "serialNumber": _v(props, "Properties.System.SerialNumber"),
         "firmwareVersion": _v(props, "Properties.Firmware.Version"),
+        "tvMode": _v(video, "ImageSource.I0.Video.DetectedType"),
         # Network
         "network": {
             "ip": _v(net, "Network.eth0.IPAddress"),
@@ -1462,7 +1468,7 @@ def _enrich_ports(
                     cam_entry["cgiMac"] = probe["mac"]
                     for pkey in ("model", "modelNumber", "brand",
                                  "productType", "serialNumber",
-                                 "firmwareVersion", "network",
+                                 "firmwareVersion", "tvMode", "network",
                                  "stream0", "stream1", "sensor"):
                         if probe.get(pkey) is not None:
                             cam_entry[pkey] = probe[pkey]
@@ -2168,6 +2174,51 @@ async def api_cameras(refresh: bool = False):
         # since static demo data can't simulate the ARP change after a swap.
         "demoMode": DEMO_MODE,
     }
+
+
+@app.get("/api/cameras/s1")
+async def api_cameras_s1():
+    """Discover JAI S1 cameras (4-cam systems Pulse's CGI probe can't see).
+    Returns { available, count, cameras: [...] }; available=false on
+    non-S1 VPUs where the JAI SDK isn't installed."""
+    return await run_ps("Get-S1Cameras.ps1", timeout=15)
+
+
+@app.post("/api/cameras/video-test")
+async def api_cameras_video_test(duration: int = 60):
+    """Slow RTSP video validation. Re-derives the currently-detected
+    camera IPs (authoritative, not client-supplied), then captures and
+    ffprobes each. Budgets duration × N cameras + overhead for the PS
+    timeout. Wired to an explicit 'Verify Video' button — never polled."""
+    nics, pix_config = await asyncio.gather(
+        run_ps("Get-NicAdapters.ps1"),
+        run_ps("Get-PixellotConfig.ps1"),
+    )
+    ocr_ips, _ = _build_ocr_sets(pix_config)
+    raw_ports = nics.get("ports", []) if nics and not nics.get("error") else []
+    probe_results = await _probe_all_cameras(raw_ports, ocr_ips, block=False)
+    ports = _enrich_ports(nics, pix_config, probe_results)
+
+    # Collect (ip, label) for every detected camera on an up port.
+    cams = []
+    for p in ports:
+        for c in p.get("camerasDetected") or []:
+            ip = (c.get("ip") or "").strip()
+            if ip:
+                cams.append((ip, p.get("cameraLabel") or p.get("portLabel") or ip))
+    if not cams:
+        return {"available": True, "results": [], "reason": "No cameras detected to test."}
+
+    ips = ",".join(c[0] for c in cams)
+    labels = ",".join(c[1] for c in cams)
+    # ffmpeg capture is duration seconds per camera, sequential; give the
+    # PS process the full budget plus a per-camera connect/probe margin.
+    budget = duration * len(cams) + 15 * len(cams) + 30
+    return await run_ps(
+        "Test-CameraVideo.ps1",
+        {"CameraIps": ips, "Labels": labels, "DurationSec": duration},
+        timeout=budget,
+    )
 
 
 @app.get("/api/services")

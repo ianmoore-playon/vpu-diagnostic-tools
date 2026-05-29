@@ -441,6 +441,30 @@ DEMO = {
             {"section": "OCR", "ip": "192.168.12.50", "mac": "00:D0:89:1B:03:01", "role": "OCR"},
         ],
     },
+    # JAI S1 camera discovery. The demo box is a standard Dynacolor system,
+    # so no S1 cameras — mirror what a non-S1 VPU returns (SDK absent).
+    "Get-S1Cameras.ps1": lambda **kw: {
+        "available": False,
+        "reason": "JAI SDK not found (Jai_FactoryDotNet.dll absent). This VPU is not an S1 system.",
+        "count": 0,
+        "cameras": [],
+    },
+    # ffmpeg/ffprobe RTSP validation. Demo returns a plausible per-camera
+    # result set (one camera intentionally not streaming) so the UI can be
+    # exercised without real ffmpeg.
+    "Test-CameraVideo.ps1": lambda **kw: {
+        "available": True,
+        "durationSec": int(kw.get("DurationSec", 60)),
+        "results": [
+            {"ip": "192.168.10.100", "label": "Main Camera 1", "ok": True,
+             "codec": "h264", "frameRate": 30.0, "resolution": "3840x2160", "error": None},
+            {"ip": "192.168.11.100", "label": "Main Camera 2", "ok": True,
+             "codec": "h264", "frameRate": 30.0, "resolution": "3840x2160", "error": None},
+            {"ip": "192.168.12.50", "label": "OCR", "ok": False,
+             "codec": None, "frameRate": None, "resolution": None,
+             "error": "No video captured (camera not streaming on rtsp://192.168.12.50/stream1)."},
+        ],
+    },
     "Get-NetworkHealth.ps1": lambda **kw: {
         "tcp": {
             "retransmitsSec": round(random.uniform(0, 3.5), 2),
