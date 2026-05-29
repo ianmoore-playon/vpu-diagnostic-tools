@@ -5996,7 +5996,9 @@ function renderSettings() {
       const r = await api("/api/update/check");
       upCurrent = r.current || null;
       if (r.error) {
-        upMsg.textContent = r.error;
+        // The api() helper signals failures with { error: true, message }, so
+        // render a string — never the bare boolean (which showed as "true").
+        upMsg.textContent = typeof r.error === "string" ? r.error : (r.message || "Couldn't check for updates.");
       } else if (!r.managed) {
         upMsg.textContent = r.note || "Updates are managed externally on this install.";
       } else if (r.updateAvailable) {
@@ -6021,7 +6023,7 @@ function renderSettings() {
     try {
       const r = await apiPost("/api/update/apply", {});
       if (!r.ok) {
-        upMsg.textContent = r.error || "Update couldn't start.";
+        upMsg.textContent = (typeof r.error === "string" ? r.error : r.message) || "Update couldn't start.";
         upApplyBtn.disabled = false;
         upCheckBtn.disabled = false;
         return;

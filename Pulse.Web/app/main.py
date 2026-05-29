@@ -2767,17 +2767,24 @@ def _update_channel():
 
 
 async def _resolve_latest_release(channel):
-    import httpx
+    # Stdlib urllib on purpose — NOT httpx. A self-updater has to work on any
+    # already-installed build, including one where an extra pip dependency
+    # never got installed; depending on httpx here is exactly what breaks the
+    # feature it's meant to provide. Runs in a thread so the blocking call
+    # doesn't stall the event loop.
     prefix, accept_pre = _UPDATE_CHANNELS.get(channel, ("web-dev-v", True))
-    headers = {"Accept": "application/vnd.github+json", "User-Agent": "Pulse-Updater"}
-    async with httpx.AsyncClient(timeout=10.0) as client:
+
+    def _fetch():
+        import urllib.request
+        import json as _json
+        headers = {"Accept": "application/vnd.github+json", "User-Agent": "Pulse-Updater"}
         for repo in (_UPDATE_PUBLIC_REPO, _UPDATE_SOURCE_REPO):
             try:
-                resp = await client.get(
+                req = urllib.request.Request(
                     f"https://api.github.com/repos/{repo}/releases", headers=headers
                 )
-                resp.raise_for_status()
-                releases = resp.json()
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    releases = _json.loads(resp.read().decode("utf-8"))
             except Exception:
                 continue
             for rel in releases:
@@ -2789,31 +2796,41 @@ async def _resolve_latest_release(channel):
                 if rel.get("prerelease") and not accept_pre:
                     continue
                 return {"tag": tag, "url": rel.get("html_url"), "notes": rel.get("body") or ""}
-    return None
+        return None
+
+    return await asyncio.to_thread(_fetch)
 
 
 @app.get("/api/update/check")
 async def api_update_check():
-    channel = _update_channel()
-    current = _installed_tag() or APP_VERSION
-    if not _is_managed_install():
-        return {
-            "managed": False, "channel": channel, "current": current,
-            "updateAvailable": False,
-            "note": "Pulse is running from source here — updates are managed with git, not this button.",
-        }
-    latest = await _resolve_latest_release(channel)
-    if not latest:
+    # Never let this 500 — a crash here just renders as a useless error in the
+    # UI. Always return a JSON envelope with a human-readable string in `error`.
+    try:
+        channel = _update_channel()
+        current = _installed_tag() or APP_VERSION
+        if not _is_managed_install():
+            return {
+                "managed": False, "channel": channel, "current": current,
+                "updateAvailable": False,
+                "note": "Pulse is running from source here — updates are managed with git, not this button.",
+            }
+        latest = await _resolve_latest_release(channel)
+        if not latest:
+            return {
+                "managed": True, "channel": channel, "current": current,
+                "updateAvailable": False,
+                "error": "Couldn't reach the update server. Check the VPU's internet connection and try again.",
+            }
         return {
             "managed": True, "channel": channel, "current": current,
-            "updateAvailable": False,
-            "error": "Couldn't reach the update server. Check the VPU's internet connection and try again.",
+            "latest": latest["tag"], "latestUrl": latest["url"], "notes": latest["notes"],
+            "updateAvailable": latest["tag"] != current,
         }
-    return {
-        "managed": True, "channel": channel, "current": current,
-        "latest": latest["tag"], "latestUrl": latest["url"], "notes": latest["notes"],
-        "updateAvailable": latest["tag"] != current,
-    }
+    except Exception as e:
+        return {
+            "managed": True, "updateAvailable": False,
+            "error": f"Update check failed: {type(e).__name__}: {e}",
+        }
 
 
 @app.post("/api/update/apply")
