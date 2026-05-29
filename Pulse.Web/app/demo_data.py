@@ -463,9 +463,11 @@ DEMO = {
     },
     # Expected main-camera count from the Coordinator log. Demo box is an
     # S2 (2 main cameras + 1 OCR), matching the Get-PixellotConfig demo.
+    # vpuRunning False → idle box, so frame capture is allowed in demo.
     "Get-CameraExpectations.ps1": lambda **kw: {
         "expectedMainCameras": 2,
         "systemType": "S2",
+        "vpuRunning": False,
     },
     # JAI S1 camera discovery. The demo box is a standard Dynacolor system,
     # so no S1 cameras — mirror what a non-S1 VPU returns (SDK absent).

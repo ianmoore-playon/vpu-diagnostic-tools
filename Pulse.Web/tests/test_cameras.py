@@ -219,6 +219,27 @@ class TestCameraDropFinding(unittest.TestCase):
         self.assertFalse(any("camera dropped" in f["title"].lower() for f in findings))
 
 
+class TestFrameCooldown(unittest.TestCase):
+    """Frame-capture rate limit. The first capture must always be allowed
+    (monotonic() can start near 0, so the default must read as 'long ago')."""
+
+    def setUp(self):
+        self._saved = main._LAST_FRAME_CAPTURE
+
+    def tearDown(self):
+        main._LAST_FRAME_CAPTURE = self._saved
+
+    def test_first_capture_allowed(self):
+        main._LAST_FRAME_CAPTURE = -1e9  # default init
+        self.assertEqual(main._frame_cooldown_remaining(0.3), 0)
+        self.assertEqual(main._frame_cooldown_remaining(0.0), 0)
+
+    def test_blocks_within_window_then_ready(self):
+        main._LAST_FRAME_CAPTURE = 100.0
+        self.assertGreater(main._frame_cooldown_remaining(105.0), 0)   # 5s in → blocked
+        self.assertEqual(main._frame_cooldown_remaining(116.0), 0)     # >15s → ready
+
+
 class TestRunPsCacheBypass(unittest.TestCase):
     """run_ps(use_cache=False) must always run fresh — frame grabs can't
     replay a 25s-old cached snapshot."""

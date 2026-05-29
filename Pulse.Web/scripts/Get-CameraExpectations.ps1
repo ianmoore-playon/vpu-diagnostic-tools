@@ -54,9 +54,18 @@ try {
         default { $systemType = $null }
     }
 
+    # Is the Pixellot capture engine (vpu.exe) running? If so, it's actively
+    # pulling the camera RTSP streams — Pulse should not grab frames and
+    # compete for the camera's limited RTSP sessions during a live event.
+    $vpuRunning = $false
+    try {
+        $vpuRunning = [bool](Get-Process -Name 'vpu' -ErrorAction SilentlyContinue)
+    } catch { }
+
     [ordered]@{
         expectedMainCameras = $count
         systemType          = $systemType
+        vpuRunning          = $vpuRunning
     } | ConvertTo-Json -Compress
 }
 catch {

@@ -3206,21 +3206,51 @@ function _camForceRefresh() {
   });
 }
 
-// ── Verify Video (slow ffmpeg/ffprobe RTSP validation) ──
+// ── Get Camera Frames (single-frame RTSP capture) ──
+// Disable the button for a cooldown, counting down, then restore it. Mirrors
+// the server-side rate limit so the button can't be spammed.
+function _camFramesCooldown(seconds) {
+  var btn = document.getElementById("cam-frames-btn");
+  if (!btn) return;
+  var left = seconds;
+  btn.disabled = true;
+  var tick = function() {
+    if (left <= 0 || currentPage !== "cameras") {
+      var b = document.getElementById("cam-frames-btn");
+      if (b) { b.disabled = false; b.innerHTML = svgIcon("camera", 14) + " Get Camera Frames"; }
+      return;
+    }
+    btn = document.getElementById("cam-frames-btn");
+    if (btn) btn.innerHTML = svgIcon("refresh", 14) + " Wait " + left + "s…";
+    left -= 1;
+    setTimeout(tick, 1000);
+  };
+  tick();
+}
+
 function _camVerifyVideo() {
-  var btn = document.querySelector('[onclick*="_camVerifyVideo"]');
+  var btn = document.getElementById("cam-frames-btn");
   var wrap = document.getElementById("cam-video-wrap");
-  if (!wrap) return;
-  if (btn) { btn.disabled = true; btn.style.opacity = "0.5"; }
+  if (!wrap || (btn && btn.disabled)) return;
+  if (btn) { btn.disabled = true; btn.innerHTML = svgIcon("refresh", 14) + " Capturing…"; }
   wrap.innerHTML = '<div class="card"><div class="cam-video-running">' +
     svgIcon("refresh", 14) +
     ' Grabbing a frame from each camera to confirm it is streaming…</div></div>';
   apiPost("/api/cameras/video-test", {}).then(function(res) {
     if (currentPage === "cameras") wrap.innerHTML = _camVideoResultsHtml(res);
+    // If the server reported its own cooldown, honor exactly that; otherwise
+    // start the standard cooldown after a real capture. A vpu-block doesn't
+    // cooldown (nothing was captured) — just re-enable.
+    if (res && res.blocked === "vpu") {
+      var b = document.getElementById("cam-frames-btn");
+      if (b) { b.disabled = false; b.innerHTML = svgIcon("camera", 14) + " Get Camera Frames"; }
+    } else {
+      _camFramesCooldown(res && res.cooldown ? res.cooldown : 15);
+    }
   }).catch(function() {
-    wrap.innerHTML = '<div class="card"><div class="cam-video-err">Video test failed to run.</div></div>';
-  }).finally(function() {
-    if (btn) { btn.disabled = false; btn.style.opacity = ""; }
+    wrap.innerHTML = '<div class="card"><div class="cam-video-err">Frame capture failed to run.</div></div>';
+    var b = document.getElementById("cam-frames-btn");
+    if (b) { b.disabled = false; b.innerHTML = svgIcon("camera", 14) + " Get Camera Frames"; }
   });
 }
 
@@ -3304,7 +3334,8 @@ function renderCameras() {
       `<button class="btn-outline btn-ol-blue" onclick="_camForceRefresh()">
         ${svgIcon("refresh", 14)} Refresh
       </button>
-      <button class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()" title="Grabs a single frame from each camera to confirm it is streaming and show what it sees.">
+      <button id="cam-frames-btn" class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()"${data.vpuRunning ? " disabled" : ""}
+        title="${data.vpuRunning ? "Disabled while the Pixellot capture engine (vpu.exe) is running — capturing frames could interfere with the live stream." : "Grabs a single frame from each camera to confirm it is streaming and show what it sees."}">
         ${svgIcon("camera", 14)} Get Camera Frames
       </button>
       <button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">

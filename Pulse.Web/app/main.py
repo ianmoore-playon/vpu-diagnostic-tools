@@ -212,6 +212,19 @@ _CGI_PROBE_TTL = 10  # seconds
 _PORT_STATE_TRACKER = {}  # adapter_mac -> {"key": str, "since": float}
 _PORT_SETTLE_SECONDS = 8
 
+# Frame-capture rate limit. Grabbing RTSP frames is a real pull on the
+# cameras; a cooldown stops a tech from spamming the button.
+# Init far in the past — monotonic() can start near 0, so 0.0 would falsely
+# block the first capture for the cooldown window.
+_LAST_FRAME_CAPTURE = -1e9      # time.monotonic() of the last actual capture
+_FRAME_CAPTURE_COOLDOWN = 15    # seconds between captures
+
+
+def _frame_cooldown_remaining(now: float) -> int:
+    """Whole seconds left on the frame-capture cooldown (0 if ready)."""
+    remaining = _FRAME_CAPTURE_COOLDOWN - (now - _LAST_FRAME_CAPTURE)
+    return int(remaining) + 1 if remaining > 0 else 0
+
 # Known default OCR IPs (from WPF's DefaultOcrIps + Pixellot convention)
 _DEFAULT_OCR_IPS = {"169.254.16.52", "169.254.16.53", "169.254.16.60"}
 # Known default main camera IPs
@@ -2268,9 +2281,11 @@ async def api_cameras(refresh: bool = False):
     # Authoritative — drives the main-camera cap and the system-type label.
     expected_main = None
     system_type = None
+    vpu_running = False
     if expectations and not expectations.get("error"):
         expected_main = expectations.get("expectedMainCameras")
         system_type = expectations.get("systemType")
+        vpu_running = bool(expectations.get("vpuRunning"))
     # First paint: use cached probes only; warm the cache in the background
     # so the next live-refresh tick picks up fresh camera identification.
     # Manual refresh blocks until probes complete so the user sees the
@@ -2284,6 +2299,9 @@ async def api_cameras(refresh: bool = False):
         "findings": _compute_camera_findings(ports),
         "systemType": system_type,
         "expectedMainCameras": expected_main,
+        # vpuRunning gates the "Get Camera Frames" button — frame capture is
+        # disabled while the capture engine owns the RTSP streams.
+        "vpuRunning": vpu_running,
         # Frontend uses this to skip swap-verification in the fault isolator,
         # since static demo data can't simulate the ARP change after a swap.
         "demoMode": DEMO_MODE,
@@ -2303,7 +2321,28 @@ async def api_cameras_video_test():
     """Grab a single frame from each detected camera to confirm it's
     streaming decodable video (and return it as a thumbnail). Re-derives
     the camera IPs server-side (authoritative, not client-supplied).
-    Wired to an explicit 'Verify Video' button — never polled."""
+    Wired to an explicit 'Get Camera Frames' button — never polled.
+
+    Two guards: refuse while vpu.exe is capturing (don't compete for the
+    cameras' RTSP sessions during a live event), and a cooldown to stop
+    the button being spammed."""
+    global _LAST_FRAME_CAPTURE
+
+    # Rate limit first — cheap, no PowerShell needed.
+    remaining = _frame_cooldown_remaining(time.monotonic())
+    if remaining > 0:
+        return {"available": True, "results": [], "blocked": "cooldown",
+                "cooldown": remaining,
+                "reason": f"Please wait {remaining}s before capturing frames again."}
+
+    # Don't capture while the Pixellot capture engine owns the streams.
+    expectations = await run_ps("Get-CameraExpectations.ps1", timeout=10, use_cache=False)
+    if expectations and not expectations.get("error") and expectations.get("vpuRunning"):
+        return {"available": False, "results": [], "blocked": "vpu",
+                "reason": "The Pixellot capture engine (vpu.exe) is running — "
+                          "frame capture is disabled to avoid interfering with the "
+                          "live stream. Stop the VPU process to capture frames."}
+
     nics, pix_config = await asyncio.gather(
         run_ps("Get-NicAdapters.ps1"),
         run_ps("Get-PixellotConfig.ps1"),
@@ -2342,6 +2381,9 @@ async def api_cameras_video_test():
     # Single-frame grab is fast: a probe + frame capture is bounded by the
     # script's own -stimeout (~6-8s) per camera. Budget ~20s/camera + margin.
     budget = 20 * len(cams) + 20
+    # Stamp the cooldown now — a capture is about to run; this prevents a
+    # second request landing while this one is still in flight.
+    _LAST_FRAME_CAPTURE = time.monotonic()
     # use_cache=False: each click captures fresh frames — never replay a
     # cached snapshot from a previous request.
     return await run_ps(
