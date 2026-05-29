@@ -703,7 +703,10 @@ const pageRenderers = {
   "disk-health": renderDiskHealth,
   events: renderEvents,
   reports: renderReports,
-  audio: renderAudio,
+  // Audio diagnostics are feature-complete but gated off for the beta build.
+  // renderAudio() (and its API/scripts) are left fully intact below —
+  // swap this back to `renderAudio` to re-enable. See renderAudioComingSoon.
+  audio: renderAudioComingSoon,
   scoreconnect: renderScoreConnect,
   "fault-isolator": renderFaultIsolator,
   settings: renderSettings,
@@ -859,8 +862,22 @@ function renderDashboard() {
   const warnCount = findings.filter((f) => f.severity === "warning").length;
   const critCount = findings.filter((f) => f.severity === "critical").length;
   const totalFindings = findings.length;
-  const sevLabel = critCount > 0 ? `${critCount} Critical` : warnCount > 0 ? `${warnCount} Warnings` : "All Clear";
   const sevColor = critCount > 0 ? "critical" : warnCount > 0 ? "warn" : "ok";
+
+  // Show BOTH counts (e.g. "2 Critical · 5 Warnings"), not just the highest.
+  const _critTxt = critCount > 0 ? `${critCount} Critical` : "";
+  const _warnTxt = warnCount > 0 ? `${warnCount} Warning${warnCount === 1 ? "" : "s"}` : "";
+  const sevLabel = (critCount || warnCount)
+    ? [_critTxt, _warnTxt].filter(Boolean).join(" · ")
+    : "All Clear";
+  // Two-tone version for the big Command Center heading — critical in red,
+  // warnings in amber, so the split reads at a glance.
+  const sevHtml = (critCount || warnCount)
+    ? [
+        critCount > 0 ? `<span class="cc-sev-crit">${critCount} Critical</span>` : "",
+        warnCount > 0 ? `<span class="cc-sev-warn">${warnCount} Warning${warnCount === 1 ? "" : "s"}</span>` : "",
+      ].filter(Boolean).join(`<span class="cc-sev-sep">·</span>`)
+    : `<span class="cc-sev-ok">All Clear</span>`;
 
   // Findings are now shown in a single consolidated list in the Command
   // Center. Cap at 10 to keep the panel from sprawling; if more exist,
@@ -931,7 +948,7 @@ function renderDashboard() {
     <div class="dash-top-grid">
       <div class="card command-center">
         <h3 class="card-label">COMMAND CENTER</h3>
-        <div class="cc-severity cc-sev-${sevColor}">${esc(sevLabel)}</div>
+        <div class="cc-severity">${sevHtml}</div>
         <div class="baseline-bar">
           ${svgIcon("check", 14)}
           Baseline completed ${esc(timeStr)} &bull; ${subsystems.length} panel${subsystems.length === 1 ? "" : "s"} checked &bull; ${totalFindings} finding${totalFindings === 1 ? "" : "s"}
@@ -944,9 +961,9 @@ function renderDashboard() {
           <div class="cc-findings-list">
             ${visibleFindings.length
               ? visibleFindings.map((f) => `
-                <a class="finding-item" href="#${esc(_findingPageFor(f.category))}" onclick="event.preventDefault();navigate('${esc(_findingPageFor(f.category))}')">
+                <a class="finding-item" href="#${esc(_findingPageFor(f.category))}" onclick="event.preventDefault();navigate('${esc(_findingPageFor(f.category))}')" title="${esc(f.category)} — opens the ${esc(f.category)} tab">
                   <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
-                  <span class="finding-cat">[${esc(f.category)}]</span>
+                  <span class="finding-cat finding-cat-${esc(f.severity)}">[${esc((f.severity || "").toUpperCase())}]</span>
                   <span class="finding-title">${esc(f.title)}</span>
                   <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
                 </a>`).join("")
@@ -5270,6 +5287,20 @@ function renderFaultIsolator() {
 }
 
 // ── Audio ────────────────────────────────────────────────────
+
+// Beta placeholder — Audio diagnostics are gated off for this build.
+// renderAudio() below is feature-complete and left intact; the page
+// renderer map points at this until the tab is re-enabled.
+function renderAudioComingSoon() {
+  $page().innerHTML = `
+    ${pageHeader("Audio", "Audio device diagnostics")}
+    <div class="coming-soon">
+      <div class="coming-soon-icon">${svgIcon("mic", 40)}</div>
+      <h3 class="coming-soon-title">Coming Soon</h3>
+      <p class="coming-soon-text">Audio diagnostics are in active development and will be available in an upcoming release.</p>
+    </div>
+  `;
+}
 
 // Thresholds & timing constants
 const AUDIO_SIGNAL_THRESHOLD = 1;

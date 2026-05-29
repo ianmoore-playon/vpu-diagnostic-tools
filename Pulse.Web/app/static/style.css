@@ -497,10 +497,15 @@ html.dark .splash-logo {
     font-size: 1.5rem;
     font-weight: 700;
     margin-bottom: 0.25rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
 }
-.cc-sev-critical { color: var(--c-accent-red); }
-.cc-sev-warn     { color: var(--c-accent-amber); }
-.cc-sev-ok       { color: var(--c-accent-green); }
+.cc-sev-critical { color: var(--c-accent-red); }    /* legacy pill: sevColor=critical */
+.cc-sev-crit     { color: var(--c-accent-red); }    /* two-tone heading: critical part */
+.cc-sev-warn     { color: var(--c-accent-amber); }  /* legacy pill + two-tone warning part */
+.cc-sev-ok       { color: var(--c-accent-green); }  /* legacy pill + two-tone all-clear */
+.cc-sev-sep      { color: var(--c-dim); font-weight: 400; }  /* the "·" between counts */
 
 .baseline-bar {
     display: flex;
@@ -544,12 +549,16 @@ html.dark .splash-logo {
 .finding-dot-info     { background: var(--c-accent-blue); }
 .finding-cat {
     font-size: 0.7rem;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--c-dim);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    min-width: 70px;
+    min-width: 80px;
 }
+/* The chip now shows severity (CRITICAL / WARNING), colored to match. */
+.finding-cat-critical { color: var(--c-accent-red); }
+.finding-cat-warning  { color: var(--c-accent-amber); }
+.finding-cat-info     { color: var(--c-accent-blue); }
 .finding-title {
     flex: 1;
     font-size: 0.8rem;
