@@ -7,6 +7,26 @@ _app_dir = _os.path.dirname(_os.path.abspath(__file__))
 if _app_dir not in _sys.path:
     _sys.path.insert(0, _app_dir)
 
+# ── pythonw.exe console safety ───────────────────────────────
+# The hidden launcher runs the server under pythonw.exe, which has NO
+# console — so sys.stdout and sys.stderr are None. uvicorn's logging
+# config attaches a StreamHandler to sys.stdout and raises on startup
+# when it's None, so the server would import fine but never bind the
+# port. Point both streams at the server log so the hidden server starts
+# cleanly and uvicorn's own output is captured for the Server Log tab.
+_SERVER_LOG_EARLY = _os.path.join(_os.path.dirname(_app_dir), "pulse-server.log")
+try:
+    open(_SERVER_LOG_EARLY, "w", encoding="utf-8").close()  # fresh log per launch
+except Exception:
+    pass
+if _sys.stdout is None or _sys.stderr is None:
+    try:
+        _redir = open(_SERVER_LOG_EARLY, "a", buffering=1, encoding="utf-8", errors="replace")
+        _sys.stdout = _redir
+        _sys.stderr = _redir
+    except Exception:
+        pass
+
 import asyncio
 import json
 
@@ -62,11 +82,11 @@ SERVER_LOG_PATH = _os.path.join(_web_root, "pulse-server.log")
 # (uvicorn, asyncio, fastapi, our app, third-party deps) flows into
 # pulse-server.log. The Server Log tab in the UI tails this file.
 #
-# Mode "w" truncates on each process start so the file never grows
-# unbounded across restarts. The file is also small enough (a few KB
-# per session) that we don't need rotation.
+# Append mode: the log was already truncated once at module top (see the
+# pythonw console-safety block). Appending here avoids wiping uvicorn's
+# startup lines and plays nicely with the stdout redirect above.
 import logging as _logging
-_server_log_handler = _logging.FileHandler(SERVER_LOG_PATH, mode="w", encoding="utf-8")
+_server_log_handler = _logging.FileHandler(SERVER_LOG_PATH, mode="a", encoding="utf-8")
 _server_log_handler.setLevel(_logging.INFO)
 _server_log_handler.setFormatter(
     _logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -2569,4 +2589,9 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(_os.environ.get("PORT", 8765))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+    # Pass the app object, NOT the "main:app" import string. The import-
+    # string form makes uvicorn re-import this module as "main", re-running
+    # all top-level code (re-truncating the log, double-attaching handlers).
+    # Passing the object runs it once. reload is already off, so we lose
+    # nothing.
+    uvicorn.run(app, host="0.0.0.0", port=port, reload=False)
