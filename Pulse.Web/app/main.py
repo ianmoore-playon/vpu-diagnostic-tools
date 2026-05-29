@@ -1380,19 +1380,19 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 ]
 
             # Flag a camera port running below gigabit. The only legitimate
-            # sub-gigabit case is an OCR/scoreboard camera (R2SD-G, S5SD-G),
-            # which is natively 100 Mbps — detected when *every* Pixellot ARP
-            # on the port uses the Dynacolor OUI (00:D0:89). Main camera heads
-            # use 00:0E:53 / 00:30:53 / 70:B3:D5 and should be at 1 Gbps.
+            # sub-gigabit case is an OCR / scoreboard camera (R2SD-G, S5SD-G),
+            # which is natively 100 Mbps. Identify it the same way enrichment
+            # does — by its link-local IP (the .52/.53/.60 default-OCR-IP
+            # convention) — NOT by OUI: on many units the main heads share the
+            # OCR's Dynacolor OUI (00:D0:89), so the OUI can't tell them apart
+            # (and the raw ARP MAC is dash-formatted, so the old colon-prefix
+            # check never matched anyway).
             if is_up and speed and speed < 1000:
-                only_ocr_at_100 = (
-                    speed == 100
-                    and pixellot_arps
-                    and all(
-                        a.get("mac", "").upper().startswith("00:D0:89")
-                        for a in pixellot_arps
-                    )
+                port_is_ocr = any(
+                    (a.get("ip") or "").strip() in _DEFAULT_OCR_IPS
+                    for a in pixellot_arps
                 )
+                only_ocr_at_100 = speed == 100 and port_is_ocr
                 if not only_ocr_at_100:
                     has_cameras = bool(pixellot_arps)
                     # A degraded link on a camera port is a Camera problem
