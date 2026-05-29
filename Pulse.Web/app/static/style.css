@@ -2869,6 +2869,20 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .ntp-source-ok  { background: var(--c-tint-green); color: var(--c-accent-green); }
 .ntp-source-bad { background: var(--c-tint-amber); color: var(--c-accent-amber); }
 
+/* ── DHCP / Static chip on the Adapter card (Canopy getIpStaticOrDynamic) */
+.dhcp-chip {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    vertical-align: middle;
+}
+.dhcp-chip-dynamic { background: var(--c-tint-blue);  color: var(--c-accent-blue); }
+.dhcp-chip-static  { background: var(--c-tint-amber); color: var(--c-accent-amber); }
+
 /* ── Time Sync card peers table (PDF #8) ─────────────────── */
 .net-ntp-peers {
     margin-top: 1rem;

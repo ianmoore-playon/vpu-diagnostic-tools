@@ -46,13 +46,30 @@ try {
         }
     }
 
-    # GPU
+    # GPU — adapted from Canopy/Leaf/checkDedicatedGpu.ps1.
+    # Pixellot VPUs require a dedicated NVIDIA or AMD GPU for encoding.
+    # Intel iGPUs alone won't run the encoder — surface vendor + an
+    # isDedicated flag so _compute_findings can flag wrong-hardware hosts.
     $gpus = Get-CimInstance Win32_VideoController | ForEach-Object {
+        $compat = $_.AdapterCompatibility
+        $vendor = switch -Regex ($compat) {
+            '^NVIDIA'       { 'NVIDIA';    break }
+            '^(AMD|ATI)'    { 'AMD';       break }
+            '^Intel'        { 'Intel';     break }
+            '^Microsoft'    { 'Microsoft'; break }
+            default         { if ($compat) { $compat } else { 'Unknown' } }
+        }
         [ordered]@{
-            name          = $_.Name
-            adapterRAMMB  = if ($_.AdapterRAM) { [math]::Round($_.AdapterRAM / 1MB, 0) } else { $null }
-            driverVersion = $_.DriverVersion
-            driverDate    = if ($_.DriverDate) { $_.DriverDate.ToString('o') } else { $null }
+            name                 = $_.Name
+            adapterRAMMB         = if ($_.AdapterRAM) { [math]::Round($_.AdapterRAM / 1MB, 0) } else { $null }
+            driverVersion        = $_.DriverVersion
+            driverDate           = if ($_.DriverDate) { $_.DriverDate.ToString('o') } else { $null }
+            adapterCompatibility = $compat
+            vendor               = $vendor
+            # Dedicated = NVIDIA or AMD with actual VRAM. Intel iGPUs and
+            # Microsoft Basic Display / Remote Desktop adapters report as
+            # not-dedicated regardless of AdapterRAM.
+            isDedicated          = ($vendor -in @('NVIDIA', 'AMD')) -and ($_.AdapterRAM -gt 0)
         }
     }
 

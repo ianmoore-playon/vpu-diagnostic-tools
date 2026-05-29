@@ -12,19 +12,35 @@ param()
 $ErrorActionPreference = 'Stop'
 
 try {
+    # Port list audited against Canopy connections.csv (the canonical Pixellot
+    # port reference). Notes:
+    #  - prod-echo.pixellot.tv covers TCP 443 + UDP 123/443/2088 per the CSV;
+    #    we hit those specific subdomain entries in addition to the wider
+    #    pixellot.tv apex test (some venues filter on FQDN, not IP).
+    #  - scorebot.sportzcast.net binds to TCP 1400–1405 for ScoreConnect; the
+    #    range is venue-dependent so every port is marked optional. Not all
+    #    schools have ScoreConnect.
     $portTests = @(
-        # Required
-        @{ protocol = 'UDP'; port = 53;   host = '8.8.8.8';               purpose = 'DNS';               optional = $false }
-        @{ protocol = 'TCP'; port = 443;  host = 'pixellot.tv';          purpose = 'Pixellot';          optional = $false }
-        @{ protocol = 'TCP'; port = 443;  host = 'nfhsnetwork.com';      purpose = 'NFHS Network';      optional = $false }
-        @{ protocol = 'TCP'; port = 443;  host = 's3.amazonaws.com';     purpose = 'AWS S3';            optional = $false }
-        @{ protocol = 'TCP'; port = 443;  host = 'service.singular.live'; purpose = 'Singular Overlay';  optional = $false }
-        @{ protocol = 'TCP'; port = 443;  host = 'logmein.com';          purpose = 'LogMeIn';           optional = $false }
-        @{ protocol = 'UDP'; port = 123;  host = 'prod-echo.pixellot.tv'; purpose = 'NTP';               optional = $false }
-        @{ protocol = 'UDP'; port = 2088; host = 'pixellot.tv';          purpose = 'Zixi Streaming';    optional = $false }
-        # Optional
-        @{ protocol = 'TCP'; port = 1935; host = 'sportzcast.net';       purpose = 'RTMP Ingest';       optional = $true }
-        @{ protocol = 'TCP'; port = 1402; host = 'sportzcast.net';       purpose = 'SportzCast';        optional = $true }
+        # Required — core Pixellot streaming + cloud services
+        @{ protocol = 'UDP'; port = 53;   host = '8.8.8.8';                purpose = 'DNS';               optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 'pixellot.tv';            purpose = 'Pixellot';          optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 'prod-echo.pixellot.tv';  purpose = 'Pixellot Echo';     optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 'nfhsnetwork.com';        purpose = 'NFHS Network';      optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 's3.amazonaws.com';       purpose = 'AWS S3';            optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 'service.singular.live';  purpose = 'Singular Overlay';  optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 'logmein.com';            purpose = 'LogMeIn';           optional = $false }
+        @{ protocol = 'UDP'; port = 123;  host = 'prod-echo.pixellot.tv';  purpose = 'NTP';               optional = $false }
+        @{ protocol = 'UDP'; port = 443;  host = 'prod-echo.pixellot.tv';  purpose = 'Zixi QUIC';         optional = $false }
+        @{ protocol = 'UDP'; port = 2088; host = 'prod-echo.pixellot.tv';  purpose = 'Zixi Streaming';    optional = $false }
+        # Optional — RTMP fallback (legacy ingest)
+        @{ protocol = 'TCP'; port = 1935; host = 'sportzcast.net';         purpose = 'RTMP Ingest';       optional = $true }
+        # Optional — Sportzcast Scorebot range (ScoreConnect deployments only)
+        @{ protocol = 'TCP'; port = 1400; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
+        @{ protocol = 'TCP'; port = 1401; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
+        @{ protocol = 'TCP'; port = 1402; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
+        @{ protocol = 'TCP'; port = 1403; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
+        @{ protocol = 'TCP'; port = 1404; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
+        @{ protocol = 'TCP'; port = 1405; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
     )
 
     $results = foreach ($test in $portTests) {
