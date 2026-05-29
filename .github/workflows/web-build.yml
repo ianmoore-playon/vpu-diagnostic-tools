@@ -41,6 +41,19 @@ jobs:
           cd Pulse.Web
           zip -r "../${NAME}.zip" . -x "app/python/*" "__pycache__/*" "*.pyc"
 
+      - name: Extract changelog notes
+        run: |
+          # Top section of the changelog (between the first two "## " headings),
+          # minus its heading line — becomes the body of the release notes the
+          # in-app updater shows. Generic fallback if empty/missing so a release
+          # never fails on a missing-notes file.
+          awk '/^## /{s++; if(s==1) next; if(s==2) exit} s>=1{print}' \
+            Pulse.Web/CHANGELOG.md > CHANGELOG_BODY.md 2>/dev/null || true
+          if [ ! -s CHANGELOG_BODY.md ]; then
+            echo "- Maintenance and internal improvements." > CHANGELOG_BODY.md
+          fi
+          echo "Release-notes body:"; cat CHANGELOG_BODY.md
+
       - name: Upload as workflow artifact
         uses: actions/upload-artifact@v4
         with:
@@ -104,17 +117,19 @@ jobs:
                 gh release delete "$old" --repo "$PUBLIC_REPO" --yes --cleanup-tag 2>/dev/null || true
               done
           gh release delete "$TAG" --repo "$PUBLIC_REPO" --yes --cleanup-tag 2>/dev/null || true
+          {
+            echo "## What's new in ${TAG}"
+            echo
+            cat CHANGELOG_BODY.md
+            echo
+            echo "---"
+            echo "**Install on a VPU** — drop \`run_pulse_web.bat\` on the desktop and double-click; it auto-updates every launch. Requires Windows 10+ (PowerShell + WMI), no .NET or Node.js."
+          } > NOTES.md
           gh release create "$TAG" \
             --repo "$PUBLIC_REPO" \
             --target main \
             --title "Pulse.Web ${TAG}" \
-            --notes "Pulse.Web release.
-
-          **Install on a VPU**
-
-          Drop \`run_pulse_web.bat\` on the VPU desktop and double-click — it auto-updates every launch.
-
-          Requires Windows 10+ (for PowerShell + WMI). No .NET or Node.js needed." \
+            --notes-file NOTES.md \
             "$ZIP"
           echo "Mirrored release ${TAG} to ${PUBLIC_REPO}"
 
@@ -170,18 +185,20 @@ jobs:
                 gh release delete "$old" --repo "$PUBLIC_REPO" --yes --cleanup-tag 2>/dev/null || true
               done
           gh release delete "$TAG" --repo "$PUBLIC_REPO" --yes --cleanup-tag 2>/dev/null || true
+          {
+            echo "## What's new in ${TAG}"
+            echo
+            cat CHANGELOG_BODY.md
+            echo
+            echo "---"
+            echo "**Beta build — not yet promoted to main.** Install: drop \`run_pulse_web_beta.bat\` on the VPU desktop and double-click; it auto-updates every launch. Requires Windows 10+ (PowerShell + WMI)."
+          } > NOTES.md
           gh release create "$TAG" \
             --repo "$PUBLIC_REPO" \
             --target main \
             --prerelease \
             --title "Pulse.Web ${TAG} (beta)" \
-            --notes "Pulse.Web beta build — not yet promoted to main.
-
-          **Install on a VPU (beta channel)**
-
-          Drop \`run_pulse_web_beta.bat\` on the VPU desktop and double-click — it auto-updates every launch.
-
-          Requires Windows 10+ (for PowerShell + WMI). No .NET or Node.js needed." \
+            --notes-file NOTES.md \
             "$ZIP"
           echo "Mirrored beta pre-release ${TAG} to ${PUBLIC_REPO}"
 
@@ -238,18 +255,20 @@ jobs:
                 gh release delete "$old" --repo "$PUBLIC_REPO" --yes --cleanup-tag 2>/dev/null || true
               done
           gh release delete "$TAG" --repo "$PUBLIC_REPO" --yes --cleanup-tag 2>/dev/null || true
+          {
+            echo "## What's new (dev — ${TAG})"
+            echo
+            cat CHANGELOG_BODY.md
+            echo
+            echo "---"
+            echo "**Dev build — internal testing only.** Install: drop \`run_pulse_web_dev.bat\` on the VPU desktop and double-click; it auto-updates every launch. Requires Windows 10+ (PowerShell + WMI)."
+          } > NOTES.md
           gh release create "$TAG" \
             --repo "$PUBLIC_REPO" \
             --target main \
             --prerelease \
             --title "Pulse.Web ${TAG} (dev)" \
-            --notes "Pulse.Web dev build — internal testing only.
-
-          **Install on a VPU (dev channel)**
-
-          Drop \`run_pulse_web_dev.bat\` on the VPU desktop and double-click — it auto-updates every launch.
-
-          Requires Windows 10+ (for PowerShell + WMI). No .NET or Node.js needed." \
+            --notes-file NOTES.md \
             "$ZIP"
           echo "Mirrored dev pre-release ${TAG} to ${PUBLIC_REPO}"
 
