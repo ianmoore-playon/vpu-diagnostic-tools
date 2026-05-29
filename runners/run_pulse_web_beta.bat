@@ -9,11 +9,11 @@ title Pulse  -  updating (beta)
 ::   PowerShell probe it spawns run at full capability. The /elevated
 ::   sentinel breaks any relaunch loop; if UAC is declined we continue with
 ::   limited diagnostics rather than failing outright.
-if /I "%~1"=="/elevated" goto :gotadmin
+if /I "%~1"=="/elevated" ( shift & goto :gotadmin )
 net session >nul 2>&1
 if %errorlevel% EQU 0 goto :gotadmin
 echo   Requesting administrator access ...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -ArgumentList '/elevated' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -ArgumentList '/elevated %*' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
 if not errorlevel 1 exit /b
 echo   Administrator access declined - continuing with limited diagnostics.
 :gotadmin
@@ -170,6 +170,8 @@ echo   Version ........................ !REL_TAG!
 :shortcut
 :: -- Self-copy + desktop shortcut -----------------------------------------
 if /I not "%~f0"=="%INSTALL_DIR%\Pulse.bat" copy /y "%~f0" "%INSTALL_DIR%\Pulse.bat" >nul 2>&1
+:: Record the channel so the in-app "Check for update" knows which release line to track
+>"%INSTALL_DIR%\CHANNEL" echo %CHANNEL%
 
 set "ICON=%INSTALL_DIR%\app\static\img\pulse.ico"
 if not exist "%ICON%" set "ICON=%INSTALL_DIR%\Pulse.bat"

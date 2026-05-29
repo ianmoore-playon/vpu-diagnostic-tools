@@ -21,8 +21,11 @@ while ($elapsed -lt $TimeoutSec) {
         $ok = $iar.AsyncWaitHandle.WaitOne(500)
         if ($ok -and $client.Connected) {
             $client.Close()
-            Start-Process $Url
-            exit 0   # server is up, browser opened
+            # A self-update restart sets PULSE_NO_BROWSER=1: the page that
+            # triggered the update is still open and reconnects on its own,
+            # so opening a second browser tab would just be noise.
+            if (-not $env:PULSE_NO_BROWSER) { Start-Process $Url }
+            exit 0   # server is up
         }
         $client.Close()
     } catch {
