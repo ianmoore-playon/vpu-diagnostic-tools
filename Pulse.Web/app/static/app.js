@@ -30,6 +30,7 @@ function svgIcon(name, size) {
     link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
     database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
     mic: '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
     volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
     "volume-x": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
   };
@@ -3499,18 +3500,41 @@ function renderServices() {
     let borderCls = "svc-tile-muted";
     if (st === "running") borderCls = "svc-tile-running";
     else if (st === "stopped") borderCls = "svc-tile-stopped";
+
+    const isProcess = s.kind === "process";
+    // Detail line: services show SCM start type; processes show PID + memory.
+    let detail = "";
+    if (isProcess && s.pid) {
+      const mem = s.memoryMB != null ? ` · ${s.memoryMB} MB` : "";
+      detail = `<div class="svc-tile-start">PID ${esc(String(s.pid))}${mem}</div>`;
+    } else if (s.startType) {
+      detail = `<div class="svc-tile-start">Start: ${esc(s.startType)}</div>`;
+    }
+
+    // Restart button only makes sense for real Windows services. Pixellot
+    // core processes (agent/coordinator/vpu/keepagentup) aren't services —
+    // they're managed by the KeepAgentUp watchdog, so the per-tile button is
+    // replaced with a managed-by note. The "Restart Agent + Coordinator"
+    // quick-action card above is the correct restart path for them.
+    let actions = "";
+    if (isProcess) {
+      actions = s.watchdog
+        ? `<span class="svc-tile-note">${svgIcon("shield", 12)} Watchdog — keeps Agent/Coordinator alive</span>`
+        : `<span class="svc-tile-note">Managed by KeepAgentUp watchdog</span>`;
+    } else if (s.status !== "NotFound") {
+      actions = `<button class="btn-outline btn-ol-blue svc-restart-btn" data-name="${esc(s.name)}">
+          ${svgIcon("refresh", 12)} Restart
+        </button>`;
+    }
+
     return `<div class="svc-tile ${borderCls}" data-svc="${esc(s.name)}">
       <div class="svc-tile-top">
         <span class="svc-tile-name">${esc(s.name)}</span>
         ${statusBadge(s.status)}
       </div>
       ${s.displayName && s.displayName !== s.name ? `<div class="svc-tile-display">${esc(s.displayName)}</div>` : ""}
-      ${s.startType ? `<div class="svc-tile-start">Start: ${esc(s.startType)}</div>` : ""}
-      <div class="svc-tile-actions">
-        ${s.status !== "NotFound" ? `<button class="btn-outline btn-ol-blue svc-restart-btn" data-name="${esc(s.name)}">
-          ${svgIcon("refresh", 12)} Restart
-        </button>` : ""}
-      </div>
+      ${detail}
+      <div class="svc-tile-actions">${actions}</div>
     </div>`;
   }
 
