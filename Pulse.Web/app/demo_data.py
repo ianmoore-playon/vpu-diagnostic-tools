@@ -210,12 +210,22 @@ DEMO = {
         "temperature": {"celsius": round(47 + random.uniform(-3, 8), 0)},
     },
     "Get-Services.ps1": lambda **kw: {
+        # Core Pixellot components are PROCESSES in C:\Pixellot\Bin (kind=process),
+        # not Windows services — detected by process, no SCM start type.
+        # ScoreConnect + LogMeIn are real Windows services (kind=service).
         "services": [
-            {"name": "agent", "displayName": "Pixellot Agent", "status": "Running", "startType": "Automatic"},
-            {"name": "coordinator", "displayName": "Pixellot Coordinator", "status": "Running", "startType": "Automatic"},
-            {"name": "vpu", "displayName": "Pixellot VPU", "status": "Running", "startType": "Automatic"},
-            {"name": "scoreconnect", "displayName": "ScoreConnect", "status": "Running", "startType": "Automatic"},
-            {"name": "LogMeIn", "displayName": "LogMeIn Remote Access", "status": "Stopped", "startType": "Manual"},
+            {"name": "agent", "displayName": "Pixellot Agent", "status": "Running", "startType": None,
+             "kind": "process", "pid": 11372, "path": "C:\\Pixellot\\Bin\\Agent.exe", "memoryMB": 57, "watchdog": False},
+            {"name": "coordinator", "displayName": "Pixellot Coordinator", "status": "Running", "startType": None,
+             "kind": "process", "pid": 10596, "path": "C:\\Pixellot\\Bin\\Coordinator.exe", "memoryMB": 15, "watchdog": False},
+            {"name": "vpu", "displayName": "Pixellot VPU", "status": "Running", "startType": None,
+             "kind": "process", "pid": 12044, "path": "C:\\Pixellot\\Bin\\vpu.exe", "memoryMB": 240, "watchdog": False},
+            {"name": "keepagentup", "displayName": "Pixellot Watchdog (KeepAgentUp)", "status": "Running", "startType": None,
+             "kind": "process", "pid": 9940, "path": "C:\\Pixellot\\Bin\\KeepAgentUp.exe", "memoryMB": 9, "watchdog": True},
+            {"name": "scoreconnect", "displayName": "ScoreConnect", "status": "Running", "startType": "Automatic",
+             "kind": "service", "pid": None, "path": None, "memoryMB": None, "watchdog": False},
+            {"name": "LogMeIn", "displayName": "LogMeIn Remote Access", "status": "Running", "startType": "Automatic",
+             "kind": "service", "pid": None, "path": None, "memoryMB": None, "watchdog": False},
         ]
     },
     "Get-NicAdapters.ps1": lambda **kw: {

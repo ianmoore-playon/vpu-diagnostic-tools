@@ -1330,26 +1330,47 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             )
 
     if services and not services.get("error"):
-        critical_svcs = {"agent"}  # vpu not running is normal (idle state)
+        # agent + coordinator are core capture processes (in C:\Pixellot\Bin,
+        # detected by process not service). vpu-not-running is normal (idle).
+        critical_svcs = {"agent", "coordinator"}
         for svc in services.get("services", []):
             name_lower = svc["name"].lower()
             display = svc.get("displayName") or svc["name"]
-            if svc["status"] == "Stopped" and name_lower in critical_svcs:
+            status = svc.get("status")
+
+            # KeepAgentUp is the watchdog that relaunches agent/coordinator if
+            # they die. If it's down the VPU loses self-healing — warn even
+            # when the core procs are currently up.
+            if name_lower == "keepagentup":
+                if status != "Running":
+                    findings.append(
+                        {
+                            "severity": "warning",
+                            "category": "Services",
+                            "title": "Pixellot watchdog (KeepAgentUp) not running",
+                            "recommendation": (
+                                "KeepAgentUp relaunches Agent and Coordinator if they crash. "
+                                "While it's down the VPU can't self-heal a process failure. "
+                                "Use 'Restart Agent + Coordinator' on the Services page "
+                                "(runs keepagentup.exe), or reboot the VPU."
+                            ),
+                        }
+                    )
+                continue
+
+            # Core processes report Running/Stopped (never NotFound now — they
+            # aren't services). NotFound remains possible for the real services.
+            if status in ("Stopped", "NotFound") and name_lower in critical_svcs:
                 findings.append(
                     {
                         "severity": "critical",
                         "category": "Services",
-                        "title": f"{display} Stopped",
-                        "recommendation": f"Restart {display} from the Services page.",
-                    }
-                )
-            elif svc["status"] == "NotFound" and name_lower in critical_svcs:
-                findings.append(
-                    {
-                        "severity": "warning",
-                        "category": "Services",
-                        "title": f"{display} Not Running",
-                        "recommendation": f"{display} service was not found running.",
+                        "title": f"{display} not running",
+                        "recommendation": (
+                            f"{display} is not running — the VPU cannot capture or stream. "
+                            f"Use 'Restart Agent + Coordinator' on the Services page "
+                            f"(runs keepagentup.exe) to relaunch it."
+                        ),
                     }
                 )
 

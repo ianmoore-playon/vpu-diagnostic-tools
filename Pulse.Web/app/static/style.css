@@ -2044,8 +2044,13 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 .svc-tile-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .svc-tile-name { font-size: 0.85rem; font-weight: 600; color: var(--c-text); }
 .svc-tile-display { font-size: 0.7rem; color: var(--c-muted); margin-bottom: 4px; }
-.svc-tile-start { font-size: 0.7rem; color: var(--c-dim); margin-bottom: auto; }
+.svc-tile-start { font-size: 0.7rem; color: var(--c-dim); margin-bottom: auto; font-family: 'Cascadia Mono', monospace; }
 .svc-tile-actions { margin-top: 10px; }
+.svc-tile-note {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 0.7rem; color: var(--c-muted);
+}
+.svc-tile-note svg { flex-shrink: 0; color: var(--c-dim); }
 
 /* ── Disk Health page ──────────────────────────────────────── */
 

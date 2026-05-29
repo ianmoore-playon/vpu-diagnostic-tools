@@ -2725,12 +2725,34 @@ function renderNetwork() {
       </div>
     </div>
 
+    <!-- Speed Test (Speedtest.net paste-in) — promoted out of Advanced -->
+    <div class="card">
+      <div class="net-ping-toolbar">
+        ${sectionTitle("zap", "Speed Test")}
+        <div class="net-ping-btns">
+          <a href="https://www.speedtest.net" target="_blank" rel="noopener" class="btn-outline btn-ol-blue" style="text-decoration:none">
+            ${svgIcon("globe", 14)} Open Speedtest.net
+          </a>
+        </div>
+      </div>
+      <div id="net-speed-ui">
+        <p class="text-pulse-muted text-sm mb-3">Run a test at speedtest.net, then paste the result URL below.</p>
+        <div class="net-speed-input-row">
+          <input id="net-speed-input" type="text" class="net-speed-input" placeholder="https://www.speedtest.net/result/123456789 or result ID" onkeydown="if(event.key==='Enter'){event.preventDefault();_fetchSpeedtest();}">
+          <button id="net-speed-fetch-btn" class="btn-outline btn-ol-blue" onclick="_fetchSpeedtest()">
+            ${svgIcon("refresh", 14)} Fetch Result
+          </button>
+        </div>
+        <div id="net-speed-results"></div>
+      </div>
+    </div>
+
     <!-- Advanced Diagnostics Toggle -->
     <div class="net-adv-toggle" onclick="_toggleAdvNet()">
       <div class="net-adv-toggle-inner">
         <span class="net-adv-toggle-icon" id="net-adv-arrow">${svgIcon("chevron", 14)}</span>
         <span class="net-adv-toggle-label">Advanced Diagnostics</span>
-        <span class="text-xs text-pulse-muted">Time sync, DNS comparison, speed test, packet capture, traceroute, live monitoring</span>
+        <span class="text-xs text-pulse-muted">Time sync, DNS comparison, packet capture, traceroute, live monitoring</span>
       </div>
     </div>
 
@@ -2740,28 +2762,6 @@ function renderNetwork() {
       ${_netTimeSyncCard(cfg, ntp, ntpPeers)}
 
       ${_netDnsResolutionCard(dnsResolution, cfg)}
-
-      <!-- Speed Test -->
-      <div class="card">
-        <div class="net-ping-toolbar">
-          ${sectionTitle("zap", "Speed Test")}
-          <div class="net-ping-btns">
-            <a href="https://www.speedtest.net" target="_blank" rel="noopener" class="btn-outline btn-ol-blue" style="text-decoration:none">
-              ${svgIcon("globe", 14)} Open Speedtest.net
-            </a>
-          </div>
-        </div>
-        <div id="net-speed-ui">
-          <p class="text-pulse-muted text-sm mb-3">Run a test at speedtest.net, then paste the result URL below.</p>
-          <div class="net-speed-input-row">
-            <input id="net-speed-input" type="text" class="net-speed-input" placeholder="https://www.speedtest.net/result/123456789 or result ID" onkeydown="if(event.key==='Enter'){event.preventDefault();_fetchSpeedtest();}">
-            <button id="net-speed-fetch-btn" class="btn-outline btn-ol-blue" onclick="_fetchSpeedtest()">
-              ${svgIcon("refresh", 14)} Fetch Result
-            </button>
-          </div>
-          <div id="net-speed-results"></div>
-        </div>
-      </div>
 
       <!-- Packet Capture -->
       <div class="card">
