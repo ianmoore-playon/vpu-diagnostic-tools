@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pulse Web | VPU Diagnostics</title>
+    <link rel="icon" type="image/png" href="/static/img/pulse-full-transparent.png">
+    <link rel="apple-touch-icon" href="/static/img/pulse-full-transparent.png">
+    <link rel="stylesheet" href="/static/tailwind-min.css">
+    <link rel="stylesheet" href="/static/style.css">
+    <script>
+        // Theme detection runs before first paint to avoid flash.
+        // Priority: saved preference > system preference > light (default).
+        (function() {
+            var saved = localStorage.getItem('pulse-theme');
+            if (saved === 'dark') {
+                document.documentElement.classList.add('dark');
+            } else if (!saved && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
+</head>
+<body class="h-full bg-pulse-bg text-pulse-text overflow-hidden">
+    <!-- Splash screen — visible until ALL preload sections finish loading.
+         App.js calls hideSplash() once preloadProgressive() resolves, and
+         showSplash() when refreshAll() re-runs diagnostics. The logo div
+         picks its background image from CSS based on html.dark — no JS
+         needed to swap themes. -->
+    <div id="splash" class="splash" role="status" aria-live="polite">
+        <div class="splash-logo" aria-label="Pulse"></div>
+        <div class="splash-progress">
+            <div id="splash-progress-fill" class="splash-progress-fill"></div>
+        </div>
+        <div class="splash-status">
+            <div class="splash-verb"    id="splash-verb">Loading diagnostics…</div>
+            <div class="splash-section" id="splash-section">&nbsp;</div>
+            <div class="splash-pct"     id="splash-pct">0%</div>
+        </div>
+    </div>
+    <div id="app" class="flex h-full">
+        <nav id="sidebar" class="w-56 bg-pulse-sidebar border-r border-pulse-border flex flex-col flex-shrink-0">
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-logo" role="img" aria-label="Pulse"></div>
+                <p class="sidebar-brand-tagline">VPU Diagnostics</p>
+            </div>
+            <div id="demo-banner" class="demo-banner hidden">DEMO DATA</div>
+            <div class="flex-1 overflow-y-auto py-1" id="nav-links"></div>
+            <button id="theme-toggle" class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle light/dark mode"></button>
+            <div class="sidebar-footer"></div>
+        </nav>
+        <main id="content" class="flex-1 overflow-y-auto p-6">
+            <div class="max-w-6xl mx-auto" id="page"></div>
+        </main>
+        <div id="log-pane" class="log-pane">
+            <div class="log-pane-header">
+                <div class="log-tabs">
+                    <button class="log-tab log-tab-active" data-log-tab="script" onclick="switchLogTab('script')">Script Log</button>
+                    <button class="log-tab" data-log-tab="server" onclick="switchLogTab('server')">Server Log</button>
+                </div>
+                <button class="log-toggle-icon" onclick="toggleLogPane()" title="Toggle log pane" aria-label="Toggle log pane">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                </button>
+            </div>
+            <div class="log-body" data-log-body="script"></div>
+            <div class="log-body log-body-hidden" data-log-body="server"></div>
+        </div>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>
