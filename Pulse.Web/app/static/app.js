@@ -118,6 +118,66 @@ function renderPage(id) {
   }
 }
 
+// ── Finding deep-link (jump to the issue on its tab) ─────────
+// Clicking a dashboard finding navigates to its tab, then scrolls to and
+// flashes the matching row. Works entirely on the destination DOM after it
+// renders, so no other tab has to cooperate. Degrades gracefully: exact row
+// match → that tab's issues panel → (nothing; leaves the user at the top).
+let _pendingFindingTitle = null;
+
+function findingJump(page, encTitle) {
+  // Title is encodeURIComponent'd at the call site so it's safe inside the
+  // inline onclick attribute regardless of quotes/punctuation in the title.
+  _pendingFindingTitle = encTitle ? decodeURIComponent(encTitle) : null;
+  if (page !== currentPage) navigate(page);
+  _applyFindingHighlight(0);
+}
+
+function _findFindingTarget(title) {
+  const page = $page();
+  if (!page || !title) return null;
+  const norm = title.trim().toLowerCase();
+  // 1. Opt-in anchor any tab MAY expose (none do yet — future-proofing).
+  try {
+    const sel = (window.CSS && CSS.escape) ? CSS.escape(norm) : norm;
+    const keyed = page.querySelector(`[data-finding-key="${sel}"]`);
+    if (keyed) return keyed;
+  } catch (e) { /* invalid selector — ignore */ }
+  // 2. A finding/issue row whose text contains the full finding title.
+  //    Pick the smallest match so we land on the row, not its container.
+  const rows = page.querySelectorAll(".finding-item, .net-issue-row, .cam-finding-row, .dh-event-row, li, tr");
+  let best = null;
+  rows.forEach((el) => {
+    const txt = (el.textContent || "").trim().toLowerCase();
+    if (txt && txt.indexOf(norm) !== -1) {
+      if (!best || el.textContent.length < best.textContent.length) best = el;
+    }
+  });
+  if (best) return best;
+  // 3. Fall back to the tab's primary issues/findings container.
+  return page.querySelector(".net-issues-list, #cam-findings-wrap, .cc-findings-list, .af-list");
+}
+
+function _applyFindingHighlight(attempt) {
+  attempt = attempt || 0;
+  if (!_pendingFindingTitle) return;
+  const el = _findFindingTarget(_pendingFindingTitle);
+  if (el) {
+    _pendingFindingTitle = null;  // one-shot
+    try { el.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    catch (e) { el.scrollIntoView(); }
+    el.classList.add("finding-flash");
+    setTimeout(() => el.classList.remove("finding-flash"), 2200);
+    return;
+  }
+  // The destination section may still be fetching — retry for ~3s.
+  if (attempt < 12) {
+    setTimeout(() => _applyFindingHighlight(attempt + 1), 250);
+  } else {
+    _pendingFindingTitle = null;
+  }
+}
+
 // ── Helpers ──────────────────────────────────────────────────
 
 const $page = () => document.getElementById("page");
@@ -604,6 +664,8 @@ function connectWS() {
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onopen = () => {
     _wsConnected = true;
+    _wsEverConnected = true;
+    _refreshLiveIndicator();
     if (currentPage === "network" && _liveNetHealth) _renderLiveNetHealth(_liveNetHealth);
   };
   ws.onmessage = (e) => {
@@ -617,6 +679,7 @@ function connectWS() {
   };
   ws.onclose = () => {
     _wsConnected = false;
+    _refreshLiveIndicator();
     if (currentPage === "network" && _liveNetHealth) _renderLiveNetHealth(_liveNetHealth);
     clearTimeout(wsRetryTimer);
     wsRetryTimer = setTimeout(connectWS, 5000);
@@ -629,6 +692,27 @@ var _liveNetHealth = null;
 var _wsConnected = false;
 // Track previous TCP counters to compute deltas (Get-Counter values are cumulative since boot)
 var _prevLiveCounters = null;
+
+// ── Live freshness indicator ─────────────────────────────────
+// The System Status gauges update live over the WebSocket every few
+// seconds, while the Command Center shows a one-time "Baseline completed"
+// snapshot time. This indicator makes the distinction explicit so a tech
+// knows the gauges are live ("Live") or stalled ("Reconnecting…").
+var _wsEverConnected = false;
+function _liveIndicatorHtml() {
+  if (_wsConnected) {
+    return `<span class="live-dot live-dot-on"></span><span>Live</span>`;
+  }
+  // "Connecting…" on first load (never connected yet) vs "Reconnecting…"
+  // after a drop — the latter implies a problem, the former is normal.
+  return _wsEverConnected
+    ? `<span class="live-dot live-dot-off"></span><span>Reconnecting…</span>`
+    : `<span class="live-dot live-dot-connecting"></span><span>Connecting…</span>`;
+}
+function _refreshLiveIndicator() {
+  const el = document.getElementById("live-indicator");
+  if (el) el.innerHTML = _liveIndicatorHtml();
+}
 
 function updateLiveMetrics(msg) {
   // Store network health regardless of current page
@@ -964,6 +1048,19 @@ function renderDashboard() {
       </div>
     </div>
 
+    ${(dash.sourceErrors && dash.sourceErrors.length) ? `
+    <!-- Partial-failure notice — some diagnostic scripts didn't complete -->
+    <div class="dash-incomplete-bar">
+      <span class="dash-incomplete-icon">${svgIcon("alert", 16)}</span>
+      <span class="dash-incomplete-text">
+        Some checks couldn't complete: <strong>${esc(dash.sourceErrors.join(", "))}</strong>.
+        The affected cards may be blank or out of date.
+      </span>
+      <button class="btn-outline btn-ol-amber dash-incomplete-retry" onclick="refreshSection('dashboard')">
+        ${svgIcon("refresh", 13)} Retry
+      </button>
+    </div>` : ""}
+
     <!-- Command Center (left: severity + baseline + top findings) + Subsystems (right) -->
     <div class="dash-top-grid">
       <div class="card command-center">
@@ -986,8 +1083,10 @@ function renderDashboard() {
                   const prev = visibleFindings[i - 1];
                   const groupBreak = i > 0 && prev.severity !== f.severity
                     ? `<div class="cc-findings-divider"></div>` : "";
+                  const fp = _findingPageFor(f.category);
+                  const encTitle = encodeURIComponent(f.title || "");
                   return groupBreak + `
-                <a class="finding-item" href="#${esc(_findingPageFor(f.category))}" onclick="event.preventDefault();navigate('${esc(_findingPageFor(f.category))}')" title="${esc(f.category)} — opens the ${esc(f.category)} tab">
+                <a class="finding-item" href="#${esc(fp)}" onclick="event.preventDefault();findingJump('${esc(fp)}','${encTitle}')" title="Opens the ${esc(f.category)} tab and highlights this issue">
                   <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
                   <span class="finding-cat finding-cat-${esc(f.severity)}">[${esc((f.severity || "").toUpperCase())}]</span>
                   <span class="finding-title">${esc(f.title)}</span>
@@ -1052,7 +1151,10 @@ function renderDashboard() {
 
     <!-- System Status Gauges -->
     <div class="card dash-gauges-card">
-      <h3 class="card-label">SYSTEM STATUS</h3>
+      <div class="dash-card-hdr-row">
+        <h3 class="card-label mb-0">SYSTEM STATUS</h3>
+        <span id="live-indicator" class="live-indicator">${_liveIndicatorHtml()}</span>
+      </div>
       <div class="dash-gauges-row" id="dash-gauges">
         <div class="dash-gauge-col" data-gauge="cpu">
           ${gauge("CPU", cpu != null ? Math.round(cpu) : null, "%")}

@@ -481,6 +481,19 @@ html.dark .splash-logo {
     background: var(--c-border);
     margin: 6px 10px;
 }
+
+/* Deep-link flash — pulses the destination row when a dashboard finding
+   is clicked, so the tech's eye lands on the exact issue on the new tab. */
+@keyframes finding-flash-kf {
+    0%   { background: var(--c-tint-blue); box-shadow: inset 0 0 0 2px var(--c-accent-blue); }
+    70%  { background: var(--c-tint-blue); box-shadow: inset 0 0 0 2px var(--c-accent-blue); }
+    100% { background: transparent;        box-shadow: inset 0 0 0 2px transparent; }
+}
+.finding-flash {
+    animation: finding-flash-kf 2.2s ease-out;
+    border-radius: 6px;
+    scroll-margin: 1rem;
+}
 .cc-findings-overflow {
     margin-top: 0.5rem;
     padding: 0.4rem 0.6rem;
@@ -856,6 +869,23 @@ html.dark .splash-logo {
 }
 .dash-banner-icon { color: var(--c-accent-blue); flex-shrink: 0; margin-top: 2px; }
 
+/* Partial-failure notice — shown when some dashboard scripts errored. */
+.dash-incomplete-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 1rem;
+    padding: 10px 14px;
+    background: var(--c-tint-amber);
+    border: 1px solid var(--c-accent-amber);
+    border-radius: 8px;
+    font-size: 0.8rem;
+    color: var(--c-text);
+}
+.dash-incomplete-icon { color: var(--c-accent-amber); display: inline-flex; flex-shrink: 0; }
+.dash-incomplete-text { flex: 1; line-height: 1.4; }
+.dash-incomplete-retry { flex-shrink: 0; }
+
 /* 2-column grid */
 .dash-2col {
     display: grid;
@@ -876,6 +906,36 @@ html.dark .splash-logo {
 
 /* System status gauges row */
 .dash-gauges-card { margin-top: 1rem; }
+
+/* System Status header row: title left, live indicator right */
+.dash-card-hdr-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+}
+.live-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--c-muted);
+}
+.live-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    flex-shrink: 0;
+}
+.live-dot-on  { background: var(--c-accent-green); animation: live-pulse 1.8s ease-in-out infinite; }
+.live-dot-off { background: var(--c-accent-amber); }
+.live-dot-connecting { background: var(--c-dim); animation: live-pulse 1.2s ease-in-out infinite; }
+@keyframes live-pulse {
+    0%, 100% { opacity: 1;   box-shadow: 0 0 0 0 rgba(34,197,94,0.45); }
+    50%      { opacity: 0.6; box-shadow: 0 0 0 4px rgba(34,197,94,0); }
+}
+
 .dash-gauges-row {
     display: flex;
     justify-content: space-around;

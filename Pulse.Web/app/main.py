@@ -1837,12 +1837,32 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
             "ntpSource": network_config.get("ntpSource"),
         }
 
+    # Report which underlying scripts failed so the dashboard can show a
+    # clear "some checks couldn't complete" notice instead of silently
+    # blanking the affected cards. (A real VPU will occasionally have a
+    # script time out — network/port probes especially.)
+    _sources = {
+        "System identity": identity,
+        "Performance": performance,
+        "Services": services,
+        "Network adapters": nics,
+        "Network config": network_config,
+        "Hardware": hardware,
+        "Installed software": installed_sw,
+        "Port connectivity": port_tests,
+    }
+    source_errors = [
+        name for name, data in _sources.items()
+        if isinstance(data, dict) and data.get("error")
+    ]
+
     return {
         "identity": flat_identity,
         "performance": performance if not performance.get("error", False) else {},
         "services": services if not services.get("error", False) else {"services": []},
         "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi),
         "networkConfig": net_cfg,
+        "sourceErrors": source_errors,
     }
 
 
