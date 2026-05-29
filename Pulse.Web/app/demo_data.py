@@ -1,8 +1,21 @@
 """Mock data for non-Windows demo mode."""
 
+import base64
 import random
 import time
 from datetime import datetime, timedelta
+
+
+def _demo_frame(label, color):
+    """A base64 SVG data URI standing in for a captured camera frame, so the
+    Verify Video thumbnail UI can be exercised in demo mode (no ffmpeg)."""
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg' width='480' height='270'>"
+        f"<rect width='480' height='270' fill='{color}'/>"
+        "<text x='240' y='150' font-family='sans-serif' font-size='20' "
+        f"fill='#cbd5e1' text-anchor='middle'>{label}</text></svg>"
+    )
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
 
 # ── Demo venue identity ──────────────────────────────────────
 # Picked once at module load so all scripts return consistent data
@@ -455,20 +468,21 @@ DEMO = {
         "count": 0,
         "cameras": [],
     },
-    # ffmpeg/ffprobe RTSP validation. Demo returns a plausible per-camera
-    # result set (one camera intentionally not streaming) so the UI can be
-    # exercised without real ffmpeg.
+    # Single-frame capture. Demo returns plausible per-camera results with
+    # placeholder thumbnail frames (one camera intentionally not streaming)
+    # so the snapshot UI can be exercised without real ffmpeg.
     "Test-CameraVideo.ps1": lambda **kw: {
         "available": True,
-        "durationSec": int(kw.get("DurationSec", 60)),
         "results": [
             {"ip": "192.168.10.100", "label": "Main Camera 1", "ok": True,
-             "codec": "h264", "frameRate": 30.0, "resolution": "3840x2160", "error": None},
+             "codec": "h264", "frameRate": 30.0, "resolution": "3840x2160",
+             "image": _demo_frame("Main Camera 1", "#1f3a5f"), "error": None},
             {"ip": "192.168.11.100", "label": "Main Camera 2", "ok": True,
-             "codec": "h264", "frameRate": 30.0, "resolution": "3840x2160", "error": None},
+             "codec": "h264", "frameRate": 30.0, "resolution": "3840x2160",
+             "image": _demo_frame("Main Camera 2", "#244a36"), "error": None},
             {"ip": "192.168.12.50", "label": "OCR", "ok": False,
-             "codec": None, "frameRate": None, "resolution": None,
-             "error": "No video captured (camera not streaming on rtsp://192.168.12.50/stream1)."},
+             "codec": None, "frameRate": None, "resolution": None, "image": None,
+             "error": "No frame captured (camera not streaming on rtsp://192.168.12.50/stream1)."},
         ],
     },
     "Get-NetworkHealth.ps1": lambda **kw: {

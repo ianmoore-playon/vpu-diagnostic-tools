@@ -3172,8 +3172,7 @@ function _camVerifyVideo() {
   if (btn) { btn.disabled = true; btn.style.opacity = "0.5"; }
   wrap.innerHTML = '<div class="card mt-4"><div class="cam-video-running">' +
     svgIcon("refresh", 14) +
-    ' Capturing a video clip from each camera to confirm it is streaming — ' +
-    'this can take up to ~60s per camera. Please wait…</div></div>';
+    ' Grabbing a frame from each camera to confirm it is streaming…</div></div>';
   apiPost("/api/cameras/video-test", {}).then(function(res) {
     if (currentPage === "cameras") wrap.innerHTML = _camVideoResultsHtml(res);
   }).catch(function() {
@@ -3197,20 +3196,26 @@ function _camVideoResultsHtml(res) {
     return '<div class="card mt-4">' + sectionTitle("play", "Video Verification") +
       '<div class="cam-no-detect">' + esc(res.reason || "No cameras detected to test.") + '</div></div>';
   }
-  var rows = results.map(function(r) {
-    var statusCls = r.ok ? "status-pass" : "status-fail";
-    var detail = r.ok
+  var cards = results.map(function(r) {
+    var meta = r.ok
       ? (esc(r.codec || "?") + " · " + (r.frameRate != null ? r.frameRate + " fps" : "? fps") + (r.resolution ? " · " + esc(r.resolution) : ""))
       : esc(r.error || "No video");
-    return "<tr><td>" + esc(r.label || r.ip) + "</td>" +
-      '<td class="font-mono">' + esc(r.ip) + "</td>" +
-      '<td><span class="' + statusCls + '">' + (r.ok ? "Streaming" : "No video") + "</span></td>" +
-      '<td class="text-pulse-muted" style="font-size:0.78rem">' + detail + "</td></tr>";
+    var thumb = r.image
+      ? '<img class="cam-frame-img" src="' + esc(r.image) + '" alt="' + esc(r.label || r.ip) + ' frame">'
+      : '<div class="cam-frame-img cam-frame-empty">' + svgIcon("camera", 22) + '<span>No frame</span></div>';
+    return '<div class="cam-frame ' + (r.ok ? "" : "cam-frame-fail") + '">' +
+      thumb +
+      '<div class="cam-frame-meta">' +
+        '<div class="cam-frame-head">' +
+          '<span class="cam-frame-label">' + esc(r.label || r.ip) + '</span>' +
+          '<span class="' + (r.ok ? "status-pass" : "status-fail") + '">' + (r.ok ? "Streaming" : "No video") + '</span>' +
+        '</div>' +
+        '<div class="cam-frame-ip font-mono">' + esc(r.ip) + '</div>' +
+        '<div class="cam-frame-detail">' + meta + '</div>' +
+      '</div></div>';
   }).join("");
-  var title = "Video Verification" + (res.durationSec ? " · " + res.durationSec + "s capture" : "");
-  return '<div class="card mt-4">' + sectionTitle("play", title) +
-    '<table class="data-table"><thead><tr><th>Camera</th><th>IP</th><th>Result</th><th>Stream</th></tr></thead>' +
-    "<tbody>" + rows + "</tbody></table></div>";
+  return '<div class="card mt-4">' + sectionTitle("play", "Video Verification — camera frames") +
+    '<div class="cam-frame-grid">' + cards + '</div></div>';
 }
 
 // ── S1 (JAI) camera discovery — only renders on S1 systems ──
@@ -3257,7 +3262,7 @@ function renderCameras() {
       `<button class="btn-outline btn-ol-blue" onclick="_camForceRefresh()">
         ${svgIcon("refresh", 14)} Refresh
       </button>
-      <button class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()" title="Captures a short RTSP clip from each camera to confirm it is actually streaming video. Slow (~60s per camera).">
+      <button class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()" title="Grabs a single frame from each camera to confirm it is streaming and show what it sees.">
         ${svgIcon("play", 14)} Verify Video
       </button>
       <button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">

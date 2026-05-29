@@ -1786,6 +1786,42 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 }
 .cam-video-running svg { animation: cam-spin 1.2s linear infinite; flex-shrink: 0; }
 .cam-video-err { font-size: 0.82rem; color: var(--c-accent-red); }
+
+/* Verify Video — captured-frame thumbnail grid */
+.cam-frame-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+}
+.cam-frame {
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--c-surface-2, rgba(148,163,184,0.06));
+}
+.cam-frame-fail { border-color: var(--c-accent-red); }
+.cam-frame-img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    background: #000;
+}
+.cam-frame-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--c-dim);
+    font-size: 0.72rem;
+    background: var(--c-surface);
+}
+.cam-frame-meta { padding: 8px 10px; }
+.cam-frame-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cam-frame-label { font-size: 0.8rem; font-weight: 600; color: var(--c-text); }
+.cam-frame-ip { font-size: 0.7rem; color: var(--c-muted); margin-top: 2px; }
+.cam-frame-detail { font-size: 0.72rem; color: var(--c-dim); margin-top: 3px; }
 .cam-connecting-note {
     display: inline-flex;
     align-items: center;

@@ -2289,11 +2289,11 @@ async def api_cameras_s1():
 
 
 @app.post("/api/cameras/video-test")
-async def api_cameras_video_test(duration: int = 60):
-    """Slow RTSP video validation. Re-derives the currently-detected
-    camera IPs (authoritative, not client-supplied), then captures and
-    ffprobes each. Budgets duration × N cameras + overhead for the PS
-    timeout. Wired to an explicit 'Verify Video' button — never polled."""
+async def api_cameras_video_test():
+    """Grab a single frame from each detected camera to confirm it's
+    streaming decodable video (and return it as a thumbnail). Re-derives
+    the camera IPs server-side (authoritative, not client-supplied).
+    Wired to an explicit 'Verify Video' button — never polled."""
     nics, pix_config = await asyncio.gather(
         run_ps("Get-NicAdapters.ps1"),
         run_ps("Get-PixellotConfig.ps1"),
@@ -2315,12 +2315,12 @@ async def api_cameras_video_test(duration: int = 60):
 
     ips = ",".join(c[0] for c in cams)
     labels = ",".join(c[1] for c in cams)
-    # ffmpeg capture is duration seconds per camera, sequential; give the
-    # PS process the full budget plus a per-camera connect/probe margin.
-    budget = duration * len(cams) + 15 * len(cams) + 30
+    # Single-frame grab is fast: a probe + frame capture is bounded by the
+    # script's own -stimeout (~6-8s) per camera. Budget ~20s/camera + margin.
+    budget = 20 * len(cams) + 20
     return await run_ps(
         "Test-CameraVideo.ps1",
-        {"CameraIps": ips, "Labels": labels, "DurationSec": duration},
+        {"CameraIps": ips, "Labels": labels},
         timeout=budget,
     )
 

@@ -1,43 +1,38 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Validate that cameras are actually streaming video (not just pinging).
+    Confirm each camera is producing decodable video by grabbing a single frame.
 .DESCRIPTION
-    For each camera IP, captures a short RTSP clip with ffmpeg (stream copy,
-    no re-encode) and inspects it with ffprobe to confirm a real video
-    stream — codec, frame rate, resolution. "Responds to ping" only proves
-    the NIC link; this proves the camera is producing decodable video.
+    For each camera IP, grabs ONE JPEG frame from the RTSP stream with ffmpeg
+    and reads codec/frame-rate/resolution with ffprobe. A successfully decoded
+    frame proves the camera is streaming real video — far stronger than a ping,
+    and near-instant compared to capturing a full clip.
+
+    Returns the frame as a base64 data URI so the UI can show a thumbnail —
+    a tech can see at a glance whether the image is black, lens-capped, or
+    pointed wrong, not just whether bytes flow.
 
     ffmpeg/ffprobe ship with Pixellot at C:\Pixellot\Bin\ffmpeg. If they're
-    missing we report available=false rather than erroring.
-
-    Adapted from Canopy videoTest.ps1. Two changes for Pulse:
-      - Camera IPs are passed in (-CameraIps) instead of read from the
-        Banyan leaf_services.json — Pulse already detects them.
-      - The localhost:8000 HTTP POST is stripped; results go to stdout JSON.
-
-    This is SLOW (DurationSec per camera). Wire it to an explicit "Verify
-    Video" button, never the live poll.
+    missing we report available=false rather than erroring. Adapted from
+    Canopy videoTest.ps1 (60s clip -> single frame; localhost POST stripped).
 .PARAMETER CameraIps
-    Comma-separated camera IPs to test, e.g. "169.254.16.50,169.254.16.51".
+    Comma-separated camera IPs, e.g. "169.254.16.50,169.254.16.51".
 .PARAMETER Labels
-    Optional comma-separated labels parallel to CameraIps (e.g. camera
-    role) for friendlier output. Falls back to the IP.
-.PARAMETER DurationSec
-    Capture length per camera in seconds. Default 60 (Canopy default);
-    shorter values trade confidence for speed.
+    Optional comma-separated labels parallel to CameraIps.
 .PARAMETER StreamPath
     RTSP stream path. Default "stream1" (Pixellot/Dynacolor primary).
+.PARAMETER MaxWidth
+    Thumbnail width in px (height auto). Default 480 — small payload, legible.
 .OUTPUTS
-    { available, durationSec, results: [ { ip, label, ok, codec,
-      frameRate, resolution, error } ] }
+    { available, results: [ { ip, label, ok, codec, frameRate, resolution,
+      image, error } ] }   # image = "data:image/jpeg;base64,..." or null
 #>
 [CmdletBinding()]
 param(
-    [string] $CameraIps   = "",
-    [string] $Labels      = "",
-    [int]    $DurationSec  = 60,
-    [string] $StreamPath   = "stream1"
+    [string] $CameraIps  = "",
+    [string] $Labels     = "",
+    [string] $StreamPath  = "stream1",
+    [int]    $MaxWidth     = 480
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,24 +46,19 @@ try {
     if (-not (Test-Path $ffmpeg) -or -not (Test-Path $ffprobe)) {
         Out-Json ([ordered]@{
             available = $false
-            reason    = "ffmpeg/ffprobe not found at C:\Pixellot\Bin\ffmpeg. Cannot validate video."
+            reason    = "ffmpeg/ffprobe not found at C:\Pixellot\Bin\ffmpeg. Cannot capture frames."
             results   = @()
         })
         return
     }
 
-    $ips = @($CameraIps -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $ips  = @($CameraIps -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     $lbls = @($Labels -split ',' | ForEach-Object { $_.Trim() })
     if ($ips.Count -eq 0) {
-        Out-Json ([ordered]@{
-            available = $true
-            reason    = "No camera IPs supplied."
-            results   = @()
-        })
+        Out-Json ([ordered]@{ available = $true; reason = "No camera IPs supplied."; results = @() })
         return
     }
 
-    # Convert ffprobe's avg_frame_rate fraction ("30000/1001") to a number.
     function Convert-FrameRate($fr) {
         if (-not $fr -or $fr -eq "0/0") { return $null }
         $parts = $fr -split '/'
@@ -78,64 +68,62 @@ try {
         try { return [math]::Round([double]$fr, 2) } catch { return $null }
     }
 
-    $tmpDir = Join-Path $env:TEMP "pulse-videotest"
+    $tmpDir = Join-Path $env:TEMP "pulse-frametest"
     New-Item -Path $tmpDir -ItemType Directory -Force | Out-Null
 
     $results = @()
     for ($i = 0; $i -lt $ips.Count; $i++) {
         $ip    = $ips[$i]
         $label = if ($i -lt $lbls.Count -and $lbls[$i]) { $lbls[$i] } else { $ip }
-        $clip  = Join-Path $tmpDir ("cam_" + ($ip -replace '[^0-9A-Za-z]', '_') + ".mkv")
+        $frame = Join-Path $tmpDir ("cam_" + ($ip -replace '[^0-9A-Za-z]', '_') + ".jpg")
         $url   = "rtsp://$ip/$StreamPath"
 
         $entry = [ordered]@{
             ip = $ip; label = $label; ok = $false
-            codec = $null; frameRate = $null; resolution = $null; error = $null
+            codec = $null; frameRate = $null; resolution = $null
+            image = $null; error = $null
         }
 
         try {
-            if (Test-Path $clip) { Remove-Item $clip -Force -ErrorAction SilentlyContinue }
-            # Capture by stream copy (no re-encode) — fast and faithful.
-            & $ffmpeg -rtsp_transport tcp -y -i $url -t $DurationSec -c copy $clip *>$null
-
-            if (-not (Test-Path $clip) -or (Get-Item $clip).Length -eq 0) {
-                $entry.error = "No video captured (camera not streaming on $url)."
-                $results += $entry
-                continue
+            # Stream metadata (fast header read; -stimeout bounds a hung camera).
+            $probeRaw = & $ffprobe -rtsp_transport tcp -stimeout 6000000 -v quiet `
+                -show_entries "stream=codec_type,codec_name,avg_frame_rate,width,height" `
+                -of json -i $url 2>$null
+            if ($probeRaw) {
+                $vstream = ($probeRaw | ConvertFrom-Json).streams |
+                    Where-Object { $_.codec_type -eq 'video' } | Select-Object -First 1
+                if ($vstream) {
+                    $entry.codec     = $vstream.codec_name
+                    $entry.frameRate = Convert-FrameRate $vstream.avg_frame_rate
+                    if ($vstream.width -and $vstream.height) {
+                        $entry.resolution = "$($vstream.width)x$($vstream.height)"
+                    }
+                }
             }
 
-            $probeRaw = & $ffprobe -v quiet -show_entries `
-                "stream=codec_type,codec_name,avg_frame_rate,width,height" `
-                -of json -i $clip 2>$null
-            $probe = $probeRaw | ConvertFrom-Json
-            $vstream = $probe.streams | Where-Object { $_.codec_type -eq 'video' } | Select-Object -First 1
+            # Grab a single decoded frame, scaled down for a thumbnail.
+            if (Test-Path $frame) { Remove-Item $frame -Force -ErrorAction SilentlyContinue }
+            & $ffmpeg -rtsp_transport tcp -stimeout 8000000 -y -i $url `
+                -frames:v 1 -an -vf "scale=$($MaxWidth):-1" -q:v 5 $frame *>$null
 
-            if ($vstream) {
-                $entry.codec     = $vstream.codec_name
-                $entry.frameRate = Convert-FrameRate $vstream.avg_frame_rate
-                if ($vstream.width -and $vstream.height) {
-                    $entry.resolution = "$($vstream.width)x$($vstream.height)"
-                }
-                $entry.ok = [bool]($entry.codec -and $entry.frameRate -and $entry.frameRate -gt 0)
-                if (-not $entry.ok) { $entry.error = "Video stream present but codec/frame rate invalid." }
+            if ((Test-Path $frame) -and (Get-Item $frame).Length -gt 0) {
+                $bytes = [System.IO.File]::ReadAllBytes($frame)
+                $entry.image = "data:image/jpeg;base64," + [System.Convert]::ToBase64String($bytes)
+                $entry.ok = $true
             } else {
-                $entry.error = "Captured file has no video stream."
+                $entry.error = "No frame captured (camera not streaming on $url)."
             }
         }
         catch {
             $entry.error = $_.Exception.Message
         }
         finally {
-            if (Test-Path $clip) { Remove-Item $clip -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $frame) { Remove-Item $frame -Force -ErrorAction SilentlyContinue }
         }
         $results += $entry
     }
 
-    Out-Json ([ordered]@{
-        available   = $true
-        durationSec = $DurationSec
-        results     = @($results)
-    })
+    Out-Json ([ordered]@{ available = $true; results = @($results) })
 }
 catch {
     Out-Json ([ordered]@{
