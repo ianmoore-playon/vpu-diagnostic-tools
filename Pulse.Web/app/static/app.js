@@ -93,6 +93,9 @@ function navigate(id) {
   if (id === currentPage) return;
   // Abort any in-flight fault-isolator poll when navigating away.
   if (currentPage === "fault-isolator" && _fi) _fi._aborted = true;
+  // Entering the fault isolator is always a fresh start — reset so a prior
+  // run's aborted state can't make the next baseline fail. Re-fetch history.
+  if (id === "fault-isolator") { _fiReset(); _fiHistoryCache = null; }
   currentPage = id;
   window.location.hash = id;
   updateNav();
@@ -5050,6 +5053,57 @@ function _sc3SetText(id, text) {
 // Ported from FaultIsolatorViewModel.cs (v0.8.21-beta).
 
 var _fi = null;
+var _fiHistoryCache = null;  // persisted prior runs (null = not yet fetched)
+
+// Fetch persisted fault-isolator runs and render them into the history panel.
+function _fiLoadHistory() {
+  api("/api/fault-isolator/history").then(function(d) {
+    _fiHistoryCache = (d && d.runs) || [];
+    var w = document.getElementById("fi-history-wrap");
+    if (w && currentPage === "fault-isolator") w.innerHTML = _fiHistoryHtml(_fiHistoryCache);
+  }).catch(function() {});
+}
+
+// Map a conclusion code to a colored verdict chip.
+function _fiVerdictChip(conclusion, title) {
+  var label = (title || conclusion || "").replace(/^CONCLUSION — /i, "") || "Result";
+  var cls = "fi-hist-chip-muted";
+  if (conclusion === "Cable") cls = "fi-hist-chip-amber";
+  else if (conclusion === "Camera" || conclusion === "LikelyCamera") cls = "fi-hist-chip-amber";
+  else if (conclusion === "NicPort" || conclusion === "NicHardware") cls = "fi-hist-chip-red";
+  return '<span class="fi-hist-chip ' + cls + '">' + esc(label) + '</span>';
+}
+
+// "Previous tests on this VPU" — collapsible per-run summary + phase detail.
+function _fiHistoryHtml(runs) {
+  if (!runs || !runs.length) return "";
+  var items = runs.slice(0, 15).map(function(r) {
+    var when = r.ts ? new Date(r.ts).toLocaleString() : "";
+    var camTxt = r.camera && (r.camera.label || r.camera.ip)
+      ? (esc(r.camera.label || "") + (r.camera.ip ? ' <span class="font-mono text-pulse-muted">' + esc(r.camera.ip) + "</span>" : ""))
+      : "";
+    var phaseRows = (r.history || []).map(function(h) {
+      var sc = h.severity === "Pass" ? "status-pass" : h.severity === "Fail" ? "status-fail" : "status-info";
+      return "<tr><td><strong>" + esc(h.phase || "") + "</strong></td>" +
+        '<td class="font-mono">' + esc(h.speed || "") + "</td>" +
+        '<td><span class="' + sc + '">' + esc(h.severity || "") + "</span></td>" +
+        '<td class="text-pulse-muted" style="font-size:0.78rem">' + esc(h.verdict || "") + "</td></tr>";
+    }).join("");
+    return '<details class="fi-hist-run">' +
+      '<summary class="fi-hist-summary">' +
+        '<span class="fi-hist-when">' + esc(when) + "</span>" +
+        '<span class="fi-hist-where">' + esc(r.suspectPort || "") + (camTxt ? " · " + camTxt : "") + "</span>" +
+        _fiVerdictChip(r.conclusion, r.title) +
+      "</summary>" +
+      '<div class="fi-hist-body">' +
+        (r.recommendation ? '<div class="fi-hist-rec">' + esc(r.recommendation) + "</div>" : "") +
+        (phaseRows ? '<table class="data-table fi-hist-table"><thead><tr><th>Phase</th><th>Speed</th><th>Result</th><th>Verdict</th></tr></thead><tbody>' + phaseRows + "</tbody></table>" : "") +
+      "</div>" +
+    "</details>";
+  }).join("");
+  return '<div class="card" style="margin-top:1.25rem">' +
+    sectionTitle("clock", "Previous tests on this VPU") + items + "</div>";
+}
 
 function _fiReset() {
   // Abort any in-flight poll from a previous run before replacing state.
@@ -5240,7 +5294,12 @@ function renderFaultIsolator() {
     "Camera Fault Isolator",
     "Process-of-elimination swap test — isolate a camera fault to NIC port, cable, or camera (CHU).",
     '<button class="btn-outline btn-ol-blue" onclick="navigate(\'cameras\')">' + svgIcon("arrow-left", 14) + " Back to Camera Connectivity</button>"
-  ) + diagramCard + '<div class="card">' + stepDots() + inner + historyTable() + "</div>";
+  ) + diagramCard + '<div class="card">' + stepDots() + inner + historyTable() + "</div>" +
+    '<div id="fi-history-wrap">' + _fiHistoryHtml(_fiHistoryCache || []) + '</div>';
+
+  // Load persisted run history on first entry (cached so phase transitions
+  // don't re-fetch or flicker the panel).
+  if (_fiHistoryCache === null) _fiLoadHistory();
 
   // ── event wiring ─────────────────────────────────────────────
   var suspectSel = document.getElementById("fi-suspect");
@@ -5300,10 +5359,11 @@ function renderFaultIsolator() {
     var peak = 0;
     var start = Date.now();
     var deadline = start + windowSec * 1000;
+    var fi = _fi;  // bind to this run; a reset swaps the global _fi out
     while (Date.now() < deadline) {
-      if (_fi._aborted) return peak;
+      if (fi._aborted || _fi !== fi) return peak;
       var elapsed = Math.floor((Date.now() - start) / 1000);
-      _fi.checkElapsed = elapsed;
+      fi.checkElapsed = elapsed;
       var btn = document.getElementById("fi-action");
       if (btn) btn.textContent = "Checking... " + elapsed + "s / " + windowSec + "s";
       var fresh;
@@ -5342,10 +5402,32 @@ function renderFaultIsolator() {
     _fi.phaseInstruction = instruction;
     _fi.actionLabel = "Run Full Diagnostic";
     _fi.checking = false;
+    _fiSaveRun();  // persist this verdict for a returning tech
+  }
+
+  // Persist the concluded run to the backend history, then refresh the panel.
+  function _fiSaveRun() {
+    var suspect = ports[_fi.suspectIdx] || {};
+    var cam = (suspect.camerasDetected || [])[0] || {};
+    var rec = {
+      ts: new Date().toISOString(),
+      conclusion: _fi.conclusion,
+      title: _fi.phaseTitle,
+      recommendation: _fi.phaseInstruction,
+      suspectPort: portLabel(_fi.suspectIdx),
+      testPort: _fi.testIdx >= 0 ? portLabel(_fi.testIdx) : null,
+      camera: { label: suspect.cameraLabel || null, ip: cam.ip || null, mac: cam.mac || null },
+      history: (_fi.history || []).slice(),
+    };
+    apiPost("/api/fault-isolator/history", rec).then(function() {
+      _fiHistoryCache = null;       // force a fresh fetch including this run
+      _fiLoadHistory();
+    }).catch(function() {});
   }
 
   async function doAction() {
     if (_fi.checking) return;
+    var myFi = _fi;  // if the isolator is reset mid-poll, bail rather than clobber
     // Clear the previous phase's PASS/FAIL chip so the user sees only the
     // current phase's status while polling.
     clearResult();
@@ -5365,7 +5447,7 @@ function renderFaultIsolator() {
       renderFaultIsolator();
 
       var spd0 = await pollPeakSpeed(si, 20, expectedSpd);
-      if (_fi._aborted) return;
+      if (_fi !== myFi || _fi._aborted) return;
       _fi.checking = false;
       var sl0 = formatSpeed(spd0);
       var sn0 = portLabel(si);
@@ -5444,7 +5526,7 @@ function renderFaultIsolator() {
       _fi.checking = true;
       renderFaultIsolator();
       var spd1 = await pollPeakSpeed(_fi.testIdx, 20, expSpd1);
-      if (_fi._aborted) return;
+      if (_fi !== myFi || _fi._aborted) return;
       _fi.checking = false;
       var sl1 = formatSpeed(spd1);
       var tn1 = portLabel(_fi.testIdx);
@@ -5529,7 +5611,7 @@ function renderFaultIsolator() {
       _fi.checking = true;
       renderFaultIsolator();
       var spd2 = await pollPeakSpeed(_fi.testIdx, 20, expSpd2);
-      if (_fi._aborted) return;
+      if (_fi !== myFi || _fi._aborted) return;
       _fi.checking = false;
       var sl2 = formatSpeed(spd2);
       var tn2 = portLabel(_fi.testIdx);
@@ -5570,7 +5652,7 @@ function renderFaultIsolator() {
       _fi.checking = true;
       renderFaultIsolator();
       var spd3 = await pollPeakSpeed(_fi.testIdx, 20);
-      if (_fi._aborted) return;
+      if (_fi !== myFi || _fi._aborted) return;
       _fi.checking = false;
       var sl3 = formatSpeed(spd3);
       var tn3 = portLabel(_fi.testIdx);

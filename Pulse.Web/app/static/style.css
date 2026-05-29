@@ -1942,6 +1942,26 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .fi-verdict-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; color: var(--c-text); }
 .fi-verdict-body  { font-size: 0.875rem; color: var(--c-text); line-height: 1.6; }
 
+/* Fault-isolator run history */
+.fi-hist-run { border: 1px solid var(--c-border); border-radius: 6px; margin-bottom: 8px; }
+.fi-hist-run:last-child { margin-bottom: 0; }
+.fi-hist-summary {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 9px 12px; cursor: pointer; list-style: none; user-select: none;
+}
+.fi-hist-summary::-webkit-details-marker { display: none; }
+.fi-hist-summary::before { content: "▸"; font-size: 0.7rem; color: var(--c-dim); transition: transform 0.15s; }
+details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
+.fi-hist-when  { font-size: 0.75rem; color: var(--c-muted); min-width: 130px; }
+.fi-hist-where { font-size: 0.82rem; font-weight: 600; color: var(--c-text); flex: 1; }
+.fi-hist-chip { font-size: 0.68rem; font-weight: 700; border-radius: 4px; padding: 2px 8px; white-space: nowrap; }
+.fi-hist-chip-amber { background: var(--c-tint-amber); color: var(--c-accent-amber); }
+.fi-hist-chip-red   { background: var(--c-tint-red); color: var(--c-accent-red); }
+.fi-hist-chip-muted { background: var(--c-surface-3); color: var(--c-muted); }
+.fi-hist-body { padding: 0 12px 12px; }
+.fi-hist-rec  { font-size: 0.8rem; color: var(--c-muted); line-height: 1.5; margin-bottom: 8px; }
+.fi-hist-table { font-size: 0.78rem; }
+
 /* ── Services page ─────────────────────────────────────────── */
 
 /* keepagentup.exe quick-action card (PDF #13) */

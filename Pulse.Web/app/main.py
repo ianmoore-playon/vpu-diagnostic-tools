@@ -43,6 +43,25 @@ from powershell import (
 _web_root = _os.path.dirname(_app_dir)
 SETTINGS_PATH = _os.path.join(_web_root, "pulse-settings.json")
 
+# Persisted fault-isolator run history — survives reloads/restarts so a tech
+# returning to a school can see prior tests (date, port, verdict, recommendation).
+FAULT_HISTORY_PATH = _os.path.join(_web_root, "pulse-fault-history.json")
+_FAULT_HISTORY_MAX = 50
+
+
+def _load_fault_history() -> list:
+    try:
+        with open(FAULT_HISTORY_PATH, "r") as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _save_fault_history(runs: list) -> None:
+    with open(FAULT_HISTORY_PATH, "w") as f:
+        json.dump(runs[-_FAULT_HISTORY_MAX:], f, indent=2)
+
 def _read_version() -> str:
     import subprocess
     repo_root = _os.path.dirname(_web_root)
@@ -2504,6 +2523,45 @@ async def api_cameras_video_test():
                 r["linkSpeedMbps"] = meta["linkSpeedMbps"]
                 r["expectedSpeedMbps"] = meta["expectedSpeedMbps"]
     return result
+
+
+# A couple of example past runs so the history panel demonstrates the
+# "tech returns to the school" workflow in demo mode.
+_DEMO_FAULT_HISTORY = [
+    {"ts": "2026-05-26T15:12:00", "conclusion": "Cable",
+     "title": "CONCLUSION — FAULTY CABLE", "suspectPort": "Port 1", "testPort": "Port 4",
+     "camera": {"label": "Main Camera 1", "ip": "169.254.16.50", "mac": "00-0E-53-AA-01-01"},
+     "recommendation": "Replacing the cable restored the link. Re-terminate both ends or replace the cable end-to-end; inspect the run for damage.",
+     "history": [
+         {"ts": "3:11:58 PM", "phase": "Phase 1 - Baseline", "speed": "100 Mbps", "verdict": "Link degraded at 100 Mbps — beginning isolation.", "severity": "Fail"},
+         {"ts": "3:12:34 PM", "phase": "Phase 2 - NIC Port Test", "speed": "100 Mbps", "verdict": "Fault followed the cable/camera, not the NIC port.", "severity": "Info"},
+         {"ts": "3:12:58 PM", "phase": "Phase 3 - Cable Test", "speed": "1 Gbps", "verdict": "Link restored with a known-good cable. The original cable is the fault.", "severity": "Pass"},
+     ]},
+]
+
+
+@app.get("/api/fault-isolator/history")
+async def api_fault_history():
+    """Prior fault-isolator runs on this VPU (newest first), for a returning
+    tech to see what was found and recommended before."""
+    runs = sorted(_load_fault_history(), key=lambda r: r.get("ts", ""), reverse=True)
+    if DEMO_MODE:
+        runs = runs + _DEMO_FAULT_HISTORY  # seed examples beneath any real runs
+    return {"runs": runs}
+
+
+@app.post("/api/fault-isolator/history")
+async def api_fault_history_save(run: dict):
+    """Append a completed fault-isolation run to the persisted history."""
+    if not isinstance(run, dict) or not run.get("conclusion"):
+        return {"ok": False, "error": "invalid run record"}
+    if not run.get("ts"):
+        from datetime import datetime as _dt
+        run["ts"] = _dt.now().isoformat()
+    runs = _load_fault_history()
+    runs.append(run)
+    _save_fault_history(runs)
+    return {"ok": True, "count": len(runs)}
 
 
 @app.get("/api/services")

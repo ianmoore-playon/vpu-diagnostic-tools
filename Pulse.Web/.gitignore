@@ -2,3 +2,4 @@ app/python/
 __pycache__/
 *.pyc
 pulse-settings.json
+pulse-fault-history.json
