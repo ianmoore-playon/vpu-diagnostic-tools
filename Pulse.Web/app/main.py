@@ -2834,40 +2834,99 @@ async def api_update_apply():
 
 @app.get("/api/reports/export")
 async def api_export():
-    keys = [
-        "identity",
-        "hardware",
-        "performance",
-        "networkConfig",
-        "nicAdapters",
-        "services",
-        "diskHealth",
-        "eventLogs",
-        "scoreConnect",
-        "pixellotConfig",
-        "installedSoftware",
-        "networkDomains",
-        "networkPorts",
-        "ntpDrift",
-    ]
+    """Full diagnostic bundle for offline review. Runs every (non-interactive)
+    data-collection script, adds the enriched camera view and Pulse's own
+    computed findings, and wraps it all in a provenance envelope so a reviewer
+    knows where/when it came from and which collectors (if any) failed."""
     sc_url = load_settings().get("scoreConnectUrl", "http://localhost:5000")
-    results = await asyncio.gather(
-        run_ps("Get-SystemIdentity.ps1"),
-        run_ps("Get-Hardware.ps1"),
-        run_ps("Get-Performance.ps1"),
-        run_ps("Get-NetworkConfig.ps1"),
-        run_ps("Get-NicAdapters.ps1"),
-        run_ps("Get-Services.ps1"),
-        run_ps("Get-DiskHealth.ps1"),
-        run_ps("Get-EventLogs.ps1"),
-        run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": sc_url}, timeout=20),
-        run_ps("Get-PixellotConfig.ps1"),
-        run_ps("Get-InstalledSoftware.ps1"),
-        run_ps("Test-NetworkDomains.ps1"),
-        run_ps("Test-NetworkPorts.ps1"),
-        run_ps("Test-NtpDrift.ps1"),
-    )
-    return dict(zip(keys, results))
+
+    # (section key, coroutine). Interactive/slow-by-design probes (traceroute,
+    # local ping, packet capture, RTSP video test) and action scripts are
+    # intentionally excluded — this is a state snapshot, not a live workbench.
+    collectors = [
+        ("identity",             run_ps("Get-SystemIdentity.ps1")),
+        ("hardware",             run_ps("Get-Hardware.ps1")),
+        ("performance",          run_ps("Get-Performance.ps1")),
+        ("networkConfig",        run_ps("Get-NetworkConfig.ps1", timeout=15)),
+        ("nicAdapters",          run_ps("Get-NicAdapters.ps1")),
+        ("services",             run_ps("Get-Services.ps1")),
+        ("diskHealth",           run_ps("Get-DiskHealth.ps1")),
+        ("eventLogs",            run_ps("Get-EventLogs.ps1")),
+        ("scoreConnect",         run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": sc_url}, timeout=20)),
+        ("scoreLink",            run_ps("Get-ScoreLinkStatus.ps1", timeout=15)),
+        ("pixellotConfig",       run_ps("Get-PixellotConfig.ps1", timeout=15)),
+        ("pixellotInstallState", run_ps("Test-PixellotInstallState.ps1", timeout=15)),
+        ("pixellotDependencies", run_ps("Get-PixellotDependencies.ps1", timeout=15)),
+        ("installedSoftware",    run_ps("Get-InstalledSoftware.ps1")),
+        ("gpuInfo",              run_ps("Get-GpuInfo.ps1", timeout=15)),
+        ("wifi",                 run_ps("Get-WifiAdapters.ps1", timeout=10)),
+        ("audio",                run_ps("Get-AudioDevices.ps1", timeout=15)),
+        ("s1Cameras",            run_ps("Get-S1Cameras.ps1", timeout=20)),
+        ("cameraExpectations",   run_ps("Get-CameraExpectations.ps1", timeout=10)),
+        ("networkHealth",        run_ps("Get-NetworkHealth.ps1", timeout=10)),
+        ("networkDomains",       run_ps("Test-NetworkDomains.ps1", timeout=30)),
+        ("networkPorts",         run_ps("Test-NetworkPorts.ps1", timeout=30)),
+        ("ntpDrift",             run_ps("Test-NtpDrift.ps1", timeout=20)),
+        ("ntpPeers",             run_ps("Get-NtpPeers.ps1", timeout=15)),
+        ("dnsResolution",        run_ps("Test-DnsResolution.ps1", timeout=30)),
+    ]
+
+    def _norm(r):
+        if isinstance(r, Exception):
+            return {"error": f"{type(r).__name__}: {r}"}
+        return r
+
+    keys = [k for k, _ in collectors]
+    raw = await asyncio.gather(*[c for _, c in collectors], return_exceptions=True)
+    sections = {k: _norm(r) for k, r in zip(keys, raw)}
+
+    nics = sections.get("nicAdapters")
+    pix_cfg = sections.get("pixellotConfig")
+
+    # Enriched camera connectivity: physical ports + detected cameras/OCR +
+    # live CGI probe (firmware, model) — the Camera Connectivity lane's output,
+    # which the raw nicAdapters dump alone doesn't capture.
+    try:
+        ocr_ips, _ = _build_ocr_sets(pix_cfg)
+        raw_ports = nics.get("ports", []) if isinstance(nics, dict) and not nics.get("error") else []
+        cam_probes = await _probe_all_cameras(raw_ports, ocr_ips)
+        sections["cameras"] = _enrich_ports(nics, pix_cfg, cam_probes)
+    except Exception as e:
+        sections["cameras"] = {"error": f"camera enrichment failed: {type(e).__name__}: {e}"}
+
+    # Pulse's own analysis, so a reviewer sees the tool's conclusions next to
+    # the raw data it drew them from.
+    try:
+        sections["findings"] = _compute_findings(
+            sections.get("identity"), sections.get("performance"), sections.get("services"),
+            nics, sections.get("hardware"), sections.get("installedSoftware"),
+            sections.get("networkConfig"), sections.get("pixellotInstallState"),
+            sections.get("networkPorts"), sections.get("gpuInfo"), sections.get("wifi"),
+        )
+    except Exception as e:
+        sections["findings"] = {"error": f"findings computation failed: {type(e).__name__}: {e}"}
+
+    source_errors = {
+        k: v["error"] for k, v in sections.items()
+        if isinstance(v, dict) and v.get("error")
+    }
+    ident = sections.get("identity")
+    hostname = ((ident.get("computerSystem") or {}).get("name")
+                if isinstance(ident, dict) else None)
+
+    import datetime
+    return {
+        **sections,
+        "_meta": {
+            "schema": "pulse-report/2",
+            "generatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "pulseVersion": APP_VERSION,
+            "channel": _update_channel(),
+            "managed": _is_managed_install(),
+            "hostname": hostname,
+            "sourceErrors": source_errors,
+        },
+    }
 
 
 # ─── WebSocket — live metrics + auto-shutdown ────────────────

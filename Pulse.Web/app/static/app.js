@@ -4167,6 +4167,19 @@ function renderReports() {
     }
     status.textContent = "Report ready.";
 
+    const meta = data._meta || {};
+    const sectionCount = Object.keys(data).filter((k) => k !== "_meta").length;
+    const findingCount = Array.isArray(data.findings) ? data.findings.length : 0;
+    const errKeys = Object.keys(meta.sourceErrors || {});
+    const summaryHtml = `
+      <div class="text-sm text-pulse-muted mb-3">
+        ${sectionCount} sections · ${findingCount} finding${findingCount === 1 ? "" : "s"} ·
+        ${errKeys.length
+          ? `<span style="color:var(--c-accent-amber)">${errKeys.length} collector${errKeys.length === 1 ? "" : "s"} failed: ${esc(errKeys.join(", "))}</span>`
+          : "all collectors OK"}
+        ${meta.pulseVersion ? " · " + esc(meta.pulseVersion) : ""}${meta.hostname ? " · " + esc(meta.hostname) : ""}
+      </div>`;
+
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const hostname = data.identity?.computerSystem?.name || "vpu";
@@ -4174,6 +4187,7 @@ function renderReports() {
     const filename = "pulse-report-" + hostname + "-" + ts + ".json";
 
     document.getElementById("rpt-result").innerHTML = `
+      ${summaryHtml}
       <a href="${url}" download="${esc(filename)}" class="btn-outline btn-ol-green" style="display:inline-flex;align-items:center;gap:6px">
         ${svgIcon("download", 14)} Download ${esc(filename)}
       </a>
