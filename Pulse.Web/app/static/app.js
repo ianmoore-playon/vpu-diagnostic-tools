@@ -6060,6 +6060,7 @@ function renderSettings() {
         </button>
         <span id="set-update-msg" class="text-sm text-pulse-muted"></span>
       </div>
+      <div id="set-update-notes" class="update-notes" style="display:none"></div>
     </div>
   `;
 
@@ -6097,6 +6098,7 @@ function renderSettings() {
   upCheckBtn?.addEventListener("click", async () => {
     upCheckBtn.disabled = true;
     upApplyBtn.style.display = "none";
+    _renderUpdateNotes(null);
     upMsg.textContent = "Checking…";
     try {
       const r = await api("/api/update/check");
@@ -6111,6 +6113,7 @@ function renderSettings() {
         upLatest = r.latest;
         upMsg.innerHTML = `Update available: <strong>${esc(r.latest)}</strong> <span class="text-pulse-muted">(installed ${esc(r.current)})</span>`;
         upApplyBtn.style.display = "";
+        _renderUpdateNotes(r.notes);
       } else {
         upMsg.textContent = `You're on the latest build (${esc(r.current)}).`;
       }
@@ -6145,6 +6148,17 @@ function renderSettings() {
 }
 
 // ── Software Update helpers (module scope so they survive a re-render) ──
+function _renderUpdateNotes(notes) {
+  const el = document.getElementById("set-update-notes");
+  if (!el) return;
+  const text = (notes || "").trim();
+  // GitHub release bodies are markdown; show them as readable escaped text
+  // with line breaks preserved (CSS white-space) — no markdown renderer and
+  // no injection risk.
+  el.textContent = text;
+  el.style.display = text ? "" : "none";
+}
+
 function _showUpdateOverlay(tag) {
   let el = document.getElementById("pulse-update-overlay");
   if (!el) {

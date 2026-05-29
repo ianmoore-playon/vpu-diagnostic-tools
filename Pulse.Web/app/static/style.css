@@ -3324,3 +3324,17 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     color: var(--c-muted);
     line-height: 1.5;
 }
+.update-notes {
+    margin-top: 12px;
+    padding: 12px 14px;
+    background: var(--c-surface-3);
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    font-size: 0.82rem;
+    color: var(--c-muted);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 240px;
+    overflow-y: auto;
+}

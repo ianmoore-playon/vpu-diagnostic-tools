@@ -76,6 +76,10 @@ Both apps use semver (`MAJOR.MINOR.PATCH`) with a three-channel pipeline. Dev st
 - Dev auto-tags on push (Web via `web-auto-tag.yml`, WPF via branch-triggered CI). Beta and main tags are pushed manually.
 - Only promote to main what was validated in beta. The beta tag version and main tag version should match for a given release.
 
+#### Changelog (shown to testers on update)
+
+`Pulse.Web/CHANGELOG.md` is the source for the "what's new" notes the in-app **Check for Update** displays. **When you ship a user-facing change, add a one-line bullet under `## [Unreleased]`** (Added / Changed / Fixed), written for a field tech, not a developer. At a beta/main promotion, rename `[Unreleased]` to the version — that section becomes the release notes the mirror release publishes. Dev builds surface the current `[Unreleased]` list automatically, so there's no per-push curation. The release workflow reads the top changelog section; don't hand-edit release bodies.
+
 ## CI Workflows
 
 - `.github/workflows/wpf-pilot-build.yml` — Windows build, triggers on `dev`/`beta`/`main` pushes (when `Pulse.WPF/` changes) and WPF tags
