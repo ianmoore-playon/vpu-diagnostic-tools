@@ -1082,6 +1082,50 @@ html.dark .splash-logo {
     font-weight: 600;
 }
 
+/* GPU vendor chip on the System Overview Graphics card */
+.gpu-vendor-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.gpu-vendor-dedicated { background: var(--c-tint-green); color: var(--c-accent-green); border: 1px solid var(--c-accent-green); }
+.gpu-vendor-igpu      { background: var(--c-surface-3); color: var(--c-muted); border: 1px solid var(--c-border); }
+
+/* Pixellot Dependencies status line on the Services tab */
+.svc-deps-line {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; margin-bottom: 1rem; border-radius: 6px;
+    font-size: 0.85rem; color: var(--c-text);
+}
+.svc-deps-line.hidden { display: none; }
+.svc-deps-line svg { flex-shrink: 0; }
+.svc-deps-pill {
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.svc-deps-current  { background: var(--c-tint-green); border-left: 3px solid var(--c-accent-green); }
+.svc-deps-current  svg, .svc-deps-current .svc-deps-pill { color: var(--c-accent-green); }
+.svc-deps-current  .svc-deps-pill { background: var(--c-tint-green); }
+.svc-deps-outdated { background: var(--c-tint-amber); border-left: 3px solid var(--c-accent-amber); }
+.svc-deps-outdated svg, .svc-deps-outdated .svc-deps-pill { color: var(--c-accent-amber); }
+.svc-deps-outdated .svc-deps-pill { background: var(--c-tint-amber); }
+.svc-deps-missing  { background: var(--c-tint-red);   border-left: 3px solid var(--c-accent-red); }
+.svc-deps-missing  svg, .svc-deps-missing .svc-deps-pill { color: var(--c-accent-red); }
+.svc-deps-missing  .svc-deps-pill { background: var(--c-tint-red); }
+.svc-deps-newer    { background: var(--c-surface-3);   border-left: 3px solid var(--c-muted); }
+.svc-deps-newer    svg, .svc-deps-newer .svc-deps-pill { color: var(--c-muted); }
+.svc-deps-newer    .svc-deps-pill { background: var(--c-surface-3); }
+
 /* System Overview — RAM warning when under the 32 GB Pixellot baseline */
 .sys-mem-warn {
     display: flex;
@@ -2240,6 +2284,15 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .settings-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 
 /* ── About page ────────────────────────────────────────────── */
+
+/* Coming-soon placeholder (gated-off tabs) */
+.coming-soon {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; min-height: 50vh; gap: 0.5rem;
+}
+.coming-soon-icon { color: var(--c-dim); margin-bottom: 0.5rem; }
+.coming-soon-title { font-size: 1.5rem; font-weight: 700; color: var(--c-text); margin: 0; }
+.coming-soon-text { font-size: 0.9rem; color: var(--c-muted); max-width: 380px; line-height: 1.5; }
 
 .about-container { display: flex; justify-content: center; align-items: center; min-height: 60vh; }
 .about-card { max-width: 480px; padding: 2rem; text-align: center; }
