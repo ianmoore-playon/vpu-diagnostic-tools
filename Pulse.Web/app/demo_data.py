@@ -10,16 +10,16 @@ from datetime import datetime, timedelta
 # The pool is small + curated so demos look like real Pixellot
 # venues without ever showing actual customer data.
 _DEMO_VENUES = [
-    {"hostname": "PXLS2-31402", "vpuName": "PXLS2_31402 Westfield Academy (TX) - Gymnasium",     "serial": "CZC8847PQR", "city": "Houston",      "state": "TX", "uplinkIp": "10.40.16.50", "gatewayIp": "10.40.16.1", "swVersion": "5.13.6", "imageVersion": "26.04.001"},
-    {"hostname": "PXLS2-22158", "vpuName": "PXLS2_22158 Roosevelt High School (CA) - Main Court","serial": "CZC7235HXM", "city": "Riverside",    "state": "CA", "uplinkIp": "10.22.8.50",  "gatewayIp": "10.22.8.1",  "swVersion": "5.13.6", "imageVersion": "26.04.001"},
-    {"hostname": "PXLS2-19844", "vpuName": "PXLS2_19844 Lincoln Memorial (FL) - Sports Complex", "serial": "CZC9912NTL", "city": "Orlando",      "state": "FL", "uplinkIp": "10.18.4.50",  "gatewayIp": "10.18.4.1",  "swVersion": "5.13.4", "imageVersion": "26.02.003"},
-    {"hostname": "PXLS2-27619", "vpuName": "PXLS2_27619 Northridge Prep (IL) - Fieldhouse",      "serial": "CZC8104WBQ", "city": "Chicago",      "state": "IL", "uplinkIp": "10.31.12.50", "gatewayIp": "10.31.12.1", "swVersion": "5.13.6", "imageVersion": "26.04.001"},
-    {"hostname": "PXLS2-18203", "vpuName": "PXLS2_18203 Cedar Ridge (CO) - Performance Center",  "serial": "CZC6502RJD", "city": "Denver",       "state": "CO", "uplinkIp": "10.55.20.50", "gatewayIp": "10.55.20.1", "swVersion": "5.13.6", "imageVersion": "26.04.001"},
-    {"hostname": "PXLS2-34701", "vpuName": "PXLS2_34701 Pinecrest Academy (GA) - Stadium",       "serial": "CZC9118MWE", "city": "Atlanta",      "state": "GA", "uplinkIp": "10.12.4.50",  "gatewayIp": "10.12.4.1",  "swVersion": "5.13.6", "imageVersion": "26.04.001"},
-    {"hostname": "PXLS2-25618", "vpuName": "PXLS2_25618 Saguaro Heights (AZ) - West Court",      "serial": "CZC7794KAV", "city": "Phoenix",      "state": "AZ", "uplinkIp": "10.66.8.50",  "gatewayIp": "10.66.8.1",  "swVersion": "5.13.4", "imageVersion": "26.02.003"},
-    {"hostname": "PXLS2-29115", "vpuName": "PXLS2_29115 Harbor Bay HS (WA) - Aquatics Center",   "serial": "CZC8329LPB", "city": "Seattle",      "state": "WA", "uplinkIp": "10.77.16.50", "gatewayIp": "10.77.16.1", "swVersion": "5.13.6", "imageVersion": "26.04.001"},
-    {"hostname": "PXLS2-21947", "vpuName": "PXLS2_21947 Magnolia Charter (LA) - Gymnasium",      "serial": "CZC6981XQH", "city": "Baton Rouge",  "state": "LA", "uplinkIp": "10.88.12.50", "gatewayIp": "10.88.12.1", "swVersion": "5.13.6", "imageVersion": "26.04.001"},
-    {"hostname": "PXLS2-33028", "vpuName": "PXLS2_33028 Granite Peak (UT) - Field House",        "serial": "CZC8866TRC", "city": "Salt Lake City", "state": "UT", "uplinkIp": "10.99.4.50",  "gatewayIp": "10.99.4.1",  "swVersion": "5.13.6", "imageVersion": "26.04.001"},
+    {"hostname": "PXLS2-31402", "vpuName": "PXLS2_31402 Westfield Academy (TX) - Gymnasium",     "venueId": "5fdb1c042e3a86412c7a04b8", "serial": "CZC8847PQR", "city": "Houston",      "state": "TX", "uplinkIp": "10.40.16.50", "gatewayIp": "10.40.16.1", "swVersion": "5.13.6", "imageVersion": "26.04.001"},
+    {"hostname": "PXLS2-22158", "vpuName": "PXLS2_22158 Roosevelt High School (CA) - Main Court","venueId": "603a45f08c9e217d09b51230", "serial": "CZC7235HXM", "city": "Riverside",    "state": "CA", "uplinkIp": "10.22.8.50",  "gatewayIp": "10.22.8.1",  "swVersion": "5.13.6", "imageVersion": "26.04.001"},
+    {"hostname": "PXLS2-19844", "vpuName": "PXLS2_19844 Lincoln Memorial (FL) - Sports Complex", "venueId": "5f0bdd24a91c834b287e0c91", "serial": "CZC9912NTL", "city": "Orlando",      "state": "FL", "uplinkIp": "10.18.4.50",  "gatewayIp": "10.18.4.1",  "swVersion": "5.13.4", "imageVersion": "26.02.003"},
+    {"hostname": "PXLS2-27619", "vpuName": "PXLS2_27619 Northridge Prep (IL) - Fieldhouse",      "venueId": "6184e90f3d7c5e228f3ab472", "serial": "CZC8104WBQ", "city": "Chicago",      "state": "IL", "uplinkIp": "10.31.12.50", "gatewayIp": "10.31.12.1", "swVersion": "5.13.6", "imageVersion": "26.04.001"},
+    {"hostname": "PXLS2-18203", "vpuName": "PXLS2_18203 Cedar Ridge (CO) - Performance Center",  "venueId": "60c2f1b8e84a5d3192058c6a", "serial": "CZC6502RJD", "city": "Denver",       "state": "CO", "uplinkIp": "10.55.20.50", "gatewayIp": "10.55.20.1", "swVersion": "5.13.6", "imageVersion": "26.04.001"},
+    {"hostname": "PXLS2-34701", "vpuName": "PXLS2_34701 Pinecrest Academy (GA) - Stadium",       "venueId": "62a85b714c0f9d27ab1e6df3", "serial": "CZC9118MWE", "city": "Atlanta",      "state": "GA", "uplinkIp": "10.12.4.50",  "gatewayIp": "10.12.4.1",  "swVersion": "5.13.6", "imageVersion": "26.04.001"},
+    {"hostname": "PXLS2-25618", "vpuName": "PXLS2_25618 Saguaro Heights (AZ) - West Court",      "venueId": "5e7c39d8d416a72594b30e85", "serial": "CZC7794KAV", "city": "Phoenix",      "state": "AZ", "uplinkIp": "10.66.8.50",  "gatewayIp": "10.66.8.1",  "swVersion": "5.13.4", "imageVersion": "26.02.003"},
+    {"hostname": "PXLS2-29115", "vpuName": "PXLS2_29115 Harbor Bay HS (WA) - Aquatics Center",   "venueId": "6310aa56b9e1c4083f7d8290", "serial": "CZC8329LPB", "city": "Seattle",      "state": "WA", "uplinkIp": "10.77.16.50", "gatewayIp": "10.77.16.1", "swVersion": "5.13.6", "imageVersion": "26.04.001"},
+    {"hostname": "PXLS2-21947", "vpuName": "PXLS2_21947 Magnolia Charter (LA) - Gymnasium",      "venueId": "612bf4c0a8351629d7f06ee4", "serial": "CZC6981XQH", "city": "Baton Rouge",  "state": "LA", "uplinkIp": "10.88.12.50", "gatewayIp": "10.88.12.1", "swVersion": "5.13.6", "imageVersion": "26.04.001"},
+    {"hostname": "PXLS2-33028", "vpuName": "PXLS2_33028 Granite Peak (UT) - Field House",        "venueId": "5f8e6a3142b9d05c8773ec19", "serial": "CZC8866TRC", "city": "Salt Lake City", "state": "UT", "uplinkIp": "10.99.4.50",  "gatewayIp": "10.99.4.1",  "swVersion": "5.13.6", "imageVersion": "26.04.001"},
 ]
 _VENUE = random.choice(_DEMO_VENUES)
 
@@ -184,6 +184,7 @@ DEMO = {
             "version": _VENUE["swVersion"],
             "imageVersion": _VENUE["imageVersion"],
             "vpuName": _VENUE["vpuName"],
+            "venueId": _VENUE["venueId"],
         },
         "isNonVpuHost": False,
         "timezone": "(UTC-05:00) Eastern Time (US & Canada)",
@@ -231,8 +232,10 @@ DEMO = {
             {"capacityGB": 16, "speedMHz": 3200, "memoryType": "DDR4", "deviceLocator": "DIMM_B1"},
         ],
         "gpus": [
-            {"name": "Intel(R) UHD Graphics 630", "adapterRAMMB": 1024, "driverVersion": "27.20.100.8935"},
-            {"name": "NVIDIA GeForce GTX 1070", "adapterRAMMB": 8192, "driverVersion": "31.0.15.5212"},
+            {"name": "Intel(R) UHD Graphics 630", "adapterRAMMB": 1024, "driverVersion": "27.20.100.8935",
+             "adapterCompatibility": "Intel Corporation", "vendor": "Intel", "isDedicated": False},
+            {"name": "NVIDIA GeForce GTX 1070", "adapterRAMMB": 8192, "driverVersion": "31.0.15.5212",
+             "adapterCompatibility": "NVIDIA", "vendor": "NVIDIA", "isDedicated": True},
         ],
         "diskDrives": [
             {"model": "Samsung SSD 870 EVO 500GB", "sizeGB": 500, "interfaceType": "SATA", "serialNumber": "S3Z8NB0K901234A"}
@@ -291,21 +294,29 @@ DEMO = {
     },
     "Test-NetworkPorts.ps1": lambda **kw: {
         "results": [
-            # Required
+            # Required — core Pixellot streaming + cloud services
             {"purpose": "DNS", "host": "8.8.8.8", "port": 53, "protocol": "UDP", "status": "pass", "optional": False},
             {"purpose": "Pixellot", "host": "pixellot.tv", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
+            {"purpose": "Pixellot Echo", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NFHS Network", "host": "nfhsnetwork.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "AWS S3", "host": "s3.amazonaws.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "Singular Overlay", "host": "service.singular.live", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "LogMeIn", "host": "logmein.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
+            {"purpose": "Zixi QUIC", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "pass", "optional": False},
             # Zixi (UDP 2088) is the streaming control channel — failures here
             # block live broadcast. Marked optional=False so it surfaces as a
             # required port failure on the Network tab.
-            {"purpose": "Zixi Streaming", "host": "pixellot.tv", "port": 2088, "protocol": "UDP", "status": "fail", "optional": False, "errorMessage": "No response — port likely blocked at venue firewall"},
-            # Optional
+            {"purpose": "Zixi Streaming", "host": "prod-echo.pixellot.tv", "port": 2088, "protocol": "UDP", "status": "fail", "optional": False, "errorMessage": "No response — port likely blocked at venue firewall"},
+            # Optional — RTMP fallback (legacy ingest)
             {"purpose": "RTMP Ingest", "host": "sportzcast.net", "port": 1935, "protocol": "TCP", "status": "fail", "optional": True},
-            {"purpose": "SportzCast", "host": "sportzcast.net", "port": 1402, "protocol": "TCP", "status": "fail", "optional": True},
+            # Optional — Sportzcast Scorebot range (ScoreConnect deployments only)
+            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1400, "protocol": "TCP", "status": "pass", "optional": True},
+            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1401, "protocol": "TCP", "status": "pass", "optional": True},
+            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1402, "protocol": "TCP", "status": "pass", "optional": True},
+            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1403, "protocol": "TCP", "status": "fail", "optional": True},
+            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1404, "protocol": "TCP", "status": "fail", "optional": True},
+            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1405, "protocol": "TCP", "status": "fail", "optional": True},
         ]
     },
     "Test-NtpDrift.ps1": lambda **kw: {"offsetSeconds": round(random.uniform(-0.3, 0.5), 3), "status": "ok", "source": "time.windows.com"},
@@ -332,6 +343,27 @@ DEMO = {
                 "peerPollInterval": "10 (1024s)",
                 "hostPollInterval": "10 (1024s)",
                 "lastSyncTimestamp": (datetime.now() - timedelta(minutes=12)).strftime("%-m/%-d/%Y %-I:%M:%S %p"),
+            },
+        ],
+    },
+    "Get-WifiAdapters.ps1": lambda **kw: {
+        # Demo trips the warning so the finding + adapter list are visible.
+        "anyActive": True,
+        "activeCount": 1,
+        "adapters": [
+            {
+                "name": "Wi-Fi",
+                "interfaceAlias": "Wi-Fi",
+                "interfaceDescription": "Intel(R) Wi-Fi 6 AX201 160MHz",
+                "macAddress": "B8-9A-2A-4C-7D-12",
+                "linkSpeed": "300 Mbps",
+                "status": "Up",
+                "isUp": True,
+                "connected": True,
+                "ssid": "Westfield-Guest",
+                "networkCategory": "Public",
+                "ipv4Connectivity": "Internet",
+                "ipv6Connectivity": "NoTraffic",
             },
         ],
     },
@@ -547,6 +579,17 @@ DEMO = {
         "primaryComputeCap": "6.1",
         "nvidiaSmiAvailable": True,
         "nvidiaSmiError": None,
+    },
+    "Get-PixellotDependencies.ps1": lambda **kw: {
+        # Demo shows an outdated 4.8.0 install so the "outdated" badge state
+        # is visible in demo mode. Real VPUs that ran PDF #2's reinstall
+        # action would report 5.0.0 → "current".
+        "installedVersion": "4.8.0",
+        "latestKnownVersion": "5.0.0",
+        "status": "outdated",
+        "registryKey": "HKLM:\\SOFTWARE\\Pixellot",
+        "registryValueName": "dependencies",
+        "registryKeyPresent": True,
     },
     "Test-PixellotInstallState.ps1": lambda **kw: {
         "dirExists": True,

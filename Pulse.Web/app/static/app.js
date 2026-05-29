@@ -992,6 +992,7 @@ function renderDashboard() {
           <span class="dash-kv-l">Hostname</span><span class="dash-kv-v">${esc(hostname)}</span>
           <span class="dash-kv-l">Manufacturer</span><span class="dash-kv-v">${esc(id.manufacturer || "—")}</span>
           <span class="dash-kv-l">Serial</span><span class="dash-kv-v">${esc(id.serialNumber || "—")}</span>
+          ${id.venueId ? `<span class="dash-kv-l">Venue ID</span><span class="dash-kv-v font-mono">${esc(id.venueId)}</span>` : ""}
         </div>
       </div>
       <div class="card">
@@ -1284,12 +1285,19 @@ function renderSystem() {
     <div class="dash-2col">
       <div class="card">
         ${sectionTitle("monitor", "Graphics")}
-        ${gpus.length ? gpus.map(g => `
-          <div class="sub-card mb-2">
-            <div class="text-sm font-semibold text-white">${esc(g.name)}</div>
+        ${gpus.length ? gpus.map(g => {
+          // Dedicated GPU (NVIDIA/AMD with VRAM) gets a green chip; Intel iGPU
+          // and others get a muted chip. Pixellot VPUs need at least one dedicated.
+          const vendor = g.vendor || (g.adapterCompatibility ? g.adapterCompatibility : "GPU");
+          const chipCls = g.isDedicated ? "gpu-vendor-dedicated" : "gpu-vendor-igpu";
+          return `<div class="sub-card mb-2">
+            <div class="flex items-center justify-between">
+              <div class="text-sm font-semibold text-white">${esc(g.name)}</div>
+              <span class="gpu-vendor-chip ${chipCls}">${esc(vendor)}</span>
+            </div>
             <div class="text-xs text-pulse-muted mt-1">RAM: ${g.adapterRAMMB ? esc(String(g.adapterRAMMB)) + " MB" : "N/A"} · Driver: ${esc(g.driverVersion)}</div>
-          </div>
-        `).join("") : '<p class="text-pulse-muted text-sm">No GPU data</p>'}
+          </div>`;
+        }).join("") : '<p class="text-pulse-muted text-sm">No GPU data</p>'}
       </div>
       <div class="card">
         ${sectionTitle("hdd", "Storage")}
@@ -1878,10 +1886,29 @@ function _netIssueRank(severity) {
   }
 }
 
-function _buildNetIssues(cfg, ports, domains, local, dnsResolution) {
+function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
   var issues = [];
   var gw = (local || {}).gateway;
   var dns = (local || {}).dns;
+
+  // ── Wi-Fi adapter active (Canopy reportWifiConnection) ──
+  // VPUs should never have a Wi-Fi interface Up. If one is, surface
+  // the warning on the Network tab as well as on the dashboard so the
+  // tech sees it whichever tab they're looking at.
+  if (wifi && !wifi.error && wifi.anyActive) {
+    var wifiActive = (wifi.adapters || []).filter(function(a) { return a.isUp; });
+    issues.push({
+      severity: "warning",
+      title: wifiActive.length + " Wi-Fi adapter(s) active — VPUs should use wired network only",
+      body: "Disable the wireless radio in Device Manager or Settings. An active Wi-Fi interface can cause unpredictable routing and break streaming.",
+      details: wifiActive.map(function(a) {
+        var label = a.interfaceDescription || a.name || "Wi-Fi";
+        var ssidPart = a.ssid ? " — SSID: " + a.ssid : "";
+        var ipPart = a.ipv4Connectivity ? " — IPv4: " + a.ipv4Connectivity : "";
+        return label + ssidPart + ipPart;
+      }),
+    });
+  }
 
   // ── Critical: Gateway ────────────────────────────────────
   if (gw && !gw.reachable) {
@@ -2168,9 +2195,10 @@ function renderNetwork() {
   const local = data.local || {};
   const ntpPeers = (data.ntpPeers && !data.ntpPeers.error) ? data.ntpPeers : null;
   const dnsResolution = (data.dnsResolution && !data.dnsResolution.error) ? data.dnsResolution : null;
+  const wifi = (data.wifi && !data.wifi.error) ? data.wifi : null;
   const ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
 
-  const issues = _buildNetIssues(cfg, ports, domains, local, dnsResolution);
+  const issues = _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi);
 
   const hasCrit = issues.some(function(f) { return f.severity === "critical"; });
   const hasWarn = issues.some(function(f) { return f.severity === "warning"; });
@@ -2345,7 +2373,15 @@ function renderNetwork() {
         <div class="kv-grid">
           ${kvRow("IP address", adapterIp)}
           ${kvRow("Subnet mask", subnetMask || "—")}
-          ${kvRow("Assignment", dhcpLabel)}
+          ${kvRowHtml("Assignment", (function() {
+            // Canopy getIpStaticOrDynamic adoption — render the value as a
+            // colored chip so the assignment mode pops at a glance.
+            if (uplinkIpCfg?.dhcpEnabled === true)
+              return '<span class="dhcp-chip dhcp-chip-dynamic">DHCP</span>';
+            if (uplinkIpCfg?.dhcpEnabled === false)
+              return '<span class="dhcp-chip dhcp-chip-static">Static</span>';
+            return "—";
+          })())}
           ${kvRow("Gateway", cfg.uplinkAdapter?.gateway || "—")}
           ${kvRow("DNS", dnsStr)}
           ${kvRow("MAC address", uplinkAdapterRow?.macAddress || "—")}
@@ -3040,6 +3076,10 @@ function renderServices() {
       </button>`
     )}
 
+    <!-- Installed Pixellot dependencies version (Canopy/Leaf adaptation) -->
+    <!-- Filled in async by the /api/services/dependencies call below. -->
+    <div id="svc-deps-line" class="svc-deps-line hidden"></div>
+
     <!-- keepagentup.exe — PDF #13 fast-remedy action -->
     <div class="card svc-quick-action">
       <div class="svc-quick-action-row">
@@ -3106,6 +3146,37 @@ function renderServices() {
         `;
       }
     }
+  })();
+
+  // Installed Pixellot Dependencies (Canopy/Leaf/getVpuDepsFromRegistry.ps1
+  // adaptation). Fills the always-visible status line at the top of the tab.
+  (async () => {
+    const r = await api("/api/services/dependencies");
+    if (currentPage !== "services") return;
+    const line = document.getElementById("svc-deps-line");
+    if (!line || !r || r.error) return;
+    line.classList.remove("hidden");
+
+    const installed = r.installedVersion || "—";
+    const latest = r.latestKnownVersion || "—";
+    const status = r.status || "unknown";
+    let cls = "svc-deps-current";
+    let label = "Current";
+    let icon = svgIcon("check", 12);
+    if (status === "outdated") {
+      cls = "svc-deps-outdated"; label = "Outdated"; icon = svgIcon("alert", 12);
+    } else if (status === "missing") {
+      cls = "svc-deps-missing"; label = "Not installed"; icon = svgIcon("alert", 12);
+    } else if (status === "newer") {
+      cls = "svc-deps-newer"; label = "Newer than known"; icon = svgIcon("info", 12);
+    }
+
+    line.className = "svc-deps-line " + cls;
+    line.innerHTML = `
+      ${icon}
+      <span><strong>Pixellot Dependencies</strong> · Current: <span class="font-mono">${esc(installed)}</span> · Latest known: <span class="font-mono">${esc(latest)}</span></span>
+      <span class="svc-deps-pill">${esc(label)}</span>
+    `;
   })();
 
   document.getElementById("svc-grid")?.addEventListener("click", async (e) => {

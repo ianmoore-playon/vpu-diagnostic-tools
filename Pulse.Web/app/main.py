@@ -864,8 +864,32 @@ def _total_ram_gb(hardware, performance) -> float:
     return 0.0
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None) -> list:
     findings = []
+
+    # ── Wi-Fi adapter detection (Canopy adoption) ────────────
+    # Pixellot VPUs are wired-only by design. An active Wi-Fi interface
+    # almost always means leftover bench-test configuration, a tech
+    # tethering to a phone, or a misconfigured uplink — any of which
+    # cause unpredictable streaming behavior.
+    if wifi and not wifi.get("error"):
+        active = [a for a in (wifi.get("adapters") or []) if a.get("isUp")]
+        if active:
+            names = ", ".join(a.get("interfaceDescription") or a.get("name") or "?" for a in active)
+            ssids = [a.get("ssid") for a in active if a.get("ssid")]
+            ssid_str = f" (SSID: {', '.join(ssids)})" if ssids else ""
+            findings.append(
+                {
+                    "severity": "warning",
+                    "category": "Network",
+                    "title": "WiFi adapter connected — VPUs should use wired network only",
+                    "recommendation": (
+                        f"Active Wi-Fi interface detected: {names}{ssid_str}. "
+                        f"Disable the wireless radio in Device Manager or via Settings → Network. "
+                        f"VPUs are wired-only by design; an active Wi-Fi adapter causes unpredictable routing."
+                    ),
+                }
+            )
 
     # ── NTP allowlist (PDF #9) ───────────────────────────────
     # School networks sometimes force VPUs onto an internal NTP server. If
@@ -1055,6 +1079,32 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     f"Installed Pixellot: {compat['installedVersion']}."
                 ),
             })
+
+    # ── Dedicated GPU presence (Canopy / Leaf / checkDedicatedGpu.ps1) ──
+    # A Pixellot VPU must have a dedicated NVIDIA or AMD card. Intel iGPU
+    # alone is wrong-hardware. Skipped if the compat check above already
+    # raised a "no-gpu" critical (would be duplicate noise).
+    if hardware and not hardware.get("error"):
+        compat_no_gpu = any(f["title"] == "No NVIDIA GPU detected" for f in findings)
+        if not compat_no_gpu:
+            gpus = hardware.get("gpus") or []
+            dedicated = [g for g in gpus if g.get("isDedicated")]
+            if gpus and not dedicated:
+                # Got at least one GPU but none are NVIDIA/AMD — most likely
+                # an Intel-iGPU-only host, which is wrong hardware.
+                vendors = sorted({(g.get("vendor") or "Unknown") for g in gpus})
+                vendor_str = ", ".join(vendors)
+                findings.append({
+                    "severity": "warning",
+                    "category": "Hardware",
+                    "title": "No dedicated GPU detected",
+                    "recommendation": (
+                        f"WMI reports only non-dedicated graphics ({vendor_str}). "
+                        f"Pixellot VPUs require a dedicated NVIDIA or AMD card for video "
+                        f"encoding — this host is the wrong hardware platform for a VPU. "
+                        f"Verify the dGPU is seated, powered, and has a current driver."
+                    ),
+                })
 
     if performance and not performance.get("error"):
         # Use `is not None` instead of truthy checks so a legitimate 0 value
@@ -1677,7 +1727,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None):
     flat_identity = {}
     if identity and not identity.get("error"):
         flat_identity = {
@@ -1692,6 +1742,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
             "pixellotVersion": identity.get("pixellot", {}).get("version"),
             "imageVersion": identity.get("pixellot", {}).get("imageVersion"),
             "vpuName": identity.get("pixellot", {}).get("vpuName"),
+            "venueId": identity.get("pixellot", {}).get("venueId"),
             "isNonVpuHost": identity.get("isNonVpuHost", False),
         }
 
@@ -1710,12 +1761,12 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         "identity": flat_identity,
         "performance": performance if not performance.get("error", False) else {},
         "services": services if not services.get("error", False) else {"services": []},
-        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info),
+        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi),
         "networkConfig": net_cfg,
     }
 
 
-def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None):
+def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None, wifi=None):
     net = {}
     if config and not config.get("error"):
         ntp_src = config.get("ntpSource")
@@ -1731,11 +1782,11 @@ def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_
             "ntpSourceApprovedList": list(PIXELLOT_APPROVED_NTP_SOURCES),
         }
 
-    # Pass local, ntpPeers, dnsResolution through even on error — let the
-    # frontend surface whichever subsection failed.
+    # Pass local, ntpPeers, dnsResolution, wifi through even on error — let
+    # the frontend surface whichever subsection failed.
     return {"config": net, "domains": domains, "ports": ports, "ntp": ntp,
             "local": local, "ntpPeers": ntp_peers,
-            "dnsResolution": dns_resolution}
+            "dnsResolution": dns_resolution, "wifi": wifi}
 
 
 # ─── Routes ───────────────────────────────────────────────────
@@ -1785,6 +1836,7 @@ async def api_preload():
         dns_resolution,
         install_state,
         gpu_info,
+        wifi,
     ) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -1805,6 +1857,7 @@ async def api_preload():
         run_ps("Test-DnsResolution.ps1"),
         run_ps("Test-PixellotInstallState.ps1", timeout=15),
         run_ps("Get-GpuInfo.ps1", timeout=15),
+        run_ps("Get-WifiAdapters.ps1", timeout=10),
     )
     # Audio is deferred — lazy-fetched on tab visit to keep preload lean.
 
@@ -1814,13 +1867,13 @@ async def api_preload():
     probe_results_pre = await _probe_all_cameras(raw_ports_pre, ocr_ips_pre)
 
     return {
-        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info),
+        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi),
         "system": {
             "identity": _enrich_identity_pixellot_compat(_enrich_identity_lifecycle(identity), gpu_info),
             "hardware": hardware,
             "software": _enrich_software_with_concerns(installed_sw),
         },
-        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers, dns_resolution),
+        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi),
         "cameras": {
             "ports": _enrich_ports(nics, pixellot_config, probe_results_pre),
             "pixellotConfig": pixellot_config,
@@ -1893,7 +1946,7 @@ async def api_scripts_cancel_all():
 
 @app.get("/api/dashboard")
 async def api_dashboard():
-    identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info = await asyncio.gather(
+    identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info, wifi = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
@@ -1907,8 +1960,9 @@ async def api_dashboard():
         # checks time to complete on a healthy connection.
         run_ps("Test-NetworkPorts.ps1", timeout=20),
         run_ps("Get-GpuInfo.ps1", timeout=15),
+        run_ps("Get-WifiAdapters.ps1", timeout=10),
     )
-    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info)
+    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info, wifi)
 
 
 def _enrich_identity_lifecycle(identity):
@@ -1956,7 +2010,7 @@ async def api_system():
 
 @app.get("/api/network")
 async def api_network():
-    config, domains, ports, ntp, local, ntp_peers, dns_resolution = await asyncio.gather(
+    config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi = await asyncio.gather(
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Test-NetworkDomains.ps1", timeout=20),
         run_ps("Test-NetworkPorts.ps1", timeout=45),
@@ -1964,8 +2018,9 @@ async def api_network():
         run_ps("Test-LocalNetwork.ps1", timeout=20),
         run_ps("Get-NtpPeers.ps1", timeout=15),
         run_ps("Test-DnsResolution.ps1", timeout=30),
+        run_ps("Get-WifiAdapters.ps1", timeout=10),
     )
-    return _build_network(config, domains, ports, ntp, local, ntp_peers, dns_resolution)
+    return _build_network(config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi)
 
 
 @app.get("/api/network/local-ping")
@@ -2149,6 +2204,14 @@ async def api_install_state():
     Returns the part files present and the last line of the most-recent
     installer log."""
     return await run_ps("Test-PixellotInstallState.ps1", timeout=15)
+
+
+@app.get("/api/services/dependencies")
+async def api_dependencies():
+    """Reads HKLM:\\SOFTWARE\\Pixellot\\dependencies to surface the installed
+    deps version next to the Pixellot Services "Reinstall Dependencies" card
+    (PDF #2). Adapted from Canopy/Leaf/getVpuDepsFromRegistry.ps1."""
+    return await run_ps("Get-PixellotDependencies.ps1", timeout=10)
 
 
 @app.get("/api/disk-health")

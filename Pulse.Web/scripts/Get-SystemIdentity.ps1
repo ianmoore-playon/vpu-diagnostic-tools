@@ -43,9 +43,9 @@ try {
     # Uses findstr (native, encoding-safe) then regex to extract the name.
     # We try several log filename patterns since Pixellot has renamed these
     # across firmware versions (agent_vpu2_*, agent_vpu_*, agent_*).
+    $logDir = 'C:\Pixellot\Data\Log'
     $vpuName = $null
     try {
-        $logDir = 'C:\Pixellot\Data\Log'
         if (Test-Path $logDir) {
             $logPatterns = @('agent_vpu2_*.log', 'agent_vpu_*.log', 'agent_*.log')
             $latestLog = $null
@@ -61,6 +61,36 @@ try {
                     $last = if ($lines -is [array]) { $lines[-1] } else { $lines }
                     if ($last -match 'result:\s*(.+)$') {
                         $vpuName = $Matches[1].Trim()
+                    }
+                }
+            }
+        }
+    }
+    catch { }
+
+    # Pixellot Cloud venueId from the latest Coordinator log
+    # Same findstr-based approach as vpuName for encoding safety —
+    # Select-String can silently miss matches on UTF-16-encoded logs.
+    # Pattern from Canopy's systemDataCollector.ps1:
+    #   "got for key /GENERAL/VenueID result: <ID>"
+    # This id is the lookup key for Pixellot Cloud's /api/v3/venues/{id}
+    # endpoint, so the API integration can self-identify without a
+    # MAC-matching dance.
+    $venueId = $null
+    try {
+        if (Test-Path $logDir) {
+            $coordLog = Get-ChildItem -Path $logDir -Filter 'coordinator*.log' -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if (-not $coordLog) {
+                $coordLog = Get-ChildItem -Path $logDir -Filter '*Coordinator*.log' -ErrorAction SilentlyContinue |
+                    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            }
+            if ($coordLog) {
+                $lines = & findstr /C:"/GENERAL/VenueID" $coordLog.FullName 2>$null
+                if ($lines) {
+                    $last = if ($lines -is [array]) { $lines[-1] } else { $lines }
+                    if ($last -match 'result:\s*(\S+)') {
+                        $venueId = $Matches[1].Trim()
                     }
                 }
             }
@@ -107,6 +137,7 @@ try {
             version      = $pixVersion
             imageVersion = $pixImageVersion
             vpuName      = $vpuName
+            venueId      = $venueId
         }
         isNonVpuHost = $isNonVpuHost
     }
