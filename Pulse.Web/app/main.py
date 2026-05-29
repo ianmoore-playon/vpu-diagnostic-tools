@@ -2685,6 +2685,153 @@ async def api_save_settings(request: Request):
     return {"ok": True}
 
 
+# ── Self-update ──────────────────────────────────────────────
+# Pulse installs to C:\Pulse via a channel launcher (Pulse.bat) that already
+# knows how to resolve -> download -> install -> restart a release. These
+# endpoints let the running app check GitHub for a newer build on its channel
+# and trigger that same launcher from inside the UI, so field techs don't have
+# to re-run a .bat by hand.
+_UPDATE_PUBLIC_REPO = "ianmoore-playon/pulse-releases"
+_UPDATE_SOURCE_REPO = "ianmoore-playon/vpu-diagnostic-tools"
+# channel -> (release-tag prefix, accept pre-releases)
+_UPDATE_CHANNELS = {
+    "production": ("web-v", False),
+    "beta": ("web-beta-v", True),
+    "dev": ("web-dev-v", True),
+    "branch": ("web-dev-v", True),
+}
+
+
+def _pulse_bat_path():
+    return _os.path.join(_web_root, "Pulse.bat")
+
+
+def _installed_tag():
+    """The release tag the launcher recorded at install (e.g. web-beta-v0.2.0)."""
+    try:
+        with open(_os.path.join(_web_root, "VERSION")) as f:
+            return f.read().strip()
+    except Exception:
+        return None
+
+
+def _is_managed_install():
+    """True only for a launcher-managed C:\\Pulse install we can update in place
+    (the launcher self-copies to Pulse.bat and writes VERSION). A from-source
+    git checkout returns False, so we never try to self-update a dev tree."""
+    return _os.path.exists(_pulse_bat_path()) and _installed_tag() is not None
+
+
+def _update_channel():
+    try:
+        with open(_os.path.join(_web_root, "CHANNEL")) as f:
+            ch = f.read().strip().lower()
+            if ch in _UPDATE_CHANNELS:
+                return ch
+    except Exception:
+        pass
+    tag = (_installed_tag() or "").lower()
+    if tag.startswith("web-beta-v"):
+        return "beta"
+    if tag.startswith("web-dev-v"):
+        return "dev"
+    if tag.startswith("web-v"):
+        return "production"
+    return "dev"
+
+
+async def _resolve_latest_release(channel):
+    import httpx
+    prefix, accept_pre = _UPDATE_CHANNELS.get(channel, ("web-dev-v", True))
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "Pulse-Updater"}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for repo in (_UPDATE_PUBLIC_REPO, _UPDATE_SOURCE_REPO):
+            try:
+                resp = await client.get(
+                    f"https://api.github.com/repos/{repo}/releases", headers=headers
+                )
+                resp.raise_for_status()
+                releases = resp.json()
+            except Exception:
+                continue
+            for rel in releases:
+                if rel.get("draft"):
+                    continue
+                tag = rel.get("tag_name", "")
+                if not tag.startswith(prefix):
+                    continue
+                if rel.get("prerelease") and not accept_pre:
+                    continue
+                return {"tag": tag, "url": rel.get("html_url"), "notes": rel.get("body") or ""}
+    return None
+
+
+@app.get("/api/update/check")
+async def api_update_check():
+    channel = _update_channel()
+    current = _installed_tag() or APP_VERSION
+    if not _is_managed_install():
+        return {
+            "managed": False, "channel": channel, "current": current,
+            "updateAvailable": False,
+            "note": "Pulse is running from source here — updates are managed with git, not this button.",
+        }
+    latest = await _resolve_latest_release(channel)
+    if not latest:
+        return {
+            "managed": True, "channel": channel, "current": current,
+            "updateAvailable": False,
+            "error": "Couldn't reach the update server. Check the VPU's internet connection and try again.",
+        }
+    return {
+        "managed": True, "channel": channel, "current": current,
+        "latest": latest["tag"], "latestUrl": latest["url"], "notes": latest["notes"],
+        "updateAvailable": latest["tag"] != current,
+    }
+
+
+@app.post("/api/update/apply")
+async def api_update_apply():
+    if _sys.platform != "win32":
+        return {"ok": False, "error": "Self-update only runs on Windows VPUs."}
+    if not _is_managed_install():
+        return {"ok": False, "error": "Pulse isn't a launcher-managed install here; update with git instead."}
+    import subprocess
+    pulse_bat = _pulse_bat_path()
+    port = int(_os.environ.get("PORT", 8765))
+    updater_path = _os.path.join(_web_root, "pulse-update.bat")
+    lines = [
+        "@echo off",
+        "rem Pulse self-update helper - spawned detached by the running server.",
+        "rem 1) let the HTTP reply flush  2) stop the server so its files unlock",
+        "rem 3) hand off to the channel launcher (resolve/download/install/restart).",
+        "rem PULSE_NO_BROWSER stops a second browser tab; the open page reloads itself.",
+        "ping -n 2 127.0.0.1 >nul",
+        f"""for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":{port} " ^| findstr "LISTENING"') do taskkill /PID %%a /F >nul 2>&1""",
+        "ping -n 3 127.0.0.1 >nul",
+        'set "PULSE_NO_BROWSER=1"',
+        f'call "{pulse_bat}"',
+        "",
+    ]
+    try:
+        with open(updater_path, "w", newline="") as f:
+            f.write("\r\n".join(lines))
+    except Exception as e:
+        return {"ok": False, "error": f"Couldn't write the updater script: {e}"}
+    _CREATE_NEW_CONSOLE = 0x00000010
+    _CREATE_NEW_PROCESS_GROUP = 0x00000200
+    try:
+        subprocess.Popen(
+            ["cmd", "/c", updater_path],
+            cwd=_web_root,
+            creationflags=_CREATE_NEW_CONSOLE | _CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+    except Exception as e:
+        return {"ok": False, "error": f"Couldn't start the updater: {e}"}
+    return {"ok": True, "message": "Pulse is updating and will restart shortly."}
+
+
 @app.get("/api/reports/export")
 async def api_export():
     keys = [
