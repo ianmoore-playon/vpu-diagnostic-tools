@@ -137,6 +137,136 @@ function Get-ScoreConnectExeVersion {
     return $null
 }
 
+# Read FileVersion from an arbitrary exe (used for the SC I executable).
+function Get-ExeVersionAt {
+    param([string]$Path)
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) { return $null }
+        $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($Path)
+        $v = $info.ProductVersion; if (-not $v) { $v = $info.FileVersion }
+        if ($v) {
+            $v = $v.Trim(); $p = $v.IndexOf('+'); if ($p -gt 0) { $v = $v.Substring(0, $p) }
+            return $v
+        }
+    } catch {}
+    return $null
+}
+
+# ── ScoreConnect service detection ────────────────────────────────────────────
+# Adapted from Canopy's scoreboardModeSet.ps1. The Windows service names are
+# 'scoreconnect' (SC I), 'scoreconnectii' (SC II), 'scoreconnectiii' (SC III).
+# Get-Service -Name matches exactly, so 'scoreconnect' won't match the others.
+# Returns @{ sc1; sc2; sc3 } booleans for which versions are RUNNING, plus
+# 'installed' for which are present at all.
+function Get-ScoreConnectServices {
+    $running   = [ordered]@{ sc1 = $false; sc2 = $false; sc3 = $false }
+    $installed = [ordered]@{ sc1 = $false; sc2 = $false; sc3 = $false }
+    try {
+        $svcs = Get-Service -Name 'scoreconnect', 'scoreconnectii', 'scoreconnectiii' -ErrorAction SilentlyContinue
+        foreach ($s in $svcs) {
+            $key = switch ($s.Name.ToLower()) {
+                'scoreconnect'    { 'sc1' }
+                'scoreconnectii'  { 'sc2' }
+                'scoreconnectiii' { 'sc3' }
+                default           { $null }
+            }
+            if ($key) {
+                $installed[$key] = $true
+                if ($s.Status -eq 'Running') { $running[$key] = $true }
+            }
+        }
+    } catch {}
+    return @{ running = $running; installed = $installed }
+}
+
+# Best-effort BOT number from SC I logs. The bot id is written as "BOT=<id>".
+# Logs may be UTF-16, so use findstr (encoding-safe) per the VPU log-parsing
+# guidance rather than Select-String. The bot id is notoriously stale anyway —
+# surfaced best-effort.
+function Get-ScoreConnectILogBot {
+    $logDir = 'C:\Program Files (x86)\Sportzcast LLC\ScoreConnect\Logs'
+    if (-not (Test-Path $logDir)) { return $null }
+    try {
+        $hit = & findstr.exe /S /I /C:"BOT=" "$logDir\*" 2>$null | Select-Object -First 1
+        if ($hit -and ($hit -match 'BOT=([^\s,;]+)')) {
+            $bot = $Matches[1].Trim()
+            if ($bot) { return $bot }
+        }
+    } catch {}
+    return $null
+}
+
+# ── SC I probe (file-based) ───────────────────────────────────────────────────
+# Adapted from Canopy's scoreboardModeSet.ps1. SC I is a legacy standalone
+# install with no HTTP API. Configuration lives in:
+#   C:\Program Files (x86)\Sportzcast LLC\ScoreConnect\Files\Parms.json
+# Schema: parms[0].sbvendor / .sbcode (no sbvendorname like SC II has).
+#
+# "Out of date" detection: very old SC I builds leave stray .txt files in the
+# Files folder instead of a Parms.json — Canopy treats their presence as an
+# out-of-date install that should be upgraded.
+#
+# Returns an object shaped like the SC II probe (hardware = 'ScoreConnect') so
+# the existing renderer surfaces it in the legacy ScoreConnect panel without
+# any frontend changes. Zero network/disk impact on a live data stream.
+function Probe-ScoreConnectI {
+    $result = @{
+        reachable    = $false
+        baseUrl      = $null
+        version      = $null
+        hardware     = 'ScoreConnect'
+        productName  = 'ScoreConnect (SC I)'
+        uid          = $null
+        scores       = $null
+        teamNames    = $null
+        vendor       = $null
+        sport        = $null
+        botNumber    = $null
+        license      = $null
+        scoreLink    = $null
+        networkIfaces = $null
+        outOfDate    = $false
+        error        = $null
+    }
+
+    $filesDir = 'C:\Program Files (x86)\Sportzcast LLC\ScoreConnect\Files'
+    if (-not (Test-Path $filesDir)) { return $result }
+
+    # Out-of-date: stray .txt files in the Files folder (no Parms.json era).
+    $strayTxt = Get-ChildItem -Path $filesDir -Filter '*.txt' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($strayTxt) {
+        $result.reachable = $true
+        $result.outOfDate = $true
+        $result.version   = 'Out of date'
+        $result.error     = 'ScoreConnect (SC I) software is out of date — upgrade to SC III'
+        return $result
+    }
+
+    $parmsPath = Join-Path $filesDir 'Parms.json'
+    if (-not (Test-Path $parmsPath)) { return $result }
+
+    try {
+        $json = Get-Content $parmsPath -Raw -ErrorAction Stop | ConvertFrom-Json
+        if (-not $json.parms -or @($json.parms).Count -lt 1) {
+            $result.reachable = $true
+            $result.error = 'Unreadable SC I configuration'
+            return $result
+        }
+        $p = $json.parms[0]
+        $result.reachable = $true
+        # SC I has no sbvendorname — sbvendor is the only vendor field.
+        $result.vendor    = $p.sbvendor
+        $result.sport     = $p.sbcode
+        $result.botNumber = Get-ScoreConnectILogBot
+        $result.version   = Get-ExeVersionAt 'C:\Program Files (x86)\Sportzcast LLC\ScoreConnect\ScoreConnect.exe'
+    }
+    catch {
+        $result.reachable = $true
+        $result.error = 'Unreadable SC I configuration'
+    }
+    return $result
+}
+
 # ── SC II probe (SignalR long-polling) ───────────────────────────────────────
 # SC II uses SignalR 2.x on localhost:1400.  No REST API — all data flows
 # through the ScoreConnectHub hub.  We use the long-polling transport so we
@@ -483,6 +613,21 @@ try {
 
     $comRx = [regex]'\bCOM(\d+)\b'
 
+    # OS-version-aware generic serial-driver description (from Canopy's
+    # usbConnectionCheck.ps1). Windows 8 / 8.1 (6.2–6.3) name the inbox
+    # USB-serial driver "USB Serial Port"; every other build uses "USB Serial
+    # Device". Used as a LAST-RESORT needle (after the specific name + VID/PID
+    # strategies) so a ScoreLink whose bus-reported description is access-
+    # denied and whose VID/PID didn't enumerate is still recognised by its
+    # generic serial driver name.
+    $osSerialDesc = 'usb serial device'
+    try {
+        $osVer = [version]((Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).Version)
+        if ($osVer -ge [version]'6.2' -and $osVer -lt [version]'6.4') {
+            $osSerialDesc = 'usb serial port'
+        }
+    } catch {}
+
     try {
         # USB\ filter — WPF checks pnpId.StartsWith("USB\\").
         # WQL escaping: 'USB\\%' is a literal backslash + wildcard.
@@ -536,6 +681,16 @@ try {
                 }
             }
 
+            # Strategy 3 (last resort): OS-aware generic serial-driver name.
+            # On a VPU the ScoreLink is the USB-serial adapter, so a COM-port
+            # device whose driver description is the OS's generic serial name
+            # is treated as a ScoreLink. Heuristic — could in theory match an
+            # unrelated USB-serial adapter, hence it runs only after the
+            # specific name and VID/PID strategies fail.
+            if ($null -eq $matched -and $drvLow.Contains($osSerialDesc)) {
+                $matched = @{ needle = $osSerialDesc; model = 'ScoreLink' }
+            }
+
             if ($null -eq $matched) { continue }
 
             # ScoreLinkII wins over ScoreLink when both are present
@@ -556,12 +711,33 @@ try {
         "$scoreLinkModel device connected ($scoreLinkPort)"
     }
 
-    # ── 6. SC II probe ──────────────────────────────────────────────────────
-    # SC II runs on port 1400 — probe independently of SC III.
-    # Derive SC II URL from the same host as SC III BaseUrl.
+    # ── 6. Legacy ScoreConnect probe (SC II, else SC I) ──────────────────────
+    # Per Canopy's scoreboardModeSet.ps1, determine which versions are running
+    # via Get-Service, then read the appropriate config source. SC III is
+    # handled above (HTTP); here we cover the legacy installs that previously
+    # showed "not detected": SC II (settings.json) and SC I (Parms.json).
+    #
+    # The running legacy version is normalised into the `sc2` output slot
+    # (hardware distinguishes SC I vs SC II) so the existing renderer surfaces
+    # it in the legacy ScoreConnect panel without any frontend changes.
+    $svc = Get-ScoreConnectServices
+
+    # SC II — rich file-based probe on port 1400 (settings.json).
     $sc2BaseUri = [System.Uri]$BaseUrl
     $sc2Url     = "http://$($sc2BaseUri.Host):1400"
     $sc2Data    = Probe-ScoreConnectII -Sc2Base $sc2Url
+
+    # SC I — only when SC II isn't present. Probe if the SC I service is
+    # running/installed, or its config exists on disk (covers a stopped
+    # service that's still configured).
+    $legacyData = $null
+    if ($sc2Data.reachable) {
+        $legacyData = $sc2Data
+    }
+    elseif ($svc.installed.sc1 -or (Test-Path 'C:\Program Files (x86)\Sportzcast LLC\ScoreConnect\Files')) {
+        $sc1Data = Probe-ScoreConnectI
+        if ($sc1Data.reachable) { $legacyData = $sc1Data }
+    }
 
     # ── 7. Output ────────────────────────────────────────────────────────────
     [ordered]@{
@@ -578,8 +754,9 @@ try {
         scoreLinkPort        = $scoreLinkPort
         scoreLinkModel       = $scoreLinkModel
         scoreLinkStatusLabel = $scoreLinkLabel
+        services             = $svc.running
         error                = $errorMsg
-        sc2                  = if ($sc2Data.reachable) { $sc2Data } else { $null }
+        sc2                  = $legacyData
     } | ConvertTo-Json -Depth 10 -Compress
 }
 catch {
