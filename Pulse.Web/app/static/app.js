@@ -2233,15 +2233,46 @@ function renderNetwork() {
   const udpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "UDP"; });
 
   // Group ports that share (protocol, port). Renders as a single multi-host card.
+  // Collapse related port tests into two kinds of multi-card so we don't
+  // render a wall of near-identical tiles:
+  //   • byPort — many hosts share one protocol/port (e.g. TCP/443 HTTPS).
+  //   • byHost — one host exposes a port range (e.g. Scorebot 1400–1405).
+  // Anything that doesn't collapse renders as a normal single tile.
   function groupPorts(list) {
-    var byKey = {};
-    var order = [];
+    // Pass 1: group by protocol/port. Multi-entry groups are "byPort".
+    var byPort = {};
+    var portOrder = [];
     list.forEach(function(p) {
       var key = (p.protocol || "").toUpperCase() + "/" + p.port;
-      if (!byKey[key]) { byKey[key] = []; order.push(key); }
-      byKey[key].push(p);
+      if (!byPort[key]) { byPort[key] = []; portOrder.push(key); }
+      byPort[key].push(p);
     });
-    return order.map(function(k) { return byKey[k]; });
+
+    var groups = [];
+    var singles = [];
+    portOrder.forEach(function(key) {
+      var items = byPort[key];
+      if (items.length > 1) groups.push({ type: "byPort", items: items, order: list.indexOf(items[0]) });
+      else singles.push(items[0]);
+    });
+
+    // Pass 2: among the single-port leftovers, collapse entries that share
+    // protocol + host + purpose into a "byHost" port-range card.
+    var byHost = {};
+    var hostOrder = [];
+    singles.forEach(function(p) {
+      var key = (p.protocol || "").toUpperCase() + "|" + (p.host || "") + "|" + (p.purpose || "");
+      if (!byHost[key]) { byHost[key] = []; hostOrder.push(key); }
+      byHost[key].push(p);
+    });
+    hostOrder.forEach(function(key) {
+      var items = byHost[key];
+      groups.push({ type: items.length > 1 ? "byHost" : "single", items: items, order: list.indexOf(items[0]) });
+    });
+
+    // Restore original first-appearance order across both passes.
+    groups.sort(function(a, b) { return a.order - b.order; });
+    return groups;
   }
 
   function portCard(p) {
@@ -2255,28 +2286,62 @@ function renderNetwork() {
     </div>`;
   }
 
-  // Multi-host card: one card showing all endpoints tested on the same protocol/port.
-  function portCardGroup(group) {
-    if (group.length === 1) return portCard(group[0]);
+  function renderPortGroup(group) {
+    if (group.type === "byHost") return portCardHostGroup(group.items);
+    if (group.items.length === 1) return portCard(group.items[0]);
+    return portCardMulti(group.items);
+  }
+
+  // Shared status rollup for a collapsed group.
+  function _portGroupClass(group) {
     const anyFail = group.some(function(p) { return (p.status || "").toLowerCase() !== "pass"; });
     const allOptional = group.every(function(p) { return p.optional; });
-    const cls = !anyFail ? "port-card-pass" : (allOptional ? "port-card-warn" : "port-card-fail");
-    const passCount = group.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
+    return !anyFail ? "port-card-pass" : (allOptional ? "port-card-warn" : "port-card-fail");
+  }
+  function _portGroupPassCount(group) {
+    return group.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
+  }
+  function _portDotColor(p) {
+    const ok = (p.status || "").toLowerCase() === "pass";
+    return ok ? "var(--c-accent-green)" : (p.optional ? "var(--c-accent-amber)" : "var(--c-accent-red)");
+  }
+
+  // byPort card: many hosts tested on the same protocol/port (e.g. TCP/443).
+  function portCardMulti(group) {
     const port = group[0].port;
     const proto = (group[0].protocol || "").toUpperCase();
     const label = proto === "TCP" && port === 443 ? "HTTPS Endpoints" : (group[0].purpose || (proto + "/" + port));
     const hosts = group.map(function(p) {
-      const hostOk = (p.status || "").toLowerCase() === "pass";
-      const dotColor = hostOk ? "var(--c-accent-green)" : (p.optional ? "var(--c-accent-amber)" : "var(--c-accent-red)");
-      return `<li><span class="port-card-host-dot" style="background:${dotColor}"></span>` +
+      return `<li><span class="port-card-host-dot" style="background:${_portDotColor(p)}"></span>` +
              `<span class="port-card-host-name">${esc(p.host)}</span>` +
              `<span class="port-card-host-purpose">${esc(p.purpose)}</span></li>`;
     }).join("");
-    return `<div class="port-card port-card-multi ${cls}">
+    return `<div class="port-card port-card-multi ${_portGroupClass(group)}">
       <div class="port-card-num">${esc(String(port))}</div>
       <div class="port-card-name">${esc(label)}</div>
-      <div class="port-card-summary">${passCount} of ${group.length} passing</div>
+      <div class="port-card-summary">${_portGroupPassCount(group)} of ${group.length} passing</div>
       <ul class="port-card-hosts">${hosts}</ul>
+    </div>`;
+  }
+
+  // byHost card: one host exposes a range of ports (e.g. Scorebot 1400–1405).
+  function portCardHostGroup(group) {
+    const sorted = group.slice().sort(function(a, b) { return a.port - b.port; });
+    const ports = sorted.map(function(p) { return p.port; });
+    const contiguous = ports[ports.length - 1] - ports[0] + 1 === ports.length;
+    const rangeLabel = contiguous ? ports[0] + "–" + ports[ports.length - 1] : ports.join(", ");
+    const purpose = group[0].purpose || ((group[0].protocol || "").toUpperCase() + " ports");
+    const portChips = sorted.map(function(p) {
+      return `<li><span class="port-card-host-dot" style="background:${_portDotColor(p)}"></span>` +
+             `<span class="port-card-host-name">${esc(String(p.port))}</span></li>`;
+    }).join("");
+    return `<div class="port-card port-card-multi ${_portGroupClass(group)}">
+      <div class="port-card-num">${esc(rangeLabel)}</div>
+      <div class="port-card-name">${esc(purpose)}</div>
+      <div class="port-card-host">${esc(group[0].host)}</div>
+      <div class="port-card-summary">${_portGroupPassCount(group)} of ${group.length} passing</div>
+      <ul class="port-card-hosts port-card-ports">${portChips}</ul>
+      ${group[0].optional ? '<div class="port-card-opt">Optional</div>' : ""}
     </div>`;
   }
 
@@ -2325,13 +2390,13 @@ function renderNetwork() {
         <div class="net-sub-card">
           <div class="net-sub-heading">TCP ports <span class="net-proto-badge net-proto-tcp">TCP</span></div>
           ${tcpPorts.length
-            ? `<div class="port-grid">${groupPorts(tcpPorts).map(portCardGroup).join("")}</div>`
+            ? `<div class="port-grid">${groupPorts(tcpPorts).map(renderPortGroup).join("")}</div>`
             : '<p class="text-pulse-muted text-sm mt-2">No TCP port results</p>'}
         </div>
         <div class="net-sub-card">
           <div class="net-sub-heading">UDP ports <span class="net-proto-badge net-proto-udp">UDP</span></div>
           ${udpPorts.length
-            ? `<div class="port-grid">${groupPorts(udpPorts).map(portCardGroup).join("")}</div>`
+            ? `<div class="port-grid">${groupPorts(udpPorts).map(renderPortGroup).join("")}</div>`
             : '<p class="text-pulse-muted text-sm mt-2">No UDP port results</p>'}
         </div>
       </div>
