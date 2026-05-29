@@ -87,6 +87,26 @@ try {
         catch { }
     }
 
+    # ICMP fallback: managed/venue networks routinely block outbound ping
+    # while allowing TCP/443. A failed ping does NOT mean "no internet" — so
+    # if ICMP came back empty, confirm with a TCP connect to a well-known
+    # host on 443 before concluding the box is offline.
+    if (-not $internetReachable) {
+        foreach ($target in @('8.8.8.8', '1.1.1.1', '9.9.9.9')) {
+            if ($internetReachable) { break }
+            try {
+                $tcp = New-Object System.Net.Sockets.TcpClient
+                $iar = $tcp.BeginConnect($target, 443, $null, $null)
+                if ($iar.AsyncWaitHandle.WaitOne(2000, $false) -and $tcp.Connected) {
+                    $internetReachable = $true
+                    $reachHost = "${target}:443"
+                }
+                $tcp.Close()
+            }
+            catch { }
+        }
+    }
+
     # NTP source
     $ntpSource = $null
     try {

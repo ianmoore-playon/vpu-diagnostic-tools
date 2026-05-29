@@ -1668,7 +1668,9 @@ async function runLocalPing(count) {
 }
 
 function _accumPing(prev, batch) {
-  // Gateway should be a local hop (< 10 ms typical); DNS may legitimately be 20–50 ms.
+  // First-hop gateway latency varies with switch load/Wi-Fi; only flag well
+  // above a healthy LAN hop (30 ms). DNS (8.8.8.8) crosses the internet so a
+  // higher 50 ms bar is normal. Packet loss flags either regardless.
   function merge(old, cur, warnLatencyMs) {
     if (!cur || !cur.target) return old;
     if (!old || !old.target) return cur;
@@ -1688,7 +1690,7 @@ function _accumPing(prev, batch) {
              lossPercent: loss, minMs: minMs, avgMs: avgMs, maxMs: maxMs, status: status };
   }
   return {
-    gateway: merge(prev.gateway, batch.gateway, 10),
+    gateway: merge(prev.gateway, batch.gateway, 30),
     dns:     merge(prev.dns,     batch.dns,     50),
   };
 }
@@ -2076,7 +2078,10 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
       issues.push({ severity: "critical", title: "Gateway unreachable (" + gw.target + ")",
         body: "Verify the uplink Ethernet cable is seated, the switch port is active, and the VLAN is correct. No traffic will leave the VPU until this is resolved." });
   }
-  else if (gw && gw.reachable && (gw.lossPercent > 0 || (gw.avgMs != null && gw.avgMs > 10)))
+  // Packet loss to the first hop is the real instability signal. First-hop
+  // latency varies with switch load/Wi-Fi and is harmless up to ~30 ms, so
+  // only flag latency well above a healthy LAN gateway.
+  else if (gw && gw.reachable && (gw.lossPercent > 0 || (gw.avgMs != null && gw.avgMs > 30)))
     issues.push({ severity: "warning", title: "Unstable gateway — " + (gw.avgMs || "?") + " ms latency, " + (gw.lossPercent || 0) + "% loss",
       body: "Try a different switch port, replace the Ethernet cable, or check for broadcast storms on the venue network." });
 
@@ -2094,7 +2099,13 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
   }
 
   // ── Critical: No internet ────────────────────────────────
-  if (!cfg.internetReachable) {
+  // internetReachable is a probe (ICMP + TCP/443) that can still be wrong if
+  // the venue blocks those specific checks. Corroborate before declaring the
+  // box offline: if any required port or domain test succeeded, the VPU
+  // demonstrably has internet, so suppress the false "no internet" finding.
+  var anyReqPortPassed = (ports || []).some(function(p) { return !p.optional && (p.status || "").toLowerCase() === "pass"; });
+  var anyDomainResolved = (domains || []).some(function(d) { return (d.status || "").toLowerCase() === "pass"; });
+  if (!cfg.internetReachable && !anyReqPortPassed && !anyDomainResolved) {
     issues.push({ severity: "critical", title: "VPU has no internet connection",
       body: "Verify the uplink cable and the gateway’s WAN status before further triage." });
     // Sort and return early — no point checking ports/domains
