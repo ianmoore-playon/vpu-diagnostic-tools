@@ -2352,13 +2352,21 @@ async def api_cameras_video_test():
     probe_results = await _probe_all_cameras(raw_ports, ocr_ips, block=False)
     ports = _enrich_ports(nics, pix_config, probe_results)
 
-    # Collect (ip, label) for every detected camera on an up port.
+    # Collect (ip, label) for every detected camera on an up port, plus a
+    # per-IP link-health map so we can flag degraded streams on the frames:
+    # a single frame may grab fine, but a degraded link won't sustain video.
     cams = []
+    cam_meta = {}
     for p in ports:
         for c in p.get("camerasDetected") or []:
             ip = (c.get("ip") or "").strip()
             if ip:
                 cams.append((ip, p.get("cameraLabel") or p.get("portLabel") or ip))
+                cam_meta[ip] = {
+                    "degraded": bool(p.get("isDegraded")),
+                    "linkSpeedMbps": p.get("linkSpeedMbps"),
+                    "expectedSpeedMbps": p.get("expectedSpeedMbps"),
+                }
     if not cams:
         return {"available": True, "results": [], "reason": "No cameras detected to test."}
 
@@ -2386,12 +2394,22 @@ async def api_cameras_video_test():
     _LAST_FRAME_CAPTURE = time.monotonic()
     # use_cache=False: each click captures fresh frames — never replay a
     # cached snapshot from a previous request.
-    return await run_ps(
+    result = await run_ps(
         "Test-CameraVideo.ps1",
         {"CameraIps": ips, "Labels": labels},
         timeout=budget,
         use_cache=False,
     )
+    # Merge link health onto each frame so the UI can warn that a degraded
+    # camera, while it grabbed a frame, won't stream reliably until fixed.
+    if isinstance(result, dict) and result.get("results"):
+        for r in result["results"]:
+            meta = cam_meta.get((r.get("ip") or "").strip())
+            if meta:
+                r["degraded"] = meta["degraded"]
+                r["linkSpeedMbps"] = meta["linkSpeedMbps"]
+                r["expectedSpeedMbps"] = meta["expectedSpeedMbps"]
+    return result
 
 
 @app.get("/api/services")

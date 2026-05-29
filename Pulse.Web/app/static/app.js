@@ -3275,15 +3275,32 @@ function _camVideoResultsHtml(res) {
     var thumb = r.image
       ? '<img class="cam-frame-img" src="' + esc(r.image) + '" alt="' + esc(r.label || r.ip) + ' frame">'
       : '<div class="cam-frame-img cam-frame-empty">' + svgIcon("camera", 22) + '<span>No frame</span></div>';
-    return '<div class="cam-frame ' + (r.ok ? "" : "cam-frame-fail") + '">' +
+    // Degraded link warning: a frame grabbed, but the link can't sustain
+    // a reliable stream until the connection issue is resolved.
+    var degraded = r.ok && r.degraded;
+    var warn = "";
+    if (degraded) {
+      var spd = r.linkSpeedMbps ? r.linkSpeedMbps + " Mbps" : "low speed";
+      var exp = r.expectedSpeedMbps
+        ? (r.expectedSpeedMbps >= 1000 ? (r.expectedSpeedMbps / 1000) + " Gbps" : r.expectedSpeedMbps + " Mbps")
+        : null;
+      warn = '<div class="cam-frame-warn">' + svgIcon("alert", 11) +
+        ' Degraded link — ' + spd + (exp ? ", expected " + exp : "") +
+        '. A frame pulled, but the stream won\'t hold until this is fixed.</div>';
+    }
+    var cardCls = r.ok ? (degraded ? "cam-frame-degraded" : "") : "cam-frame-fail";
+    var statusTxt = !r.ok ? "No video" : (degraded ? "Streaming · degraded" : "Streaming");
+    var statusCls = !r.ok ? "status-fail" : (degraded ? "status-warn" : "status-pass");
+    return '<div class="cam-frame ' + cardCls + '">' +
       thumb +
       '<div class="cam-frame-meta">' +
         '<div class="cam-frame-head">' +
           '<span class="cam-frame-label">' + esc(r.label || r.ip) + '</span>' +
-          '<span class="' + (r.ok ? "status-pass" : "status-fail") + '">' + (r.ok ? "Streaming" : "No video") + '</span>' +
+          '<span class="' + statusCls + '">' + statusTxt + '</span>' +
         '</div>' +
         '<div class="cam-frame-ip font-mono">' + esc(r.ip) + '</div>' +
         '<div class="cam-frame-detail">' + meta + '</div>' +
+        warn +
       '</div></div>';
   }).join("");
   return '<div class="card">' + sectionTitle("camera", "Camera Frames") +

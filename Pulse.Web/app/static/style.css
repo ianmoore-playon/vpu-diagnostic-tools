@@ -1821,6 +1821,7 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     background: var(--c-surface-2, rgba(148,163,184,0.06));
 }
 .cam-frame-fail { border-color: var(--c-accent-red); }
+.cam-frame-degraded { border-color: var(--c-accent-amber); }
 .cam-frame-img {
     display: block;
     width: 100%;
@@ -1843,6 +1844,20 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .cam-frame-label { font-size: 0.8rem; font-weight: 600; color: var(--c-text); }
 .cam-frame-ip { font-size: 0.7rem; color: var(--c-muted); margin-top: 2px; }
 .cam-frame-detail { font-size: 0.72rem; color: var(--c-dim); margin-top: 3px; }
+.cam-frame-warn {
+    display: flex;
+    align-items: flex-start;
+    gap: 5px;
+    margin-top: 6px;
+    padding: 5px 7px;
+    border-radius: 4px;
+    background: var(--c-tint-amber);
+    color: var(--c-accent-amber);
+    font-size: 0.68rem;
+    font-weight: 500;
+    line-height: 1.35;
+}
+.cam-frame-warn svg { flex-shrink: 0; margin-top: 1px; }
 .cam-connecting-note {
     display: inline-flex;
     align-items: center;
