@@ -3258,3 +3258,44 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     background: #ef4444;
     color: #fff;
 }
+
+/* ── Self-update overlay ────────────────────────────────────── */
+.update-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8, 10, 16, 0.82);
+    backdrop-filter: blur(2px);
+}
+.update-overlay-box {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    padding: 32px 40px;
+    max-width: 440px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+.update-spinner {
+    width: 40px;
+    height: 40px;
+    margin: 0 auto 18px;
+    border: 3px solid var(--c-border);
+    border-top-color: var(--c-accent-blue);
+    border-radius: 50%;
+    animation: spin-icon 0.8s linear infinite;
+}
+.update-overlay-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--c-text);
+    margin-bottom: 8px;
+}
+.update-overlay-sub {
+    font-size: 0.85rem;
+    color: var(--c-muted);
+    line-height: 1.5;
+}

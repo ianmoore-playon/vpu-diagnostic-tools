@@ -5917,6 +5917,21 @@ function renderSettings() {
         ${svgIcon("play", 14)} Run All Diagnostics
       </button>
     </div>
+
+    <!-- Software Update -->
+    <div class="card mt-4">
+      ${sectionTitle("refresh", "Software Update")}
+      <p class="text-sm text-pulse-muted mb-3">Check for a newer Pulse build on this VPU's channel and install it. Pulse restarts and this page reloads automatically — no need to re-run the launcher.</p>
+      <div class="settings-actions">
+        <button class="btn-outline btn-ol-blue" id="set-update-check">
+          ${svgIcon("globe", 14)} Check for Update
+        </button>
+        <button class="btn-outline btn-ol-green" id="set-update-apply" style="display:none">
+          ${svgIcon("refresh", 14)} Update &amp; Restart
+        </button>
+        <span id="set-update-msg" class="text-sm text-pulse-muted"></span>
+      </div>
+    </div>
   `;
 
   async function saveSettings() {
@@ -5943,6 +5958,106 @@ function renderSettings() {
     msgEl.textContent = result.ok ? "Saved" : "Error saving";
     if (result.ok) setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 2000);
   });
+
+  // ── Software Update ──
+  const upCheckBtn = document.getElementById("set-update-check");
+  const upApplyBtn = document.getElementById("set-update-apply");
+  const upMsg = document.getElementById("set-update-msg");
+  let upLatest = null, upCurrent = null;
+
+  upCheckBtn?.addEventListener("click", async () => {
+    upCheckBtn.disabled = true;
+    upApplyBtn.style.display = "none";
+    upMsg.textContent = "Checking…";
+    try {
+      const r = await api("/api/update/check");
+      upCurrent = r.current || null;
+      if (r.error) {
+        upMsg.textContent = r.error;
+      } else if (!r.managed) {
+        upMsg.textContent = r.note || "Updates are managed externally on this install.";
+      } else if (r.updateAvailable) {
+        upLatest = r.latest;
+        upMsg.innerHTML = `Update available: <strong>${esc(r.latest)}</strong> <span class="text-pulse-muted">(installed ${esc(r.current)})</span>`;
+        upApplyBtn.style.display = "";
+      } else {
+        upMsg.textContent = `You're on the latest build (${esc(r.current)}).`;
+      }
+    } catch (e) {
+      upMsg.textContent = "Couldn't check for updates.";
+    } finally {
+      upCheckBtn.disabled = false;
+    }
+  });
+
+  upApplyBtn?.addEventListener("click", async () => {
+    if (!confirm(`Download and install ${upLatest}?\n\nPulse will restart and this page will reload automatically.`)) return;
+    upApplyBtn.disabled = true;
+    upCheckBtn.disabled = true;
+    upMsg.textContent = "Starting update…";
+    try {
+      const r = await apiPost("/api/update/apply", {});
+      if (!r.ok) {
+        upMsg.textContent = r.error || "Update couldn't start.";
+        upApplyBtn.disabled = false;
+        upCheckBtn.disabled = false;
+        return;
+      }
+      _showUpdateOverlay(upLatest);
+      _pollForRestart(upCurrent);
+    } catch (e) {
+      upMsg.textContent = "Update couldn't start.";
+      upApplyBtn.disabled = false;
+      upCheckBtn.disabled = false;
+    }
+  });
+}
+
+// ── Software Update helpers (module scope so they survive a re-render) ──
+function _showUpdateOverlay(tag) {
+  let el = document.getElementById("pulse-update-overlay");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "pulse-update-overlay";
+    el.className = "update-overlay";
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `
+    <div class="update-overlay-box">
+      <div class="update-spinner" aria-hidden="true"></div>
+      <div class="update-overlay-title">Updating Pulse${tag ? " to " + esc(tag) : ""}…</div>
+      <p class="update-overlay-sub" id="update-overlay-sub">Pulse is restarting. This page reloads automatically once it's back — usually under a minute.</p>
+    </div>`;
+  el.style.display = "flex";
+}
+
+function _pollForRestart(currentVer) {
+  let sawDown = false;
+  const startedAt = Date.now();
+  const tick = async () => {
+    if (Date.now() - startedAt > 180000) {
+      const sub = document.getElementById("update-overlay-sub");
+      if (sub) sub.textContent = "This is taking longer than expected. If Pulse doesn't come back on its own, relaunch it from the desktop shortcut.";
+      return;
+    }
+    try {
+      const res = await fetch("/api/version", { cache: "no-store" });
+      if (res.ok) {
+        let changed = false;
+        try {
+          const d = await res.json();
+          changed = !!(currentVer && d && d.version && d.version !== currentVer);
+        } catch (_) {}
+        if (sawDown || changed) { location.reload(); return; }
+      } else {
+        sawDown = true;
+      }
+    } catch (e) {
+      sawDown = true;
+    }
+    setTimeout(tick, 2000);
+  };
+  setTimeout(tick, 3000);
 }
 
 // ── About ────────────────────────────────────────────────────
