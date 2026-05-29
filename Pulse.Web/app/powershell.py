@@ -125,6 +125,45 @@ def _cache_key(script_name: str, args: Optional[dict], timeout: int) -> tuple:
     return (script_name, arg_items, timeout)
 
 
+def _extract_json(text: str):
+    """Parse JSON from script stdout, tolerating leading non-JSON noise.
+
+    Every Pulse PS script is supposed to emit exactly one compressed JSON
+    object as its final stdout line. In practice a script can leak content
+    ahead of that — a PowerShell warning/verbose record that escaped
+    redirection, a module-load banner, a stray Write-Output. A naive
+    json.loads(whole_blob) then fails and we lose otherwise-good data.
+
+    Strategy, cheapest first:
+      1. Parse the whole (stripped) string.
+      2. Scan lines from the end for the first that parses as a JSON
+         object/array — recovers the canonical "JSON on the last line" case.
+      3. Substring from first '{' to last '}' as a last resort.
+    Returns the parsed object, or None if nothing parses.
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    for line in reversed(text.splitlines()):
+        candidate = line.strip()
+        if candidate[:1] in ("{", "["):
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
 async def run_ps(
     script_name: str, args: Optional[dict] = None, timeout: int = 30
 ) -> dict:
@@ -247,14 +286,52 @@ async def _run_ps_inner(script_name, args, timeout, task_id, cancel_evt):
         ms = (time.monotonic() - t0) * 1000
         output = stdout.decode("utf-8", errors="replace").strip()
         stderr_text = stderr.decode("utf-8", errors="replace").strip()
+        exit_code = proc.returncode
 
+        # ── Empty stdout ─────────────────────────────────────────
+        # The script died before emitting JSON (e.g. Add-Type / COM /
+        # registry failure outside a try, missing cmdlet, early exit).
+        # The reason is almost always in stderr — surface it instead of
+        # the old useless "No output" so the field tester sees WHY.
         if not output:
-            _log(script_name, ms, "error", "no output", 0)
-            return {"error": True, "message": f"No output from {script_name}"}
+            detail = (f"no stdout; exit={exit_code}; stderr: {stderr_text[:200]}"
+                      if stderr_text else f"no stdout, no stderr; exit={exit_code}")
+            _log(script_name, ms, "error", detail, 0)
+            if stderr_text:
+                msg = f"{script_name} produced no output. PowerShell error: {stderr_text[:500]}"
+            else:
+                msg = (f"{script_name} produced no output and no error text "
+                       f"(exit code {exit_code}). The script may have failed to start "
+                       f"or exited before emitting JSON.")
+            return {
+                "error": True,
+                "message": msg,
+                "stderr": stderr_text[:2000] or None,
+                "exitCode": exit_code,
+            }
 
-        result = json.loads(output)
-        detail = stderr_text[:200] if stderr_text else "ok"
-        _log(script_name, ms, "ok", detail, len(output))
+        # ── Parse (tolerant of leading noise) ────────────────────
+        result = _extract_json(output)
+        if result is None:
+            snippet = output[:200].replace("\n", " ")
+            _log(script_name, ms, "error", f"unparseable stdout; head: {snippet}")
+            return {
+                "error": True,
+                "message": (f"Invalid JSON from {script_name}. "
+                            f"Output started with: {output[:300]}"),
+                "stderr": stderr_text[:2000] or None,
+                "rawHead": output[:500],
+                "exitCode": exit_code,
+            }
+
+        # Recovered from noisy stdout? Log a warning so we notice the script
+        # is leaking non-JSON, but still return the good data.
+        recovered = output[:1] not in ("{", "[")
+        if recovered:
+            _log(script_name, ms, "warn", "recovered JSON from noisy stdout", len(output))
+        else:
+            detail = stderr_text[:200] if stderr_text else "ok"
+            _log(script_name, ms, "ok", detail, len(output))
         return result
 
     except asyncio.TimeoutError:
@@ -265,11 +342,6 @@ async def _run_ps_inner(script_name, args, timeout, task_id, cancel_evt):
             pass
         _log(script_name, ms, "timeout", f"after {timeout}s")
         return {"error": True, "message": f"Timeout after {timeout}s: {script_name}"}
-
-    except json.JSONDecodeError as e:
-        ms = (time.monotonic() - t0) * 1000
-        _log(script_name, ms, "error", f"invalid JSON: {e}")
-        return {"error": True, "message": f"Invalid JSON from {script_name}: {e}"}
 
     except FileNotFoundError:
         ms = (time.monotonic() - t0) * 1000
