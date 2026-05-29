@@ -23,8 +23,17 @@ set "EXTRACT=%TEMP%\pulse-extract"
 set "RESOLVE_OUT=%TEMP%\pulse-resolve.txt"
 
 echo.
-echo   Pulse  -  VPU Diagnostics
-echo   --------------------------------------------------------
+echo  .-----------------------------------------------------.
+echo  ^|                                                     ^|
+echo  ^| __________ ____ ___.____       ____________________ ^|
+echo  ^| \______   \    ^|   \    ^|     /   _____/\_   _____/ ^|
+echo  ^|  ^|     ___/    ^|   /    ^|     \_____  \  ^|    __)_  ^|
+echo  ^|  ^|    ^|   ^|    ^|  /^|    ^|___  /        \ ^|        \ ^|
+echo  ^|  ^|____^|   ^|______/ ^|_______ \/_______  //_______  / ^|
+echo  ^|                       [ BETA ]                      ^|
+echo  '-----------------------------------------------------'
+echo                    VPU Diagnostics
+echo.
 echo   Channel : beta
 echo   Install : %INSTALL_DIR%
 echo.
