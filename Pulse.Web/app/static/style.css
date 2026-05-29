@@ -475,6 +475,12 @@ html.dark .splash-logo {
     max-height: 220px;
     overflow-y: auto;
 }
+/* Separates severity groups (critical cluster vs warning cluster). */
+.cc-findings-divider {
+    height: 1px;
+    background: var(--c-border);
+    margin: 6px 10px;
+}
 .cc-findings-overflow {
     margin-top: 0.5rem;
     padding: 0.4rem 0.6rem;

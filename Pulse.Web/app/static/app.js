@@ -879,12 +879,23 @@ function renderDashboard() {
       ].filter(Boolean).join(`<span class="cc-sev-sep">·</span>`)
     : `<span class="cc-sev-ok">All Clear</span>`;
 
-  // Findings are now shown in a single consolidated list in the Command
-  // Center. Cap at 10 to keep the panel from sprawling; if more exist,
-  // surface a "+N more" hint that drills into the relevant tab.
+  // Findings are shown in a single consolidated list, grouped by severity
+  // (critical first, then warning, then info) — the natural triage order.
+  // The sort is stable, so each group keeps its original ordering.
+  // Cap at 10 to keep the panel from sprawling; surface a "+N more" hint
+  // when there are more.
+  const _SEV_RANK = { critical: 0, error: 0, warning: 1, warn: 1, info: 2 };
+  const sortedFindings = findings
+    .map((f, i) => [f, i])  // decorate with index for a stable sort
+    .sort((a, b) => {
+      const ra = _SEV_RANK[(a[0].severity || "").toLowerCase()] ?? 3;
+      const rb = _SEV_RANK[(b[0].severity || "").toLowerCase()] ?? 3;
+      return ra !== rb ? ra - rb : a[1] - b[1];
+    })
+    .map((pair) => pair[0]);
   const _MAX_FINDINGS_INLINE = 10;
-  const visibleFindings = findings.slice(0, _MAX_FINDINGS_INLINE);
-  const overflowCount = Math.max(0, findings.length - _MAX_FINDINGS_INLINE);
+  const visibleFindings = sortedFindings.slice(0, _MAX_FINDINGS_INLINE);
+  const overflowCount = Math.max(0, sortedFindings.length - _MAX_FINDINGS_INLINE);
   const subsystems = _subsystemHealth(findings);
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -960,13 +971,20 @@ function renderDashboard() {
           </div>
           <div class="cc-findings-list">
             ${visibleFindings.length
-              ? visibleFindings.map((f) => `
+              ? visibleFindings.map((f, i) => {
+                  // Thin divider whenever the severity group changes, so the
+                  // critical/warning clusters read as distinct groups.
+                  const prev = visibleFindings[i - 1];
+                  const groupBreak = i > 0 && prev.severity !== f.severity
+                    ? `<div class="cc-findings-divider"></div>` : "";
+                  return groupBreak + `
                 <a class="finding-item" href="#${esc(_findingPageFor(f.category))}" onclick="event.preventDefault();navigate('${esc(_findingPageFor(f.category))}')" title="${esc(f.category)} — opens the ${esc(f.category)} tab">
                   <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
                   <span class="finding-cat finding-cat-${esc(f.severity)}">[${esc((f.severity || "").toUpperCase())}]</span>
                   <span class="finding-title">${esc(f.title)}</span>
                   <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
-                </a>`).join("")
+                </a>`;
+                }).join("")
               : `<div class="dash-no-findings">${svgIcon("check", 16)} <span>No active findings detected.</span></div>`
             }
             ${overflowCount > 0 ? `<div class="cc-findings-overflow">+${overflowCount} more — visit the relevant tab for the full list</div>` : ""}
