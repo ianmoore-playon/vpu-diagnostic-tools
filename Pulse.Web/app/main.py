@@ -2342,10 +2342,13 @@ async def api_cameras_video_test():
     # Single-frame grab is fast: a probe + frame capture is bounded by the
     # script's own -stimeout (~6-8s) per camera. Budget ~20s/camera + margin.
     budget = 20 * len(cams) + 20
+    # use_cache=False: each click captures fresh frames — never replay a
+    # cached snapshot from a previous request.
     return await run_ps(
         "Test-CameraVideo.ps1",
         {"CameraIps": ips, "Labels": labels},
         timeout=budget,
+        use_cache=False,
     )
 
 

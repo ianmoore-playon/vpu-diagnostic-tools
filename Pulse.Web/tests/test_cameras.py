@@ -9,6 +9,7 @@ and finding logic that's easy to break silently when sessions edit
 main.py. Pure functions only.
 """
 
+import asyncio
 import os
 import sys
 import time
@@ -19,6 +20,7 @@ if _APP_DIR not in sys.path:
     sys.path.insert(0, _APP_DIR)
 
 import main  # noqa: E402
+import powershell  # noqa: E402
 
 
 def _port(name, mac, status="Up", speed=1000, rx=1, arp=None):
@@ -215,6 +217,22 @@ class TestCameraDropFinding(unittest.TestCase):
         ports = _enrich(empty)
         findings = main._compute_camera_findings(ports)
         self.assertFalse(any("camera dropped" in f["title"].lower() for f in findings))
+
+
+class TestRunPsCacheBypass(unittest.TestCase):
+    """run_ps(use_cache=False) must always run fresh — frame grabs can't
+    replay a 25s-old cached snapshot."""
+
+    def setUp(self):
+        powershell._RESULT_CACHE.clear()
+
+    def test_cached_run_populates_cache(self):
+        asyncio.run(powershell.run_ps("Test-NtpDrift.ps1"))
+        self.assertGreaterEqual(len(powershell._RESULT_CACHE), 1)
+
+    def test_no_cache_run_skips_cache(self):
+        asyncio.run(powershell.run_ps("Test-NtpDrift.ps1", use_cache=False))
+        self.assertEqual(len(powershell._RESULT_CACHE), 0)
 
 
 if __name__ == "__main__":

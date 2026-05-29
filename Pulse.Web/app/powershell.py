@@ -165,23 +165,34 @@ def _extract_json(text: str):
 
 
 async def run_ps(
-    script_name: str, args: Optional[dict] = None, timeout: int = 30
+    script_name: str, args: Optional[dict] = None, timeout: int = 30,
+    use_cache: bool = True,
 ) -> dict:
+    """Run a PowerShell script and return its parsed JSON.
+
+    use_cache=False bypasses the result cache and in-flight dedup entirely,
+    so the script always runs fresh. Used for point-in-time captures (e.g.
+    camera frame grabs) where a 25s-old cached result would be wrong — a
+    second 'Get Camera Frames' click must capture new frames, not replay
+    the previous ones.
+    """
     key = _cache_key(script_name, args, timeout)
 
-    # 1. Fresh cached result? Return it immediately — no semaphore, no PS.
-    entry = _RESULT_CACHE.get(key)
-    if entry and entry[0] > time.monotonic():
-        return entry[1]
+    if use_cache:
+        # 1. Fresh cached result? Return it immediately — no semaphore, no PS.
+        entry = _RESULT_CACHE.get(key)
+        if entry and entry[0] > time.monotonic():
+            return entry[1]
 
-    # 2. Same script already running? Await its future instead of duplicating.
-    inflight = _INFLIGHT.get(key)
-    if inflight and not inflight.done():
-        return await inflight
+        # 2. Same script already running? Await its future instead of duplicating.
+        inflight = _INFLIGHT.get(key)
+        if inflight and not inflight.done():
+            return await inflight
 
-    # 3. Cache miss + no in-flight call — actually invoke PowerShell.
+    # 3. Cache miss (or cache bypassed) — actually invoke PowerShell.
     future: asyncio.Future = asyncio.get_event_loop().create_future()
-    _INFLIGHT[key] = future
+    if use_cache:
+        _INFLIGHT[key] = future
 
     task_id = uuid.uuid4().hex[:8]
     t0 = time.monotonic()
@@ -197,7 +208,7 @@ async def run_ps(
         async with _get_semaphore():
             result = await _run_ps_inner(script_name, args, timeout, task_id, cancel_evt)
         # Only cache successful results. Errors should retry on next call.
-        if isinstance(result, dict) and not result.get("error"):
+        if use_cache and isinstance(result, dict) and not result.get("error"):
             _RESULT_CACHE[key] = (time.monotonic() + _RESULT_TTL, result)
         future.set_result(result)
         return result
