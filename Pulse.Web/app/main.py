@@ -911,8 +911,8 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "title": "WiFi adapter connected — VPUs should use wired network only",
                     "recommendation": (
                         f"Active Wi-Fi interface detected: {names}{ssid_str}. "
-                        f"Disable the wireless radio in Device Manager or via Settings → Network. "
-                        f"VPUs are wired-only by design; an active Wi-Fi adapter causes unpredictable routing."
+                        f"Disconnect from Wi-Fi and connect the VPU to the network over Ethernet instead. "
+                        f"Wi-Fi connections can introduce latency and packet loss that disrupt streaming."
                     ),
                 }
             )

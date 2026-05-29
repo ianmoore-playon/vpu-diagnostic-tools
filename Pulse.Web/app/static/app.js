@@ -1900,7 +1900,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     issues.push({
       severity: "warning",
       title: wifiActive.length + " Wi-Fi adapter(s) active — VPUs should use wired network only",
-      body: "Disable the wireless radio in Device Manager or Settings. An active Wi-Fi interface can cause unpredictable routing and break streaming.",
+      body: "Disconnect from Wi-Fi and connect the VPU to the network over Ethernet instead. Wi-Fi connections can introduce latency and packet loss that disrupt streaming.",
       details: wifiActive.map(function(a) {
         var label = a.interfaceDescription || a.name || "Wi-Fi";
         var ssidPart = a.ssid ? " — SSID: " + a.ssid : "";
