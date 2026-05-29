@@ -2559,7 +2559,8 @@ function renderNetwork() {
         <div class="net-sub-card">
           <div class="net-sub-heading">UDP ports <span class="net-proto-badge net-proto-udp">UDP</span></div>
           ${udpPorts.length
-            ? `<div class="port-grid">${groupPorts(udpPorts).map(renderPortGroup).join("")}</div>`
+            ? `<div class="port-grid">${groupPorts(udpPorts).map(renderPortGroup).join("")}</div>
+               <p class="net-udp-note">UDP is connectionless: DNS (53) and NTP (123) are confirmed by a real protocol reply. Other ports report <strong>pass</strong> when no block is detected — a stateless probe can't always confirm the service is listening.</p>`
             : '<p class="text-pulse-muted text-sm mt-2">No UDP port results</p>'}
         </div>
       </div>
@@ -2747,6 +2748,7 @@ function renderNetwork() {
           </div>
         </div>
         <p class="text-pulse-muted text-sm">Captures TCP packet headers using Windows pktmon (ports 443, 1935, 80, UDP 2088). Analyzes retransmissions, resets, and drops.</p>
+        <p class="net-capture-admin-note">${svgIcon("shield", 12)} Requires Pulse to be running as administrator.</p>
         <div id="net-capture-results"></div>
       </div>
 

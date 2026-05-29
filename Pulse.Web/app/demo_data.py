@@ -319,13 +319,13 @@ DEMO = {
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1405, "protocol": "TCP", "status": "fail", "optional": True},
         ]
     },
-    "Test-NtpDrift.ps1": lambda **kw: {"offsetSeconds": round(random.uniform(-0.3, 0.5), 3), "status": "ok", "source": "time.windows.com"},
+    "Test-NtpDrift.ps1": lambda **kw: {"offsetSeconds": round(random.uniform(-0.3, 0.5), 3), "status": "ok", "source": "0.us.pool.ntp.org", "configuredSource": "0.us.pool.ntp.org", "networkSynced": True},
     "Get-NtpPeers.ps1": lambda **kw: {
         "status": {
-            "source": "time.windows.com",
-            "sourceIp": "13.86.101.172",
-            "stratum": 3,
-            "stratumText": "3 (secondary reference - syncd by (S)NTP)",
+            "source": "0.us.pool.ntp.org",
+            "sourceIp": "23.186.168.130",
+            "stratum": 2,
+            "stratumText": "2 (secondary reference - syncd by (S)NTP)",
             "lastSync": (datetime.now() - timedelta(minutes=12)).strftime("%-m/%-d/%Y %-I:%M:%S %p"),
             "leapIndicator": "0(no warning)",
             "rootDelay": "0.0445007s",
@@ -334,12 +334,12 @@ DEMO = {
         },
         "peers": [
             {
-                "name": "time.windows.com",
+                "name": "0.us.pool.ntp.org",
                 "state": "Active",
                 "timeRemaining": "534.1234567s",
                 "mode": "3 (Client)",
-                "stratum": 3,
-                "stratumText": "3 (secondary reference - syncd by (S)NTP)",
+                "stratum": 2,
+                "stratumText": "2 (secondary reference - syncd by (S)NTP)",
                 "peerPollInterval": "10 (1024s)",
                 "hostPollInterval": "10 (1024s)",
                 "lastSyncTimestamp": (datetime.now() - timedelta(minutes=12)).strftime("%-m/%-d/%Y %-I:%M:%S %p"),

@@ -54,14 +54,16 @@ try {
             # Only adapters that are Up can be on a Wi-Fi network. Get-NetConnectionProfile
             # returns "NoTraffic" / "LocalNetwork" / "Internet" for ipv4Connectivity, which
             # is the signal we surface to the tech.
+            # $profile is a PowerShell automatic variable (profile script path);
+            # use $connProfile to avoid shadowing it.
             try {
-                $profile = Get-NetConnectionProfile -InterfaceAlias $a.Name -ErrorAction Stop
-                if ($profile) {
+                $connProfile = Get-NetConnectionProfile -InterfaceAlias $a.Name -ErrorAction Stop
+                if ($connProfile) {
                     $detail.connected        = $true
-                    $detail.ssid             = $profile.Name
-                    $detail.networkCategory  = "$($profile.NetworkCategory)"
-                    $detail.ipv4Connectivity = "$($profile.IPv4Connectivity)"
-                    $detail.ipv6Connectivity = "$($profile.IPv6Connectivity)"
+                    $detail.ssid             = $connProfile.Name
+                    $detail.networkCategory  = "$($connProfile.NetworkCategory)"
+                    $detail.ipv4Connectivity = "$($connProfile.IPv4Connectivity)"
+                    $detail.ipv6Connectivity = "$($connProfile.IPv6Connectivity)"
                 }
             }
             catch { }  # Up but not on a profile — leave connected=false

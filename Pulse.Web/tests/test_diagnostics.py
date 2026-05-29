@@ -277,5 +277,80 @@ class TestExtractJson(unittest.TestCase):
         self.assertEqual(powershell._extract_json('[1, 2, 3]'), [1, 2, 3])
 
 
+# ── NTP source allowlist (PDF #9) ────────────────────────────
+class TestNtpAllowlist(unittest.TestCase):
+    def test_canonical_sources_approved(self):
+        for s in ("0.us.pool.ntp.org", "1.us.pool.ntp.org",
+                  "2.us.pool.ntp.org", "3.us.pool.ntp.org"):
+            self.assertTrue(main._is_approved_ntp_source(s), s)
+
+    def test_case_and_whitespace_tolerant(self):
+        self.assertTrue(main._is_approved_ntp_source("2.US.POOL.NTP.ORG"))
+        self.assertTrue(main._is_approved_ntp_source("  0.us.pool.ntp.org  "))
+
+    def test_any_us_pool_subdomain_approved(self):
+        # The four canonical names are aliases into the same pool.
+        self.assertTrue(main._is_approved_ntp_source("custom.us.pool.ntp.org"))
+
+    def test_off_pool_sources_rejected(self):
+        for s in ("time.windows.com", "time.nist.gov", "pool.ntp.org",
+                  "Local CMOS Clock", "", None):
+            self.assertFalse(main._is_approved_ntp_source(s), s)
+
+
+# ── Demo-data contract (catches demo-vs-real drift) ──────────
+class TestDemoDataContract(unittest.TestCase):
+    """Every PowerShell script the backend invokes via run_ps must have a
+    demo-mode entry, or demo mode silently returns null for that section
+    on a non-Windows host. This is the class of bug behind the earlier
+    Get-NetworkHealth `remoteHost` mismatch."""
+
+    # Scripts referenced by main.py that intentionally have no demo entry yet.
+    # Keep this minimal — each entry is a known gap. Remove an entry once its
+    # demo data lands (test_exempt_list_has_no_stale_entries enforces that).
+    _DEMO_EXEMPT = {
+        # Owned by the ScoreConnect session — demo entries pending.
+        "Get-Sc3InstallStatus.ps1",
+        "Install-ScoreConnectIII.ps1",
+    }
+
+    def _referenced_scripts(self):
+        import re
+        with open(os.path.join(_APP_DIR, "main.py"), encoding="utf-8") as f:
+            src = f.read()
+        return set(re.findall(r'run_ps\(\s*"([^"]+\.ps1)"', src))
+
+    def test_every_referenced_script_has_demo(self):
+        import demo_data
+        referenced = self._referenced_scripts()
+        missing = referenced - set(demo_data.DEMO) - self._DEMO_EXEMPT
+        self.assertEqual(
+            missing, set(),
+            f"Scripts invoked by main.py with no demo_data entry — demo mode "
+            f"returns null for these: {sorted(missing)}",
+        )
+
+    def test_exempt_list_has_no_stale_entries(self):
+        # If an exempt script gained a demo entry, drop it from the exempt set
+        # so the contract stays honest.
+        import demo_data
+        stale = self._DEMO_EXEMPT & set(demo_data.DEMO)
+        self.assertEqual(
+            stale, set(),
+            f"In _DEMO_EXEMPT but now have demo entries — remove them: {sorted(stale)}",
+        )
+
+    def test_demo_entries_callable_and_serializable(self):
+        # A demo lambda that raises or returns non-JSON would break demo mode
+        # for that section. Each must run with no args and serialize cleanly.
+        import json
+        import demo_data
+        for name, fn in demo_data.DEMO.items():
+            with self.subTest(script=name):
+                result = fn()
+                self.assertIsInstance(result, (dict, list), name)
+                json.dumps(result, default=str)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

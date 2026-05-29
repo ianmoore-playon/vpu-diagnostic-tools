@@ -21,12 +21,17 @@ param()
 $ErrorActionPreference = 'Stop'
 
 function Invoke-W32tm {
-    param([string]$Argument)
+    # Pass each w32tm token as a separate argument. A single string like
+    # "/query /status" is handed to the native exe as ONE argument by
+    # PowerShell (it doesn't re-split on spaces), which w32tm rejects — so
+    # the args must arrive pre-split and be splatted with @.
+    param([string[]]$Arguments)
     # Run with a hard timeout so a broken NTP config doesn't hang the script.
+    # The unary comma keeps the array intact as a single -ArgumentList item.
     $job = Start-Job -ScriptBlock {
-        param($arg)
-        & w32tm $arg 2>&1 | Out-String
-    } -ArgumentList $Argument
+        param($wargs)
+        & w32tm @wargs 2>&1 | Out-String
+    } -ArgumentList (, $Arguments)
     $done = Wait-Job -Job $job -Timeout 5
     $out = if ($done) { (Receive-Job -Job $job).Trim() } else { Stop-Job -Job $job; '' }
     Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
@@ -53,9 +58,11 @@ function Get-Stratum {
 
 try {
     # ── /query /status ───────────────────────────────────────────
-    $statusRaw = Invoke-W32tm '/query /status'
+    $statusRaw = Invoke-W32tm @('/query', '/status')
 
+    # "Source: time.windows.com,0x9" — strip the trailing ,0x.. config flag.
     $source        = Get-Field $statusRaw 'Source'
+    if ($source) { $source = ($source -replace ',0x[0-9A-Fa-f]+\s*$', '').Trim() }
     $stratumRaw    = Get-Field $statusRaw 'Stratum'
     $stratum       = Get-Stratum $stratumRaw
     $lastSync      = Get-Field $statusRaw 'Last Successful Sync Time'
@@ -88,7 +95,7 @@ try {
     }
 
     # ── /query /peers ────────────────────────────────────────────
-    $peersRaw = Invoke-W32tm '/query /peers'
+    $peersRaw = Invoke-W32tm @('/query', '/peers')
 
     # Each peer block starts with "Peer: <name>". Split on that header but
     # keep the header line attached to its block via a lookahead split.

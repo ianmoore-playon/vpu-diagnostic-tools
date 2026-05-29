@@ -1306,6 +1306,26 @@ html.dark .splash-logo {
 .port-card-host { font-size: 0.65rem; font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; color: var(--c-dim); }
 .port-card-opt { font-size: 0.6rem; color: var(--c-dimmer); font-style: italic; }
 
+/* Honest caveat under the UDP port column re: connectionless semantics. */
+.net-udp-note {
+    margin-top: 0.6rem;
+    font-size: 0.66rem;
+    line-height: 1.45;
+    color: var(--c-dim);
+}
+.net-udp-note strong { color: var(--c-muted); font-weight: 600; }
+
+/* "Requires administrator" note on the Packet Capture card. */
+.net-capture-admin-note {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 0.5rem;
+    font-size: 0.7rem;
+    color: var(--c-dim);
+    font-style: italic;
+}
+
 /* Multi-host port card — used when several endpoints share one protocol/port (e.g. TCP/443) */
 .port-card-multi {
     grid-column: span 2;
