@@ -2811,7 +2811,57 @@ function _camNicDiagramHtml(ports, showLiveBadge) {
   return nicHeader + '<div class="nic-diagram-wrap">' +
     '<div class="nic-diagram-ports">' + portIcons + '</div>' +
     '<div class="nic-diagram-legend">' + legend + '</div>' +
+    _camOrientationPanelHtml() +
   '</div>' + note;
+}
+
+// Supplemental "which way is the VPU sitting?" reference, shown beside the
+// port diagram. Field techs were confused that "Port 4 is leftmost" depends
+// on how the HP Z2 tower is mounted (upright vs on its side), which rotates
+// the PCIe NIC bracket. Shows the chassis in both orientations with the
+// camera (POE) port bank highlighted — it sits just above the AC power
+// inlet on the back, which is the orientation-independent anchor.
+function _camOrientationPanelHtml() {
+  // Upright tower, viewed from the back: POE bank is a horizontal row above
+  // the round AC power inlet.
+  var upright =
+    '<svg viewBox="0 0 64 96" width="58" height="86" class="orient-svg">' +
+      '<rect x="12" y="4" width="40" height="86" rx="4" class="orient-chassis"/>' +
+      '<rect x="18" y="11" width="28" height="4" rx="1" class="orient-io"/>' +
+      '<rect x="34" y="19" width="12" height="4" rx="1" class="orient-io"/>' +
+      '<rect x="14" y="58" width="36" height="15" rx="2" class="orient-portbank"/>' +
+      '<rect x="18" y="62" width="6" height="7" class="orient-port"/>' +
+      '<rect x="26" y="62" width="6" height="7" class="orient-port"/>' +
+      '<rect x="34" y="62" width="6" height="7" class="orient-port"/>' +
+      '<rect x="42" y="62" width="6" height="7" class="orient-port"/>' +
+      '<circle cx="32" cy="82" r="4" class="orient-ac"/>' +
+    '</svg>';
+  // Same tower laid on its side: the bank becomes a vertical column, AC inlet
+  // beside it.
+  var onside =
+    '<svg viewBox="0 0 96 64" width="86" height="58" class="orient-svg">' +
+      '<rect x="4" y="12" width="86" height="40" rx="4" class="orient-chassis"/>' +
+      '<rect x="11" y="18" width="4" height="28" rx="1" class="orient-io"/>' +
+      '<rect x="19" y="18" width="4" height="12" rx="1" class="orient-io"/>' +
+      '<rect x="55" y="14" width="15" height="36" rx="2" class="orient-portbank"/>' +
+      '<rect x="59" y="18" width="7" height="6" class="orient-port"/>' +
+      '<rect x="59" y="26" width="7" height="6" class="orient-port"/>' +
+      '<rect x="59" y="34" width="7" height="6" class="orient-port"/>' +
+      '<rect x="59" y="42" width="7" height="6" class="orient-port"/>' +
+      '<circle cx="82" cy="32" r="4" class="orient-ac"/>' +
+    '</svg>';
+  return '<div class="nic-orient-panel">' +
+    '<div class="nic-orient-title">VPU orientation</div>' +
+    '<div class="orient-figs">' +
+      '<div class="orient-fig">' + upright + '<div class="orient-fig-label">Standing upright</div></div>' +
+      '<div class="orient-fig">' + onside + '<div class="orient-fig-label">On its side</div></div>' +
+    '</div>' +
+    '<div class="orient-caption">' +
+      'The 4 camera ports (POE) are the row just above the round <strong>AC power inlet</strong> on the back. ' +
+      'They map Port 4 → Port 1 as shown left. ' +
+      '<strong>Tip:</strong> a lit link light on a jack matches the linked port above — use it to confirm regardless of mounting.' +
+    '</div>' +
+  '</div>';
 }
 
 // Force a fresh camera probe — clears the backend CGI cache and re-polls.

@@ -1342,7 +1342,43 @@ html.dark .splash-logo {
     justify-content: center;
     gap: 24px;
     padding: 28px 24px;
+    flex-wrap: wrap;
 }
+
+/* VPU orientation reference panel (beside the port diagram) */
+.nic-orient-panel {
+    max-width: 280px;
+    padding: 12px 14px;
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    background: var(--c-surface);
+    align-self: stretch;
+}
+.nic-orient-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--c-muted);
+    margin-bottom: 8px;
+}
+.orient-figs {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 10px;
+}
+.orient-fig { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.orient-fig-label { font-size: 0.62rem; font-weight: 600; color: var(--c-muted); }
+.orient-svg { display: block; }
+.orient-chassis { fill: var(--c-surface-2, rgba(148,163,184,0.08)); stroke: var(--c-dim); stroke-width: 1.5; }
+.orient-io { fill: var(--c-dimmer); }
+.orient-portbank { fill: rgba(59,130,246,0.12); stroke: #3b82f6; stroke-width: 1; }
+.orient-port { fill: #3b82f6; }
+.orient-ac { fill: none; stroke: var(--c-dim); stroke-width: 1.5; }
+.orient-caption { font-size: 0.66rem; line-height: 1.5; color: var(--c-muted); }
+.orient-caption strong { color: var(--c-text); font-weight: 600; }
 .nic-diagram-ports {
     display: flex;
     gap: 48px;
