@@ -2137,14 +2137,18 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
         }),
       });
     }
-    var mismatches = (dnsResolution.results || []).filter(function(r) { return r.discrepancy === "mismatch"; });
-    if (mismatches.length) {
+    // Only a redirect (system DNS returns a private/internal IP while Google
+    // returns a public one) is worth flagging — that's a captive portal or
+    // SSL-inspection proxy. Two different *public* IPs are normal CDN/GeoDNS
+    // load balancing and are intentionally NOT flagged.
+    var redirects = (dnsResolution.results || []).filter(function(r) { return r.discrepancy === "redirect"; });
+    if (redirects.length) {
       issues.push({
         severity: "warning",
-        title: mismatches.length + " domain(s) resolve to different IPs via system vs Google DNS",
-        body: "Could indicate a captive portal, school filter, or internal mirror. Verify the resolved IP matches Pixellot's expected ranges.",
-        details: mismatches.map(function(r) {
-          return r.host + " — system: " + r.system.resolvedTo + "; google: " + r.google.resolvedTo;
+        title: redirects.length + " domain(s) redirected by the local DNS to an internal IP",
+        body: "The configured resolver returned a private/internal address where Google DNS returned a public one — typically a captive portal or SSL-inspection proxy. Pixellot traffic may be intercepted. Have the venue bypass inspection for these hosts.",
+        details: redirects.map(function(r) {
+          return r.host + " — system: " + r.system.resolvedTo + " (internal); google: " + r.google.resolvedTo;
         }),
       });
     }
@@ -2317,9 +2321,9 @@ function _netDnsResolutionCard(dnsResolution, cfg) {
         if (r.discrepancy === "system-blocked") {
           rowCls = "net-dns-row-bad";
           note = '<span class="net-dns-note status-fail">School DNS blocking Pixellot</span>';
-        } else if (r.discrepancy === "mismatch") {
+        } else if (r.discrepancy === "redirect") {
           rowCls = "net-dns-row-warn";
-          note = '<span class="net-dns-note status-warn">IPs differ — possible DNS rewrite</span>';
+          note = '<span class="net-dns-note status-warn">Redirected to internal IP</span>';
         }
         return '<tr class="' + rowCls + '">' +
           '<td class="font-mono text-xs">' + esc(r.host) + '</td>' +

@@ -387,33 +387,28 @@ DEMO = {
             },
         ],
     },
+    # Raw resolution rows only — the backend (_classify_dns_row) decides what
+    # counts as a discrepancy. The pixellot/CDN rows return *different public*
+    # IPs (the real screenshot values) which is benign CDN/GeoDNS balancing
+    # and must NOT warn; www.pixellot.tv is system-blocked (a real finding).
     "Test-DnsResolution.ps1": lambda **kw: {
         "googleServer": "8.8.8.8",
-        "systemBlockedCount": 1,
-        "mismatchCount": 0,
         "results": [
-            # Hostname that intentionally trips the system-blocked case so the
-            # finding + UI variant are visible in demo mode.
             {"host": "www.pixellot.tv",
-             "system": {"resolvedTo": None,           "status": "fail", "resolutionMs": round(random.uniform(2000, 3000), 1), "error": "No such host is known."},
-             "google": {"resolvedTo": "52.20.181.44", "status": "pass", "resolutionMs": round(random.uniform(8, 20), 1),       "error": None},
-             "discrepancy": "system-blocked"},
+             "system": {"resolvedTo": None,             "status": "fail", "resolutionMs": round(random.uniform(2000, 3000), 1), "error": "No such host is known."},
+             "google": {"resolvedTo": "52.1.53.61",     "status": "pass", "resolutionMs": round(random.uniform(8, 20), 1),       "error": None}},
             {"host": "pixellot.tv",
-             "system": {"resolvedTo": "52.20.181.44", "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
-             "google": {"resolvedTo": "52.20.181.44", "status": "pass", "resolutionMs": round(random.uniform(8, 16), 1),  "error": None},
-             "discrepancy": None},
+             "system": {"resolvedTo": "52.44.182.199",  "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
+             "google": {"resolvedTo": "52.1.53.61",     "status": "pass", "resolutionMs": round(random.uniform(8, 16), 1),  "error": None}},
             {"host": "software.pixellot.tv",
-             "system": {"resolvedTo": "52.20.181.45", "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
-             "google": {"resolvedTo": "52.20.181.45", "status": "pass", "resolutionMs": round(random.uniform(8, 16), 1),  "error": None},
-             "discrepancy": None},
+             "system": {"resolvedTo": "143.204.160.127", "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
+             "google": {"resolvedTo": "143.204.160.99",  "status": "pass", "resolutionMs": round(random.uniform(8, 16), 1),  "error": None}},
             {"host": "nfhsnetwork.com",
-             "system": {"resolvedTo": "52.20.181.43", "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
-             "google": {"resolvedTo": "52.20.181.43", "status": "pass", "resolutionMs": round(random.uniform(8, 16), 1),  "error": None},
-             "discrepancy": None},
+             "system": {"resolvedTo": "143.204.160.62",  "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
+             "google": {"resolvedTo": "143.204.160.113", "status": "pass", "resolutionMs": round(random.uniform(8, 16), 1),  "error": None}},
             {"host": "s3.amazonaws.com",
-             "system": {"resolvedTo": "52.217.44.54", "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
-             "google": {"resolvedTo": "52.217.44.54", "status": "pass", "resolutionMs": round(random.uniform(8, 16), 1),  "error": None},
-             "discrepancy": None},
+             "system": {"resolvedTo": "16.15.254.35",   "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
+             "google": {"resolvedTo": "52.216.26.198",  "status": "pass", "resolutionMs": round(random.uniform(8, 16), 1),  "error": None}},
         ],
     },
     "Test-LocalNetwork.ps1": lambda **kw: {

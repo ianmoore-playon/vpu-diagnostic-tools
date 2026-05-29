@@ -78,41 +78,24 @@ function Resolve-Once {
     return $out
 }
 
-function Classify-Discrepancy {
-    param($Sys, $Goog)
-    # If only one resolver succeeded, the other side is the problem.
-    if ($Sys.status -eq 'pass' -and $Goog.status -ne 'pass') { return 'google-blocked' }
-    if ($Sys.status -ne 'pass' -and $Goog.status -eq 'pass') { return 'system-blocked' }
-    # Both passed but pointed at different IPs — could indicate DNS-level
-    # redirection (captive portal, school filter, internal mirror).
-    if ($Sys.status -eq 'pass' -and $Goog.status -eq 'pass' -and
-        $Sys.resolvedTo -and $Goog.resolvedTo -and
-        $Sys.resolvedTo -ne $Goog.resolvedTo) { return 'mismatch' }
-    return $null
-}
-
 try {
-    # $host is a PowerShell automatic variable — use a different name to avoid shadowing.
+    # Collect raw resolution results only. The discrepancy classification
+    # (system-blocked / redirect / benign) lives in the Python backend
+    # (_classify_dns_row) so the rule is in one tested place — telling a real
+    # DNS redirect from benign CDN/GeoDNS load balancing needs public-vs-
+    # private IP reasoning that doesn't belong in the collector.
+    # $host is a PowerShell automatic variable — use a different name.
     $results = foreach ($testHost in $testHosts) {
-        $sys  = Resolve-Once -Name $testHost
-        $goog = Resolve-Once -Name $testHost -Server '8.8.8.8'
         [ordered]@{
-            host        = $testHost
-            system      = $sys
-            google      = $goog
-            discrepancy = Classify-Discrepancy -Sys $sys -Goog $goog
+            host   = $testHost
+            system = Resolve-Once -Name $testHost
+            google = Resolve-Once -Name $testHost -Server '8.8.8.8'
         }
     }
 
-    # Aggregate flags so the UI can show a top-level "system DNS is broken" finding.
-    $systemBlocked = @($results | Where-Object { $_.discrepancy -eq 'system-blocked' }).Count
-    $mismatched    = @($results | Where-Object { $_.discrepancy -eq 'mismatch' }).Count
-
     [ordered]@{
-        googleServer    = '8.8.8.8'
-        results         = @($results)
-        systemBlockedCount = $systemBlocked
-        mismatchCount      = $mismatched
+        googleServer = '8.8.8.8'
+        results      = @($results)
     } | ConvertTo-Json -Depth 5 -Compress
 }
 catch {

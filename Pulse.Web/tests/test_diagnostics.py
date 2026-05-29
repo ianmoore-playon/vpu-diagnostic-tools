@@ -277,6 +277,66 @@ class TestExtractJson(unittest.TestCase):
         self.assertEqual(powershell._extract_json('[1, 2, 3]'), [1, 2, 3])
 
 
+# ── DNS discrepancy classification (PDF #10) ─────────────────
+class TestDnsDiscrepancy(unittest.TestCase):
+    """A real DNS redirect (system resolver returns an internal IP) must be
+    distinguished from benign CDN/GeoDNS load balancing (two different public
+    IPs) — the latter is normal and must not warn."""
+
+    def test_private_ip_detection(self):
+        for ip in ("10.0.0.5", "192.168.1.1", "172.16.4.9", "169.254.1.1",
+                   "127.0.0.1", "100.64.0.1"):
+            self.assertTrue(main._is_private_or_bogon_ip(ip), ip)
+        for ip in ("52.44.182.199", "143.204.160.127", "8.8.8.8", "1.1.1.1"):
+            self.assertFalse(main._is_private_or_bogon_ip(ip), ip)
+        for junk in ("", None, "not-an-ip", "example.com"):
+            self.assertFalse(main._is_private_or_bogon_ip(junk), junk)
+
+    def _row(self, sys_ip, sys_status, goog_ip, goog_status):
+        return ({"resolvedTo": sys_ip, "status": sys_status},
+                {"resolvedTo": goog_ip, "status": goog_status})
+
+    def test_cdn_different_public_ips_is_benign(self):
+        # The reported false positive: software.pixellot.tv on CloudFront.
+        s, g = self._row("143.204.160.127", "pass", "143.204.160.99", "pass")
+        self.assertIsNone(main._classify_dns_row(s, g))
+        # And the apex domain on different AWS IPs.
+        s, g = self._row("52.44.182.199", "pass", "52.1.53.61", "pass")
+        self.assertIsNone(main._classify_dns_row(s, g))
+
+    def test_same_ip_is_benign(self):
+        s, g = self._row("52.1.53.61", "pass", "52.1.53.61", "pass")
+        self.assertIsNone(main._classify_dns_row(s, g))
+
+    def test_redirect_to_internal_ip_flagged(self):
+        # Captive portal / SSL-inspection proxy: system returns a private IP.
+        s, g = self._row("192.168.1.50", "pass", "52.1.53.61", "pass")
+        self.assertEqual(main._classify_dns_row(s, g), "redirect")
+
+    def test_system_blocked_flagged(self):
+        s, g = self._row(None, "fail", "52.1.53.61", "pass")
+        self.assertEqual(main._classify_dns_row(s, g), "system-blocked")
+
+    def test_google_blocked_flagged(self):
+        s, g = self._row("52.1.53.61", "pass", None, "fail")
+        self.assertEqual(main._classify_dns_row(s, g), "google-blocked")
+
+    def test_annotate_recomputes_counts(self):
+        dns = {"results": [
+            {"system": {"resolvedTo": None, "status": "fail"},
+             "google": {"resolvedTo": "52.1.53.61", "status": "pass"}},
+            {"system": {"resolvedTo": "143.204.160.127", "status": "pass"},
+             "google": {"resolvedTo": "143.204.160.99", "status": "pass"}},
+            {"system": {"resolvedTo": "192.168.1.50", "status": "pass"},
+             "google": {"resolvedTo": "52.1.53.61", "status": "pass"}},
+        ]}
+        out = main._annotate_dns_resolution(dns)
+        self.assertEqual(out["systemBlockedCount"], 1)
+        self.assertEqual(out["redirectCount"], 1)
+        self.assertEqual([r["discrepancy"] for r in out["results"]],
+                         ["system-blocked", None, "redirect"])
+
+
 # ── Wi-Fi uplink finding gating ──────────────────────────────
 class TestWifiUplinkFinding(unittest.TestCase):
     """The Wi-Fi warning must fire only when Wi-Fi is the actual internet

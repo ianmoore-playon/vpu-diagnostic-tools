@@ -498,6 +498,70 @@ def _is_approved_ntp_source(source: Optional[str]) -> bool:
     return host.endswith(".us.pool.ntp.org")
 
 
+# ── DNS resolution comparison (PDF #10) ──────────────────────
+# system-resolver vs Google (8.8.8.8). We classify each domain so the UI can
+# warn on real problems without crying wolf on benign CDN behavior.
+import ipaddress as _ipaddress
+
+
+def _is_private_or_bogon_ip(value) -> bool:
+    """True if `value` is a non-public IPv4 (RFC1918, link-local, loopback,
+    CGNAT, etc.). Used to tell a real DNS redirect — the local resolver hands
+    back an *internal* IP — from benign CDN/GeoDNS load balancing, where both
+    resolvers return different but equally-public IPs."""
+    try:
+        ip = _ipaddress.ip_address(str(value).strip())
+    except (ValueError, AttributeError):
+        return False
+    return not ip.is_global
+
+
+def _classify_dns_row(system: dict, google: dict) -> Optional[str]:
+    """Classify one domain's system-vs-Google resolution.
+
+    Returns:
+      'system-blocked' — Google resolves, the configured resolver doesn't
+                         (the venue DNS is filtering Pixellot infrastructure).
+      'google-blocked' — the reverse (rare; usually a transient Google miss).
+      'redirect'       — both resolve but the system resolver returns a
+                         private/internal IP while Google returns a public one
+                         (captive portal / SSL-inspection proxy / DNS rewrite).
+      None             — healthy, including two *different public* IPs, which
+                         is normal CDN/GeoDNS load balancing, not a problem.
+    """
+    sys_pass = (system or {}).get("status") == "pass"
+    goog_pass = (google or {}).get("status") == "pass"
+    if sys_pass and not goog_pass:
+        return "google-blocked"
+    if goog_pass and not sys_pass:
+        return "system-blocked"
+    if sys_pass and goog_pass:
+        sys_ip = (system or {}).get("resolvedTo")
+        goog_ip = (google or {}).get("resolvedTo")
+        if (sys_ip and goog_ip and sys_ip != goog_ip
+                and _is_private_or_bogon_ip(sys_ip)
+                and not _is_private_or_bogon_ip(goog_ip)):
+            return "redirect"
+    return None
+
+
+def _annotate_dns_resolution(dns_resolution):
+    """Attach an authoritative `discrepancy` to each DNS row + recompute the
+    aggregate counts. Classification lives here (tested) rather than in the
+    PowerShell collector so the rule stays in one place and out of an
+    untestable script."""
+    if not dns_resolution or dns_resolution.get("error"):
+        return dns_resolution
+    results = dns_resolution.get("results") or []
+    for row in results:
+        row["discrepancy"] = _classify_dns_row(row.get("system"), row.get("google"))
+    dns_resolution["systemBlockedCount"] = sum(
+        1 for r in results if r.get("discrepancy") == "system-blocked")
+    dns_resolution["redirectCount"] = sum(
+        1 for r in results if r.get("discrepancy") == "redirect")
+    return dns_resolution
+
+
 # ── Windows LTSC lifecycle map (PDF #4) ─────────────────────
 # Pixellot VPUs ship on Win 10 IoT LTSC. Two builds in the field:
 #   1809 (LTSC 2019) → build 17763 → all VPUs except Z2
@@ -1904,6 +1968,10 @@ def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_
             "ntpSourceApproved": _is_approved_ntp_source(ntp_src),
             "ntpSourceApprovedList": list(PIXELLOT_APPROVED_NTP_SOURCES),
         }
+
+    # Classify DNS rows here (single, tested source of truth) before handing
+    # the data to the frontend.
+    dns_resolution = _annotate_dns_resolution(dns_resolution)
 
     # Pass local, ntpPeers, dnsResolution, wifi through even on error — let
     # the frontend surface whichever subsection failed.
