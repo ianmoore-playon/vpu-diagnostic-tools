@@ -220,6 +220,7 @@ function Probe-ScoreConnectI {
         scores       = $null
         teamNames    = $null
         vendor       = $null
+        vendorIsCode = $false
         sport        = $null
         botNumber    = $null
         license      = $null
@@ -254,9 +255,19 @@ function Probe-ScoreConnectI {
         }
         $p = $json.parms[0]
         $result.reachable = $true
-        # SC I has no sbvendorname — sbvendor is the only vendor field.
-        $result.vendor    = $p.sbvendor
-        $result.sport     = $p.sbcode
+        # Prefer a human-readable vendor name when the SC I build provides one
+        # (sbvendorname); older builds expose only the numeric sbvendor code.
+        # When it's a bare code the renderer labels it "(code)" rather than
+        # presenting a meaningless number as a vendor name.
+        $vn = $p.sbvendorname
+        $vendorIsCode = $false
+        if (-not $vn) {
+            $vn = $p.sbvendor
+            if ($vn -ne $null -and ("$vn" -match '^\d+$')) { $vendorIsCode = $true }
+        }
+        $result.vendor       = $vn
+        $result.vendorIsCode = $vendorIsCode
+        $result.sport        = $p.sbcode
         $result.botNumber = Get-ScoreConnectILogBot
         $result.version   = Get-ExeVersionAt 'C:\Program Files (x86)\Sportzcast LLC\ScoreConnect\ScoreConnect.exe'
     }
