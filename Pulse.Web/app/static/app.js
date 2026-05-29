@@ -2037,21 +2037,23 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
   var gw = (local || {}).gateway;
   var dns = (local || {}).dns;
 
-  // ── Wi-Fi adapter active (Canopy reportWifiConnection) ──
-  // VPUs should never have a Wi-Fi interface Up. If one is, surface
-  // the warning on the Network tab as well as on the dashboard so the
-  // tech sees it whichever tab they're looking at.
-  if (wifi && !wifi.error && wifi.anyActive) {
-    var wifiActive = (wifi.adapters || []).filter(function(a) { return a.isUp; });
+  // ── Wi-Fi is the internet uplink (Canopy reportWifiConnection) ──
+  // Only warn when Wi-Fi is actually carrying the VPU's internet traffic —
+  // a real Wi-Fi NIC holds the default route and no wired adapter does.
+  // Wi-Fi Direct / hosted-network virtual adapters always show "connected"
+  // and must NOT trip this (they aren't the uplink).
+  if (wifi && !wifi.error && wifi.uplinkIsWifi) {
+    var wifiUplink = (wifi.adapters || []).filter(function(a) {
+      return a.isUp && a.hasDefaultRoute && !a.isVirtual;
+    });
     issues.push({
       severity: "warning",
-      title: wifiActive.length + " Wi-Fi adapter(s) active — VPUs should use wired network only",
-      body: "Disconnect from Wi-Fi and connect the VPU to the network over Ethernet instead. Wi-Fi connections can introduce latency and packet loss that disrupt streaming.",
-      details: wifiActive.map(function(a) {
+      title: "VPU is using Wi-Fi for its internet connection — switch to wired Ethernet",
+      body: "Connect the onboard Ethernet port to the venue network instead. Wi-Fi introduces latency and packet loss that disrupt streaming.",
+      details: wifiUplink.map(function(a) {
         var label = a.interfaceDescription || a.name || "Wi-Fi";
         var ssidPart = a.ssid ? " — SSID: " + a.ssid : "";
-        var ipPart = a.ipv4Connectivity ? " — IPv4: " + a.ipv4Connectivity : "";
-        return label + ssidPart + ipPart;
+        return label + ssidPart;
       }),
     });
   }

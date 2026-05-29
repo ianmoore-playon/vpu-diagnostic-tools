@@ -893,29 +893,32 @@ def _total_ram_gb(hardware, performance) -> float:
 def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None) -> list:
     findings = []
 
-    # ── Wi-Fi adapter detection (Canopy adoption) ────────────
-    # Pixellot VPUs are wired-only by design. An active Wi-Fi interface
-    # almost always means leftover bench-test configuration, a tech
-    # tethering to a phone, or a misconfigured uplink — any of which
-    # cause unpredictable streaming behavior.
-    if wifi and not wifi.get("error"):
-        active = [a for a in (wifi.get("adapters") or []) if a.get("isUp")]
-        if active:
-            names = ", ".join(a.get("interfaceDescription") or a.get("name") or "?" for a in active)
-            ssids = [a.get("ssid") for a in active if a.get("ssid")]
-            ssid_str = f" (SSID: {', '.join(ssids)})" if ssids else ""
-            findings.append(
-                {
-                    "severity": "warning",
-                    "category": "Network",
-                    "title": "WiFi adapter connected — VPUs should use wired network only",
-                    "recommendation": (
-                        f"Active Wi-Fi interface detected: {names}{ssid_str}. "
-                        f"Disconnect from Wi-Fi and connect the VPU to the network over Ethernet instead. "
-                        f"Wi-Fi connections can introduce latency and packet loss that disrupt streaming."
-                    ),
-                }
-            )
+    # ── Wi-Fi uplink detection (Canopy adoption) ─────────────
+    # Pixellot VPUs are wired-only by design. We only warn when Wi-Fi is the
+    # VPU's actual internet uplink (a real Wi-Fi NIC holds the default route
+    # and no wired adapter does). Windows always carries Wi-Fi Direct / hosted-
+    # network virtual adapters that show "connected" — those are not the
+    # uplink and must not trip this finding.
+    if wifi and not wifi.get("error") and wifi.get("uplinkIsWifi"):
+        uplink_wifi = [
+            a for a in (wifi.get("adapters") or [])
+            if a.get("isUp") and a.get("hasDefaultRoute") and not a.get("isVirtual")
+        ]
+        names = ", ".join(a.get("interfaceDescription") or a.get("name") or "?" for a in uplink_wifi)
+        ssids = [a.get("ssid") for a in uplink_wifi if a.get("ssid")]
+        ssid_str = f" (SSID: {', '.join(ssids)})" if ssids else ""
+        findings.append(
+            {
+                "severity": "warning",
+                "category": "Network",
+                "title": "VPU is using Wi-Fi for its internet connection — switch to wired Ethernet",
+                "recommendation": (
+                    f"The VPU's active internet path is over Wi-Fi: {names}{ssid_str}. "
+                    f"Connect the onboard Ethernet port to the venue network instead. "
+                    f"Wi-Fi introduces latency and packet loss that disrupt streaming."
+                ),
+            }
+        )
 
     # ── NTP allowlist (PDF #9) ───────────────────────────────
     # School networks sometimes force VPUs onto an internal NTP server. If

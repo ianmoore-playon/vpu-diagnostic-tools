@@ -360,22 +360,29 @@ DEMO = {
         ],
     },
     "Get-WifiAdapters.ps1": lambda **kw: {
-        # Demo trips the warning so the finding + adapter list are visible.
-        "anyActive": True,
-        "activeCount": 1,
+        # Realistic wired VPU: a Wi-Fi Direct *virtual* adapter is present and
+        # shows "connected" (Windows always carries one), but Ethernet holds
+        # the default route. uplinkIsWifi=False, so NO warning fires — this is
+        # the false-positive case the finding must not trip on.
+        "anyActive": False,
+        "activeCount": 0,
+        "ethernetHasDefaultRoute": True,
+        "uplinkIsWifi": False,
         "adapters": [
             {
-                "name": "Wi-Fi",
-                "interfaceAlias": "Wi-Fi",
-                "interfaceDescription": "Intel(R) Wi-Fi 6 AX201 160MHz",
-                "macAddress": "B8-9A-2A-4C-7D-12",
-                "linkSpeed": "300 Mbps",
+                "name": "Local Area Connection* 2",
+                "interfaceAlias": "Local Area Connection* 2",
+                "interfaceDescription": "Microsoft Wi-Fi Direct Virtual Adapter #2",
+                "macAddress": "B8-9A-2A-4C-7D-13",
+                "linkSpeed": "0 bps",
                 "status": "Up",
                 "isUp": True,
+                "isVirtual": True,
+                "hasDefaultRoute": False,
                 "connected": True,
-                "ssid": "Westfield-Guest",
+                "ssid": "DIRECT-3a-DESKTOP",
                 "networkCategory": "Public",
-                "ipv4Connectivity": "Internet",
+                "ipv4Connectivity": "NoTraffic",
                 "ipv6Connectivity": "NoTraffic",
             },
         ],

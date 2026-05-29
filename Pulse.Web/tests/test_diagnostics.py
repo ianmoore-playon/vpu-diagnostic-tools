@@ -277,6 +277,53 @@ class TestExtractJson(unittest.TestCase):
         self.assertEqual(powershell._extract_json('[1, 2, 3]'), [1, 2, 3])
 
 
+# ── Wi-Fi uplink finding gating ──────────────────────────────
+class TestWifiUplinkFinding(unittest.TestCase):
+    """The Wi-Fi warning must fire only when Wi-Fi is the actual internet
+    uplink — never for Wi-Fi Direct / virtual adapters that merely show
+    'connected'."""
+
+    def _wifi_titles(self, wifi):
+        findings = main._compute_findings(
+            identity=_identity("5.2.0"), performance={}, services={}, nics={},
+            hardware={"gpus": [{"vendor": "NVIDIA", "isDedicated": True}]},
+            gpu_info=_gpu("Turing"), wifi=wifi,
+        )
+        return {f["title"] for f in findings if f.get("category") == "Network"}
+
+    def _has_wifi_finding(self, titles):
+        return any("Wi-Fi" in t or "WiFi" in t for t in titles)
+
+    def test_virtual_adapter_does_not_warn(self):
+        # The reported false positive: Wi-Fi Direct virtual adapter, connected,
+        # but not the uplink. uplinkIsWifi=False → no finding.
+        wifi = {
+            "uplinkIsWifi": False, "ethernetHasDefaultRoute": True,
+            "adapters": [{
+                "interfaceDescription": "Microsoft Wi-Fi Direct Virtual Adapter #2",
+                "isUp": True, "isVirtual": True, "hasDefaultRoute": False,
+                "connected": True, "ssid": "DIRECT-3a-DESKTOP",
+            }],
+        }
+        self.assertFalse(self._has_wifi_finding(self._wifi_titles(wifi)))
+
+    def test_real_wifi_uplink_warns(self):
+        # Real Wi-Fi NIC holding the default route, no wired uplink → warn.
+        wifi = {
+            "uplinkIsWifi": True, "ethernetHasDefaultRoute": False,
+            "adapters": [{
+                "interfaceDescription": "Intel(R) Wi-Fi 6 AX201 160MHz",
+                "isUp": True, "isVirtual": False, "hasDefaultRoute": True,
+                "connected": True, "ssid": "Venue-WiFi",
+            }],
+        }
+        self.assertTrue(self._has_wifi_finding(self._wifi_titles(wifi)))
+
+    def test_no_wifi_payload_no_warn(self):
+        self.assertFalse(self._has_wifi_finding(self._wifi_titles(None)))
+        self.assertFalse(self._has_wifi_finding(self._wifi_titles({"error": True})))
+
+
 # ── NTP source allowlist (PDF #9) ────────────────────────────
 class TestNtpAllowlist(unittest.TestCase):
     def test_canonical_sources_approved(self):
