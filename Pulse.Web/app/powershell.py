@@ -25,6 +25,14 @@ SCRIPTS_DIR = os.path.normpath(
 
 DEMO_MODE = sys.platform != "win32"
 
+# When the server runs under pythonw.exe (the hidden launcher) it has no
+# console of its own. Spawning powershell.exe — a console-subsystem app —
+# would then make Windows allocate a NEW visible console window for every
+# script call (and the WebSocket poll fires several per cycle). CREATE_NO_WINDOW
+# runs each child with no window while still letting us capture its piped
+# stdout/stderr. 0 on non-Windows (where the real subprocess path never runs).
+_CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
+
 LOG_BUFFER: deque[dict] = deque(maxlen=500)
 RUNNING_TASKS: dict[str, dict] = {}
 
@@ -214,6 +222,7 @@ async def _run_ps_inner(script_name, args, timeout, task_id, cancel_evt):
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            creationflags=_CREATE_NO_WINDOW,
         )
         RUNNING_TASKS[task_id]["handle"] = proc
 

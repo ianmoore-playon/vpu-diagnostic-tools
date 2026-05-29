@@ -2589,9 +2589,14 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(_os.environ.get("PORT", 8765))
+    # Bind to loopback only. Pulse is always accessed from the VPU's own
+    # browser (directly or over LogMeIn/RDP), never from another machine,
+    # so 127.0.0.1 is correct AND avoids the Windows Defender Firewall
+    # prompt that 0.0.0.0 (all interfaces) triggers on first launch.
+    #
     # Pass the app object, NOT the "main:app" import string. The import-
     # string form makes uvicorn re-import this module as "main", re-running
     # all top-level code (re-truncating the log, double-attaching handlers).
     # Passing the object runs it once. reload is already off, so we lose
     # nothing.
-    uvicorn.run(app, host="0.0.0.0", port=port, reload=False)
+    uvicorn.run(app, host="127.0.0.1", port=port, reload=False)
