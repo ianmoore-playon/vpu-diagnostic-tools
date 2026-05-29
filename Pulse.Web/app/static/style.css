@@ -1763,6 +1763,7 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     gap: 8px;
 }
 .cam-port-active { border-color: #22c55e; }
+.cam-port-degraded { border-color: var(--c-accent-amber); }
 .cam-port-down { border-color: var(--c-dimmer); opacity: 0.75; }
 .cam-port-empty { border-style: dashed; opacity: 0.5; }
 .cam-port-header { display: flex; align-items: center; gap: 6px; }

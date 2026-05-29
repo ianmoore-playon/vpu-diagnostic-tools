@@ -2983,7 +2983,7 @@ function _camPortTile(port, index) {
   if (p.isOcr) camLabelCls = "badge-ol-info";
   else if (camLabel && camLabel.indexOf("Main") === 0) camLabelCls = "badge-ol-main";
   else camLabelCls = "badge-ol-muted";
-  return `<div class="cam-port-tile ${p.isUp ? "cam-port-active" : "cam-port-down"}">
+  return `<div class="cam-port-tile ${!p.isUp ? "cam-port-down" : p.isDegraded ? "cam-port-degraded" : "cam-port-active"}">
     <div class="cam-port-header">
       <span class="cam-port-num">Port ${index + 1}</span>
       ${camLabel ? '<span class="badge-ol ' + camLabelCls + '">' + esc(camLabel) + '</span>' : ''}
