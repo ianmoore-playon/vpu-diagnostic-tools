@@ -562,6 +562,30 @@ def _annotate_dns_resolution(dns_resolution):
     return dns_resolution
 
 
+def _internet_reachable(config, port_tests):
+    """Authoritative 'does this VPU have internet', returned as
+    (reachable: bool, tested_host: str | None).
+
+    The raw probe in Get-NetworkConfig pings / TCP-connects to 8.8.8.8 etc.,
+    but locked-down venue/school networks routinely block those public IPs
+    entirely while Pixellot's own services stay reachable. A successful
+    required TCP/443 service test is definitive proof of outbound HTTPS to a
+    real endpoint — stronger evidence than any probe — so we treat that as
+    'reachable' even when the probe failed."""
+    internet = (config or {}).get("internet", {}) if isinstance(config, dict) else {}
+    probe_host = internet.get("testedHost")
+    if internet.get("reachable"):
+        return True, probe_host
+    results = port_tests.get("results") or [] if isinstance(port_tests, dict) else []
+    for p in results:
+        if (not p.get("optional")
+                and str(p.get("port")) == "443"
+                and (p.get("protocol") or "").upper() == "TCP"
+                and (p.get("status") or "").lower() == "pass"):
+            return True, "{}:443".format(p.get("host"))
+    return False, probe_host
+
+
 # ── Windows LTSC lifecycle map (PDF #4) ─────────────────────
 # Pixellot VPUs ship on Win 10 IoT LTSC. Two builds in the field:
 #   1809 (LTSC 2019) → build 17763 → all VPUs except Z2
@@ -1916,11 +1940,12 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
     # Basic network config for the dashboard network card
     net_cfg = {}
     if network_config and not network_config.get("error"):
+        dash_reachable, dash_tested = _internet_reachable(network_config, port_tests)
         net_cfg = {
             "ipConfig": network_config.get("ipConfigurations", []),
             "uplinkAdapter": network_config.get("uplinkAdapter"),
-            "internetReachable": network_config.get("internet", {}).get("reachable", False),
-            "testedHost": network_config.get("internet", {}).get("testedHost"),
+            "internetReachable": dash_reachable,
+            "testedHost": dash_tested,
             "ntpSource": network_config.get("ntpSource"),
         }
 
@@ -1957,13 +1982,14 @@ def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_
     net = {}
     if config and not config.get("error"):
         ntp_src = config.get("ntpSource")
+        reachable, tested_host = _internet_reachable(config, ports)
         net = {
             "adapters": config.get("adapters", []),
             "ipConfig": config.get("ipConfigurations", []),
             "uplinkAdapter": config.get("uplinkAdapter"),
             "uplinkStats": config.get("uplinkStats"),
-            "internetReachable": config.get("internet", {}).get("reachable", False),
-            "testedHost": config.get("internet", {}).get("testedHost"),
+            "internetReachable": reachable,
+            "testedHost": tested_host,
             "ntpSource": ntp_src,
             "ntpSourceApproved": _is_approved_ntp_source(ntp_src),
             "ntpSourceApprovedList": list(PIXELLOT_APPROVED_NTP_SOURCES),

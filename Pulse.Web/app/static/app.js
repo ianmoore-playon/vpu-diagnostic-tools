@@ -2099,13 +2099,11 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
   }
 
   // ── Critical: No internet ────────────────────────────────
-  // internetReachable is a probe (ICMP + TCP/443) that can still be wrong if
-  // the venue blocks those specific checks. Corroborate before declaring the
-  // box offline: if any required port or domain test succeeded, the VPU
-  // demonstrably has internet, so suppress the false "no internet" finding.
-  var anyReqPortPassed = (ports || []).some(function(p) { return !p.optional && (p.status || "").toLowerCase() === "pass"; });
-  var anyDomainResolved = (domains || []).some(function(d) { return (d.status || "").toLowerCase() === "pass"; });
-  if (!cfg.internetReachable && !anyReqPortPassed && !anyDomainResolved) {
+  // cfg.internetReachable is authoritative: the backend already treats a
+  // passing required TCP/443 service test as proof of internet, so it stays
+  // True on locked-down networks that block ICMP/8.8.8.8. If it's False here,
+  // the box genuinely can't reach Pixellot services.
+  if (!cfg.internetReachable) {
     issues.push({ severity: "critical", title: "VPU has no internet connection",
       body: "Verify the uplink cable and the gateway’s WAN status before further triage." });
     // Sort and return early — no point checking ports/domains

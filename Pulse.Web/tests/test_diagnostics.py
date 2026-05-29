@@ -337,6 +337,47 @@ class TestDnsDiscrepancy(unittest.TestCase):
                          ["system-blocked", None, "redirect"])
 
 
+# ── Internet reachability derivation ─────────────────────────
+class TestInternetReachable(unittest.TestCase):
+    """A locked-down venue network blocks ICMP/8.8.8.8 but Pixellot services
+    stay reachable. internetReachable must come from real service reachability
+    (a passing TCP/443 test), not just the 8.8.8.8 probe."""
+
+    _PORTS_443_PASS = {"results": [
+        {"protocol": "TCP", "port": 443, "host": "pixellot.tv",
+         "purpose": "Pixellot", "optional": False, "status": "pass"},
+    ]}
+    _PORTS_443_FAIL = {"results": [
+        {"protocol": "TCP", "port": 443, "host": "pixellot.tv",
+         "purpose": "Pixellot", "optional": False, "status": "fail"},
+    ]}
+
+    def test_probe_success_wins(self):
+        cfg = {"internet": {"reachable": True, "testedHost": "8.8.8.8"}}
+        self.assertEqual(main._internet_reachable(cfg, None), (True, "8.8.8.8"))
+
+    def test_icmp_blocked_but_443_passes(self):
+        # The field case: probe failed, but HTTPS to pixellot.tv works.
+        cfg = {"internet": {"reachable": False, "testedHost": None}}
+        reachable, host = main._internet_reachable(cfg, self._PORTS_443_PASS)
+        self.assertTrue(reachable)
+        self.assertEqual(host, "pixellot.tv:443")
+
+    def test_truly_offline(self):
+        cfg = {"internet": {"reachable": False, "testedHost": None}}
+        self.assertEqual(main._internet_reachable(cfg, self._PORTS_443_FAIL), (False, None))
+
+    def test_optional_443_does_not_count(self):
+        cfg = {"internet": {"reachable": False, "testedHost": None}}
+        ports = {"results": [{"protocol": "TCP", "port": 443, "host": "x",
+                              "optional": True, "status": "pass"}]}
+        self.assertEqual(main._internet_reachable(cfg, ports), (False, None))
+
+    def test_missing_ports_falls_back_to_probe(self):
+        cfg = {"internet": {"reachable": False, "testedHost": None}}
+        self.assertEqual(main._internet_reachable(cfg, None), (False, None))
+
+
 # ── Wi-Fi uplink finding gating ──────────────────────────────
 class TestWifiUplinkFinding(unittest.TestCase):
     """The Wi-Fi warning must fire only when Wi-Fi is the actual internet
