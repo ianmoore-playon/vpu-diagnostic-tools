@@ -4297,9 +4297,15 @@ function renderScoreConnect() {
   // RTD parsed scores from SC III raw data
   const rtdParsed = dataReceiving ? parseRtdScores(data.rawData, config.vendor, config.sport) : null;
 
-  // SC II config/teams
+  // Legacy ScoreConnect config/teams. The probe routes whichever legacy
+  // install is running (SC I or SC II) into `sc2`; hardware/productName
+  // distinguish them so we can label the panel correctly.
   const sc2Teams = sc2 && sc2.teamNames || {};
   const sc2HasConfig = sc2 && sc2.reachable && (sc2.vendor || sc2.botNumber || sc2.version);
+  const legacyIsSc1 = sc2 && ((sc2.hardware || "").toLowerCase() === "scoreconnect"
+    || (sc2.productName || "").indexOf("SC I") !== -1);
+  const legacyFull = legacyIsSc1 ? "ScoreConnect I" : "ScoreConnect II";
+  const legacyShort = legacyIsSc1 ? "SC I" : "SC II";
 
   // Team name source: SC II settings.json has configured names, use as labels
   const visitorLabel = sc2Teams.visitor || "GUEST";
@@ -4332,9 +4338,9 @@ function renderScoreConnect() {
 
   // Determine page subtitle based on what's detected
   const subtitle = sc2 && sc2.reachable && isDetected
-    ? "ScoreConnect II + III detected"
+    ? legacyFull + " + III detected"
     : sc2 && sc2.reachable
-    ? "ScoreConnect II — configuration from device"
+    ? legacyFull + " — configuration from device"
     : "ScoreConnect III — service, configuration, and live data";
 
   $page().innerHTML = `
@@ -4377,7 +4383,7 @@ function renderScoreConnect() {
       ${sectionTitle("heartbeat", "Status")}
       <div class="kv-grid">
         ${isDetected ? kvRowHtml("ScoreConnect III", _scDot(true) + '<span class="status-pass">Running</span>') : ""}
-        ${sc2 && sc2.reachable ? kvRowHtml("ScoreConnect II", _scDot(true) + '<span class="status-pass">Running</span>') : ""}
+        ${sc2 && sc2.reachable ? kvRowHtml(legacyFull, _scDot(true) + `<span class="status-pass">Running</span>${sc2.outOfDate ? ' <span class="status-warn">· out of date</span>' : ''}`) : ""}
         ${isDetected ? kvRowHtml("Scoreboard Data", `<span id="sc3-data-status">${_sc3DataStatusHtml(dataReceiving ? "live" : "disconnected", 0, data.dataStatus)}</span>`) : ""}
       </div>
       ${data.rawData ? `
@@ -4412,12 +4418,14 @@ function renderScoreConnect() {
     </div>
     ` : ""}
 
-    <!-- SC II Detail Card -->
+    <!-- Legacy ScoreConnect (SC I / SC II) Detail Card -->
     ${sc2HasConfig ? `
     <div class="card mt-4">
-      ${sectionTitle("heartbeat", "SC II Details")}
+      ${sectionTitle("heartbeat", legacyShort + " Details")}
       <div class="kv-grid">
-        ${kvRowHtml("Status", '<span class="status-pass">Running</span>')}
+        ${kvRowHtml("Status", sc2.outOfDate
+          ? '<span class="status-warn">Running — software out of date</span>'
+          : '<span class="status-pass">Running</span>')}
         ${kvRow("Version", sc2.version)}
         ${kvRow("Hardware", sc2.hardware)}
         ${kvRow("UID", sc2.uid)}
