@@ -723,6 +723,15 @@ function _subsystemHealth(findings) {
     const k = (f.category || "").toLowerCase();
     cats[k] = (cats[k] || 0) + 1;
   });
+
+  // Event Viewer doesn't generate dashboard findings of its own, so derive
+  // its health from the cached event log: any recent Error-level entry
+  // turns the tile amber. (Falls back to Healthy when events aren't loaded.)
+  const evEntries = (cached("events") || {}).entries || [];
+  const evErrorCount = evEntries.filter(
+    (e) => (e.level || "").toLowerCase() === "error"
+  ).length;
+
   return [
     { id: "system", label: "System Overview", icon: "cpu",
       health: (cats.system || cats.hardware || cats.performance) ? "Warning" : "Healthy",
@@ -740,10 +749,10 @@ function _subsystemHealth(findings) {
       health: cats.storage ? "Warning" : "Healthy",
       desc: "Free space, SMART health, disk events." },
     { id: "events", label: "Event Viewer", icon: "triangle",
-      // Event Viewer surfaces OS errors but doesn't generate findings of its own —
-      // its health rolls up from the dashboard, so it stays Healthy here.
-      health: "Healthy",
-      desc: "Recent OS errors from VPU providers." },
+      health: evErrorCount > 0 ? "Warning" : "Healthy",
+      desc: evErrorCount > 0
+        ? `${evErrorCount} recent OS error${evErrorCount === 1 ? "" : "s"} logged.`
+        : "Recent OS errors from VPU providers." },
   ];
 }
 
@@ -2080,12 +2089,16 @@ function _netTimeSyncCard(cfg, ntp, ntpPeers) {
   var st = (ntpPeers && ntpPeers.status) || {};
   var peers = (ntpPeers && ntpPeers.peers) || [];
 
-  // NTP drift summary (from Test-NtpDrift.ps1, separate from w32tm /query)
+  // NTP drift summary (from Test-NtpDrift.ps1). Drift is measured against the
+  // configured source; ntp.source reports the server actually used so we can
+  // label it unambiguously (it falls back to an independent reference when the
+  // box isn't network-synced).
   var driftStatus = (ntp.status || "").toLowerCase();
   var offset = ntp.offsetSeconds != null ? ntp.offsetSeconds + "s" : "—";
+  var driftRef = ntp.source ? ' vs ' + esc(ntp.source) : "";
   var driftLabel;
-  if (driftStatus === "ok") driftLabel = '<span class="status-pass" style="font-weight:600">In sync (' + esc(offset) + ')</span>';
-  else if (driftStatus === "warn") driftLabel = '<span class="status-warn" style="font-weight:600">Drift (' + esc(offset) + ')</span>';
+  if (driftStatus === "ok") driftLabel = '<span class="status-pass" style="font-weight:600">In sync (' + esc(offset) + ')</span><span class="text-xs text-pulse-muted">' + driftRef + '</span>';
+  else if (driftStatus === "warn") driftLabel = '<span class="status-warn" style="font-weight:600">Drift (' + esc(offset) + ')</span><span class="text-xs text-pulse-muted">' + driftRef + '</span>';
   else if (driftStatus) driftLabel = '<span class="status-fail" style="font-weight:600">Error</span>';
   else driftLabel = "—";
 
@@ -2124,6 +2137,13 @@ function _netTimeSyncCard(cfg, ntp, ntpPeers) {
       '</tbody></table>';
   }
 
+  // Flag the case where the VPU isn't syncing from any network time source.
+  var syncWarning = ntp.networkSynced === false
+    ? '<div class="net-iface-stats-warn">' + svgIcon("triangle", 12) +
+      ' Clock is not syncing from a network time source (drift measured against ' +
+      esc(ntp.source || "an independent reference") + '). Point the VPU at an approved NTP server.</div>'
+    : "";
+
   return `<div class="card">
     ${sectionTitle("clock", "Time Sync (NTP)")}
     <div class="kv-grid">
@@ -2133,6 +2153,7 @@ function _netTimeSyncCard(cfg, ntp, ntpPeers) {
       ${kvRow("Last sync", lastSyncDisplay)}
       ${kvRowHtml("Drift status", driftLabel)}
     </div>
+    ${syncWarning}
     <div class="net-ntp-peers">
       <div class="net-ntp-peers-title">${svgIcon("activity", 12)} Active Peers</div>
       ${peersHtml}
@@ -2516,7 +2537,7 @@ function renderNetwork() {
             } else {
               chip = "";
             }
-            var tooltip = "Drift is measured against the Windows-configured NTP source. The port test (UDP/123) targets prod-echo.pixellot.tv separately.";
+            var tooltip = "The server the VPU syncs its clock from. Drift is measured against this same source (see Time Sync under Advanced Diagnostics). The UDP/123 port test separately checks reachability to prod-echo.pixellot.tv.";
             return '<span title="' + esc(tooltip) + '">' + esc(src) + '</span> ' + chip;
           })())}
           ${kvRowHtml("NTP status", (function() {
@@ -4321,6 +4342,18 @@ function parseRtdScores(rawData, vendor, sport) {
   return null;
 }
 
+// Vendor+sport combos whose RTD byte layout we've VALIDATED against real
+// hardware. Outside these, the positional parse is unverified and could be
+// confidently wrong — for a diagnostic tool that's worse than showing nothing,
+// so the UI falls back to raw data instead of fabricated scores. (A "json"
+// strategy carries explicitly-named fields and is trusted for any vendor.)
+function _sc3ComboValidated(vendor, sport) {
+  var v = (vendor || "").toLowerCase();
+  var s = (sport || "").toLowerCase();
+  // Daktronics football — confirmed byte-for-byte from live VPU captures.
+  return v.indexOf("daktronics") !== -1 && s.indexOf("football") !== -1;
+}
+
 function renderScoreConnect() {
   const data = cached("scoreconnect");
   if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
@@ -4336,6 +4369,14 @@ function renderScoreConnect() {
 
   // RTD parsed scores from SC III raw data
   const rtdParsed = dataReceiving ? parseRtdScores(data.rawData, config.vendor, config.sport) : null;
+
+  // Only TRUST the parsed scoreboard for validated vendor/sport combos (or an
+  // explicitly-keyed JSON parse). Outside that, show raw data — never guessed
+  // scores. comboValidated is vendor/sport-based (static for the session), so
+  // the scoreboard hero stays put even when data briefly drops.
+  const showScoreboard = isDetected && (_sc3ComboValidated(config.vendor, config.sport)
+    || (rtdParsed && rtdParsed._strategy === "json"));
+  const rtdShown = showScoreboard ? rtdParsed : null;
 
   // Legacy ScoreConnect config/teams. The probe routes whichever legacy
   // install is running (SC I or SC II) into `sc2`; hardware/productName
@@ -4390,25 +4431,46 @@ function renderScoreConnect() {
       </button>`
     )}
 
-    <!-- HERO: Live Scoreboard (parsed SC III data) -->
-    ${isDetected ? `
+    <!-- HERO: Live Scoreboard — only for validated vendor/sport combos -->
+    ${showScoreboard ? `
     <div class="sc-board sc-board-hero" id="sc3-hero-board">
       <div class="sc-header">
         <div class="sc-team-home">
           <div class="sc-team-label">${esc(visitorLabel)}</div>
-          <div class="sc-score" id="sc3-guest">${rtdParsed && rtdParsed.guestScore != null ? esc(String(rtdParsed.guestScore)) : "—"}</div>
+          <div class="sc-score" id="sc3-guest">${rtdShown && rtdShown.guestScore != null ? esc(String(rtdShown.guestScore)) : "—"}</div>
         </div>
         <div class="sc-center">
-          <div class="sc-period-label" id="sc3-period">${rtdParsed && rtdParsed.period ? "Q" + rtdParsed.period : "GAME CLOCK"}</div>
-          <div class="sc-clock" id="sc3-clock">${rtdParsed && rtdParsed.clock ? esc(rtdParsed.clock) : "--:--"}</div>
-          <div class="sc-data-desc" id="sc3-down">${rtdParsed ? _sc3DownText(rtdParsed) : ""}</div>
+          <div class="sc-period-label" id="sc3-period">${rtdShown && rtdShown.period ? "Q" + rtdShown.period : "GAME CLOCK"}</div>
+          <div class="sc-clock" id="sc3-clock">${rtdShown && rtdShown.clock ? esc(rtdShown.clock) : "--:--"}</div>
+          <div class="sc-data-desc" id="sc3-down">${rtdShown ? _sc3DownText(rtdShown) : ""}</div>
           <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-accent-green)" : "var(--c-accent-red)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
             ${_sc3StageBadge(dataReceiving ? "live" : "disconnected", 0)}
           </div>
         </div>
         <div class="sc-team-away">
           <div class="sc-team-label">${esc(homeLabel)}</div>
-          <div class="sc-score" id="sc3-home">${rtdParsed && rtdParsed.homeScore != null ? esc(String(rtdParsed.homeScore)) : "—"}</div>
+          <div class="sc-score" id="sc3-home">${rtdShown && rtdShown.homeScore != null ? esc(String(rtdShown.homeScore)) : "—"}</div>
+        </div>
+      </div>
+    </div>
+    ` : isDetected ? `
+    <!-- SC III detected but vendor/sport not yet validated — show status, NOT guessed scores -->
+    <div class="sc-board sc-board-hero" id="sc3-hero-board">
+      <div class="sc-header">
+        <div class="sc-team-home">
+          <div class="sc-team-label">Vendor</div>
+          <div class="sc-team-name">${esc(config.vendor || "—")}</div>
+        </div>
+        <div class="sc-center">
+          <div class="sc-data-status"><span class="sc-data-label">${dataReceiving ? "Receiving Data" : "No Data"}</span></div>
+          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-accent-green)" : "var(--c-accent-red)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
+            ${_sc3StageBadge(dataReceiving ? "live" : "disconnected", 0)}
+          </div>
+          <div class="sc-data-desc" style="margin-top:0.6rem;max-width:360px;line-height:1.4">Parsed scoreboard not yet validated for <strong>${esc(config.vendor || "this vendor")}${config.sport ? " / " + esc(config.sport) : ""}</strong> — raw data shown below.</div>
+        </div>
+        <div class="sc-team-away">
+          <div class="sc-team-label">Sport</div>
+          <div class="sc-team-name">${esc(config.sport || "—")}</div>
         </div>
       </div>
     </div>
@@ -4470,7 +4532,9 @@ function renderScoreConnect() {
         ${kvRow("Hardware", sc2.hardware)}
         ${kvRow("UID", sc2.uid)}
         ${sc2.botNumber ? kvRow("Bot Number", sc2.botNumber) : ""}
-        ${sc2.vendor ? kvRow("Vendor", sc2.vendor) : ""}
+        ${sc2.vendor ? (sc2.vendorIsCode
+          ? kvRowHtml("Vendor", `${esc(String(sc2.vendor))} <span class="text-pulse-muted" style="font-size:0.75rem">(code)</span>`)
+          : kvRow("Vendor", sc2.vendor)) : ""}
         ${sc2.sport ? kvRow("Sport Code", sc2.sport) : ""}
         ${sc2.license ? kvRow("License Expires", sc2.license) : ""}
         ${sc2.scoreLink ? kvRow("ScoreLink", sc2.scoreLink.description) : ""}
@@ -4516,7 +4580,7 @@ function renderScoreConnect() {
   // receiving data, so the hero updates the moment the feed starts. Safe:
   // stateless REST, no SC II contact, no WMI.
   if (isDetected) {
-    _sc3StartLivePoll(config.vendor, config.sport);
+    _sc3StartLivePoll(config.vendor, config.sport, showScoreboard);
   } else {
     _sc3StopLivePoll();
   }
@@ -4656,16 +4720,19 @@ function _sc3StartUsbPoll() {
   _sc3UsbPoll = setTimeout(tick, _SC3_USB_POLL_MS);
 }
 
-function _sc3StartLivePoll(vendor, sport) {
+function _sc3StartLivePoll(vendor, sport, showScoreboard) {
   _sc3StopLivePoll();
   // Reset staleness tracking for a fresh session.
   _sc3LastRaw = null;
   _sc3LastChangeMs = Date.now();
   _sc3StartUsbPoll();
 
+  // Both hero variants (scoreboard + unvalidated status) carry #sc3-hero-board
+  // and #sc3-live-badge, so the poll runs for either — only the scoreboard
+  // variant has the score elements to update.
   async function tick() {
     // Self-terminate if the user navigated away from the page.
-    if (currentPage !== "scoreconnect" || !document.getElementById("sc3-clock")) {
+    if (currentPage !== "scoreconnect" || !document.getElementById("sc3-hero-board")) {
       _sc3StopLivePoll();
       return;
     }
@@ -4673,15 +4740,23 @@ function _sc3StartLivePoll(vendor, sport) {
     var live = await api("/api/scoreconnect/live");
 
     // Re-check after the await — user may have navigated during the fetch.
-    if (currentPage !== "scoreconnect" || !document.getElementById("sc3-clock")) {
+    if (currentPage !== "scoreconnect" || !document.getElementById("sc3-hero-board")) {
       _sc3StopLivePoll();
       return;
     }
 
     var st = _sc3ComputeStage(live);
 
-    // While live (data flowing) update the parsed scores from the new packet.
-    if (st.stage === "live" && live.rawData) {
+    // Always refresh the raw-data readout (shown for any SC III vendor).
+    if (live && live.rawData) {
+      var rawEl = document.getElementById("sc3-raw-value");
+      if (rawEl) rawEl.textContent = live.rawData;
+    }
+
+    // Update parsed scores ONLY for validated vendor/sport combos. Outside
+    // those we never write fabricated numbers — the raw data above is the
+    // source of truth. While live, refresh from the new packet.
+    if (showScoreboard && st.stage === "live" && live.rawData) {
       var p = parseRtdScores(live.rawData, vendor, sport);
       if (p) {
         _sc3SetText("sc3-clock", p.clock || "--:--");
@@ -4689,8 +4764,6 @@ function _sc3StartLivePoll(vendor, sport) {
         if (p.guestScore != null) _sc3SetText("sc3-guest", String(p.guestScore));
         if (p.homeScore != null)  _sc3SetText("sc3-home", String(p.homeScore));
         _sc3SetText("sc3-down", _sc3DownText(p));
-        var rawEl = document.getElementById("sc3-raw-value");
-        if (rawEl) rawEl.textContent = live.rawData;
       }
     }
     // In stale/disconnected/offline we keep the LAST known scores on screen
