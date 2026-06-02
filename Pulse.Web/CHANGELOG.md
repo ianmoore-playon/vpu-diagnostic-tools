@@ -27,6 +27,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   instead (press **Win**, type "pulse", hit Enter). Cleaner footprint on the
   VPU. Existing installs auto-clean up the old desktop shortcut on next launch.
 
+### Fixed
+- **Camera Connectivity no longer errors out when a port is down.** A page that
+  showed only "Internal Server Error" now loads normally and tells you why the
+  port is down (disabled / driver fault / no signal).
+
 ## [0.2.0] - 2026-06-02
 
 ### Added

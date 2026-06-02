@@ -1629,13 +1629,20 @@ def _derive_down_reason(port: dict) -> str:
       no-link  — link is enabled & driver OK, but nothing is on the wire
                  (cable unplugged/broken, or camera unpowered/dead)
     """
-    admin = (port.get("adminStatus") or "").lower()
-    media = (port.get("mediaConnectionState") or "").lower()
-    driver = (port.get("driverStatus") or "")
-    status = (port.get("status") or "").lower()
+    # Coerce every field to a string before inspecting it. Windows reports
+    # these as enums, and PowerShell's ConvertTo-Json serializes enums as
+    # bare integers on a real VPU (demo data happens to use strings), so a
+    # raw .lower() on an int crashes the whole /api/cameras endpoint.
+    admin = str(port.get("adminStatus") or "").strip().lower()
+    media = str(port.get("mediaConnectionState") or "").strip().lower()
+    driver = str(port.get("driverStatus") or "").strip().lower()
+    status = str(port.get("status") or "").strip().lower()
     if admin == "down" or status == "disabled":
         return "disabled"
-    if driver and driver not in ("OK", "Unknown"):
+    # driverStatus is a PnP health word ("OK"/"Error"/"Degraded"/...). If it
+    # arrived as a bare numeric enum we can't interpret it, so ignore digits
+    # rather than mis-flag a healthy driver as faulted.
+    if driver and not driver.isdigit() and driver not in ("ok", "unknown"):
         return "driver"
     if media == "disconnected" or status in (
         "disconnected", "down", "not present", "lower layer down"

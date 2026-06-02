@@ -141,6 +141,31 @@ class TestDownReason(unittest.TestCase):
         self.assertIsNone(by["Up"]["downReason"])
         self.assertEqual(by["Dn"]["downReason"], "no-link")
 
+    # --- Regression: real VPUs serialize Windows enums as INTEGERS, not the
+    # string names demo data uses. A bare .lower() on an int 500'd the whole
+    # /api/cameras endpoint. These guard against that ever returning. ---
+    def test_int_enum_fields_do_not_crash(self):
+        # mediaConnectionState/adminStatus/status arriving as ints must not raise.
+        r = main._derive_down_reason(
+            {"status": "Down", "adminStatus": 1, "mediaConnectionState": 2,
+             "driverStatus": 0})
+        self.assertEqual(r, "no-link")  # falls through to the string status check
+
+    def test_numeric_driver_status_not_flagged_as_driver_fault(self):
+        # A numeric driverStatus we can't interpret must NOT mis-classify as a
+        # driver fault — it should fall through to the link check.
+        self.assertEqual(main._derive_down_reason(
+            {"status": "Disconnected", "adminStatus": "Up",
+             "driverStatus": 0, "mediaConnectionState": 0}), "no-link")
+
+    def test_enriched_down_port_with_int_enums_no_crash(self):
+        nics = {"ports": [
+            dict(_port("Dn", "00-30-64-36-73-AB", status="Down"),
+                 adminStatus=1, mediaConnectionState=2, driverStatus=0),
+        ]}
+        ports = _enrich(nics["ports"])  # must not raise
+        self.assertEqual(ports[0]["downReason"], "no-link")
+
 
 class TestDedupAndDownPorts(unittest.TestCase):
     def setUp(self):
