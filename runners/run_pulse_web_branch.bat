@@ -165,10 +165,13 @@ echo %BRANCH%-!SHORT_SHA!> "%INSTALL_DIR%\VERSION"
 echo   Version ........................ %BRANCH%-!SHORT_SHA!
 
 :shortcut
-:: -- Self-copy + desktop shortcut -----------------------------------------
-:: Copy this launcher into the install dir so the desktop shortcut has a
-:: stable target. Guard against copying onto itself (when launched FROM
-:: the shortcut, %~f0 already IS the install copy).
+:: -- Self-copy + Start Menu shortcut --------------------------------------
+:: Stealth footprint: no desktop icon. Findable via Start Menu — press Win,
+:: type "pulse", hit Enter. Also auto-removes any existing Desktop\Pulse.lnk
+:: from older launcher builds so existing installs migrate on next launch.
+:: Copy this launcher into the install dir so the shortcut has a stable
+:: target. Guard against copying onto itself (when launched FROM the
+:: shortcut, %~f0 already IS the install copy).
 if /I not "%~f0"=="%INSTALL_DIR%\Pulse.bat" copy /y "%~f0" "%INSTALL_DIR%\Pulse.bat" >nul 2>&1
 :: Record the channel so the in-app "Check for update" knows which release line to track
 >"%INSTALL_DIR%\CHANNEL" echo dev
@@ -176,8 +179,8 @@ if /I not "%~f0"=="%INSTALL_DIR%\Pulse.bat" copy /y "%~f0" "%INSTALL_DIR%\Pulse.
 set "ICON=%INSTALL_DIR%\app\static\img\pulse.ico"
 if not exist "%ICON%" set "ICON=%INSTALL_DIR%\Pulse.bat"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$d=[Environment]::GetFolderPath('DesktopDirectory'); $s=(New-Object -ComObject WScript.Shell).CreateShortcut(\"$d\Pulse.lnk\"); $s.TargetPath='%INSTALL_DIR%\Pulse.bat'; $s.WorkingDirectory='%INSTALL_DIR%'; $s.IconLocation='%ICON%'; $s.Description='Pulse - VPU Diagnostics'; $s.Save()" 2>nul
-echo   Desktop shortcut ............... ready
+    "$old=[Environment]::GetFolderPath('DesktopDirectory')+'\Pulse.lnk'; if (Test-Path $old) { Remove-Item $old -Force -ErrorAction SilentlyContinue }; $d=[Environment]::GetFolderPath('Programs'); $s=(New-Object -ComObject WScript.Shell).CreateShortcut(\"$d\Pulse.lnk\"); $s.TargetPath='%INSTALL_DIR%\Pulse.bat'; $s.WorkingDirectory='%INSTALL_DIR%'; $s.IconLocation='%ICON%'; $s.Description='Pulse - VPU Diagnostics'; $s.Save()" 2>nul
+echo   Start Menu shortcut ............ ready
 
 :: -- Hand off to the runtime launcher -------------------------------------
 echo.

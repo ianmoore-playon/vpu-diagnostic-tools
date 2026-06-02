@@ -22,6 +22,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Changed
+- **Pulse no longer leaves a desktop icon** — launch from the Start Menu
+  instead (press **Win**, type "pulse", hit Enter). Cleaner footprint on the
+  VPU. Existing installs auto-clean up the old desktop shortcut on next launch.
+
 ## [0.2.0] - 2026-06-02
 
 ### Added
