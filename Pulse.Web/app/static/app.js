@@ -2966,7 +2966,7 @@ function _camDetailsPanel(cams, portIdx, portData) {
   '</details>';
 }
 
-function _camPortTile(port, index) {
+function _camPortTile(port, index, ctx) {
   if (!port) {
     return `<div class="cam-port-tile cam-port-empty">
       <div class="cam-port-num">Port ${index + 1}</div>
@@ -2980,8 +2980,10 @@ function _camPortTile(port, index) {
   const speed = p.linkSpeedMbps
     ? p.linkSpeedMbps >= 1000 ? (p.linkSpeedMbps / 1000) + " Gbps" : p.linkSpeedMbps + " Mbps"
     : "No link";
+  // Down ports get a *reason*, not just "Down", + triage guidance below.
+  var downLabelMap = { disabled: "Disabled", driver: "Driver error", "no-link": "No link" };
   let statusLabel, dotCls;
-  if (!p.isUp) { statusLabel = "Down"; dotCls = "cam-dot-down"; }
+  if (!p.isUp) { statusLabel = downLabelMap[p.downReason] || "Down"; dotCls = "cam-dot-down"; }
   else if (p.connecting) { statusLabel = p.linkSpeedMbps ? "Connecting · " + speed : "Connecting…"; dotCls = "cam-dot-connecting"; }
   else if (p.isDegraded) { statusLabel = "Degraded · " + speed; dotCls = "cam-dot-warn"; }
   // Fully linked → always green. OCR vs Main is shown by the badge, so the
@@ -3025,8 +3027,33 @@ function _camPortTile(port, index) {
       ${_camDetailsPanel(cams, index, p)}`;
     })()
     : p.connecting ? '<div class="cam-connecting-note">' + svgIcon("refresh", 12) + ' Establishing link — waiting for camera…</div>'
-    : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
+    : !p.isUp ? _camDownGuidanceHtml(p, ctx)
+    : '<div class="cam-no-detect">No Pixellot cameras on this port</div>'}
   </div>`;
+}
+
+// Triage guidance for a down port: explain the detected reason and, for the
+// "no signal" case, use sibling ports to point at card vs cable/camera.
+function _camDownGuidanceHtml(p, ctx) {
+  var reason = p.downReason || "down";
+  var msg;
+  if (reason === "disabled") {
+    msg = "Adapter is disabled in Windows — enable it in Network Connections to bring this port back.";
+  } else if (reason === "driver") {
+    msg = "The NIC driver reports a fault — reinstall the Intel network driver, then re-check.";
+  } else {
+    // no-link / generic: nothing detected on the wire.
+    var othersUp = ctx && ctx.total > 1 && ctx.upCount >= 1;
+    var allDown = ctx && ctx.total > 1 && ctx.upCount === 0;
+    if (allDown) {
+      msg = "No signal — and every NIC port is down. Suspect the NIC card, its driver, or power to the camera bank, not a single cable.";
+    } else if (othersUp) {
+      msg = "No signal on this port. The other ports are linked, so the card is healthy — check this cable (seated both ends) and the camera's power, then use Fault Isolator.";
+    } else {
+      msg = "No signal detected. Check the cable is seated both ends and the camera has power, then use Fault Isolator.";
+    }
+  }
+  return '<div class="cam-down-guide">' + svgIcon("alert", 12) + ' <span>' + esc(msg) + '</span></div>';
 }
 
 function _camFindingsHtml(findings) {
@@ -3049,7 +3076,11 @@ function _camPortGridHtml(ports) {
   for (let i = 0; i < Math.max(4, ports.length); i++) {
     portSlots.push(ports[i] || null);
   }
-  return portSlots.slice().reverse().map((p, ri) => _camPortTile(p, portSlots.length - 1 - ri)).join("");
+  // Card-health context for down-port guidance: how many real NIC ports are up.
+  const real = ports.filter(function(p) { return p; });
+  const upCount = real.filter(function(p) { return p.isUp; }).length;
+  const ctx = { upCount: upCount, total: real.length };
+  return portSlots.slice().reverse().map((p, ri) => _camPortTile(p, portSlots.length - 1 - ri, ctx)).join("");
 }
 
 function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {

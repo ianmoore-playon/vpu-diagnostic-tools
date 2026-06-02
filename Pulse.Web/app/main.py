@@ -1621,6 +1621,29 @@ def _order_ports_physically(raw_ports):
     return sorted(list(raw_ports or []), key=lambda p: _mac_to_int(p.get("mac")))
 
 
+def _derive_down_reason(port: dict) -> str:
+    """Classify *why* a down port is down, so the UI can guide the tech
+    instead of just saying 'Down':
+      disabled — adapter turned off in Windows (fixable: enable it)
+      driver   — NIC driver reports a fault (escalate / reinstall driver)
+      no-link  — link is enabled & driver OK, but nothing is on the wire
+                 (cable unplugged/broken, or camera unpowered/dead)
+    """
+    admin = (port.get("adminStatus") or "").lower()
+    media = (port.get("mediaConnectionState") or "").lower()
+    driver = (port.get("driverStatus") or "")
+    status = (port.get("status") or "").lower()
+    if admin == "down" or status == "disabled":
+        return "disabled"
+    if driver and driver not in ("OK", "Unknown"):
+        return "driver"
+    if media == "disconnected" or status in (
+        "disconnected", "down", "not present", "lower layer down"
+    ):
+        return "no-link"
+    return "down"
+
+
 def _enrich_ports(
     nics: dict,
     pixellot_config: dict = None,
@@ -1773,6 +1796,8 @@ def _enrich_ports(
                     "isDegraded": is_degraded,
                     "expectedSpeedMbps": expected_speed,
                     "camerasDetected": cameras,
+                    # Why is a down port down? (disabled / driver / no-link)
+                    "downReason": None if is_up else _derive_down_reason(port),
                 }
             )
 

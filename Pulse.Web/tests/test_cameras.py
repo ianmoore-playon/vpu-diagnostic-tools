@@ -107,6 +107,41 @@ class TestIdentityLayering(unittest.TestCase):
         self.assertEqual(cam["identitySource"], "cameras.cfg")
 
 
+class TestDownReason(unittest.TestCase):
+    """Classify *why* a port is down so the UI can guide the tech."""
+
+    def test_disabled_via_admin_status(self):
+        self.assertEqual(main._derive_down_reason(
+            {"status": "Disconnected", "adminStatus": "Down"}), "disabled")
+
+    def test_disabled_via_status(self):
+        self.assertEqual(main._derive_down_reason({"status": "Disabled"}), "disabled")
+
+    def test_driver_fault(self):
+        self.assertEqual(main._derive_down_reason(
+            {"status": "Down", "adminStatus": "Up", "driverStatus": "Error"}), "driver")
+
+    def test_driver_ok_is_not_driver_reason(self):
+        self.assertEqual(main._derive_down_reason(
+            {"status": "Disconnected", "adminStatus": "Up",
+             "driverStatus": "OK", "mediaConnectionState": "Disconnected"}), "no-link")
+
+    def test_no_link_via_media(self):
+        self.assertEqual(main._derive_down_reason(
+            {"status": "Down", "adminStatus": "Up", "mediaConnectionState": "Disconnected"}), "no-link")
+
+    def test_enriched_down_port_gets_reason_up_port_none(self):
+        nics = {"ports": [
+            _port("Up", "00-30-64-36-73-AA"),
+            dict(_port("Dn", "00-30-64-36-73-AB", status="Down"), adminStatus="Up",
+                 mediaConnectionState="Disconnected"),
+        ]}
+        ports = _enrich(nics["ports"])
+        by = {p["name"]: p for p in ports}
+        self.assertIsNone(by["Up"]["downReason"])
+        self.assertEqual(by["Dn"]["downReason"], "no-link")
+
+
 class TestDedupAndDownPorts(unittest.TestCase):
     def setUp(self):
         main._PORT_STATE_TRACKER.clear()

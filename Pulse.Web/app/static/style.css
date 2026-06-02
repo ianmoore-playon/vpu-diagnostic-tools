@@ -1799,6 +1799,20 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .cam-entry-mac { white-space: nowrap; }
 .cam-entry-source { font-size: 0.6rem; flex-basis: 100%; }
 .cam-no-detect { font-size: 0.7rem; color: var(--c-dim); }
+.cam-down-guide {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--c-surface-2, rgba(148,163,184,0.06));
+    border: 1px solid var(--c-border);
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: var(--c-muted);
+}
+.cam-down-guide svg { flex-shrink: 0; margin-top: 1px; color: var(--c-dim); }
 .cam-video-running {
     display: flex;
     align-items: center;
