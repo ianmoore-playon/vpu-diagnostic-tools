@@ -22,6 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-02
+
 ### Added
 - **Dashboard now flags missing main cameras.** If the VPU is configured for
   more cameras than are actually reporting on the camera NIC, you get a
