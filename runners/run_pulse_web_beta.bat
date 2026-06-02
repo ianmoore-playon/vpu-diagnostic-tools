@@ -18,7 +18,7 @@ if not errorlevel 1 exit /b
 echo   Administrator access declined - continuing with limited diagnostics.
 :gotadmin
 
-:: ════════════════════════════════════════════════════════════════
+:: ================================================================
 ::  Pulse updater / launcher  (BETA channel)
 ::
 ::  - Installs to C:\Pulse
@@ -27,7 +27,7 @@ echo   Administrator access declined - continuing with limited diagnostics.
 ::  - If offline or the download fails, launches the installed copy
 ::  - Creates a desktop shortcut; hands off to run.bat, which starts
 ::    the server hidden and closes this window
-:: ════════════════════════════════════════════════════════════════
+:: ================================================================
 
 :: -- Config ---------------------------------------------------------------
 set "CHANNEL=beta"
@@ -189,7 +189,7 @@ echo   Desktop shortcut ............... ready
 :: -- Hand off to the runtime launcher -------------------------------------
 echo.
 if not exist "%INSTALL_DIR%\run.bat" (
-    echo   [ERROR] %INSTALL_DIR%\run.bat not found — install incomplete.
+    echo   [ERROR] %INSTALL_DIR%\run.bat not found - install incomplete.
     goto :fatal
 )
 cd /d "%INSTALL_DIR%"
@@ -200,12 +200,12 @@ if not defined PULSE_DEBUG (
     exit /b 0
 )
 
-:: ── DEBUG MODE ───────────────────────────────────────────────────────────
+:: -- DEBUG MODE -----------------------------------------------------------
 :: Run the server in THIS window so any Python/uvicorn startup error is
 :: visible, instead of starting it hidden and closing the window.
 set "PYEXE=%INSTALL_DIR%\app\python\python.exe"
 if not exist "%PYEXE%" (
-    echo   First run — bootstrapping the runtime via run.bat ...
+    echo   First run - bootstrapping the runtime via run.bat ...
     set "PULSE_NO_BROWSER=1"
     call run.bat
     :: run.bat starts the server hidden on success; stop it so we can run it
@@ -213,26 +213,26 @@ if not exist "%PYEXE%" (
     for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8765 " ^| findstr "LISTENING"') do taskkill /PID %%a /F >nul 2>&1
 )
 if not exist "%PYEXE%" (
-    echo   [ERROR] Python runtime still missing at "%PYEXE%" — bootstrap failed.
+    echo   [ERROR] Python runtime still missing at "%PYEXE%" - bootstrap failed.
     echo           See the messages above and %INSTALL_DIR%\pulse-server.log
     goto :fatal
 )
 :: Free the port in case a hidden instance is already holding it.
 for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8765 " ^| findstr "LISTENING"') do taskkill /PID %%a /F >nul 2>&1
 echo.
-echo  ════════════════════════════════════════════════════════════════
-echo    PULSE DEBUG MODE — the server runs HERE so you can see any error.
+echo  ================================================================
+echo    PULSE DEBUG MODE - the server runs HERE so you can see any error.
 echo    When you see "Uvicorn running on http://127.0.0.1:8765",
 echo    open that address in Chrome.    Press Ctrl+C to stop.
 echo    This window will NOT close on its own.
-echo  ════════════════════════════════════════════════════════════════
+echo  ================================================================
 echo.
 "%PYEXE%" "%INSTALL_DIR%\app\main.py"
 echo.
-echo  ════════════════════════════════════════════════════════════════
+echo  ================================================================
 echo    [DEBUG] The server process exited. Any error/traceback is above.
 echo    Also check %INSTALL_DIR%\pulse-server.log
-echo  ════════════════════════════════════════════════════════════════
+echo  ================================================================
 pause
 endlocal
 exit /b 0
@@ -241,7 +241,7 @@ exit /b 0
 :fatal
 echo.
 echo  ============================================
-echo    PULSE FAILED — see the messages above.
+echo    PULSE FAILED - see the messages above.
 echo    Press any key to close.
 echo  ============================================
 pause >nul
