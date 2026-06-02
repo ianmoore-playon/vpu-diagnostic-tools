@@ -20,6 +20,25 @@ flow shows testers when a new build is available.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 `Pulse.Web/VERSION`.
 
+## [0.2.0] - 2026-06-02
+
+### Added
+- **Dashboard now flags missing main cameras.** If the VPU is configured for
+  more cameras than are actually reporting on the camera NIC, you get a
+  CRITICAL finding (none detected) or a WARNING (some missing, e.g.
+  "1 of 2 main cameras detected"). Click it to jump straight to Camera
+  Connectivity. Stays silent when expectations can't be read — never guesses.
+
+### Changed
+- **Launcher fails loud while we're in beta.** If something goes wrong on
+  launch, the window stays open with the actual error/traceback instead of
+  closing silently — and the browser still opens automatically once Pulse
+  is ready.
+
+### Fixed
+- **Garbled box-line characters** in the launcher console output on VPUs
+  whose console codepage isn't UTF-8. Output is now plain ASCII everywhere.
+
 ## [0.1.0] - 2026-05-29
 
 ### Added

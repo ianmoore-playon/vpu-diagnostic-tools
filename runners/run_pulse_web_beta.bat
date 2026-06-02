@@ -18,7 +18,7 @@ if not errorlevel 1 exit /b
 echo   Administrator access declined - continuing with limited diagnostics.
 :gotadmin
 
-:: ════════════════════════════════════════════════════════════════
+:: ================================================================
 ::  Pulse updater / launcher  (BETA channel)
 ::
 ::  - Installs to C:\Pulse
@@ -27,7 +27,7 @@ echo   Administrator access declined - continuing with limited diagnostics.
 ::  - If offline or the download fails, launches the installed copy
 ::  - Creates a desktop shortcut; hands off to run.bat, which starts
 ::    the server hidden and closes this window
-:: ════════════════════════════════════════════════════════════════
+:: ================================================================
 
 :: -- Config ---------------------------------------------------------------
 set "CHANNEL=beta"
@@ -37,6 +37,13 @@ set "PUBLIC_REPO=ianmoore-playon/pulse-releases"
 set "ZIPFILE=%TEMP%\pulse-dl.zip"
 set "EXTRACT=%TEMP%\pulse-extract"
 set "RESOLVE_OUT=%TEMP%\pulse-resolve.txt"
+
+:: -- Debug mode -----------------------------------------------------------
+::   1 = run the server in THIS window so any startup error/traceback is
+::       visible, and never close the window without a keypress. Flip to
+::       empty ("") for the quiet, hidden-server experience before wide
+::       rollout / promotion to main.
+set "PULSE_DEBUG=1"
 
 echo.
 echo  .-----------------------------------------------------.
@@ -182,11 +189,61 @@ echo   Desktop shortcut ............... ready
 :: -- Hand off to the runtime launcher -------------------------------------
 echo.
 if not exist "%INSTALL_DIR%\run.bat" (
-    echo   [ERROR] %INSTALL_DIR%\run.bat not found — install incomplete.
+    echo   [ERROR] %INSTALL_DIR%\run.bat not found - install incomplete.
     goto :fatal
 )
 cd /d "%INSTALL_DIR%"
-call run.bat
+
+if not defined PULSE_DEBUG (
+    call run.bat
+    endlocal
+    exit /b 0
+)
+
+:: -- DEBUG MODE -----------------------------------------------------------
+:: Run the server in THIS window so any Python/uvicorn startup error is
+:: visible, instead of starting it hidden and closing the window.
+set "PYEXE=%INSTALL_DIR%\app\python\python.exe"
+if not exist "%PYEXE%" (
+    echo   First run - bootstrapping the runtime via run.bat ...
+    set "PULSE_NO_BROWSER=1"
+    call run.bat
+    :: Clear the flag — the foreground server run below SHOULD open Chrome.
+    set "PULSE_NO_BROWSER="
+    :: run.bat starts the server hidden on success; stop it so we can run it
+    :: here in the foreground, where errors are visible.
+    for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8765 " ^| findstr "LISTENING"') do taskkill /PID %%a /F >nul 2>&1
+)
+if not exist "%PYEXE%" (
+    echo   [ERROR] Python runtime still missing at "%PYEXE%" - bootstrap failed.
+    echo           See the messages above and %INSTALL_DIR%\pulse-server.log
+    goto :fatal
+)
+:: Free the port in case a hidden instance is already holding it.
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8765 " ^| findstr "LISTENING"') do taskkill /PID %%a /F >nul 2>&1
+
+:: Background waiter that opens Chrome the moment the server binds the port.
+:: Same script normal-mode uses; the START makes it asynchronous so it polls
+:: while the foreground server boots in this window.
+set "WAITER=%INSTALL_DIR%\scripts\Wait-AndLaunch.ps1"
+if exist "%WAITER%" (
+    start "" /b powershell -NoProfile -ExecutionPolicy Bypass -File "%WAITER%" -Port 8765 -Url "http://localhost:8765" -TimeoutSec 60
+)
+
+echo.
+echo  ================================================================
+echo    PULSE DEBUG MODE - the server runs HERE so you can see any error.
+echo    Chrome will open automatically once the server is up.
+echo    Press Ctrl+C to stop.  This window will NOT close on its own.
+echo  ================================================================
+echo.
+"%PYEXE%" "%INSTALL_DIR%\app\main.py"
+echo.
+echo  ================================================================
+echo    [DEBUG] The server process exited. Any error/traceback is above.
+echo    Also check %INSTALL_DIR%\pulse-server.log
+echo  ================================================================
+pause
 endlocal
 exit /b 0
 
@@ -194,7 +251,7 @@ exit /b 0
 :fatal
 echo.
 echo  ============================================
-echo    PULSE UPDATE FAILED — see messages above.
+echo    PULSE FAILED - see the messages above.
 echo    Press any key to close.
 echo  ============================================
 pause >nul

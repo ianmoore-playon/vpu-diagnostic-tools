@@ -1010,7 +1010,7 @@ def _total_ram_gb(hardware, performance) -> float:
     return 0.0
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None) -> list:
     findings = []
 
     # ── Wi-Fi uplink detection (Canopy adoption) ─────────────
@@ -1488,6 +1488,56 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 }
             )
 
+    # ── Missing / under-count main cameras ─────────────────────
+    # Compare what the Coordinator says the VPU is configured for
+    # (`expectedMainCameras`, from Get-CameraExpectations) against what's
+    # actually present on the camera NIC. Only fires when we have an
+    # authoritative expected count — never guesses. OCR ports don't count
+    # toward the main total (the OCR camera is its own role).
+    if expectations and not expectations.get("error") and nics and not nics.get("error"):
+        expected_main = expectations.get("expectedMainCameras")
+        if isinstance(expected_main, int) and expected_main > 0:
+            # Enrich ports for accurate Main vs OCR classification (by ARP +
+            # default-OCR-IP convention; no CGI probe results required).
+            enriched_ports = _enrich_ports(nics, pixellot_config, None)
+            detected_main = 0
+            for p in enriched_ports:
+                if not p.get("isUp") or p.get("isOcr"):
+                    continue
+                for c in (p.get("camerasDetected") or []):
+                    if "OCR" not in (c.get("role") or ""):
+                        detected_main += 1
+            if detected_main < expected_main:
+                missing = expected_main - detected_main
+                if detected_main == 0:
+                    sev = "critical"
+                    title = f"No main cameras detected (expected {expected_main})"
+                    rec = (
+                        f"The VPU is configured for {expected_main} main camera"
+                        f"{'s' if expected_main != 1 else ''} but none are reporting "
+                        f"on the camera NIC. Check that the camera cables are seated, "
+                        f"the cameras have power, and the correct ports are in use. "
+                        f"See the Camera Connectivity tab for per-port detail."
+                    )
+                else:
+                    sev = "warning"
+                    title = (
+                        f"{detected_main} of {expected_main} main cameras detected "
+                        f"({missing} missing)"
+                    )
+                    rec = (
+                        f"{missing} main camera{'s are' if missing != 1 else ' is'} "
+                        f"expected but not detected. Inspect the missing port(s) on "
+                        f"the Camera Connectivity tab — typically a cable, switch "
+                        f"port, or camera-power issue."
+                    )
+                findings.append({
+                    "severity": sev,
+                    "category": "Camera",
+                    "title": title,
+                    "recommendation": rec,
+                })
+
     # Deduplicate by (category, title) — separate checks shouldn't produce
     # the same finding twice on the dashboard.
     seen = set()
@@ -1958,7 +2008,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None):
     flat_identity = {}
     if identity and not identity.get("error"):
         flat_identity = {
@@ -2012,7 +2062,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         "identity": flat_identity,
         "performance": performance if not performance.get("error", False) else {},
         "services": services if not services.get("error", False) else {"services": []},
-        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi),
+        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations),
         "networkConfig": net_cfg,
         "sourceErrors": source_errors,
     }
@@ -2203,7 +2253,7 @@ async def api_scripts_cancel_all():
 
 @app.get("/api/dashboard")
 async def api_dashboard():
-    identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info, wifi = await asyncio.gather(
+    identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info, wifi, pixellot_config, expectations = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
@@ -2218,8 +2268,13 @@ async def api_dashboard():
         run_ps("Test-NetworkPorts.ps1", timeout=20),
         run_ps("Get-GpuInfo.ps1", timeout=15),
         run_ps("Get-WifiAdapters.ps1", timeout=10),
+        # Pixellot config + expected camera count feed the dashboard's new
+        # "missing main cameras" finding (compared against what's detected on
+        # the camera NIC). Same scripts the Camera Connectivity tab uses.
+        run_ps("Get-PixellotConfig.ps1", timeout=15),
+        run_ps("Get-CameraExpectations.ps1", timeout=10),
     )
-    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info, wifi)
+    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations)
 
 
 def _enrich_identity_lifecycle(identity):
@@ -3024,6 +3079,7 @@ async def api_export():
             nics, sections.get("hardware"), sections.get("installedSoftware"),
             sections.get("networkConfig"), sections.get("pixellotInstallState"),
             sections.get("networkPorts"), sections.get("gpuInfo"), sections.get("wifi"),
+            pixellot_config=pix_cfg, expectations=sections.get("cameraExpectations"),
         )
     except Exception as e:
         sections["findings"] = {"error": f"findings computation failed: {type(e).__name__}: {e}"}
