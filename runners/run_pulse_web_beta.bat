@@ -208,6 +208,8 @@ if not exist "%PYEXE%" (
     echo   First run - bootstrapping the runtime via run.bat ...
     set "PULSE_NO_BROWSER=1"
     call run.bat
+    :: Clear the flag — the foreground server run below SHOULD open Chrome.
+    set "PULSE_NO_BROWSER="
     :: run.bat starts the server hidden on success; stop it so we can run it
     :: here in the foreground, where errors are visible.
     for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8765 " ^| findstr "LISTENING"') do taskkill /PID %%a /F >nul 2>&1
@@ -219,12 +221,20 @@ if not exist "%PYEXE%" (
 )
 :: Free the port in case a hidden instance is already holding it.
 for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8765 " ^| findstr "LISTENING"') do taskkill /PID %%a /F >nul 2>&1
+
+:: Background waiter that opens Chrome the moment the server binds the port.
+:: Same script normal-mode uses; the START makes it asynchronous so it polls
+:: while the foreground server boots in this window.
+set "WAITER=%INSTALL_DIR%\scripts\Wait-AndLaunch.ps1"
+if exist "%WAITER%" (
+    start "" /b powershell -NoProfile -ExecutionPolicy Bypass -File "%WAITER%" -Port 8765 -Url "http://localhost:8765" -TimeoutSec 60
+)
+
 echo.
 echo  ================================================================
 echo    PULSE DEBUG MODE - the server runs HERE so you can see any error.
-echo    When you see "Uvicorn running on http://127.0.0.1:8765",
-echo    open that address in Chrome.    Press Ctrl+C to stop.
-echo    This window will NOT close on its own.
+echo    Chrome will open automatically once the server is up.
+echo    Press Ctrl+C to stop.  This window will NOT close on its own.
 echo  ================================================================
 echo.
 "%PYEXE%" "%INSTALL_DIR%\app\main.py"
