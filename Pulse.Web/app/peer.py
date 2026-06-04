@@ -219,10 +219,14 @@ def _summarize(path: str, report: dict) -> dict:
     meta = report.get("_meta", {}) if isinstance(report, dict) else {}
     findings = report.get("findings") if isinstance(report, dict) else None
     sections = [k for k in report if not k.startswith("_") and k != "findings"] if isinstance(report, dict) else []
+    ident = report.get("identity") if isinstance(report, dict) else None
+    pix = ident.get("pixellot") if isinstance(ident, dict) else None
+    vpu_name = pix.get("vpuName") if isinstance(pix, dict) else None
     return {
         "id": rec.get("id") or os.path.basename(path)[:-5],
         "receivedAt": rec.get("receivedAt"),
         "senderIp": rec.get("senderIp"),
+        "vpuName": vpu_name,
         "hostname": meta.get("hostname"),
         "generatedAt": meta.get("generatedAt"),
         "pulseVersion": meta.get("pulseVersion"),
