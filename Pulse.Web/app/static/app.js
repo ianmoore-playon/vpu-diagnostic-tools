@@ -2056,6 +2056,39 @@ function _prefixToMask(prefix) {
   return [24, 16, 8, 0].map(function(s) { return (mask >>> s) & 0xFF; }).join(".");
 }
 
+// "Impact if blocked" copy, sourced from the NFHS Network Firewall Setup doc
+// where the endpoint appears there, and authored from Pixellot service
+// knowledge for the few Pulse-only endpoints the doc doesn't list (AWS S3,
+// Singular, leaf-* buckets). Single editable home — revisit/expand later.
+// Ports are keyed by purpose; domains by hostname.
+const NET_PORT_IMPACT = {
+  "DNS": "The VPU can't resolve any hostname, so it can't reach any service.",
+  "Pixellot": "System management and software updates are blocked, and the stream fails to broadcast.",
+  "Pixellot Echo": "Stream fails to broadcast and remote support access is lost.",
+  "NFHS Network": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
+  "AWS S3": "Recordings and clips can't upload, and software/asset downloads fail.",
+  "Singular Overlay": "On-screen graphics and scorebug overlays won't load.",
+  "LogMeIn": "The support team can't diagnose the VPU remotely.",
+  "NTP": "The clock can drift — the VPU may miss scheduled events if no valid time server is set.",
+  "Zixi QUIC": "Stream fails to broadcast.",
+  "Zixi Streaming": "Stream fails to broadcast.",
+  "RTMP Ingest": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
+  "Scorebot": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
+};
+const NET_DOMAIN_IMPACT = {
+  "nfhsnetwork.com": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
+  "pixellot.tv": "System management and software updates are blocked, and the stream fails to broadcast.",
+  "software.pixellot.tv": "Software and firmware updates are blocked.",
+  "sportzcast.net": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
+  "service.singular.live": "On-screen graphics and scorebug overlays won't load.",
+  "logmein.com": "The support team can't diagnose the VPU remotely.",
+  "s3.amazonaws.com": "Recordings can't upload and software/asset downloads fail.",
+  "leaf-uploads.s3.amazonaws.com": "Game recordings and clips can't upload to the cloud.",
+  "leaf-downloads.s3.amazonaws.com": "Software, firmware, and config downloads fail.",
+};
+function _netPortImpact(p) { return (p && NET_PORT_IMPACT[p.purpose]) || ""; }
+function _netDomainImpact(d) { return (d && NET_DOMAIN_IMPACT[d.domain]) || ""; }
+
 // Severity ordering for Network tab issues. Returns a stable rank where
 // critical comes first. The previous inline `(o[severity] || 3)` form
 // treated critical as falsy (rank 0) and silently fell through to 3,
@@ -2147,9 +2180,9 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
   if (reqFailed.length > 0) {
     var portDetails = reqFailed.map(function(p) {
       var proto = (p.protocol || "TCP").toUpperCase();
-      if (p.port === 123 && proto === "UDP")
-        return proto + "/" + p.port + " — NTP sync failed. VPU clock will drift, breaking signed-URL streaming.";
-      return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote");
+      var impact = _netPortImpact(p);
+      return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote")
+        + (impact ? " — " + impact : "");
     });
     issues.push({ severity: "critical", title: reqFailed.length + " of " + (reqFailed.length + reqPass.length) + " required ports blocked",
       body: "Ensure these ports are allowed by the venue firewall and VLAN policy.",
@@ -2199,7 +2232,8 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
   var domTotal = (domains || []).length;
   if (domFailed.length > 0) {
     var domDetails = domFailed.map(function(d) {
-      return d.domain + " — ensure it is whitelisted (firewall, DNS allow-list, SSL inspection bypass)";
+      var impact = _netDomainImpact(d);
+      return d.domain + (impact ? " — " + impact : " — ensure it is whitelisted (firewall, DNS allow-list, SSL inspection bypass)");
     });
     issues.push({ severity: "warning", title: domFailed.length + " of " + domTotal + " domains failed DNS resolution",
       body: "Check DNS server settings on this adapter.",
@@ -2479,7 +2513,7 @@ function renderNetwork() {
   function portCard(p) {
     const ok = (p.status || "").toLowerCase() === "pass";
     const cls = ok ? "port-card-pass" : (p.optional ? "port-card-warn" : "port-card-fail");
-    return `<div class="port-card ${cls}">
+    return `<div class="port-card ${cls}" title="${esc(_netPortImpact(p))}">
       <div class="port-card-num">${esc(String(p.port))}</div>
       <div class="port-card-name">${esc(p.purpose)}</div>
       <div class="port-card-host">${esc(p.host)}</div>
@@ -2513,7 +2547,7 @@ function renderNetwork() {
     const proto = (group[0].protocol || "").toUpperCase();
     const label = proto === "TCP" && port === 443 ? "HTTPS Endpoints" : (group[0].purpose || (proto + "/" + port));
     const hosts = group.map(function(p) {
-      return `<li><span class="port-card-host-dot" style="background:${_portDotColor(p)}"></span>` +
+      return `<li title="${esc(_netPortImpact(p))}"><span class="port-card-host-dot" style="background:${_portDotColor(p)}"></span>` +
              `<span class="port-card-host-name">${esc(p.host)}</span>` +
              `<span class="port-card-host-purpose">${esc(p.purpose)}</span></li>`;
     }).join("");
@@ -2548,7 +2582,7 @@ function renderNetwork() {
       }).join("") +
       '</ul>';
 
-    return `<div class="port-card port-card-multi ${isOptional ? "port-card-compact " : ""}${_portGroupClass(group)}">
+    return `<div class="port-card port-card-multi ${isOptional ? "port-card-compact " : ""}${_portGroupClass(group)}" title="${esc(_netPortImpact(group[0]))}">
       <div class="port-card-num">${esc(rangeLabel)}</div>
       <div class="port-card-name">${esc(purpose)}</div>
       <div class="port-card-host">${esc(group[0].host)}</div>
@@ -2748,7 +2782,7 @@ function renderNetwork() {
               var dnsTime = d.resolutionMs != null ? d.resolutionMs + " ms" : "";
               var dnsSlow = d.resolutionMs != null && d.resolutionMs > 200;
               var dotColor = ok ? "var(--c-accent-green)" : "var(--c-accent-red)";
-              return `<div class="domain-row">
+              return `<div class="domain-row" title="${esc(_netDomainImpact(d))}">
                 <span class="domain-dot" style="background:${dotColor}"></span>
                 <span class="domain-name">${esc(d.domain)}</span>
                 <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
