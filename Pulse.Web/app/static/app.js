@@ -3406,8 +3406,6 @@ function renderCameras() {
   if (!data) { $page().innerHTML = sectionLoading("Camera Connectivity"); fetchSection("cameras"); return; }
 
   const ports = data.ports || [];
-  const pixCfg = data.pixellotConfig || {};
-  const cfgCameras = pixCfg.cameras || [];
   const findings = data.findings || [];
 
   const portSlots = [];
@@ -3441,21 +3439,6 @@ function renderCameras() {
       <div class="cam-port-grid" id="cam-port-grid">
         ${_camPortGridHtml(ports)}
       </div>
-
-      ${cfgCameras.length ? `
-      <div class="card">
-        ${sectionTitle("file", "cameras.cfg")}
-        <table class="data-table"><thead><tr>
-          <th>Section</th><th>IP</th><th>MAC</th><th>Role</th>
-        </tr></thead><tbody>
-        ${cfgCameras.map(c => `<tr>
-          <td>${esc(c.section)}</td>
-          <td class="font-mono">${esc(c.ip)}</td>
-          <td class="font-mono">${esc(c.mac)}</td>
-          <td>${esc(c.role)}</td>
-        </tr>`).join("")}
-        </tbody></table>
-      </div>` : ""}
     </div>
 
   `;

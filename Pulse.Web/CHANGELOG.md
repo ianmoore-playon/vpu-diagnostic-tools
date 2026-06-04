@@ -26,6 +26,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - **Pulse no longer leaves a desktop icon** — launch from the Start Menu
   instead (press **Win**, type "pulse", hit Enter). Cleaner footprint on the
   VPU. Existing installs auto-clean up the old desktop shortcut on next launch.
+- **Removed the raw cameras.cfg table from Camera Connectivity.** Camera
+  identity already shows on each port tile — the duplicate config dump just
+  added clutter.
 
 ### Fixed
 - **Camera Connectivity no longer errors out when a port is down.** A page that
