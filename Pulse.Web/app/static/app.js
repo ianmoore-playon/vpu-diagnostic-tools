@@ -5410,11 +5410,44 @@ function renderFaultIsolator() {
   // expectedMbps: optional. If provided, polling exits early once peak
   // hits or exceeds the camera's expected speed. Defaults to 1 Gbps.
   async function pollPeakSpeed(portIdx, windowSec, expectedMbps) {
+    // ── Demo mode: scripted phase results so the wizard walks all 4 phases ──
+    // Static demo /api/cameras can't reflect post-swap state, so a live poll
+    // would either (a) immediately conclude on whichever test port the user
+    // picked, or (b) time out for 20s every phase. Scripting the per-phase
+    // result lets the demo show the full 4-phase narrative ending at the
+    // CAMERA verdict — the capability we want to demonstrate. Phase 0
+    // (baseline) still reads the real suspect port so picking different
+    // ports shows different baselines (Port 2 = degraded, Port 1 = healthy).
+    var fi = _fi;
+    if (dataCache.cameras && dataCache.cameras.demoMode) {
+      var btn = document.getElementById("fi-action");
+      // Brief animated "Checking..." beat so it doesn't snap; total ~2.5s.
+      for (var t = 1; t <= 3; t++) {
+        if (fi._aborted || _fi !== fi) return 0;
+        fi.checkElapsed = t;
+        if (btn) btn.textContent = "Checking... " + t + "s / 3s";
+        await new Promise(function(r) { setTimeout(r, 800); });
+      }
+      if (_fi.phase === 0) {
+        // Baseline: read the REAL suspect port speed (one fetch, no looping —
+        // demo data is static, the first sample is the final sample).
+        try {
+          var fresh0 = await api("/api/cameras");
+          dataCache.cameras = fresh0;
+          var p0 = (fresh0.ports || [])[portIdx];
+          return p0 ? (p0.linkSpeedMbps || 0) : 0;
+        } catch (e) { return 0; }
+      }
+      if (_fi.phase === 1) return 100;   // NIC Port test — still degraded
+      if (_fi.phase === 2) return 100;   // Cable test    — still degraded
+      return 1000;                       // Camera test   — restored ⇒ CAMERA verdict
+    }
+
     var threshold = expectedMbps || 1000;
     var peak = 0;
     var start = Date.now();
     var deadline = start + windowSec * 1000;
-    var fi = _fi;  // bind to this run; a reset swaps the global _fi out
+    // bind to this run; a reset swaps the global _fi out
     while (Date.now() < deadline) {
       if (fi._aborted || _fi !== fi) return peak;
       var elapsed = Math.floor((Date.now() - start) / 1000);
