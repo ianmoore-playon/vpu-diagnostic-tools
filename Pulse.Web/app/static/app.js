@@ -2648,6 +2648,7 @@ function renderNetwork() {
           <div class="font-semibold text-white mb-1">${esc(uplinkAdapterRow.name)}</div>
           <div class="text-pulse-muted text-xs mb-3">${esc(uplinkAdapterRow.interfaceDescription || "")}</div>` : `
           <p class="text-pulse-muted text-sm mb-3">No internet-bound adapter detected.</p>`}
+        <div class="net-iface-stats-title">IP Configuration</div>
         <div class="kv-grid">
           ${kvRow("IP address", adapterIp)}
           ${kvRow("Subnet mask", subnetMask || "—")}
@@ -2662,6 +2663,10 @@ function renderNetwork() {
           })())}
           ${kvRow("Gateway", cfg.uplinkAdapter?.gateway || "—")}
           ${kvRow("DNS", dnsStr)}
+        </div>
+
+        <div class="net-iface-stats-title" style="margin-top:0.85rem">Link</div>
+        <div class="kv-grid">
           ${kvRow("MAC address", uplinkAdapterRow?.macAddress || "—")}
           ${kvRowHtml("Link state", uplinkAdapterRow
             ? `<span style="color:${adapterLinkState === "Up" ? "var(--c-accent-green)" : "var(--c-muted)"};font-weight:600">${esc(adapterLinkState)}</span>`
@@ -2670,10 +2675,18 @@ function renderNetwork() {
           ${duplexLabel ? kvRowHtml("Duplex", duplexLabel === "Half Duplex"
             ? '<span class="status-warn" style="font-weight:600">Half Duplex</span>'
             : '<span style="color:var(--c-accent-green);font-weight:600">Full Duplex</span>') : ""}
+        </div>
+
+        <div class="net-iface-stats-title" style="margin-top:0.85rem">Connectivity</div>
+        <div class="kv-grid">
           ${kvRowHtml("Internet", cfg.internetReachable
             ? '<span class="status-pass">Reachable</span>'
             : '<span class="status-fail">Unreachable</span>')}
           ${kvRow("Tested host", cfg.testedHost || "—")}
+        </div>
+
+        <div class="net-iface-stats-title" style="margin-top:0.85rem">Time Sync</div>
+        <div class="kv-grid">
           ${kvRowHtml("NTP server", (function() {
             var src = cfg.ntpSource || ntp.source || "";
             if (!src) return "—";
