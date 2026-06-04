@@ -43,7 +43,7 @@ Code flows `dev` → `beta` → `main`. Each branch has CI builds; tags create r
 
 Dev and beta tags create pre-releases. Production tags create full releases.
 
-Launchers in `runners/` are per-channel (`run_pulse.bat`, `run_pulse_beta.bat`, `run_pulse_dev.bat`, and web equivalents). Each installs to its own `%LOCALAPPDATA%` directory so channels coexist on a VPU.
+Launchers in `runners/` are per-channel: `run_pulse.bat` (production → latest `web-v*` release), `run_pulse_beta.bat` (beta → latest `web-beta-v*` pre-release), `run_pulse_dev.bat` (dev → latest commit on the `dev` branch; pass a branch name to test another). All install to `C:\Pulse` (one channel at a time) and auto-update every launch. (The old Pulse.WPF launchers + `install*.ps1` were removed when WPF was deprecated.)
 
 ### Versioning
 

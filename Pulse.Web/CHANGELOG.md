@@ -23,6 +23,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [Unreleased]
 
 ### Changed
+- **Simpler launchers.** One per channel, clearly named: `run_pulse.bat`
+  (production), `run_pulse_beta.bat` (beta), `run_pulse_dev.bat` (dev). The dev
+  launcher now always pulls the latest `dev`-branch commit instead of a stale
+  tagged release. (The old `_web_`-prefixed names and the duplicate Pulse.WPF
+  launchers are gone — WPF is deprecated.)
 - **Pulse no longer leaves a desktop icon** — launch from the Start Menu
   instead (press **Win**, type "pulse", hit Enter). Cleaner footprint on the
   VPU. Existing installs auto-clean up the old desktop shortcut on next launch.

@@ -1,9 +1,9 @@
 # Package Pulse.Web and publish as a GitHub release.
 #
-# No build step — just zip the Pulse.Web/ tree and release it.
-# Tags web-v* create a production release mirrored to pulse-releases.
-# Tags web-beta-v* create a beta pre-release mirrored to pulse-releases.
-# Tags web-dev-v* create a dev pre-release mirrored to pulse-releases.
+# No build step — just zip the Pulse.Web/ tree and publish it on this repo.
+# Tags web-v* create a production release.
+# Tags web-beta-v* create a beta pre-release.
+# Tags web-dev-v* create a dev pre-release.
 
 name: Build Pulse.Web
 
@@ -94,7 +94,7 @@ jobs:
           # known-good launcher paired with this build.
           files: |
             ${{ env.ARTIFACT_ZIP }}
-            runners/run_pulse_web.bat
+            runners/run_pulse.bat
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           prerelease: false
@@ -102,10 +102,10 @@ jobs:
             Pulse.Web release.
 
             Public release published on this repo. Field VPUs install via
-            `run_pulse_web.bat`, which auto-updates from here every launch.
+            `run_pulse.bat`, which auto-updates from here every launch.
 
             Install on a VPU:
-            - Drop `run_pulse_web.bat` on the desktop and double-click — auto-updates every launch.
+            - Drop `run_pulse.bat` on the desktop and double-click — auto-updates every launch.
 
       # ── Beta pre-release (beta channel, web-beta-v* tags) ──────────────
       - name: Publish beta pre-release (source repo)
@@ -114,15 +114,15 @@ jobs:
         with:
           files: |
             ${{ env.ARTIFACT_ZIP }}
-            runners/run_pulse_web_beta.bat
+            runners/run_pulse_beta.bat
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           prerelease: true
           body: |
             Pulse.Web beta build — not yet promoted to main.
 
-            **Internal source-repo pre-release.** Mirrored to pulse-releases
-            as a pre-release asset for testing.
+            Install on a VPU (beta channel): drop `run_pulse_beta.bat` on the
+            desktop and double-click — it auto-updates from here every launch.
 
       # ── Dev pre-release (dev channel, web-dev-v* tags) ─────────────────
       - name: Publish dev pre-release (source repo)
@@ -131,13 +131,13 @@ jobs:
         with:
           files: |
             ${{ env.ARTIFACT_ZIP }}
-            runners/run_pulse_web_dev.bat
+            runners/run_pulse_dev.bat
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           prerelease: true
           body: |
             Pulse.Web dev build — internal testing only.
 
-            **Internal source-repo pre-release.** Mirrored to pulse-releases
-            as a pre-release asset for dev testing.
+            Note: the `run_pulse_dev.bat` launcher tracks the latest `dev`-branch
+            commit directly, so dev users normally don't install from this tag.
 

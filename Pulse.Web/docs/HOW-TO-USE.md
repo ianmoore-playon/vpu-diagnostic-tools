@@ -29,9 +29,9 @@ You'll get one of these `.bat` files from the team:
 
 | File | When to use it |
 |------|----------------|
-| `run_pulse_web.bat` | Production. Stable, validated builds. Use this 95% of the time. |
-| `run_pulse_web_beta.bat` | Beta testing. What you'll be running during this test program. |
-| `run_pulse_web_dev.bat` | Bleeding-edge dev builds. Only use if asked. |
+| `run_pulse.bat` | Production. Stable, validated builds. Use this 95% of the time. |
+| `run_pulse_beta.bat` | Beta testing. What you'll be running during this test program. |
+| `run_pulse_dev.bat` | Bleeding-edge dev builds (latest `dev` commit). Only use if asked. |
 
 **Steps:**
 
@@ -193,20 +193,21 @@ The browser polls the backend via HTTP, plus there's a WebSocket on `/ws` that s
 
 ### File locations on the VPU
 
+All channels install to the same directory — **`C:\Pulse`** — one channel at a
+time (the `CHANNEL` file records which). Re-running a different channel's
+launcher swaps the install in place.
+
 | Path | What it contains |
 |------|------------------|
-| `%LOCALAPPDATA%\PulseWeb\` | Production install (run_pulse_web.bat) |
-| `%LOCALAPPDATA%\PulseWeb-beta\` | Beta install (run_pulse_web_beta.bat) |
-| `%LOCALAPPDATA%\PulseWeb-dev\` | Dev install (run_pulse_web_dev.bat) |
-| `%LOCALAPPDATA%\PulseWeb-branch\` | Branch test install (run_pulse_web_branch.bat) |
-| `<install_dir>\app\python\` | Embedded Python (downloaded on first run) |
-| `<install_dir>\app\static\` | HTML / JS / CSS |
-| `<install_dir>\scripts\` | PowerShell scripts run for diagnostics |
-| `<install_dir>\pulse-server.log` | Server log file (truncated each launch) |
-| `<install_dir>\pulse-settings.json` | User settings (poll interval, ScoreConnect URL) |
-| `<install_dir>\VERSION` | Channel + commit SHA for the installed copy |
-
-Each channel installs to its own directory so you can have all three running at different times without conflict (they share the port though — only one at a time).
+| `C:\Pulse\` | The install (whichever channel was last launched) |
+| `C:\Pulse\Pulse.bat` | The launcher, self-copied here (the Start Menu shortcut points at it) |
+| `C:\Pulse\app\python\` | Embedded Python (downloaded on first run) |
+| `C:\Pulse\app\static\` | HTML / JS / CSS |
+| `C:\Pulse\scripts\` | PowerShell scripts run for diagnostics |
+| `C:\Pulse\pulse-server.log` | Server log file (truncated each launch) |
+| `C:\Pulse\pulse-settings.json` | User settings (poll interval, ScoreConnect URL) |
+| `C:\Pulse\VERSION` | The installed release tag / commit |
+| `C:\Pulse\CHANNEL` | Which channel is installed (production / beta / dev) |
 
 ### The log panel (bottom of every page)
 
@@ -252,12 +253,13 @@ If something is misbehaving and you suspect cached / stale files:
 ```cmd
 :: Kill any running Pulse
 taskkill /IM python.exe /F
+taskkill /IM pythonw.exe /F
 
-:: Nuke the install dir for the channel you're using
-rd /s /q "%LOCALAPPDATA%\PulseWeb-beta"
+:: Nuke the install dir
+rd /s /q "C:\Pulse"
 
 :: Re-run the launcher
-run_pulse_web_beta.bat
+run_pulse_beta.bat
 ```
 
 The launcher will redownload everything from GitHub.
@@ -331,7 +333,7 @@ Anything you find — bugs, confusing UX, missing data, false positives — file
 
 Print this page and tape it to your monitor.
 
-**Launch:** Double-click `run_pulse_web_beta.bat` → Chrome opens automatically
+**Launch:** Double-click `run_pulse_beta.bat` (or Start Menu → type "pulse") → Chrome opens automatically
 
 **Triage flow:** Dashboard → Click a finding → Read recommendation → Try fix → Run All Diagnostics
 
