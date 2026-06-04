@@ -33,6 +33,7 @@ function svgIcon(name, size) {
     shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
     volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
     "volume-x": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
+    activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
@@ -2620,6 +2621,7 @@ function renderNetwork() {
       <div class="net-ping-toolbar">
         ${sectionTitle("activity", "Local Network Health")}
         <div id="net-ping-controls" class="net-ping-btns">
+          <span class="text-xs text-pulse-muted" style="margin-right:4px">Ping count</span>
           <span id="net-ping-spinner" class="net-ping-spin" style="display:none">${svgIcon("refresh", 14)}</span>
           <button class="net-ping-preset${!local.gateway && !local.dns ? " net-ping-preset-active" : ""}" onclick="runLocalPing(4)">4</button>
           <button class="net-ping-preset" onclick="runLocalPing(10)">10</button>
