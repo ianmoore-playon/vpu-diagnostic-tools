@@ -4562,7 +4562,7 @@ function _shareRenderInbox(reports) {
     const card = _mk("div", "share-rx");
     const head = _mk("div", "share-rx-head");
     const left = _mk("div");
-    left.appendChild(_mk("div", "share-rx-host", r.hostname || "Unknown host"));
+    left.appendChild(_mk("div", "share-rx-host", r.vpuName || r.hostname || "Unknown host"));
     let meta = "Received " + _shareFmtTime(r.receivedAt) + " from " + (r.senderIp || "?")
       + " · " + r.findingCount + " finding" + (r.findingCount === 1 ? "" : "s")
       + " · " + _shareFmtBytes(r.sizeBytes);
@@ -4600,7 +4600,9 @@ function _shareSummaryEl(data) {
   } else {
     wrap.appendChild(document.createTextNode("all collectors OK"));
   }
-  const tail = (meta.pulseVersion ? " · " + meta.pulseVersion : "") + (meta.hostname ? " · " + meta.hostname : "");
+  const vpuName = data.identity && data.identity.pixellot && data.identity.pixellot.vpuName;
+  const name = vpuName || meta.hostname;
+  const tail = (meta.pulseVersion ? " · " + meta.pulseVersion : "") + (name ? " · " + name : "");
   if (tail) wrap.appendChild(document.createTextNode(tail));
   return wrap;
 }
