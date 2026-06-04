@@ -20,6 +20,13 @@ flow shows testers when a new build is available.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 `Pulse.Web/VERSION`.
 
+## [0.2.1] - 2026-06-04
+
+### Changed
+- Removed the Repair Tools panel (DISM, System File Checker, and chkdsk) from
+  the Disk & System Health page for this release. These run long or change
+  boot state and shouldn't be triggered without guidance.
+
 ## [0.2.0] - 2026-06-02
 
 ### Added
