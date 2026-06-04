@@ -2856,6 +2856,7 @@ function renderNetwork() {
 var _camerasRefreshTimer = null;
 var _camerasFailCount = 0;  // consecutive /api/cameras failures during live refresh
 var _camLastSignature = null;  // structural fingerprint of last rendered cameras
+var _camNicLayout = "h";       // 4-port LED diagram orientation: 'h' upright (ports L→R) / 'v' on-side (ports top→bottom)
 
 // Structural fingerprint of the camera data — everything that affects the
 // rendered layout EXCEPT the volatile RX/TX byte counters (which tick every
@@ -3118,6 +3119,17 @@ function _camPortGridHtml(ports) {
   return portSlots.slice().reverse().map((p, ri) => _camPortTile(p, portSlots.length - 1 - ri, ctx)).join("");
 }
 
+// Flip the 4-port LED row between horizontal (VPU upright) and vertical
+// (VPU on its side). Toggles the class in place so it works on both the
+// Camera Connectivity page and the Fault Isolator's reference diagram, and
+// updates the persistent layout var so live-refresh rebuilds keep the choice.
+function _camToggleNicLayout() {
+  _camNicLayout = (_camNicLayout === "v") ? "h" : "v";
+  var isV = _camNicLayout === "v";
+  document.querySelectorAll(".nic-diagram-ports").forEach(function(el) { el.classList.toggle("is-vertical", isV); });
+  document.querySelectorAll(".nic-layout-toggle").forEach(function(b) { b.classList.toggle("is-active", isV); });
+}
+
 function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
   if (showLiveBadge === undefined) showLiveBadge = true;
   const count = Math.max(4, ports.length);
@@ -3177,8 +3189,15 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
     sysChip = '<span class="nic-sys-chip">' + sysName + n +
       ' main camera' + (n === 1 ? '' : 's') + ' expected</span>';
   }
+  // Toggle to flip the LED row between upright (horizontal) and on-its-side
+  // (vertical) so it matches however the VPU is physically mounted.
+  var layoutToggle = hasRealPorts
+    ? '<button class="nic-layout-toggle' + (_camNicLayout === "v" ? " is-active" : "") +
+        '" onclick="_camToggleNicLayout()" title="Flip the port row to match how the VPU is mounted — upright (left-to-right) or on its side (top-to-bottom).">' +
+        svgIcon("refresh", 12) + ' Flip layout</button>'
+    : '';
   var nicHeader = '<div class="nic-diagram-header">' +
-    headerLabel + sysChip +
+    headerLabel + sysChip + layoutToggle +
     (showLiveBadge ? '<span id="cam-live-badge" class="cam-live-badge">Auto-Refresh</span>' : '') +
   '</div>';
   // Only show the physical-order note when we actually have NIC data;
@@ -3187,7 +3206,7 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
     ? '<div class="nic-diagram-note">Port order mirrors the physical orientation of the NIC — Port ' + count + ' is leftmost on the card.</div>'
     : '';
   return nicHeader + '<div class="nic-diagram-wrap">' +
-    '<div class="nic-diagram-ports">' + portIcons + '</div>' +
+    '<div class="nic-diagram-ports' + (_camNicLayout === "v" ? " is-vertical" : "") + '">' + portIcons + '</div>' +
     '<div class="nic-diagram-legend">' + legend + '</div>' +
     _camOrientationPanelHtml() +
   '</div>' + note;
@@ -3205,7 +3224,10 @@ function _camOrientationPanelHtml() {
   //   a cooling fan grille, the PCIe camera card with the 4 POE ports
   //   (highlighted + numbered), a lower fan, and the AC power inlet.
   // Ports numbered 4→1 (Port 4 leftmost, matching the diagram above).
-  var upright =
+  // One drawing only. "On its side" is this SAME SVG rotated 90° via CSS,
+  // so the two figures can never drift apart. Upright: POE ports 4→1 left to
+  // right; rotated -90° puts Port 1 at top and Port 4 at bottom.
+  var chassis =
     '<svg viewBox="0 0 104 156" width="98" height="147" class="orient-svg">' +
       '<rect x="12" y="4" width="80" height="148" rx="6" class="orient-chassis"/>' +
       // motherboard I/O zone
@@ -3220,8 +3242,8 @@ function _camOrientationPanelHtml() {
       '<circle cx="71" cy="32" r="13" class="orient-fan"/><circle cx="71" cy="32" r="7" class="orient-fan"/>' +
       // PCIe camera card — POE ports (highlighted), Port 4→1 left to right
       '<rect x="18" y="80" width="68" height="25" rx="3" class="orient-portbank"/>' +
-      _orientPort(22, 85, 12, 15, "4", true) + _orientPort(37, 85, 12, 15, "3", true) +
-      _orientPort(52, 85, 12, 15, "2", true) + _orientPort(67, 85, 12, 15, "1", true) +
+      _orientPort(22, 85, 12, 15, "4") + _orientPort(37, 85, 12, 15, "3") +
+      _orientPort(52, 85, 12, 15, "2") + _orientPort(67, 85, 12, 15, "1") +
       // lower fan + AC inlet
       '<circle cx="34" cy="130" r="12" class="orient-fan"/><circle cx="34" cy="130" r="6.5" class="orient-fan"/>' +
       '<rect x="56" y="122" width="28" height="17" rx="2" class="orient-acbox"/>' +
@@ -3229,46 +3251,23 @@ function _camOrientationPanelHtml() {
       '<circle cx="76" cy="127" r="1.6" class="orient-acpin"/>' +
       '<circle cx="76" cy="134" r="1.6" class="orient-acpin"/>' +
     '</svg>';
-  // Same back panel laid on its side (tower rotated): I/O cluster to the
-  // left, AC inlet to the right, POE bank a vertical column. Numbered
-  // 1→4 TOP-to-bottom (Port 4 ends up at the bottom when laid down).
-  var onside =
-    '<svg viewBox="0 0 156 104" width="135" height="90" class="orient-svg">' +
-      '<rect x="4" y="12" width="148" height="80" rx="6" class="orient-chassis"/>' +
-      '<rect x="10" y="18" width="44" height="68" rx="2" class="orient-iozone"/>' +
-      '<rect x="13" y="22" width="3" height="22" rx="1" class="orient-io"/>' +
-      '<rect x="19" y="22" width="5" height="17" rx="1" class="orient-io"/>' +
-      '<rect x="26" y="22" width="5" height="17" rx="1" class="orient-io"/>' +
-      '<rect x="34" y="22" width="11" height="13" rx="1" class="orient-eth"/>' +
-      '<rect x="19" y="45" width="6" height="9" rx="1" class="orient-io"/>' +
-      '<rect x="27" y="45" width="6" height="9" rx="1" class="orient-io"/>' +
-      '<rect x="35" y="45" width="6" height="9" rx="1" class="orient-io"/>' +
-      '<circle cx="32" cy="70" r="11" class="orient-fan"/><circle cx="32" cy="70" r="6" class="orient-fan"/>' +
-      '<rect x="78" y="16" width="25" height="72" rx="3" class="orient-portbank"/>' +
-      _orientPort(82, 20, 15, 12, "1", false) + _orientPort(82, 35, 15, 12, "2", false) +
-      _orientPort(82, 50, 15, 12, "3", false) + _orientPort(82, 65, 15, 12, "4", false) +
-      '<rect x="116" y="44" width="28" height="17" rx="2" class="orient-acbox"/>' +
-      '<circle cx="124" cy="52.5" r="1.6" class="orient-acpin"/>' +
-      '<circle cx="136" cy="49" r="1.6" class="orient-acpin"/>' +
-      '<circle cx="136" cy="56" r="1.6" class="orient-acpin"/>' +
-    '</svg>';
   return '<div class="nic-orient-panel">' +
     '<div class="nic-orient-title">VPU orientation</div>' +
     '<div class="orient-figs">' +
-      '<div class="orient-fig">' + upright + '<div class="orient-fig-label">Standing upright</div></div>' +
-      '<div class="orient-fig">' + onside + '<div class="orient-fig-label">On its side</div></div>' +
+      '<div class="orient-fig"><div class="orient-svg-box">' + chassis + '</div>' +
+        '<div class="orient-fig-label">Standing upright</div></div>' +
+      '<div class="orient-fig"><div class="orient-svg-box orient-svg-rot">' + chassis + '</div>' +
+        '<div class="orient-fig-label">On its side</div></div>' +
     '</div>' +
     '<div class="orient-caption">' +
-      'The 4 camera ports (POE) are the highlighted bank on the back, just above the ' +
-      '<strong>AC power inlet</strong> — numbered Port 4 → Port 1 (Port 4 leftmost). ' +
-      '<strong>Tip:</strong> a lit link light on a jack matches the linked port above — use it to confirm regardless of mounting.' +
+      'Camera (POE) ports are the highlighted bank above the <strong>AC power inlet</strong>. ' +
+      '<strong>Tip:</strong> a lit jack matches the linked port above — use it to confirm regardless of mounting.' +
     '</div>' +
   '</div>';
 }
 
-// A POE port rectangle + centered number. center=true centers the number
-// for the rect's own size (used in both orientations).
-function _orientPort(x, y, w, h, num, _h) {
+// A POE port rectangle + centered number.
+function _orientPort(x, y, w, h, num) {
   return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="1.5" class="orient-port"/>' +
          '<text x="' + (x + w / 2) + '" y="' + (y + h / 2 + 3) + '" class="orient-port-num">' + num + '</text>';
 }
@@ -5192,7 +5191,7 @@ function _fiReset() {
     resultDetail: "",
     resultSeverity: "", // pass | info | fail
     phaseTitle: "SELECT A PORT TO BEGIN",
-    phaseInstruction: "Select the NIC port showing a degraded or missing link and click Start Baseline.",
+    phaseInstruction: "Select the NIC port with a degraded or missing link, then Start Baseline.",
     actionLabel: "Start Baseline",
     checking: false,
     _aborted: false,
@@ -5406,8 +5405,8 @@ function renderFaultIsolator() {
       if (_fi.testIdx >= 0 && _fi.suspectIdx >= 0) {
         var sn = portLabel(_fi.suspectIdx);
         var tn = portLabel(_fi.testIdx);
-        _fi.phaseInstruction = "Move the SAME cable and camera from " + sn +
-          " to " + tn + " (test port). Click Check Now when ready.";
+        _fi.phaseInstruction = "Move the SAME cable + camera from " + sn +
+          " to " + tn + ", then Check Now.";
         renderFaultIsolator();
       }
     });
@@ -5560,10 +5559,10 @@ function renderFaultIsolator() {
       // Healthy if speed meets or exceeds expected for the camera type.
       if (spd0 >= expectedSpd) {
         addHistory("Phase 1 - Baseline", cfg0, sl0, "Port healthy — no fault on this port.", "Pass");
-        showResult("Baseline: " + sl0 + " — Port is operating normally.",
-          "The selected port is at the expected " + expectedLbl + ". No fault detected.", "pass");
+        showResult("Baseline: " + sl0 + " — port is healthy.",
+          "At the expected " + expectedLbl + " — no fault here.", "pass");
         _fi.phaseTitle = "BASELINE — PORT HEALTHY";
-        _fi.phaseInstruction = "Pick a different port from the dropdown above and click Run Baseline, or close the wizard.";
+        _fi.phaseInstruction = "Pick another port above and Run Baseline, or close the wizard.";
         _fi.actionLabel = "Run Baseline";
         // Reset to phase 0 so the suspect dropdown reappears for re-selection.
         _fi.phase = 0;
@@ -5573,17 +5572,16 @@ function renderFaultIsolator() {
 
       var bMsg, bInstr;
       if (spd0 <= 0) {
-        bMsg = "No link detected";
-        // Split the no-link case into a clear two-step prompt so the tech
-        // first verifies basics, then moves on to the swap test if still no link.
-        bInstr = "Step 1: Confirm the camera is powered on and the cable is firmly seated on both ends. " +
-                 "Step 2: If there's still no link, select a known-good test port below and click Check Now.";
+        bMsg = "No link";
+        bInstr = "Confirm the camera is powered and the cable seated (both ends). Still no link? Pick a known-good test port below and Check Now.";
       } else {
-        bMsg   = "Link is degraded at " + sl0 + " (expected " + expectedLbl + ")";
-        bInstr = "Select a known-good test port below, then move the SAME cable and camera from " + sn0 + " to it. Click Check Now when ready.";
+        bMsg   = "Degraded — " + sl0 + " (expected " + expectedLbl + ")";
+        bInstr = "Pick a known-good test port below, then move the SAME cable + camera from " + sn0 + " to it. Check Now.";
       }
-      addHistory("Phase 1 - Baseline", cfg0, sl0, bMsg + " — beginning isolation.", "Fail");
-      showResult("Baseline: " + sl0 + " — " + bMsg + ".", bInstr, "fail");
+      addHistory("Phase 1 - Baseline", cfg0, sl0, bMsg + " — isolating.", "Fail");
+      // Detail omitted on purpose — the next step already shows as the phase
+      // instruction directly above this callout; repeating bInstr was clutter.
+      showResult("Baseline: " + bMsg + ".", "", "fail");
       // Remember expected speed so subsequent phases use the right pass threshold.
       _fi.expectedSpeedMbps = expectedSpd;
       // Capture the suspect's camera MAC(s) so Phase 1 can verify the swap
@@ -5618,7 +5616,7 @@ function renderFaultIsolator() {
       if (preSpd > 0 && preSpd < 1000) {
         showResult(
           "Pre-check: " + portLabel(_fi.testIdx) + " was at " + preSpd + " Mbps BEFORE the swap.",
-          portLabel(_fi.testIdx) + " was already degraded before you moved anything. Phase 2 results will be unreliable — pick a different test port from the dropdown above, or click Start Over.",
+          portLabel(_fi.testIdx) + " was already degraded before the swap, so this test won't be reliable. Pick a different test port above, or Start Over.",
           "fail"
         );
         renderFaultIsolator();
@@ -5683,27 +5681,27 @@ function renderFaultIsolator() {
       }
 
       if (spd1 >= expSpd1) {
-        var v1 = "Link restored on the test port. The fault follows the original NIC port.";
+        var v1 = "Link restored on the test port — fault is the original NIC port.";
         addHistory("Phase 2 - NIC Port Test", cfg1, sl1, v1, "Pass");
-        showResult("Phase 2: " + sl1 + " — Fault follows the original NIC port.", v1, "pass");
+        showResult("Phase 2: " + sl1 + " — fault follows the NIC port.", "", "pass");
         conclude("NicPort", "CONCLUSION — FAULTY NIC PORT",
-          "Moving the cable and camera to " + tn1 + " restored the link. The original NIC port is the source of the fault. Escalate for NIC or motherboard repair.");
+          "Moving to " + tn1 + " restored the link — the original NIC port is the fault. Escalate for NIC/motherboard repair.");
         renderFaultIsolator();
         return;
       }
       if (spd1 <= 0) {
         addHistory("Phase 2 - NIC Port Test", cfg1, sl1, "No link detected — test inconclusive.", "Info");
-        _fi.phaseInstruction = "No link on " + tn1 + ". Verify the cable is fully seated on the test port and the camera is powered on, then click Check Now to re-measure.";
+        _fi.phaseInstruction = "No link on " + tn1 + ". Check the cable is seated and the camera powered, then Check Now.";
         showResult("Phase 2: No link — test inconclusive.", _fi.phaseInstruction, "info");
         renderFaultIsolator();
         return;
       }
-      var cv1 = "Fault stayed with the cable / camera. The original NIC port is not the source.";
+      var cv1 = "Fault followed the cable/camera — NIC port is fine.";
       addHistory("Phase 2 - NIC Port Test", cfg1, sl1, cv1, "Info");
-      showResult("Phase 2: " + sl1 + " — Fault follows cable / camera, not the NIC port.", cv1, "info");
+      showResult("Phase 2: " + sl1 + " — NIC port is fine; fault follows the cable/camera.", "", "info");
       _fi.phase = 2;
       _fi.phaseTitle = "PHASE 3 — DOES THE FAULT FOLLOW THE CABLE?";
-      _fi.phaseInstruction = "Keep the camera on " + tn1 + ". Disconnect the original cable on both ends and replace it with a known-good cable. Then click Check Now.";
+      _fi.phaseInstruction = "Keep the camera on " + tn1 + ". Swap the original cable for a known-good one (both ends), then Check Now.";
       _fi.actionLabel = "Check Now";
       renderFaultIsolator();
       return;
@@ -5722,27 +5720,27 @@ function renderFaultIsolator() {
       var cfg2 = "Port: " + tn2 + "  |  Cable: (NEW — known good)  |  Camera: (original)";
 
       if (spd2 >= expSpd2) {
-        var v2 = "Link restored with a known-good cable. The original cable is the source of the fault.";
+        var v2 = "Link restored with a known-good cable — cable is the fault.";
         addHistory("Phase 3 - Cable Test", cfg2, sl2, v2, "Pass");
-        showResult("Phase 3: " + sl2 + " — Fault follows the cable.", v2, "pass");
+        showResult("Phase 3: " + sl2 + " — fault follows the cable.", "", "pass");
         conclude("Cable", "CONCLUSION — FAULTY CABLE",
-          "Replacing the cable restored the link. The original cable (or its termination) is the source of the fault. Re-terminate both ends or replace the cable end-to-end. Inspect the cable run for physical damage (kinks, crushing, pinch points), and verify with a cable tester if one is available.");
+          "Replacing the cable restored the link — the original cable is the fault. Re-terminate both ends or replace the run, and check it for damage (kinks, crushing, pinch points).");
         renderFaultIsolator();
         return;
       }
       if (spd2 <= 0) {
         addHistory("Phase 3 - Cable Test", cfg2, sl2, "No link detected — test inconclusive.", "Info");
-        _fi.phaseInstruction = "No link on " + tn2 + ". Verify the new cable is fully seated on both ends and the camera is powered on, then click Check Now to re-measure.";
+        _fi.phaseInstruction = "No link on " + tn2 + ". Check the new cable (both ends) and camera power, then Check Now.";
         showResult("Phase 3: No link — test inconclusive.", _fi.phaseInstruction, "info");
         renderFaultIsolator();
         return;
       }
-      var cv2 = "Fault stayed with the camera. The original cable is not the source.";
+      var cv2 = "Fault followed the camera — cable is fine.";
       addHistory("Phase 3 - Cable Test", cfg2, sl2, cv2, "Info");
-      showResult("Phase 3: " + sl2 + " — Fault is not the cable.", cv2, "info");
+      showResult("Phase 3: " + sl2 + " — cable is fine; fault follows the camera.", "", "info");
       _fi.phase = 3;
       _fi.phaseTitle = "PHASE 4 — DOES THE FAULT FOLLOW THE CAMERA?";
-      _fi.phaseInstruction = "Stay on " + tn2 + " with the new cable. Connect a known-good camera, then click Check Now. If you don't have a spare camera, click \"No Spare CHU — Infer\" to conclude from what's already been ruled out.";
+      _fi.phaseInstruction = "Keep the new cable on " + tn2 + ". Connect a known-good camera, then Check Now. No spare? Click \"No Spare CHU — Infer\".";
       _fi.actionLabel = "Check Now";
       renderFaultIsolator();
       return;
@@ -5763,26 +5761,26 @@ function renderFaultIsolator() {
       var cfg3 = "Port: " + tn3 + "  |  Cable: (NEW)  |  Camera: (NEW — known good)";
 
       if (spd3 >= 1000) {
-        var v3 = "Link restored with a known-good camera. The original camera is the source of the fault.";
+        var v3 = "Link restored with a known-good camera — camera is the fault.";
         addHistory("Phase 4 - Camera Test", cfg3, sl3, v3, "Pass");
-        showResult("Phase 4: " + sl3 + " — Fault follows the camera.", v3, "pass");
+        showResult("Phase 4: " + sl3 + " — fault follows the camera.", "", "pass");
         conclude("Camera", "CONCLUSION — FAULTY CAMERA (CHU)",
-          "Replacing the camera restored the link. The original camera (CHU) is the source of the fault. Replace the camera unit.");
+          "Replacing the camera restored the link — the original camera (CHU) is the fault. Replace the camera unit.");
         renderFaultIsolator();
         return;
       }
       if (spd3 <= 0) {
         addHistory("Phase 4 - Camera Test", cfg3, sl3, "No link detected — test inconclusive.", "Info");
-        _fi.phaseInstruction = "No link on " + tn3 + ". Verify the known-good camera is connected and powered on, then click Check Now to re-measure.";
+        _fi.phaseInstruction = "No link on " + tn3 + ". Check the known-good camera is connected and powered, then Check Now.";
         showResult("Phase 4: No link — test inconclusive.", _fi.phaseInstruction, "info");
         renderFaultIsolator();
         return;
       }
-      var vf3 = "Fault persists with known-good cable and camera. The fault is likely in the NIC hardware or the VPU motherboard.";
+      var vf3 = "Still failing with known-good cable and camera — likely NIC hardware or motherboard.";
       addHistory("Phase 4 - Camera Test", cfg3, sl3, vf3, "Fail");
-      showResult("Phase 4: " + sl3 + " — Fault persists with known-good equipment.", vf3, "fail");
+      showResult("Phase 4: " + sl3 + " — still failing with known-good equipment.", "", "fail");
       conclude("NicHardware", "CONCLUSION — NIC / HARDWARE FAULT",
-        "Known-good cable and camera still fail on " + tn3 + ". This indicates a fault in the NIC hardware or the VPU motherboard. Run the full diagnostic from the Camera Connectivity panel and escalate to hardware repair.");
+        "Known-good cable and camera still fail on " + tn3 + " — the fault is in the NIC hardware or motherboard. Run the full diagnostic and escalate to hardware repair.");
       renderFaultIsolator();
       return;
     }
@@ -5793,11 +5791,11 @@ function renderFaultIsolator() {
     var tn = portLabel(_fi.testIdx);
     var cfg = "Port: " + tn + "  |  Cable: (NEW)  |  Camera: (no spare available)";
     addHistory("Phase 4 - SKIPPED", cfg, "—",
-      "No spare CHU available. Conclusion inferred from Phase 2 and Phase 3 outcomes.", "Info");
+      "No spare CHU — inferred from Phase 2 and Phase 3.", "Info");
     showResult("Phase 4 skipped — inferred conclusion.",
-      "Phase 2 cleared the original NIC port; Phase 3 cleared the original cable. The remaining suspect is the camera (CHU).", "info");
+      "NIC port (Phase 2) and cable (Phase 3) are both cleared — the camera (CHU) is the remaining suspect.", "info");
     conclude("LikelyCamera", "LIKELY CAMERA (CHU) FAULT — UNVERIFIED",
-      "Cable replacement did not restore the link, and the original NIC port has already been cleared (Phase 2). The remaining suspect is the camera (CHU). Replace the camera unit when a known-good spare is available; if the link still fails with a known-good camera, the issue is likely NIC hardware and a full diagnostic + escalation is warranted.");
+      "NIC port and cable are already cleared, so the camera (CHU) is the remaining suspect. Replace it when a known-good spare is available; if a known-good camera still fails, it's likely NIC hardware — run the full diagnostic and escalate.");
     renderFaultIsolator();
   }
 }

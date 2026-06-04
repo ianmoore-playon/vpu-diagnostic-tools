@@ -29,6 +29,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - **Removed the raw cameras.cfg table from Camera Connectivity.** Camera
   identity already shows on each port tile — the duplicate config dump just
   added clutter.
+- **Clearer VPU orientation diagram + a port-layout toggle.** The "upright" and
+  "on its side" pictures are now the same drawing (one is just rotated), so they
+  can't disagree. New **Flip layout** button rotates the 4-port LED row between
+  horizontal and vertical to match how the VPU is actually mounted.
+- **Tighter Fault Isolator wording.** Phase steps, results, and conclusions are
+  shorter and less repetitive — the same guidance, less to read on each screen.
 
 ### Fixed
 - **Camera Connectivity no longer errors out when a port is down.** A page that

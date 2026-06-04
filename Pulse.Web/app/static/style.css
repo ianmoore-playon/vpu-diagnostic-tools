@@ -1494,6 +1494,29 @@ html.dark .splash-logo {
     border-radius: 999px;
     padding: 2px 9px;
 }
+/* Flip-layout toggle: right-aligned in the diagram header (margin-left:auto
+   works whether or not the live-refresh badge is present). */
+.nic-layout-toggle {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.66rem;
+    font-weight: 600;
+    color: var(--c-muted);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    padding: 3px 9px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.nic-layout-toggle:hover { color: var(--c-text); border-color: var(--c-accent-blue); }
+.nic-layout-toggle.is-active {
+    color: var(--c-accent-blue);
+    border-color: var(--c-accent-blue);
+    background: var(--c-tint-blue);
+}
 .nic-diagram-note {
     font-size: 0.7rem;
     color: var(--c-dim);
@@ -1526,7 +1549,7 @@ html.dark .splash-logo {
 /* VPU orientation reference panel (beside the port diagram). Extra left
    separation so it reads as a distinct reference, not part of the port row. */
 .nic-orient-panel {
-    max-width: 320px;
+    max-width: 360px;
     padding: 14px 16px;
     border: 1px solid var(--c-border);
     border-radius: 8px;
@@ -1544,7 +1567,7 @@ html.dark .splash-logo {
 }
 .orient-figs {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: center;
     gap: 16px;
     margin-bottom: 10px;
@@ -1552,6 +1575,13 @@ html.dark .splash-logo {
 .orient-fig { display: flex; flex-direction: column; align-items: center; gap: 5px; }
 .orient-fig-label { font-size: 0.62rem; font-weight: 600; color: var(--c-muted); }
 .orient-svg { display: block; }
+/* Both figures share one square slot so the upright drawing and the same
+   drawing rotated 90° (landscape) both sit centered without overflow. */
+.orient-svg-box { width: 150px; height: 150px; display: flex; align-items: center; justify-content: center; }
+/* "On its side" = the SAME chassis SVG rotated -90° (Port 1 → top, Port 4 →
+   bottom). Counter-rotate the port numbers so they stay upright/readable. */
+.orient-svg-rot .orient-svg { transform: rotate(-90deg); }
+.orient-svg-rot .orient-port-num { transform: rotate(90deg); transform-box: fill-box; transform-origin: center; }
 .orient-chassis { fill: var(--c-surface-2, rgba(148,163,184,0.08)); stroke: var(--c-dim); stroke-width: 1.5; }
 .orient-iozone { fill: rgba(148,163,184,0.06); stroke: var(--c-border); stroke-width: 0.75; }
 .orient-io { fill: var(--c-dimmer); }
@@ -1568,6 +1598,14 @@ html.dark .splash-logo {
     display: flex;
     gap: 48px;
     align-items: flex-end;
+}
+/* On-its-side view: stack the ports as a column. column-reverse turns the
+   DOM order (Port 4 … Port 1) into Port 1 at top → Port 4 at bottom, matching
+   the rotated chassis figure. */
+.nic-diagram-ports.is-vertical {
+    flex-direction: column-reverse;
+    align-items: center;
+    gap: 14px;
 }
 .nic-port-icon {
     display: flex;
