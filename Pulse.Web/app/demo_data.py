@@ -256,9 +256,13 @@ DEMO = {
             {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #3", "status": "Up", "linkSpeedMbps": 100, "fullDuplex": True, "mac": "A4:4C:C8:12:34:03",
              "rxBytes": 1028374, "txBytes": 293847, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0,
              "arpEntries": [{"ip": "169.254.16.52", "mac": "00:D0:89:1B:03:01"}]},
-            {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) I211 Gigabit Network Connection", "status": "Up", "linkSpeedMbps": 1000, "fullDuplex": True, "mac": "A4:4C:C8:12:34:04",
+            # Port 4 demoed as a dead link (cable unplugged) so the no-link
+            # down-port tile + Fault Isolator no-link path are exercisable in
+            # demo. status=Disconnected + adminStatus=Up + driver OK →
+            # _derive_down_reason() == "no-link".
+            {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) I211 Gigabit Network Connection", "status": "Disconnected", "adminStatus": "Up", "mediaConnectionState": "Disconnected", "driverStatus": "OK", "linkSpeedMbps": 0, "fullDuplex": False, "mac": "A4:4C:C8:12:34:04",
              "rxBytes": 129384756012, "txBytes": 98273640182, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0,
-             "arpEntries": [{"ip": _VENUE["gatewayIp"], "mac": "00:1A:2B:3C:4D:5E"}]},
+             "arpEntries": []},
         ]
     },
     "Get-Hardware.ps1": lambda **kw: {
