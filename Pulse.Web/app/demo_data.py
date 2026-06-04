@@ -192,7 +192,10 @@ DEMO = {
         "computerSystem": {"name": _VENUE["hostname"], "manufacturer": "HP", "model": "HP Z2 Tower G9 Workstation Desktop PC"},
         "bios": {"serialNumber": _VENUE["serial"]},
         "uptime": {"formatted": _fmt_uptime(_uptime_secs()), "totalSeconds": _uptime_secs()},
-        "operatingSystem": {"caption": "Microsoft Windows 10 IoT Enterprise LTSC", "version": "10.0.19044", "buildNumber": "19044", "osArchitecture": "64-bit"},
+        # LTSC 2019 (1809, build 17763) — EOS Jan 2029, well clear of the EOL
+        # warning window so the demo dashboard stays clean. (Older LTSC build
+        # 19044 here used to trigger the "OS EOL approaching" finding.)
+        "operatingSystem": {"caption": "Microsoft Windows 10 IoT Enterprise LTSC 2019", "version": "10.0.17763", "buildNumber": "17763", "osArchitecture": "64-bit"},
         "pixellot": {
             "version": _VENUE["swVersion"],
             "imageVersion": _VENUE["imageVersion"],
@@ -214,8 +217,13 @@ DEMO = {
         # not Windows services — detected by process, no SCM start type.
         # ScoreConnect + LogMeIn are real Windows services (kind=service).
         "services": [
-            {"name": "agent", "displayName": "Pixellot Agent", "status": "Running", "startType": None,
-             "kind": "process", "pid": 11372, "path": "C:\\Pixellot\\Bin\\Agent.exe", "memoryMB": 57, "watchdog": False},
+            # ── Demo: Agent deliberately STOPPED to drive a single, narrative-
+            # clean CRITICAL finding ("Pixellot Agent process not running").
+            # This is the demo's "click finding → jump to tab → one-click
+            # restart" moment. Flip back to "Running" if you want a fully-
+            # green dashboard.
+            {"name": "agent", "displayName": "Pixellot Agent", "status": "Stopped", "startType": None,
+             "kind": "process", "pid": None, "path": "C:\\Pixellot\\Bin\\Agent.exe", "memoryMB": None, "watchdog": False},
             {"name": "coordinator", "displayName": "Pixellot Coordinator", "status": "Running", "startType": None,
              "kind": "process", "pid": 10596, "path": "C:\\Pixellot\\Bin\\Coordinator.exe", "memoryMB": 15, "watchdog": False},
             {"name": "vpu", "displayName": "Pixellot VPU", "status": "Running", "startType": None,
@@ -240,9 +248,14 @@ DEMO = {
             {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "linkSpeedMbps": 100, "fullDuplex": True, "mac": "A4:4C:C8:12:34:02",
              "rxBytes": 18238473625, "txBytes": 1283746281, "rxErrors": 187, "txErrors": 2, "rxPacketErrors": 187, "rxDiscards": 14, "txPacketErrors": 2, "txDiscards": 0,
              "arpEntries": [{"ip": "192.168.11.100", "mac": "00:0E:53:BB:02:01"}, {"ip": "192.168.11.101", "mac": "00:0E:53:BB:02:02"}]},
+            # Ethernet 3 is the OCR / scoreboard camera. OCR cameras are
+             # natively 100 Mbps, so this is HEALTHY (not degraded). Uses the
+             # default-OCR link-local IP convention (169.254.16.52/53/60) so
+             # the dashboard correctly identifies it as OCR and skips the
+             # "below gigabit" warning for this port.
             {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #3", "status": "Up", "linkSpeedMbps": 100, "fullDuplex": True, "mac": "A4:4C:C8:12:34:03",
              "rxBytes": 1028374, "txBytes": 293847, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0,
-             "arpEntries": [{"ip": "192.168.12.50", "mac": "00:D0:89:1B:03:01"}]},
+             "arpEntries": [{"ip": "169.254.16.52", "mac": "00:D0:89:1B:03:01"}]},
             {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) I211 Gigabit Network Connection", "status": "Up", "linkSpeedMbps": 1000, "fullDuplex": True, "mac": "A4:4C:C8:12:34:04",
              "rxBytes": 129384756012, "txBytes": 98273640182, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0,
              "arpEntries": [{"ip": _VENUE["gatewayIp"], "mac": "00:1A:2B:3C:4D:5E"}]},
@@ -257,7 +270,11 @@ DEMO = {
         "gpus": [
             {"name": "Intel(R) UHD Graphics 630", "adapterRAMMB": 1024, "driverVersion": "27.20.100.8935",
              "adapterCompatibility": "Intel Corporation", "vendor": "Intel", "isDedicated": False},
-            {"name": "NVIDIA GeForce GTX 1070", "adapterRAMMB": 8192, "driverVersion": "31.0.15.5212",
+            # Ampere-arch GPU (RTX 3060) so the Pixellot version × hardware
+            # compat check passes — Ampere has no version cap. (Was GTX 1070
+            # = Pascal, capped at 5.2.x, which conflicted with the 5.13.x
+            # swVersion the demo venues use and produced a CRITICAL finding.)
+            {"name": "NVIDIA GeForce RTX 3060", "adapterRAMMB": 12288, "driverVersion": "31.0.15.5212",
              "adapterCompatibility": "NVIDIA", "vendor": "NVIDIA", "isDedicated": True},
         ],
         "diskDrives": [
@@ -277,11 +294,10 @@ DEMO = {
             {"displayName": "Intel(R) Network Connections", "displayVersion": "27.2", "publisher": "Intel"},
             {"displayName": "7-Zip 23.01 (x64)", "displayVersion": "23.01", "publisher": "Igor Pavlov"},
             {"displayName": "TightVNC", "displayVersion": "2.8.81", "publisher": "GlavSoft LLC."},
-            # ── Concerning entries — kept light for demo readability ──
-            # critical: AV/EDR (PDF #11) — surfaces as [Hardware] finding
-            {"displayName": "CrowdStrike Falcon Sensor", "displayVersion": "7.18.16805.0", "publisher": "CrowdStrike, Inc."},
-            # warning: non-standard remote access (LogMeIn is the approved one)
-            {"displayName": "TeamViewer", "displayVersion": "15.51.5", "publisher": "TeamViewer Germany GmbH"},
+            # ── To exercise the "unsupported security software" or
+            # "non-standard remote-access tool" findings, add (e.g.)
+            # CrowdStrike Falcon Sensor or TeamViewer here. Kept OUT of the
+            # default demo so the dashboard stays narrative-clean.
         ],
     },
     "Get-NetworkConfig.ps1": lambda **kw: {
@@ -327,10 +343,9 @@ DEMO = {
             {"purpose": "LogMeIn", "host": "logmein.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
             {"purpose": "Zixi QUIC", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "pass", "optional": False},
-            # Zixi (UDP 2088) is the streaming control channel — failures here
-            # block live broadcast. Marked optional=False so it surfaces as a
-            # required port failure on the Network tab.
-            {"purpose": "Zixi Streaming", "host": "prod-echo.pixellot.tv", "port": 2088, "protocol": "UDP", "status": "fail", "optional": False, "errorMessage": "No response — port likely blocked at venue firewall"},
+            # Zixi (UDP 2088) is the streaming control channel. Passing in
+            # the demo — flip to "fail" to exercise the required-port finding.
+            {"purpose": "Zixi Streaming", "host": "prod-echo.pixellot.tv", "port": 2088, "protocol": "UDP", "status": "pass", "optional": False},
             # Optional — RTMP fallback (legacy ingest)
             {"purpose": "RTMP Ingest", "host": "sportzcast.net", "port": 1935, "protocol": "TCP", "status": "fail", "optional": True},
             # Optional — Sportzcast Scorebot range (ScoreConnect deployments only)
@@ -626,15 +641,17 @@ DEMO = {
         "cbsLogPath": "C:\\Windows\\Logs\\CBS\\CBS.log",
     })((kw or {}).get("Action", "CheckHealth")),
     "Get-GpuInfo.ps1": lambda **kw: {
-        # Demo represents a Pascal-era VPU (GTX 1070) so the compat banner
-        # has something to talk about. Combined with Pixellot 5.13.x in the
-        # venue pool, this trips the "Pixellot exceeds cap" critical finding.
+        # Ampere-arch GPU (RTX 3060) — no Pixellot version cap, so the
+        # compat check passes cleanly for the demo. Was a Pascal GTX 1070
+        # which conflicted with the demo venues' 5.13.x Pixellot version
+        # and produced a noisy CRITICAL finding for the presentation.
+        # (Flip to Pascal/GTX 1070 + computeCap 6.1 to exercise the cap.)
         "gpus": [
             {"name": "Intel(R) UHD Graphics 630", "computeCap": None, "architecture": "NotNvidia", "source": "wmi"},
-            {"name": "NVIDIA GeForce GTX 1070", "computeCap": "6.1", "architecture": "Pascal", "source": "nvidia-smi"},
+            {"name": "NVIDIA GeForce RTX 3060", "computeCap": "8.6", "architecture": "Ampere/Ada", "source": "nvidia-smi"},
         ],
-        "primaryArchitecture": "Pascal",
-        "primaryComputeCap": "6.1",
+        "primaryArchitecture": "Ampere/Ada",
+        "primaryComputeCap": "8.6",
         "nvidiaSmiAvailable": True,
         "nvidiaSmiError": None,
     },
