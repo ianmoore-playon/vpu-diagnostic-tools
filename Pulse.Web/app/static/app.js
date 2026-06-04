@@ -3926,24 +3926,16 @@ function renderDiskHealth() {
       </div>
     </div>` : ""}
 
-    <!-- Repair Tools (PDF #1) — DISM CheckHealth / RestoreHealth, sfc, chkdsk -->
-    <div class="card mt-4" id="dh-repair">
-      ${sectionTitle("zap", "Repair Tools")}
-      <p class="text-xs text-pulse-muted mb-3">
-        Windows image &amp; file repair sequence. The first three tail
-        <span class="font-mono">C:\\Windows\\Logs\\CBS\\CBS.log</span> on completion.
-        <strong>RestoreHealth and SFC can take 10–30 minutes</strong> — leave the tab open.
-      </p>
-      <div class="dh-repair-grid">
-        ${_repairCard("CheckHealth", "Check Image Health", "Fast (~30s) — reports component-store corruption without repairing.", "dism /Online /Cleanup-Image /CheckHealth")}
-        ${_repairCard("RestoreHealth", "Restore Image", "Slow (5–20 min) — downloads + replaces corrupt component-store files.", "dism /Online /Cleanup-Image /RestoreHealth")}
-        ${_repairCard("SfcScan", "Scan System Files", "Slow (10–30 min) — verifies protected system files against the image.", "sfc /scannow")}
-        ${_repairCard("ChkdskSchedule", "Schedule chkdsk on Next Reboot", "Queues chkdsk /f /r C: — actual check runs on next boot. Returns immediately.", "chkdsk /f /r C:", /*amber*/ true)}
-      </div>
-    </div>
+    <!-- Repair Tools (PDF #1) — GATED OFF for beta. DISM / sfc / chkdsk are
+         destructive/long-running and we don't want beta testers running them
+         unprompted. The _repairCard / _runRepairTool helpers, the
+         /api/disk-health/repair endpoint, and Invoke-RepairTool.ps1 are all
+         left intact — to re-enable, restore the card block below (see git
+         history for commit that gated it). -->
   `;
 
-  // Wire up repair buttons
+  // Repair-tool button wiring is a no-op while the card is gated (no
+  // .dh-repair-btn elements rendered). Kept for an easy restore.
   document.querySelectorAll(".dh-repair-btn").forEach(btn => {
     btn.addEventListener("click", () => _runRepairTool(btn.dataset.action));
   });
