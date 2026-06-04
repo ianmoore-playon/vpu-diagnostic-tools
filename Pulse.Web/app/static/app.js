@@ -817,10 +817,9 @@ const pageRenderers = {
   events: renderEvents,
   reports: renderReports,
   share: renderShare,
-  // Audio diagnostics are feature-complete but gated off for the beta build.
-  // renderAudio() (and its API/scripts) are left fully intact below —
-  // swap this back to `renderAudio` to re-enable. See renderAudioComingSoon.
-  audio: renderAudioComingSoon,
+  // Audio diagnostics re-enabled for demo. renderAudioComingSoon() is left
+  // intact below as the gate — swap back to it to hide the tab again.
+  audio: renderAudio,
   scoreconnect: renderScoreConnect,
   "fault-isolator": renderFaultIsolator,
   settings: renderSettings,
