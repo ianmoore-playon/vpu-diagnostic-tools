@@ -427,10 +427,24 @@ function preloadProgressive(opts) {
   const deferred = Object.keys(PAGE_API).filter((k) => k !== "dashboard");
   const totalSections = 1 + deferred.length;   // dashboard + deferred
   let completedSections = 0;
+  // Demo mode: serialize ticks with a small delay so the splash actually
+  // SHOWS each section being checked instead of flashing past. Real cold
+  // start is naturally ~5-15s, so the demo's ~2.5s artificial pacing
+  // mirrors the field UX. window.__PULSE_DEMO_MODE is injected into the
+  // HTML at render time so we know synchronously — relying on the
+  // /api/version response races with the first tick and (in practice)
+  // loses, leaving the bar flashing to 100% with no delay.
+  let _demoTickDelayMs = (typeof window !== "undefined" && window.__PULSE_DEMO_MODE) ? 280 : 0;
+  let _tickChain = Promise.resolve();
   const tick = (key) => {
-    completedSections++;
-    _setSplashSection(key);
-    _setSplashPct((completedSections / totalSections) * 100);
+    _tickChain = _tickChain.then(async () => {
+      if (_demoTickDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, _demoTickDelayMs));
+      }
+      completedSections++;
+      _setSplashSection(key);
+      _setSplashPct((completedSections / totalSections) * 100);
+    });
   };
 
   _setSplashVerb(`${verb}…`);
@@ -445,6 +459,8 @@ function preloadProgressive(opts) {
       if (footer) footer.textContent = data.version;
       if (currentPage === "about") renderPage("about");
     }
+    // Engage the demo pacing for THIS preload (~2.5s total across 9 ticks).
+    if (data?.demoMode) _demoTickDelayMs = 280;
   });
   const logsPromise = api("/api/logs").then((logData) => {
     if (logData && !logData.error) {
@@ -469,10 +485,15 @@ function preloadProgressive(opts) {
     fetchSection(key).then((res) => { tick(key); return res; })
   );
 
-  // allSettled so one failing endpoint can't trap the splash.
+  // allSettled so one failing endpoint can't trap the splash. Also wait
+  // on _tickChain so the splash stays up until the (demo-paced) progress
+  // bar has actually FINISHED animating — not just when the fetches return.
   return Promise.allSettled([
     dashboardPromise, versionPromise, logsPromise, ...deferredPromises,
-  ]);
+  ]).then(async (results) => {
+    await _tickChain;
+    return results;
+  });
 }
 
 async function refreshAll() {

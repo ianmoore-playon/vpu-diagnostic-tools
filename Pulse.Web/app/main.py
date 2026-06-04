@@ -2148,6 +2148,11 @@ async def serve_index():
         lambda m: f"{m.group(1)}?v={bust}",
         html,
     )
+    # Inject demo-mode flag synchronously so the splash screen can decide
+    # whether to slow the per-section progress bar BEFORE the first fetch
+    # resolves. /api/version exposes the same field for runtime consumers.
+    demo_js = f"<script>window.__PULSE_DEMO_MODE={'true' if DEMO_MODE else 'false'};</script>"
+    html = html.replace("</head>", f"  {demo_js}\n  </head>", 1)
     return HTMLResponse(html)
 
 
@@ -2235,7 +2240,11 @@ async def api_preload():
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": APP_VERSION}
+    # demoMode is exposed here (and not only on /api/logs) so the splash
+    # screen can decide synchronously whether to slow the per-section
+    # progress bar — the loading visual is the user's first impression
+    # and instant-fast in demo mode flashes past in milliseconds.
+    return {"version": APP_VERSION, "demoMode": DEMO_MODE}
 
 
 @app.get("/api/logs")
