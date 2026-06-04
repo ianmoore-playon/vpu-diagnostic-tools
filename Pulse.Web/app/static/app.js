@@ -3827,8 +3827,14 @@ function renderDiskHealth() {
 
   const osDrive = logical.find(d => d.deviceID === "C:") || logical[0];
   const osFreeGB = osDrive?.freeSpaceGB;
+  const osPct = osDrive?.usedPercent;
   const osLabel = osDrive ? `${osFreeGB} GB free of ${osDrive.sizeGB} GB` : "No data";
-  const osSev = osFreeGB != null && osFreeGB < 50 ? "critical" : osFreeGB != null && osFreeGB < 100 ? "warning" : "ok";
+  // Critical at >90% used (matches the volume bars, the [Storage] finding, and
+  // the dashboard gauge), OR if absolute headroom drops below 50 GB (catches a
+  // nearly-full large disk that's still under 90%). Warning at >80% / <100 GB.
+  const osSev =
+    (osPct != null && osPct > 90) || (osFreeGB != null && osFreeGB < 50) ? "critical" :
+    (osPct != null && osPct > 80) || (osFreeGB != null && osFreeGB < 100) ? "warning" : "ok";
 
   function summaryCard(icon, title, chipSev, chipText, value, desc) {
     return `<div class="card dh-summary-card">
@@ -3853,7 +3859,7 @@ function renderDiskHealth() {
     <div class="dh-summary-row">
       ${summaryCard("heartbeat", "SMART Health", smartSev, smartLabel, smartLabel, "Per-disk health attributes")}
       ${summaryCard("alert", "Disk & Driver Errors", errorSev, errorLabel, errorLabel, "From the Windows Event Log (last 48 h)")}
-      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Drops below 50 GB → Critical")}
+      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Over 90% used (or <50 GB free) → Critical")}
     </div>
 
     <!-- Volumes -->
