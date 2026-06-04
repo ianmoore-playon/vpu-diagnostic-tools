@@ -34,7 +34,7 @@ cd Pulse.Web && run.bat
 
 ## Branches & Releases
 
-Code flows `dev` → `beta` → `main`. Each branch has CI builds; tags create releases mirrored to `ianmoore-playon/pulse-releases`.
+Code flows `dev` → `beta` → `main`. Each branch has CI builds; tags create releases on `playon/pulse` (the single source + distribution repo).
 
 | App | Dev tag | Beta tag | Production tag |
 |-----|---------|----------|----------------|
@@ -85,7 +85,7 @@ Both apps use semver (`MAJOR.MINOR.PATCH`) with a three-channel pipeline. Dev st
 - `.github/workflows/wpf-pilot-build.yml` — Windows build, triggers on `dev`/`beta`/`main` pushes (when `Pulse.WPF/` changes) and WPF tags
 - `.github/workflows/web-build.yml` — Zips `Pulse.Web/`, triggers on web tags
 
-Both mirror releases to the public `ianmoore-playon/pulse-releases` repo via `PUBLIC_RELEASE_PAT` secret.
+Both publish releases directly to `playon/pulse` using the workflow's built-in `GITHUB_TOKEN` — no separate PAT or mirror step required.
 
 ## Key Directories
 

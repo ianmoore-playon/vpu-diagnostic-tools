@@ -1,9 +1,9 @@
 # install-beta.ps1 — Beta channel
 # Downloads the latest PRE-RELEASE from pulse-releases and runs Pulse.WPF.
-# Deployed to the root of ianmoore-playon/pulse-releases.
+# Deployed to the root of playon/pulse.
 
 $ErrorActionPreference = 'Stop'
-$repo       = "ianmoore-playon/pulse-releases"
+$repo       = "playon/pulse"
 $installDir = "$env:LOCALAPPDATA\Pulse.WPF-beta"
 $zipPath    = "$env:TEMP\Pulse.WPF-beta-latest.zip"
 

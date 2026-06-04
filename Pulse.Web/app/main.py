@@ -2883,8 +2883,8 @@ async def api_save_settings(request: Request):
 # endpoints let the running app check GitHub for a newer build on its channel
 # and trigger that same launcher from inside the UI, so field techs don't have
 # to re-run a .bat by hand.
-_UPDATE_PUBLIC_REPO = "ianmoore-playon/pulse-releases"
-_UPDATE_SOURCE_REPO = "ianmoore-playon/vpu-diagnostic-tools"
+_UPDATE_PUBLIC_REPO = "playon/pulse"
+_UPDATE_SOURCE_REPO = "playon/pulse"
 # channel -> (release-tag prefix, accept pre-releases)
 _UPDATE_CHANNELS = {
     "production": ("web-v", False),

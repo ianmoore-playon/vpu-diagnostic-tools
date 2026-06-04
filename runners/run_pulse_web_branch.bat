@@ -34,7 +34,7 @@ set "BRANCH=dev"
 if not "%~1"=="" set "BRANCH=%~1"
 
 set "INSTALL_DIR=C:\Pulse"
-set "REPO=ianmoore-playon/vpu-diagnostic-tools"
+set "REPO=playon/pulse"
 set "ZIPFILE=%TEMP%\pulse-dl.zip"
 set "EXTRACT=%TEMP%\pulse-extract"
 

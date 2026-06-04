@@ -73,7 +73,7 @@ jobs:
           # build time, so anyone who saved that .bat to a desktop kept pulling
           # the same pinned build forever (a footgun that looked like an auto-
           # updater). The single supported entrypoint is now the static
-          # Pulse.WPF.bat that lives at the root of ianmoore-playon/pulse-releases,
+          # Pulse.WPF.bat that lives at the root of playon/pulse,
           # which calls install.ps1 -> /releases/latest every run.
           echo "ARTIFACT_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "ARTIFACT_ZIP=release/$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -96,53 +96,12 @@ jobs:
           body: |
             Pulse.WPF production build.
 
-            **Internal source-repo release.** The public-facing copy is mirrored
-            to ianmoore-playon/pulse-releases automatically — that's where
-            techs and contractors download from.
+            Public release published on this repo — that's where techs and
+            contractors download from.
 
             Install path on a VPU:
-            - `Pulse.WPF.bat` (static, lives at the root of pulse-releases) — auto-updates every launch
-            - or the one-liner: `irm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1 | iex`
-
-      - name: Mirror production release to pulse-releases
-        if: startsWith(github.ref, 'refs/tags/wpf-pilot-v')
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-          $publicRepo = "ianmoore-playon/pulse-releases"
-          gh release delete $tag --repo $publicRepo --yes --cleanup-tag 2>$null
-          gh release create $tag `
-            --repo $publicRepo `
-            --target main `
-            --title "Pulse.WPF $tag" `
-            --notes "Pulse.WPF production build.`n`n**Install on a VPU**`n`nDrop ``Pulse.WPF.bat`` on the VPU desktop and double-click — it auto-updates every launch.`n`nOr the one-liner:`n``````powershell`nirm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1 | iex`n```````n`nRequires .NET Framework 4.8 (pre-installed on every VPU)." `
-            ${{ env.ARTIFACT_ZIP }}
-          Write-Host "Mirrored production release $tag to $publicRepo"
-
-      - name: Sync install scripts to pulse-releases
-        if: startsWith(github.ref, 'refs/tags/wpf-pilot-v') || startsWith(github.ref, 'refs/tags/beta-v') || startsWith(github.ref, 'refs/tags/dev-v')
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
-        shell: pwsh
-        run: |
-          $publicRepo = "ianmoore-playon/pulse-releases"
-          foreach ($script in @("install.ps1", "install-beta.ps1", "install-dev.ps1")) {
-            $local = Get-Content "runners/$script" -Raw
-            $existing = $null
-            try {
-              $existing = gh api "repos/$publicRepo/contents/$script" --jq '.sha' 2>$null
-            } catch {}
-            $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($local))
-            $body = @{ message = "Update $script from source repo"; content = $encoded }
-            if ($existing) { $body.sha = $existing }
-            $tmpFile = [System.IO.Path]::GetTempFileName()
-            $body | ConvertTo-Json -Compress | Set-Content $tmpFile -Encoding utf8
-            gh api "repos/$publicRepo/contents/$script" -X PUT --input $tmpFile
-            Remove-Item $tmpFile
-            Write-Host "Synced $script to $publicRepo"
-          }
+            - `Pulse.WPF.bat` (static, lives at the root of playon/pulse) — auto-updates every launch
+            - or the one-liner: `irm https://raw.githubusercontent.com/playon/pulse/main/install.ps1 | iex`
 
       # ── Beta pre-release (beta channel, beta-v* tags) ────────────────────────
       - name: Publish beta pre-release (source repo)
@@ -159,24 +118,6 @@ jobs:
             **Internal source-repo pre-release.** Mirrored to pulse-releases
             as a pre-release asset for testing.
 
-      - name: Mirror beta pre-release to pulse-releases
-        if: startsWith(github.ref, 'refs/tags/beta-v')
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-          $publicRepo = "ianmoore-playon/pulse-releases"
-          gh release delete $tag --repo $publicRepo --yes --cleanup-tag 2>$null
-          gh release create $tag `
-            --repo $publicRepo `
-            --target main `
-            --prerelease `
-            --title "Pulse.WPF $tag (beta)" `
-            --notes "Pulse.WPF beta build — not yet promoted to main.`n`n**Install on a VPU (beta channel)**`n`nDrop ``Pulse.WPF-beta.bat`` on the VPU desktop and double-click.`n`nOr the one-liner:`n``````powershell`nirm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install-beta.ps1 | iex`n```````n`nRequires .NET Framework 4.8 (pre-installed on every VPU)." `
-            ${{ env.ARTIFACT_ZIP }}
-          Write-Host "Mirrored beta pre-release $tag to $publicRepo"
-
       # ── Dev pre-release (dev channel, dev-v* tags) ──────────────────────
       - name: Publish dev pre-release (source repo)
         if: startsWith(github.ref, 'refs/tags/dev-v')
@@ -192,20 +133,3 @@ jobs:
             **Internal source-repo pre-release.** Mirrored to pulse-releases
             as a pre-release asset for dev testing.
 
-      - name: Mirror dev pre-release to pulse-releases
-        if: startsWith(github.ref, 'refs/tags/dev-v')
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-          $publicRepo = "ianmoore-playon/pulse-releases"
-          gh release delete $tag --repo $publicRepo --yes --cleanup-tag 2>$null
-          gh release create $tag `
-            --repo $publicRepo `
-            --target main `
-            --prerelease `
-            --title "Pulse.WPF $tag (dev)" `
-            --notes "Pulse.WPF dev build — internal testing only.`n`n**Install on a VPU (dev channel)**`n`nDrop ``Pulse.WPF-dev.bat`` on the VPU desktop and double-click.`n`nOr the one-liner:`n``````powershell`nirm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install-dev.ps1 | iex`n```````n`nRequires .NET Framework 4.8 (pre-installed on every VPU)." `
-            ${{ env.ARTIFACT_ZIP }}
-          Write-Host "Mirrored dev pre-release $tag to $publicRepo"

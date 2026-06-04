@@ -14,12 +14,12 @@ There are two variants:
 ## Install on a VPU
 
 The supported install path runs the installer from
-[`ianmoore-playon/pulse-releases`](https://github.com/ianmoore-playon/pulse-releases)
+[`playon/pulse`](https://github.com/playon/pulse)
 with admin elevation so the build lands in `Program Files`.
 
 **Option 1 — elevated launcher (recommended for field use)**
 
-Download [`runners/run_pulse.bat`](https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/main/runners/run_pulse.bat)
+Download [`runners/run_pulse.bat`](https://raw.githubusercontent.com/playon/pulse/main/runners/run_pulse.bat)
 to the VPU desktop and double-click. The launcher requests UAC
 elevation, then pulls the latest tagged release and runs
 `install.ps1` in an admin context so Pulse can install system-wide
@@ -31,7 +31,7 @@ latest tag.
 Open an **Administrator** PowerShell and run:
 
 ```powershell
-irm 'https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1' | iex
+irm 'https://raw.githubusercontent.com/playon/pulse/main/install.ps1' | iex
 ```
 
 Same installer the launcher uses — the only difference is you provide
@@ -48,7 +48,7 @@ required — just double-click and it bootstraps everything.
 
 ### Install on a VPU
 
-Download [`runners/run_pulse_web.bat`](https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/main/runners/run_pulse_web.bat)
+Download [`runners/run_pulse_web.bat`](https://raw.githubusercontent.com/playon/pulse/main/runners/run_pulse_web.bat)
 to the VPU desktop and double-click. The launcher pulls the latest
 `web-v*` release from GitHub, extracts it to `%LOCALAPPDATA%\PulseWeb`,
 and runs the app. Subsequent double-clicks auto-update to the latest

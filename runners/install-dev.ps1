@@ -1,9 +1,9 @@
 # install-dev.ps1 — Dev channel
 # Downloads the latest DEV pre-release from pulse-releases and runs Pulse.WPF.
-# Deployed to the root of ianmoore-playon/pulse-releases.
+# Deployed to the root of playon/pulse.
 
 $ErrorActionPreference = 'Stop'
-$repo       = "ianmoore-playon/pulse-releases"
+$repo       = "playon/pulse"
 $installDir = "$env:LOCALAPPDATA\Pulse.WPF-dev"
 $zipPath    = "$env:TEMP\Pulse.WPF-dev-latest.zip"
 

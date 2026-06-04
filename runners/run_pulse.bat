@@ -22,4 +22,4 @@ start /wait "" "%TEMP%\chrome_installer.exe" /silent /install
 echo Deleting Chrome installer
 del "%TEMP%\chrome_installer.exe"
 echo Downloading Pulse now...
-powershell -Command "irm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1 | iex"
+powershell -Command "irm https://raw.githubusercontent.com/playon/pulse/main/install.ps1 | iex"

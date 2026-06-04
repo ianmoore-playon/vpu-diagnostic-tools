@@ -6266,10 +6266,10 @@ function renderAbout() {
           </div>
         </div>
         <div class="about-links">
-          <a href="https://github.com/ianmoore-playon/pulse-releases" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
+          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
             ${svgIcon("globe", 14)} View Releases
           </a>
-          <a href="https://github.com/ianmoore-playon/vpu-diagnostic-tools" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
+          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
             ${svgIcon("info", 14)} Source Repo
           </a>
         </div>

@@ -32,8 +32,8 @@ echo   Administrator access declined - continuing with limited diagnostics.
 :: -- Config ---------------------------------------------------------------
 set "CHANNEL=dev"
 set "INSTALL_DIR=C:\Pulse"
-set "REPO=ianmoore-playon/vpu-diagnostic-tools"
-set "PUBLIC_REPO=ianmoore-playon/pulse-releases"
+set "REPO=playon/pulse"
+set "PUBLIC_REPO=playon/pulse"
 set "ZIPFILE=%TEMP%\pulse-dl.zip"
 set "EXTRACT=%TEMP%\pulse-extract"
 set "RESOLVE_OUT=%TEMP%\pulse-resolve.txt"

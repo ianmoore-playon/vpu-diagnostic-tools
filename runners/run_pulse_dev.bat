@@ -16,4 +16,4 @@ if '%errorlevel%' NEQ '0' (
 
 :runpulse
 echo Downloading Pulse DEV now...
-powershell -Command "irm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install-dev.ps1 | iex"
+powershell -Command "irm https://raw.githubusercontent.com/playon/pulse/main/install-dev.ps1 | iex"

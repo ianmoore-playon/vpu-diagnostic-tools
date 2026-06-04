@@ -1,9 +1,9 @@
 # install.ps1 — Production channel
 # Downloads the latest STABLE release from pulse-releases and runs Pulse.WPF.
-# Deployed to the root of ianmoore-playon/pulse-releases.
+# Deployed to the root of playon/pulse.
 
 $ErrorActionPreference = 'Stop'
-$repo       = "ianmoore-playon/pulse-releases"
+$repo       = "playon/pulse"
 $installDir = "$env:LOCALAPPDATA\Pulse.WPF"
 $zipPath    = "$env:TEMP\Pulse.WPF-latest.zip"
 
