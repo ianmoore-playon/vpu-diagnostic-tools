@@ -28,7 +28,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   Pulse on the same network — no USB or file copy. On the receiving machine,
   turn on **Receive over LAN** and read off its five-word pairing code (e.g.
   "tiger maple river copper dust"); on the sending machine, type those words
-  and hit **Send**. Received reports show up in an
+  and hit **Send**. On a VPU with more than one network, pick which one to
+  share from the dropdown (so the other machine can actually reach it), and
+  Pulse opens the Windows firewall for the share port automatically (one
+  approval prompt). Received reports show up in an
   in-app inbox you can view, download, or delete. Receiving is off by default,
   so Pulse only opens to the network when you ask it to (Windows may prompt to
   allow access the first time).

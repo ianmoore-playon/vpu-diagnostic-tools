@@ -102,6 +102,44 @@ def get_lan_ip() -> str:
     return "127.0.0.1"
 
 
+def _is_ipv4(ip: str) -> bool:
+    try:
+        socket.inet_aton(ip)
+        return ip.count(".") == 3
+    except OSError:
+        return False
+
+
+def list_lan_ips() -> list:
+    """All usable non-loopback IPv4 addresses on this host, default-route first.
+    A multi-NIC box (VPUs have uplink + camera ports; this dev Mac has two LANs)
+    needs the tech to pick which one the peer can actually reach, so we surface
+    every candidate. Stdlib enumeration is unreliable cross-platform, so we also
+    parse ipconfig/ifconfig — no extra dependency."""
+    ips, seen = [], set()
+
+    def add(ip):
+        if ip and ip not in seen and not ip.startswith("127.") and not ip.startswith("169.254."):
+            seen.add(ip)
+            ips.append(ip)
+
+    add(get_lan_ip())  # default-route interface goes first (best default)
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            add(info[4][0])
+    except Exception:
+        pass
+    try:
+        import subprocess
+        cmd = ["ipconfig"] if os.name == "nt" else ["ifconfig"]
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+        for m in re.findall(r"(?:IPv4[^\n:]*:\s*|inet )(\d+\.\d+\.\d+\.\d+)", out):
+            add(m)
+    except Exception:
+        pass
+    return ips
+
+
 # ─── Pairing code ─────────────────────────────────────────────
 
 def gen_nonce() -> int:
@@ -302,7 +340,8 @@ def is_receiving() -> bool:
 
 def listener_status() -> dict:
     if not is_receiving():
-        return {"on": False, "code": None, "address": None, "lanPort": None}
+        return {"on": False, "code": None, "address": None, "lanPort": None,
+                "candidates": list_lan_ips()}
     s = _session
     return {
         "on": True,
@@ -310,25 +349,43 @@ def listener_status() -> dict:
         "ip": s["ip"],
         "lanPort": s["port"],
         "address": f"{s['ip']}:{s['port']}",
+        "candidates": s.get("candidates") or list_lan_ips(),
         "startedAt": s["startedAt"],
     }
 
 
-async def start_listener(lan_port: int, app_version: str = "unknown") -> dict:
+def set_advertise_ip(ip: str) -> dict:
+    """Re-point the pairing code at a different local IP without rebinding the
+    listener (it already listens on 0.0.0.0). Lets the tech pick the interface
+    the peer can actually reach. Keeps the same pairing number."""
+    if not is_receiving():
+        return listener_status()
+    if not _is_ipv4(ip):
+        raise ValueError("not a valid IPv4 address")
+    _session["ip"] = ip
+    _session["code"] = encode_pair(ip, int(_session["nonce"]))
+    return listener_status()
+
+
+async def start_listener(lan_port: int, app_version: str = "unknown",
+                         advertise_ip: Optional[str] = None) -> dict:
     """Bind the receive listener to 0.0.0.0:lan_port and open a pairing
-    session. Idempotent — returns the current status if already running.
+    session. If already running, just re-points the advertised IP (if given).
     Raises RuntimeError if the port can't be opened."""
     global _session, _server, _task, _app_version
     if is_receiving():
+        if advertise_ip:
+            return set_advertise_ip(advertise_ip)
         return listener_status()
     _app_version = app_version
-    ip = get_lan_ip()
+    ip = advertise_ip if (advertise_ip and _is_ipv4(advertise_ip)) else get_lan_ip()
     nonce = gen_nonce()
     _session = {
         "code": encode_pair(ip, nonce),
         "nonce": str(nonce),
         "ip": ip,
         "port": lan_port,
+        "candidates": list_lan_ips(),
         "startedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
     config = uvicorn.Config(peer_app, host="0.0.0.0", port=lan_port,

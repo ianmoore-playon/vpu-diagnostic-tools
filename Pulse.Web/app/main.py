@@ -3221,10 +3221,27 @@ async def api_peer_set_receive_mode(request: Request):
     body = await request.json()
     if body.get("on"):
         try:
-            return await peer.start_listener(_lan_port(), APP_VERSION)
+            status = await peer.start_listener(_lan_port(), APP_VERSION, body.get("ip"))
         except Exception as e:
             return {"on": False, "error": f"{type(e).__name__}: {e}"}
+        # Open the Windows firewall for the LAN port so peers can actually reach
+        # us — otherwise Defender silently drops inbound. Best-effort, elevated;
+        # the listener still runs if it fails (the tech can allow it manually).
+        status["firewall"] = await _open_share_firewall(status.get("lanPort") or _lan_port())
+        return status
     return await peer.stop_listener()
+
+
+async def _open_share_firewall(port: int) -> dict:
+    """Add a one-time inbound allow-rule for the LAN share port (Windows only).
+    Idempotent: if the rule already exists no prompt appears; otherwise it adds
+    the rule elevated (single UAC prompt), mirroring the SC3 installer."""
+    if _os.name != "nt":
+        return {"applied": False, "reason": "not Windows — open the port manually if firewalled"}
+    try:
+        return await run_ps("Set-PulseShareFirewall.ps1", {"Port": str(port)}, timeout=20)
+    except Exception as e:
+        return {"applied": False, "error": f"{type(e).__name__}: {e}"}
 
 
 @app.get("/api/peer/inbox")

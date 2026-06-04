@@ -3437,3 +3437,15 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 }
 .share-rx-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .share-rx-body:empty { display: none; }
+
+.share-pick { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.share-ip-select {
+    padding: 5px 10px;
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
+    color: var(--c-text);
+    outline: none;
+}

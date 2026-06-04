@@ -4456,28 +4456,64 @@ function _shareRenderReceiveInfo(status) {
   const info = document.getElementById("share-recv-info");
   if (!btn || !info) return;
   info.textContent = "";
-  if (status && status.on) {
-    if (label) label.textContent = "Disable receiving";
-    btn.classList.remove("btn-ol-blue"); btn.classList.add("btn-ol-red");
-    const wrap = _mk("div", "share-pair");
-    wrap.appendChild(_mk("div", "text-sm text-pulse-muted mb-1", "Pairing code — type this on the sending Pulse"));
-    const row = _mk("div", "share-pair-row");
-    const codeEl = _mk("span", "share-pair-code", status.code || "");
-    codeEl.id = "share-code-display";
-    const copyBtn = _mk("button", "btn-outline btn-ol-blue", "Copy");
-    copyBtn.addEventListener("click", _shareCopyCode);
-    row.appendChild(codeEl); row.appendChild(copyBtn);
-    wrap.appendChild(row);
-    const addrLine = _mk("div", "text-sm text-pulse-muted mt-2");
-    addrLine.appendChild(document.createTextNode("Listening on "));
-    addrLine.appendChild(_mk("strong", null, status.address || ""));
-    addrLine.appendChild(document.createTextNode(". Leave this page open to keep receiving."));
-    wrap.appendChild(addrLine);
-    info.appendChild(wrap);
-  } else {
+  if (!status || !status.on) {
     if (label) label.textContent = "Enable receiving";
     btn.classList.remove("btn-ol-red"); btn.classList.add("btn-ol-blue");
+    return;
   }
+  if (label) label.textContent = "Disable receiving";
+  btn.classList.remove("btn-ol-blue"); btn.classList.add("btn-ol-red");
+
+  const wrap = _mk("div", "share-pair");
+  wrap.appendChild(_mk("div", "text-sm text-pulse-muted mb-1", "Pairing code — type these 5 words on the sending Pulse"));
+  const row = _mk("div", "share-pair-row");
+  const codeEl = _mk("span", "share-pair-code", status.code || "");
+  codeEl.id = "share-code-display";
+  const copyBtn = _mk("button", "btn-outline btn-ol-blue", "Copy");
+  copyBtn.addEventListener("click", _shareCopyCode);
+  row.appendChild(codeEl); row.appendChild(copyBtn);
+  wrap.appendChild(row);
+
+  const addrLine = _mk("div", "text-sm text-pulse-muted mt-2");
+  addrLine.appendChild(document.createTextNode("Listening on "));
+  addrLine.appendChild(_mk("strong", null, status.address || ""));
+  addrLine.appendChild(document.createTextNode(". Leave this page open to keep receiving."));
+  wrap.appendChild(addrLine);
+
+  // Interface picker — a multi-NIC host (VPU uplink + camera ports) may pick
+  // an IP the peer can't reach. Let the tech choose the one on the sender's
+  // network; switching re-points the code without restarting the listener.
+  const cands = status.candidates || [];
+  if (cands.length > 1) {
+    const pick = _mk("div", "share-pick mt-2");
+    pick.appendChild(_mk("span", "text-sm text-pulse-muted", "On a different network than your other machine? Use address: "));
+    const sel = document.createElement("select");
+    sel.className = "share-ip-select";
+    cands.forEach((ip) => {
+      const o = document.createElement("option");
+      o.value = ip; o.textContent = ip;
+      if (ip === status.ip) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", () => _shareSelectIp(sel.value));
+    pick.appendChild(sel);
+    wrap.appendChild(pick);
+  }
+
+  // Firewall outcome (Windows opens the port automatically; elsewhere, hint).
+  const fw = status.firewall;
+  if (fw && (fw.message || fw.error || fw.reason)) {
+    const fwLine = _mk("div", "text-sm mt-2", fw.error || fw.message || fw.reason);
+    fwLine.style.color = fw.error ? "var(--c-accent-amber)" : "var(--c-muted)";
+    wrap.appendChild(fwLine);
+  }
+
+  info.appendChild(wrap);
+}
+
+async function _shareSelectIp(ip) {
+  const status = await apiPost("/api/peer/receive-mode", { on: true, ip: ip });
+  _shareRenderReceiveInfo(status);
 }
 
 function _shareCopyCode() {
