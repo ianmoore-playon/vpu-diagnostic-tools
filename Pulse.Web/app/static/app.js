@@ -34,6 +34,8 @@ function svgIcon(name, size) {
     volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
     "volume-x": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
     activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+    send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+    inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
@@ -57,6 +59,7 @@ const NAV_SECTIONS = [
   ]},
   { label: "EVIDENCE", pages: [
     { id: "reports", label: "Reports", icon: "file" },
+    { id: "share", label: "Share over LAN", icon: "send" },
   ]},
   { label: "SETUP", pages: [
     { id: "settings", label: "Settings", icon: "cog" },
@@ -813,6 +816,7 @@ const pageRenderers = {
   "disk-health": renderDiskHealth,
   events: renderEvents,
   reports: renderReports,
+  share: renderShare,
   // Audio diagnostics are feature-complete but gated off for the beta build.
   // renderAudio() (and its API/scripts) are left fully intact below —
   // swap this back to `renderAudio` to re-enable. See renderAudioComingSoon.
@@ -4249,6 +4253,9 @@ function renderReports() {
       </button>
       <button class="btn-outline btn-ol-blue" onclick="refreshAll()">
         ${svgIcon("play", 14)} Run All Diagnostics
+      </button>
+      <button class="btn-outline btn-ol-blue" onclick="navigate('share')">
+        ${svgIcon("send", 14)} Send to a peer
       </button>`
     )}
 
@@ -4303,6 +4310,297 @@ function renderReports() {
       </details>
     `;
   });
+}
+
+// ── Share over LAN ───────────────────────────────────────────
+// Push the diagnostic snapshot to another Pulse on the same network. The
+// receiving side opts in (the only time Pulse listens on the LAN); the sender
+// pastes the receiver's pairing code and hits Send. Backend: peer.py + the
+// /api/peer/* routes in main.py.
+//
+// NOTE on rendering: the page SHELL below is a static template (innerHTML, no
+// data interpolation). Everything peer-supplied — pairing codes, hostnames,
+// IPs, report JSON — is built with textContent/createElement in the helpers,
+// so untrusted data never reaches innerHTML.
+
+var _shareInbox = { key: null, poll: null };
+
+function _mk(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function _shareFmtBytes(n) {
+  if (n == null) return "—";
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function _shareFmtTime(iso) {
+  if (!iso) return "—";
+  try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
+}
+
+function _shareSetMsg(el, text, color) {
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.color = color || "";
+}
+
+function renderShare() {
+  $page().innerHTML = `
+    ${pageHeader("Share over LAN", "Send this VPU's diagnostic snapshot to another Pulse on the same network")}
+
+    <div class="card">
+      ${sectionTitle("send", "Send to another Pulse")}
+      <p class="text-sm text-pulse-muted mb-3">Paste the <strong>pairing code</strong> shown on the receiving Pulse (its Share over LAN page, with "Receive over LAN" enabled). Pulse builds the full snapshot and pushes it straight there — no file to move.</p>
+      <input type="text" id="share-code" class="settings-input" placeholder="Pairing code, e.g. tiger maple river copper dust" autocomplete="off" spellcheck="false" style="max-width:480px"/>
+      <details class="mt-2" style="max-width:420px">
+        <summary class="text-sm text-pulse-muted cursor-pointer">Receiver has more than one network? Override the address</summary>
+        <input type="text" id="share-addr" class="settings-input mt-2" placeholder="192.168.1.42:8766 (optional)" autocomplete="off" spellcheck="false"/>
+      </details>
+      <div class="settings-actions">
+        <button class="btn-outline btn-ol-blue" id="share-test">${svgIcon("activity", 14)} Test connection</button>
+        <button class="btn-outline btn-ol-green" id="share-send">${svgIcon("send", 14)} Send snapshot</button>
+        <span id="share-send-msg" class="text-sm text-pulse-muted"></span>
+      </div>
+      <div id="share-send-result" class="mt-3"></div>
+    </div>
+
+    <div class="card mt-4">
+      ${sectionTitle("inbox", "Receive over LAN")}
+      <p class="text-sm text-pulse-muted mb-3">Turn this on to let another Pulse send its snapshot to <em>this</em> machine. This opens a port to your local network — Windows may ask you to allow access the first time.</p>
+      <div class="settings-actions">
+        <button class="btn-outline btn-ol-blue" id="share-recv-toggle">${svgIcon("inbox", 14)} <span id="share-recv-label">Enable receiving</span></button>
+        <span id="share-recv-msg" class="text-sm text-pulse-muted"></span>
+      </div>
+      <div id="share-recv-info" class="mt-3"></div>
+      <div id="share-inbox" class="mt-4"></div>
+    </div>
+  `;
+
+  document.getElementById("share-test").addEventListener("click", _shareTest);
+  document.getElementById("share-send").addEventListener("click", _shareSend);
+  document.getElementById("share-recv-toggle").addEventListener("click", _shareToggleReceive);
+  document.getElementById("share-code").addEventListener("keydown", (e) => { if (e.key === "Enter") _shareSend(); });
+
+  _shareLoadStatus();
+  _shareStartInboxPoll();
+}
+
+// ── Send (sender side) ──
+
+async function _shareTest() {
+  const msg = document.getElementById("share-send-msg");
+  const code = (document.getElementById("share-code").value || "").trim();
+  const addrEl = document.getElementById("share-addr");
+  const addr = ((addrEl && addrEl.value) || "").trim();
+  if (!code && !addr) { _shareSetMsg(msg, "Enter a pairing code first."); return; }
+  _shareSetMsg(msg, "Testing…");
+  const q = "code=" + encodeURIComponent(code) + "&address=" + encodeURIComponent(addr);
+  const r = await api("/api/peer/send/ping?" + q);
+  if (r.ok) _shareSetMsg(msg, "Reachable — " + (r.hostname || r.address), "var(--c-accent-green)");
+  else _shareSetMsg(msg, r.error || "Unreachable", "var(--c-accent-red)");
+}
+
+async function _shareSend() {
+  const btn = document.getElementById("share-send");
+  const msg = document.getElementById("share-send-msg");
+  const result = document.getElementById("share-send-result");
+  const code = (document.getElementById("share-code").value || "").trim();
+  const addrEl = document.getElementById("share-addr");
+  const addr = ((addrEl && addrEl.value) || "").trim();
+  if (!code) { _shareSetMsg(msg, "Paste the receiver's pairing code.", "var(--c-accent-red)"); return; }
+  btn.disabled = true;
+  result.textContent = "";
+  _shareSetMsg(msg, "Building snapshot and sending…");
+  const r = await apiPost("/api/peer/send", { code: code, address: addr });
+  btn.disabled = false;
+  if (r.ok) {
+    _shareSetMsg(msg, "Sent.", "var(--c-accent-green)");
+    const line = _mk("div", "text-sm text-pulse-muted");
+    line.appendChild(document.createTextNode("Delivered " + _shareFmtBytes(r.bytes) + " to "));
+    line.appendChild(_mk("strong", null, r.peer || r.address || "peer"));
+    line.appendChild(document.createTextNode(". It's now in that machine's Received Reports."));
+    result.appendChild(line);
+  } else {
+    _shareSetMsg(msg, r.error || r.message || "Send failed", "var(--c-accent-red)");
+  }
+}
+
+// ── Receive (receiver side) ──
+
+async function _shareLoadStatus() {
+  _shareRenderReceiveInfo(await api("/api/peer/receive-mode"));
+}
+
+async function _shareToggleReceive() {
+  const btn = document.getElementById("share-recv-toggle");
+  const msg = document.getElementById("share-recv-msg");
+  const cur = await api("/api/peer/receive-mode");
+  btn.disabled = true;
+  _shareSetMsg(msg, cur.on ? "Stopping…" : "Starting…");
+  const status = await apiPost("/api/peer/receive-mode", { on: !cur.on });
+  btn.disabled = false;
+  if (status.error) _shareSetMsg(msg, status.error, "var(--c-accent-red)");
+  else _shareSetMsg(msg, "");
+  _shareRenderReceiveInfo(status);
+}
+
+function _shareRenderReceiveInfo(status) {
+  const btn = document.getElementById("share-recv-toggle");
+  const label = document.getElementById("share-recv-label");
+  const info = document.getElementById("share-recv-info");
+  if (!btn || !info) return;
+  info.textContent = "";
+  if (status && status.on) {
+    if (label) label.textContent = "Disable receiving";
+    btn.classList.remove("btn-ol-blue"); btn.classList.add("btn-ol-red");
+    const wrap = _mk("div", "share-pair");
+    wrap.appendChild(_mk("div", "text-sm text-pulse-muted mb-1", "Pairing code — type this on the sending Pulse"));
+    const row = _mk("div", "share-pair-row");
+    const codeEl = _mk("span", "share-pair-code", status.code || "");
+    codeEl.id = "share-code-display";
+    const copyBtn = _mk("button", "btn-outline btn-ol-blue", "Copy");
+    copyBtn.addEventListener("click", _shareCopyCode);
+    row.appendChild(codeEl); row.appendChild(copyBtn);
+    wrap.appendChild(row);
+    const addrLine = _mk("div", "text-sm text-pulse-muted mt-2");
+    addrLine.appendChild(document.createTextNode("Listening on "));
+    addrLine.appendChild(_mk("strong", null, status.address || ""));
+    addrLine.appendChild(document.createTextNode(". Leave this page open to keep receiving."));
+    wrap.appendChild(addrLine);
+    info.appendChild(wrap);
+  } else {
+    if (label) label.textContent = "Enable receiving";
+    btn.classList.remove("btn-ol-red"); btn.classList.add("btn-ol-blue");
+  }
+}
+
+function _shareCopyCode() {
+  const el = document.getElementById("share-code-display");
+  if (!el || !navigator.clipboard) return;
+  navigator.clipboard.writeText(el.textContent);
+  const msg = document.getElementById("share-recv-msg");
+  if (msg) { _shareSetMsg(msg, "Copied."); setTimeout(() => _shareSetMsg(msg, ""), 1500); }
+}
+
+// ── Inbox ──
+
+function _shareStartInboxPoll() {
+  if (_shareInbox.poll) clearInterval(_shareInbox.poll);
+  _shareInbox.key = null;
+  _shareInboxTick();
+  _shareInbox.poll = setInterval(_shareInboxTick, 3000);
+}
+
+async function _shareInboxTick() {
+  // Self-terminate if the user navigated away — the router doesn't clear us.
+  if (currentPage !== "share") {
+    if (_shareInbox.poll) { clearInterval(_shareInbox.poll); _shareInbox.poll = null; }
+    return;
+  }
+  const r = await api("/api/peer/inbox");
+  const reports = (r && r.reports) || [];
+  // Only re-render when the set of reports changes, so an open preview doesn't
+  // collapse on every poll.
+  const key = reports.map((x) => x.id).join(",");
+  if (key === _shareInbox.key) return;
+  _shareInbox.key = key;
+  _shareRenderInbox(reports);
+}
+
+function _shareRenderInbox(reports) {
+  const host = document.getElementById("share-inbox");
+  if (!host) return;
+  host.textContent = "";
+  if (!reports.length) {
+    host.appendChild(_mk("div", "text-sm text-pulse-muted", "No reports received yet."));
+    return;
+  }
+  host.appendChild(_mk("div", "text-sm text-pulse-muted mb-2", "Received Reports (" + reports.length + ")"));
+  reports.forEach((r) => {
+    const card = _mk("div", "share-rx");
+    const head = _mk("div", "share-rx-head");
+    const left = _mk("div");
+    left.appendChild(_mk("div", "share-rx-host", r.hostname || "Unknown host"));
+    let meta = "Received " + _shareFmtTime(r.receivedAt) + " from " + (r.senderIp || "?")
+      + " · " + r.findingCount + " finding" + (r.findingCount === 1 ? "" : "s")
+      + " · " + _shareFmtBytes(r.sizeBytes);
+    if (r.sourceErrorCount) meta += " · " + r.sourceErrorCount + " collector" + (r.sourceErrorCount === 1 ? "" : "s") + " failed";
+    left.appendChild(_mk("div", "text-sm text-pulse-muted", meta));
+    const actions = _mk("div", "share-rx-actions");
+    const viewBtn = _mk("button", "btn-outline btn-ol-blue", "View");
+    viewBtn.addEventListener("click", () => _shareViewReport(r.id));
+    const dlBtn = _mk("button", "btn-outline btn-ol-green", "Download");
+    dlBtn.addEventListener("click", () => _shareDownloadReport(r.id));
+    const delBtn = _mk("button", "btn-outline btn-ol-red", "Delete");
+    delBtn.addEventListener("click", () => _shareDeleteReport(r.id));
+    actions.appendChild(viewBtn); actions.appendChild(dlBtn); actions.appendChild(delBtn);
+    head.appendChild(left); head.appendChild(actions);
+    card.appendChild(head);
+    const body = _mk("div", "share-rx-body mt-2");
+    body.id = "share-rx-body-" + r.id;
+    card.appendChild(body);
+    host.appendChild(card);
+  });
+}
+
+function _shareSummaryEl(data) {
+  const meta = data._meta || {};
+  const sectionCount = Object.keys(data).filter((k) => !k.startsWith("_") && k !== "findings").length;
+  const findingCount = Array.isArray(data.findings) ? data.findings.length : 0;
+  const errKeys = Object.keys(meta.sourceErrors || {});
+  const wrap = _mk("div", "text-sm text-pulse-muted mb-3");
+  wrap.appendChild(document.createTextNode(
+    sectionCount + " sections · " + findingCount + " finding" + (findingCount === 1 ? "" : "s") + " · "));
+  if (errKeys.length) {
+    const e = _mk("span", null, errKeys.length + " collector" + (errKeys.length === 1 ? "" : "s") + " failed: " + errKeys.join(", "));
+    e.style.color = "var(--c-accent-amber)";
+    wrap.appendChild(e);
+  } else {
+    wrap.appendChild(document.createTextNode("all collectors OK"));
+  }
+  const tail = (meta.pulseVersion ? " · " + meta.pulseVersion : "") + (meta.hostname ? " · " + meta.hostname : "");
+  if (tail) wrap.appendChild(document.createTextNode(tail));
+  return wrap;
+}
+
+async function _shareViewReport(id) {
+  const body = document.getElementById("share-rx-body-" + id);
+  if (!body) return;
+  if (body.dataset.open === "1") { body.textContent = ""; body.dataset.open = "0"; return; }
+  body.dataset.open = "1";
+  body.textContent = "Loading…";
+  const data = await api("/api/peer/inbox/" + encodeURIComponent(id));
+  body.textContent = "";
+  if (data.error) { _shareSetMsg(body, data.error, "var(--c-accent-red)"); return; }
+  body.appendChild(_shareSummaryEl(data));
+  body.appendChild(_mk("pre", "p-4 bg-pulse-bg rounded text-xs overflow-auto max-h-96 text-pulse-muted",
+    JSON.stringify(data, null, 2)));
+}
+
+async function _shareDownloadReport(id) {
+  const data = await api("/api/peer/inbox/" + encodeURIComponent(id));
+  if (data.error) return;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const hostname = (data._meta && data._meta.hostname) || (data.identity && data.identity.computerSystem && data.identity.computerSystem.name) || "vpu";
+  const a = _mk("a");
+  a.href = url;
+  a.download = "pulse-report-" + hostname + "-" + id + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function _shareDeleteReport(id) {
+  if (!confirm("Delete this received report?")) return;
+  await fetch("/api/peer/inbox/" + encodeURIComponent(id), { method: "DELETE" });
+  _shareInbox.key = null;  // force the next tick to re-render
+  _shareInboxTick();
 }
 
 // ── ScoreConnect ─────────────────────────────────────────────

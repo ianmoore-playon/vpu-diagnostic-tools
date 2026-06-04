@@ -22,6 +22,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Added
+- **Share a report to another Pulse over the LAN.** A new **Share over LAN**
+  page lets you send this VPU's full diagnostic snapshot straight to another
+  Pulse on the same network — no USB or file copy. On the receiving machine,
+  turn on **Receive over LAN** and read off its five-word pairing code (e.g.
+  "tiger maple river copper dust"); on the sending machine, type those words
+  and hit **Send**. Received reports show up in an
+  in-app inbox you can view, download, or delete. Receiving is off by default,
+  so Pulse only opens to the network when you ask it to (Windows may prompt to
+  allow access the first time).
+
 ### Changed
 - **The build version now shows on the loading screen**, right under the Pulse
   logo — so you can see exactly which build you're on at a glance (handy when

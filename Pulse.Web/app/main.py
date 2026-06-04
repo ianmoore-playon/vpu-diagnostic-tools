@@ -31,7 +31,7 @@ import asyncio
 import json
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from powershell import (
@@ -39,6 +39,7 @@ from powershell import (
     get_running_tasks, cancel_task, cancel_all_tasks,
     clear_ps_cache,
 )
+import peer
 
 _web_root = _os.path.dirname(_app_dir)
 SETTINGS_PATH = _os.path.join(_web_root, "pulse-settings.json")
@@ -3091,12 +3092,14 @@ async def api_update_apply():
     return {"ok": True, "message": "Pulse is updating and will restart shortly."}
 
 
-@app.get("/api/reports/export")
-async def api_export():
+async def build_report() -> dict:
     """Full diagnostic bundle for offline review. Runs every (non-interactive)
     data-collection script, adds the enriched camera view and Pulse's own
     computed findings, and wraps it all in a provenance envelope so a reviewer
-    knows where/when it came from and which collectors (if any) failed."""
+    knows where/when it came from and which collectors (if any) failed.
+
+    Shared by the Reports download (/api/reports/export) and the LAN peer push
+    (/api/peer/send) so both ship the identical snapshot."""
     sc_url = load_settings().get("scoreConnectUrl", "http://localhost:5000")
 
     # (section key, coroutine). Interactive/slow-by-design probes (traceroute,
@@ -3189,6 +3192,127 @@ async def api_export():
     }
 
 
+@app.get("/api/reports/export")
+async def api_export():
+    return await build_report()
+
+
+# ─── LAN peer sharing — send a snapshot to another Pulse ─────
+# The receiving side opts in (peer.start_listener), which is the only path
+# that binds to the LAN; the sending side just makes an outbound POST. See
+# peer.py for the loopback-preserving rationale and the pairing-code scheme.
+
+def _lan_port() -> int:
+    """Port the receive listener binds on the LAN. Default = UI port + 1 so a
+    single host can run two instances for testing without colliding."""
+    try:
+        return int(_os.environ.get("PULSE_LAN_PORT", int(_os.environ.get("PORT", 8765)) + 1))
+    except ValueError:
+        return 8766
+
+
+@app.get("/api/peer/receive-mode")
+async def api_peer_receive_mode():
+    return peer.listener_status()
+
+
+@app.post("/api/peer/receive-mode")
+async def api_peer_set_receive_mode(request: Request):
+    body = await request.json()
+    if body.get("on"):
+        try:
+            return await peer.start_listener(_lan_port(), APP_VERSION)
+        except Exception as e:
+            return {"on": False, "error": f"{type(e).__name__}: {e}"}
+    return await peer.stop_listener()
+
+
+@app.get("/api/peer/inbox")
+async def api_peer_inbox():
+    return {"reports": peer.list_received()}
+
+
+@app.get("/api/peer/inbox/{rec_id}")
+async def api_peer_inbox_get(rec_id: str):
+    report = peer.get_received(rec_id)
+    if report is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return report
+
+
+@app.delete("/api/peer/inbox/{rec_id}")
+async def api_peer_inbox_delete(rec_id: str):
+    return {"ok": peer.delete_received(rec_id)}
+
+
+def _resolve_peer_target(code: str, address: str):
+    """Turn a pairing code (and optional address override) into (ip, port,
+    nonce). The code carries ip/port/nonce; an address overrides ip:port for a
+    multi-NIC host. Raises ValueError with a tech-readable message."""
+    code = (code or "").strip()
+    address = (address or "").strip()
+    ip = port = nonce = None
+    if code:
+        try:
+            ip, port, nonce = peer.decode_pair(code)
+        except Exception:
+            raise ValueError("that pairing code doesn't look right")
+    if address:
+        target = peer.parse_address(address, port or _lan_port())
+        if not target:
+            raise ValueError("address should look like 192.168.1.42:8766")
+        ip, port = target
+    if not ip or not port:
+        raise ValueError("enter a pairing code (or an address) for the receiving Pulse")
+    return ip, port, nonce
+
+
+@app.get("/api/peer/send/ping")
+async def api_peer_send_ping(code: str = Query(""), address: str = Query("")):
+    try:
+        ip, port, _ = _resolve_peer_target(code, address)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    try:
+        info = await asyncio.to_thread(peer.ping_peer_sync, ip, port)
+        if not (isinstance(info, dict) and info.get("pulse")):
+            return {"ok": False, "error": "reachable, but that isn't a Pulse receiver"}
+        return {"ok": True, "address": f"{ip}:{port}", "hostname": info.get("hostname")}
+    except urllib.error.URLError as e:
+        return {"ok": False, "error": f"can't reach {ip}:{port} — {getattr(e, 'reason', e)}"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+@app.post("/api/peer/send")
+async def api_peer_send(request: Request):
+    """Build the current snapshot and push it to a peer. Requires a pairing
+    code (it carries the nonce the receiver checks); an optional address
+    overrides the IP:port encoded in the code, e.g. for a multi-NIC host."""
+    body = await request.json()
+    try:
+        ip, port, nonce = _resolve_peer_target(body.get("code"), body.get("address"))
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    if not nonce:
+        return {"ok": False, "error": "paste the pairing code shown on the receiving Pulse"}
+
+    report = await build_report()
+    payload = json.dumps(report).encode("utf-8")
+    try:
+        res = await asyncio.to_thread(peer.push_report_sync, payload, ip, port, nonce)
+        return {"ok": bool(res.get("ok", True)), "peer": res.get("hostname"),
+                "address": f"{ip}:{port}", "bytes": len(payload)}
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            return {"ok": False, "error": "the receiver rejected the pairing code — re-copy it"}
+        return {"ok": False, "error": f"receiver returned HTTP {e.code}"}
+    except urllib.error.URLError as e:
+        return {"ok": False, "error": f"can't reach {ip}:{port} — {getattr(e, 'reason', e)}"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 # ─── WebSocket — live metrics + auto-shutdown ────────────────
 
 _ws_clients: set = set()
@@ -3200,7 +3324,9 @@ IDLE_SHUTDOWN_SECS = 60  # shut down 60s after last client disconnects
 async def _idle_shutdown():
     """Shut down the server after all WebSocket clients disconnect."""
     await asyncio.sleep(IDLE_SHUTDOWN_SECS)
-    if not _ws_clients and _ever_had_client:
+    # Stay alive while a LAN receive listener is enabled — a peer may push a
+    # report even with no browser tab open. Receiver turns it off to release us.
+    if not _ws_clients and _ever_had_client and not peer.is_receiving():
         _log("auto-shutdown", 0, "ok", f"no clients for {IDLE_SHUTDOWN_SECS}s")
         # Send SIGINT to ourselves so uvicorn's lifespan handlers run cleanly.
         # _os._exit would bypass cleanup and abruptly tear down the process.
