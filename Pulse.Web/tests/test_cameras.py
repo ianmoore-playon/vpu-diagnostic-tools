@@ -316,5 +316,77 @@ class TestRunPsCacheBypass(unittest.TestCase):
         self.assertEqual(len(powershell._RESULT_CACHE), 0)
 
 
+class TestConnectingState(unittest.TestCase):
+    """The blue 'connecting' cue must fire on a real reconnect (down→up), even
+    when the camera resolves instantly — but never just because the page
+    loaded with an already-up port."""
+
+    def setUp(self):
+        main._PORT_STATE_TRACKER.clear()
+
+    def _age_up(self, seconds):
+        # Age every tracked port's up-transition so the connecting window lapses.
+        for e in main._PORT_STATE_TRACKER.values():
+            if e.get("upSince") is not None:
+                e["upSince"] -= seconds
+
+    def test_first_sight_up_port_not_connecting(self):
+        # Page just loaded: port already up with a camera. No false blue flash.
+        up = [_port("E", "00-30-64-36-73-AA",
+              arp=[_arp("192.168.10.50", "00-0E-53-AA-01-01")])]
+        ports = _enrich(up)
+        self.assertTrue(ports[0]["camerasDetected"], "fixture should detect a camera")
+        self.assertFalse(ports[0]["connecting"],
+                         "an already-up port must not flash connecting on load")
+
+    def test_down_then_up_is_connecting_even_with_camera(self):
+        mac = "00-30-64-36-73-AA"
+        arp = [_arp("192.168.10.50", "00-0E-53-AA-01-01")]
+        _enrich([_port("E", mac, status="Down")])      # observed down
+        ports = _enrich([_port("E", mac, arp=arp)])     # now up → reconnect
+        # Camera resolves immediately from ARP, yet we still show the cue.
+        self.assertTrue(ports[0]["camerasDetected"])
+        self.assertTrue(ports[0]["connecting"],
+                        "a down→up transition must show connecting even with a camera")
+
+    def test_connecting_clears_after_window(self):
+        mac = "00-30-64-36-73-AA"
+        arp = [_arp("192.168.10.50", "00-0E-53-AA-01-01")]
+        _enrich([_port("E", mac, status="Down")])
+        _enrich([_port("E", mac, arp=arp)])             # came up → connecting
+        self._age_up(main._PORT_CONNECTING_SECONDS + 1)  # establish window lapses
+        ports = _enrich([_port("E", mac, arp=arp)])
+        self.assertFalse(ports[0]["connecting"],
+                         "connecting must clear once the establish window passes")
+
+
+class TestResultCacheAge(unittest.TestCase):
+    """run_ps cache is age-based: cache_ttl lets a live poll demand fresher
+    data than the default 25s without colliding with other callers on the key
+    (a stale read here is exactly why a cable unplug took ~15s to show)."""
+
+    def setUp(self):
+        powershell._RESULT_CACHE.clear()
+        powershell._INFLIGHT.clear()
+
+    def test_cache_ttl_is_read_time_freshness(self):
+        async def go():
+            await powershell.run_ps("Get-NicAdapters.ps1")          # populate
+            key = powershell._cache_key("Get-NicAdapters.ps1", None, 30)
+            stored_at, val = powershell._RESULT_CACHE[key]
+            powershell._RESULT_CACHE[key] = (stored_at - 3.0, val)  # age it 3s
+            before = powershell._RESULT_CACHE[key][0]
+            # Default 25s window still accepts a 3s-old entry → cache hit (ts unchanged).
+            await powershell.run_ps("Get-NicAdapters.ps1")
+            hit = powershell._RESULT_CACHE[key][0] == before
+            # cache_ttl=1.5 rejects the 3s-old entry → refetch (ts advances).
+            await powershell.run_ps("Get-NicAdapters.ps1", cache_ttl=1.5)
+            refetched = powershell._RESULT_CACHE[key][0] > before
+            return hit, refetched
+        hit, refetched = asyncio.run(go())
+        self.assertTrue(hit, "default TTL should reuse a 3s-old entry")
+        self.assertTrue(refetched, "cache_ttl=1.5 must reject a 3s-old entry and refetch")
+
+
 if __name__ == "__main__":
     unittest.main()

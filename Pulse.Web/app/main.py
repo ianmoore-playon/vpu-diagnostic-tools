@@ -228,8 +228,13 @@ _CGI_PROBE_TTL = 10  # seconds
 #   2. suppress transient degraded/error findings during that window —
 #      a port mid-negotiation briefly reports 100 Mbps / errors before it
 #      stabilizes, and alarming on that during a cable swap is noise.
-_PORT_STATE_TRACKER = {}  # adapter_mac -> {"key": str, "since": float}
+_PORT_STATE_TRACKER = {}  # adapter_mac -> {"key", "since", "isUp", "upSince", ...}
 _PORT_SETTLE_SECONDS = 8
+# How long a port shows the blue "connecting" cue after a down→up transition,
+# even if its camera resolves instantly from cache. Without this, a quick
+# cable reseat jumps straight gray→green and the tech never sees the
+# establishing state. Kept short so it reads as a brief handshake, not a hang.
+_PORT_CONNECTING_SECONDS = 6
 
 # Frame-capture rate limit. Grabbing RTSP frames is a real pull on the
 # cameras; a cooldown stops a tech from spamming the button.
@@ -1859,6 +1864,23 @@ def _enrich_ports(
         adapter_id = p.get("mac") or p.get("name") or p.get("portLabel")
 
         prev = _PORT_STATE_TRACKER.get(adapter_id)
+        prev_up = bool(prev.get("isUp")) if prev else None  # None = never seen
+
+        # up_since: when this port most recently went down→up. Tracks the LINK
+        # transition specifically (not speed/camera changes) so the blue
+        # "connecting" cue fires on every reconnect, even when the camera
+        # resolves instantly from cache. On first sight (prev is None) treat an
+        # already-up port as long-established — never flash "connecting" just
+        # because the page loaded.
+        if prev is None:
+            up_since = (now_mono - _PORT_CONNECTING_SECONDS) if is_up else None
+        elif is_up and not prev_up:
+            up_since = now_mono                       # observed a real down→up
+        elif is_up:
+            up_since = prev.get("upSince") or now_mono
+        else:
+            up_since = None                           # down
+
         if not prev or prev["key"] != state_key:
             # State changed — reset the settle timer but carry forward the
             # "this port has hosted a camera" memory used for drop detection.
@@ -1871,6 +1893,8 @@ def _enrich_ports(
             _PORT_STATE_TRACKER[adapter_id] = entry
         else:
             entry = prev
+        entry["isUp"] = bool(is_up)
+        entry["upSince"] = up_since
         # When a Pixellot camera is actively present, remember it so that if
         # it later disappears we can tell what dropped (and from where).
         if is_up and has_cam:
@@ -1886,9 +1910,18 @@ def _enrich_ports(
         p["_settled"] = not fresh
         p["_everHadCamera"] = entry["everHadCamera"]
         p["_lastCam"] = entry["lastCam"]
-        # Connecting: link is up but no camera resolved yet, and either the
-        # speed is still negotiating (0) or the port just changed (settling).
-        p["connecting"] = bool(is_up and not cams and (speed == 0 or fresh))
+        # Connecting (blue): the port just came up and is still establishing.
+        # Primary driver is the down→up transition window, so a reconnect is
+        # always visible even if the camera resolves instantly. Plus the
+        # original cases: link still negotiating (speed 0), or up-but-no-camera
+        # during the settle window.
+        came_up_recently = (
+            is_up and up_since is not None
+            and (now_mono - up_since) < _PORT_CONNECTING_SECONDS
+        )
+        p["connecting"] = bool(
+            is_up and (came_up_recently or speed == 0 or (not cams and fresh))
+        )
 
     # Second pass: number main cameras and OCR cameras by camera IP so
     # numbering is stable (Main Camera 1 = .50, Main Camera 2 = .51, etc).
@@ -2501,8 +2534,13 @@ async def api_cameras(refresh: bool = False):
     # instead of waiting up to TTL for the cache to expire.
     if refresh:
         _CGI_PROBE_CACHE.clear()
+    # NIC link state must be near-real-time: a cable unplug/replug should show
+    # within a poll or two, not whenever the default 25s cache happens to
+    # expire. cache_ttl=1.5 forces a fresh adapter read on each ~2s live poll
+    # (the in-flight dedup still prevents overlapping runs if one is slow).
+    # PixellotConfig / Expectations change rarely, so they keep the long cache.
     nics, pix_config, expectations = await asyncio.gather(
-        run_ps("Get-NicAdapters.ps1"),
+        run_ps("Get-NicAdapters.ps1", cache_ttl=1.5),
         run_ps("Get-PixellotConfig.ps1"),
         run_ps("Get-CameraExpectations.ps1", timeout=10),
     )

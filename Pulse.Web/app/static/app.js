@@ -3459,7 +3459,7 @@ function renderCameras() {
   // S1 (JAI) discovery — one-shot per full render; renders only on S1 systems.
   _camLoadS1();
 
-  // ── Live refresh: poll /api/cameras every 3s and update port grid + findings ──
+  // ── Live refresh: poll /api/cameras every 2s and update port grid + findings ──
   // Seed the signature from what we just rendered so the first tick can
   // tell whether anything structural actually changed.
   _camLastSignature = _camSignature(data);
@@ -3522,7 +3522,8 @@ function renderCameras() {
         setTimeout(function() { badge.classList.remove("cam-live-tick"); }, 600);
       }
     }).catch(function() { markStale(); });
-  }, 3000);
+  }, 2000);  // 2s poll — paired with the backend's near-fresh NIC read so a
+             // cable unplug/replug shows up in ~2s instead of ~15s.
 }
 
 function formatBytes(b) {

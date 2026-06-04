@@ -40,6 +40,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - **Camera Connectivity no longer errors out when a port is down.** A page that
   showed only "Internal Server Error" now loads normally and tells you why the
   port is down (disabled / driver fault / no signal).
+- **Cable unplug/replug now shows in ~2 seconds, not ~15.** Link status is read
+  near-live instead of from a cached snapshot, so disconnecting or reconnecting
+  a camera updates the port almost immediately.
+- **The blue "connecting" state shows again on reconnect.** Plugging a cable
+  back in now flashes the establishing-link cue before going green, instead of
+  jumping straight from gray to linked.
 
 ## [0.2.0] - 2026-06-02
 
