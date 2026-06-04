@@ -2186,6 +2186,9 @@ async def serve_index():
     # resolves. /api/version exposes the same field for runtime consumers.
     demo_js = f"<script>window.__PULSE_DEMO_MODE={'true' if DEMO_MODE else 'false'};</script>"
     html = html.replace("</head>", f"  {demo_js}\n  </head>", 1)
+    # Render the version into the splash so it shows under the logo while the
+    # diagnostics load — server-side fill means no fetch flash. Blank if unknown.
+    html = html.replace("{{PULSE_VERSION}}", "" if APP_VERSION in (None, "", "unknown") else APP_VERSION)
     return HTMLResponse(html)
 
 

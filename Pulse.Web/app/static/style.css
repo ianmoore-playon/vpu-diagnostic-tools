@@ -157,6 +157,15 @@ html.dark .sidebar-brand-logo {
 html.dark .splash-logo {
     filter: none;
 }
+.splash-version {
+    /* Sits snug under the logo (counteracts the .splash flex gap). */
+    margin-top: -0.85rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+    color: var(--c-dim);
+}
+.splash-version:empty { display: none; }   /* hide when version is unknown */
 .splash-progress {
     width: min(420px, 60vmin);
     height: 6px;

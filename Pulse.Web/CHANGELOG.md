@@ -23,6 +23,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [Unreleased]
 
 ### Changed
+- **The build version now shows on the loading screen**, right under the Pulse
+  logo — so you can see exactly which build you're on at a glance (handy when
+  reporting an issue).
 - **Simpler launchers.** One per channel, clearly named: `run_pulse.bat`
   (production), `run_pulse_beta.bat` (beta), `run_pulse_dev.bat` (dev). The dev
   launcher now always pulls the latest `dev`-branch commit instead of a stale
