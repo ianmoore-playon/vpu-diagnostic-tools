@@ -5990,9 +5990,9 @@ function renderFaultIsolator() {
         addHistory("Phase 1 - Baseline", cfg0, sl0, "Port healthy — no fault on this port.", "Pass");
         showResult("Baseline: " + sl0 + " — port is healthy.",
           "At the expected " + expectedLbl + " — no fault here.", "pass");
-        _fi.phaseTitle = "BASELINE — PORT HEALTHY";
-        _fi.phaseInstruction = "Pick another port above and Run Baseline, or close the wizard.";
-        _fi.actionLabel = "Run Baseline";
+        _fi.phaseTitle = "PORT HEALTHY — NO FAULT FOUND";
+        _fi.phaseInstruction = "This port is at its expected speed — no fault to isolate here. To test a different port, select it above and start its baseline. Otherwise close the wizard.";
+        _fi.actionLabel = "Start Baseline";
         // Reset to phase 0 so the suspect dropdown reappears for re-selection.
         _fi.phase = 0;
         renderFaultIsolator();
