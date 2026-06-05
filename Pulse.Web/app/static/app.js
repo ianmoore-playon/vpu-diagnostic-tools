@@ -2093,6 +2093,79 @@ const NET_DOMAIN_IMPACT = {
 function _netPortImpact(p) { return (p && NET_PORT_IMPACT[p.purpose]) || ""; }
 function _netDomainImpact(d) { return (d && NET_DOMAIN_IMPACT[d.domain]) || ""; }
 
+// Port Connectivity as a single status list (Required → Optional), one row
+// per service. Replaces the old TCP|UDP card grid: uniform rows, service-led,
+// protocol/port as metadata, a status pill, and a one-glance section summary.
+function _renderPortConnectivity(ports) {
+  ports = ports || [];
+  if (!ports.length) return '<p class="text-pulse-muted text-sm mt-2">No port results.</p>';
+
+  // Group by protocol+host+purpose so a single service's port range (Scorebot
+  // 1400–1405) collapses to one row, while distinct services sharing a port
+  // (the six TCP/443 hosts) each keep their own row.
+  function groupRows(list) {
+    var by = {}, order = [];
+    list.forEach(function(p) {
+      var k = (p.protocol || "").toUpperCase() + "|" + (p.host || "") + "|" + (p.purpose || "");
+      if (!by[k]) { by[k] = []; order.push(k); }
+      by[k].push(p);
+    });
+    return order.map(function(k) { return by[k]; });
+  }
+
+  function row(items) {
+    var p0 = items[0];
+    var proto = (p0.protocol || "TCP").toUpperCase();
+    var portsN = items.map(function(p) { return p.port; }).sort(function(a, b) { return a - b; });
+    var portLabel;
+    if (portsN.length === 1) {
+      portLabel = proto + "/" + portsN[0];
+    } else {
+      var contiguous = portsN[portsN.length - 1] - portsN[0] + 1 === portsN.length;
+      portLabel = proto + "/" + (contiguous ? portsN[0] + "–" + portsN[portsN.length - 1] : portsN.join(","));
+    }
+    var pass = items.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
+    var total = items.length;
+    var allPass = pass === total;
+    var optional = p0.optional;
+
+    var pillTxt, pillCls;
+    if (total > 1) { pillTxt = pass + "/" + total; pillCls = allPass ? "pass" : (optional ? "muted" : "fail"); }
+    else if (allPass) { pillTxt = "Pass"; pillCls = "pass"; }
+    else { pillTxt = optional ? "Blocked" : "Fail"; pillCls = optional ? "muted" : "fail"; }
+
+    // Optional failures are de-emphasized (muted, not red) — they aren't a problem.
+    var dot = allPass ? "var(--c-accent-green)" : (optional ? "var(--c-dim)" : "var(--c-accent-red)");
+    var rowCls = (!allPass && !optional) ? " is-fail" : "";
+    var impact = NET_PORT_IMPACT[p0.purpose] || "";
+
+    return '<div class="net-port-row' + rowCls + '" title="' + esc(impact) + '">' +
+      '<span class="net-port-dot" style="background:' + dot + '"></span>' +
+      '<span class="net-port-svc">' + esc(p0.purpose || "—") + '</span>' +
+      '<span class="net-port-host">' + esc(p0.host || "") + '</span>' +
+      '<span class="net-port-proto">' + esc(portLabel) + '</span>' +
+      '<span class="net-port-status"><span class="net-port-pill net-port-pill-' + pillCls + '">' + esc(pillTxt) + '</span></span>' +
+    '</div>';
+  }
+
+  var required = ports.filter(function(p) { return !p.optional; });
+  var optional = ports.filter(function(p) { return p.optional; });
+  var reqPass = required.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
+  var reqBlocked = required.length - reqPass;
+
+  var summary = reqBlocked === 0
+    ? '<span class="net-port-summary net-port-summary-ok">' + svgIcon("check", 13) + ' All ' + required.length + ' required reachable</span>'
+    : '<span class="net-port-summary net-port-summary-bad">' + svgIcon("triangle", 13) + ' ' + reqBlocked + ' of ' + required.length + ' required blocked</span>';
+  if (optional.length) summary += '<span class="net-port-summary-opt">· ' + optional.length + ' optional</span>';
+
+  var body = "";
+  if (required.length) body += '<div class="net-port-group-label">Required</div>' + groupRows(required).map(row).join("");
+  if (optional.length) body += '<div class="net-port-group-label">Optional</div>' + groupRows(optional).map(row).join("");
+
+  return '<div class="net-port-summary-bar">' + summary + '</div>' +
+         '<div class="net-port-list">' + body + '</div>';
+}
+
 // Severity ordering for Network tab issues. Returns a stable rank where
 // critical comes first. The previous inline `(o[severity] || 3)` form
 // treated critical as falsy (rank 0) and silently fell through to 3,
@@ -2637,20 +2710,7 @@ function renderNetwork() {
     <!-- Port Connectivity -->
     <div class="card">
       ${sectionTitle("link", "Port Connectivity")}
-      <div class="net-port-cols">
-        <div class="net-sub-card">
-          <div class="net-sub-heading">TCP ports <span class="net-proto-badge net-proto-tcp">TCP</span></div>
-          ${tcpPorts.length
-            ? `<div class="port-grid">${groupPorts(tcpPorts).map(renderPortGroup).join("")}</div>`
-            : '<p class="text-pulse-muted text-sm mt-2">No TCP port results</p>'}
-        </div>
-        <div class="net-sub-card">
-          <div class="net-sub-heading">UDP ports <span class="net-proto-badge net-proto-udp">UDP</span></div>
-          ${udpPorts.length
-            ? `<div class="port-grid">${groupPorts(udpPorts).map(renderPortGroup).join("")}</div>`
-            : '<p class="text-pulse-muted text-sm mt-2">No UDP port results</p>'}
-        </div>
-      </div>
+      ${_renderPortConnectivity(ports)}
     </div>
 
     <!-- Local Network Health -->
@@ -5022,18 +5082,6 @@ function parseRtdScores(rawData, vendor, sport) {
   return null;
 }
 
-// Vendor+sport combos whose RTD byte layout we've VALIDATED against real
-// hardware. Outside these, the positional parse is unverified and could be
-// confidently wrong — for a diagnostic tool that's worse than showing nothing,
-// so the UI falls back to raw data instead of fabricated scores. (A "json"
-// strategy carries explicitly-named fields and is trusted for any vendor.)
-function _sc3ComboValidated(vendor, sport) {
-  var v = (vendor || "").toLowerCase();
-  var s = (sport || "").toLowerCase();
-  // Daktronics football — confirmed byte-for-byte from live VPU captures.
-  return v.indexOf("daktronics") !== -1 && s.indexOf("football") !== -1;
-}
-
 function renderScoreConnect() {
   const data = cached("scoreconnect");
   if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
@@ -5054,8 +5102,13 @@ function renderScoreConnect() {
   // explicitly-keyed JSON parse). Outside that, show raw data — never guessed
   // scores. comboValidated is vendor/sport-based (static for the session), so
   // the scoreboard hero stays put even when data briefly drops.
-  const showScoreboard = isDetected && (_sc3ComboValidated(config.vendor, config.sport)
-    || (rtdParsed && rtdParsed._strategy === "json"));
+  // Parse-driven gate. ScoreConnect III normalises every vendor's protocol
+  // into the same CG layout, so the parser is vendor-agnostic — field-tested
+  // across the major scoreboard manufacturers, not just Daktronics. Show the
+  // scoreboard whenever the parser can actually extract data; fall back to raw
+  // only when it genuinely can't (its sanity checks null out unreadable feeds,
+  // so we never fabricate scores).
+  const showScoreboard = isDetected && rtdParsed != null;
   const rtdShown = showScoreboard ? rtdParsed : null;
 
   // Legacy ScoreConnect config/teams. The probe routes whichever legacy
@@ -5149,7 +5202,9 @@ function renderScoreConnect() {
           <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-accent-green)" : "var(--c-accent-red)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
             ${_sc3StageBadge(dataReceiving ? "live" : "disconnected", 0)}
           </div>
-          <div class="sc-data-desc" style="margin-top:0.6rem;max-width:360px;line-height:1.4">Parsed scoreboard not yet validated for <strong>${esc(config.vendor || "this vendor")}${config.sport ? " / " + esc(config.sport) : ""}</strong> — raw data shown below.</div>
+          ${dataReceiving
+            ? `<div class="sc-data-desc" style="margin-top:0.6rem;max-width:360px;line-height:1.4">Receiving data, but Pulse couldn't parse this feed${config.vendor ? " (" + esc(config.vendor) + ")" : ""} — raw data shown below.</div>`
+            : `<div class="sc-data-desc" style="margin-top:0.6rem;max-width:360px;line-height:1.4">Waiting for scoreboard data…</div>`}
         </div>
         <div class="sc-team-away">
           <div class="sc-team-label">Sport</div>
