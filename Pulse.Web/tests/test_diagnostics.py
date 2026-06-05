@@ -462,6 +462,15 @@ class TestDemoDataContract(unittest.TestCase):
         "Install-ScoreConnectIII.ps1",
     }
 
+    # Side-effect / action scripts: they *do* something (change system state)
+    # rather than return diagnostic data, so demo mode has nothing meaningful
+    # to mock. Permanently exempt — unlike _DEMO_EXEMPT, these will never gain
+    # a demo entry, so they're excluded from the stale-entry guard too.
+    _ACTION_SCRIPTS = {
+        # Opens a Windows firewall port when the user enables report sharing.
+        "Set-PulseShareFirewall.ps1",
+    }
+
     def _referenced_scripts(self):
         import re
         with open(os.path.join(_APP_DIR, "main.py"), encoding="utf-8") as f:
@@ -471,7 +480,7 @@ class TestDemoDataContract(unittest.TestCase):
     def test_every_referenced_script_has_demo(self):
         import demo_data
         referenced = self._referenced_scripts()
-        missing = referenced - set(demo_data.DEMO) - self._DEMO_EXEMPT
+        missing = referenced - set(demo_data.DEMO) - self._DEMO_EXEMPT - self._ACTION_SCRIPTS
         self.assertEqual(
             missing, set(),
             f"Scripts invoked by main.py with no demo_data entry — demo mode "
