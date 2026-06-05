@@ -35,6 +35,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   in-app inbox you can view, download, or delete. Receiving is off by default,
   so Pulse only opens to the network when you ask it to (Windows may prompt to
   allow access the first time).
+- **Every port and domain Pulse tests now explains what happens if it's
+  blocked.** Hover an entry in Port Connectivity or Domain Reachability — or
+  open the matching issue — to see the real-world impact (e.g. the game won't
+  stream, or scoreboard data won't come through). Makes it obvious which
+  blocked endpoints actually matter at a given venue and which are harmless.
 
 ### Changed
 - **The build version now shows on the loading screen**, right under the Pulse
@@ -57,6 +62,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   horizontal and vertical to match how the VPU is actually mounted.
 - **Tighter Fault Isolator wording.** Phase steps, results, and conclusions are
   shorter and less repetitive — the same guidance, less to read on each screen.
+- **Port Connectivity is now a single, scannable status list.** One row per
+  service — name, host, protocol/port, and a Pass/Blocked status — grouped into
+  Required and Optional with a one-line summary at the top, replacing the old
+  two-column grid of port numbers. Optional services (RTMP, Scorebot) are
+  de-emphasized so a blocked optional port no longer looks like a failure.
+- **Speed Test moved out of Advanced Diagnostics** to sit right under the
+  internet adapter and domain checks — where you'd look for it first.
+- **Internet Adapter details are grouped into labeled sections** (IP
+  Configuration, Link, Connectivity, Time Sync) so the card reads top to bottom.
+  Local Network Health regained its section icon, and the 4 / 10 / 20 / 50 ping
+  presets now have a "Ping count" label.
 
 ### Fixed
 - **Camera Connectivity no longer errors out when a port is down.** A page that
@@ -68,6 +84,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - **The blue "connecting" state shows again on reconnect.** Plugging a cable
   back in now flashes the establishing-link cue before going green, instead of
   jumping straight from gray to linked.
+- **Far fewer false network alarms.** Pulse no longer reports "no internet" on
+  venues that simply block ping (it confirms reachability through real services
+  instead); the DNS check now tests the VPU's actual configured resolver rather
+  than a public one (8.8.8.8) that locked-down school networks block on purpose;
+  harmless CDN address differences are no longer flagged; and the
+  gateway-instability threshold was loosened so normal latency doesn't trip it.
+- **Wi-Fi is only flagged when it's actually carrying the internet uplink** —
+  idle or virtual wireless adapters no longer raise a warning, and the guidance
+  now points to switching to Ethernet rather than disabling the adapter.
 
 ## [0.2.0] - 2026-06-02
 
