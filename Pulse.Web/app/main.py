@@ -186,6 +186,13 @@ async def _on_startup():
         ps_log("server", 0, "ok", msg)
         _server_log.info(msg)
 
+    # Fire-and-forget run-tracking check-in. No-op unless PULSE_CHECKIN_URL is
+    # set (and never in demo/dev). Scheduled as a task so it can't delay startup.
+    try:
+        asyncio.create_task(_send_checkin())
+    except Exception:
+        pass
+
 
 def load_settings() -> dict:
     try:
@@ -2981,6 +2988,59 @@ def _update_channel():
     if tag.startswith("web-v"):
         return "production"
     return "dev"
+
+
+# ── Optional run-tracking check-in ──────────────────────────────────────────
+# Fire-and-forget "Pulse ran on this VPU" beacon for fleet tracking. Completely
+# disabled unless PULSE_CHECKIN_URL is set (the launcher loads it, with the
+# secret, from a non-committed pulse-checkin.cfg — so the token never lands in
+# source control). Never runs in demo/dev (DEMO_MODE) so a developer's machine
+# can't pollute the fleet list. Identity-only payload; one-way (we POST, we
+# don't act on any response). Fail-open in every branch: a blocked network or
+# unreachable sink must never slow or break launch. Stdlib urllib on purpose
+# (no httpx) — same lesson as the self-updater: the beacon has to work on any
+# installed build, including one missing an optional pip dependency.
+
+def _post_checkin_sync(url: str, payload: dict) -> None:
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}
+    )
+    # Apps Script 302-redirects the POST to a result URL; urllib follows it as a
+    # GET and reads the JSON ack. We don't need the body — just don't error.
+    with urllib.request.urlopen(req, timeout=4) as resp:
+        resp.read(256)
+
+
+async def _send_checkin() -> None:
+    url = (_os.environ.get("PULSE_CHECKIN_URL") or "").strip()
+    if not url or DEMO_MODE:
+        return  # disabled, or a dev/demo machine — never report
+    try:
+        ident = await run_ps("Get-SystemIdentity.ps1")
+        if not isinstance(ident, dict) or ident.get("error"):
+            return  # couldn't read identity — skip silently
+        cs   = ident.get("computerSystem") or {}
+        bios = ident.get("bios") or {}
+        px   = ident.get("pixellot") or {}
+        payload = {
+            "secret":       _os.environ.get("PULSE_CHECKIN_SECRET", ""),
+            "hostname":     cs.get("name"),
+            "serialNumber": bios.get("serialNumber"),
+            "venueId":      px.get("venueId"),
+            "vpuName":      px.get("vpuName"),
+            "model":        cs.get("model"),
+            "pulseVersion": APP_VERSION,
+            "channel":      _update_channel(),
+        }
+        await asyncio.to_thread(_post_checkin_sync, url, payload)
+        _server_log.info("Check-in sent for %s", payload.get("hostname") or "unknown VPU")
+    except Exception as e:
+        # Fail-open: the beacon must never affect Pulse.
+        try:
+            _server_log.info("Check-in skipped (%s)", e)
+        except Exception:
+            pass
 
 
 async def _resolve_latest_release(channel):
