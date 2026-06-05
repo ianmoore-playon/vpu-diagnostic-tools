@@ -2149,17 +2149,21 @@ function _renderPortConnectivity(ports) {
 
   var required = ports.filter(function(p) { return !p.optional; });
   var optional = ports.filter(function(p) { return p.optional; });
+  var reqGroups = groupRows(required);
+  var optGroups = groupRows(optional);
   var reqPass = required.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
   var reqBlocked = required.length - reqPass;
 
   var summary = reqBlocked === 0
     ? '<span class="net-port-summary net-port-summary-ok">' + svgIcon("check", 13) + ' All ' + required.length + ' required reachable</span>'
     : '<span class="net-port-summary net-port-summary-bad">' + svgIcon("triangle", 13) + ' ' + reqBlocked + ' of ' + required.length + ' required blocked</span>';
-  if (optional.length) summary += '<span class="net-port-summary-opt">· ' + optional.length + ' optional</span>';
+  // Count optional by service/row (Scorebot's port range is one service), not
+  // by individual port, so the chip matches the rows shown below.
+  if (optGroups.length) summary += '<span class="net-port-summary-opt">· ' + optGroups.length + ' optional</span>';
 
   var body = "";
-  if (required.length) body += '<div class="net-port-group-label">Required</div>' + groupRows(required).map(row).join("");
-  if (optional.length) body += '<div class="net-port-group-label">Optional</div>' + groupRows(optional).map(row).join("");
+  if (reqGroups.length) body += '<div class="net-port-group-label">Required</div>' + reqGroups.map(row).join("");
+  if (optGroups.length) body += '<div class="net-port-group-label">Optional</div>' + optGroups.map(row).join("");
 
   return '<div class="net-port-summary-bar">' + summary + '</div>' +
          '<div class="net-port-list">' + body + '</div>';

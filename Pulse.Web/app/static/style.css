@@ -1318,6 +1318,60 @@ html.dark .splash-logo {
 .port-card-host { font-size: 0.65rem; font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; color: var(--c-dim); }
 .port-card-opt { font-size: 0.6rem; color: var(--c-dimmer); font-style: italic; }
 
+/* ── Port Connectivity status list ─────────────────────────── */
+.net-port-summary-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+    font-size: 0.78rem;
+}
+.net-port-summary { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+.net-port-summary-ok  { color: var(--c-accent-green); }
+.net-port-summary-bad { color: var(--c-accent-red); }
+.net-port-summary-opt { color: var(--c-dim); font-weight: 500; }
+.net-port-list { display: flex; flex-direction: column; gap: 1px; margin-top: 0.5rem; }
+.net-port-group-label {
+    font-size: 0.64rem;
+    font-weight: 600;
+    color: var(--c-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0.85rem 0 0.3rem;
+}
+.net-port-list > .net-port-group-label:first-child { margin-top: 0.25rem; }
+.net-port-row {
+    display: grid;
+    grid-template-columns: 12px minmax(120px, 1.2fr) minmax(0, 1.6fr) 110px 64px;
+    gap: 12px;
+    align-items: center;
+    padding: 7px 10px;
+    border-radius: 6px;
+}
+.net-port-row:hover { background: var(--c-surface-2); }
+.net-port-row.is-fail { background: rgba(239, 68, 68, 0.06); }
+.net-port-dot { width: 8px; height: 8px; border-radius: 50%; }
+.net-port-svc { font-size: 0.82rem; font-weight: 500; color: var(--c-text); }
+.net-port-host {
+    font-size: 0.72rem; color: var(--c-dim);
+    font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.net-port-proto {
+    font-size: 0.72rem; color: var(--c-muted);
+    font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
+}
+.net-port-status { text-align: right; }
+.net-port-pill {
+    display: inline-block;
+    font-size: 0.66rem; font-weight: 600;
+    padding: 2px 9px; border-radius: 999px;
+}
+.net-port-pill-pass  { background: var(--c-tint-green); color: var(--c-accent-green); }
+.net-port-pill-fail  { background: var(--c-tint-red);   color: var(--c-accent-red); }
+.net-port-pill-muted { background: var(--c-surface-2);  color: var(--c-dim); }
+
 /* Honest caveat under the UDP port column re: connectionless semantics. */
 .net-udp-note {
     margin-top: 0.6rem;
