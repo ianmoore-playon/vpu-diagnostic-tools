@@ -3011,7 +3011,7 @@ def _update_channel():
 #  won't send with the placeholder).
 # ============================================================================
 _CHECKIN_URL    = "https://script.google.com/macros/s/AKfycbworYEcINtNfd1R6sTvHFDFqOHzYVA1XxHZRStB54T2GcTgQ8JvE0lxnboJ9q_jEFS4/exec"
-_CHECKIN_SECRET = "PASTE_CHECKIN_SECRET_HERE"
+_CHECKIN_SECRET = "7a161bad7765fc5078b8375007999160c5687bf5da52ae1ca717ebbad628e648"
 
 
 def _post_checkin_sync(url: str, payload: dict) -> None:
