@@ -186,8 +186,8 @@ async def _on_startup():
         ps_log("server", 0, "ok", msg)
         _server_log.info(msg)
 
-    # Fire-and-forget run-tracking check-in. No-op unless PULSE_CHECKIN_URL is
-    # set (and never in demo/dev). Scheduled as a task so it can't delay startup.
+    # Fire-and-forget run-tracking check-in (no-op until the check-in secret is
+    # filled in, and never in demo/dev). Scheduled so it can't delay startup.
     try:
         asyncio.create_task(_send_checkin())
     except Exception:
@@ -2990,16 +2990,29 @@ def _update_channel():
     return "dev"
 
 
-# ── Optional run-tracking check-in ──────────────────────────────────────────
-# Fire-and-forget "Pulse ran on this VPU" beacon for fleet tracking. Completely
-# disabled unless PULSE_CHECKIN_URL is set (the launcher loads it, with the
-# secret, from a non-committed pulse-checkin.cfg — so the token never lands in
-# source control). Never runs in demo/dev (DEMO_MODE) so a developer's machine
-# can't pollute the fleet list. Identity-only payload; one-way (we POST, we
-# don't act on any response). Fail-open in every branch: a blocked network or
-# unreachable sink must never slow or break launch. Stdlib urllib on purpose
-# (no httpx) — same lesson as the self-updater: the beacon has to work on any
-# installed build, including one missing an optional pip dependency.
+# ── Run-tracking check-in ───────────────────────────────────────────────────
+# Fire-and-forget "Pulse ran on this VPU" beacon for fleet tracking. The sink is
+# a Google Apps Script web app that upserts one row per unit (first/last seen,
+# run count). The URL + secret are embedded below by deliberate choice: this is
+# a low-value, rotatable, write-only spreadsheet key, and baking it into main.py
+# means every release checks in with zero per-VPU setup. Env vars
+# PULSE_CHECKIN_URL / PULSE_CHECKIN_SECRET override the embedded defaults.
+#
+# Never runs in demo/dev (DEMO_MODE) so a developer's machine can't pollute the
+# list. Identity-only payload; one-way (we POST, we don't act on any response).
+# Fail-open in every branch: a blocked network or unreachable sink must never
+# slow or break launch. Stdlib urllib on purpose (no httpx) — the beacon has to
+# work on any installed build, even one missing an optional pip dependency.
+#
+# ============================================================================
+#  >>> PASTE YOUR APPS SCRIPT SECRET HERE <<<
+#  Replace PASTE_CHECKIN_SECRET_HERE below with the secret from your Apps Script
+#  deployment. The URL is already set. Until then, check-in stays inert (it
+#  won't send with the placeholder).
+# ============================================================================
+_CHECKIN_URL    = "https://script.google.com/macros/s/AKfycbworYEcINtNfd1R6sTvHFDFqOHzYVA1XxHZRStB54T2GcTgQ8JvE0lxnboJ9q_jEFS4/exec"
+_CHECKIN_SECRET = "PASTE_CHECKIN_SECRET_HERE"
+
 
 def _post_checkin_sync(url: str, payload: dict) -> None:
     data = json.dumps(payload).encode("utf-8")
@@ -3013,9 +3026,10 @@ def _post_checkin_sync(url: str, payload: dict) -> None:
 
 
 async def _send_checkin() -> None:
-    url = (_os.environ.get("PULSE_CHECKIN_URL") or "").strip()
-    if not url or DEMO_MODE:
-        return  # disabled, or a dev/demo machine — never report
+    url = (_os.environ.get("PULSE_CHECKIN_URL") or _CHECKIN_URL).strip()
+    secret = (_os.environ.get("PULSE_CHECKIN_SECRET") or _CHECKIN_SECRET).strip()
+    if not url or not secret or secret == "PASTE_CHECKIN_SECRET_HERE" or DEMO_MODE:
+        return  # not configured (placeholder secret), or a dev/demo machine — never report
     try:
         ident = await run_ps("Get-SystemIdentity.ps1")
         if not isinstance(ident, dict) or ident.get("error"):
@@ -3024,7 +3038,7 @@ async def _send_checkin() -> None:
         bios = ident.get("bios") or {}
         px   = ident.get("pixellot") or {}
         payload = {
-            "secret":       _os.environ.get("PULSE_CHECKIN_SECRET", ""),
+            "secret":       secret,
             "hostname":     cs.get("name"),
             "serialNumber": bios.get("serialNumber"),
             "venueId":      px.get("venueId"),

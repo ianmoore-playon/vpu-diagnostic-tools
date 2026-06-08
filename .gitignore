@@ -24,8 +24,3 @@ Pulse.Web/app/python/
 
 # Server log written at runtime
 Pulse.Web/pulse-server.log
-
-# Run-tracking check-in config — holds the live Apps Script URL + secret.
-# Never commit a filled copy; pulse-checkin.cfg.example is the committed template.
-pulse-checkin.cfg
-**/pulse-checkin.cfg

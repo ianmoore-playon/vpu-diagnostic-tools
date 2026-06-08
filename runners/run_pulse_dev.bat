@@ -39,14 +39,6 @@ set "REPO=playon/pulse"
 set "ZIPFILE=%TEMP%\pulse-dl.zip"
 set "EXTRACT=%TEMP%\pulse-extract"
 
-:: -- Optional run-tracking check-in (NOT in source control) ---------------
-::   If a pulse-checkin.cfg sits next to this launcher (or in %INSTALL_DIR%),
-::   load PULSE_CHECKIN_URL + PULSE_CHECKIN_SECRET from it. Keeps the token out
-::   of the repo and the release zip. Copy pulse-checkin.cfg.example to
-::   pulse-checkin.cfg and fill it in to enable the "units Pulse ran on" list.
-if exist "%~dp0pulse-checkin.cfg" call "%~dp0pulse-checkin.cfg"
-if not defined PULSE_CHECKIN_URL if exist "%INSTALL_DIR%\pulse-checkin.cfg" call "%INSTALL_DIR%\pulse-checkin.cfg"
-
 echo.
 echo  .-----------------------------------------------------.
 echo  ^|                                                     ^|
@@ -182,9 +174,6 @@ echo   Version ........................ %BRANCH%-!SHORT_SHA!
 :: target. Guard against copying onto itself (when launched FROM the
 :: shortcut, %~f0 already IS the install copy).
 if /I not "%~f0"=="%INSTALL_DIR%\Pulse.bat" copy /y "%~f0" "%INSTALL_DIR%\Pulse.bat" >nul 2>&1
-:: Persist the optional check-in config into the install so Start-Menu launches
-:: (which run %INSTALL_DIR%\Pulse.bat) pick up the same token.
-if exist "%~dp0pulse-checkin.cfg" if /I not "%~dp0"=="%INSTALL_DIR%\" copy /y "%~dp0pulse-checkin.cfg" "%INSTALL_DIR%\pulse-checkin.cfg" >nul 2>&1
 :: Record the channel so the in-app "Check for update" knows which release line to track
 >"%INSTALL_DIR%\CHANNEL" echo dev
 
