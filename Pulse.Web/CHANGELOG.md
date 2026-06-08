@@ -23,12 +23,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [Unreleased]
 
 ### Added
-- **Pulse can record which VPUs it's run on (opt-in, admin-configured).** When
-  your admin turns on run-tracking, Pulse sends a small identity-only check-in
-  on launch — hostname, serial, venue, model, version — so we can see which
-  units Pulse has been used on during beta. It's off unless configured, never
-  runs on demo/dev machines, and fails silently if the network blocks it; Pulse
-  works exactly the same either way.
+- **Pulse records which VPUs it's run on.** On launch Pulse sends a small
+  identity-only check-in — hostname, serial, venue, model, version — so we can
+  see which units Pulse has been used on. It never runs on demo/dev machines and
+  fails silently if the network blocks it; Pulse works exactly the same either way.
 - **Share a report to another Pulse over the LAN.** A new **Share over LAN**
   page lets you send this VPU's full diagnostic snapshot straight to another
   Pulse on the same network — no USB or file copy. On the receiving machine,
