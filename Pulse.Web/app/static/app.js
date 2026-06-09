@@ -1561,7 +1561,7 @@ function renderSystem() {
           label = `End-of-support: ${lc.eosDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
         }
         return `<div class="sys-lifecycle ${cls} mt-3">
-          ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
+          ${svgIcon(cls === "sys-lifecycle-ok" ? "info" : "alert", 14)}
           <div>
             <div class="font-semibold">${esc(lc.ltscRelease)}</div>
             <div class="text-xs mt-1">${esc(label)}${lc.endOfServicingDate ? ` &middot; End-of-servicing: ${esc(lc.endOfServicingDate)}` : ""}</div>
@@ -1590,32 +1590,33 @@ function renderSystem() {
       ${swList.length ? `
         <input type="text" id="sw-filter" placeholder="Filter software..." class="sw-filter-input"/>
         <div class="sw-table-wrap">
-          <table class="data-table" id="sw-table"><thead><tr>
-            <th>Name</th><th>Version</th><th>Publisher</th><th>Concern</th>
-          </tr></thead><tbody>
           ${(() => {
-            // Sort concerning entries to the top, critical first
+            const hasConcerns = swList.some(s => s.concern);
+            // Drop the Concern column entirely when nothing is flagged —
+            // saves a wasted column of dashes on a healthy box.
             const sevRank = { critical: 0, warning: 1 };
             const sorted = [...swList].sort((a, b) => {
               const ra = a.concern ? sevRank[a.concern.severity] ?? 9 : 99;
               const rb = b.concern ? sevRank[b.concern.severity] ?? 9 : 99;
               return ra - rb;
             });
-            return sorted.map(s => {
+            const rows = sorted.map(s => {
               const c = s.concern;
               const rowCls = c ? ` class="sw-row-${esc(c.severity)}"` : "";
-              const concernCell = c
+              const concernCell = hasConcerns ? `<td>${c
                 ? `<span class="sw-concern-badge sw-concern-${esc(c.severity)}" title="${esc(c.reason)}">${esc(c.shortLabel || c.label)}</span>`
-                : `<span class="text-pulse-muted text-xs">—</span>`;
+                : `<span class="text-pulse-muted text-xs">—</span>`}</td>` : "";
               return `<tr${rowCls}>
                 <td>${esc(s.displayName)}</td>
                 <td class="font-mono text-xs">${esc(s.displayVersion)}</td>
                 <td class="text-pulse-muted">${esc(s.publisher)}</td>
-                <td>${concernCell}</td>
+                ${concernCell}
               </tr>`;
             }).join("");
+            return `<table class="data-table" id="sw-table"><thead><tr>
+              <th>Name</th><th>Version</th><th>Publisher</th>${hasConcerns ? "<th>Concern</th>" : ""}
+            </tr></thead><tbody>${rows}</tbody></table>`;
           })()}
-          </tbody></table>
         </div>
       ` : '<p class="text-pulse-muted text-sm">No software data</p>'}
     </div>
@@ -3694,9 +3695,14 @@ function renderServices() {
     // quick-action card above is the correct restart path for them.
     let actions = "";
     if (isProcess) {
+      // Pixellot core processes don't have an individual restart button
+      // because the KeepAgentUp watchdog supervises them — use the
+      // "Restart Agent + Coordinator" quick action above instead.  The
+      // notes here explain that to the tech so the missing button doesn't
+      // read as a gap.
       actions = s.watchdog
-        ? `<span class="svc-tile-note">${svgIcon("shield", 12)} Watchdog — keeps Agent/Coordinator alive</span>`
-        : `<span class="svc-tile-note">Managed by KeepAgentUp watchdog</span>`;
+        ? `<span class="svc-tile-note" title="This watchdog process restarts the Agent and Coordinator automatically when they exit.">${svgIcon("shield", 12)} Watchdog — restarts Agent/Coordinator on failure</span>`
+        : `<span class="svc-tile-note" title="Use the 'Restart Agent + Coordinator' button above to restart this process.">${svgIcon("shield", 12)} Managed by KeepAgentUp — use Restart action above</span>`;
     } else if (s.status !== "NotFound") {
       actions = `<button class="btn-outline btn-ol-blue svc-restart-btn" data-name="${esc(s.name)}">
           ${svgIcon("refresh", 12)} Restart
@@ -3734,7 +3740,7 @@ function renderServices() {
             Runs <span class="font-mono">c:\\pixellot\\bin\\keepagentup.exe</span> — the documented fast remedy when the Pixellot Agent or Coordinator is unresponsive. Try this before escalating to an RMA.
           </div>
         </div>
-        <button class="btn-outline btn-ol-amber" id="svc-keepagent-btn">
+        <button class="btn-outline btn-ol-blue" id="svc-keepagent-btn" title="Documented first-line remedy when Agent/Coordinator is unresponsive">
           ${svgIcon("zap", 14)} Restart Agent + Coordinator
         </button>
       </div>
@@ -4013,20 +4019,25 @@ function renderDiskHealth() {
     </div>
 
     <!-- Pixellot Storage Paths -->
-    ${paths.length ? `
+    ${paths.length ? (() => {
+      // Drop the Status column entirely when no path reports a status —
+      // saves a wasted column of dashes for the common case.
+      const hasStatus = paths.some(p => p.status);
+      return `
     <div class="card mt-4">
       ${sectionTitle("file", "Pixellot Storage Paths")}
       <table class="data-table"><thead><tr>
-        <th>Path</th><th>Description</th><th>Size</th><th>Status</th>
+        <th>Path</th><th>Description</th><th>Size</th>${hasStatus ? "<th>Status</th>" : ""}
       </tr></thead><tbody>
       ${paths.map(p => `<tr>
         <td class="font-mono text-xs">${esc(p.path)}</td>
         <td class="text-pulse-muted">${esc(p.description || "")}</td>
         <td class="font-semibold">${p.sizeGB != null ? esc(String(p.sizeGB)) + " GB" : esc(p.error || "—")}</td>
-        <td>${p.status ? statusBadge(p.status) : "—"}</td>
+        ${hasStatus ? `<td>${p.status ? statusBadge(p.status) : "—"}</td>` : ""}
       </tr>`).join("")}
       </tbody></table>
-    </div>` : ""}
+    </div>`;
+    })() : ""}
 
     <!-- Physical Disks -->
     ${physical.length ? `

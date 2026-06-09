@@ -1282,8 +1282,11 @@ html.dark .demo-banner {
     line-height: 1.45;
 }
 .sys-lifecycle svg { flex-shrink: 0; margin-top: 2px; }
-.sys-lifecycle-ok   { background: var(--c-tint-green); border-left: 3px solid var(--c-accent-green); }
-.sys-lifecycle-ok   svg { color: var(--c-accent-green); }
+/* "ok" used to mean green — but EOL is informational, not a celebration,
+   even when years away.  Now: blue/info for >1y or unknown, amber for
+   <1y, red for <90d or past. */
+.sys-lifecycle-ok   { background: var(--c-tint-blue);  border-left: 3px solid var(--c-accent-blue); }
+.sys-lifecycle-ok   svg { color: var(--c-accent-blue); }
 .sys-lifecycle-warn { background: var(--c-tint-amber); border-left: 3px solid var(--c-accent-amber); }
 .sys-lifecycle-warn svg { color: var(--c-accent-amber); }
 .sys-lifecycle-crit { background: var(--c-tint-red);   border-left: 3px solid var(--c-accent-red);   }
@@ -2218,10 +2221,13 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     padding: 14px;
     display: flex;
     flex-direction: column;
-    border-left: 3px solid;
+    border-left: 4px solid;
 }
-.svc-tile-running { border-left-color: #22c55e; }
-.svc-tile-stopped { border-left-color: #ef4444; }
+/* Theme-aware accent colors + thicker stripe so the running/stopped
+   indicator is legible at a glance — was 3px raw hex that washed out
+   on the dark surface. */
+.svc-tile-running { border-left-color: var(--c-accent-green); }
+.svc-tile-stopped { border-left-color: var(--c-accent-red); }
 .svc-tile-muted   { border-left-color: var(--c-dimmer); }
 .svc-tile-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .svc-tile-name { font-size: 0.85rem; font-weight: 600; color: var(--c-text); }
