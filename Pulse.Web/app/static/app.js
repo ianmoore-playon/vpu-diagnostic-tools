@@ -116,6 +116,14 @@ function updateNav() {
 function renderPage(id) {
   const fn = pageRenderers[id];
   if (!fn) { $page().innerHTML = `<p class="text-pulse-muted">Unknown page: ${esc(id)}</p>`; return; }
+  // Defensive: if someone calls renderPage() without going through
+  // navigate() (e.g. via console eval or a future caller), keep the
+  // sidebar active-state and currentPage in sync so the highlight
+  // can't lie about where the user is.
+  if (id !== currentPage) {
+    currentPage = id;
+    updateNav();
+  }
   try {
     fn();
   } catch (err) {

@@ -47,6 +47,13 @@ html.dark {
 html, body { height: 100%; margin: 0; }
 #app { height: 100%; }
 
+/* Sidebar sits a half-step darker than the page background so the
+   navigation chrome reads as subordinate to the content. In dark mode
+   `--c-surface-2` already differs from `--c-bg`; in light mode the two
+   variables are identical, so we override here to `--c-deep-bg`. */
+#sidebar { background: var(--c-deep-bg); }
+html.dark #sidebar { background: var(--c-surface-2); }
+
 /* ── Scrollbar ──────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -218,23 +225,36 @@ html.dark .splash-logo {
 }
 
 /* ── Theme toggle ───────────────────────────────────────────── */
+/* Sits at the bottom of the sidebar above the footer.  Styled as a
+   subtle but discoverable button: clear icon + label, soft background
+   so it's distinguishable from the footer text below it.  Hover/focus
+   bumps the contrast further. */
 .theme-toggle-btn {
     display: flex;
     align-items: center;
-    gap: 7px;
-    width: 100%;
-    padding: 8px 16px;
-    background: none;
-    border: none;
-    border-top: 1px solid var(--c-border);
-    color: var(--c-dim);
+    gap: 8px;
+    width: calc(100% - 16px);
+    margin: 8px;
+    padding: 7px 10px;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    color: var(--c-muted);
     font-size: 0.72rem;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
-    transition: color 0.15s, background 0.15s;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
     text-align: left;
 }
-.theme-toggle-btn:hover { background: var(--c-surface-2); color: var(--c-muted); }
+.theme-toggle-btn:hover {
+    background: var(--c-surface-3);
+    color: var(--c-text);
+    border-color: var(--c-dimmer);
+}
+.theme-toggle-btn:focus-visible {
+    outline: 2px solid var(--c-accent-blue);
+    outline-offset: 1px;
+}
 
 .sidebar-footer {
     padding: 10px 16px;
@@ -244,16 +264,26 @@ html.dark .splash-logo {
 }
 
 /* ── Demo banner ──────────────────────────────────────────── */
+/* High-visibility amber band so techs reviewing screenshots can't
+   miss that the data is fake.  The tinted-amber variant blends into
+   the sidebar in light mode, so we use solid amber-100 / amber-800
+   in light and a brighter dark-mode treatment than the bare tint. */
 .demo-banner {
     padding: 6px 16px;
-    background: var(--c-tint-amber);
-    border-bottom: 1px solid var(--c-border);
-    color: var(--c-accent-amber);
+    background: #fef3c7;
+    border-top: 1px solid #fcd34d;
+    border-bottom: 1px solid #fcd34d;
+    color: #92400e;
     font-size: 0.65rem;
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     text-align: center;
+}
+html.dark .demo-banner {
+    background: #422006;
+    border-color: #b45309;
+    color: #fbbf24;
 }
 
 /* ── Nav ───────────────────────────────────────────────────── */
@@ -699,7 +729,7 @@ html.dark .splash-logo {
 .af-list { display: flex; flex-direction: column; }
 
 /* ── Content bottom padding (clear log pane) ─────────────── */
-#content { padding-bottom: 40px; }
+#content { padding-bottom: 44px; }
 
 /* ── Log pane ─────────────────────────────────────────────── */
 .log-pane {
@@ -707,7 +737,7 @@ html.dark .splash-logo {
     bottom: 0;
     left: 14rem;
     right: 0;
-    height: 32px;
+    height: 36px;
     background: var(--c-deep-bg);
     border-top: 1px solid var(--c-border);
     z-index: 50;
@@ -720,7 +750,7 @@ html.dark .splash-logo {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0 14px 0 0;
+    padding: 0 16px 0 0;
     font-size: 0.7rem;
     font-weight: 600;
     color: var(--c-dim);
@@ -732,7 +762,7 @@ html.dark .splash-logo {
 }
 .log-tabs { display: flex; gap: 0; }
 .log-tab {
-    padding: 7px 14px;
+    padding: 8px 16px;
     cursor: pointer;
     background: none;
     border: none;
