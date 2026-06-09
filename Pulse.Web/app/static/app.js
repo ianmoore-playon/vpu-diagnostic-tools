@@ -3185,7 +3185,7 @@ function _camDownGuidanceHtml(p, ctx) {
     if (allDown) {
       msg = "No signal — and every NIC port is down. Suspect the NIC card, its driver, or power to the camera bank, not a single cable.";
     } else if (othersUp) {
-      msg = "No signal on this port. The other ports are linked, so the card is healthy — check this cable (seated both ends) and the camera's power, then use Fault Isolator.";
+      msg = "No signal on this port. The other ports are linked, so this is likely isolated to this cable, camera, or port — not a card-wide failure. Check the cable (both ends) and the camera's power, then use Fault Isolator.";
     } else {
       msg = "No signal detected. Check the cable is seated both ends and the camera has power, then use Fault Isolator.";
     }
