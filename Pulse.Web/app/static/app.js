@@ -4289,9 +4289,12 @@ function renderEvents() {
 
     const levelChip = (lvl) => {
       const l = (lvl || "").toLowerCase();
-      if (l === "fatal")   return '<span class="ev-level-chip ev-level-error">Fatal</span>';
+      // Distinct visual class per severity — Fatal solid-fill (showstopper),
+      // Error red-outline (single failure), Restart blue-outline (lifecycle
+      // event, not a problem). Was Fatal+Error and Warning+Restart shared.
+      if (l === "fatal")   return '<span class="ev-level-chip ev-level-fatal">Fatal</span>';
       if (l === "error")   return '<span class="ev-level-chip ev-level-error">Error</span>';
-      if (l === "restart") return '<span class="ev-level-chip ev-level-warn">Restart</span>';
+      if (l === "restart") return '<span class="ev-level-chip ev-level-restart">Restart</span>';
       return `<span class="ev-level-chip ev-level-info">${esc(l)}</span>`;
     };
 
@@ -4349,15 +4352,14 @@ function renderEvents() {
 // ── Reports ──────────────────────────────────────────────────
 
 function renderReports() {
+  // Reports page used to host both Generate Report (its primary action,
+  // in the top-right) AND Run All Diagnostics (which belongs on Dashboard
+  // — same button appears there). We move Generate Report INTO the card
+  // describing it so action sits with its explanation, and drop the
+  // redundant Run All Diagnostics button.
   $page().innerHTML = `
     ${pageHeader("Reports", "Diagnostic-run snapshots — generate and download full system reports",
-      `<button class="btn-outline btn-ol-green" id="rpt-export">
-        ${svgIcon("download", 14)} Generate Report
-      </button>
-      <button class="btn-outline btn-ol-blue" onclick="refreshAll()">
-        ${svgIcon("play", 14)} Run All Diagnostics
-      </button>
-      <button class="btn-outline btn-ol-blue" onclick="navigate('share')">
+      `<button class="btn-outline btn-ol-blue" onclick="navigate('share')" title="Hand off a generated report to another Pulse on the same network">
         ${svgIcon("send", 14)} Send to a peer
       </button>`
     )}
@@ -4365,7 +4367,10 @@ function renderReports() {
     <div class="card">
       ${sectionTitle("file", "Full Diagnostic Export")}
       <p class="text-sm text-pulse-muted mb-4">Generate a complete diagnostic report containing all system, network, and service data. This runs every data collection script and bundles the output into a downloadable JSON file.</p>
-      <span id="rpt-status" class="text-sm text-pulse-muted"></span>
+      <button class="btn-outline btn-ol-green" id="rpt-export">
+        ${svgIcon("download", 14)} Generate Report
+      </button>
+      <span id="rpt-status" class="text-sm text-pulse-muted ml-3"></span>
       <div id="rpt-result" class="mt-4"></div>
     </div>
   `;
@@ -6574,10 +6579,16 @@ function renderSettings() {
     <div class="card mt-4">
       ${sectionTitle("clock", "Live Metrics")}
       <p class="text-sm text-pulse-muted mb-3">How often the WebSocket refreshes live performance metrics (1000–30000 ms).</p>
-      <input type="number" id="set-poll" value="${pollMs}" min="1000" max="30000" step="500" class="settings-input" style="max-width:200px"/>
+      <div class="settings-input-with-suffix" style="max-width:200px">
+        <input type="number" id="set-poll" value="${pollMs}" min="1000" max="30000" step="500" class="settings-input"/>
+        <span class="settings-input-suffix">ms</span>
+      </div>
       <div class="settings-actions">
         <button class="btn-outline btn-ol-blue" id="set-save-poll">
           ${svgIcon("check", 14)} Save
+        </button>
+        <button class="btn-outline btn-ol-blue" id="set-reset-poll" title="Restore the default 3000 ms refresh interval">
+          ${svgIcon("refresh", 14)} Reset to default
         </button>
         <span id="set-poll-msg" class="text-sm text-pulse-muted"></span>
       </div>
@@ -6587,13 +6598,15 @@ function renderSettings() {
     <div class="card mt-4">
       ${sectionTitle("file", "Logs & Reports")}
       <p class="text-sm text-pulse-muted mb-3">File paths used by Pulse on this VPU.</p>
-      <div class="kv-grid mb-3" style="max-width:640px">
-        ${kvRow("Server log", data._paths?.serverLog || "—")}
-        ${kvRow("Settings file", data._paths?.settingsFile || "—")}
+      <div class="settings-paths mb-3">
+        ${_settingsPathRow("Server log", data._paths?.serverLog)}
+        ${_settingsPathRow("Settings file", data._paths?.settingsFile)}
       </div>
-      <button class="btn-outline btn-ol-blue" onclick="openServerLog()">
-        ${svgIcon("file", 14)} View Server Log
-      </button>
+      <div class="settings-actions">
+        <button class="btn-outline btn-ol-blue" onclick="openServerLog()">
+          ${svgIcon("file", 14)} View Server Log
+        </button>
+      </div>
     </div>
 
     <!-- Diagnostics -->
@@ -6638,6 +6651,24 @@ function renderSettings() {
 
   document.getElementById("set-reset-url")?.addEventListener("click", () => {
     document.getElementById("set-sc-url").value = "http://localhost:5000";
+  });
+
+  document.getElementById("set-reset-poll")?.addEventListener("click", () => {
+    document.getElementById("set-poll").value = 3000;
+  });
+
+  // Path copy buttons inside the Logs & Reports card
+  document.querySelectorAll(".settings-path-copy").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const path = btn.dataset.path || "";
+      if (!path) return;
+      try {
+        await navigator.clipboard.writeText(path);
+        const old = btn.innerHTML;
+        btn.innerHTML = svgIcon("check", 12) + " Copied";
+        setTimeout(() => { btn.innerHTML = old; }, 1400);
+      } catch (e) { /* clipboard blocked — silent */ }
+    });
   });
 
   document.getElementById("set-save-poll")?.addEventListener("click", async () => {
@@ -6703,6 +6734,18 @@ function renderSettings() {
       upCheckBtn.disabled = false;
     }
   });
+}
+
+// Helper: a path row with a copy-to-clipboard button so techs can paste
+// the absolute path into Explorer / a remote session without retyping.
+function _settingsPathRow(label, path) {
+  const safe = path || "—";
+  const hasPath = !!path;
+  return `<div class="settings-path-row">
+    <span class="settings-path-label">${esc(label)}</span>
+    <span class="settings-path-value font-mono">${esc(safe)}</span>
+    ${hasPath ? `<button class="settings-path-copy btn-outline btn-ol-blue" data-path="${esc(path)}" title="Copy path to clipboard">${svgIcon("copy", 12)} Copy</button>` : ""}
+  </div>`;
 }
 
 // ── Software Update helpers (module scope so they survive a re-render) ──
@@ -6793,11 +6836,11 @@ function renderAbout() {
           </div>
         </div>
         <div class="about-links">
-          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
-            ${svgIcon("globe", 14)} View Releases
+          <a href="https://github.com/playon/pulse/releases" target="_blank" rel="noopener" class="btn-outline btn-ol-green" title="Open the GitHub releases page in a new tab">
+            ${svgIcon("external-link", 14)} View Releases
           </a>
-          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
-            ${svgIcon("info", 14)} Source Repo
+          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue" title="Open the source repository in a new tab">
+            ${svgIcon("external-link", 14)} Source Repo
           </a>
         </div>
       </div>

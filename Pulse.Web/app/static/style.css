@@ -2313,14 +2313,21 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
+/* Custom chevron — Firefox/Chrome default arrow on a dark themed
+   <select> was invisible; this draws the chevron as an inline SVG
+   background tinted via currentColor so it adapts to both themes. */
 .ev-select {
-    background: var(--c-bg);
+    appearance: none;
+    -webkit-appearance: none;
+    background: var(--c-bg) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>") no-repeat right 10px center;
+    background-size: 12px;
     border: 1px solid var(--c-border);
     border-radius: 6px;
-    padding: 6px 10px;
+    padding: 6px 28px 6px 10px;
     color: var(--c-text);
     font-size: 0.8rem;
     outline: none;
+    cursor: pointer;
 }
 .ev-select:focus { border-color: #3b82f6; }
 .ev-input {
@@ -2348,10 +2355,18 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     font-weight: 600;
     border: 1px solid;
 }
+/* Fatal vs Error vs Warning vs Restart need to read as four distinct
+   severities at a glance.  Was: Fatal+Error both red outline, Warning+
+   Restart both amber outline. Now: Fatal is solid red (showstopper),
+   Error is red outline (single failure), Warning is amber outline,
+   Restart is blue outline (lifecycle event, not a problem). */
+.ev-level-fatal { background: var(--c-accent-red); color: #fff; border-color: var(--c-accent-red); }
 .ev-level-error { border-color: #ef4444; color: #ef4444; background: rgba(239, 68, 68, 0.08); }
 .ev-level-warn  { border-color: #eab308; color: #eab308; background: rgba(234, 179, 8, 0.08); }
+.ev-level-restart { border-color: #3b82f6; color: #3b82f6; background: rgba(59, 130, 246, 0.06); }
 .ev-level-info  { border-color: #3b82f6; color: #60a5fa; background: rgba(59, 130, 246, 0.08); }
-.ev-msg-cell { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-msg-cell { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
+.ev-msg-cell:hover { white-space: normal; }
 
 /* Pixellot logs scanner (PDF #5) */
 .px-log-summary { display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -2668,6 +2683,37 @@ html.dark .sc-board { box-shadow: none; border-color: #3a4356; }
 }
 .settings-input:focus { border-color: #3b82f6; }
 .settings-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
+/* Number input with a unit suffix (e.g. "3000 ms") — suffix is
+   positioned over the right padding of the input via flex layout so
+   the value stays editable and the unit is always visible. */
+.settings-input-with-suffix { position: relative; }
+.settings-input-with-suffix .settings-input { padding-right: 36px; }
+.settings-input-suffix {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.75rem;
+    color: var(--c-muted);
+    pointer-events: none;
+    margin-top: -6px;  /* offset .settings-input's margin-bottom */
+}
+
+/* File-path rows in Logs & Reports — label, monospace path, copy button */
+.settings-paths { display: flex; flex-direction: column; gap: 6px; max-width: 760px; }
+.settings-path-row {
+    display: grid;
+    grid-template-columns: 120px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--c-border);
+}
+.settings-path-row:last-child { border-bottom: none; }
+.settings-path-label { font-size: 0.75rem; color: var(--c-muted); }
+.settings-path-value { font-size: 0.78rem; color: var(--c-text); word-break: break-all; }
+.settings-path-copy { font-size: 0.7rem; padding: 3px 8px; }
 
 /* ── About page ────────────────────────────────────────────── */
 
