@@ -5553,6 +5553,12 @@ function _sc3SetText(id, text) {
 
 var _fi = null;
 var _fiHistoryCache = null;  // persisted prior runs (null = not yet fetched)
+// How long each link check waits for the speed to reach the threshold before
+// giving up. A healthy link returns the instant a good sample lands, so this
+// is just the max wait on a failing check. Kept short so the tech isn't left
+// staring at a countdown. The on-screen timer is decoupled from the network
+// poll (see pollPeakSpeed) so it ticks smoothly instead of jumping per poll.
+var _FI_CHECK_WINDOW = 10;   // seconds
 
 // Fetch persisted fault-isolator runs and render them into the history panel.
 function _fiLoadHistory() {
@@ -5757,7 +5763,7 @@ function renderFaultIsolator() {
 
   } else {
     // Phases 1-3: active swap phases
-    var btnLabel = _fi.checking ? ("Checking... " + (_fi.checkElapsed || 0) + "s / 20s") : _fi.actionLabel;
+    var btnLabel = _fi.checking ? ("Checking… " + (_fi.checkElapsed || 0) + "s / " + _FI_CHECK_WINDOW + "s") : _fi.actionLabel;
     // Phase 1 (AwaitingNicPortTest): show test port dropdown so the tech can
     // change it after a pre-check failure without starting over entirely.
     // Mirrors WPF's IsPickingTestPort => Phase == AwaitingNicPortTest.
@@ -5891,23 +5897,34 @@ function renderFaultIsolator() {
     var peak = 0;
     var start = Date.now();
     var deadline = start + windowSec * 1000;
-    // bind to this run; a reset swaps the global _fi out
-    while (Date.now() < deadline) {
-      if (fi._aborted || _fi !== fi) return peak;
-      var elapsed = Math.floor((Date.now() - start) / 1000);
+    // Smooth countdown, decoupled from the poll. The network poll below
+    // iterates roughly every (api call + 1s) — 2-3s on a real VPU — so driving
+    // the timer from it made the seconds jump 2-3 at a time. This ticker
+    // refreshes the button ~5×/sec so the count ticks fluidly every second.
+    var ticker = setInterval(function() {
+      if (fi._aborted || _fi !== fi) return;
+      var elapsed = Math.min(windowSec, Math.floor((Date.now() - start) / 1000));
       fi.checkElapsed = elapsed;
-      var btn = document.getElementById("fi-action");
-      if (btn) btn.textContent = "Checking... " + elapsed + "s / " + windowSec + "s";
-      var fresh;
-      try { fresh = await api("/api/cameras"); dataCache.cameras = fresh; }
-      catch (e) { fresh = { ports: [] }; }
-      var portData = (fresh.ports || [])[portIdx];
-      var sample = portData ? (portData.linkSpeedMbps || 0) : 0;
-      if (sample > peak) peak = sample;
-      if (peak >= threshold) return peak;
-      await new Promise(function(r) { setTimeout(r, 1000); });
+      var b = document.getElementById("fi-action");
+      if (b) b.textContent = "Checking… " + elapsed + "s / " + windowSec + "s";
+    }, 200);
+    try {
+      // bind to this run; a reset swaps the global _fi out
+      while (Date.now() < deadline) {
+        if (fi._aborted || _fi !== fi) return peak;
+        var fresh;
+        try { fresh = await api("/api/cameras"); dataCache.cameras = fresh; }
+        catch (e) { fresh = { ports: [] }; }
+        var portData = (fresh.ports || [])[portIdx];
+        var sample = portData ? (portData.linkSpeedMbps || 0) : 0;
+        if (sample > peak) peak = sample;
+        if (peak >= threshold) return peak;
+        await new Promise(function(r) { setTimeout(r, 800); });
+      }
+      return peak;
+    } finally {
+      clearInterval(ticker);
     }
-    return peak;
   }
 
   function addHistory(phaseName, config, speed, verdict, severity) {
@@ -5978,7 +5995,7 @@ function renderFaultIsolator() {
       _fi.checking = true;
       renderFaultIsolator();
 
-      var spd0 = await pollPeakSpeed(si, 20, expectedSpd);
+      var spd0 = await pollPeakSpeed(si, _FI_CHECK_WINDOW, expectedSpd);
       if (_fi !== myFi || _fi._aborted) return;
       _fi.checking = false;
       var sl0 = formatSpeed(spd0);
@@ -6056,7 +6073,7 @@ function renderFaultIsolator() {
       var expLbl1 = formatSpeed(expSpd1);
       _fi.checking = true;
       renderFaultIsolator();
-      var spd1 = await pollPeakSpeed(_fi.testIdx, 20, expSpd1);
+      var spd1 = await pollPeakSpeed(_fi.testIdx, _FI_CHECK_WINDOW, expSpd1);
       if (_fi !== myFi || _fi._aborted) return;
       _fi.checking = false;
       var sl1 = formatSpeed(spd1);
@@ -6141,7 +6158,7 @@ function renderFaultIsolator() {
       var expSpd2 = _fi.expectedSpeedMbps || 1000;
       _fi.checking = true;
       renderFaultIsolator();
-      var spd2 = await pollPeakSpeed(_fi.testIdx, 20, expSpd2);
+      var spd2 = await pollPeakSpeed(_fi.testIdx, _FI_CHECK_WINDOW, expSpd2);
       if (_fi !== myFi || _fi._aborted) return;
       _fi.checking = false;
       var sl2 = formatSpeed(spd2);
@@ -6182,7 +6199,7 @@ function renderFaultIsolator() {
     if (_fi.phase === 3) {
       _fi.checking = true;
       renderFaultIsolator();
-      var spd3 = await pollPeakSpeed(_fi.testIdx, 20);
+      var spd3 = await pollPeakSpeed(_fi.testIdx, _FI_CHECK_WINDOW);
       if (_fi !== myFi || _fi._aborted) return;
       _fi.checking = false;
       var sl3 = formatSpeed(spd3);
