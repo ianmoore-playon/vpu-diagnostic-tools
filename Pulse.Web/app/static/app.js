@@ -2115,74 +2115,134 @@ function _renderPortConnectivity(ports) {
   ports = ports || [];
   if (!ports.length) return '<p class="text-pulse-muted text-sm mt-2">No port results.</p>';
 
-  // Group by protocol+host+purpose so a single service's port range (Scorebot
-  // 1400–1405) collapses to one row, while distinct services sharing a port
-  // (the six TCP/443 hosts) each keep their own row.
-  function groupRows(list) {
-    var by = {}, order = [];
+  // Combine related results into one tile: hosts sharing a protocol/port (the
+  // six TCP/443 services) group together, and a single host's port range
+  // (Scorebot 1400–1405) collapses to one tile. Two passes — by proto/port
+  // first, then by host for the leftovers — mirroring the original card grid.
+  function groupPorts(list) {
+    var byPort = {}, portOrder = [];
     list.forEach(function(p) {
-      var k = (p.protocol || "").toUpperCase() + "|" + (p.host || "") + "|" + (p.purpose || "");
-      if (!by[k]) { by[k] = []; order.push(k); }
-      by[k].push(p);
+      var key = (p.protocol || "").toUpperCase() + "/" + p.port;
+      if (!byPort[key]) { byPort[key] = []; portOrder.push(key); }
+      byPort[key].push(p);
     });
-    return order.map(function(k) { return by[k]; });
+    var groups = [], singles = [];
+    portOrder.forEach(function(key) {
+      var items = byPort[key];
+      if (items.length > 1) groups.push({ type: "byPort", items: items, order: list.indexOf(items[0]) });
+      else singles.push(items[0]);
+    });
+    var byHost = {}, hostOrder = [];
+    singles.forEach(function(p) {
+      var key = (p.protocol || "").toUpperCase() + "|" + (p.host || "") + "|" + (p.purpose || "");
+      if (!byHost[key]) { byHost[key] = []; hostOrder.push(key); }
+      byHost[key].push(p);
+    });
+    hostOrder.forEach(function(key) {
+      var items = byHost[key];
+      groups.push({ type: items.length > 1 ? "byHost" : "single", items: items, order: list.indexOf(items[0]) });
+    });
+    // Wide multi-host (byPort) tiles first so they anchor their grid row — a
+    // span-2 tile can't fit beside a single-width tile, so if it came second it
+    // would wrap and leave an empty cell. Leading with it removes the gap.
+    groups.sort(function(a, b) {
+      var am = a.type === "byPort" ? 0 : 1, bm = b.type === "byPort" ? 0 : 1;
+      if (am !== bm) return am - bm;
+      return a.order - b.order;
+    });
+    return groups;
   }
 
-  function row(items) {
-    var p0 = items[0];
-    var proto = (p0.protocol || "TCP").toUpperCase();
-    var portsN = items.map(function(p) { return p.port; }).sort(function(a, b) { return a - b; });
-    var portLabel;
-    if (portsN.length === 1) {
-      portLabel = proto + "/" + portsN[0];
-    } else {
-      var contiguous = portsN[portsN.length - 1] - portsN[0] + 1 === portsN.length;
-      portLabel = proto + "/" + (contiguous ? portsN[0] + "–" + portsN[portsN.length - 1] : portsN.join(","));
-    }
-    var pass = items.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
-    var total = items.length;
-    var allPass = pass === total;
-    var optional = p0.optional;
+  function portLabel(items) {
+    var proto = (items[0].protocol || "TCP").toUpperCase();
+    // Unique ports: a byPort group is one shared port across many hosts
+    // (443) → "TCP/443"; a byHost group is a range on one host (Scorebot
+    // 1400–1405) → "TCP/1400–1405".
+    var seen = {}, portsN = [];
+    items.forEach(function(p) { if (!seen[p.port]) { seen[p.port] = 1; portsN.push(p.port); } });
+    portsN.sort(function(a, b) { return a - b; });
+    if (portsN.length === 1) return proto + "/" + portsN[0];
+    var contiguous = portsN[portsN.length - 1] - portsN[0] + 1 === portsN.length;
+    return proto + "/" + (contiguous ? portsN[0] + "–" + portsN[portsN.length - 1] : portsN.join(","));
+  }
 
+  function dotColor(p) {
+    var ok = (p.status || "").toLowerCase() === "pass";
+    return ok ? "var(--c-accent-green)" : (p.optional ? "var(--c-dim)" : "var(--c-accent-red)");
+  }
+
+  // Status rollup for a (possibly multi-port) group → pill + accent colour.
+  function rollup(items) {
+    var pass = items.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
+    var total = items.length, allPass = pass === total, optional = items[0].optional;
     var pillTxt, pillCls;
     if (total > 1) { pillTxt = pass + "/" + total; pillCls = allPass ? "pass" : (optional ? "muted" : "fail"); }
     else if (allPass) { pillTxt = "Pass"; pillCls = "pass"; }
     else { pillTxt = optional ? "Blocked" : "Fail"; pillCls = optional ? "muted" : "fail"; }
-
     // Optional failures are de-emphasized (muted, not red) — they aren't a problem.
-    var dot = allPass ? "var(--c-accent-green)" : (optional ? "var(--c-dim)" : "var(--c-accent-red)");
-    var rowCls = (!allPass && !optional) ? " is-fail" : "";
-    var impact = NET_PORT_IMPACT[p0.purpose] || "";
+    var accent = allPass ? "var(--c-accent-green)" : (optional ? "var(--c-dim)" : "var(--c-accent-red)");
+    // Only required failures get a class hook (red border); optional + pass are
+    // styled purely via --rowaccent, so no dead is-optional class.
+    var stateCls = (!allPass && !optional) ? " is-fail" : "";
+    return { pillTxt: pillTxt, pillCls: pillCls, accent: accent, stateCls: stateCls };
+  }
 
-    return '<div class="net-port-row' + rowCls + '" title="' + esc(impact) + '">' +
-      '<span class="net-port-dot" style="background:' + dot + '"></span>' +
-      '<span class="net-port-svc">' + esc(p0.purpose || "—") + '</span>' +
-      '<span class="net-port-host">' + esc(p0.host || "") + '</span>' +
-      '<span class="net-port-proto">' + esc(portLabel) + '</span>' +
-      '<span class="net-port-status"><span class="net-port-pill net-port-pill-' + pillCls + '">' + esc(pillTxt) + '</span></span>' +
-    '</div>';
+  // Port-led tile. byPort groups list each host inside; single / byHost
+  // (port-range) groups show the one service + host.
+  function card(group) {
+    var items = group.items, p0 = items[0], st = rollup(items);
+    var head = '<div class="net-port-card-head">' +
+        '<span class="net-port-portnum">' + esc(portLabel(items)) + '</span>' +
+        '<span class="net-port-pill net-port-pill-' + st.pillCls + '">' + esc(st.pillTxt) + '</span>' +
+      '</div>';
+    var bodyHtml, cls = "net-port-card" + st.stateCls, title;
+    if (group.type === "byPort") {
+      cls += " is-multi";
+      // Tile-level tooltip — the header and gaps between host rows would
+      // otherwise have none; each host row keeps its own service-specific impact.
+      title = ' title="Several services share this port — hover a host for its impact if blocked."';
+      bodyHtml = '<ul class="net-port-hostlist">' + items.map(function(p) {
+        // Non-colour status cue (shape, not just the colour) for accessibility.
+        var ok = (p.status || "").toLowerCase() === "pass";
+        var glyph = ok ? "✓" : (p.optional ? "–" : "✕");
+        return '<li title="' + esc(_netPortImpact(p)) + '">' +
+            '<span class="net-port-hstat" style="color:' + dotColor(p) + '">' + glyph + '</span>' +
+            '<span class="net-port-hname">' + esc(p.host || "") + '</span>' +
+            '<span class="net-port-hsvc">' + esc(p.purpose || "") + '</span>' +
+          '</li>';
+      }).join("") + '</ul>';
+    } else {
+      title = ' title="' + esc(NET_PORT_IMPACT[p0.purpose] || "") + '"';
+      bodyHtml = '<div class="net-port-card-svc">' + esc(p0.purpose || "—") + '</div>' +
+                 '<div class="net-port-card-host">' + esc(p0.host || "") + '</div>';
+    }
+    return '<div class="' + cls + '" style="--rowaccent:' + st.accent + '"' + title + '>' + head + bodyHtml + '</div>';
   }
 
   var required = ports.filter(function(p) { return !p.optional; });
   var optional = ports.filter(function(p) { return p.optional; });
-  var reqGroups = groupRows(required);
-  var optGroups = groupRows(optional);
+  var reqGroups = groupPorts(required);
+  var optGroups = groupPorts(optional);
   var reqPass = required.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
   var reqBlocked = required.length - reqPass;
 
-  var summary = reqBlocked === 0
-    ? '<span class="net-port-summary net-port-summary-ok">' + svgIcon("check", 13) + ' All ' + required.length + ' required reachable</span>'
-    : '<span class="net-port-summary net-port-summary-bad">' + svgIcon("triangle", 13) + ' ' + reqBlocked + ' of ' + required.length + ' required blocked</span>';
-  // Count optional by service/row (Scorebot's port range is one service), not
-  // by individual port, so the chip matches the rows shown below.
+  var summary;
+  if (required.length === 0) {
+    // Guard the degenerate case — don't render "All 0 required reachable".
+    summary = '<span class="net-port-summary net-port-summary-opt">No required ports tested</span>';
+  } else if (reqBlocked === 0) {
+    summary = '<span class="net-port-summary net-port-summary-ok">' + svgIcon("check", 13) + ' All ' + required.length + ' required reachable</span>';
+  } else {
+    summary = '<span class="net-port-summary net-port-summary-bad">' + svgIcon("triangle", 13) + ' ' + reqBlocked + ' of ' + required.length + ' required blocked</span>';
+  }
+  // Optional count = tiles shown (a multi-host group or port range is one tile).
   if (optGroups.length) summary += '<span class="net-port-summary-opt">· ' + optGroups.length + ' optional</span>';
 
   var body = "";
-  if (reqGroups.length) body += '<div class="net-port-group-label">Required</div>' + reqGroups.map(row).join("");
-  if (optGroups.length) body += '<div class="net-port-group-label">Optional</div>' + optGroups.map(row).join("");
+  if (reqGroups.length) body += '<div class="net-port-group-label">Required</div><div class="net-port-grid">' + reqGroups.map(card).join("") + '</div>';
+  if (optGroups.length) body += '<div class="net-port-group-label">Optional</div><div class="net-port-grid">' + optGroups.map(card).join("") + '</div>';
 
-  return '<div class="net-port-summary-bar">' + summary + '</div>' +
-         '<div class="net-port-list">' + body + '</div>';
+  return '<div class="net-port-summary-bar">' + summary + '</div>' + body;
 }
 
 // Severity ordering for Network tab issues. Returns a stable rank where
@@ -2559,134 +2619,6 @@ function renderNetwork() {
   const uplinkStats = cfg.uplinkStats || {};
   const duplexLabel = uplinkStats.fullDuplex === true ? "Full Duplex" : uplinkStats.fullDuplex === false ? "Half Duplex" : null;
   const totalErrors = (uplinkStats.rxErrors || 0) + (uplinkStats.txErrors || 0);
-
-  const tcpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "TCP"; });
-  const udpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "UDP"; });
-
-  // Group ports that share (protocol, port). Renders as a single multi-host card.
-  // Collapse related port tests into two kinds of multi-card so we don't
-  // render a wall of near-identical tiles:
-  //   • byPort — many hosts share one protocol/port (e.g. TCP/443 HTTPS).
-  //   • byHost — one host exposes a port range (e.g. Scorebot 1400–1405).
-  // Anything that doesn't collapse renders as a normal single tile.
-  function groupPorts(list) {
-    // Pass 1: group by protocol/port. Multi-entry groups are "byPort".
-    var byPort = {};
-    var portOrder = [];
-    list.forEach(function(p) {
-      var key = (p.protocol || "").toUpperCase() + "/" + p.port;
-      if (!byPort[key]) { byPort[key] = []; portOrder.push(key); }
-      byPort[key].push(p);
-    });
-
-    var groups = [];
-    var singles = [];
-    portOrder.forEach(function(key) {
-      var items = byPort[key];
-      if (items.length > 1) groups.push({ type: "byPort", items: items, order: list.indexOf(items[0]) });
-      else singles.push(items[0]);
-    });
-
-    // Pass 2: among the single-port leftovers, collapse entries that share
-    // protocol + host + purpose into a "byHost" port-range card.
-    var byHost = {};
-    var hostOrder = [];
-    singles.forEach(function(p) {
-      var key = (p.protocol || "").toUpperCase() + "|" + (p.host || "") + "|" + (p.purpose || "");
-      if (!byHost[key]) { byHost[key] = []; hostOrder.push(key); }
-      byHost[key].push(p);
-    });
-    hostOrder.forEach(function(key) {
-      var items = byHost[key];
-      groups.push({ type: items.length > 1 ? "byHost" : "single", items: items, order: list.indexOf(items[0]) });
-    });
-
-    // Restore original first-appearance order across both passes.
-    groups.sort(function(a, b) { return a.order - b.order; });
-    return groups;
-  }
-
-  function portCard(p) {
-    const ok = (p.status || "").toLowerCase() === "pass";
-    const cls = ok ? "port-card-pass" : (p.optional ? "port-card-warn" : "port-card-fail");
-    return `<div class="port-card ${cls}" title="${esc(_netPortImpact(p))}">
-      <div class="port-card-num">${esc(String(p.port))}</div>
-      <div class="port-card-name">${esc(p.purpose)}</div>
-      <div class="port-card-host">${esc(p.host)}</div>
-      ${p.optional ? '<div class="port-card-opt">Optional</div>' : ""}
-    </div>`;
-  }
-
-  function renderPortGroup(group) {
-    if (group.type === "byHost") return portCardHostGroup(group.items);
-    if (group.items.length === 1) return portCard(group.items[0]);
-    return portCardMulti(group.items);
-  }
-
-  // Shared status rollup for a collapsed group.
-  function _portGroupClass(group) {
-    const anyFail = group.some(function(p) { return (p.status || "").toLowerCase() !== "pass"; });
-    const allOptional = group.every(function(p) { return p.optional; });
-    return !anyFail ? "port-card-pass" : (allOptional ? "port-card-warn" : "port-card-fail");
-  }
-  function _portGroupPassCount(group) {
-    return group.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
-  }
-  function _portDotColor(p) {
-    const ok = (p.status || "").toLowerCase() === "pass";
-    return ok ? "var(--c-accent-green)" : (p.optional ? "var(--c-accent-amber)" : "var(--c-accent-red)");
-  }
-
-  // byPort card: many hosts tested on the same protocol/port (e.g. TCP/443).
-  function portCardMulti(group) {
-    const port = group[0].port;
-    const proto = (group[0].protocol || "").toUpperCase();
-    const label = proto === "TCP" && port === 443 ? "HTTPS Endpoints" : (group[0].purpose || (proto + "/" + port));
-    const hosts = group.map(function(p) {
-      return `<li title="${esc(_netPortImpact(p))}"><span class="port-card-host-dot" style="background:${_portDotColor(p)}"></span>` +
-             `<span class="port-card-host-name">${esc(p.host)}</span>` +
-             `<span class="port-card-host-purpose">${esc(p.purpose)}</span></li>`;
-    }).join("");
-    return `<div class="port-card port-card-multi ${_portGroupClass(group)}">
-      <div class="port-card-num">${esc(String(port))}</div>
-      <div class="port-card-name">${esc(label)}</div>
-      <div class="port-card-summary">${_portGroupPassCount(group)} of ${group.length} passing</div>
-      <ul class="port-card-hosts">${hosts}</ul>
-    </div>`;
-  }
-
-  // byHost card: one host exposes a range of ports (e.g. Scorebot 1400–1405).
-  function portCardHostGroup(group) {
-    const sorted = group.slice().sort(function(a, b) { return a.port - b.port; });
-    const ports = sorted.map(function(p) { return p.port; });
-    const contiguous = ports[ports.length - 1] - ports[0] + 1 === ports.length;
-    const rangeLabel = contiguous ? ports[0] + "–" + ports[ports.length - 1] : ports.join(", ");
-    const purpose = group[0].purpose || ((group[0].protocol || "").toUpperCase() + " ports");
-    const isOptional = group.every(function(p) { return p.optional; });
-
-    // Optional groups stay compact — just the range + "X of N passing".
-    // The per-port PASS/FAIL breakdown is reserved for required groups,
-    // where knowing exactly which port is blocked is actionable.
-    const portList = isOptional ? "" :
-      '<ul class="port-card-hosts">' +
-      sorted.map(function(p) {
-        const ok = (p.status || "").toLowerCase() === "pass";
-        const statusCls = ok ? "status-pass" : "status-fail";
-        return `<li><span class="port-card-host-dot" style="background:${_portDotColor(p)}"></span>` +
-               `<span class="port-card-host-name">${esc(String(p.port))}</span>` +
-               `<span class="port-card-port-status ${statusCls}">${ok ? "Pass" : "Fail"}</span></li>`;
-      }).join("") +
-      '</ul>';
-
-    return `<div class="port-card port-card-multi ${isOptional ? "port-card-compact " : ""}${_portGroupClass(group)}" title="${esc(_netPortImpact(group[0]))}">
-      <div class="port-card-num">${esc(rangeLabel)}</div>
-      <div class="port-card-name">${esc(purpose)}</div>
-      <div class="port-card-host">${esc(group[0].host)}</div>
-      <div class="port-card-summary">${_portGroupPassCount(group)} of ${group.length} passing</div>
-      ${portList}
-      ${isOptional ? '<div class="port-card-opt">Optional</div>' : ""}
-    </div>`;
-  }
 
   const issuesPanel = issues.length ? `
     <div class="card">

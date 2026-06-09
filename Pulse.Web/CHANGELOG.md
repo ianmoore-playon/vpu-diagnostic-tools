@@ -74,11 +74,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   horizontal and vertical to match how the VPU is actually mounted.
 - **Tighter Fault Isolator wording.** Phase steps, results, and conclusions are
   shorter and less repetitive — the same guidance, less to read on each screen.
-- **Port Connectivity is now a single, scannable status list.** One row per
-  service — name, host, protocol/port, and a Pass/Blocked status — grouped into
-  Required and Optional with a one-line summary at the top, replacing the old
-  two-column grid of port numbers. Optional services (RTMP, Scorebot) are
-  de-emphasized so a blocked optional port no longer looks like a failure.
+- **Port Connectivity redesigned as port-led tiles.** Each tile leads with its
+  protocol/port (e.g. `TCP/443`) and a Pass/Blocked status; services that share
+  a port are combined into one tile (the HTTPS endpoints; Scorebot's port
+  range), grouped into Required and Optional with a one-line summary at the top,
+  replacing the old two-column TCP/UDP grid. Optional services (RTMP, Scorebot)
+  are de-emphasized so a blocked optional port no longer looks like a failure.
 - **Speed Test moved out of Advanced Diagnostics** to sit right under the
   internet adapter and domain checks — where you'd look for it first.
 - **Internet Adapter details are grouped into labeled sections** (IP
