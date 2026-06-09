@@ -5130,7 +5130,7 @@ function renderScoreConnect() {
   // Build BOT and ScoreLink cards independently
   const botCard = botStatus.isConnected != null ? `
     <div class="card">
-      ${sectionTitle("globe", "Cloud (BOT) Status")}
+      ${sectionTitle("globe", "Cloud (Bot) Status")}
       <div class="kv-grid">
         ${kvRowHtml("Connected", botStatus.isConnected
           ? '<span class="status-pass">Yes</span>'
@@ -5138,7 +5138,7 @@ function renderScoreConnect() {
         ${botStatus.scoreConnectId ? kvRowHtml("ScoreConnect ID",
           `${esc(botStatus.scoreConnectId)} <span class="text-pulse-muted" style="font-size:0.75rem">(may be stale)</span>`)
           : ""}
-        ${kvRow("BOT Server", botStatus.botServerAddress)}
+        ${kvRow("Bot Server", botStatus.botServerAddress)}
         ${botStatus.lastErrorMessage ? kvRowHtml("Last Error", `<span class="text-pulse-muted">${esc(botStatus.lastErrorMessage)}</span>`) : ""}
       </div>
     </div>` : "";
@@ -5174,8 +5174,8 @@ function renderScoreConnect() {
     ${showScoreboard ? `
     <div class="sc-board sc-board-hero" id="sc3-hero-board">
       <div class="sc-header">
-        <div class="sc-team-home">
-          <div class="sc-team-label">${esc(visitorLabel)}</div>
+        <div class="sc-team-home" style="min-width:0">
+          <div class="sc-team-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:18ch;margin:0 auto">${esc(visitorLabel)}</div>
           <div class="sc-score" id="sc3-guest">${rtdShown && rtdShown.guestScore != null ? esc(String(rtdShown.guestScore)) : "—"}</div>
         </div>
         <div class="sc-center">
@@ -5186,8 +5186,8 @@ function renderScoreConnect() {
             ${_sc3StageBadge(dataReceiving ? "live" : "disconnected", 0)}
           </div>
         </div>
-        <div class="sc-team-away">
-          <div class="sc-team-label">${esc(homeLabel)}</div>
+        <div class="sc-team-away" style="min-width:0">
+          <div class="sc-team-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:18ch;margin:0 auto">${esc(homeLabel)}</div>
           <div class="sc-score" id="sc3-home">${rtdShown && rtdShown.homeScore != null ? esc(String(rtdShown.homeScore)) : "—"}</div>
         </div>
       </div>
@@ -5251,10 +5251,10 @@ function renderScoreConnect() {
       ${sectionTitle("server", legacyFull)}
       <div class="kv-grid">
         ${kvRowHtml("Status", sc2.outOfDate
-          ? _scDot(true) + '<span class="status-warn">Running — software out of date</span>'
+          ? _scDot(true, "var(--c-accent-amber)") + '<span class="status-warn">Running — software out of date</span>'
           : _scDot(true) + '<span class="status-pass">Running</span>')}
         ${kvRow("Version", sc2.version)}
-        ${kvRow("Hardware", sc2.hardware)}
+        ${kvRow("Hardware", (sc2.hardware || "").replace("ScoreConnectII", "ScoreConnect II"))}
         ${kvRow("UID", sc2.uid)}
         ${sc2.botNumber ? kvRow("Bot Number", sc2.botNumber) : ""}
         ${sc2.vendor ? (sc2.vendorIsCode
@@ -5281,7 +5281,7 @@ function renderScoreConnect() {
     <div class="card mt-4">
       ${sectionTitle("server", "ScoreConnect III")}
       <div class="kv-grid">
-        ${kvRowHtml("Status", _scDot(true) + '<span class="status-pass">Running</span>')}
+        ${kvRowHtml("Status", `<span id="sc3-svc-status">${_sc3SvcStatusHtml("live")}</span>`)}
         ${kvRowHtml("Scoreboard Data", `<span id="sc3-data-status">${_sc3DataStatusHtml(dataReceiving ? "live" : "disconnected", 0, data.dataStatus)}</span>`)}
         ${kvRow("Version", version)}
         ${kvRow("Base URL", data.baseUrl)}
@@ -5325,6 +5325,8 @@ function renderScoreConnect() {
 // scoreboard values in place, without re-rendering the whole page.
 
 var _sc3LivePoll = null;
+var _sc3PollGen = 0;   // bumped on every stop/start so an in-flight tick that
+                       // resolves after being superseded can detect it and bail
 
 function _sc3DownText(p) {
   if (!p || !p.down) return "";
@@ -5335,13 +5337,23 @@ function _sc3DownText(p) {
   return t;
 }
 
-// Status dot for the demoted indicators: green + flashing when active,
-// grey + static when off. Matches the hero LIVE badge animation.
-function _scDot(on) {
-  var c = on ? "var(--c-accent-green)" : "var(--c-dim)";
+// Status dot: green + flashing when active, grey + static when off. Pass an
+// explicit `color` (e.g. amber) to override — used for the out-of-date warning
+// so the dot color matches the message instead of staying green.
+function _scDot(on, color) {
+  var c = color || (on ? "var(--c-accent-green)" : "var(--c-dim)");
   var anim = on ? "animation:pulse-live 1.4s ease-in-out infinite;" : "";
   return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'
     + 'background:' + c + ';' + anim + 'margin-right:7px;vertical-align:middle"></span>';
+}
+
+// ScoreConnect III "Status" row cell. The service is Running unless the live
+// poll finds it unreachable (offline stage) — then it must say so, instead of
+// staying a contradictory green "Running".
+function _sc3SvcStatusHtml(stage) {
+  return stage === "offline"
+    ? _scDot(false) + '<span class="status-fail">Not responding</span>'
+    : _scDot(true) + '<span class="status-pass">Running</span>';
 }
 
 // Hero badge per data stage. Mirrors SC III's own behaviour.
@@ -5415,6 +5427,7 @@ function _sc3ComputeStage(live) {
 }
 
 function _sc3StopLivePoll() {
+  _sc3PollGen++;   // invalidate any in-flight tick from a prior run
   if (_sc3LivePoll) { clearTimeout(_sc3LivePoll); _sc3LivePoll = null; }
   _sc3StopUsbPoll();
 }
@@ -5454,6 +5467,7 @@ function _sc3StartUsbPoll() {
 
 function _sc3StartLivePoll(vendor, sport, showScoreboard) {
   _sc3StopLivePoll();
+  var myGen = _sc3PollGen;   // this run's token; if it changes, we've been superseded
   // Reset staleness tracking for a fresh session.
   _sc3LastRaw = null;
   _sc3LastChangeMs = Date.now();
@@ -5471,7 +5485,9 @@ function _sc3StartLivePoll(vendor, sport, showScoreboard) {
 
     var live = await api("/api/scoreconnect/live");
 
-    // Re-check after the await — user may have navigated during the fetch.
+    // Bail if a newer poll superseded this one during the await (generation
+    // token), or the user navigated away.
+    if (myGen !== _sc3PollGen) return;
     if (currentPage !== "scoreconnect" || !document.getElementById("sc3-hero-board")) {
       _sc3StopLivePoll();
       return;
@@ -5483,6 +5499,16 @@ function _sc3StartLivePoll(vendor, sport, showScoreboard) {
     if (live && live.rawData) {
       var rawEl = document.getElementById("sc3-raw-value");
       if (rawEl) rawEl.textContent = live.rawData;
+    }
+
+    // If the feed has started parsing but we're on the status hero (scores
+    // weren't shown), promote to the scoreboard hero with a re-render. Fires
+    // only on that one-way transition, so no flapping/loop.
+    if (!showScoreboard && live && live.rawData && parseRtdScores(live.rawData, vendor, sport)) {
+      var cd = cached("scoreconnect");
+      if (cd) { cd.rawData = live.rawData; cd.dataStatus = live.dataStatus; }
+      renderScoreConnect();
+      return;
     }
 
     // Update parsed scores ONLY for validated vendor/sport combos. Outside
@@ -5508,13 +5534,19 @@ function _sc3StartLivePoll(vendor, sport, showScoreboard) {
       badge.innerHTML = _sc3StageBadge(st.stage, st.secs);
     }
 
-    // Dim the scoreboard once disconnected/offline to signal the data is dead.
-    var board = document.getElementById("sc3-hero-board");
-    if (board) board.style.opacity = (st.stage === "disconnected" || st.stage === "offline") ? "0.45" : "1";
+    // When the data is dead, dim ONLY the score cluster (scores/clock/period/
+    // down) — never the badge, so the failure indicator stays fully legible.
+    var dead = (st.stage === "disconnected" || st.stage === "offline");
+    ["sc3-guest", "sc3-home", "sc3-clock", "sc3-period", "sc3-down"].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.style.opacity = dead ? "0.4" : "";
+    });
 
-    // Status-card "Scoreboard Data" cell.
+    // "Scoreboard Data" cell + the service "Status" row.
     var dataCell = document.getElementById("sc3-data-status");
     if (dataCell) dataCell.innerHTML = _sc3DataStatusHtml(st.stage, st.secs, live && live.dataStatus);
+    var svcCell = document.getElementById("sc3-svc-status");
+    if (svcCell) svcCell.innerHTML = _sc3SvcStatusHtml(st.stage);
 
     // Schedule the next poll only after this one completes.
     _sc3LivePoll = setTimeout(tick, _SC3_POLL_MS);
