@@ -514,9 +514,9 @@ DEMO = {
             {"ip": "192.168.11.100", "label": "Main Camera 2", "ok": True,
              "codec": "h264", "frameRate": 30.0, "resolution": "3840x2160",
              "image": _demo_frame("Main Camera 2", "#244a36"), "error": None},
-            {"ip": "192.168.12.50", "label": "OCR", "ok": False,
+            {"ip": "169.254.16.52", "label": "OCR", "ok": False,
              "codec": None, "frameRate": None, "resolution": None, "image": None,
-             "error": "No frame captured (camera not streaming on rtsp://192.168.12.50/stream1)."},
+             "error": "No frame captured (camera not streaming on rtsp://169.254.16.52/stream1)."},
         ],
     },
     "Get-NetworkHealth.ps1": lambda **kw: {

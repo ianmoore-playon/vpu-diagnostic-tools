@@ -2012,7 +2012,6 @@ def _compute_camera_findings(ports: list) -> list:
 
     for port in ports:
         label = port.get("portLabel", port.get("name", "Port"))
-        adapter = port.get("name", "")
         is_up = port.get("isUp")
         cams = port.get("camerasDetected") or []
 
@@ -2031,7 +2030,7 @@ def _compute_camera_findings(ports: list) -> list:
                 findings.append({
                     "severity": "critical",
                     "title": f"{label} — camera dropped",
-                    "body": f"{adapter}. A camera{ipinfo} was streaming on this port "
+                    "body": f"A camera{ipinfo} was streaming on this port "
                             "earlier this session and is no longer detected. Check the "
                             "cable and camera power, or use Fault Isolator.",
                 })
@@ -2050,7 +2049,7 @@ def _compute_camera_findings(ports: list) -> list:
                 {
                     "severity": "warning",
                     "title": f"{label} running at {speed} Mbps — expected {exp_label}",
-                    "body": f"{adapter}. Degraded link speed usually means a bad cable, faulty connector, or wrong duplex negotiation.",
+                    "body": f"Degraded link speed usually means a bad cable, faulty connector, or wrong duplex negotiation.",
                 }
             )
 
@@ -2059,7 +2058,7 @@ def _compute_camera_findings(ports: list) -> list:
                 {
                     "severity": "warning",
                     "title": f"{label} in half-duplex mode",
-                    "body": f"{adapter}. Half-duplex causes collisions and packet loss at camera scale. Check cable quality.",
+                    "body": f"Half-duplex causes collisions and packet loss at camera scale. Check cable quality.",
                 }
             )
 
@@ -2071,7 +2070,7 @@ def _compute_camera_findings(ports: list) -> list:
                 {
                     "severity": "warning",
                     "title": f"{label} — {total_errs} packet error(s)",
-                    "body": f"{adapter}. RX {rx_errs}, TX {tx_errs}. May indicate a bad cable or NIC driver issue.",
+                    "body": f"RX {rx_errs}, TX {tx_errs}. May indicate a bad cable or NIC driver issue.",
                 }
             )
 
