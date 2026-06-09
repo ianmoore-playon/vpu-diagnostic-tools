@@ -904,6 +904,13 @@ html.dark .splash-logo {
 }
 @media (max-width: 900px) { .dash-2col { grid-template-columns: 1fr; } }
 
+/* Narrow screens: let wide data tables scroll horizontally instead of
+   forcing the whole page wider (System Overview, Disk Health, etc.). */
+@media (max-width: 768px) {
+    .data-table { display: block; overflow-x: auto; white-space: nowrap; }
+    .sw-table-wrap { overflow-x: auto; }
+}
+
 /* Key-value pairs */
 .dash-kv {
     display: grid;
@@ -1165,7 +1172,7 @@ html.dark .splash-logo {
     display: inline-block;
     padding: 2px 8px;
     border-radius: 3px;
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -1251,7 +1258,7 @@ html.dark .splash-logo {
     outline: none;
     transition: border-color 0.15s;
 }
-.sw-filter-input:focus { border-color: #3b82f6; }
+.sw-filter-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35); }
 .sw-table-wrap { max-height: 400px; overflow-y: auto; }
 
 /* Concerning-software flags in Software Inventory */

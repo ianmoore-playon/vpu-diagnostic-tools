@@ -195,7 +195,7 @@ DEMO = {
         # LTSC 2019 (1809, build 17763) — EOS Jan 2029, well clear of the EOL
         # warning window so the demo dashboard stays clean. (Older LTSC build
         # 19044 here used to trigger the "OS EOL approaching" finding.)
-        "operatingSystem": {"caption": "Microsoft Windows 10 IoT Enterprise LTSC 2019", "version": "10.0.17763", "buildNumber": "17763", "osArchitecture": "64-bit"},
+        "operatingSystem": {"caption": "Microsoft Windows 10 IoT Enterprise LTSC 2019", "version": "10.0.17763", "buildNumber": "17763", "osArchitecture": "64-bit", "installDate": "2024-01-15T08:00:00.0000000-05:00"},
         "pixellot": {
             "version": _VENUE["swVersion"],
             "imageVersion": _VENUE["imageVersion"],
@@ -205,6 +205,7 @@ DEMO = {
         "isNonVpuHost": False,
         "timezone": "(UTC-05:00) Eastern Time (US & Canada)",
         "timezoneId": "Eastern Standard Time",
+        "locale": "en-US",
     },
     "Get-Performance.ps1": lambda **kw: {
         "cpu": {"usagePercent": round(28 + random.uniform(-8, 15), 1)},
@@ -286,7 +287,7 @@ DEMO = {
         ],
     },
     "Get-InstalledSoftware.ps1": lambda **kw: {
-        "count": 18,
+        "count": 10,
         "software": [
             {"displayName": "Pixellot VPU Agent", "displayVersion": _VENUE["swVersion"], "publisher": "Pixellot Ltd."},
             {"displayName": "Pixellot VPU Engine", "displayVersion": _VENUE["swVersion"], "publisher": "Pixellot Ltd."},
