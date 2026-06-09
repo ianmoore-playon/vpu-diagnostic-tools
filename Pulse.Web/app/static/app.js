@@ -2974,6 +2974,7 @@ var _camerasRefreshTimer = null;
 var _camerasFailCount = 0;  // consecutive /api/cameras failures during live refresh
 var _camLastSignature = null;  // structural fingerprint of last rendered cameras
 var _camNicLayout = "h";       // 4-port LED diagram orientation: 'h' upright (ports L→R) / 'v' on-side (ports top→bottom)
+var _camLastVideo = null;      // last captured frame set, restored across re-renders (with a capture time so it's never mistaken for live)
 
 // Structural fingerprint of the camera data — everything that affects the
 // rendered layout EXCEPT the volatile RX/TX byte counters (which tick every
@@ -3243,8 +3244,14 @@ function _camPortGridHtml(ports) {
 function _camToggleNicLayout() {
   _camNicLayout = (_camNicLayout === "v") ? "h" : "v";
   var isV = _camNicLayout === "v";
-  document.querySelectorAll(".nic-diagram-ports").forEach(function(el) { el.classList.toggle("is-vertical", isV); });
-  document.querySelectorAll(".nic-layout-toggle").forEach(function(b) { b.classList.toggle("is-active", isV); });
+  // Flip BOTH the LED row and its legend so they read in the same order — a
+  // vertical LED column (Port 1 top → Port 4 bottom) must not sit next to a
+  // legend that reads Port 4 → 1, or the labels contradict the lights.
+  document.querySelectorAll(".nic-diagram-ports, .nic-diagram-legend").forEach(function(el) { el.classList.toggle("is-vertical", isV); });
+  document.querySelectorAll(".nic-layout-toggle").forEach(function(b) {
+    b.classList.toggle("is-active", isV);
+    b.setAttribute("aria-pressed", isV ? "true" : "false");
+  });
 }
 
 function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
@@ -3257,10 +3264,19 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
     return "nic-led-ok";
   }
   function ledDotColor(p) {
-    if (!p || !p.isUp) return "var(--c-dim)";
-    if (p.connecting) return "#3b82f6";
-    if (p.isDegraded) return "#f59e0b";
-    return "#22c55e";
+    if (!p || !p.isUp) return "var(--c-status-down)";
+    if (p.connecting) return "var(--c-status-connecting)";
+    if (p.isDegraded) return "var(--c-status-warn)";
+    return "var(--c-status-ok)";
+  }
+  // Colorblind-safe: pair every status dot with a word, since the LEDs/legend
+  // are otherwise color-only (the per-port tiles below already carry text).
+  function ledStatusText(p) {
+    if (!p) return "—";              // padding slot, no physical port
+    if (!p.isUp) return "No link";
+    if (p.connecting) return "Connecting";
+    if (p.isDegraded) return "Degraded";
+    return "Linked";
   }
   // Physical ports: reversed (highest port on left = physical chassis left)
   var portIcons = "";
@@ -3283,6 +3299,7 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
     legend += '<div class="nic-legend-row">' +
       '<span class="nic-legend-dot" style="background:' + ledDotColor(lp) + '"></span>' +
       '<span class="nic-legend-label">Port ' + (li + 1) + '</span>' +
+      '<span class="nic-legend-status">' + ledStatusText(lp) + '</span>' +
     '</div>';
   }
   // NIC header: show just the primary card name. Windows appends " #N"
@@ -3310,12 +3327,13 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
   // (vertical) so it matches however the VPU is physically mounted.
   var layoutToggle = hasRealPorts
     ? '<button class="nic-layout-toggle' + (_camNicLayout === "v" ? " is-active" : "") +
+        '" aria-pressed="' + (_camNicLayout === "v" ? "true" : "false") +
         '" onclick="_camToggleNicLayout()" title="Flip the port row to match how the VPU is mounted — upright (left-to-right) or on its side (top-to-bottom).">' +
         svgIcon("refresh", 12) + ' Flip layout</button>'
     : '';
   var nicHeader = '<div class="nic-diagram-header">' +
     headerLabel + sysChip + layoutToggle +
-    (showLiveBadge ? '<span id="cam-live-badge" class="cam-live-badge">Auto-Refresh</span>' : '') +
+    (showLiveBadge ? '<span id="cam-live-badge" class="cam-live-badge" aria-live="polite">Auto-Refresh</span>' : '') +
   '</div>';
   // Only show the physical-order note when we actually have NIC data;
   // otherwise it reads misleadingly on an empty system.
@@ -3324,7 +3342,7 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
     : '';
   return nicHeader + '<div class="nic-diagram-wrap">' +
     '<div class="nic-diagram-ports' + (_camNicLayout === "v" ? " is-vertical" : "") + '">' + portIcons + '</div>' +
-    '<div class="nic-diagram-legend">' + legend + '</div>' +
+    '<div class="nic-diagram-legend' + (_camNicLayout === "v" ? " is-vertical" : "") + '">' + legend + '</div>' +
     _camOrientationPanelHtml() +
   '</div>' + note;
 }
@@ -3371,9 +3389,11 @@ function _camOrientationPanelHtml() {
   return '<div class="nic-orient-panel">' +
     '<div class="nic-orient-title">VPU orientation</div>' +
     '<div class="orient-figs">' +
-      '<div class="orient-fig"><div class="orient-svg-box">' + chassis + '</div>' +
+      '<div class="orient-fig"><div class="orient-svg-box" role="img" ' +
+        'aria-label="VPU standing upright: the four camera ports run left to right, Port 4 to Port 1.">' + chassis + '</div>' +
         '<div class="orient-fig-label">Standing upright</div></div>' +
-      '<div class="orient-fig"><div class="orient-svg-box orient-svg-rot">' + chassis + '</div>' +
+      '<div class="orient-fig"><div class="orient-svg-box orient-svg-rot" role="img" ' +
+        'aria-label="VPU on its side: the four camera ports stack top to bottom, Port 1 to Port 4.">' + chassis + '</div>' +
         '<div class="orient-fig-label">On its side</div></div>' +
     '</div>' +
     '<div class="orient-caption">' +
@@ -3393,6 +3413,9 @@ function _orientPort(x, y, w, h, num) {
 // Used by the manual Refresh button so on-site troubleshooting can override
 // any stale ARP/probe data instead of waiting for the TTL.
 function _camForceRefresh() {
+  // A deliberate Refresh means "show me current state" — drop any stale
+  // captured frames so they aren't restored on the re-render.
+  _camLastVideo = null;
   var btn = document.querySelector('[onclick*="_camForceRefresh"]');
   if (btn) { btn.disabled = true; btn.style.opacity = "0.5"; }
   api("/api/cameras?refresh=true").then(function(fresh) {
@@ -3436,6 +3459,13 @@ function _camVerifyVideo() {
     svgIcon("refresh", 14) +
     ' Grabbing a frame from each camera to confirm it is streaming…</div></div>';
   apiPost("/api/cameras/video-test", {}).then(function(res) {
+    // Keep a real capture (not a vpu-block) so it survives a re-render /
+    // navigate-away-and-back, stamped with the time so it's clearly a
+    // snapshot, not live. Cleared by a manual Refresh (_camForceRefresh).
+    if (res && (res.results || []).length) {
+      res._capturedAt = new Date().toLocaleTimeString();
+      _camLastVideo = res;
+    }
     if (currentPage === "cameras") wrap.innerHTML = _camVideoResultsHtml(res);
     // If the server reported its own cooldown, honor exactly that; otherwise
     // start the standard cooldown after a real capture. A vpu-block doesn't
@@ -3502,7 +3532,10 @@ function _camVideoResultsHtml(res) {
         warn +
       '</div></div>';
   }).join("");
-  return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
+  var stamp = res._capturedAt
+    ? '<div style="font-size:0.7rem;color:var(--c-dim);margin:-2px 0 10px">Captured ' + esc(res._capturedAt) + ' — a point-in-time snapshot, not live.</div>'
+    : "";
+  return '<div class="card">' + sectionTitle("camera", "Camera Frames") + stamp +
     '<div class="cam-frame-grid">' + cards + '</div></div>';
 }
 
@@ -3572,6 +3605,14 @@ function renderCameras() {
     </div>
 
   `;
+
+  // Restore a previously-captured frame set so navigating away and back (a
+  // full re-render) doesn't silently discard it. Stamped with its capture
+  // time so it can't be mistaken for live; a manual Refresh clears it.
+  if (_camLastVideo) {
+    var _vw = document.getElementById("cam-video-wrap");
+    if (_vw) _vw.innerHTML = _camVideoResultsHtml(_camLastVideo);
+  }
 
   // S1 (JAI) discovery — one-shot per full render; renders only on S1 systems.
   _camLoadS1();
@@ -5750,20 +5791,24 @@ function renderFaultIsolator() {
   }
 
   // ── port option builder (shared by Phase 0 and Phase 1 dropdowns) ──
-  function portOption(p, i, excludeIdx) {
+  function portOption(p, i, excludeIdx, disableDown) {
     if (i === excludeIdx) return "";
     // Camera label (Main Camera 1, OCR, etc.) — same one shown on the port tile.
     var camLbl = p.cameraLabel ? " (" + p.cameraLabel + ")" : "";
+    var down = !p.isUp || !(p.linkSpeedMbps > 0);
     var spd;
-    if (!p.isUp) spd = " — No link";
+    if (down) spd = " — No link";
     // Trust the backend isDegraded flag — it knows the expected speed for
     // each camera model. A 100 Mbps OCR isn't degraded; an unknown 100 Mbps
     // camera might be.
     else if (p.isDegraded) spd = " — " + formatSpeed(p.linkSpeedMbps) + " (FAULT)";
     else if (p.isOcr) spd = " — " + formatSpeed(p.linkSpeedMbps || 100) + " (expected)";
-    else if (p.linkSpeedMbps > 0) spd = " — " + formatSpeed(p.linkSpeedMbps);
-    else spd = " — No link";
-    return '<option value="' + i + '">Port ' + (i + 1) + esc(camLbl) + esc(spd) + "</option>";
+    else spd = " — " + formatSpeed(p.linkSpeedMbps);
+    // A down port can't be a known-good test target — disable it in the test
+    // dropdown so the tech can't pick a dead port and waste a check cycle.
+    var dis = !!(disableDown && down);
+    var label = "Port " + (i + 1) + camLbl + spd + (dis ? " — can't test" : "");
+    return '<option value="' + i + '"' + (dis ? " disabled" : "") + '>' + esc(label) + "</option>";
   }
 
   // ── phase HTML ───────────────────────────────────────────────
@@ -5808,7 +5853,7 @@ function renderFaultIsolator() {
     // Mirrors WPF's IsPickingTestPort => Phase == AwaitingNicPortTest.
     var testPortPicker = "";
     if (_fi.phase === 1 && !_fi.checking) {
-      var testOpts = ports.map(function(p, i) { return portOption(p, i, _fi.suspectIdx); }).join("");
+      var testOpts = ports.map(function(p, i) { return portOption(p, i, _fi.suspectIdx, true); }).join("");
       testPortPicker = '<div style="margin:12px 0">' +
         '<div class="text-xs text-pulse-muted mb-1">Test port (known-good)</div>' +
         '<select id="fi-test" class="ev-select" style="width:100%;max-width:320px">' + testOpts + "</select>" +
@@ -5868,7 +5913,24 @@ function renderFaultIsolator() {
 
   // Phase 1: test port dropdown (change-only, no suspect dropdown)
   if (testSel && _fi.phase === 1) {
-    if (_fi.testIdx >= 0) testSel.value = String(_fi.testIdx);
+    // Steer to a genuinely known-good default: a linked 1 Gbps, non-degraded,
+    // non-suspect port if one exists, else the first linked non-suspect port.
+    // Also captures the pre-swap speed up front so the pre-check is valid even
+    // if the tech never opens the dropdown (a 0 default would falsely fail it).
+    if (_fi.testIdx < 0 || _fi.testIdx === _fi.suspectIdx ||
+        !ports[_fi.testIdx] || !ports[_fi.testIdx].isUp) {
+      var bestTest = -1, firstLinked = -1;
+      ports.forEach(function(p, i) {
+        if (i === _fi.suspectIdx || !(p.isUp && p.linkSpeedMbps > 0)) return;
+        if (firstLinked < 0) firstLinked = i;
+        if (bestTest < 0 && p.linkSpeedMbps >= 1000 && !p.isDegraded) bestTest = i;
+      });
+      _fi.testIdx = bestTest >= 0 ? bestTest : firstLinked;
+    }
+    if (_fi.testIdx >= 0 && ports[_fi.testIdx]) {
+      testSel.value = String(_fi.testIdx);
+      _fi.testPreSpeedMbps = ports[_fi.testIdx].linkSpeedMbps || 0;
+    }
     testSel.addEventListener("change", function() {
       _fi.testIdx = parseInt(testSel.value);
       // Re-capture pre-swap speed for the newly-selected test port
@@ -6093,15 +6155,24 @@ function renderFaultIsolator() {
         renderFaultIsolator();
         return;
       }
-      // Pre-check: was the test port already running below 1 Gbps before
-      // the swap? Even an OCR test port should provide 1 Gbps capacity once
-      // a Main camera is moved to it, so 1 Gbps is the correct sanity bar
-      // here regardless of the suspect camera's expected speed.
+      // Pre-check the chosen test port BEFORE the swap. It must be a genuinely
+      // known-good 1 Gbps port — otherwise the test can't tell a fault from a
+      // bad test port. (Down ports are already disabled in the dropdown; this
+      // also guards a port that dropped between selection and Check Now.)
       var preSpd = _fi.testPreSpeedMbps || 0;
-      if (preSpd > 0 && preSpd < 1000) {
+      if (preSpd <= 0) {
         showResult(
-          "Pre-check: " + portLabel(_fi.testIdx) + " was at " + preSpd + " Mbps BEFORE the swap.",
-          portLabel(_fi.testIdx) + " was already degraded before the swap, so this test won't be reliable. Pick a different test port above, or Start Over.",
+          portLabel(_fi.testIdx) + " has no link.",
+          portLabel(_fi.testIdx) + " shows no link before you've moved anything, so it can't serve as a known-good test port. Pick a port that's currently linked, then Check Now.",
+          "fail"
+        );
+        renderFaultIsolator();
+        return;
+      }
+      if (preSpd < 1000) {
+        showResult(
+          portLabel(_fi.testIdx) + " only links at " + preSpd + " Mbps.",
+          portLabel(_fi.testIdx) + " can't carry 1 Gbps, so it can't confirm a Main camera. Pick a port currently linked at 1 Gbps, or Start Over.",
           "fail"
         );
         renderFaultIsolator();
