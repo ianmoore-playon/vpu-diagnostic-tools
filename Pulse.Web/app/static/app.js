@@ -6020,7 +6020,7 @@ function renderFaultIsolator() {
         return String(c.mac || "").toUpperCase().replace(/-/g, ":");
       }).filter(function(m) { return m; });
       _fi.phase = 1;
-      _fi.phaseTitle = "PHASE 2 — DOES THE FAULT FOLLOW THE NIC PORT?";
+      _fi.phaseTitle = "DOES THE FAULT FOLLOW THE NIC PORT?";
       _fi.phaseInstruction = bInstr;
       _fi.actionLabel = "Check Now";
       renderFaultIsolator();
@@ -6129,7 +6129,7 @@ function renderFaultIsolator() {
       addHistory("Phase 2 - NIC Port Test", cfg1, sl1, cv1, "Info");
       showResult("Phase 2: " + sl1 + " — NIC port is fine; fault follows the cable/camera.", "", "info");
       _fi.phase = 2;
-      _fi.phaseTitle = "PHASE 3 — DOES THE FAULT FOLLOW THE CABLE?";
+      _fi.phaseTitle = "DOES THE FAULT FOLLOW THE CABLE?";
       _fi.phaseInstruction = "Keep the camera on " + tn1 + ". Swap the original cable for a known-good one (both ends), then Check Now.";
       _fi.actionLabel = "Check Now";
       renderFaultIsolator();
@@ -6168,7 +6168,7 @@ function renderFaultIsolator() {
       addHistory("Phase 3 - Cable Test", cfg2, sl2, cv2, "Info");
       showResult("Phase 3: " + sl2 + " — cable is fine; fault follows the camera.", "", "info");
       _fi.phase = 3;
-      _fi.phaseTitle = "PHASE 4 — DOES THE FAULT FOLLOW THE CAMERA?";
+      _fi.phaseTitle = "DOES THE FAULT FOLLOW THE CAMERA?";
       _fi.phaseInstruction = "Keep the new cable on " + tn2 + ". Connect a known-good camera, then Check Now. No spare? Click \"No Spare CHU — Infer\".";
       _fi.actionLabel = "Check Now";
       renderFaultIsolator();
