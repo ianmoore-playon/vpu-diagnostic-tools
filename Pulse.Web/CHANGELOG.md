@@ -46,6 +46,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   blocked endpoints actually matter at a given venue and which are harmless.
 
 ### Changed
+- **System Overview cleanups (UX audit).** Install date shows as a plain date
+  instead of a raw timestamp; the install-date and locale fields are now
+  populated; blank hardware values show "—" instead of "null GB"; GPU cards
+  label each adapter **Dedicated**/**Integrated** (not color-only); the
+  hardware-compatibility note reads in plain language; and the software filter
+  shows a "no matches" message. Wide tables now scroll on narrow screens instead
+  of squashing the page. (Also fixes a stray "undefined GB free" on Disk &
+  System Health.)
 - **The build version now shows on the loading screen**, right under the Pulse
   logo — so you can see exactly which build you're on at a glance (handy when
   reporting an issue).

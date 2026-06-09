@@ -951,7 +951,7 @@ function _renderVolumes(volumes) {
       </div>
       <div class="dash-vol-bottom">
         <div class="dash-vol-bar"><div class="dash-vol-fill" style="width:${Math.min(pct, 100)}%;background:${color}"></div></div>
-        <span class="dash-vol-free">${esc(String(d.freeSpaceGB))} free of ${esc(String(d.sizeGB))} GB</span>
+        <span class="dash-vol-free">${d.freeSpaceGB != null ? esc(String(d.freeSpaceGB)) : "—"} free of ${d.sizeGB != null ? esc(String(d.sizeGB)) + " GB" : "—"}</span>
       </div>
     </div>`;
   }).join("");
@@ -1061,7 +1061,7 @@ function renderDashboard() {
         : (memTotalMB / 1024).toFixed(0) + " GB")
     : "";
   const sysDisk = volumes.find((d) => d.deviceID === "C:") || volumes[0];
-  const diskCaption = sysDisk ? `${sysDisk.freeSpaceGB} GB free of ${sysDisk.sizeGB} GB` : "";
+  const diskCaption = sysDisk && sysDisk.freeSpaceGB != null && sysDisk.sizeGB != null ? `${sysDisk.freeSpaceGB} GB free of ${sysDisk.sizeGB} GB` : "";
 
   $page().innerHTML = `
     <!-- Header -->
@@ -1363,7 +1363,7 @@ function renderSystem() {
   const swList = sw.software || [];
 
   $page().innerHTML = `
-    ${pageHeader("System Overview", "Hardware identity, OS, Pixellot software, and installed applications",
+    ${pageHeader("System Overview", "Hardware identity, OS, Pixellot software, and installed software",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderSystem()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
@@ -1397,8 +1397,7 @@ function renderSystem() {
           if (c.status === "ok") {
             cls = "sys-lifecycle-ok";
             title = "Version compatible with hardware";
-            const capStr = c.maxVersion ? `max ${c.maxVersion}` : "no cap";
-            detail = `${esc(c.installedVersion)} on ${esc(c.architecture)} GPU · ${esc(capStr)} · ${esc(c.capReason)}`;
+            detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : " — no version limit"}.`;
           } else if (c.status === "over") {
             cls = "sys-lifecycle-crit";
             title = "Version exceeds hardware compatibility cap";
@@ -1443,7 +1442,7 @@ function renderSystem() {
             <th>Capacity</th><th>Speed</th><th>Type</th><th>Slot</th>
           </tr></thead><tbody>
           ${memory.map(m => `<tr>
-            <td>${esc(String(m.capacityGB))} GB</td>
+            <td>${m.capacityGB != null ? esc(String(m.capacityGB)) + " GB" : "—"}</td>
             <td>${m.speedMHz ? esc(String(m.speedMHz)) + " MHz" : "—"}</td>
             <td>${esc(m.memoryType)}</td>
             <td>${esc(m.deviceLocator)}</td>
@@ -1477,7 +1476,7 @@ function renderSystem() {
           return `<div class="sub-card mb-2">
             <div class="flex items-center justify-between">
               <div class="text-sm font-semibold text-white">${esc(g.name)}</div>
-              <span class="gpu-vendor-chip ${chipCls}">${esc(vendor)}</span>
+              <span class="gpu-vendor-chip ${chipCls}">${esc(vendor)} · ${g.isDedicated ? "Dedicated" : "Integrated"}</span>
             </div>
             <div class="text-xs text-pulse-muted mt-1">RAM: ${g.adapterRAMMB ? esc(String(g.adapterRAMMB)) + " MB" : "N/A"} · Driver: ${esc(g.driverVersion)}</div>
           </div>`;
@@ -1491,7 +1490,7 @@ function renderSystem() {
           </tr></thead><tbody>
           ${drives.map(d => `<tr>
             <td>${esc(d.model)}</td>
-            <td>${esc(String(d.sizeGB))} GB</td>
+            <td>${d.sizeGB != null ? esc(String(d.sizeGB)) + " GB" : "—"}</td>
             <td>${esc(d.interfaceType)}</td>
             <td class="font-mono text-xs">${esc(d.serialNumber)}</td>
           </tr>`).join("")}
@@ -1508,7 +1507,7 @@ function renderSystem() {
         ${kvRow("Version", os.version)}
         ${kvRow("Build", os.buildNumber)}
         ${kvRow("Architecture", os.osArchitecture)}
-        ${kvRow("Install Date", os.installDate)}
+        ${kvRow("Install Date", os.installDate ? String(os.installDate).slice(0, 10) : null)}
         ${kvRow("Timezone", id.timezone)}
         ${kvRow("Locale", id.locale)}
       </div>
@@ -1546,7 +1545,7 @@ function renderSystem() {
 
     <!-- Software Inventory -->
     <div class="card mt-4">
-      ${sectionTitle("server", "Software Inventory (" + swList.length + ")")}
+      ${sectionTitle("server", "Installed Software (" + swList.length + ")")}
       ${(() => {
         // Group concerning entries by severity for the summary banner.
         const flagged = swList.filter(s => s.concern);
@@ -1597,11 +1596,28 @@ function renderSystem() {
 
   const swFilter = document.getElementById("sw-filter");
   if (swFilter) {
+    const swRows = [...document.querySelectorAll("#sw-table tbody tr")];
+    const swBody = document.querySelector("#sw-table tbody");
     swFilter.addEventListener("input", () => {
       const q = swFilter.value.toLowerCase();
-      document.querySelectorAll("#sw-table tbody tr").forEach(tr => {
-        tr.style.display = tr.textContent.toLowerCase().includes(q) ? "" : "none";
+      let shown = 0;
+      swRows.forEach(tr => {
+        const match = tr.textContent.toLowerCase().includes(q);
+        tr.style.display = match ? "" : "none";
+        if (match) shown++;
       });
+      let none = document.getElementById("sw-no-match");
+      if (shown === 0 && q) {
+        if (!none && swBody) {
+          none = document.createElement("tr");
+          none.id = "sw-no-match";
+          none.innerHTML = '<td colspan="4" class="text-pulse-muted text-sm" style="text-align:center;padding:1rem">No software matches your filter.</td>';
+          swBody.appendChild(none);
+        }
+        if (none) none.style.display = "";
+      } else if (none) {
+        none.style.display = "none";
+      }
     });
   }
 }
@@ -3977,7 +3993,7 @@ function renderDiskHealth() {
           <div class="dh-vol-bar-wrap">
             <div class="dash-vol-bar"><div class="dash-vol-fill" style="width:${Math.min(pct, 100)}%;background:${color}"></div></div>
           </div>
-          <span class="dh-vol-free">${esc(String(d.freeSpaceGB))} free of ${esc(String(d.sizeGB))} GB</span>
+          <span class="dh-vol-free">${d.freeSpaceGB != null ? esc(String(d.freeSpaceGB)) : "—"} free of ${d.sizeGB != null ? esc(String(d.sizeGB)) + " GB" : "—"}</span>
           <span class="dh-vol-status" style="color:${statusColor}">${esc(status)}</span>
         </div>`;
       }).join("") : '<p class="text-pulse-muted text-sm">No volume data</p>'}
@@ -4010,7 +4026,7 @@ function renderDiskHealth() {
         <td>${esc(d.friendlyName)}</td>
         <td>${esc(d.mediaType)}</td>
         <td>${esc(d.busType)}</td>
-        <td>${esc(String(d.sizeGB))} GB</td>
+        <td>${d.sizeGB != null ? esc(String(d.sizeGB)) + " GB" : "—"}</td>
         <td>${statusBadge(d.healthStatus || "Unknown")}</td>
       </tr>`).join("")}
       </tbody></table>
