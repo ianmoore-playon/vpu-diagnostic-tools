@@ -3977,8 +3977,11 @@ function renderDiskHealth() {
         const pct = d.usedPercent || 0;
         const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
         const role = d.deviceID === "C:" ? "OS Drive" : "Storage";
+        // Use the same pill component as the Physical Disks and Storage
+        // Paths tables below so all three sections render status the same
+        // way — was previously bare colored text.
         const status = pct > 90 ? "Critical" : pct > 80 ? "Low" : "OK";
-        const statusColor = pct > 90 ? "var(--c-accent-red)" : pct > 80 ? "var(--c-accent-amber)" : "var(--c-accent-green)";
+        const statusKind = pct > 90 ? "fail" : pct > 80 ? "warn" : "pass";
         return `<div class="dh-vol-row">
           <span class="dh-vol-drive font-mono">${esc(d.deviceID)}</span>
           <span class="dh-vol-role">${esc(role)}</span>
@@ -3986,7 +3989,7 @@ function renderDiskHealth() {
             <div class="dash-vol-bar"><div class="dash-vol-fill" style="width:${Math.min(pct, 100)}%;background:${color}"></div></div>
           </div>
           <span class="dh-vol-free">${esc(String(d.freeSpaceGB))} free of ${esc(String(d.sizeGB))} GB</span>
-          <span class="dh-vol-status" style="color:${statusColor}">${esc(status)}</span>
+          <span class="dh-vol-status">${badge(status, statusKind)}</span>
         </div>`;
       }).join("") : '<p class="text-pulse-muted text-sm">No volume data</p>'}
     </div>
@@ -5141,8 +5144,8 @@ function renderScoreConnect() {
       ${sectionTitle("globe", "Cloud (BOT) Status")}
       <div class="kv-grid">
         ${kvRowHtml("Connected", botStatus.isConnected
-          ? '<span class="status-pass">Yes</span>'
-          : '<span class="status-fail">No</span>')}
+          ? badge("Yes", "pass")
+          : badge("No", "fail"))}
         ${botStatus.scoreConnectId ? kvRowHtml("ScoreConnect ID",
           `${esc(botStatus.scoreConnectId)} <span class="text-pulse-muted" style="font-size:0.75rem">(may be stale)</span>`)
           : ""}
@@ -6472,14 +6475,17 @@ function _audioFormFactorLabel(ff) {
 function _audioDeviceRow(d) {
   const slug = _audioSlug(d.id);
   const isActive = d.state === "Active";
-  const stateClass = isActive ? "status-pass" : d.state === "Disabled" ? "status-warn" : "status-fail";
+  // Use the canonical pill component so audio state matches every other
+  // status indicator in the app (Services, Disk Health, etc.) instead of
+  // appearing as bare colored text.
+  const badgeKind = isActive ? "pass" : d.state === "Disabled" ? "warn" : "fail";
 
   return `<div class="audio-device${isActive ? "" : " audio-device-inactive"}">
     <div class="audio-device-header">
       <div class="audio-device-name">${esc(d.name || "Unknown Device")}</div>
       <div class="audio-device-badges">
         ${_audioFormFactorBadge(d.formFactor)}
-        <span class="${stateClass}">${esc(d.state)}</span>
+        ${badge(d.state, badgeKind)}
       </div>
     </div>
     ${isActive ? `

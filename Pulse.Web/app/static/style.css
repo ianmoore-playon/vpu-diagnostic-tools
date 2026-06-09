@@ -2225,7 +2225,7 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 .dh-vol-drive { font-size: 0.85rem; font-weight: 600; color: var(--c-text); }
 .dh-vol-role { font-size: 0.75rem; color: var(--c-muted); }
 .dh-vol-free { font-size: 0.75rem; color: var(--c-muted); }
-.dh-vol-status { font-size: 0.8rem; font-weight: 600; text-align: right; }
+.dh-vol-status { display: flex; justify-content: flex-end; }
 
 /* Repair Tools (PDF #1) — DISM, sfc, chkdsk action cards */
 .dh-repair-grid {
