@@ -1421,7 +1421,7 @@ html.dark .demo-banner {
 }
 .net-port-pill-pass  { background: var(--c-tint-green); color: var(--c-accent-green); }
 .net-port-pill-fail  { background: var(--c-tint-red);   color: var(--c-accent-red); }
-.net-port-pill-muted { background: var(--c-surface-2);  color: var(--c-dim); }
+.net-port-pill-muted { background: var(--c-border);     color: var(--c-muted); }
 
 /* Honest caveat under the UDP port column re: connectionless semantics. */
 .net-udp-note {
@@ -1537,8 +1537,13 @@ html.dark .demo-banner {
 }
 .domain-row + .domain-row { border-top: 1px solid var(--c-border); }
 .domain-dot { width: 7px; height: 7px; border-radius: 50%; justify-self: center; }
-.domain-name { font-size: 0.8rem; color: var(--c-text); }
-.domain-ip { font-size: 0.7rem; font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; color: var(--c-dim); }
+/* Long domain names (e.g. leaf-downloads.s3.amazonaws.com) used to wrap
+   onto a second line and pull the latency value down with them. Keep
+   the row strictly one line — the hover tooltip still reveals the full
+   impact context. */
+.domain-name { font-size: 0.8rem; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.domain-ip { font-size: 0.7rem; font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; color: var(--c-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.domain-dns-time { white-space: nowrap; }
 
 /* ── Camera page ───────────────────────────────────────────── */
 
@@ -1696,16 +1701,19 @@ html.dark .demo-banner {
    bottom). Counter-rotate the port numbers so they stay upright/readable. */
 .orient-svg-rot .orient-svg { transform: rotate(-90deg); }
 .orient-svg-rot .orient-port-num { transform: rotate(90deg); transform-box: fill-box; transform-origin: center; }
-.orient-chassis { fill: var(--c-surface-2, rgba(148,163,184,0.08)); stroke: var(--c-dim); stroke-width: 1.5; }
-.orient-iozone { fill: rgba(148,163,184,0.06); stroke: var(--c-border); stroke-width: 0.75; }
-.orient-io { fill: var(--c-dimmer); }
-.orient-eth { fill: var(--c-muted); }
-.orient-fan { fill: none; stroke: var(--c-dim); stroke-width: 1; }
+/* Bumped strokes from --c-dim to --c-muted (and fills from --c-dimmer
+   to --c-dim) so the chassis lines remain crisp in both themes — the
+   dim variants were too faint against dark surfaces. */
+.orient-chassis { fill: var(--c-surface-2, rgba(148,163,184,0.08)); stroke: var(--c-muted); stroke-width: 1.5; }
+.orient-iozone { fill: rgba(148,163,184,0.06); stroke: var(--c-dim); stroke-width: 0.75; }
+.orient-io { fill: var(--c-dim); }
+.orient-eth { fill: var(--c-text); }
+.orient-fan { fill: none; stroke: var(--c-muted); stroke-width: 1; }
 .orient-portbank { fill: rgba(59,130,246,0.14); stroke: #3b82f6; stroke-width: 1.2; }
 .orient-port { fill: #3b82f6; }
 .orient-port-num { fill: #fff; font-size: 9px; font-weight: 700; text-anchor: middle; }
-.orient-acbox { fill: none; stroke: var(--c-dim); stroke-width: 1.2; }
-.orient-acpin { fill: var(--c-dim); }
+.orient-acbox { fill: none; stroke: var(--c-muted); stroke-width: 1.2; }
+.orient-acpin { fill: var(--c-muted); }
 .orient-caption { font-size: 0.66rem; line-height: 1.5; color: var(--c-muted); }
 .orient-caption strong { color: var(--c-text); font-weight: 600; }
 .nic-diagram-ports {
@@ -1914,13 +1922,17 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     flex-direction: column;
     gap: 8px;
 }
-.cam-port-active { border-color: #22c55e; }
+.cam-port-active { border-color: var(--c-accent-green); }
 .cam-port-degraded { border-color: var(--c-accent-amber); }
-.cam-port-down { border-color: var(--c-dimmer); opacity: 0.75; }
+/* Down ports keep a muted (not alarming) treatment but stay legible —
+   dashed border distinguishes them from "active" without the heavy
+   0.75 opacity that previously washed out the labels. Empty (no-NIC)
+   slots stay dashed + half-opacity to clearly read as unused. */
+.cam-port-down { border-color: var(--c-dimmer); border-style: dashed; }
 .cam-port-empty { border-style: dashed; opacity: 0.5; }
 .cam-port-header { display: flex; align-items: center; gap: 6px; }
 .cam-port-num { font-size: 0.85rem; font-weight: 700; color: var(--c-text); }
-.cam-port-name { font-size: 0.7rem; color: var(--c-dim); font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cam-port-name { font-size: 0.7rem; color: var(--c-muted); font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cam-port-status { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; }
 .cam-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .cam-dot-up { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.4); }
@@ -2037,7 +2049,11 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 @keyframes cam-spin { to { transform: rotate(360deg); } }
 
 /* ── Camera findings card ──────────────────────────────────── */
-.cam-finding-row { border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; }
+/* Stacked finding rows previously had nearly-identical backgrounds with
+   only an 8px gap between them, so two consecutive warnings would
+   visually merge.  Bump the gap and add a subtle inset shadow so each
+   row reads as its own card-within-card. */
+.cam-finding-row { border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; box-shadow: inset 0 0 0 1px var(--c-border); }
 .cam-finding-row:last-child { margin-bottom: 0; }
 .cam-finding-row-critical { background: var(--c-tint-red); border-left: 3px solid var(--c-accent-red); }
 .cam-finding-row-warning  { background: var(--c-tint-amber); border-left: 3px solid var(--c-accent-amber); }
@@ -2958,8 +2974,11 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 }
 .net-ping-preset:hover { background: var(--c-border); color: var(--c-text); }
 .net-ping-preset:disabled { opacity: 0.4; cursor: not-allowed; }
-.net-ping-cont { color: #3b82f6; border-color: #3b82f6; }
-.net-ping-cont:hover { background: rgba(59, 130, 246, 0.12); }
+/* "Continuous" presets the same way as 4/10/20/50 — it's an action
+   verb, not a selected state.  The button text flips to "Stop" when
+   active, which gives the running state its own clear treatment. */
+.net-ping-cont { color: var(--c-muted); }
+.net-ping-cont:hover { background: var(--c-tint-blue); color: var(--c-accent-blue); border-color: var(--c-accent-blue); }
 .net-ping-stop { font-size: 0.7rem; padding: 3px 10px; }
 
 @keyframes spin-icon { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

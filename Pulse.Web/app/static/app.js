@@ -2842,7 +2842,7 @@ function renderNetwork() {
         </div>
         ${totalErrors > 0 || (uplinkStats.rxBytes != null) ? `
           <div class="net-iface-stats">
-            <div class="net-iface-stats-title">${svgIcon("activity", 12)} Interface Counters</div>
+            <div class="net-iface-stats-title" title="Cumulative NIC counters since boot. Zero across the board is healthy; non-zero errors or discards usually mean a bad cable, dirty switch port, or NIC driver issue.">${svgIcon("activity", 12)} Interface Counters ${svgIcon("info", 12)}</div>
             <div class="net-iface-stats-grid">
               <div class="net-iface-stat">
                 <span class="net-iface-stat-label">RX Errors</span>
