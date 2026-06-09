@@ -5122,7 +5122,6 @@ function renderScoreConnect() {
   const legacyIsSc1 = sc2 && ((sc2.hardware || "").toLowerCase() === "scoreconnect"
     || (sc2.productName || "").indexOf("SC I") !== -1);
   const legacyFull = legacyIsSc1 ? "ScoreConnect I" : "ScoreConnect II";
-  const legacyShort = legacyIsSc1 ? "SC I" : "SC II";
 
   // Team name source: SC II settings.json has configured names, use as labels
   const visitorLabel = sc2Teams.visitor || "GUEST";
@@ -5153,17 +5152,18 @@ function renderScoreConnect() {
       </div>
     </div>` : "";
 
-  // Determine page subtitle based on what's detected
-  const subtitle = sc2 && sc2.reachable && isDetected
-    ? legacyFull + " + III detected"
+  // Page subtitle reflects the single active version (ScoreConnect III takes
+  // precedence when present — it's the live data source). We never show both.
+  const subtitle = isDetected
+    ? "ScoreConnect III — service, configuration, and live data"
     : sc2 && sc2.reachable
     ? legacyFull + " — configuration from device"
-    : "ScoreConnect III — service, configuration, and live data";
+    : "ScoreConnect — service not detected";
 
   $page().innerHTML = `
     ${pageHeader("Score Connect", subtitle,
       `${isDetected ? `<button class="btn-outline btn-ol-blue" onclick="window.open('${esc(data.baseUrl || "http://localhost:5000")}','_blank','noopener')">
-        ${svgIcon("globe", 14)} Open SC III
+        ${svgIcon("globe", 14)} Open ScoreConnect III
       </button>` : ""}
       <button class="btn-outline btn-ol-blue" onclick="dataCache.scoreconnect=null;renderScoreConnect()">
         ${svgIcon("refresh", 14)} Refresh
@@ -5220,23 +5220,7 @@ function renderScoreConnect() {
     <!-- ScoreLink USB device — directly below the scoreboard hero -->
     ${slCard}
 
-    <!-- Status — demoted running / receiving indicators + raw data -->
-    ${anySC ? `
-    <div class="card mt-4">
-      ${sectionTitle("heartbeat", "Status")}
-      <div class="kv-grid">
-        ${isDetected ? kvRowHtml("ScoreConnect III", _scDot(true) + '<span class="status-pass">Running</span>') : ""}
-        ${sc2 && sc2.reachable ? kvRowHtml(legacyFull, _scDot(true) + `<span class="status-pass">Running</span>${sc2.outOfDate ? ' <span class="status-warn">· out of date</span>' : ''}`) : ""}
-        ${isDetected ? kvRowHtml("Scoreboard Data", `<span id="sc3-data-status">${_sc3DataStatusHtml(dataReceiving ? "live" : "disconnected", 0, data.dataStatus)}</span>`) : ""}
-      </div>
-      ${data.rawData ? `
-      <div class="sc-raw-data" style="margin-top:0.85rem">
-        <div class="sc-raw-label">RAW SCOREBOARD DATA (SC III)</div>
-        <div class="sc-raw-value" id="sc3-raw-value">${esc(data.rawData)}</div>
-      </div>` : ""}
-    </div>` : ""}
-
-    <!-- SC II → SC III Upgrade Prompt -->
+    <!-- ScoreConnect → SC III Upgrade Prompt -->
     ${sc2 && sc2.reachable && !isDetected ? `
     <div class="card mt-4" style="border:1px solid var(--c-accent-blue)">
       <div style="display:flex;align-items:flex-start;gap:0.75rem">
@@ -5244,8 +5228,8 @@ function renderScoreConnect() {
         <div style="flex:1">
           <div class="font-semibold" style="margin-bottom:0.25rem">Upgrade to ScoreConnect III</div>
           <div class="text-pulse-muted" style="font-size:0.8rem;line-height:1.5">
-            SC III is the preferred version. It provides live scoreboard data, parsed scores,
-            and real-time status through a REST API — no interference with the data stream.
+            ScoreConnect III is the preferred version. It provides live scoreboard data, parsed
+            scores, and real-time status through a REST API — no interference with the data stream.
           </div>
           <div style="margin-top:0.75rem">
             <button class="btn-outline btn-ol-blue" id="btn-install-sc3" onclick="installSc3(this)">
@@ -5261,14 +5245,14 @@ function renderScoreConnect() {
     </div>
     ` : ""}
 
-    <!-- Legacy ScoreConnect (SC I / SC II) Detail Card -->
-    ${sc2HasConfig ? `
+    <!-- Active legacy version (ScoreConnect I/II) — only when ScoreConnect III is NOT present -->
+    ${!isDetected && sc2HasConfig ? `
     <div class="card mt-4">
-      ${sectionTitle("heartbeat", legacyShort + " Details")}
+      ${sectionTitle("server", legacyFull)}
       <div class="kv-grid">
         ${kvRowHtml("Status", sc2.outOfDate
-          ? '<span class="status-warn">Running — software out of date</span>'
-          : '<span class="status-pass">Running</span>')}
+          ? _scDot(true) + '<span class="status-warn">Running — software out of date</span>'
+          : _scDot(true) + '<span class="status-pass">Running</span>')}
         ${kvRow("Version", sc2.version)}
         ${kvRow("Hardware", sc2.hardware)}
         ${kvRow("UID", sc2.uid)}
@@ -5292,11 +5276,13 @@ function renderScoreConnect() {
       </div>` : ""}
     </div>` : ""}
 
-    <!-- SC III Details — service + configuration (merged, no duplicates) -->
+    <!-- ScoreConnect III — status, configuration, and live data (all grouped) -->
     ${isDetected ? `
     <div class="card mt-4">
       ${sectionTitle("server", "ScoreConnect III")}
       <div class="kv-grid">
+        ${kvRowHtml("Status", _scDot(true) + '<span class="status-pass">Running</span>')}
+        ${kvRowHtml("Scoreboard Data", `<span id="sc3-data-status">${_sc3DataStatusHtml(dataReceiving ? "live" : "disconnected", 0, data.dataStatus)}</span>`)}
         ${kvRow("Version", version)}
         ${kvRow("Base URL", data.baseUrl)}
         ${config.vendor ? kvRow("Vendor", config.vendor) : ""}
@@ -5311,6 +5297,11 @@ function renderScoreConnect() {
           ? (data.hasLocalStream ? '<span class="status-pass">Yes</span>' : '<span class="status-fail">No</span>')
           : '—')}
       </div>
+      ${data.rawData ? `
+      <div class="sc-raw-data" style="margin-top:0.85rem">
+        <div class="sc-raw-label">RAW SCOREBOARD DATA (ScoreConnect III)</div>
+        <div class="sc-raw-value" id="sc3-raw-value">${esc(data.rawData)}</div>
+      </div>` : ""}
     </div>` : ""}
 
     <!-- Cloud BOT (ScoreLink panel moved up under the hero) -->
@@ -5363,7 +5354,7 @@ function _sc3StageBadge(stage, secs) {
     live:         { c: "var(--c-accent-green)", flash: true,  txt: "LIVE" },
     stale:        { c: "var(--c-accent-amber)", flash: true,  txt: "STALE · " + secs + "s" },
     disconnected: { c: "var(--c-accent-red)",   flash: false, txt: "NO SIGNAL" },
-    offline:      { c: "var(--c-dim)",          flash: false, txt: "SC III OFFLINE" }
+    offline:      { c: "var(--c-dim)",          flash: false, txt: "ScoreConnect III Offline" }
   };
   var s = map[stage] || map.offline;
   var anim = s.flash ? "animation:pulse-live 1.4s ease-in-out infinite;" : "";
@@ -5385,7 +5376,7 @@ function _sc3DataStatusHtml(stage, secs, statusText) {
       + '<span style="color:var(--c-accent-amber)">Data stale — no new packets (disconnecting in ' + secs + 's)</span>';
   }
   if (stage === "offline") {
-    return _scDot(false) + '<span class="status-fail">SC III not responding</span>';
+    return _scDot(false) + '<span class="status-fail">ScoreConnect III not responding</span>';
   }
   return _scDot(false) + '<span class="status-fail">No scoreboard data is being received</span>';
 }
