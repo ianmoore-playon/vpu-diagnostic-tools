@@ -3644,3 +3644,68 @@ html.dark .sc-board { box-shadow: none; border-color: #3a4356; }
     color: var(--c-text);
     outline: none;
 }
+
+/* ── Responsive collapse (below 768 px) ─────────────────────── */
+/* Pulse Web is desktop-first (VPUs run a full browser), but field techs
+   sometimes pull it up on a phone over Tailscale.  Below the tablet
+   breakpoint we collapse the sidebar to a horizontal nav strip on top
+   and let the main content take the full viewport width so cards stop
+   getting squeezed into 130-px columns. */
+@media (max-width: 767px) {
+    #app { flex-direction: column; }
+    #sidebar {
+        width: 100% !important;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        border-right: none;
+        border-bottom: 1px solid var(--c-border);
+    }
+    .sidebar-brand {
+        flex-direction: row;
+        gap: 10px;
+        padding: 10px 14px;
+        border-bottom: none;
+        flex: 0 0 auto;
+    }
+    .sidebar-brand-logo { width: 110px; margin-bottom: 0; }
+    .sidebar-brand-tagline { display: none; }
+    .demo-banner { flex: 1; padding: 6px 14px; }
+    /* Nav links + theme toggle + footer drop to a second row that
+       horizontally scrolls so the tech can still reach every page. */
+    #nav-links {
+        flex-basis: 100%;
+        order: 2;
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 4px 8px;
+        gap: 4px;
+        border-top: 1px solid var(--c-border);
+    }
+    .nav-section { display: contents; }
+    .nav-section-header { display: none; }
+    .nav-item {
+        border-left: none;
+        border-bottom: 3px solid transparent;
+        padding: 6px 10px;
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
+    .nav-item.active {
+        border-left-color: transparent;
+        border-bottom-color: var(--c-accent-blue);
+    }
+    .theme-toggle-btn {
+        order: 3;
+        width: auto;
+        margin: 8px 8px 8px auto;
+        padding: 6px 10px;
+        flex: 0 0 auto;
+    }
+    .sidebar-footer { display: none; }
+    /* Log pane spans the full width below the now-top-mounted sidebar. */
+    .log-pane { left: 0; }
+}
