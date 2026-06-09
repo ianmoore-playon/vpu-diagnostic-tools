@@ -2384,7 +2384,11 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 
 /* ── ScoreConnect page ─────────────────────────────────────── */
 
-/* Scoreboard — dark themed panel that mimics a real broadcast overlay */
+/* Scoreboard — dark themed panel that mimics a real broadcast overlay.
+   Always uses the broadcast-dark palette (it's a mock of a real screen,
+   not theme-aware chrome).  Border bumped + drop shadow in light mode
+   so it clearly reads as a contained widget instead of bleeding into
+   the page; the dark border tier is fine on dark page bg already. */
 .sc-board {
     background: #0f1419;
     border: 1px solid #2a3040;
@@ -2392,7 +2396,9 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     padding: 1.25rem 1.5rem;
     color: #e8ecf1;
     font-family: "SF Mono", "Cascadia Mono", "Fira Code", monospace;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
+html.dark .sc-board { box-shadow: none; border-color: #3a4356; }
 /* Hero variant — top of page, larger everything */
 .sc-board-hero {
     border-radius: 12px;
@@ -2695,12 +2701,20 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 @media (max-width: 768px) {
   .audio-summary { grid-template-columns: 1fr; }
 }
-.audio-summary-card { text-align: center; padding: 1.25rem 1rem; }
+/* All three summary tiles render with the same centered layout
+   (icon on top, big value/label below) so they read as peers in
+   the row — was icon-on-left for the Signal tile only. */
+.audio-summary-card { text-align: center; padding: 1.25rem 1rem; display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
 .audio-summary-icon { color: var(--c-muted); margin-bottom: 0.5rem; display: flex; justify-content: center; }
 .audio-summary-num { font-size: 1.5rem; font-weight: 700; color: var(--c-text); }
-.audio-signal-card { display: flex; align-items: center; gap: 0.75rem; padding: 1.25rem 1rem; }
+.audio-signal-card {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 0.5rem;
+    padding: 1.25rem 1rem; text-align: center;
+}
 .audio-signal-dot {
-  width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  margin-bottom: 0.25rem;
 }
 .audio-signal-active { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.5); }
 .audio-signal-silent { background: var(--c-dim); }
@@ -2735,10 +2749,13 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 }
 .audio-device-name { font-weight: 600; font-size: 0.875rem; color: var(--c-text); }
 .audio-device-badges { display: flex; align-items: center; gap: 0.5rem; }
+/* Device-class label (LINE-IN / MIC / HEADSET / SPEAKERS / HDMI) — kept
+   subordinate to the status badge beside it, but with stronger border
+   contrast so it reads as informational instead of decorative. */
 .audio-port-badge {
   font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
   padding: 0.15rem 0.5rem; border-radius: 4px;
-  background: var(--c-surface-3); color: var(--c-muted); border: 1px solid var(--c-border);
+  background: var(--c-surface-2); color: var(--c-muted); border: 1px solid var(--c-dimmer);
 }
 
 .audio-device-controls { margin-top: 0.75rem; }
@@ -2783,9 +2800,11 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
   width: 16px; height: 16px; border-radius: 50%;
   background: #3b82f6; border: 2px solid var(--c-surface); cursor: pointer;
 }
-.audio-slider-muted::-webkit-slider-thumb { background: var(--c-dim); }
-.audio-slider-muted::-moz-range-thumb     { background: var(--c-dim); }
-.audio-slider-muted { opacity: 0.6; }
+/* Mute state on the slider is conveyed by the speaker-X icon next to
+   the track, not by recoloring the thumb — keeping the knob blue
+   (just on a faded track) makes all three sliders look like the same
+   control instead of three different ones. */
+.audio-slider-muted { opacity: 0.55; }
 
 /* ── Network Panel ───────────────────────────────────────── */
 

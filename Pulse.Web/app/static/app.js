@@ -36,6 +36,8 @@ function svgIcon(name, size) {
     activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
     send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
     inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    "external-link": '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
+    copy: '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
@@ -5163,7 +5165,7 @@ function renderScoreConnect() {
           ? badge("Yes", "pass")
           : badge("No", "fail"))}
         ${botStatus.scoreConnectId ? kvRowHtml("ScoreConnect ID",
-          `${esc(botStatus.scoreConnectId)} <span class="text-pulse-muted" style="font-size:0.75rem">(may be stale)</span>`)
+          `${esc(botStatus.scoreConnectId)} <span class="text-pulse-dim ml-1" style="font-size:0.85em;cursor:help" title="ScoreConnect III reports this ID at startup. If the BOT service has reconfigured since, the displayed value can briefly lag.">${svgIcon("info", 12)}</span>`)
           : ""}
         ${kvRow("BOT Server", botStatus.botServerAddress)}
         ${botStatus.lastErrorMessage ? kvRowHtml("Last Error", `<span class="text-pulse-muted">${esc(botStatus.lastErrorMessage)}</span>`) : ""}
@@ -5189,8 +5191,8 @@ function renderScoreConnect() {
 
   $page().innerHTML = `
     ${pageHeader("Score Connect", subtitle,
-      `${isDetected ? `<button class="btn-outline btn-ol-blue" onclick="window.open('${esc(data.baseUrl || "http://localhost:5000")}','_blank','noopener')">
-        ${svgIcon("globe", 14)} Open ScoreConnect III
+      `${isDetected ? `<button class="btn-outline btn-ol-green" onclick="window.open('${esc(data.baseUrl || "http://localhost:5000")}','_blank','noopener')" title="Opens the local ScoreConnect III web UI in a new tab">
+        ${svgIcon("external-link", 14)} Open ScoreConnect III
       </button>` : ""}
       <button class="btn-outline btn-ol-blue" onclick="dataCache.scoreconnect=null;renderScoreConnect()">
         ${svgIcon("refresh", 14)} Refresh
