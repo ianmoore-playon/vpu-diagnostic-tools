@@ -414,6 +414,15 @@ html.dark .demo-banner {
     flex-wrap: wrap;
     gap: 0.75rem;
 }
+/* Severity pill belongs next to the page title (state), not in the
+   button row (actions) — keeps state and verbs visually separate and
+   stops the pill from wrapping under the buttons on narrower widths. */
+.dash-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
 .dash-actions {
     display: flex;
     align-items: center;
@@ -667,9 +676,9 @@ html.dark .demo-banner {
 /* ── Health badges ────────────────────────────────────────── */
 .health-badge {
     display: inline-block;
-    padding: 2px 8px;
+    padding: 2px 9px;
     border-radius: 999px;
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     font-weight: 600;
     letter-spacing: 0.02em;
 }
@@ -861,11 +870,15 @@ html.dark .demo-banner {
 }
 .dash-sub-grid-full .dash-sub-name { font-size: 0.85rem; }
 .dash-sub-grid-full .dash-sub-desc { font-size: 0.7rem; }
+/* Flatten the subsystem tiles — they're items inside a Subsystems card,
+   not cards themselves.  Drop the inner background+border (which read
+   as nested cards-in-cards) and use a transparent border that hover
+   tints instead of swapping background + border at once. */
 .dash-sub-tile {
     display: block;
     padding: 8px 10px;
-    background: var(--c-surface-2);
-    border: 1px solid var(--c-border);
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: 6px;
     text-decoration: none;
     color: var(--c-text);
@@ -1002,13 +1015,21 @@ html.dark .demo-banner {
     word-break: break-word;
 }
 
-/* Uptime / Internet icon tiles */
+/* Uptime / Internet icon tiles — sit beside the ring-gauge column.
+   The 7rem-ish circular bounding box mirrors the gauge size so all
+   six tiles in the row read as peers (was visually shorter). */
 .dash-icon-tile {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     padding: 6px 0;
+    width: 7rem;
+    height: 7rem;
+    border: 1px dashed var(--c-border);
+    border-radius: 999px;
+    background: var(--c-surface-2);
 }
 .dash-tile-val { font-size: 0.95rem; font-weight: 600; color: var(--c-text); }
 

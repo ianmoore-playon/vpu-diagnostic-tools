@@ -913,6 +913,13 @@ function _renderNicRows(ports) {
       roles.push(null);
     }
   }
+  // Tooltips on each badge so the colored chips have plain-English meaning
+  // for techs glancing at the dashboard — was previously no legend at all.
+  const statusTip = {
+    Linked: "Link up at the expected speed",
+    Error:  "Link is up but degraded (e.g. 100 Mbps on a Gigabit port)",
+    Down:   "No physical link detected on this port",
+  };
   for (let i = 0; i < count; i++) {
     if (i < ports.length) {
       const p = ports[i];
@@ -924,19 +931,26 @@ function _renderNicRows(ports) {
       else if (p.isDegraded) { status = "Error"; cls = "warn"; }
       else { status = "Linked"; cls = "pass"; }
       const role = roles[i];
-      const roleBadge = role ? ` <span class="badge-ol badge-ol-info">${esc(role)}</span>` : "";
+      const roleTip = role === "OCR"
+        ? "OCR (scoreboard overlay) camera port"
+        : role
+          ? "Pixellot camera detected on this port"
+          : "";
+      const roleBadge = role
+        ? ` <span class="badge-ol badge-ol-info" title="${esc(roleTip)}">${esc(role)}</span>`
+        : "";
       rows.push(`<div class="dash-nic-row">
         <span class="dash-nic-port">Port ${i + 1}</span>
         <span class="dash-nic-name">${esc(p.name)}</span>
         <span class="dash-nic-speed">${p.isUp ? esc(speed) : "—"}</span>
-        <span class="dash-nic-badges"><span class="badge-ol badge-ol-${cls}">${esc(status)}</span>${roleBadge}</span>
+        <span class="dash-nic-badges"><span class="badge-ol badge-ol-${cls}" title="${esc(statusTip[status] || "")}">${esc(status)}</span>${roleBadge}</span>
       </div>`);
     } else {
       rows.push(`<div class="dash-nic-row">
         <span class="dash-nic-port">Port ${i + 1}</span>
         <span class="dash-nic-name" style="color:var(--c-dimmer)">Not detected</span>
         <span class="dash-nic-speed">—</span>
-        <span class="dash-nic-badges"><span class="badge-ol badge-ol-muted">—</span></span>
+        <span class="dash-nic-badges"><span class="badge-ol badge-ol-muted" title="No NIC detected at this port index">—</span></span>
       </div>`);
     }
   }
@@ -1075,7 +1089,12 @@ function renderDashboard() {
     <!-- Header -->
     <div class="dash-header">
       <div>
-        <h2 class="text-2xl font-bold text-white">Dashboard</h2>
+        <div class="dash-title-row">
+          <h2 class="text-2xl font-bold text-white">Dashboard</h2>
+          <span class="dash-sev-pill dash-sev-${sevColor}">
+            <span class="dash-sev-dot"></span> ${esc(sevLabel)}
+          </span>
+        </div>
         ${vpuName ? `<p class="text-sm text-pulse-muted">${esc(vpuName)}</p>` : ""}
       </div>
       <div class="dash-actions">
@@ -1088,9 +1107,6 @@ function renderDashboard() {
         <button class="btn-outline btn-ol-blue" onclick="dataCache.dashboard=null;renderDashboard()">
           ${svgIcon("refresh", 14)} Refresh Dashboard
         </button>
-        <span class="dash-sev-pill dash-sev-${sevColor}">
-          <span class="dash-sev-dot"></span> ${esc(sevLabel)}
-        </span>
       </div>
     </div>
 
