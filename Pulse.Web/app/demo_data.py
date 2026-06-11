@@ -210,7 +210,11 @@ DEMO = {
     "Get-Performance.ps1": lambda **kw: {
         "cpu": {"usagePercent": round(28 + random.uniform(-8, 15), 1)},
         "memory": {"usedPercent": round(58 + random.uniform(-5, 10), 1), "totalGB": 16, "usedGB": round(9.3 + random.uniform(-0.5, 1.0), 1)},
-        "disk": {"usedPercent": round(62 + random.uniform(-1, 2), 1)},
+        # All-fixed-volumes aggregate (C: ~62% of 465 GB + D: ~25% of 953 GB
+        # ≈ 37%). Deliberately differs from C:'s own 62% so the demo reproduces
+        # the real-VPU bug: the dashboard gauge must show C: (62%), not this
+        # aggregate. See _systemDiskPct() in app.js.
+        "disk": {"usedPercent": round(37 + random.uniform(-1, 2), 1)},
         "temperature": {"celsius": round(47 + random.uniform(-3, 8), 0)},
     },
     "Get-Services.ps1": lambda **kw: {
