@@ -22,6 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-11
+
 ### Added
 - **Pulse records which VPUs it's run on.** On launch Pulse sends a small
   identity-only check-in — hostname, serial, venue, model, version — so we can
@@ -131,6 +133,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   pass while the actual LogMeIn gateways were blocked. It now tests
   secure.logmein.com, which lives on the same GoTo network the VPU's real
   LogMeIn sessions use.
+
+## [0.2.1] - 2026-06-04
+
+### Changed
+- Removed the Repair Tools panel (DISM, System File Checker, and chkdsk) from
+  the Disk & System Health page for this release. These run long or change
+  boot state and shouldn't be triggered without guidance.
 
 ## [0.2.0] - 2026-06-02
 
