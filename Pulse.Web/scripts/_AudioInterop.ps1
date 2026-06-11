@@ -8,7 +8,7 @@
     COM interfaces. The IAudioEndpointVolume interface includes all methods
     through GetMute (vtable index 13) so callers can read/write mute state.
 
-    Idempotent — the type-presence check at the top skips Add-Type if the
+    Idempotent - the type-presence check at the top skips Add-Type if the
     interop types are already loaded in the current PowerShell session.
 #>
 
@@ -19,11 +19,11 @@ using System.Runtime.InteropServices;
 
 namespace CoreAudio {
 
-    // ── COM class ────────────────────────────────────────────
+    // -- COM class --------------------------------------------
     [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
     public class MMDeviceEnumerator {}
 
-    // ── Enums ────────────────────────────────────────────────
+    // -- Enums ------------------------------------------------
     public enum EDataFlow : uint { eRender = 0, eCapture = 1, eAll = 2 }
     public enum EDeviceState : uint {
         ACTIVE = 0x1, DISABLED = 0x2, NOTPRESENT = 0x4, UNPLUGGED = 0x8,
@@ -35,7 +35,7 @@ namespace CoreAudio {
         SPDIF = 8, DigitalAudioDisplayDevice = 9, UnknownFormFactor = 10
     }
 
-    // ── IMMDeviceCollection ──────────────────────────────────
+    // -- IMMDeviceCollection ----------------------------------
     [Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"),
      InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IMMDeviceCollection {
@@ -43,7 +43,7 @@ namespace CoreAudio {
         int Item(uint index, out IMMDevice device);
     }
 
-    // ── IMMDevice ────────────────────────────────────────────
+    // -- IMMDevice --------------------------------------------
     [Guid("D666063F-1587-4E43-81F1-B948E807363F"),
      InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IMMDevice {
@@ -55,7 +55,7 @@ namespace CoreAudio {
         int GetState(out uint state);
     }
 
-    // ── IPropertyStore ───────────────────────────────────────
+    // -- IPropertyStore ---------------------------------------
     [Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"),
      InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IPropertyStore {
@@ -76,8 +76,8 @@ namespace CoreAudio {
         public IntPtr data1; public IntPtr data2;
     }
 
-    // ── IAudioEndpointVolume ─────────────────────────────────
-    // Full vtable through GetMute (index 13) — required so SetMute/GetMute
+    // -- IAudioEndpointVolume ---------------------------------
+    // Full vtable through GetMute (index 13) - required so SetMute/GetMute
     // resolve to the correct COM slots. Methods after GetMute are omitted
     // since we don't call them, and the vtable beyond what's defined is
     // untouched.
@@ -99,14 +99,14 @@ namespace CoreAudio {
         int GetMute(out int pbMute);
     }
 
-    // ── IAudioMeterInformation ───────────────────────────────
+    // -- IAudioMeterInformation -------------------------------
     [Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064"),
      InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IAudioMeterInformation {
         int GetPeakValue(out float pfPeak);
     }
 
-    // ── IMMDeviceEnumerator ──────────────────────────────────
+    // -- IMMDeviceEnumerator ----------------------------------
     [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"),
      InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IMMDeviceEnumerator {
@@ -116,13 +116,13 @@ namespace CoreAudio {
                                     out IMMDevice device);
     }
 
-    // ── Ole32 — PropVariantClear ─────────────────────────────
+    // -- Ole32 - PropVariantClear -----------------------------
     public static class Ole32 {
         [DllImport("ole32.dll")]
         public static extern int PropVariantClear(ref PROPVARIANT pvar);
     }
 
-    // ── Constants ────────────────────────────────────────────
+    // -- Constants --------------------------------------------
     public static class Guids {
         public static Guid IID_IAudioEndpointVolume =
             new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
