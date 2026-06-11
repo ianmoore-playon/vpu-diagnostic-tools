@@ -46,6 +46,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   blocked endpoints actually matter at a given venue and which are harmless.
 
 ### Changed
+- **Fixed the System Disk gauge reading the wrong number.** The dashboard donut
+  was showing a whole-machine average across all drives, so a large near-empty
+  D: dragged it down (e.g. **9%** when the C: system drive was really ~50% full).
+  It now shows the **C: (system) drive's own usage**, matching the "free of"
+  figure beneath it. The storage card also labels both drives by role —
+  **System (C:) — OS & Pixellot** and **Recordings (D:) — local VOD storage** —
+  so you can watch the recordings drive fill up.
 - **System Overview cleanups (UX audit).** Install date shows as a plain date
   instead of a raw timestamp; the install-date and locale fields are now
   populated; blank hardware values show "—" instead of "null GB"; GPU cards

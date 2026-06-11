@@ -753,7 +753,7 @@ function updateLiveMetrics(msg) {
   const perf = msg.performance || {};
   const cpu = perf.cpu?.usagePercent;
   const mem = perf.memory?.usedPercent;
-  const disk = perf.disk?.usedPercent;
+  const disk = _systemDiskPct(perf);
 
   // Update system status gauge SVGs
   _updateGaugeLive("cpu", cpu);
@@ -935,12 +935,26 @@ function _renderNicRows(ports) {
   return rows.join("");
 }
 
+// System Disk gauge value = the C: (system) drive's OWN used%, read from the
+// disk-health volume list. NOT perf.disk.usedPercent — Get-Performance.ps1
+// computes that as an all-fixed-volumes aggregate, so a large near-empty D:
+// drags it far below C:'s real value (e.g. shows 9% when C: is ~50% full).
+// Falls back to the perf aggregate only until disk-health has been cached.
+function _systemDiskPct(perf) {
+  const vols = (cached("disk-health") || {}).logicalDisks || [];
+  const sys = vols.find((d) => d.deviceID === "C:") || vols[0];
+  if (sys && sys.usedPercent != null) return sys.usedPercent;
+  return perf && perf.disk ? perf.disk.usedPercent : null;
+}
+
 function _renderVolumes(volumes) {
   if (!volumes.length) return '<div class="text-xs text-pulse-muted py-2">No storage data</div>';
   return volumes.map((d) => {
     const pct = d.usedPercent || 0;
     const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
-    const role = d.deviceID === "C:" ? "OS Drive" : "Storage";
+    const role = d.deviceID === "C:" ? "System — OS & Pixellot"
+               : d.deviceID === "D:" ? "Recordings — local VOD storage"
+               : "Storage";
     return `<div class="dash-vol-row">
       <div class="dash-vol-top">
         <div class="dash-vol-id">
@@ -978,7 +992,7 @@ function renderDashboard() {
 
   const cpu = perf.cpu?.usagePercent;
   const mem = perf.memory?.usedPercent;
-  const disk = perf.disk?.usedPercent;
+  const disk = _systemDiskPct(perf);
   const temp = perf.temperature?.celsius;
 
   const warnCount = findings.filter((f) => f.severity === "warning").length;
@@ -1203,7 +1217,7 @@ function renderDashboard() {
           <div class="dash-gauge-sub">${esc(memCaption)}</div>
         </div>
         <div class="dash-gauge-col" data-gauge="disk">
-          ${gauge("System Disk", disk != null ? Math.round(disk) : null, "%")}
+          ${gauge("System Disk (C:)", disk != null ? Math.round(disk) : null, "%")}
           <div class="dash-gauge-sub">${esc(diskCaption)}</div>
         </div>
         <div class="dash-gauge-col" data-gauge="temp">
@@ -3957,7 +3971,9 @@ function renderDiskHealth() {
       ${logical.length ? logical.map(d => {
         const pct = d.usedPercent || 0;
         const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
-        const role = d.deviceID === "C:" ? "OS Drive" : "Storage";
+        const role = d.deviceID === "C:" ? "System — OS & Pixellot"
+                   : d.deviceID === "D:" ? "Recordings — local VOD storage"
+                   : "Storage";
         const status = pct > 90 ? "Critical" : pct > 80 ? "Low" : "OK";
         const statusColor = pct > 90 ? "var(--c-accent-red)" : pct > 80 ? "var(--c-accent-amber)" : "var(--c-accent-green)";
         return `<div class="dh-vol-row">
