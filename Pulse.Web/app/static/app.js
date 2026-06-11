@@ -5647,7 +5647,6 @@ function _fiReset() {
     conclusion: "",     // NicPort | Cable | Camera | NicHardware | LikelyCamera
     suspectIdx: -1,
     testIdx: -1,
-    testPreSpeedMbps: null,
     expectedSpeedMbps: null,  // captured from suspect port at baseline time
     suspectCameraMacs: [],    // captured at end of baseline; used to verify the physical swap in phase 1
     history: [],        // [{ts,phase,config,speed,verdict,severity}]
@@ -5740,7 +5739,7 @@ function renderFaultIsolator() {
   }
 
   // ── port option builder (shared by Phase 0 and Phase 1 dropdowns) ──
-  function portOption(p, i, excludeIdx, disableDown) {
+  function portOption(p, i, excludeIdx) {
     if (i === excludeIdx) return "";
     // Camera label (Main Camera 1, OCR, etc.) — same one shown on the port tile.
     var camLbl = p.cameraLabel ? " (" + p.cameraLabel + ")" : "";
@@ -5753,11 +5752,11 @@ function renderFaultIsolator() {
     else if (p.isDegraded) spd = " — " + formatSpeed(p.linkSpeedMbps) + " (FAULT)";
     else if (p.isOcr) spd = " — " + formatSpeed(p.linkSpeedMbps || 100) + " (expected)";
     else spd = " — " + formatSpeed(p.linkSpeedMbps);
-    // A down port can't be a known-good test target — disable it in the test
-    // dropdown so the tech can't pick a dead port and waste a check cycle.
-    var dis = !!(disableDown && down);
-    var label = "Port " + (i + 1) + camLbl + spd + (dis ? " — can't test" : "");
-    return '<option value="' + i + '"' + (dis ? " disabled" : "") + '>' + esc(label) + "</option>";
+    // Every non-suspect port is selectable — including an empty "No link" port,
+    // which is the natural swap target (you light it up by moving the camera
+    // onto it). A port's current speed reflects its current occupant, not its
+    // capacity, so it must not gate selection.
+    return '<option value="' + i + '">' + esc("Port " + (i + 1) + camLbl + spd) + "</option>";
   }
 
   // ── phase HTML ───────────────────────────────────────────────
@@ -5802,10 +5801,12 @@ function renderFaultIsolator() {
     // Mirrors WPF's IsPickingTestPort => Phase == AwaitingNicPortTest.
     var testPortPicker = "";
     if (_fi.phase === 1 && !_fi.checking) {
-      var testOpts = ports.map(function(p, i) { return portOption(p, i, _fi.suspectIdx, true); }).join("");
+      var testOpts = '<option value="-1">— Select —</option>' +
+        ports.map(function(p, i) { return portOption(p, i, _fi.suspectIdx); }).join("");
       testPortPicker = '<div style="margin:12px 0">' +
-        '<div class="text-xs text-pulse-muted mb-1">Test port (known-good)</div>' +
-        '<select id="fi-test" class="ev-select" style="width:100%;max-width:320px">' + testOpts + "</select>" +
+        '<div class="text-xs text-pulse-muted mb-1">Test port — where you\'ll move the camera</div>' +
+        '<select id="fi-test" class="ev-select" style="width:100%;max-width:360px">' + testOpts + "</select>" +
+        '<div class="text-xs text-pulse-muted" style="margin-top:4px">An empty (No link) port is fine — you light it up by moving the camera over. Pick one you expect to run at this camera\'s speed.</div>' +
         "</div>";
     }
     inner = '<div class="fi-phase-card">' +
@@ -5860,31 +5861,14 @@ function renderFaultIsolator() {
     updateBegin();
   }
 
-  // Phase 1: test port dropdown (change-only, no suspect dropdown)
+  // Phase 1: test port dropdown. No auto-default — the tech is physically
+  // relocating hardware, so the destination is a conscious choice (defaults to
+  // "— Select —"). The earlier auto-default steered toward an OCCUPIED port,
+  // which means displacing a working camera; an empty port is the better target.
   if (testSel && _fi.phase === 1) {
-    // Steer to a genuinely known-good default: a linked 1 Gbps, non-degraded,
-    // non-suspect port if one exists, else the first linked non-suspect port.
-    // Also captures the pre-swap speed up front so the pre-check is valid even
-    // if the tech never opens the dropdown (a 0 default would falsely fail it).
-    if (_fi.testIdx < 0 || _fi.testIdx === _fi.suspectIdx ||
-        !ports[_fi.testIdx] || !ports[_fi.testIdx].isUp) {
-      var bestTest = -1, firstLinked = -1;
-      ports.forEach(function(p, i) {
-        if (i === _fi.suspectIdx || !(p.isUp && p.linkSpeedMbps > 0)) return;
-        if (firstLinked < 0) firstLinked = i;
-        if (bestTest < 0 && p.linkSpeedMbps >= 1000 && !p.isDegraded) bestTest = i;
-      });
-      _fi.testIdx = bestTest >= 0 ? bestTest : firstLinked;
-    }
-    if (_fi.testIdx >= 0 && ports[_fi.testIdx]) {
-      testSel.value = String(_fi.testIdx);
-      _fi.testPreSpeedMbps = ports[_fi.testIdx].linkSpeedMbps || 0;
-    }
+    if (_fi.testIdx >= 0 && _fi.testIdx !== _fi.suspectIdx) testSel.value = String(_fi.testIdx);
     testSel.addEventListener("change", function() {
       _fi.testIdx = parseInt(testSel.value);
-      // Re-capture pre-swap speed for the newly-selected test port
-      var tp = ports[_fi.testIdx];
-      _fi.testPreSpeedMbps = tp ? (tp.linkSpeedMbps || 0) : 0;
       // Visual feedback: confirm the selection by updating the instruction text
       // so the tech can see "Check Now" will use the new port.
       if (_fi.testIdx >= 0 && _fi.suspectIdx >= 0) {
@@ -6069,10 +6053,10 @@ function renderFaultIsolator() {
       var bMsg, bInstr;
       if (spd0 <= 0) {
         bMsg = "No link";
-        bInstr = "Confirm the camera is powered and the cable seated (both ends). Still no link? Pick a known-good test port below and Check Now.";
+        bInstr = "Confirm the camera is powered and the cable seated (both ends). Still no link? Pick a test port below, move the camera over, then Check Now.";
       } else {
         bMsg   = "Degraded — " + sl0 + " (expected " + expectedLbl + ")";
-        bInstr = "Pick a known-good test port below, then move the SAME cable + camera from " + sn0 + " to it. Check Now.";
+        bInstr = "Pick a test port below, then move the SAME cable + camera from " + sn0 + " to it. Check Now.";
       }
       addHistory("Phase 1 - Baseline", cfg0, sl0, bMsg + " — isolating.", "Fail");
       // Detail omitted on purpose — the next step already shows as the phase
@@ -6104,29 +6088,11 @@ function renderFaultIsolator() {
         renderFaultIsolator();
         return;
       }
-      // Pre-check the chosen test port BEFORE the swap. It must be a genuinely
-      // known-good 1 Gbps port — otherwise the test can't tell a fault from a
-      // bad test port. (Down ports are already disabled in the dropdown; this
-      // also guards a port that dropped between selection and Check Now.)
-      var preSpd = _fi.testPreSpeedMbps || 0;
-      if (preSpd <= 0) {
-        showResult(
-          portLabel(_fi.testIdx) + " has no link.",
-          portLabel(_fi.testIdx) + " shows no link before you've moved anything, so it can't serve as a known-good test port. Pick a port that's currently linked, then Check Now.",
-          "fail"
-        );
-        renderFaultIsolator();
-        return;
-      }
-      if (preSpd < 1000) {
-        showResult(
-          portLabel(_fi.testIdx) + " only links at " + preSpd + " Mbps.",
-          portLabel(_fi.testIdx) + " can't carry 1 Gbps, so it can't confirm a Main camera. Pick a port currently linked at 1 Gbps, or Start Over.",
-          "fail"
-        );
-        renderFaultIsolator();
-        return;
-      }
+      // No pre-check on the test port's pre-swap speed: an empty target reads
+      // "No link" and a port hosting an OCR reads 100, yet either can be a fine
+      // 1 Gbps target once the suspect camera is moved onto it. The real guards
+      // come AFTER the swap — the swap-verification (suspect MAC moved to the
+      // test port) and the post-swap speed reading interpret the result.
       // Expected speed for the suspect camera — drives the pass threshold.
       var expSpd1 = _fi.expectedSpeedMbps || 1000;
       var expLbl1 = formatSpeed(expSpd1);
