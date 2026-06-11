@@ -106,6 +106,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - **Wi-Fi is only flagged when it's actually carrying the internet uplink** —
   idle or virtual wireless adapters no longer raise a warning, and the guidance
   now points to switching to Ethernet rather than disabling the adapter.
+- **UDP port checks no longer show green on silently blocked ports.** The Zixi
+  streaming ports (UDP 443 / 2088) previously passed whenever the firewall gave
+  no answer at all — exactly what most school firewalls do when they block a
+  port — so a venue could show all-green while streaming was actually blocked.
+  Pulse now requires a real reply from Pixellot's echo server to pass (with
+  retries so one lost packet doesn't cause a false alarm). If Pulse and another
+  port tester now disagree, believe the one showing the failure.
+- **The LogMeIn check now tests the real remote-access service.** It previously
+  tested logmein.com, which now points at GoTo's marketing website — so it could
+  pass while the actual LogMeIn gateways were blocked. It now tests
+  secure.logmein.com, which lives on the same GoTo network the VPU's real
+  LogMeIn sessions use.
 
 ## [0.2.0] - 2026-06-02
 

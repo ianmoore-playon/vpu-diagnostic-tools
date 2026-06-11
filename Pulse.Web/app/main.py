@@ -2237,7 +2237,9 @@ async def api_preload():
         run_ps("Get-PixellotConfig.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
         run_ps("Test-NetworkDomains.ps1"),
-        run_ps("Test-NetworkPorts.ps1"),
+        # 40s: UDP rows retry once and require an echoed reply — a blocked-UDP
+        # venue adds ~14s over the default 30s budget.
+        run_ps("Test-NetworkPorts.ps1", timeout=40),
         run_ps("Test-NtpDrift.ps1"),
         run_ps("Test-LocalNetwork.ps1"),
         run_ps("Get-NtpPeers.ps1"),
@@ -2346,10 +2348,11 @@ async def api_dashboard():
         run_ps("Get-Hardware.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
         run_ps("Test-PixellotInstallState.ps1", timeout=15),
-        # 20s timeout (down from 45) for dashboard use — keeps the
-        # Run-All cold start under ~25s while still giving real port
-        # checks time to complete on a healthy connection.
-        run_ps("Test-NetworkPorts.ps1", timeout=20),
+        # 30s for dashboard use — UDP rows now require an echoed reply and
+        # retry once (a blocked-UDP venue costs ~14s in port checks alone),
+        # so 20s would expire on exactly the venues the test exists to catch.
+        # Healthy connections still finish in well under 15s.
+        run_ps("Test-NetworkPorts.ps1", timeout=30),
         run_ps("Get-GpuInfo.ps1", timeout=15),
         run_ps("Get-WifiAdapters.ps1", timeout=10),
         # Pixellot config + expected camera count feed the dashboard's new
@@ -3200,7 +3203,10 @@ async def build_report() -> dict:
         ("cameraExpectations",   run_ps("Get-CameraExpectations.ps1", timeout=10)),
         ("networkHealth",        run_ps("Get-NetworkHealth.ps1", timeout=10)),
         ("networkDomains",       run_ps("Test-NetworkDomains.ps1", timeout=30)),
-        ("networkPorts",         run_ps("Test-NetworkPorts.ps1", timeout=30)),
+        # 40s: UDP rows retry once and require an echoed reply, so a
+        # blocked-UDP venue adds ~14s — this is the report path, completeness
+        # beats a few extra seconds here.
+        ("networkPorts",         run_ps("Test-NetworkPorts.ps1", timeout=40)),
         ("ntpDrift",             run_ps("Test-NtpDrift.ps1", timeout=20)),
         ("ntpPeers",             run_ps("Get-NtpPeers.ps1", timeout=15)),
         ("dnsResolution",        run_ps("Test-DnsResolution.ps1", timeout=30)),
