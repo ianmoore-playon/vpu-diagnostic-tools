@@ -88,6 +88,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   presets now have a "Ping count" label.
 
 ### Fixed
+- **"Install ScoreConnect III" no longer gets stuck at 5%.** The installer now
+  opens in a visible window you complete on screen — approve the Windows
+  administrator prompt, then follow the installer's prompts — and Pulse confirms
+  ScoreConnect III is running once it finishes. If you decline the prompt or it
+  stalls, Pulse now says so and offers **Retry** instead of spinning forever.
+  (Also fixes the garbled text that used to appear in the progress message.)
 - **Camera Connectivity no longer errors out when a port is down.** A page that
   showed only "Internal Server Error" now loads normally and tells you why the
   port is down (disabled / driver fault / no signal).

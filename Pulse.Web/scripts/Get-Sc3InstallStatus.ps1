@@ -8,16 +8,16 @@
     This script reads that file and returns the current state.
 
     Status stages:
-      starting       — install just kicked off, awaiting elevation
-      downloading    — fetching installer from Canopy CDN
-      installing     — running the installer
-      verifying      — checking SC III is reachable on :5000
-      complete       — install finished successfully
-      failed         — install errored (see 'error' field)
-      idle           — no install has been started
+      starting       - install just kicked off, awaiting elevation
+      downloading    - fetching installer from Canopy CDN
+      installing     - running the installer
+      verifying      - checking SC III is reachable on :5000
+      complete       - install finished successfully
+      failed         - install errored (see 'error' field)
+      idle           - no install has been started
 
     The 'stale' flag is true when the status file hasn't been updated in
-    >30s — useful for detecting hung installs.
+    >30s - useful for detecting hung installs.
 #>
 [CmdletBinding()]
 param()
@@ -38,13 +38,18 @@ try {
     $raw = Get-Content -Path $statusPath -Raw -ErrorAction Stop
     $status = $raw | ConvertFrom-Json
 
-    # Compute staleness — if the file hasn't been touched in 30s and we're
+    # Compute staleness - if the file hasn't been touched in 30s and we're
     # not in a terminal state, the elevated process is likely hung or the
-    # user cancelled the UAC prompt.
+    # user cancelled the UAC prompt. Parse with invariant culture + round-trip
+    # style so a non-US-locale VPU still flips stale (a current-culture parse
+    # throws on the ISO 'o' string and would leave a hang spinning forever).
     $stale = $false
     if ($status.updatedAt) {
         try {
-            $updated = [DateTime]::Parse($status.updatedAt)
+            $updated = [DateTime]::Parse(
+                $status.updatedAt,
+                [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::RoundtripKind)
             $ageSec = ((Get-Date) - $updated).TotalSeconds
             $terminal = $status.stage -in @('complete', 'failed', 'idle')
             if (-not $terminal -and $ageSec -gt 30) { $stale = $true }

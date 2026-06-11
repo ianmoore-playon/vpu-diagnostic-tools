@@ -4703,7 +4703,7 @@ async function installSc3(btn) {
   // Replace the upgrade banner contents with a progress UI
   var card = btn.closest(".card");
   if (!card) return;
-  _renderSc3Progress(card, { stage: "starting", percent: 2, message: "Requesting elevation…" });
+  _renderSc3Progress(card, { stage: "starting", percent: 5, message: "Approve the Windows administrator prompt to begin installing ScoreConnect III." });
 
   // Kick off the install — backend returns immediately
   var result = await apiPost("/api/scoreconnect/install-sc3");
@@ -4718,8 +4718,25 @@ async function installSc3(btn) {
 
   // Begin polling for progress every 1.5s
   if (_sc3InstallPoll) clearInterval(_sc3InstallPoll);
+  var badPolls = 0;
   _sc3InstallPoll = setInterval(async function() {
     var s = await api("/api/scoreconnect/install-sc3/status");
+
+    // Tolerate a few transient read failures (null response, or an 'unknown'
+    // stage from a momentary file read race), then surface a Retry rather than
+    // spinning silently forever.
+    if (!s || s.stage === "unknown") {
+      if (++badPolls >= 4) {
+        clearInterval(_sc3InstallPoll); _sc3InstallPoll = null;
+        _renderSc3Progress(card, {
+          stage: "failed", percent: 0,
+          message: "Lost contact with the installer.",
+          error: (s && s.error) || "Could not read install status."
+        });
+      }
+      return;
+    }
+    badPolls = 0;
     _renderSc3Progress(card, s);
 
     if (s.stage === "complete") {
@@ -4772,7 +4789,7 @@ function _renderSc3Progress(card, status) {
           <div style="height:100%;width:${pct}%;background:${barColor};transition:width 0.5s ease-out"></div>
         </div>
         ${err ? `<div class="status-fail" style="font-size:0.75rem;margin-top:0.5rem">${esc(err)}</div>` : ""}
-        ${stale ? `<div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.35rem">Install appears stalled — the UAC prompt may have been declined.</div>` : ""}
+        ${stale ? `<div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.35rem">Install appears stalled. Click Retry to start over.</div>` : ""}
         ${(stage === "failed" || stale) ? `<button class="btn-outline btn-ol-blue" style="margin-top:0.6rem" onclick="installSc3(this)">${svgIcon("refresh", 14)} Retry Install</button>` : ""}
         ${stage === "complete" ? `<div class="status-pass" style="font-size:0.8rem;margin-top:0.5rem">ScoreConnect III is now installed. Refreshing data…</div>` : ""}
       </div>

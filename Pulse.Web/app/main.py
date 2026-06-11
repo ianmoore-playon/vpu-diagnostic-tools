@@ -2903,20 +2903,22 @@ async def api_scoreconnect_scorelink():
 
 @app.post("/api/scoreconnect/install-sc3")
 async def api_install_sc3():
-    """Kicks off a ScoreConnect III install as an elevated background task.
-    Returns immediately — the install runs in the background, hidden, with
-    stdin piped to bypass the Canopy script's interactive 'Press Enter'
-    prompts. Frontend polls /api/scoreconnect/install-sc3/status for progress.
+    """Kicks off a ScoreConnect III install in an elevated, visible console.
+    Returns immediately — an elevated child (UAC prompt shows) launches the
+    Canopy installer in a visible window the tech answers, then verifies SC III
+    on :5000. Frontend polls /api/scoreconnect/install-sc3/status for progress.
     """
     return await run_ps("Install-ScoreConnectIII.ps1", timeout=30)
 
 
 @app.get("/api/scoreconnect/install-sc3/status")
 async def api_install_sc3_status():
-    """Polls the SC III install status file written by the elevated
-    background process. Returns stage, percent, message, error.
+    """Polls the SC III install status file written by the elevated install
+    process. Returns stage, percent, message, error. cache_ttl=1.0 so each
+    poll reflects the latest stage instead of replaying the 25s-cached result
+    (which would make a healthy, progressing install look frozen).
     Frontend should poll this every 1.5–2s while an install is in progress."""
-    return await run_ps("Get-Sc3InstallStatus.ps1", timeout=5)
+    return await run_ps("Get-Sc3InstallStatus.ps1", timeout=5, cache_ttl=1.0)
 
 
 @app.get("/api/settings")
