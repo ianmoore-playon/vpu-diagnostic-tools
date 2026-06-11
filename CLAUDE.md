@@ -9,18 +9,41 @@ Pulse — diagnostic tools for Pixellot VPU field support. Two variants:
 
 ## Multi-Session Etiquette
 
-Multiple Claude Code sessions often work this repo at once on the same checkout (`dev`). Uncommitted changes are visible to every session, so a careless commit can sweep up another session's in-progress work. Follow these:
+Several Claude sessions often share **one** checkout of this repo — the same `.git`, working tree, staging index, and HEAD on `dev`. Every session's changes are interleaved with yours at all times. Left unmanaged this causes: staged files swept into another session's commit, a commit message landing on unrelated files, uncommitted edits wiped by another session's `checkout`/`restore`, and the shared `dev` HEAD detached or rebased mid-edit.
 
-1. **Stage explicitly — never broadly.** Use `git add <specific files you personally edited>`. Never `git add -A`, `git add .`, or `git commit -am` — they grab everything in the tree, including other sessions' WIP.
-2. **Review the staged diff before every commit.** Run `git diff --cached --stat` first. If it lists files you didn't touch — or the line count is bigger than your change — stop; another session's work is mixed in. Unstage with `git restore --staged <file>`.
-3. **Commit small and often.** Land your own work the moment a change is coherent. WIP left sitting in a shared file is what gets swept up. The less you leave floating, the safer everyone is.
-4. **The big shared files are the hazard:** `Pulse.Web/app/static/app.js`, `Pulse.Web/app/main.py`, `Pulse.Web/app/static/style.css`. Several areas edit them. Edits rarely *conflict* (different functions), but `git add app.js` grabs everyone's uncommitted lines. If you must commit one while another session has WIP in it, coordinate first or expect to co-commit their lines — and name it honestly in the message.
-5. **Pull before you push:** `git pull --rebase origin dev`.
-6. **Never rewrite pushed `dev` history** — no `commit --amend`, `rebase`, or force-push on `dev`; other sessions are actively pulling it.
+### Best fix — one worktree per session
+
+Before working, isolate yourself:
+
+```bash
+git worktree add ../pulse-<task> -b <task> origin/dev
+```
+
+Work there, commit, `git push origin <task>`, open a PR. Separate tree + index + HEAD = zero collisions. Prefer this for anything beyond a quick one-file edit.
+
+### If you share the checkout
+
+1. **Never stage broadly.** No `git add -A`, `git add .`, or `git commit -am` — they grab every session's WIP.
+2. **Commit only your files, by path, in one command:** `git commit <path1> <path2> -m "msg"`. A pathspec commit ignores the shared index, so a parallel `git commit` can't race in between (it *will* if you `git add` then commit as separate steps). Caveat: if another session edited the *same* file, you still co-commit their lines — so claim your lane.
+3. **One file = one session at a time.** Hazard files everyone reaches for: `Pulse.Web/app/static/app.js`, `Pulse.Web/app/main.py`, `Pulse.Web/app/demo_data.py`, `Pulse.Web/app/static/style.css`. Don't edit one another session is in.
+4. **Commit small and often.** Uncommitted work gets clobbered by another session's checkout/restore; committed work is safe.
+5. **Verify before *and* after committing:** `git show --stat HEAD` (or `git diff --cached --stat`) must list only *your* files. If others' appear, you swept them.
+
+### Never run tree-wide or history commands on the shared checkout
+
+`git checkout -- .` · `git restore .` · `git reset --hard` · `git stash` (without a pathspec) · `git rebase` · `git pull --rebase` · `git checkout <branch>`. They discard or rewrite other sessions' work and move HEAD under everyone. (`git pull --rebase` also replays other sessions' unpushed commits and drops you into *their* conflicts — which is why it's no longer the recommended pre-push step here.) And never rewrite pushed `dev` history — no `commit --amend`, `rebase`, or force-push on `dev`.
+
+### Pushing through someone else's conflict
+
+If a push is rejected over a conflict in another session's commit, **do not resolve their conflict.** Cherry-pick *your* commit onto `origin/dev` in a throwaway worktree and push that:
+
+```bash
+git worktree add --detach /tmp/wt origin/dev
+git -C /tmp/wt cherry-pick <your-sha>
+git -C /tmp/wt push origin HEAD:dev && git worktree remove --force /tmp/wt
+```
 
 **Lanes:** Camera Connectivity · ScoreConnect · Network · System · Setup · Audio · Pixellot Cloud. Edit your area's render function and scripts; treat the others' as read-only.
-
-The single most important habit is **#2 — check `git diff --cached --stat` before committing.**
 
 ## Build
 
@@ -34,7 +57,7 @@ cd Pulse.Web && run.bat
 
 ## Branches & Releases
 
-Code flows `dev` → `beta` → `main`. Each branch has CI builds; tags create releases mirrored to `ianmoore-playon/pulse-releases`.
+Code flows `dev` → `beta` → `main`. Each branch has CI builds; tags create releases on `playon/pulse` (the single source + distribution repo).
 
 | App | Dev tag | Beta tag | Production tag |
 |-----|---------|----------|----------------|
@@ -43,7 +66,7 @@ Code flows `dev` → `beta` → `main`. Each branch has CI builds; tags create r
 
 Dev and beta tags create pre-releases. Production tags create full releases.
 
-Launchers in `runners/` are per-channel (`run_pulse.bat`, `run_pulse_beta.bat`, `run_pulse_dev.bat`, and web equivalents). Each installs to its own `%LOCALAPPDATA%` directory so channels coexist on a VPU.
+Launchers in `runners/` are per-channel: `run_pulse.bat` (production → latest `web-v*` release), `run_pulse_beta.bat` (beta → latest `web-beta-v*` pre-release), `run_pulse_dev.bat` (dev → latest commit on the `dev` branch; pass a branch name to test another). All install to `C:\Pulse` (one channel at a time) and auto-update every launch. (The old Pulse.WPF launchers + `install*.ps1` were removed when WPF was deprecated.)
 
 ### Versioning
 
@@ -85,7 +108,7 @@ Both apps use semver (`MAJOR.MINOR.PATCH`) with a three-channel pipeline. Dev st
 - `.github/workflows/wpf-pilot-build.yml` — Windows build, triggers on `dev`/`beta`/`main` pushes (when `Pulse.WPF/` changes) and WPF tags
 - `.github/workflows/web-build.yml` — Zips `Pulse.Web/`, triggers on web tags
 
-Both mirror releases to the public `ianmoore-playon/pulse-releases` repo via `PUBLIC_RELEASE_PAT` secret.
+Both publish releases directly to `playon/pulse` using the workflow's built-in `GITHUB_TOKEN` — no separate PAT or mirror step required.
 
 ## Key Directories
 

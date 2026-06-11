@@ -31,9 +31,9 @@ namespace Pulse.WPF.ViewModels
         public AboutViewModel()
         {
             OpenReleasesCommand = new RelayCommand(() => SafeOpenUrl(
-                "https://github.com/ianmoore-playon/pulse-releases"));
+                "https://github.com/playon/pulse"));
             OpenSourceRepoCommand = new RelayCommand(() => SafeOpenUrl(
-                "https://github.com/ianmoore-playon/vpu-diagnostic-tools"));
+                "https://github.com/playon/pulse"));
         }
 
         private static void SafeOpenUrl(string url)

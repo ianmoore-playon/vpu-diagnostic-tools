@@ -19,6 +19,13 @@
   --c-accent-amber:  #d97706;
   --c-accent-blue:   #2563eb;
   --c-green-soft:    #15803d;
+  /* Camera status tokens — one source of truth for the port LEDs, the tile
+     dots, and the legend so the same state never shows two different shades.
+     Vivid on purpose (status lights); shared across light/dark. */
+  --c-status-ok:         #22c55e;
+  --c-status-warn:       #f59e0b;
+  --c-status-down:       #64748b;
+  --c-status-connecting: #3b82f6;
 }
 
 html.dark {
@@ -157,6 +164,15 @@ html.dark .sidebar-brand-logo {
 html.dark .splash-logo {
     filter: none;
 }
+.splash-version {
+    /* Sits snug under the logo (counteracts the .splash flex gap). */
+    margin-top: -0.85rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+    color: var(--c-dim);
+}
+.splash-version:empty { display: none; }   /* hide when version is unknown */
 .splash-progress {
     width: min(420px, 60vmin);
     height: 6px;
@@ -895,6 +911,13 @@ html.dark .splash-logo {
 }
 @media (max-width: 900px) { .dash-2col { grid-template-columns: 1fr; } }
 
+/* Narrow screens: let wide data tables scroll horizontally instead of
+   forcing the whole page wider (System Overview, Disk Health, etc.). */
+@media (max-width: 768px) {
+    .data-table { display: block; overflow-x: auto; white-space: nowrap; }
+    .sw-table-wrap { overflow-x: auto; }
+}
+
 /* Key-value pairs */
 .dash-kv {
     display: grid;
@@ -1156,7 +1179,7 @@ html.dark .splash-logo {
     display: inline-block;
     padding: 2px 8px;
     border-radius: 3px;
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -1242,7 +1265,7 @@ html.dark .splash-logo {
     outline: none;
     transition: border-color 0.15s;
 }
-.sw-filter-input:focus { border-color: #3b82f6; }
+.sw-filter-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35); }
 .sw-table-wrap { max-height: 400px; overflow-y: auto; }
 
 /* Concerning-software flags in Software Inventory */
@@ -1284,39 +1307,97 @@ html.dark .splash-logo {
 .sw-row-critical td { background: rgba(239, 68, 68, 0.06); }
 .sw-row-warning  td { background: rgba(217, 119, 6, 0.06); }
 
-/* ── Network page ──────────────────────────────────────────── */
-
-.port-grid {
+/* ── Network page · Port Connectivity ─────────────────────── */
+.net-port-summary-bar {
     display: flex;
-    flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+    font-size: 0.78rem;
 }
-.port-card {
+.net-port-summary { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+.net-port-summary-ok  { color: var(--c-accent-green); }
+.net-port-summary-bad { color: var(--c-accent-red); }
+.net-port-summary-opt { color: var(--c-dim); font-weight: 500; }
+.net-port-group-label {
+    font-size: 0.64rem;
+    font-weight: 600;
+    color: var(--c-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 1rem 0 0.5rem;
+}
+/* Responsive grid of port tiles; tall multi-host tiles don't stretch their
+   shorter neighbours (align-items: start). */
+.net-port-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+    align-items: start;
+    margin-top: 0.5rem;
+}
+/* Port-led tile: a prominent protocol/port header + status pill, then the
+   service + host (or a host list when several services share the port). A top
+   accent strip carries the status colour (green reachable / dim optional /
+   red blocked-required), driven by the per-card --rowaccent var. */
+.net-port-card {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    padding: 10px 14px;
-    border-radius: 6px;
-    border: 1px solid;
-    min-width: 80px;
-    transition: background 0.15s;
+    gap: 6px;
+    padding: 11px 13px 12px;
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border);
+    border-top: 3px solid var(--rowaccent, var(--c-border));
+    border-radius: 8px;
+    transition: border-color 0.12s ease;
 }
-.port-card-pass { border-color: var(--c-accent-green); background: rgba(34, 197, 94, 0.05); }
-.port-card-fail { border-color: var(--c-accent-red);   background: rgba(239, 68, 68, 0.05); }
-.port-card-warn { border-color: var(--c-accent-amber); background: rgba(234, 179, 8, 0.05); }
-.port-card-num { font-size: 1.1rem; font-weight: 700; color: var(--c-text); }
-.port-card-name { font-size: 0.7rem; color: var(--c-muted); text-align: center; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.port-card-host { font-size: 0.65rem; font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; color: var(--c-dim); }
-.port-card-opt { font-size: 0.6rem; color: var(--c-dimmer); font-style: italic; }
-
-/* Honest caveat under the UDP port column re: connectionless semantics. */
-.net-udp-note {
-    margin-top: 0.6rem;
-    font-size: 0.66rem;
-    line-height: 1.45;
-    color: var(--c-dim);
+.net-port-card:hover { border-color: var(--rowaccent, var(--c-border)); }
+.net-port-card.is-fail { border-color: rgba(220, 38, 38, 0.4); }
+/* A port shared by several services spans wider so the host list has room. */
+.net-port-card.is-multi { grid-column: span 2; }
+.net-port-card-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
-.net-udp-note strong { color: var(--c-muted); font-weight: 600; }
+.net-port-portnum {
+    font-size: 0.92rem; font-weight: 700; color: var(--c-text);
+    font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
+    letter-spacing: 0.01em;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.net-port-card-svc {
+    font-size: 0.82rem; font-weight: 600; color: var(--c-text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.net-port-card-host {
+    font-size: 0.73rem; color: var(--c-muted);
+    font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.net-port-hostlist {
+    list-style: none; margin: 1px 0 0; padding: 0;
+    display: flex; flex-direction: column; gap: 5px;
+}
+.net-port-hostlist li {
+    display: grid; grid-template-columns: 13px minmax(0, 1fr) auto;
+    align-items: center; gap: 8px;
+}
+.net-port-hstat { font-size: 0.8rem; font-weight: 700; line-height: 1; text-align: center; }
+.net-port-hname {
+    font-size: 0.73rem; color: var(--c-text);
+    font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.net-port-hsvc { font-size: 0.7rem; color: var(--c-muted); white-space: nowrap; }
+.net-port-pill {
+    display: inline-block;
+    font-size: 0.66rem; font-weight: 600;
+    padding: 2px 9px; border-radius: 999px;
+    flex-shrink: 0;
+}
+.net-port-pill-pass  { background: var(--c-tint-green); color: var(--c-accent-green); }
+.net-port-pill-fail  { background: var(--c-tint-red);   color: var(--c-accent-red); }
+.net-port-pill-muted { background: var(--c-surface-3);  color: var(--c-muted); border: 1px solid var(--c-border); }
 
 /* "Requires administrator" note on the Packet Capture card. */
 .net-capture-admin-note {
@@ -1327,89 +1408,6 @@ html.dark .splash-logo {
     font-size: 0.7rem;
     color: var(--c-dim);
     font-style: italic;
-}
-
-/* Multi-host port card — used when several endpoints share one protocol/port (e.g. TCP/443) */
-.port-card-multi {
-    grid-column: span 2;
-    align-items: stretch;
-    text-align: left;
-    padding: 12px 14px;
-    gap: 4px;
-    min-width: 220px;
-}
-.port-card-multi .port-card-num {
-    align-self: center;
-}
-.port-card-multi .port-card-name {
-    text-align: center;
-    max-width: none;
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--c-text);
-}
-.port-card-summary {
-    text-align: center;
-    font-size: 0.65rem;
-    color: var(--c-dim);
-    margin-bottom: 4px;
-}
-/* Optional port-range card: no per-port list, so it packs tighter and
-   reads as secondary next to the required tiles. */
-.port-card-compact {
-    min-width: 170px;
-}
-.port-card-compact .port-card-summary { margin-bottom: 0; }
-.port-card-hosts {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-}
-.port-card-hosts li {
-    display: grid;
-    grid-template-columns: 8px 1fr auto;
-    gap: 6px;
-    align-items: center;
-}
-.port-card-host-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-}
-.port-card-host-name {
-    font-size: 0.7rem;
-    font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
-    color: var(--c-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.port-card-host-purpose {
-    font-size: 0.6rem;
-    color: var(--c-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-/* Port-range card (byHost, e.g. Scorebot 1400–1405): per-port rows stack
-   vertically like the 443 card — port number left, Pass/Fail status right. */
-.port-card-port-status {
-    font-size: 0.6rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    text-align: right;
-}
-
-.port-section-label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: var(--c-muted);
-    letter-spacing: 0.06em;
-    margin-bottom: 6px;
 }
 
 /* Domain list */
@@ -1494,6 +1492,29 @@ html.dark .splash-logo {
     border-radius: 999px;
     padding: 2px 9px;
 }
+/* Flip-layout toggle: right-aligned in the diagram header (margin-left:auto
+   works whether or not the live-refresh badge is present). */
+.nic-layout-toggle {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.66rem;
+    font-weight: 600;
+    color: var(--c-muted);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    padding: 3px 9px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.nic-layout-toggle:hover { color: var(--c-text); border-color: var(--c-accent-blue); }
+.nic-layout-toggle.is-active {
+    color: var(--c-accent-blue);
+    border-color: var(--c-accent-blue);
+    background: var(--c-tint-blue);
+}
 .nic-diagram-note {
     font-size: 0.7rem;
     color: var(--c-dim);
@@ -1526,7 +1547,7 @@ html.dark .splash-logo {
 /* VPU orientation reference panel (beside the port diagram). Extra left
    separation so it reads as a distinct reference, not part of the port row. */
 .nic-orient-panel {
-    max-width: 320px;
+    max-width: 360px;
     padding: 14px 16px;
     border: 1px solid var(--c-border);
     border-radius: 8px;
@@ -1544,7 +1565,7 @@ html.dark .splash-logo {
 }
 .orient-figs {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: center;
     gap: 16px;
     margin-bottom: 10px;
@@ -1552,6 +1573,13 @@ html.dark .splash-logo {
 .orient-fig { display: flex; flex-direction: column; align-items: center; gap: 5px; }
 .orient-fig-label { font-size: 0.62rem; font-weight: 600; color: var(--c-muted); }
 .orient-svg { display: block; }
+/* Both figures share one square slot so the upright drawing and the same
+   drawing rotated 90° (landscape) both sit centered without overflow. */
+.orient-svg-box { width: 150px; height: 150px; display: flex; align-items: center; justify-content: center; }
+/* "On its side" = the SAME chassis SVG rotated -90° (Port 1 → top, Port 4 →
+   bottom). Counter-rotate the port numbers so they stay upright/readable. */
+.orient-svg-rot .orient-svg { transform: rotate(-90deg); }
+.orient-svg-rot .orient-port-num { transform: rotate(90deg); transform-box: fill-box; transform-origin: center; }
 .orient-chassis { fill: var(--c-surface-2, rgba(148,163,184,0.08)); stroke: var(--c-dim); stroke-width: 1.5; }
 .orient-iozone { fill: rgba(148,163,184,0.06); stroke: var(--c-border); stroke-width: 0.75; }
 .orient-io { fill: var(--c-dimmer); }
@@ -1568,6 +1596,14 @@ html.dark .splash-logo {
     display: flex;
     gap: 48px;
     align-items: flex-end;
+}
+/* On-its-side view: stack the ports as a column. column-reverse turns the
+   DOM order (Port 4 … Port 1) into Port 1 at top → Port 4 at bottom, matching
+   the rotated chassis figure. */
+.nic-diagram-ports.is-vertical {
+    flex-direction: column-reverse;
+    align-items: center;
+    gap: 14px;
 }
 .nic-port-icon {
     display: flex;
@@ -1600,10 +1636,10 @@ html.dark .splash-logo {
     border-radius: 50%;
     transition: background 0.3s, box-shadow 0.3s;
 }
-.nic-led-ok { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.5); }
-.nic-led-warn { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.5); }
-.nic-led-off { background: #64748b; }
-.nic-led-connecting { background: #3b82f6; box-shadow: 0 0 8px rgba(59,130,246,0.6); animation: cam-connecting-pulse 1.1s ease-in-out infinite; }
+.nic-led-ok { background: var(--c-status-ok); box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+.nic-led-warn { background: var(--c-status-warn); box-shadow: 0 0 8px rgba(245,158,11,0.5); }
+.nic-led-off { background: var(--c-status-down); }
+.nic-led-connecting { background: var(--c-status-connecting); box-shadow: 0 0 8px rgba(59,130,246,0.6); animation: cam-connecting-pulse 1.1s ease-in-out infinite; }
 .nic-port-label {
     font-size: 0.72rem;
     font-weight: 600;
@@ -1622,6 +1658,9 @@ html.dark .splash-logo {
     border-radius: 8px;
     background: var(--c-surface);
 }
+/* Match the LED column's order when flipped (Port 1 top → Port 4 bottom),
+   so the legend labels never read opposite the lights they describe. */
+.nic-diagram-legend.is-vertical { flex-direction: column-reverse; }
 .nic-legend-row {
     display: flex;
     align-items: center;
@@ -1637,6 +1676,13 @@ html.dark .splash-logo {
     font-size: 0.82rem;
     font-weight: 500;
     color: var(--c-text);
+}
+/* Colorblind-safe status word beside each legend dot. */
+.nic-legend-status {
+    margin-left: auto;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--c-muted);
 }
 
 /* Camera role badge in detection entries */
@@ -1771,11 +1817,11 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .cam-port-name { font-size: 0.7rem; color: var(--c-dim); font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cam-port-status { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; }
 .cam-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.cam-dot-up { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.4); }
-.cam-dot-down { background: var(--c-dimmer); }
-.cam-dot-warn { background: #eab308; }
+.cam-dot-up { background: var(--c-status-ok); box-shadow: 0 0 6px rgba(34, 197, 94, 0.4); }
+.cam-dot-down { background: var(--c-status-down); }
+.cam-dot-warn { background: var(--c-status-warn); }
 .cam-dot-muted { background: var(--c-dimmer); }
-.cam-dot-connecting { background: #3b82f6; animation: cam-connecting-pulse 1.1s ease-in-out infinite; }
+.cam-dot-connecting { background: var(--c-status-connecting); animation: cam-connecting-pulse 1.1s ease-in-out infinite; }
 @keyframes cam-connecting-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 .cam-port-detail { padding-top: 2px; }
 .kv-mini { display: flex; justify-content: space-between; gap: 8px; font-size: 0.7rem; color: var(--c-muted); padding: 1px 0; }
@@ -1799,6 +1845,20 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .cam-entry-mac { white-space: nowrap; }
 .cam-entry-source { font-size: 0.6rem; flex-basis: 100%; }
 .cam-no-detect { font-size: 0.7rem; color: var(--c-dim); }
+.cam-down-guide {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--c-surface-2, rgba(148,163,184,0.06));
+    border: 1px solid var(--c-border);
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: var(--c-muted);
+}
+.cam-down-guide svg { flex-shrink: 0; margin-top: 1px; color: var(--c-dim); }
 .cam-video-running {
     display: flex;
     align-items: center;
@@ -2616,15 +2676,6 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 }
 @media (max-width: 1200px) { .net-bottom-grid { grid-template-columns: 1fr; } }
 
-/* Port Connectivity: TCP | UDP side-by-side sub-cards */
-.net-port-cols {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-    margin-top: 0.75rem;
-}
-@media (max-width: 700px) { .net-port-cols { grid-template-columns: 1fr; } }
-
 /* Compact kv-grid for use inside narrow sub-cards */
 .net-kv {
     display: grid;
@@ -2634,38 +2685,6 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 .net-kv .kv-row { display: contents; }
 .net-kv .kv-label { font-size: 0.72rem; color: var(--c-muted); }
 .net-kv .kv-value { font-size: 0.78rem; color: var(--c-text); word-break: break-word; min-width: 0; }
-
-/* Subtle sub-card used inside Port Connectivity and Adapter cards */
-.net-sub-card {
-    background: var(--c-surface-3);
-    border: 1px solid var(--c-border);
-    border-radius: 6px;
-    padding: 14px;
-}
-
-/* "TCP ports" / "ADAPTER" / "IP CONFIGURATION" heading inside sub-card */
-.net-sub-heading {
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: var(--c-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.625rem;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-}
-
-/* Protocol badges (TCP / UDP) inline in sub-heading */
-.net-proto-badge {
-    padding: 1px 7px;
-    border-radius: 3px;
-    font-size: 0.65rem;
-    font-weight: 700;
-    color: #fff;
-}
-.net-proto-tcp { background: #3b82f6; }
-.net-proto-udp { background: #eab308; color: #1c1917; }
 
 /* Findings banner */
 /* Unified issues & recommendations */
@@ -3337,4 +3356,54 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     word-break: break-word;
     max-height: 240px;
     overflow-y: auto;
+}
+
+/* ── Share over LAN ────────────────────────────────────────── */
+
+.share-pair {
+    padding: 14px 16px;
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    max-width: 480px;
+}
+.share-pair-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.share-pair-code {
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: #3b82f6;
+    user-select: all;
+    word-spacing: 0.15em;
+}
+
+.share-rx {
+    padding: 0.875rem 1rem;
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    margin-bottom: 0.625rem;
+}
+.share-rx:last-child { margin-bottom: 0; }
+.share-rx-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 1rem; flex-wrap: wrap;
+}
+.share-rx-host {
+    display: flex; align-items: center; gap: 0.4rem;
+    font-size: 0.9rem; font-weight: 600; color: var(--c-text);
+}
+.share-rx-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.share-rx-body:empty { display: none; }
+
+.share-pick { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.share-ip-select {
+    padding: 5px 10px;
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
+    color: var(--c-text);
+    outline: none;
 }

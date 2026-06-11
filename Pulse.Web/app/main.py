@@ -31,7 +31,7 @@ import asyncio
 import json
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from powershell import (
@@ -39,6 +39,7 @@ from powershell import (
     get_running_tasks, cancel_task, cancel_all_tasks,
     clear_ps_cache,
 )
+import peer
 
 _web_root = _os.path.dirname(_app_dir)
 SETTINGS_PATH = _os.path.join(_web_root, "pulse-settings.json")
@@ -185,6 +186,13 @@ async def _on_startup():
         ps_log("server", 0, "ok", msg)
         _server_log.info(msg)
 
+    # Fire-and-forget run-tracking check-in (no-op until the check-in secret is
+    # filled in, and never in demo/dev). Scheduled so it can't delay startup.
+    try:
+        asyncio.create_task(_send_checkin())
+    except Exception:
+        pass
+
 
 def load_settings() -> dict:
     try:
@@ -228,8 +236,13 @@ _CGI_PROBE_TTL = 10  # seconds
 #   2. suppress transient degraded/error findings during that window —
 #      a port mid-negotiation briefly reports 100 Mbps / errors before it
 #      stabilizes, and alarming on that during a cable swap is noise.
-_PORT_STATE_TRACKER = {}  # adapter_mac -> {"key": str, "since": float}
+_PORT_STATE_TRACKER = {}  # adapter_mac -> {"key", "since", "isUp", "upSince", ...}
 _PORT_SETTLE_SECONDS = 8
+# How long a port shows the blue "connecting" cue after a down→up transition,
+# even if its camera resolves instantly from cache. Without this, a quick
+# cable reseat jumps straight gray→green and the tech never sees the
+# establishing state. Kept short so it reads as a brief handshake, not a hang.
+_PORT_CONNECTING_SECONDS = 6
 
 # Frame-capture rate limit. Grabbing RTSP frames is a real pull on the
 # cameras; a cooldown stops a tech from spamming the button.
@@ -1621,6 +1634,36 @@ def _order_ports_physically(raw_ports):
     return sorted(list(raw_ports or []), key=lambda p: _mac_to_int(p.get("mac")))
 
 
+def _derive_down_reason(port: dict) -> str:
+    """Classify *why* a down port is down, so the UI can guide the tech
+    instead of just saying 'Down':
+      disabled — adapter turned off in Windows (fixable: enable it)
+      driver   — NIC driver reports a fault (escalate / reinstall driver)
+      no-link  — link is enabled & driver OK, but nothing is on the wire
+                 (cable unplugged/broken, or camera unpowered/dead)
+    """
+    # Coerce every field to a string before inspecting it. Windows reports
+    # these as enums, and PowerShell's ConvertTo-Json serializes enums as
+    # bare integers on a real VPU (demo data happens to use strings), so a
+    # raw .lower() on an int crashes the whole /api/cameras endpoint.
+    admin = str(port.get("adminStatus") or "").strip().lower()
+    media = str(port.get("mediaConnectionState") or "").strip().lower()
+    driver = str(port.get("driverStatus") or "").strip().lower()
+    status = str(port.get("status") or "").strip().lower()
+    if admin == "down" or status == "disabled":
+        return "disabled"
+    # driverStatus is a PnP health word ("OK"/"Error"/"Degraded"/...). If it
+    # arrived as a bare numeric enum we can't interpret it, so ignore digits
+    # rather than mis-flag a healthy driver as faulted.
+    if driver and not driver.isdigit() and driver not in ("ok", "unknown"):
+        return "driver"
+    if media == "disconnected" or status in (
+        "disconnected", "down", "not present", "lower layer down"
+    ):
+        return "no-link"
+    return "down"
+
+
 def _enrich_ports(
     nics: dict,
     pixellot_config: dict = None,
@@ -1773,6 +1816,8 @@ def _enrich_ports(
                     "isDegraded": is_degraded,
                     "expectedSpeedMbps": expected_speed,
                     "camerasDetected": cameras,
+                    # Why is a down port down? (disabled / driver / no-link)
+                    "downReason": None if is_up else _derive_down_reason(port),
                 }
             )
 
@@ -1827,6 +1872,23 @@ def _enrich_ports(
         adapter_id = p.get("mac") or p.get("name") or p.get("portLabel")
 
         prev = _PORT_STATE_TRACKER.get(adapter_id)
+        prev_up = bool(prev.get("isUp")) if prev else None  # None = never seen
+
+        # up_since: when this port most recently went down→up. Tracks the LINK
+        # transition specifically (not speed/camera changes) so the blue
+        # "connecting" cue fires on every reconnect, even when the camera
+        # resolves instantly from cache. On first sight (prev is None) treat an
+        # already-up port as long-established — never flash "connecting" just
+        # because the page loaded.
+        if prev is None:
+            up_since = (now_mono - _PORT_CONNECTING_SECONDS) if is_up else None
+        elif is_up and not prev_up:
+            up_since = now_mono                       # observed a real down→up
+        elif is_up:
+            up_since = prev.get("upSince") or now_mono
+        else:
+            up_since = None                           # down
+
         if not prev or prev["key"] != state_key:
             # State changed — reset the settle timer but carry forward the
             # "this port has hosted a camera" memory used for drop detection.
@@ -1839,6 +1901,8 @@ def _enrich_ports(
             _PORT_STATE_TRACKER[adapter_id] = entry
         else:
             entry = prev
+        entry["isUp"] = bool(is_up)
+        entry["upSince"] = up_since
         # When a Pixellot camera is actively present, remember it so that if
         # it later disappears we can tell what dropped (and from where).
         if is_up and has_cam:
@@ -1854,9 +1918,18 @@ def _enrich_ports(
         p["_settled"] = not fresh
         p["_everHadCamera"] = entry["everHadCamera"]
         p["_lastCam"] = entry["lastCam"]
-        # Connecting: link is up but no camera resolved yet, and either the
-        # speed is still negotiating (0) or the port just changed (settling).
-        p["connecting"] = bool(is_up and not cams and (speed == 0 or fresh))
+        # Connecting (blue): the port just came up and is still establishing.
+        # Primary driver is the down→up transition window, so a reconnect is
+        # always visible even if the camera resolves instantly. Plus the
+        # original cases: link still negotiating (speed 0), or up-but-no-camera
+        # during the settle window.
+        came_up_recently = (
+            is_up and up_since is not None
+            and (now_mono - up_since) < _PORT_CONNECTING_SECONDS
+        )
+        p["connecting"] = bool(
+            is_up and (came_up_recently or speed == 0 or (not cams and fresh))
+        )
 
     # Second pass: number main cameras and OCR cameras by camera IP so
     # numbering is stable (Main Camera 1 = .50, Main Camera 2 = .51, etc).
@@ -1939,7 +2012,6 @@ def _compute_camera_findings(ports: list) -> list:
 
     for port in ports:
         label = port.get("portLabel", port.get("name", "Port"))
-        adapter = port.get("name", "")
         is_up = port.get("isUp")
         cams = port.get("camerasDetected") or []
 
@@ -1958,7 +2030,7 @@ def _compute_camera_findings(ports: list) -> list:
                 findings.append({
                     "severity": "critical",
                     "title": f"{label} — camera dropped",
-                    "body": f"{adapter}. A camera{ipinfo} was streaming on this port "
+                    "body": f"A camera{ipinfo} was streaming on this port "
                             "earlier this session and is no longer detected. Check the "
                             "cable and camera power, or use Fault Isolator.",
                 })
@@ -1977,7 +2049,7 @@ def _compute_camera_findings(ports: list) -> list:
                 {
                     "severity": "warning",
                     "title": f"{label} running at {speed} Mbps — expected {exp_label}",
-                    "body": f"{adapter}. Degraded link speed usually means a bad cable, faulty connector, or wrong duplex negotiation.",
+                    "body": f"Degraded link speed usually means a bad cable, faulty connector, or wrong duplex negotiation.",
                 }
             )
 
@@ -1986,7 +2058,7 @@ def _compute_camera_findings(ports: list) -> list:
                 {
                     "severity": "warning",
                     "title": f"{label} in half-duplex mode",
-                    "body": f"{adapter}. Half-duplex causes collisions and packet loss at camera scale. Check cable quality.",
+                    "body": f"Half-duplex causes collisions and packet loss at camera scale. Check cable quality.",
                 }
             )
 
@@ -1998,7 +2070,7 @@ def _compute_camera_findings(ports: list) -> list:
                 {
                     "severity": "warning",
                     "title": f"{label} — {total_errs} packet error(s)",
-                    "body": f"{adapter}. RX {rx_errs}, TX {tx_errs}. May indicate a bad cable or NIC driver issue.",
+                    "body": f"RX {rx_errs}, TX {tx_errs}. May indicate a bad cable or NIC driver issue.",
                 }
             )
 
@@ -2116,6 +2188,14 @@ async def serve_index():
         lambda m: f"{m.group(1)}?v={bust}",
         html,
     )
+    # Inject demo-mode flag synchronously so the splash screen can decide
+    # whether to slow the per-section progress bar BEFORE the first fetch
+    # resolves. /api/version exposes the same field for runtime consumers.
+    demo_js = f"<script>window.__PULSE_DEMO_MODE={'true' if DEMO_MODE else 'false'};</script>"
+    html = html.replace("</head>", f"  {demo_js}\n  </head>", 1)
+    # Render the version into the splash so it shows under the logo while the
+    # diagnostics load — server-side fill means no fetch flash. Blank if unknown.
+    html = html.replace("{{PULSE_VERSION}}", "" if APP_VERSION in (None, "", "unknown") else APP_VERSION)
     return HTMLResponse(html)
 
 
@@ -2157,7 +2237,9 @@ async def api_preload():
         run_ps("Get-PixellotConfig.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
         run_ps("Test-NetworkDomains.ps1"),
-        run_ps("Test-NetworkPorts.ps1"),
+        # 40s: UDP rows retry once and require an echoed reply — a blocked-UDP
+        # venue adds ~14s over the default 30s budget.
+        run_ps("Test-NetworkPorts.ps1", timeout=40),
         run_ps("Test-NtpDrift.ps1"),
         run_ps("Test-LocalNetwork.ps1"),
         run_ps("Get-NtpPeers.ps1"),
@@ -2203,7 +2285,11 @@ async def api_preload():
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": APP_VERSION}
+    # demoMode is exposed here (and not only on /api/logs) so the splash
+    # screen can decide synchronously whether to slow the per-section
+    # progress bar — the loading visual is the user's first impression
+    # and instant-fast in demo mode flashes past in milliseconds.
+    return {"version": APP_VERSION, "demoMode": DEMO_MODE}
 
 
 @app.get("/api/logs")
@@ -2262,10 +2348,11 @@ async def api_dashboard():
         run_ps("Get-Hardware.ps1"),
         run_ps("Get-InstalledSoftware.ps1"),
         run_ps("Test-PixellotInstallState.ps1", timeout=15),
-        # 20s timeout (down from 45) for dashboard use — keeps the
-        # Run-All cold start under ~25s while still giving real port
-        # checks time to complete on a healthy connection.
-        run_ps("Test-NetworkPorts.ps1", timeout=20),
+        # 30s for dashboard use — UDP rows now require an echoed reply and
+        # retry once (a blocked-UDP venue costs ~14s in port checks alone),
+        # so 20s would expire on exactly the venues the test exists to catch.
+        # Healthy connections still finish in well under 15s.
+        run_ps("Test-NetworkPorts.ps1", timeout=30),
         run_ps("Get-GpuInfo.ps1", timeout=15),
         run_ps("Get-WifiAdapters.ps1", timeout=10),
         # Pixellot config + expected camera count feed the dashboard's new
@@ -2460,8 +2547,13 @@ async def api_cameras(refresh: bool = False):
     # instead of waiting up to TTL for the cache to expire.
     if refresh:
         _CGI_PROBE_CACHE.clear()
+    # NIC link state must be near-real-time: a cable unplug/replug should show
+    # within a poll or two, not whenever the default 25s cache happens to
+    # expire. cache_ttl=1.5 forces a fresh adapter read on each ~2s live poll
+    # (the in-flight dedup still prevents overlapping runs if one is slow).
+    # PixellotConfig / Expectations change rarely, so they keep the long cache.
     nics, pix_config, expectations = await asyncio.gather(
-        run_ps("Get-NicAdapters.ps1"),
+        run_ps("Get-NicAdapters.ps1", cache_ttl=1.5),
         run_ps("Get-PixellotConfig.ps1"),
         run_ps("Get-CameraExpectations.ps1", timeout=10),
     )
@@ -2811,20 +2903,22 @@ async def api_scoreconnect_scorelink():
 
 @app.post("/api/scoreconnect/install-sc3")
 async def api_install_sc3():
-    """Kicks off a ScoreConnect III install as an elevated background task.
-    Returns immediately — the install runs in the background, hidden, with
-    stdin piped to bypass the Canopy script's interactive 'Press Enter'
-    prompts. Frontend polls /api/scoreconnect/install-sc3/status for progress.
+    """Kicks off a ScoreConnect III install in an elevated, visible console.
+    Returns immediately — an elevated child (UAC prompt shows) launches the
+    Canopy installer in a visible window the tech answers, then verifies SC III
+    on :5000. Frontend polls /api/scoreconnect/install-sc3/status for progress.
     """
     return await run_ps("Install-ScoreConnectIII.ps1", timeout=30)
 
 
 @app.get("/api/scoreconnect/install-sc3/status")
 async def api_install_sc3_status():
-    """Polls the SC III install status file written by the elevated
-    background process. Returns stage, percent, message, error.
+    """Polls the SC III install status file written by the elevated install
+    process. Returns stage, percent, message, error. cache_ttl=1.0 so each
+    poll reflects the latest stage instead of replaying the 25s-cached result
+    (which would make a healthy, progressing install look frozen).
     Frontend should poll this every 1.5–2s while an install is in progress."""
-    return await run_ps("Get-Sc3InstallStatus.ps1", timeout=5)
+    return await run_ps("Get-Sc3InstallStatus.ps1", timeout=5, cache_ttl=1.0)
 
 
 @app.get("/api/settings")
@@ -2851,8 +2945,8 @@ async def api_save_settings(request: Request):
 # endpoints let the running app check GitHub for a newer build on its channel
 # and trigger that same launcher from inside the UI, so field techs don't have
 # to re-run a .bat by hand.
-_UPDATE_PUBLIC_REPO = "ianmoore-playon/pulse-releases"
-_UPDATE_SOURCE_REPO = "ianmoore-playon/vpu-diagnostic-tools"
+_UPDATE_PUBLIC_REPO = "playon/pulse"
+_UPDATE_SOURCE_REPO = "playon/pulse"
 # channel -> (release-tag prefix, accept pre-releases)
 _UPDATE_CHANNELS = {
     "production": ("web-v", False),
@@ -2898,6 +2992,73 @@ def _update_channel():
     if tag.startswith("web-v"):
         return "production"
     return "dev"
+
+
+# ── Run-tracking check-in ───────────────────────────────────────────────────
+# Fire-and-forget "Pulse ran on this VPU" beacon for fleet tracking. The sink is
+# a Google Apps Script web app that upserts one row per unit (first/last seen,
+# run count). The URL + secret are embedded below by deliberate choice: this is
+# a low-value, rotatable, write-only spreadsheet key, and baking it into main.py
+# means every release checks in with zero per-VPU setup. Env vars
+# PULSE_CHECKIN_URL / PULSE_CHECKIN_SECRET override the embedded defaults.
+#
+# Never runs in demo/dev (DEMO_MODE) so a developer's machine can't pollute the
+# list. Identity-only payload; one-way (we POST, we don't act on any response).
+# Fail-open in every branch: a blocked network or unreachable sink must never
+# slow or break launch. Stdlib urllib on purpose (no httpx) — the beacon has to
+# work on any installed build, even one missing an optional pip dependency.
+#
+# ============================================================================
+#  >>> PASTE YOUR APPS SCRIPT SECRET HERE <<<
+#  Replace PASTE_CHECKIN_SECRET_HERE below with the secret from your Apps Script
+#  deployment. The URL is already set. Until then, check-in stays inert (it
+#  won't send with the placeholder).
+# ============================================================================
+_CHECKIN_URL    = "https://script.google.com/macros/s/AKfycbworYEcINtNfd1R6sTvHFDFqOHzYVA1XxHZRStB54T2GcTgQ8JvE0lxnboJ9q_jEFS4/exec"
+_CHECKIN_SECRET = "7a161bad7765fc5078b8375007999160c5687bf5da52ae1ca717ebbad628e648"
+
+
+def _post_checkin_sync(url: str, payload: dict) -> None:
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}
+    )
+    # Apps Script 302-redirects the POST to a result URL; urllib follows it as a
+    # GET and reads the JSON ack. We don't need the body — just don't error.
+    with urllib.request.urlopen(req, timeout=4) as resp:
+        resp.read(256)
+
+
+async def _send_checkin() -> None:
+    url = (_os.environ.get("PULSE_CHECKIN_URL") or _CHECKIN_URL).strip()
+    secret = (_os.environ.get("PULSE_CHECKIN_SECRET") or _CHECKIN_SECRET).strip()
+    if not url or not secret or secret == "PASTE_CHECKIN_SECRET_HERE" or DEMO_MODE:
+        return  # not configured (placeholder secret), or a dev/demo machine — never report
+    try:
+        ident = await run_ps("Get-SystemIdentity.ps1")
+        if not isinstance(ident, dict) or ident.get("error"):
+            return  # couldn't read identity — skip silently
+        cs   = ident.get("computerSystem") or {}
+        bios = ident.get("bios") or {}
+        px   = ident.get("pixellot") or {}
+        payload = {
+            "secret":       secret,
+            "hostname":     cs.get("name"),
+            "serialNumber": bios.get("serialNumber"),
+            "venueId":      px.get("venueId"),
+            "vpuName":      px.get("vpuName"),
+            "model":        cs.get("model"),
+            "pulseVersion": APP_VERSION,
+            "channel":      _update_channel(),
+        }
+        await asyncio.to_thread(_post_checkin_sync, url, payload)
+        _server_log.info("Check-in sent for %s", payload.get("hostname") or "unknown VPU")
+    except Exception as e:
+        # Fail-open: the beacon must never affect Pulse.
+        try:
+            _server_log.info("Check-in skipped (%s)", e)
+        except Exception:
+            pass
 
 
 async def _resolve_latest_release(channel):
@@ -3009,12 +3170,14 @@ async def api_update_apply():
     return {"ok": True, "message": "Pulse is updating and will restart shortly."}
 
 
-@app.get("/api/reports/export")
-async def api_export():
+async def build_report() -> dict:
     """Full diagnostic bundle for offline review. Runs every (non-interactive)
     data-collection script, adds the enriched camera view and Pulse's own
     computed findings, and wraps it all in a provenance envelope so a reviewer
-    knows where/when it came from and which collectors (if any) failed."""
+    knows where/when it came from and which collectors (if any) failed.
+
+    Shared by the Reports download (/api/reports/export) and the LAN peer push
+    (/api/peer/send) so both ship the identical snapshot."""
     sc_url = load_settings().get("scoreConnectUrl", "http://localhost:5000")
 
     # (section key, coroutine). Interactive/slow-by-design probes (traceroute,
@@ -3042,7 +3205,10 @@ async def api_export():
         ("cameraExpectations",   run_ps("Get-CameraExpectations.ps1", timeout=10)),
         ("networkHealth",        run_ps("Get-NetworkHealth.ps1", timeout=10)),
         ("networkDomains",       run_ps("Test-NetworkDomains.ps1", timeout=30)),
-        ("networkPorts",         run_ps("Test-NetworkPorts.ps1", timeout=30)),
+        # 40s: UDP rows retry once and require an echoed reply, so a
+        # blocked-UDP venue adds ~14s — this is the report path, completeness
+        # beats a few extra seconds here.
+        ("networkPorts",         run_ps("Test-NetworkPorts.ps1", timeout=40)),
         ("ntpDrift",             run_ps("Test-NtpDrift.ps1", timeout=20)),
         ("ntpPeers",             run_ps("Get-NtpPeers.ps1", timeout=15)),
         ("dnsResolution",        run_ps("Test-DnsResolution.ps1", timeout=30)),
@@ -3107,6 +3273,144 @@ async def api_export():
     }
 
 
+@app.get("/api/reports/export")
+async def api_export():
+    return await build_report()
+
+
+# ─── LAN peer sharing — send a snapshot to another Pulse ─────
+# The receiving side opts in (peer.start_listener), which is the only path
+# that binds to the LAN; the sending side just makes an outbound POST. See
+# peer.py for the loopback-preserving rationale and the pairing-code scheme.
+
+def _lan_port() -> int:
+    """Port the receive listener binds on the LAN. Default = UI port + 1 so a
+    single host can run two instances for testing without colliding."""
+    try:
+        return int(_os.environ.get("PULSE_LAN_PORT", int(_os.environ.get("PORT", 8765)) + 1))
+    except ValueError:
+        return 8766
+
+
+@app.get("/api/peer/receive-mode")
+async def api_peer_receive_mode():
+    return peer.listener_status()
+
+
+@app.post("/api/peer/receive-mode")
+async def api_peer_set_receive_mode(request: Request):
+    body = await request.json()
+    if body.get("on"):
+        try:
+            status = await peer.start_listener(_lan_port(), APP_VERSION, body.get("ip"))
+        except Exception as e:
+            return {"on": False, "error": f"{type(e).__name__}: {e}"}
+        # Open the Windows firewall for the LAN port so peers can actually reach
+        # us — otherwise Defender silently drops inbound. Best-effort, elevated;
+        # the listener still runs if it fails (the tech can allow it manually).
+        status["firewall"] = await _open_share_firewall(status.get("lanPort") or _lan_port())
+        return status
+    return await peer.stop_listener()
+
+
+async def _open_share_firewall(port: int) -> dict:
+    """Add a one-time inbound allow-rule for the LAN share port (Windows only).
+    Idempotent: if the rule already exists no prompt appears; otherwise it adds
+    the rule elevated (single UAC prompt), mirroring the SC3 installer."""
+    if _os.name != "nt":
+        return {"applied": False, "reason": "not Windows — open the port manually if firewalled"}
+    try:
+        return await run_ps("Set-PulseShareFirewall.ps1", {"Port": str(port)}, timeout=20)
+    except Exception as e:
+        return {"applied": False, "error": f"{type(e).__name__}: {e}"}
+
+
+@app.get("/api/peer/inbox")
+async def api_peer_inbox():
+    return {"reports": peer.list_received()}
+
+
+@app.get("/api/peer/inbox/{rec_id}")
+async def api_peer_inbox_get(rec_id: str):
+    report = peer.get_received(rec_id)
+    if report is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return report
+
+
+@app.delete("/api/peer/inbox/{rec_id}")
+async def api_peer_inbox_delete(rec_id: str):
+    return {"ok": peer.delete_received(rec_id)}
+
+
+def _resolve_peer_target(code: str, address: str):
+    """Turn a pairing code (and optional address override) into (ip, port,
+    nonce). The code carries ip/port/nonce; an address overrides ip:port for a
+    multi-NIC host. Raises ValueError with a tech-readable message."""
+    code = (code or "").strip()
+    address = (address or "").strip()
+    ip = port = nonce = None
+    if code:
+        try:
+            ip, port, nonce = peer.decode_pair(code)
+        except Exception:
+            raise ValueError("that pairing code doesn't look right")
+    if address:
+        target = peer.parse_address(address, port or _lan_port())
+        if not target:
+            raise ValueError("address should look like 192.168.1.42:8766")
+        ip, port = target
+    if not ip or not port:
+        raise ValueError("enter a pairing code (or an address) for the receiving Pulse")
+    return ip, port, nonce
+
+
+@app.get("/api/peer/send/ping")
+async def api_peer_send_ping(code: str = Query(""), address: str = Query("")):
+    try:
+        ip, port, _ = _resolve_peer_target(code, address)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    try:
+        info = await asyncio.to_thread(peer.ping_peer_sync, ip, port)
+        if not (isinstance(info, dict) and info.get("pulse")):
+            return {"ok": False, "error": "reachable, but that isn't a Pulse receiver"}
+        return {"ok": True, "address": f"{ip}:{port}", "hostname": info.get("hostname")}
+    except urllib.error.URLError as e:
+        return {"ok": False, "error": f"can't reach {ip}:{port} — {getattr(e, 'reason', e)}"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+@app.post("/api/peer/send")
+async def api_peer_send(request: Request):
+    """Build the current snapshot and push it to a peer. Requires a pairing
+    code (it carries the nonce the receiver checks); an optional address
+    overrides the IP:port encoded in the code, e.g. for a multi-NIC host."""
+    body = await request.json()
+    try:
+        ip, port, nonce = _resolve_peer_target(body.get("code"), body.get("address"))
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    if not nonce:
+        return {"ok": False, "error": "paste the pairing code shown on the receiving Pulse"}
+
+    report = await build_report()
+    payload = json.dumps(report).encode("utf-8")
+    try:
+        res = await asyncio.to_thread(peer.push_report_sync, payload, ip, port, nonce)
+        return {"ok": bool(res.get("ok", True)), "peer": res.get("hostname"),
+                "address": f"{ip}:{port}", "bytes": len(payload)}
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            return {"ok": False, "error": "the receiver rejected the pairing code — re-copy it"}
+        return {"ok": False, "error": f"receiver returned HTTP {e.code}"}
+    except urllib.error.URLError as e:
+        return {"ok": False, "error": f"can't reach {ip}:{port} — {getattr(e, 'reason', e)}"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 # ─── WebSocket — live metrics + auto-shutdown ────────────────
 
 _ws_clients: set = set()
@@ -3118,7 +3422,9 @@ IDLE_SHUTDOWN_SECS = 60  # shut down 60s after last client disconnects
 async def _idle_shutdown():
     """Shut down the server after all WebSocket clients disconnect."""
     await asyncio.sleep(IDLE_SHUTDOWN_SECS)
-    if not _ws_clients and _ever_had_client:
+    # Stay alive while a LAN receive listener is enabled — a peer may push a
+    # report even with no browser tab open. Receiver turns it off to release us.
+    if not _ws_clients and _ever_had_client and not peer.is_receiving():
         _log("auto-shutdown", 0, "ok", f"no clients for {IDLE_SHUTDOWN_SECS}s")
         # Send SIGINT to ourselves so uvicorn's lifespan handlers run cleanly.
         # _os._exit would bypass cleanup and abruptly tear down the process.

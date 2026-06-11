@@ -94,7 +94,7 @@ through the GitHub Actions workflow.
 The workflow in `.github/workflows/wpf-pilot-build.yml` builds on
 `windows-latest`. Pushes to `dev` or `main` build and upload a runnable zip.
 `wpf-pilot-v*` tags create a release and mirror the artifact to the public
-`ianmoore-playon/pulse-releases` repo used by the field launcher.
+`playon/pulse` repo used by the field launcher.
 
 For hands-on VPU validation, use `V1_LAB_CHECKLIST.md`.
 

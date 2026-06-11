@@ -68,7 +68,7 @@
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                     <Button Command="{Binding OpenReleasesCommand}"
                             Style="{StaticResource TopBarOutlinedButton}"
-                            ToolTip="https://github.com/ianmoore-playon/pulse-releases">
+                            ToolTip="https://github.com/playon/pulse">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <md:PackIcon Kind="OpenInNew" Width="16" Height="16" VerticalAlignment="Center" />
                             <TextBlock Text="View releases" Margin="6,0,0,0" VerticalAlignment="Center" />
@@ -76,7 +76,7 @@
                     </Button>
                     <Button Command="{Binding OpenSourceRepoCommand}"
                             Style="{StaticResource TopBarOutlinedButton}"
-                            ToolTip="https://github.com/ianmoore-playon/vpu-diagnostic-tools (source — private)">
+                            ToolTip="https://github.com/playon/pulse (source — private)">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <md:PackIcon Kind="Github" Width="16" Height="16" VerticalAlignment="Center" />
                             <TextBlock Text="Source repo" Margin="6,0,0,0" VerticalAlignment="Center" />

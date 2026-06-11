@@ -33,6 +33,9 @@ function svgIcon(name, size) {
     shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
     volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
     "volume-x": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
+    activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+    send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+    inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
@@ -56,6 +59,7 @@ const NAV_SECTIONS = [
   ]},
   { label: "EVIDENCE", pages: [
     { id: "reports", label: "Reports", icon: "file" },
+    { id: "share", label: "Share over LAN", icon: "send" },
   ]},
   { label: "SETUP", pages: [
     { id: "settings", label: "Settings", icon: "cog" },
@@ -427,10 +431,24 @@ function preloadProgressive(opts) {
   const deferred = Object.keys(PAGE_API).filter((k) => k !== "dashboard");
   const totalSections = 1 + deferred.length;   // dashboard + deferred
   let completedSections = 0;
+  // Demo mode: serialize ticks with a small delay so the splash actually
+  // SHOWS each section being checked instead of flashing past. Real cold
+  // start is naturally ~5-15s, so the demo's ~2.5s artificial pacing
+  // mirrors the field UX. window.__PULSE_DEMO_MODE is injected into the
+  // HTML at render time so we know synchronously — relying on the
+  // /api/version response races with the first tick and (in practice)
+  // loses, leaving the bar flashing to 100% with no delay.
+  let _demoTickDelayMs = (typeof window !== "undefined" && window.__PULSE_DEMO_MODE) ? 280 : 0;
+  let _tickChain = Promise.resolve();
   const tick = (key) => {
-    completedSections++;
-    _setSplashSection(key);
-    _setSplashPct((completedSections / totalSections) * 100);
+    _tickChain = _tickChain.then(async () => {
+      if (_demoTickDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, _demoTickDelayMs));
+      }
+      completedSections++;
+      _setSplashSection(key);
+      _setSplashPct((completedSections / totalSections) * 100);
+    });
   };
 
   _setSplashVerb(`${verb}…`);
@@ -445,6 +463,8 @@ function preloadProgressive(opts) {
       if (footer) footer.textContent = data.version;
       if (currentPage === "about") renderPage("about");
     }
+    // Engage the demo pacing for THIS preload (~2.5s total across 9 ticks).
+    if (data?.demoMode) _demoTickDelayMs = 280;
   });
   const logsPromise = api("/api/logs").then((logData) => {
     if (logData && !logData.error) {
@@ -469,10 +489,15 @@ function preloadProgressive(opts) {
     fetchSection(key).then((res) => { tick(key); return res; })
   );
 
-  // allSettled so one failing endpoint can't trap the splash.
+  // allSettled so one failing endpoint can't trap the splash. Also wait
+  // on _tickChain so the splash stays up until the (demo-paced) progress
+  // bar has actually FINISHED animating — not just when the fetches return.
   return Promise.allSettled([
     dashboardPromise, versionPromise, logsPromise, ...deferredPromises,
-  ]);
+  ]).then(async (results) => {
+    await _tickChain;
+    return results;
+  });
 }
 
 async function refreshAll() {
@@ -728,7 +753,7 @@ function updateLiveMetrics(msg) {
   const perf = msg.performance || {};
   const cpu = perf.cpu?.usagePercent;
   const mem = perf.memory?.usedPercent;
-  const disk = perf.disk?.usedPercent;
+  const disk = _systemDiskPct(perf);
 
   // Update system status gauge SVGs
   _updateGaugeLive("cpu", cpu);
@@ -791,10 +816,10 @@ const pageRenderers = {
   "disk-health": renderDiskHealth,
   events: renderEvents,
   reports: renderReports,
-  // Audio diagnostics are feature-complete but gated off for the beta build.
-  // renderAudio() (and its API/scripts) are left fully intact below —
-  // swap this back to `renderAudio` to re-enable. See renderAudioComingSoon.
-  audio: renderAudioComingSoon,
+  share: renderShare,
+  // Audio diagnostics re-enabled for demo. renderAudioComingSoon() is left
+  // intact below as the gate — swap back to it to hide the tab again.
+  audio: renderAudio,
   scoreconnect: renderScoreConnect,
   "fault-isolator": renderFaultIsolator,
   settings: renderSettings,
@@ -910,12 +935,26 @@ function _renderNicRows(ports) {
   return rows.join("");
 }
 
+// System Disk gauge value = the C: (system) drive's OWN used%, read from the
+// disk-health volume list. NOT perf.disk.usedPercent — Get-Performance.ps1
+// computes that as an all-fixed-volumes aggregate, so a large near-empty D:
+// drags it far below C:'s real value (e.g. shows 9% when C: is ~50% full).
+// Falls back to the perf aggregate only until disk-health has been cached.
+function _systemDiskPct(perf) {
+  const vols = (cached("disk-health") || {}).logicalDisks || [];
+  const sys = vols.find((d) => d.deviceID === "C:") || vols[0];
+  if (sys && sys.usedPercent != null) return sys.usedPercent;
+  return perf && perf.disk ? perf.disk.usedPercent : null;
+}
+
 function _renderVolumes(volumes) {
   if (!volumes.length) return '<div class="text-xs text-pulse-muted py-2">No storage data</div>';
   return volumes.map((d) => {
     const pct = d.usedPercent || 0;
     const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
-    const role = d.deviceID === "C:" ? "OS Drive" : "Storage";
+    const role = d.deviceID === "C:" ? "System — OS & Pixellot"
+               : d.deviceID === "D:" ? "Recordings — local VOD storage"
+               : "Storage";
     return `<div class="dash-vol-row">
       <div class="dash-vol-top">
         <div class="dash-vol-id">
@@ -926,7 +965,7 @@ function _renderVolumes(volumes) {
       </div>
       <div class="dash-vol-bottom">
         <div class="dash-vol-bar"><div class="dash-vol-fill" style="width:${Math.min(pct, 100)}%;background:${color}"></div></div>
-        <span class="dash-vol-free">${esc(String(d.freeSpaceGB))} free of ${esc(String(d.sizeGB))} GB</span>
+        <span class="dash-vol-free">${d.freeSpaceGB != null ? esc(String(d.freeSpaceGB)) : "—"} free of ${d.sizeGB != null ? esc(String(d.sizeGB)) + " GB" : "—"}</span>
       </div>
     </div>`;
   }).join("");
@@ -953,7 +992,7 @@ function renderDashboard() {
 
   const cpu = perf.cpu?.usagePercent;
   const mem = perf.memory?.usedPercent;
-  const disk = perf.disk?.usedPercent;
+  const disk = _systemDiskPct(perf);
   const temp = perf.temperature?.celsius;
 
   const warnCount = findings.filter((f) => f.severity === "warning").length;
@@ -1036,7 +1075,7 @@ function renderDashboard() {
         : (memTotalMB / 1024).toFixed(0) + " GB")
     : "";
   const sysDisk = volumes.find((d) => d.deviceID === "C:") || volumes[0];
-  const diskCaption = sysDisk ? `${sysDisk.freeSpaceGB} GB free of ${sysDisk.sizeGB} GB` : "";
+  const diskCaption = sysDisk && sysDisk.freeSpaceGB != null && sysDisk.sizeGB != null ? `${sysDisk.freeSpaceGB} GB free of ${sysDisk.sizeGB} GB` : "";
 
   $page().innerHTML = `
     <!-- Header -->
@@ -1178,7 +1217,7 @@ function renderDashboard() {
           <div class="dash-gauge-sub">${esc(memCaption)}</div>
         </div>
         <div class="dash-gauge-col" data-gauge="disk">
-          ${gauge("System Disk", disk != null ? Math.round(disk) : null, "%")}
+          ${gauge("System Disk (C:)", disk != null ? Math.round(disk) : null, "%")}
           <div class="dash-gauge-sub">${esc(diskCaption)}</div>
         </div>
         <div class="dash-gauge-col" data-gauge="temp">
@@ -1338,7 +1377,7 @@ function renderSystem() {
   const swList = sw.software || [];
 
   $page().innerHTML = `
-    ${pageHeader("System Overview", "Hardware identity, OS, Pixellot software, and installed applications",
+    ${pageHeader("System Overview", "Hardware identity, OS, Pixellot software, and installed software",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderSystem()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
@@ -1372,8 +1411,7 @@ function renderSystem() {
           if (c.status === "ok") {
             cls = "sys-lifecycle-ok";
             title = "Version compatible with hardware";
-            const capStr = c.maxVersion ? `max ${c.maxVersion}` : "no cap";
-            detail = `${esc(c.installedVersion)} on ${esc(c.architecture)} GPU · ${esc(capStr)} · ${esc(c.capReason)}`;
+            detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : " — no version limit"}.`;
           } else if (c.status === "over") {
             cls = "sys-lifecycle-crit";
             title = "Version exceeds hardware compatibility cap";
@@ -1418,7 +1456,7 @@ function renderSystem() {
             <th>Capacity</th><th>Speed</th><th>Type</th><th>Slot</th>
           </tr></thead><tbody>
           ${memory.map(m => `<tr>
-            <td>${esc(String(m.capacityGB))} GB</td>
+            <td>${m.capacityGB != null ? esc(String(m.capacityGB)) + " GB" : "—"}</td>
             <td>${m.speedMHz ? esc(String(m.speedMHz)) + " MHz" : "—"}</td>
             <td>${esc(m.memoryType)}</td>
             <td>${esc(m.deviceLocator)}</td>
@@ -1452,7 +1490,7 @@ function renderSystem() {
           return `<div class="sub-card mb-2">
             <div class="flex items-center justify-between">
               <div class="text-sm font-semibold text-white">${esc(g.name)}</div>
-              <span class="gpu-vendor-chip ${chipCls}">${esc(vendor)}</span>
+              <span class="gpu-vendor-chip ${chipCls}">${esc(vendor)} · ${g.isDedicated ? "Dedicated" : "Integrated"}</span>
             </div>
             <div class="text-xs text-pulse-muted mt-1">RAM: ${g.adapterRAMMB ? esc(String(g.adapterRAMMB)) + " MB" : "N/A"} · Driver: ${esc(g.driverVersion)}</div>
           </div>`;
@@ -1466,7 +1504,7 @@ function renderSystem() {
           </tr></thead><tbody>
           ${drives.map(d => `<tr>
             <td>${esc(d.model)}</td>
-            <td>${esc(String(d.sizeGB))} GB</td>
+            <td>${d.sizeGB != null ? esc(String(d.sizeGB)) + " GB" : "—"}</td>
             <td>${esc(d.interfaceType)}</td>
             <td class="font-mono text-xs">${esc(d.serialNumber)}</td>
           </tr>`).join("")}
@@ -1483,7 +1521,7 @@ function renderSystem() {
         ${kvRow("Version", os.version)}
         ${kvRow("Build", os.buildNumber)}
         ${kvRow("Architecture", os.osArchitecture)}
-        ${kvRow("Install Date", os.installDate)}
+        ${kvRow("Install Date", os.installDate ? String(os.installDate).slice(0, 10) : null)}
         ${kvRow("Timezone", id.timezone)}
         ${kvRow("Locale", id.locale)}
       </div>
@@ -1521,7 +1559,7 @@ function renderSystem() {
 
     <!-- Software Inventory -->
     <div class="card mt-4">
-      ${sectionTitle("server", "Software Inventory (" + swList.length + ")")}
+      ${sectionTitle("server", "Installed Software (" + swList.length + ")")}
       ${(() => {
         // Group concerning entries by severity for the summary banner.
         const flagged = swList.filter(s => s.concern);
@@ -1572,11 +1610,28 @@ function renderSystem() {
 
   const swFilter = document.getElementById("sw-filter");
   if (swFilter) {
+    const swRows = [...document.querySelectorAll("#sw-table tbody tr")];
+    const swBody = document.querySelector("#sw-table tbody");
     swFilter.addEventListener("input", () => {
       const q = swFilter.value.toLowerCase();
-      document.querySelectorAll("#sw-table tbody tr").forEach(tr => {
-        tr.style.display = tr.textContent.toLowerCase().includes(q) ? "" : "none";
+      let shown = 0;
+      swRows.forEach(tr => {
+        const match = tr.textContent.toLowerCase().includes(q);
+        tr.style.display = match ? "" : "none";
+        if (match) shown++;
       });
+      let none = document.getElementById("sw-no-match");
+      if (shown === 0 && q) {
+        if (!none && swBody) {
+          none = document.createElement("tr");
+          none.id = "sw-no-match";
+          none.innerHTML = '<td colspan="4" class="text-pulse-muted text-sm" style="text-align:center;padding:1rem">No software matches your filter.</td>';
+          swBody.appendChild(none);
+        }
+        if (none) none.style.display = "";
+      } else if (none) {
+        none.style.display = "none";
+      }
     });
   }
 }
@@ -2034,6 +2089,176 @@ function _prefixToMask(prefix) {
   return [24, 16, 8, 0].map(function(s) { return (mask >>> s) & 0xFF; }).join(".");
 }
 
+// "Impact if blocked" copy, sourced from the NFHS Network Firewall Setup doc
+// where the endpoint appears there, and authored from Pixellot service
+// knowledge for the few Pulse-only endpoints the doc doesn't list (AWS S3,
+// Singular, leaf-* buckets). Single editable home — revisit/expand later.
+// Ports are keyed by purpose; domains by hostname.
+const NET_PORT_IMPACT = {
+  "DNS": "The VPU can't resolve any hostname, so it can't reach any service.",
+  "Pixellot": "System management and software updates are blocked, and the stream fails to broadcast.",
+  "Pixellot Echo": "Stream fails to broadcast and remote support access is lost.",
+  "NFHS Network": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
+  "AWS S3": "Recordings and clips can't upload, and software/asset downloads fail.",
+  "Singular Overlay": "On-screen graphics and scorebug overlays won't load.",
+  "LogMeIn": "The support team can't diagnose the VPU remotely.",
+  "NTP": "The clock can drift — the VPU may miss scheduled events if no valid time server is set.",
+  "Zixi QUIC": "Stream fails to broadcast.",
+  "Zixi Streaming": "Stream fails to broadcast.",
+  "RTMP Ingest": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
+  "Scorebot": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
+};
+const NET_DOMAIN_IMPACT = {
+  "nfhsnetwork.com": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
+  "pixellot.tv": "System management and software updates are blocked, and the stream fails to broadcast.",
+  "software.pixellot.tv": "Software and firmware updates are blocked.",
+  "sportzcast.net": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
+  "service.singular.live": "On-screen graphics and scorebug overlays won't load.",
+  "logmein.com": "The support team can't diagnose the VPU remotely.",
+  "s3.amazonaws.com": "Recordings can't upload and software/asset downloads fail.",
+  "leaf-uploads.s3.amazonaws.com": "Game recordings and clips can't upload to the cloud.",
+  "leaf-downloads.s3.amazonaws.com": "Software, firmware, and config downloads fail.",
+};
+function _netPortImpact(p) { return (p && NET_PORT_IMPACT[p.purpose]) || ""; }
+function _netDomainImpact(d) { return (d && NET_DOMAIN_IMPACT[d.domain]) || ""; }
+
+// Port Connectivity as a single status list (Required → Optional), one row
+// per service. Replaces the old TCP|UDP card grid: uniform rows, service-led,
+// protocol/port as metadata, a status pill, and a one-glance section summary.
+function _renderPortConnectivity(ports) {
+  ports = ports || [];
+  if (!ports.length) return '<p class="text-pulse-muted text-sm mt-2">No port results.</p>';
+
+  // Combine related results into one tile: hosts sharing a protocol/port (the
+  // six TCP/443 services) group together, and a single host's port range
+  // (Scorebot 1400–1405) collapses to one tile. Two passes — by proto/port
+  // first, then by host for the leftovers — mirroring the original card grid.
+  function groupPorts(list) {
+    var byPort = {}, portOrder = [];
+    list.forEach(function(p) {
+      var key = (p.protocol || "").toUpperCase() + "/" + p.port;
+      if (!byPort[key]) { byPort[key] = []; portOrder.push(key); }
+      byPort[key].push(p);
+    });
+    var groups = [], singles = [];
+    portOrder.forEach(function(key) {
+      var items = byPort[key];
+      if (items.length > 1) groups.push({ type: "byPort", items: items, order: list.indexOf(items[0]) });
+      else singles.push(items[0]);
+    });
+    var byHost = {}, hostOrder = [];
+    singles.forEach(function(p) {
+      var key = (p.protocol || "").toUpperCase() + "|" + (p.host || "") + "|" + (p.purpose || "");
+      if (!byHost[key]) { byHost[key] = []; hostOrder.push(key); }
+      byHost[key].push(p);
+    });
+    hostOrder.forEach(function(key) {
+      var items = byHost[key];
+      groups.push({ type: items.length > 1 ? "byHost" : "single", items: items, order: list.indexOf(items[0]) });
+    });
+    // Wide multi-host (byPort) tiles first so they anchor their grid row — a
+    // span-2 tile can't fit beside a single-width tile, so if it came second it
+    // would wrap and leave an empty cell. Leading with it removes the gap.
+    groups.sort(function(a, b) {
+      var am = a.type === "byPort" ? 0 : 1, bm = b.type === "byPort" ? 0 : 1;
+      if (am !== bm) return am - bm;
+      return a.order - b.order;
+    });
+    return groups;
+  }
+
+  function portLabel(items) {
+    var proto = (items[0].protocol || "TCP").toUpperCase();
+    // Unique ports: a byPort group is one shared port across many hosts
+    // (443) → "TCP/443"; a byHost group is a range on one host (Scorebot
+    // 1400–1405) → "TCP/1400–1405".
+    var seen = {}, portsN = [];
+    items.forEach(function(p) { if (!seen[p.port]) { seen[p.port] = 1; portsN.push(p.port); } });
+    portsN.sort(function(a, b) { return a - b; });
+    if (portsN.length === 1) return proto + "/" + portsN[0];
+    var contiguous = portsN[portsN.length - 1] - portsN[0] + 1 === portsN.length;
+    return proto + "/" + (contiguous ? portsN[0] + "–" + portsN[portsN.length - 1] : portsN.join(","));
+  }
+
+  function dotColor(p) {
+    var ok = (p.status || "").toLowerCase() === "pass";
+    return ok ? "var(--c-accent-green)" : (p.optional ? "var(--c-dim)" : "var(--c-accent-red)");
+  }
+
+  // Status rollup for a (possibly multi-port) group → pill + accent colour.
+  function rollup(items) {
+    var pass = items.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
+    var total = items.length, allPass = pass === total, optional = items[0].optional;
+    var pillTxt, pillCls;
+    if (total > 1) { pillTxt = pass + "/" + total; pillCls = allPass ? "pass" : (optional ? "muted" : "fail"); }
+    else if (allPass) { pillTxt = "Pass"; pillCls = "pass"; }
+    else { pillTxt = optional ? "Blocked" : "Fail"; pillCls = optional ? "muted" : "fail"; }
+    // Optional failures are de-emphasized (muted, not red) — they aren't a problem.
+    var accent = allPass ? "var(--c-accent-green)" : (optional ? "var(--c-dim)" : "var(--c-accent-red)");
+    // Only required failures get a class hook (red border); optional + pass are
+    // styled purely via --rowaccent, so no dead is-optional class.
+    var stateCls = (!allPass && !optional) ? " is-fail" : "";
+    return { pillTxt: pillTxt, pillCls: pillCls, accent: accent, stateCls: stateCls };
+  }
+
+  // Port-led tile. byPort groups list each host inside; single / byHost
+  // (port-range) groups show the one service + host.
+  function card(group) {
+    var items = group.items, p0 = items[0], st = rollup(items);
+    var head = '<div class="net-port-card-head">' +
+        '<span class="net-port-portnum">' + esc(portLabel(items)) + '</span>' +
+        '<span class="net-port-pill net-port-pill-' + st.pillCls + '">' + esc(st.pillTxt) + '</span>' +
+      '</div>';
+    var bodyHtml, cls = "net-port-card" + st.stateCls, title;
+    if (group.type === "byPort") {
+      cls += " is-multi";
+      // Tile-level tooltip — the header and gaps between host rows would
+      // otherwise have none; each host row keeps its own service-specific impact.
+      title = ' title="Several services share this port — hover a host for its impact if blocked."';
+      bodyHtml = '<ul class="net-port-hostlist">' + items.map(function(p) {
+        // Non-colour status cue (shape, not just the colour) for accessibility.
+        var ok = (p.status || "").toLowerCase() === "pass";
+        var glyph = ok ? "✓" : (p.optional ? "–" : "✕");
+        return '<li title="' + esc(_netPortImpact(p)) + '">' +
+            '<span class="net-port-hstat" style="color:' + dotColor(p) + '">' + glyph + '</span>' +
+            '<span class="net-port-hname">' + esc(p.host || "") + '</span>' +
+            '<span class="net-port-hsvc">' + esc(p.purpose || "") + '</span>' +
+          '</li>';
+      }).join("") + '</ul>';
+    } else {
+      title = ' title="' + esc(NET_PORT_IMPACT[p0.purpose] || "") + '"';
+      bodyHtml = '<div class="net-port-card-svc">' + esc(p0.purpose || "—") + '</div>' +
+                 '<div class="net-port-card-host">' + esc(p0.host || "") + '</div>';
+    }
+    return '<div class="' + cls + '" style="--rowaccent:' + st.accent + '"' + title + '>' + head + bodyHtml + '</div>';
+  }
+
+  var required = ports.filter(function(p) { return !p.optional; });
+  var optional = ports.filter(function(p) { return p.optional; });
+  var reqGroups = groupPorts(required);
+  var optGroups = groupPorts(optional);
+  var reqPass = required.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
+  var reqBlocked = required.length - reqPass;
+
+  var summary;
+  if (required.length === 0) {
+    // Guard the degenerate case — don't render "All 0 required reachable".
+    summary = '<span class="net-port-summary net-port-summary-opt">No required ports tested</span>';
+  } else if (reqBlocked === 0) {
+    summary = '<span class="net-port-summary net-port-summary-ok">' + svgIcon("check", 13) + ' All ' + required.length + ' required reachable</span>';
+  } else {
+    summary = '<span class="net-port-summary net-port-summary-bad">' + svgIcon("triangle", 13) + ' ' + reqBlocked + ' of ' + required.length + ' required blocked</span>';
+  }
+  // Optional count = tiles shown (a multi-host group or port range is one tile).
+  if (optGroups.length) summary += '<span class="net-port-summary-opt">· ' + optGroups.length + ' optional</span>';
+
+  var body = "";
+  if (reqGroups.length) body += '<div class="net-port-group-label">Required</div><div class="net-port-grid">' + reqGroups.map(card).join("") + '</div>';
+  if (optGroups.length) body += '<div class="net-port-group-label">Optional</div><div class="net-port-grid">' + optGroups.map(card).join("") + '</div>';
+
+  return '<div class="net-port-summary-bar">' + summary + '</div>' + body;
+}
+
 // Severity ordering for Network tab issues. Returns a stable rank where
 // critical comes first. The previous inline `(o[severity] || 3)` form
 // treated critical as falsy (rank 0) and silently fell through to 3,
@@ -2125,9 +2350,9 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
   if (reqFailed.length > 0) {
     var portDetails = reqFailed.map(function(p) {
       var proto = (p.protocol || "TCP").toUpperCase();
-      if (p.port === 123 && proto === "UDP")
-        return proto + "/" + p.port + " — NTP sync failed. VPU clock will drift, breaking signed-URL streaming.";
-      return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote");
+      var impact = _netPortImpact(p);
+      return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote")
+        + (impact ? " — " + impact : "");
     });
     issues.push({ severity: "critical", title: reqFailed.length + " of " + (reqFailed.length + reqPass.length) + " required ports blocked",
       body: "Ensure these ports are allowed by the venue firewall and VLAN policy.",
@@ -2177,7 +2402,8 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
   var domTotal = (domains || []).length;
   if (domFailed.length > 0) {
     var domDetails = domFailed.map(function(d) {
-      return d.domain + " — ensure it is whitelisted (firewall, DNS allow-list, SSL inspection bypass)";
+      var impact = _netDomainImpact(d);
+      return d.domain + (impact ? " — " + impact : " — ensure it is whitelisted (firewall, DNS allow-list, SSL inspection bypass)");
     });
     issues.push({ severity: "warning", title: domFailed.length + " of " + domTotal + " domains failed DNS resolution",
       body: "Check DNS server settings on this adapter.",
@@ -2408,134 +2634,6 @@ function renderNetwork() {
   const duplexLabel = uplinkStats.fullDuplex === true ? "Full Duplex" : uplinkStats.fullDuplex === false ? "Half Duplex" : null;
   const totalErrors = (uplinkStats.rxErrors || 0) + (uplinkStats.txErrors || 0);
 
-  const tcpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "TCP"; });
-  const udpPorts = ports.filter(function(p) { return (p.protocol || "").toUpperCase() === "UDP"; });
-
-  // Group ports that share (protocol, port). Renders as a single multi-host card.
-  // Collapse related port tests into two kinds of multi-card so we don't
-  // render a wall of near-identical tiles:
-  //   • byPort — many hosts share one protocol/port (e.g. TCP/443 HTTPS).
-  //   • byHost — one host exposes a port range (e.g. Scorebot 1400–1405).
-  // Anything that doesn't collapse renders as a normal single tile.
-  function groupPorts(list) {
-    // Pass 1: group by protocol/port. Multi-entry groups are "byPort".
-    var byPort = {};
-    var portOrder = [];
-    list.forEach(function(p) {
-      var key = (p.protocol || "").toUpperCase() + "/" + p.port;
-      if (!byPort[key]) { byPort[key] = []; portOrder.push(key); }
-      byPort[key].push(p);
-    });
-
-    var groups = [];
-    var singles = [];
-    portOrder.forEach(function(key) {
-      var items = byPort[key];
-      if (items.length > 1) groups.push({ type: "byPort", items: items, order: list.indexOf(items[0]) });
-      else singles.push(items[0]);
-    });
-
-    // Pass 2: among the single-port leftovers, collapse entries that share
-    // protocol + host + purpose into a "byHost" port-range card.
-    var byHost = {};
-    var hostOrder = [];
-    singles.forEach(function(p) {
-      var key = (p.protocol || "").toUpperCase() + "|" + (p.host || "") + "|" + (p.purpose || "");
-      if (!byHost[key]) { byHost[key] = []; hostOrder.push(key); }
-      byHost[key].push(p);
-    });
-    hostOrder.forEach(function(key) {
-      var items = byHost[key];
-      groups.push({ type: items.length > 1 ? "byHost" : "single", items: items, order: list.indexOf(items[0]) });
-    });
-
-    // Restore original first-appearance order across both passes.
-    groups.sort(function(a, b) { return a.order - b.order; });
-    return groups;
-  }
-
-  function portCard(p) {
-    const ok = (p.status || "").toLowerCase() === "pass";
-    const cls = ok ? "port-card-pass" : (p.optional ? "port-card-warn" : "port-card-fail");
-    return `<div class="port-card ${cls}">
-      <div class="port-card-num">${esc(String(p.port))}</div>
-      <div class="port-card-name">${esc(p.purpose)}</div>
-      <div class="port-card-host">${esc(p.host)}</div>
-      ${p.optional ? '<div class="port-card-opt">Optional</div>' : ""}
-    </div>`;
-  }
-
-  function renderPortGroup(group) {
-    if (group.type === "byHost") return portCardHostGroup(group.items);
-    if (group.items.length === 1) return portCard(group.items[0]);
-    return portCardMulti(group.items);
-  }
-
-  // Shared status rollup for a collapsed group.
-  function _portGroupClass(group) {
-    const anyFail = group.some(function(p) { return (p.status || "").toLowerCase() !== "pass"; });
-    const allOptional = group.every(function(p) { return p.optional; });
-    return !anyFail ? "port-card-pass" : (allOptional ? "port-card-warn" : "port-card-fail");
-  }
-  function _portGroupPassCount(group) {
-    return group.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
-  }
-  function _portDotColor(p) {
-    const ok = (p.status || "").toLowerCase() === "pass";
-    return ok ? "var(--c-accent-green)" : (p.optional ? "var(--c-accent-amber)" : "var(--c-accent-red)");
-  }
-
-  // byPort card: many hosts tested on the same protocol/port (e.g. TCP/443).
-  function portCardMulti(group) {
-    const port = group[0].port;
-    const proto = (group[0].protocol || "").toUpperCase();
-    const label = proto === "TCP" && port === 443 ? "HTTPS Endpoints" : (group[0].purpose || (proto + "/" + port));
-    const hosts = group.map(function(p) {
-      return `<li><span class="port-card-host-dot" style="background:${_portDotColor(p)}"></span>` +
-             `<span class="port-card-host-name">${esc(p.host)}</span>` +
-             `<span class="port-card-host-purpose">${esc(p.purpose)}</span></li>`;
-    }).join("");
-    return `<div class="port-card port-card-multi ${_portGroupClass(group)}">
-      <div class="port-card-num">${esc(String(port))}</div>
-      <div class="port-card-name">${esc(label)}</div>
-      <div class="port-card-summary">${_portGroupPassCount(group)} of ${group.length} passing</div>
-      <ul class="port-card-hosts">${hosts}</ul>
-    </div>`;
-  }
-
-  // byHost card: one host exposes a range of ports (e.g. Scorebot 1400–1405).
-  function portCardHostGroup(group) {
-    const sorted = group.slice().sort(function(a, b) { return a.port - b.port; });
-    const ports = sorted.map(function(p) { return p.port; });
-    const contiguous = ports[ports.length - 1] - ports[0] + 1 === ports.length;
-    const rangeLabel = contiguous ? ports[0] + "–" + ports[ports.length - 1] : ports.join(", ");
-    const purpose = group[0].purpose || ((group[0].protocol || "").toUpperCase() + " ports");
-    const isOptional = group.every(function(p) { return p.optional; });
-
-    // Optional groups stay compact — just the range + "X of N passing".
-    // The per-port PASS/FAIL breakdown is reserved for required groups,
-    // where knowing exactly which port is blocked is actionable.
-    const portList = isOptional ? "" :
-      '<ul class="port-card-hosts">' +
-      sorted.map(function(p) {
-        const ok = (p.status || "").toLowerCase() === "pass";
-        const statusCls = ok ? "status-pass" : "status-fail";
-        return `<li><span class="port-card-host-dot" style="background:${_portDotColor(p)}"></span>` +
-               `<span class="port-card-host-name">${esc(String(p.port))}</span>` +
-               `<span class="port-card-port-status ${statusCls}">${ok ? "Pass" : "Fail"}</span></li>`;
-      }).join("") +
-      '</ul>';
-
-    return `<div class="port-card port-card-multi ${isOptional ? "port-card-compact " : ""}${_portGroupClass(group)}">
-      <div class="port-card-num">${esc(rangeLabel)}</div>
-      <div class="port-card-name">${esc(purpose)}</div>
-      <div class="port-card-host">${esc(group[0].host)}</div>
-      <div class="port-card-summary">${_portGroupPassCount(group)} of ${group.length} passing</div>
-      ${portList}
-      ${isOptional ? '<div class="port-card-opt">Optional</div>' : ""}
-    </div>`;
-  }
-
   const issuesPanel = issues.length ? `
     <div class="card">
       <div class="af-header">
@@ -2577,21 +2675,7 @@ function renderNetwork() {
     <!-- Port Connectivity -->
     <div class="card">
       ${sectionTitle("link", "Port Connectivity")}
-      <div class="net-port-cols">
-        <div class="net-sub-card">
-          <div class="net-sub-heading">TCP ports <span class="net-proto-badge net-proto-tcp">TCP</span></div>
-          ${tcpPorts.length
-            ? `<div class="port-grid">${groupPorts(tcpPorts).map(renderPortGroup).join("")}</div>`
-            : '<p class="text-pulse-muted text-sm mt-2">No TCP port results</p>'}
-        </div>
-        <div class="net-sub-card">
-          <div class="net-sub-heading">UDP ports <span class="net-proto-badge net-proto-udp">UDP</span></div>
-          ${udpPorts.length
-            ? `<div class="port-grid">${groupPorts(udpPorts).map(renderPortGroup).join("")}</div>
-               <p class="net-udp-note">UDP is connectionless: DNS (53) and NTP (123) are confirmed by a real protocol reply. Other ports report <strong>pass</strong> when no block is detected — a stateless probe can't always confirm the service is listening.</p>`
-            : '<p class="text-pulse-muted text-sm mt-2">No UDP port results</p>'}
-        </div>
-      </div>
+      ${_renderPortConnectivity(ports)}
     </div>
 
     <!-- Local Network Health -->
@@ -2599,6 +2683,7 @@ function renderNetwork() {
       <div class="net-ping-toolbar">
         ${sectionTitle("activity", "Local Network Health")}
         <div id="net-ping-controls" class="net-ping-btns">
+          <span class="text-xs text-pulse-muted" style="margin-right:4px">Ping count</span>
           <span id="net-ping-spinner" class="net-ping-spin" style="display:none">${svgIcon("refresh", 14)}</span>
           <button class="net-ping-preset${!local.gateway && !local.dns ? " net-ping-preset-active" : ""}" onclick="runLocalPing(4)">4</button>
           <button class="net-ping-preset" onclick="runLocalPing(10)">10</button>
@@ -2627,6 +2712,7 @@ function renderNetwork() {
           <div class="font-semibold text-white mb-1">${esc(uplinkAdapterRow.name)}</div>
           <div class="text-pulse-muted text-xs mb-3">${esc(uplinkAdapterRow.interfaceDescription || "")}</div>` : `
           <p class="text-pulse-muted text-sm mb-3">No internet-bound adapter detected.</p>`}
+        <div class="net-iface-stats-title">IP Configuration</div>
         <div class="kv-grid">
           ${kvRow("IP address", adapterIp)}
           ${kvRow("Subnet mask", subnetMask || "—")}
@@ -2641,6 +2727,10 @@ function renderNetwork() {
           })())}
           ${kvRow("Gateway", cfg.uplinkAdapter?.gateway || "—")}
           ${kvRow("DNS", dnsStr)}
+        </div>
+
+        <div class="net-iface-stats-title" style="margin-top:0.85rem">Link</div>
+        <div class="kv-grid">
           ${kvRow("MAC address", uplinkAdapterRow?.macAddress || "—")}
           ${kvRowHtml("Link state", uplinkAdapterRow
             ? `<span style="color:${adapterLinkState === "Up" ? "var(--c-accent-green)" : "var(--c-muted)"};font-weight:600">${esc(adapterLinkState)}</span>`
@@ -2649,10 +2739,18 @@ function renderNetwork() {
           ${duplexLabel ? kvRowHtml("Duplex", duplexLabel === "Half Duplex"
             ? '<span class="status-warn" style="font-weight:600">Half Duplex</span>'
             : '<span style="color:var(--c-accent-green);font-weight:600">Full Duplex</span>') : ""}
+        </div>
+
+        <div class="net-iface-stats-title" style="margin-top:0.85rem">Connectivity</div>
+        <div class="kv-grid">
           ${kvRowHtml("Internet", cfg.internetReachable
             ? '<span class="status-pass">Reachable</span>'
             : '<span class="status-fail">Unreachable</span>')}
           ${kvRow("Tested host", cfg.testedHost || "—")}
+        </div>
+
+        <div class="net-iface-stats-title" style="margin-top:0.85rem">Time Sync</div>
+        <div class="kv-grid">
           ${kvRowHtml("NTP server", (function() {
             var src = cfg.ntpSource || ntp.source || "";
             if (!src) return "—";
@@ -2713,7 +2811,7 @@ function renderNetwork() {
               var dnsTime = d.resolutionMs != null ? d.resolutionMs + " ms" : "";
               var dnsSlow = d.resolutionMs != null && d.resolutionMs > 200;
               var dotColor = ok ? "var(--c-accent-green)" : "var(--c-accent-red)";
-              return `<div class="domain-row">
+              return `<div class="domain-row" title="${esc(_netDomainImpact(d))}">
                 <span class="domain-dot" style="background:${dotColor}"></span>
                 <span class="domain-name">${esc(d.domain)}</span>
                 <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
@@ -2821,6 +2919,8 @@ function renderNetwork() {
 var _camerasRefreshTimer = null;
 var _camerasFailCount = 0;  // consecutive /api/cameras failures during live refresh
 var _camLastSignature = null;  // structural fingerprint of last rendered cameras
+var _camNicLayout = "h";       // 4-port LED diagram orientation: 'h' upright (ports L→R) / 'v' on-side (ports top→bottom)
+var _camLastVideo = null;      // last captured frame set, restored across re-renders (with a capture time so it's never mistaken for live)
 
 // Structural fingerprint of the camera data — everything that affects the
 // rendered layout EXCEPT the volatile RX/TX byte counters (which tick every
@@ -2966,7 +3066,7 @@ function _camDetailsPanel(cams, portIdx, portData) {
   '</details>';
 }
 
-function _camPortTile(port, index) {
+function _camPortTile(port, index, ctx) {
   if (!port) {
     return `<div class="cam-port-tile cam-port-empty">
       <div class="cam-port-num">Port ${index + 1}</div>
@@ -2980,8 +3080,10 @@ function _camPortTile(port, index) {
   const speed = p.linkSpeedMbps
     ? p.linkSpeedMbps >= 1000 ? (p.linkSpeedMbps / 1000) + " Gbps" : p.linkSpeedMbps + " Mbps"
     : "No link";
+  // Down ports get a *reason*, not just "Down", + triage guidance below.
+  var downLabelMap = { disabled: "Disabled", driver: "Driver error", "no-link": "No link" };
   let statusLabel, dotCls;
-  if (!p.isUp) { statusLabel = "Down"; dotCls = "cam-dot-down"; }
+  if (!p.isUp) { statusLabel = downLabelMap[p.downReason] || "Down"; dotCls = "cam-dot-down"; }
   else if (p.connecting) { statusLabel = p.linkSpeedMbps ? "Connecting · " + speed : "Connecting…"; dotCls = "cam-dot-connecting"; }
   else if (p.isDegraded) { statusLabel = "Degraded · " + speed; dotCls = "cam-dot-warn"; }
   // Fully linked → always green. OCR vs Main is shown by the badge, so the
@@ -3025,8 +3127,33 @@ function _camPortTile(port, index) {
       ${_camDetailsPanel(cams, index, p)}`;
     })()
     : p.connecting ? '<div class="cam-connecting-note">' + svgIcon("refresh", 12) + ' Establishing link — waiting for camera…</div>'
-    : p.isUp ? '<div class="cam-no-detect">No Pixellot cameras on this port</div>' : ""}
+    : !p.isUp ? _camDownGuidanceHtml(p, ctx)
+    : '<div class="cam-no-detect">No Pixellot cameras on this port</div>'}
   </div>`;
+}
+
+// Triage guidance for a down port: explain the detected reason and, for the
+// "no signal" case, use sibling ports to point at card vs cable/camera.
+function _camDownGuidanceHtml(p, ctx) {
+  var reason = p.downReason || "down";
+  var msg;
+  if (reason === "disabled") {
+    msg = "Adapter is disabled in Windows — enable it in Network Connections to bring this port back.";
+  } else if (reason === "driver") {
+    msg = "The NIC driver reports a fault — reinstall the Intel network driver, then re-check.";
+  } else {
+    // no-link / generic: nothing detected on the wire.
+    var othersUp = ctx && ctx.total > 1 && ctx.upCount >= 1;
+    var allDown = ctx && ctx.total > 1 && ctx.upCount === 0;
+    if (allDown) {
+      msg = "No signal — and every NIC port is down. Suspect the NIC card, its driver, or power to the camera bank, not a single cable.";
+    } else if (othersUp) {
+      msg = "No signal on this port. The other ports are linked, so this is likely isolated to this cable, camera, or port — not a card-wide failure. Check the cable (both ends) and the camera's power, then use Fault Isolator.";
+    } else {
+      msg = "No signal detected. Check the cable is seated both ends and the camera has power, then use Fault Isolator.";
+    }
+  }
+  return '<div class="cam-down-guide">' + svgIcon("alert", 12) + ' <span>' + esc(msg) + '</span></div>';
 }
 
 function _camFindingsHtml(findings) {
@@ -3049,7 +3176,28 @@ function _camPortGridHtml(ports) {
   for (let i = 0; i < Math.max(4, ports.length); i++) {
     portSlots.push(ports[i] || null);
   }
-  return portSlots.slice().reverse().map((p, ri) => _camPortTile(p, portSlots.length - 1 - ri)).join("");
+  // Card-health context for down-port guidance: how many real NIC ports are up.
+  const real = ports.filter(function(p) { return p; });
+  const upCount = real.filter(function(p) { return p.isUp; }).length;
+  const ctx = { upCount: upCount, total: real.length };
+  return portSlots.slice().reverse().map((p, ri) => _camPortTile(p, portSlots.length - 1 - ri, ctx)).join("");
+}
+
+// Flip the 4-port LED row between horizontal (VPU upright) and vertical
+// (VPU on its side). Toggles the class in place so it works on both the
+// Camera Connectivity page and the Fault Isolator's reference diagram, and
+// updates the persistent layout var so live-refresh rebuilds keep the choice.
+function _camToggleNicLayout() {
+  _camNicLayout = (_camNicLayout === "v") ? "h" : "v";
+  var isV = _camNicLayout === "v";
+  // Flip BOTH the LED row and its legend so they read in the same order — a
+  // vertical LED column (Port 1 top → Port 4 bottom) must not sit next to a
+  // legend that reads Port 4 → 1, or the labels contradict the lights.
+  document.querySelectorAll(".nic-diagram-ports, .nic-diagram-legend").forEach(function(el) { el.classList.toggle("is-vertical", isV); });
+  document.querySelectorAll(".nic-layout-toggle").forEach(function(b) {
+    b.classList.toggle("is-active", isV);
+    b.setAttribute("aria-pressed", isV ? "true" : "false");
+  });
 }
 
 function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
@@ -3062,10 +3210,19 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
     return "nic-led-ok";
   }
   function ledDotColor(p) {
-    if (!p || !p.isUp) return "var(--c-dim)";
-    if (p.connecting) return "#3b82f6";
-    if (p.isDegraded) return "#f59e0b";
-    return "#22c55e";
+    if (!p || !p.isUp) return "var(--c-status-down)";
+    if (p.connecting) return "var(--c-status-connecting)";
+    if (p.isDegraded) return "var(--c-status-warn)";
+    return "var(--c-status-ok)";
+  }
+  // Colorblind-safe: pair every status dot with a word, since the LEDs/legend
+  // are otherwise color-only (the per-port tiles below already carry text).
+  function ledStatusText(p) {
+    if (!p) return "—";              // padding slot, no physical port
+    if (!p.isUp) return "No link";
+    if (p.connecting) return "Connecting";
+    if (p.isDegraded) return "Degraded";
+    return "Linked";
   }
   // Physical ports: reversed (highest port on left = physical chassis left)
   var portIcons = "";
@@ -3088,6 +3245,7 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
     legend += '<div class="nic-legend-row">' +
       '<span class="nic-legend-dot" style="background:' + ledDotColor(lp) + '"></span>' +
       '<span class="nic-legend-label">Port ' + (li + 1) + '</span>' +
+      '<span class="nic-legend-status">' + ledStatusText(lp) + '</span>' +
     '</div>';
   }
   // NIC header: show just the primary card name. Windows appends " #N"
@@ -3111,9 +3269,17 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
     sysChip = '<span class="nic-sys-chip">' + sysName + n +
       ' main camera' + (n === 1 ? '' : 's') + ' expected</span>';
   }
+  // Toggle to flip the LED row between upright (horizontal) and on-its-side
+  // (vertical) so it matches however the VPU is physically mounted.
+  var layoutToggle = hasRealPorts
+    ? '<button class="nic-layout-toggle' + (_camNicLayout === "v" ? " is-active" : "") +
+        '" aria-pressed="' + (_camNicLayout === "v" ? "true" : "false") +
+        '" onclick="_camToggleNicLayout()" title="Flip the port row to match how the VPU is mounted — upright (left-to-right) or on its side (top-to-bottom).">' +
+        svgIcon("refresh", 12) + ' Flip layout</button>'
+    : '';
   var nicHeader = '<div class="nic-diagram-header">' +
-    headerLabel + sysChip +
-    (showLiveBadge ? '<span id="cam-live-badge" class="cam-live-badge">Auto-Refresh</span>' : '') +
+    headerLabel + sysChip + layoutToggle +
+    (showLiveBadge ? '<span id="cam-live-badge" class="cam-live-badge" aria-live="polite">Auto-Refresh</span>' : '') +
   '</div>';
   // Only show the physical-order note when we actually have NIC data;
   // otherwise it reads misleadingly on an empty system.
@@ -3121,8 +3287,8 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
     ? '<div class="nic-diagram-note">Port order mirrors the physical orientation of the NIC — Port ' + count + ' is leftmost on the card.</div>'
     : '';
   return nicHeader + '<div class="nic-diagram-wrap">' +
-    '<div class="nic-diagram-ports">' + portIcons + '</div>' +
-    '<div class="nic-diagram-legend">' + legend + '</div>' +
+    '<div class="nic-diagram-ports' + (_camNicLayout === "v" ? " is-vertical" : "") + '">' + portIcons + '</div>' +
+    '<div class="nic-diagram-legend' + (_camNicLayout === "v" ? " is-vertical" : "") + '">' + legend + '</div>' +
     _camOrientationPanelHtml() +
   '</div>' + note;
 }
@@ -3139,7 +3305,10 @@ function _camOrientationPanelHtml() {
   //   a cooling fan grille, the PCIe camera card with the 4 POE ports
   //   (highlighted + numbered), a lower fan, and the AC power inlet.
   // Ports numbered 4→1 (Port 4 leftmost, matching the diagram above).
-  var upright =
+  // One drawing only. "On its side" is this SAME SVG rotated 90° via CSS,
+  // so the two figures can never drift apart. Upright: POE ports 4→1 left to
+  // right; rotated -90° puts Port 1 at top and Port 4 at bottom.
+  var chassis =
     '<svg viewBox="0 0 104 156" width="98" height="147" class="orient-svg">' +
       '<rect x="12" y="4" width="80" height="148" rx="6" class="orient-chassis"/>' +
       // motherboard I/O zone
@@ -3154,8 +3323,8 @@ function _camOrientationPanelHtml() {
       '<circle cx="71" cy="32" r="13" class="orient-fan"/><circle cx="71" cy="32" r="7" class="orient-fan"/>' +
       // PCIe camera card — POE ports (highlighted), Port 4→1 left to right
       '<rect x="18" y="80" width="68" height="25" rx="3" class="orient-portbank"/>' +
-      _orientPort(22, 85, 12, 15, "4", true) + _orientPort(37, 85, 12, 15, "3", true) +
-      _orientPort(52, 85, 12, 15, "2", true) + _orientPort(67, 85, 12, 15, "1", true) +
+      _orientPort(22, 85, 12, 15, "4") + _orientPort(37, 85, 12, 15, "3") +
+      _orientPort(52, 85, 12, 15, "2") + _orientPort(67, 85, 12, 15, "1") +
       // lower fan + AC inlet
       '<circle cx="34" cy="130" r="12" class="orient-fan"/><circle cx="34" cy="130" r="6.5" class="orient-fan"/>' +
       '<rect x="56" y="122" width="28" height="17" rx="2" class="orient-acbox"/>' +
@@ -3163,46 +3332,25 @@ function _camOrientationPanelHtml() {
       '<circle cx="76" cy="127" r="1.6" class="orient-acpin"/>' +
       '<circle cx="76" cy="134" r="1.6" class="orient-acpin"/>' +
     '</svg>';
-  // Same back panel laid on its side (tower rotated): I/O cluster to the
-  // left, AC inlet to the right, POE bank a vertical column. Numbered
-  // 1→4 TOP-to-bottom (Port 4 ends up at the bottom when laid down).
-  var onside =
-    '<svg viewBox="0 0 156 104" width="135" height="90" class="orient-svg">' +
-      '<rect x="4" y="12" width="148" height="80" rx="6" class="orient-chassis"/>' +
-      '<rect x="10" y="18" width="44" height="68" rx="2" class="orient-iozone"/>' +
-      '<rect x="13" y="22" width="3" height="22" rx="1" class="orient-io"/>' +
-      '<rect x="19" y="22" width="5" height="17" rx="1" class="orient-io"/>' +
-      '<rect x="26" y="22" width="5" height="17" rx="1" class="orient-io"/>' +
-      '<rect x="34" y="22" width="11" height="13" rx="1" class="orient-eth"/>' +
-      '<rect x="19" y="45" width="6" height="9" rx="1" class="orient-io"/>' +
-      '<rect x="27" y="45" width="6" height="9" rx="1" class="orient-io"/>' +
-      '<rect x="35" y="45" width="6" height="9" rx="1" class="orient-io"/>' +
-      '<circle cx="32" cy="70" r="11" class="orient-fan"/><circle cx="32" cy="70" r="6" class="orient-fan"/>' +
-      '<rect x="78" y="16" width="25" height="72" rx="3" class="orient-portbank"/>' +
-      _orientPort(82, 20, 15, 12, "1", false) + _orientPort(82, 35, 15, 12, "2", false) +
-      _orientPort(82, 50, 15, 12, "3", false) + _orientPort(82, 65, 15, 12, "4", false) +
-      '<rect x="116" y="44" width="28" height="17" rx="2" class="orient-acbox"/>' +
-      '<circle cx="124" cy="52.5" r="1.6" class="orient-acpin"/>' +
-      '<circle cx="136" cy="49" r="1.6" class="orient-acpin"/>' +
-      '<circle cx="136" cy="56" r="1.6" class="orient-acpin"/>' +
-    '</svg>';
   return '<div class="nic-orient-panel">' +
     '<div class="nic-orient-title">VPU orientation</div>' +
     '<div class="orient-figs">' +
-      '<div class="orient-fig">' + upright + '<div class="orient-fig-label">Standing upright</div></div>' +
-      '<div class="orient-fig">' + onside + '<div class="orient-fig-label">On its side</div></div>' +
+      '<div class="orient-fig"><div class="orient-svg-box" role="img" ' +
+        'aria-label="VPU standing upright: the four camera ports run left to right, Port 4 to Port 1.">' + chassis + '</div>' +
+        '<div class="orient-fig-label">Standing upright</div></div>' +
+      '<div class="orient-fig"><div class="orient-svg-box orient-svg-rot" role="img" ' +
+        'aria-label="VPU on its side: the four camera ports stack top to bottom, Port 1 to Port 4.">' + chassis + '</div>' +
+        '<div class="orient-fig-label">On its side</div></div>' +
     '</div>' +
     '<div class="orient-caption">' +
-      'The 4 camera ports (POE) are the highlighted bank on the back, just above the ' +
-      '<strong>AC power inlet</strong> — numbered Port 4 → Port 1 (Port 4 leftmost). ' +
-      '<strong>Tip:</strong> a lit link light on a jack matches the linked port above — use it to confirm regardless of mounting.' +
+      'Camera (POE) ports are the highlighted bank above the <strong>AC power inlet</strong>. ' +
+      '<strong>Tip:</strong> a lit jack matches the linked port above — use it to confirm regardless of mounting.' +
     '</div>' +
   '</div>';
 }
 
-// A POE port rectangle + centered number. center=true centers the number
-// for the rect's own size (used in both orientations).
-function _orientPort(x, y, w, h, num, _h) {
+// A POE port rectangle + centered number.
+function _orientPort(x, y, w, h, num) {
   return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="1.5" class="orient-port"/>' +
          '<text x="' + (x + w / 2) + '" y="' + (y + h / 2 + 3) + '" class="orient-port-num">' + num + '</text>';
 }
@@ -3211,6 +3359,9 @@ function _orientPort(x, y, w, h, num, _h) {
 // Used by the manual Refresh button so on-site troubleshooting can override
 // any stale ARP/probe data instead of waiting for the TTL.
 function _camForceRefresh() {
+  // A deliberate Refresh means "show me current state" — drop any stale
+  // captured frames so they aren't restored on the re-render.
+  _camLastVideo = null;
   var btn = document.querySelector('[onclick*="_camForceRefresh"]');
   if (btn) { btn.disabled = true; btn.style.opacity = "0.5"; }
   api("/api/cameras?refresh=true").then(function(fresh) {
@@ -3254,6 +3405,13 @@ function _camVerifyVideo() {
     svgIcon("refresh", 14) +
     ' Grabbing a frame from each camera to confirm it is streaming…</div></div>';
   apiPost("/api/cameras/video-test", {}).then(function(res) {
+    // Keep a real capture (not a vpu-block) so it survives a re-render /
+    // navigate-away-and-back, stamped with the time so it's clearly a
+    // snapshot, not live. Cleared by a manual Refresh (_camForceRefresh).
+    if (res && (res.results || []).length) {
+      res._capturedAt = new Date().toLocaleTimeString();
+      _camLastVideo = res;
+    }
     if (currentPage === "cameras") wrap.innerHTML = _camVideoResultsHtml(res);
     // If the server reported its own cooldown, honor exactly that; otherwise
     // start the standard cooldown after a real capture. A vpu-block doesn't
@@ -3320,7 +3478,10 @@ function _camVideoResultsHtml(res) {
         warn +
       '</div></div>';
   }).join("");
-  return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
+  var stamp = res._capturedAt
+    ? '<div style="font-size:0.7rem;color:var(--c-dim);margin:-2px 0 10px">Captured ' + esc(res._capturedAt) + ' — a point-in-time snapshot, not live.</div>'
+    : "";
+  return '<div class="card">' + sectionTitle("camera", "Camera Frames") + stamp +
     '<div class="cam-frame-grid">' + cards + '</div></div>';
 }
 
@@ -3354,8 +3515,6 @@ function renderCameras() {
   if (!data) { $page().innerHTML = sectionLoading("Camera Connectivity"); fetchSection("cameras"); return; }
 
   const ports = data.ports || [];
-  const pixCfg = data.pixellotConfig || {};
-  const cfgCameras = pixCfg.cameras || [];
   const findings = data.findings || [];
 
   const portSlots = [];
@@ -3389,29 +3548,22 @@ function renderCameras() {
       <div class="cam-port-grid" id="cam-port-grid">
         ${_camPortGridHtml(ports)}
       </div>
-
-      ${cfgCameras.length ? `
-      <div class="card">
-        ${sectionTitle("file", "cameras.cfg")}
-        <table class="data-table"><thead><tr>
-          <th>Section</th><th>IP</th><th>MAC</th><th>Role</th>
-        </tr></thead><tbody>
-        ${cfgCameras.map(c => `<tr>
-          <td>${esc(c.section)}</td>
-          <td class="font-mono">${esc(c.ip)}</td>
-          <td class="font-mono">${esc(c.mac)}</td>
-          <td>${esc(c.role)}</td>
-        </tr>`).join("")}
-        </tbody></table>
-      </div>` : ""}
     </div>
 
   `;
 
+  // Restore a previously-captured frame set so navigating away and back (a
+  // full re-render) doesn't silently discard it. Stamped with its capture
+  // time so it can't be mistaken for live; a manual Refresh clears it.
+  if (_camLastVideo) {
+    var _vw = document.getElementById("cam-video-wrap");
+    if (_vw) _vw.innerHTML = _camVideoResultsHtml(_camLastVideo);
+  }
+
   // S1 (JAI) discovery — one-shot per full render; renders only on S1 systems.
   _camLoadS1();
 
-  // ── Live refresh: poll /api/cameras every 3s and update port grid + findings ──
+  // ── Live refresh: poll /api/cameras every 2s and update port grid + findings ──
   // Seed the signature from what we just rendered so the first tick can
   // tell whether anything structural actually changed.
   _camLastSignature = _camSignature(data);
@@ -3474,7 +3626,8 @@ function renderCameras() {
         setTimeout(function() { badge.classList.remove("cam-live-tick"); }, 600);
       }
     }).catch(function() { markStale(); });
-  }, 3000);
+  }, 2000);  // 2s poll — paired with the backend's near-fresh NIC read so a
+             // cable unplug/replug shows up in ~2s instead of ~15s.
 }
 
 function formatBytes(b) {
@@ -3777,8 +3930,14 @@ function renderDiskHealth() {
 
   const osDrive = logical.find(d => d.deviceID === "C:") || logical[0];
   const osFreeGB = osDrive?.freeSpaceGB;
+  const osPct = osDrive?.usedPercent;
   const osLabel = osDrive ? `${osFreeGB} GB free of ${osDrive.sizeGB} GB` : "No data";
-  const osSev = osFreeGB != null && osFreeGB < 50 ? "critical" : osFreeGB != null && osFreeGB < 100 ? "warning" : "ok";
+  // Critical at >90% used (matches the volume bars, the [Storage] finding, and
+  // the dashboard gauge), OR if absolute headroom drops below 50 GB (catches a
+  // nearly-full large disk that's still under 90%). Warning at >80% / <100 GB.
+  const osSev =
+    (osPct != null && osPct > 90) || (osFreeGB != null && osFreeGB < 50) ? "critical" :
+    (osPct != null && osPct > 80) || (osFreeGB != null && osFreeGB < 100) ? "warning" : "ok";
 
   function summaryCard(icon, title, chipSev, chipText, value, desc) {
     return `<div class="card dh-summary-card">
@@ -3803,7 +3962,7 @@ function renderDiskHealth() {
     <div class="dh-summary-row">
       ${summaryCard("heartbeat", "SMART Health", smartSev, smartLabel, smartLabel, "Per-disk health attributes")}
       ${summaryCard("alert", "Disk & Driver Errors", errorSev, errorLabel, errorLabel, "From the Windows Event Log (last 48 h)")}
-      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Drops below 50 GB → Critical")}
+      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Over 90% used (or <50 GB free) → Critical")}
     </div>
 
     <!-- Volumes -->
@@ -3812,7 +3971,9 @@ function renderDiskHealth() {
       ${logical.length ? logical.map(d => {
         const pct = d.usedPercent || 0;
         const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
-        const role = d.deviceID === "C:" ? "OS Drive" : "Storage";
+        const role = d.deviceID === "C:" ? "System — OS & Pixellot"
+                   : d.deviceID === "D:" ? "Recordings — local VOD storage"
+                   : "Storage";
         const status = pct > 90 ? "Critical" : pct > 80 ? "Low" : "OK";
         const statusColor = pct > 90 ? "var(--c-accent-red)" : pct > 80 ? "var(--c-accent-amber)" : "var(--c-accent-green)";
         return `<div class="dh-vol-row">
@@ -3821,7 +3982,7 @@ function renderDiskHealth() {
           <div class="dh-vol-bar-wrap">
             <div class="dash-vol-bar"><div class="dash-vol-fill" style="width:${Math.min(pct, 100)}%;background:${color}"></div></div>
           </div>
-          <span class="dh-vol-free">${esc(String(d.freeSpaceGB))} free of ${esc(String(d.sizeGB))} GB</span>
+          <span class="dh-vol-free">${d.freeSpaceGB != null ? esc(String(d.freeSpaceGB)) : "—"} free of ${d.sizeGB != null ? esc(String(d.sizeGB)) + " GB" : "—"}</span>
           <span class="dh-vol-status" style="color:${statusColor}">${esc(status)}</span>
         </div>`;
       }).join("") : '<p class="text-pulse-muted text-sm">No volume data</p>'}
@@ -3854,7 +4015,7 @@ function renderDiskHealth() {
         <td>${esc(d.friendlyName)}</td>
         <td>${esc(d.mediaType)}</td>
         <td>${esc(d.busType)}</td>
-        <td>${esc(String(d.sizeGB))} GB</td>
+        <td>${d.sizeGB != null ? esc(String(d.sizeGB)) + " GB" : "—"}</td>
         <td>${statusBadge(d.healthStatus || "Unknown")}</td>
       </tr>`).join("")}
       </tbody></table>
@@ -4160,6 +4321,9 @@ function renderReports() {
       </button>
       <button class="btn-outline btn-ol-blue" onclick="refreshAll()">
         ${svgIcon("play", 14)} Run All Diagnostics
+      </button>
+      <button class="btn-outline btn-ol-blue" onclick="navigate('share')">
+        ${svgIcon("send", 14)} Send to a peer
       </button>`
     )}
 
@@ -4216,6 +4380,335 @@ function renderReports() {
   });
 }
 
+// ── Share over LAN ───────────────────────────────────────────
+// Push the diagnostic snapshot to another Pulse on the same network. The
+// receiving side opts in (the only time Pulse listens on the LAN); the sender
+// pastes the receiver's pairing code and hits Send. Backend: peer.py + the
+// /api/peer/* routes in main.py.
+//
+// NOTE on rendering: the page SHELL below is a static template (innerHTML, no
+// data interpolation). Everything peer-supplied — pairing codes, hostnames,
+// IPs, report JSON — is built with textContent/createElement in the helpers,
+// so untrusted data never reaches innerHTML.
+
+var _shareInbox = { key: null, poll: null };
+
+function _mk(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function _shareFmtBytes(n) {
+  if (n == null) return "—";
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function _shareFmtTime(iso) {
+  if (!iso) return "—";
+  try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
+}
+
+function _shareSetMsg(el, text, color) {
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.color = color || "";
+}
+
+function renderShare() {
+  $page().innerHTML = `
+    ${pageHeader("Share over LAN", "Send this VPU's diagnostic snapshot to another Pulse on the same network")}
+
+    <div class="card">
+      ${sectionTitle("send", "Send to another Pulse")}
+      <p class="text-sm text-pulse-muted mb-3">Paste the <strong>pairing code</strong> shown on the receiving Pulse (its Share over LAN page, with "Receive over LAN" enabled). Pulse builds the full snapshot and pushes it straight there — no file to move.</p>
+      <input type="text" id="share-code" class="settings-input" placeholder="Pairing code, e.g. tiger maple river copper dust" autocomplete="off" spellcheck="false" style="max-width:480px"/>
+      <details class="mt-2" style="max-width:420px">
+        <summary class="text-sm text-pulse-muted cursor-pointer">Receiver has more than one network? Override the address</summary>
+        <input type="text" id="share-addr" class="settings-input mt-2" placeholder="192.168.1.42:8766 (optional)" autocomplete="off" spellcheck="false"/>
+      </details>
+      <div class="settings-actions">
+        <button class="btn-outline btn-ol-blue" id="share-test">${svgIcon("activity", 14)} Test connection</button>
+        <button class="btn-outline btn-ol-green" id="share-send">${svgIcon("send", 14)} Send snapshot</button>
+        <span id="share-send-msg" class="text-sm text-pulse-muted"></span>
+      </div>
+      <div id="share-send-result" class="mt-3"></div>
+    </div>
+
+    <div class="card mt-4">
+      ${sectionTitle("inbox", "Receive over LAN")}
+      <p class="text-sm text-pulse-muted mb-3">Turn this on to let another Pulse send its snapshot to <em>this</em> machine. This opens a port to your local network — Windows may ask you to allow access the first time.</p>
+      <div class="settings-actions">
+        <button class="btn-outline btn-ol-blue" id="share-recv-toggle">${svgIcon("inbox", 14)} <span id="share-recv-label">Enable receiving</span></button>
+        <span id="share-recv-msg" class="text-sm text-pulse-muted"></span>
+      </div>
+      <div id="share-recv-info" class="mt-3"></div>
+      <div id="share-inbox" class="mt-4"></div>
+    </div>
+  `;
+
+  document.getElementById("share-test").addEventListener("click", _shareTest);
+  document.getElementById("share-send").addEventListener("click", _shareSend);
+  document.getElementById("share-recv-toggle").addEventListener("click", _shareToggleReceive);
+  document.getElementById("share-code").addEventListener("keydown", (e) => { if (e.key === "Enter") _shareSend(); });
+
+  _shareLoadStatus();
+  _shareStartInboxPoll();
+}
+
+// ── Send (sender side) ──
+
+async function _shareTest() {
+  const msg = document.getElementById("share-send-msg");
+  const code = (document.getElementById("share-code").value || "").trim();
+  const addrEl = document.getElementById("share-addr");
+  const addr = ((addrEl && addrEl.value) || "").trim();
+  if (!code && !addr) { _shareSetMsg(msg, "Enter a pairing code first."); return; }
+  _shareSetMsg(msg, "Testing…");
+  const q = "code=" + encodeURIComponent(code) + "&address=" + encodeURIComponent(addr);
+  const r = await api("/api/peer/send/ping?" + q);
+  if (r.ok) _shareSetMsg(msg, "Reachable — " + (r.hostname || r.address), "var(--c-accent-green)");
+  else _shareSetMsg(msg, r.error || "Unreachable", "var(--c-accent-red)");
+}
+
+async function _shareSend() {
+  const btn = document.getElementById("share-send");
+  const msg = document.getElementById("share-send-msg");
+  const result = document.getElementById("share-send-result");
+  const code = (document.getElementById("share-code").value || "").trim();
+  const addrEl = document.getElementById("share-addr");
+  const addr = ((addrEl && addrEl.value) || "").trim();
+  if (!code) { _shareSetMsg(msg, "Paste the receiver's pairing code.", "var(--c-accent-red)"); return; }
+  btn.disabled = true;
+  result.textContent = "";
+  _shareSetMsg(msg, "Building snapshot and sending…");
+  const r = await apiPost("/api/peer/send", { code: code, address: addr });
+  btn.disabled = false;
+  if (r.ok) {
+    _shareSetMsg(msg, "Sent.", "var(--c-accent-green)");
+    const line = _mk("div", "text-sm text-pulse-muted");
+    line.appendChild(document.createTextNode("Delivered " + _shareFmtBytes(r.bytes) + " to "));
+    line.appendChild(_mk("strong", null, r.peer || r.address || "peer"));
+    line.appendChild(document.createTextNode(". It's now in that machine's Received Reports."));
+    result.appendChild(line);
+  } else {
+    _shareSetMsg(msg, r.error || r.message || "Send failed", "var(--c-accent-red)");
+  }
+}
+
+// ── Receive (receiver side) ──
+
+async function _shareLoadStatus() {
+  _shareRenderReceiveInfo(await api("/api/peer/receive-mode"));
+}
+
+async function _shareToggleReceive() {
+  const btn = document.getElementById("share-recv-toggle");
+  const msg = document.getElementById("share-recv-msg");
+  const cur = await api("/api/peer/receive-mode");
+  btn.disabled = true;
+  _shareSetMsg(msg, cur.on ? "Stopping…" : "Starting…");
+  const status = await apiPost("/api/peer/receive-mode", { on: !cur.on });
+  btn.disabled = false;
+  if (status.error) _shareSetMsg(msg, status.error, "var(--c-accent-red)");
+  else _shareSetMsg(msg, "");
+  _shareRenderReceiveInfo(status);
+}
+
+function _shareRenderReceiveInfo(status) {
+  const btn = document.getElementById("share-recv-toggle");
+  const label = document.getElementById("share-recv-label");
+  const info = document.getElementById("share-recv-info");
+  if (!btn || !info) return;
+  info.textContent = "";
+  if (!status || !status.on) {
+    if (label) label.textContent = "Enable receiving";
+    btn.classList.remove("btn-ol-red"); btn.classList.add("btn-ol-blue");
+    return;
+  }
+  if (label) label.textContent = "Disable receiving";
+  btn.classList.remove("btn-ol-blue"); btn.classList.add("btn-ol-red");
+
+  const wrap = _mk("div", "share-pair");
+  wrap.appendChild(_mk("div", "text-sm text-pulse-muted mb-1", "Pairing code — type these 5 words on the sending Pulse"));
+  const row = _mk("div", "share-pair-row");
+  const codeEl = _mk("span", "share-pair-code", status.code || "");
+  codeEl.id = "share-code-display";
+  const copyBtn = _mk("button", "btn-outline btn-ol-blue", "Copy");
+  copyBtn.addEventListener("click", _shareCopyCode);
+  row.appendChild(codeEl); row.appendChild(copyBtn);
+  wrap.appendChild(row);
+
+  const addrLine = _mk("div", "text-sm text-pulse-muted mt-2");
+  addrLine.appendChild(document.createTextNode("Listening on "));
+  addrLine.appendChild(_mk("strong", null, status.address || ""));
+  addrLine.appendChild(document.createTextNode(". Leave this page open to keep receiving."));
+  wrap.appendChild(addrLine);
+
+  // Interface picker — a multi-NIC host (VPU uplink + camera ports) may pick
+  // an IP the peer can't reach. Let the tech choose the one on the sender's
+  // network; switching re-points the code without restarting the listener.
+  const cands = status.candidates || [];
+  if (cands.length > 1) {
+    const pick = _mk("div", "share-pick mt-2");
+    pick.appendChild(_mk("span", "text-sm text-pulse-muted", "On a different network than your other machine? Use address: "));
+    const sel = document.createElement("select");
+    sel.className = "share-ip-select";
+    cands.forEach((ip) => {
+      const o = document.createElement("option");
+      o.value = ip; o.textContent = ip;
+      if (ip === status.ip) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", () => _shareSelectIp(sel.value));
+    pick.appendChild(sel);
+    wrap.appendChild(pick);
+  }
+
+  // Firewall outcome (Windows opens the port automatically; elsewhere, hint).
+  const fw = status.firewall;
+  if (fw && (fw.message || fw.error || fw.reason)) {
+    const fwLine = _mk("div", "text-sm mt-2", fw.error || fw.message || fw.reason);
+    fwLine.style.color = fw.error ? "var(--c-accent-amber)" : "var(--c-muted)";
+    wrap.appendChild(fwLine);
+  }
+
+  info.appendChild(wrap);
+}
+
+async function _shareSelectIp(ip) {
+  const status = await apiPost("/api/peer/receive-mode", { on: true, ip: ip });
+  _shareRenderReceiveInfo(status);
+}
+
+function _shareCopyCode() {
+  const el = document.getElementById("share-code-display");
+  if (!el || !navigator.clipboard) return;
+  navigator.clipboard.writeText(el.textContent);
+  const msg = document.getElementById("share-recv-msg");
+  if (msg) { _shareSetMsg(msg, "Copied."); setTimeout(() => _shareSetMsg(msg, ""), 1500); }
+}
+
+// ── Inbox ──
+
+function _shareStartInboxPoll() {
+  if (_shareInbox.poll) clearInterval(_shareInbox.poll);
+  _shareInbox.key = null;
+  _shareInboxTick();
+  _shareInbox.poll = setInterval(_shareInboxTick, 3000);
+}
+
+async function _shareInboxTick() {
+  // Self-terminate if the user navigated away — the router doesn't clear us.
+  if (currentPage !== "share") {
+    if (_shareInbox.poll) { clearInterval(_shareInbox.poll); _shareInbox.poll = null; }
+    return;
+  }
+  const r = await api("/api/peer/inbox");
+  const reports = (r && r.reports) || [];
+  // Only re-render when the set of reports changes, so an open preview doesn't
+  // collapse on every poll.
+  const key = reports.map((x) => x.id).join(",");
+  if (key === _shareInbox.key) return;
+  _shareInbox.key = key;
+  _shareRenderInbox(reports);
+}
+
+function _shareRenderInbox(reports) {
+  const host = document.getElementById("share-inbox");
+  if (!host) return;
+  host.textContent = "";
+  if (!reports.length) {
+    host.appendChild(_mk("div", "text-sm text-pulse-muted", "No reports received yet."));
+    return;
+  }
+  host.appendChild(_mk("div", "text-sm text-pulse-muted mb-2", "Received Reports (" + reports.length + ")"));
+  reports.forEach((r) => {
+    const card = _mk("div", "share-rx");
+    const head = _mk("div", "share-rx-head");
+    const left = _mk("div");
+    left.appendChild(_mk("div", "share-rx-host", r.vpuName || r.hostname || "Unknown host"));
+    let meta = "Received " + _shareFmtTime(r.receivedAt) + " from " + (r.senderIp || "?")
+      + " · " + r.findingCount + " finding" + (r.findingCount === 1 ? "" : "s")
+      + " · " + _shareFmtBytes(r.sizeBytes);
+    if (r.sourceErrorCount) meta += " · " + r.sourceErrorCount + " collector" + (r.sourceErrorCount === 1 ? "" : "s") + " failed";
+    left.appendChild(_mk("div", "text-sm text-pulse-muted", meta));
+    const actions = _mk("div", "share-rx-actions");
+    const viewBtn = _mk("button", "btn-outline btn-ol-blue", "View");
+    viewBtn.addEventListener("click", () => _shareViewReport(r.id));
+    const dlBtn = _mk("button", "btn-outline btn-ol-green", "Download");
+    dlBtn.addEventListener("click", () => _shareDownloadReport(r.id));
+    const delBtn = _mk("button", "btn-outline btn-ol-red", "Delete");
+    delBtn.addEventListener("click", () => _shareDeleteReport(r.id));
+    actions.appendChild(viewBtn); actions.appendChild(dlBtn); actions.appendChild(delBtn);
+    head.appendChild(left); head.appendChild(actions);
+    card.appendChild(head);
+    const body = _mk("div", "share-rx-body mt-2");
+    body.id = "share-rx-body-" + r.id;
+    card.appendChild(body);
+    host.appendChild(card);
+  });
+}
+
+function _shareSummaryEl(data) {
+  const meta = data._meta || {};
+  const sectionCount = Object.keys(data).filter((k) => !k.startsWith("_") && k !== "findings").length;
+  const findingCount = Array.isArray(data.findings) ? data.findings.length : 0;
+  const errKeys = Object.keys(meta.sourceErrors || {});
+  const wrap = _mk("div", "text-sm text-pulse-muted mb-3");
+  wrap.appendChild(document.createTextNode(
+    sectionCount + " sections · " + findingCount + " finding" + (findingCount === 1 ? "" : "s") + " · "));
+  if (errKeys.length) {
+    const e = _mk("span", null, errKeys.length + " collector" + (errKeys.length === 1 ? "" : "s") + " failed: " + errKeys.join(", "));
+    e.style.color = "var(--c-accent-amber)";
+    wrap.appendChild(e);
+  } else {
+    wrap.appendChild(document.createTextNode("all collectors OK"));
+  }
+  const vpuName = data.identity && data.identity.pixellot && data.identity.pixellot.vpuName;
+  const name = vpuName || meta.hostname;
+  const tail = (meta.pulseVersion ? " · " + meta.pulseVersion : "") + (name ? " · " + name : "");
+  if (tail) wrap.appendChild(document.createTextNode(tail));
+  return wrap;
+}
+
+async function _shareViewReport(id) {
+  const body = document.getElementById("share-rx-body-" + id);
+  if (!body) return;
+  if (body.dataset.open === "1") { body.textContent = ""; body.dataset.open = "0"; return; }
+  body.dataset.open = "1";
+  body.textContent = "Loading…";
+  const data = await api("/api/peer/inbox/" + encodeURIComponent(id));
+  body.textContent = "";
+  if (data.error) { _shareSetMsg(body, data.error, "var(--c-accent-red)"); return; }
+  body.appendChild(_shareSummaryEl(data));
+  body.appendChild(_mk("pre", "p-4 bg-pulse-bg rounded text-xs overflow-auto max-h-96 text-pulse-muted",
+    JSON.stringify(data, null, 2)));
+}
+
+async function _shareDownloadReport(id) {
+  const data = await api("/api/peer/inbox/" + encodeURIComponent(id));
+  if (data.error) return;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const hostname = (data._meta && data._meta.hostname) || (data.identity && data.identity.computerSystem && data.identity.computerSystem.name) || "vpu";
+  const a = _mk("a");
+  a.href = url;
+  a.download = "pulse-report-" + hostname + "-" + id + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function _shareDeleteReport(id) {
+  if (!confirm("Delete this received report?")) return;
+  await fetch("/api/peer/inbox/" + encodeURIComponent(id), { method: "DELETE" });
+  _shareInbox.key = null;  // force the next tick to re-render
+  _shareInboxTick();
+}
+
 // ── ScoreConnect ─────────────────────────────────────────────
 
 // ── SC III Installer ─────────────────────────────────────────
@@ -4226,7 +4719,7 @@ async function installSc3(btn) {
   // Replace the upgrade banner contents with a progress UI
   var card = btn.closest(".card");
   if (!card) return;
-  _renderSc3Progress(card, { stage: "starting", percent: 2, message: "Requesting elevation…" });
+  _renderSc3Progress(card, { stage: "starting", percent: 5, message: "Approve the Windows administrator prompt to begin installing ScoreConnect III." });
 
   // Kick off the install — backend returns immediately
   var result = await apiPost("/api/scoreconnect/install-sc3");
@@ -4241,8 +4734,25 @@ async function installSc3(btn) {
 
   // Begin polling for progress every 1.5s
   if (_sc3InstallPoll) clearInterval(_sc3InstallPoll);
+  var badPolls = 0;
   _sc3InstallPoll = setInterval(async function() {
     var s = await api("/api/scoreconnect/install-sc3/status");
+
+    // Tolerate a few transient read failures (null response, or an 'unknown'
+    // stage from a momentary file read race), then surface a Retry rather than
+    // spinning silently forever.
+    if (!s || s.stage === "unknown") {
+      if (++badPolls >= 4) {
+        clearInterval(_sc3InstallPoll); _sc3InstallPoll = null;
+        _renderSc3Progress(card, {
+          stage: "failed", percent: 0,
+          message: "Lost contact with the installer.",
+          error: (s && s.error) || "Could not read install status."
+        });
+      }
+      return;
+    }
+    badPolls = 0;
     _renderSc3Progress(card, s);
 
     if (s.stage === "complete") {
@@ -4295,7 +4805,7 @@ function _renderSc3Progress(card, status) {
           <div style="height:100%;width:${pct}%;background:${barColor};transition:width 0.5s ease-out"></div>
         </div>
         ${err ? `<div class="status-fail" style="font-size:0.75rem;margin-top:0.5rem">${esc(err)}</div>` : ""}
-        ${stale ? `<div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.35rem">Install appears stalled — the UAC prompt may have been declined.</div>` : ""}
+        ${stale ? `<div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.35rem">Install appears stalled. Click Retry to start over.</div>` : ""}
         ${(stage === "failed" || stale) ? `<button class="btn-outline btn-ol-blue" style="margin-top:0.6rem" onclick="installSc3(this)">${svgIcon("refresh", 14)} Retry Install</button>` : ""}
         ${stage === "complete" ? `<div class="status-pass" style="font-size:0.8rem;margin-top:0.5rem">ScoreConnect III is now installed. Refreshing data…</div>` : ""}
       </div>
@@ -4597,18 +5107,6 @@ function parseRtdScores(rawData, vendor, sport) {
   return null;
 }
 
-// Vendor+sport combos whose RTD byte layout we've VALIDATED against real
-// hardware. Outside these, the positional parse is unverified and could be
-// confidently wrong — for a diagnostic tool that's worse than showing nothing,
-// so the UI falls back to raw data instead of fabricated scores. (A "json"
-// strategy carries explicitly-named fields and is trusted for any vendor.)
-function _sc3ComboValidated(vendor, sport) {
-  var v = (vendor || "").toLowerCase();
-  var s = (sport || "").toLowerCase();
-  // Daktronics football — confirmed byte-for-byte from live VPU captures.
-  return v.indexOf("daktronics") !== -1 && s.indexOf("football") !== -1;
-}
-
 function renderScoreConnect() {
   const data = cached("scoreconnect");
   if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
@@ -4629,8 +5127,13 @@ function renderScoreConnect() {
   // explicitly-keyed JSON parse). Outside that, show raw data — never guessed
   // scores. comboValidated is vendor/sport-based (static for the session), so
   // the scoreboard hero stays put even when data briefly drops.
-  const showScoreboard = isDetected && (_sc3ComboValidated(config.vendor, config.sport)
-    || (rtdParsed && rtdParsed._strategy === "json"));
+  // Parse-driven gate. ScoreConnect III normalises every vendor's protocol
+  // into the same CG layout, so the parser is vendor-agnostic — field-tested
+  // across the major scoreboard manufacturers, not just Daktronics. Show the
+  // scoreboard whenever the parser can actually extract data; fall back to raw
+  // only when it genuinely can't (its sanity checks null out unreadable feeds,
+  // so we never fabricate scores).
+  const showScoreboard = isDetected && rtdParsed != null;
   const rtdShown = showScoreboard ? rtdParsed : null;
 
   // Legacy ScoreConnect config/teams. The probe routes whichever legacy
@@ -4641,7 +5144,6 @@ function renderScoreConnect() {
   const legacyIsSc1 = sc2 && ((sc2.hardware || "").toLowerCase() === "scoreconnect"
     || (sc2.productName || "").indexOf("SC I") !== -1);
   const legacyFull = legacyIsSc1 ? "ScoreConnect I" : "ScoreConnect II";
-  const legacyShort = legacyIsSc1 ? "SC I" : "SC II";
 
   // Team name source: SC II settings.json has configured names, use as labels
   const visitorLabel = sc2Teams.visitor || "GUEST";
@@ -4650,7 +5152,7 @@ function renderScoreConnect() {
   // Build BOT and ScoreLink cards independently
   const botCard = botStatus.isConnected != null ? `
     <div class="card">
-      ${sectionTitle("globe", "Cloud (BOT) Status")}
+      ${sectionTitle("globe", "Cloud (Bot) Status")}
       <div class="kv-grid">
         ${kvRowHtml("Connected", botStatus.isConnected
           ? '<span class="status-pass">Yes</span>'
@@ -4658,7 +5160,7 @@ function renderScoreConnect() {
         ${botStatus.scoreConnectId ? kvRowHtml("ScoreConnect ID",
           `${esc(botStatus.scoreConnectId)} <span class="text-pulse-muted" style="font-size:0.75rem">(may be stale)</span>`)
           : ""}
-        ${kvRow("BOT Server", botStatus.botServerAddress)}
+        ${kvRow("Bot Server", botStatus.botServerAddress)}
         ${botStatus.lastErrorMessage ? kvRowHtml("Last Error", `<span class="text-pulse-muted">${esc(botStatus.lastErrorMessage)}</span>`) : ""}
       </div>
     </div>` : "";
@@ -4672,17 +5174,18 @@ function renderScoreConnect() {
       </div>
     </div>` : "";
 
-  // Determine page subtitle based on what's detected
-  const subtitle = sc2 && sc2.reachable && isDetected
-    ? legacyFull + " + III detected"
+  // Page subtitle reflects the single active version (ScoreConnect III takes
+  // precedence when present — it's the live data source). We never show both.
+  const subtitle = isDetected
+    ? "ScoreConnect III — service, configuration, and live data"
     : sc2 && sc2.reachable
     ? legacyFull + " — configuration from device"
-    : "ScoreConnect III — service, configuration, and live data";
+    : "ScoreConnect — service not detected";
 
   $page().innerHTML = `
     ${pageHeader("Score Connect", subtitle,
       `${isDetected ? `<button class="btn-outline btn-ol-blue" onclick="window.open('${esc(data.baseUrl || "http://localhost:5000")}','_blank','noopener')">
-        ${svgIcon("globe", 14)} Open SC III
+        ${svgIcon("globe", 14)} Open ScoreConnect III
       </button>` : ""}
       <button class="btn-outline btn-ol-blue" onclick="dataCache.scoreconnect=null;renderScoreConnect()">
         ${svgIcon("refresh", 14)} Refresh
@@ -4693,8 +5196,8 @@ function renderScoreConnect() {
     ${showScoreboard ? `
     <div class="sc-board sc-board-hero" id="sc3-hero-board">
       <div class="sc-header">
-        <div class="sc-team-home">
-          <div class="sc-team-label">${esc(visitorLabel)}</div>
+        <div class="sc-team-home" style="min-width:0">
+          <div class="sc-team-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:18ch;margin:0 auto">${esc(visitorLabel)}</div>
           <div class="sc-score" id="sc3-guest">${rtdShown && rtdShown.guestScore != null ? esc(String(rtdShown.guestScore)) : "—"}</div>
         </div>
         <div class="sc-center">
@@ -4705,8 +5208,8 @@ function renderScoreConnect() {
             ${_sc3StageBadge(dataReceiving ? "live" : "disconnected", 0)}
           </div>
         </div>
-        <div class="sc-team-away">
-          <div class="sc-team-label">${esc(homeLabel)}</div>
+        <div class="sc-team-away" style="min-width:0">
+          <div class="sc-team-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:18ch;margin:0 auto">${esc(homeLabel)}</div>
           <div class="sc-score" id="sc3-home">${rtdShown && rtdShown.homeScore != null ? esc(String(rtdShown.homeScore)) : "—"}</div>
         </div>
       </div>
@@ -4724,7 +5227,9 @@ function renderScoreConnect() {
           <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-accent-green)" : "var(--c-accent-red)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
             ${_sc3StageBadge(dataReceiving ? "live" : "disconnected", 0)}
           </div>
-          <div class="sc-data-desc" style="margin-top:0.6rem;max-width:360px;line-height:1.4">Parsed scoreboard not yet validated for <strong>${esc(config.vendor || "this vendor")}${config.sport ? " / " + esc(config.sport) : ""}</strong> — raw data shown below.</div>
+          ${dataReceiving
+            ? `<div class="sc-data-desc" style="margin-top:0.6rem;max-width:360px;line-height:1.4">Receiving data, but Pulse couldn't parse this feed${config.vendor ? " (" + esc(config.vendor) + ")" : ""} — raw data shown below.</div>`
+            : `<div class="sc-data-desc" style="margin-top:0.6rem;max-width:360px;line-height:1.4">Waiting for scoreboard data…</div>`}
         </div>
         <div class="sc-team-away">
           <div class="sc-team-label">Sport</div>
@@ -4737,23 +5242,7 @@ function renderScoreConnect() {
     <!-- ScoreLink USB device — directly below the scoreboard hero -->
     ${slCard}
 
-    <!-- Status — demoted running / receiving indicators + raw data -->
-    ${anySC ? `
-    <div class="card mt-4">
-      ${sectionTitle("heartbeat", "Status")}
-      <div class="kv-grid">
-        ${isDetected ? kvRowHtml("ScoreConnect III", _scDot(true) + '<span class="status-pass">Running</span>') : ""}
-        ${sc2 && sc2.reachable ? kvRowHtml(legacyFull, _scDot(true) + `<span class="status-pass">Running</span>${sc2.outOfDate ? ' <span class="status-warn">· out of date</span>' : ''}`) : ""}
-        ${isDetected ? kvRowHtml("Scoreboard Data", `<span id="sc3-data-status">${_sc3DataStatusHtml(dataReceiving ? "live" : "disconnected", 0, data.dataStatus)}</span>`) : ""}
-      </div>
-      ${data.rawData ? `
-      <div class="sc-raw-data" style="margin-top:0.85rem">
-        <div class="sc-raw-label">RAW SCOREBOARD DATA (SC III)</div>
-        <div class="sc-raw-value" id="sc3-raw-value">${esc(data.rawData)}</div>
-      </div>` : ""}
-    </div>` : ""}
-
-    <!-- SC II → SC III Upgrade Prompt -->
+    <!-- ScoreConnect → SC III Upgrade Prompt -->
     ${sc2 && sc2.reachable && !isDetected ? `
     <div class="card mt-4" style="border:1px solid var(--c-accent-blue)">
       <div style="display:flex;align-items:flex-start;gap:0.75rem">
@@ -4761,8 +5250,8 @@ function renderScoreConnect() {
         <div style="flex:1">
           <div class="font-semibold" style="margin-bottom:0.25rem">Upgrade to ScoreConnect III</div>
           <div class="text-pulse-muted" style="font-size:0.8rem;line-height:1.5">
-            SC III is the preferred version. It provides live scoreboard data, parsed scores,
-            and real-time status through a REST API — no interference with the data stream.
+            ScoreConnect III is the preferred version. It provides live scoreboard data, parsed
+            scores, and real-time status through a REST API — no interference with the data stream.
           </div>
           <div style="margin-top:0.75rem">
             <button class="btn-outline btn-ol-blue" id="btn-install-sc3" onclick="installSc3(this)">
@@ -4778,16 +5267,16 @@ function renderScoreConnect() {
     </div>
     ` : ""}
 
-    <!-- Legacy ScoreConnect (SC I / SC II) Detail Card -->
-    ${sc2HasConfig ? `
+    <!-- Active legacy version (ScoreConnect I/II) — only when ScoreConnect III is NOT present -->
+    ${!isDetected && sc2HasConfig ? `
     <div class="card mt-4">
-      ${sectionTitle("heartbeat", legacyShort + " Details")}
+      ${sectionTitle("server", legacyFull)}
       <div class="kv-grid">
         ${kvRowHtml("Status", sc2.outOfDate
-          ? '<span class="status-warn">Running — software out of date</span>'
-          : '<span class="status-pass">Running</span>')}
+          ? _scDot(true, "var(--c-accent-amber)") + '<span class="status-warn">Running — software out of date</span>'
+          : _scDot(true) + '<span class="status-pass">Running</span>')}
         ${kvRow("Version", sc2.version)}
-        ${kvRow("Hardware", sc2.hardware)}
+        ${kvRow("Hardware", (sc2.hardware || "").replace("ScoreConnectII", "ScoreConnect II"))}
         ${kvRow("UID", sc2.uid)}
         ${sc2.botNumber ? kvRow("Bot Number", sc2.botNumber) : ""}
         ${sc2.vendor ? (sc2.vendorIsCode
@@ -4809,11 +5298,13 @@ function renderScoreConnect() {
       </div>` : ""}
     </div>` : ""}
 
-    <!-- SC III Details — service + configuration (merged, no duplicates) -->
+    <!-- ScoreConnect III — status, configuration, and live data (all grouped) -->
     ${isDetected ? `
     <div class="card mt-4">
       ${sectionTitle("server", "ScoreConnect III")}
       <div class="kv-grid">
+        ${kvRowHtml("Status", `<span id="sc3-svc-status">${_sc3SvcStatusHtml("live")}</span>`)}
+        ${kvRowHtml("Scoreboard Data", `<span id="sc3-data-status">${_sc3DataStatusHtml(dataReceiving ? "live" : "disconnected", 0, data.dataStatus)}</span>`)}
         ${kvRow("Version", version)}
         ${kvRow("Base URL", data.baseUrl)}
         ${config.vendor ? kvRow("Vendor", config.vendor) : ""}
@@ -4828,6 +5319,11 @@ function renderScoreConnect() {
           ? (data.hasLocalStream ? '<span class="status-pass">Yes</span>' : '<span class="status-fail">No</span>')
           : '—')}
       </div>
+      ${data.rawData ? `
+      <div class="sc-raw-data" style="margin-top:0.85rem">
+        <div class="sc-raw-label">RAW SCOREBOARD DATA (ScoreConnect III)</div>
+        <div class="sc-raw-value" id="sc3-raw-value">${esc(data.rawData)}</div>
+      </div>` : ""}
     </div>` : ""}
 
     <!-- Cloud BOT (ScoreLink panel moved up under the hero) -->
@@ -4851,6 +5347,8 @@ function renderScoreConnect() {
 // scoreboard values in place, without re-rendering the whole page.
 
 var _sc3LivePoll = null;
+var _sc3PollGen = 0;   // bumped on every stop/start so an in-flight tick that
+                       // resolves after being superseded can detect it and bail
 
 function _sc3DownText(p) {
   if (!p || !p.down) return "";
@@ -4861,13 +5359,23 @@ function _sc3DownText(p) {
   return t;
 }
 
-// Status dot for the demoted indicators: green + flashing when active,
-// grey + static when off. Matches the hero LIVE badge animation.
-function _scDot(on) {
-  var c = on ? "var(--c-accent-green)" : "var(--c-dim)";
+// Status dot: green + flashing when active, grey + static when off. Pass an
+// explicit `color` (e.g. amber) to override — used for the out-of-date warning
+// so the dot color matches the message instead of staying green.
+function _scDot(on, color) {
+  var c = color || (on ? "var(--c-accent-green)" : "var(--c-dim)");
   var anim = on ? "animation:pulse-live 1.4s ease-in-out infinite;" : "";
   return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'
     + 'background:' + c + ';' + anim + 'margin-right:7px;vertical-align:middle"></span>';
+}
+
+// ScoreConnect III "Status" row cell. The service is Running unless the live
+// poll finds it unreachable (offline stage) — then it must say so, instead of
+// staying a contradictory green "Running".
+function _sc3SvcStatusHtml(stage) {
+  return stage === "offline"
+    ? _scDot(false) + '<span class="status-fail">Not responding</span>'
+    : _scDot(true) + '<span class="status-pass">Running</span>';
 }
 
 // Hero badge per data stage. Mirrors SC III's own behaviour.
@@ -4880,7 +5388,7 @@ function _sc3StageBadge(stage, secs) {
     live:         { c: "var(--c-accent-green)", flash: true,  txt: "LIVE" },
     stale:        { c: "var(--c-accent-amber)", flash: true,  txt: "STALE · " + secs + "s" },
     disconnected: { c: "var(--c-accent-red)",   flash: false, txt: "NO SIGNAL" },
-    offline:      { c: "var(--c-dim)",          flash: false, txt: "SC III OFFLINE" }
+    offline:      { c: "var(--c-dim)",          flash: false, txt: "ScoreConnect III Offline" }
   };
   var s = map[stage] || map.offline;
   var anim = s.flash ? "animation:pulse-live 1.4s ease-in-out infinite;" : "";
@@ -4902,7 +5410,7 @@ function _sc3DataStatusHtml(stage, secs, statusText) {
       + '<span style="color:var(--c-accent-amber)">Data stale — no new packets (disconnecting in ' + secs + 's)</span>';
   }
   if (stage === "offline") {
-    return _scDot(false) + '<span class="status-fail">SC III not responding</span>';
+    return _scDot(false) + '<span class="status-fail">ScoreConnect III not responding</span>';
   }
   return _scDot(false) + '<span class="status-fail">No scoreboard data is being received</span>';
 }
@@ -4941,6 +5449,7 @@ function _sc3ComputeStage(live) {
 }
 
 function _sc3StopLivePoll() {
+  _sc3PollGen++;   // invalidate any in-flight tick from a prior run
   if (_sc3LivePoll) { clearTimeout(_sc3LivePoll); _sc3LivePoll = null; }
   _sc3StopUsbPoll();
 }
@@ -4980,6 +5489,7 @@ function _sc3StartUsbPoll() {
 
 function _sc3StartLivePoll(vendor, sport, showScoreboard) {
   _sc3StopLivePoll();
+  var myGen = _sc3PollGen;   // this run's token; if it changes, we've been superseded
   // Reset staleness tracking for a fresh session.
   _sc3LastRaw = null;
   _sc3LastChangeMs = Date.now();
@@ -4997,7 +5507,9 @@ function _sc3StartLivePoll(vendor, sport, showScoreboard) {
 
     var live = await api("/api/scoreconnect/live");
 
-    // Re-check after the await — user may have navigated during the fetch.
+    // Bail if a newer poll superseded this one during the await (generation
+    // token), or the user navigated away.
+    if (myGen !== _sc3PollGen) return;
     if (currentPage !== "scoreconnect" || !document.getElementById("sc3-hero-board")) {
       _sc3StopLivePoll();
       return;
@@ -5009,6 +5521,16 @@ function _sc3StartLivePoll(vendor, sport, showScoreboard) {
     if (live && live.rawData) {
       var rawEl = document.getElementById("sc3-raw-value");
       if (rawEl) rawEl.textContent = live.rawData;
+    }
+
+    // If the feed has started parsing but we're on the status hero (scores
+    // weren't shown), promote to the scoreboard hero with a re-render. Fires
+    // only on that one-way transition, so no flapping/loop.
+    if (!showScoreboard && live && live.rawData && parseRtdScores(live.rawData, vendor, sport)) {
+      var cd = cached("scoreconnect");
+      if (cd) { cd.rawData = live.rawData; cd.dataStatus = live.dataStatus; }
+      renderScoreConnect();
+      return;
     }
 
     // Update parsed scores ONLY for validated vendor/sport combos. Outside
@@ -5034,13 +5556,19 @@ function _sc3StartLivePoll(vendor, sport, showScoreboard) {
       badge.innerHTML = _sc3StageBadge(st.stage, st.secs);
     }
 
-    // Dim the scoreboard once disconnected/offline to signal the data is dead.
-    var board = document.getElementById("sc3-hero-board");
-    if (board) board.style.opacity = (st.stage === "disconnected" || st.stage === "offline") ? "0.45" : "1";
+    // When the data is dead, dim ONLY the score cluster (scores/clock/period/
+    // down) — never the badge, so the failure indicator stays fully legible.
+    var dead = (st.stage === "disconnected" || st.stage === "offline");
+    ["sc3-guest", "sc3-home", "sc3-clock", "sc3-period", "sc3-down"].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.style.opacity = dead ? "0.4" : "";
+    });
 
-    // Status-card "Scoreboard Data" cell.
+    // "Scoreboard Data" cell + the service "Status" row.
     var dataCell = document.getElementById("sc3-data-status");
     if (dataCell) dataCell.innerHTML = _sc3DataStatusHtml(st.stage, st.secs, live && live.dataStatus);
+    var svcCell = document.getElementById("sc3-svc-status");
+    if (svcCell) svcCell.innerHTML = _sc3SvcStatusHtml(st.stage);
 
     // Schedule the next poll only after this one completes.
     _sc3LivePoll = setTimeout(tick, _SC3_POLL_MS);
@@ -5070,6 +5598,12 @@ function _sc3SetText(id, text) {
 
 var _fi = null;
 var _fiHistoryCache = null;  // persisted prior runs (null = not yet fetched)
+// How long each link check waits for the speed to reach the threshold before
+// giving up. A healthy link returns the instant a good sample lands, so this
+// is just the max wait on a failing check. Kept short so the tech isn't left
+// staring at a countdown. The on-screen timer is decoupled from the network
+// poll (see pollPeakSpeed) so it ticks smoothly instead of jumping per poll.
+var _FI_CHECK_WINDOW = 10;   // seconds
 
 // Fetch persisted fault-isolator runs and render them into the history panel.
 function _fiLoadHistory() {
@@ -5129,7 +5663,6 @@ function _fiReset() {
     conclusion: "",     // NicPort | Cable | Camera | NicHardware | LikelyCamera
     suspectIdx: -1,
     testIdx: -1,
-    testPreSpeedMbps: null,
     expectedSpeedMbps: null,  // captured from suspect port at baseline time
     suspectCameraMacs: [],    // captured at end of baseline; used to verify the physical swap in phase 1
     history: [],        // [{ts,phase,config,speed,verdict,severity}]
@@ -5137,7 +5670,7 @@ function _fiReset() {
     resultDetail: "",
     resultSeverity: "", // pass | info | fail
     phaseTitle: "SELECT A PORT TO BEGIN",
-    phaseInstruction: "Select the NIC port showing a degraded or missing link and click Start Baseline.",
+    phaseInstruction: "Select the NIC port with a degraded or missing link, then Start Baseline.",
     actionLabel: "Start Baseline",
     checking: false,
     _aborted: false,
@@ -5226,16 +5759,20 @@ function renderFaultIsolator() {
     if (i === excludeIdx) return "";
     // Camera label (Main Camera 1, OCR, etc.) — same one shown on the port tile.
     var camLbl = p.cameraLabel ? " (" + p.cameraLabel + ")" : "";
+    var down = !p.isUp || !(p.linkSpeedMbps > 0);
     var spd;
-    if (!p.isUp) spd = " — No link";
+    if (down) spd = " — No link";
     // Trust the backend isDegraded flag — it knows the expected speed for
     // each camera model. A 100 Mbps OCR isn't degraded; an unknown 100 Mbps
     // camera might be.
     else if (p.isDegraded) spd = " — " + formatSpeed(p.linkSpeedMbps) + " (FAULT)";
     else if (p.isOcr) spd = " — " + formatSpeed(p.linkSpeedMbps || 100) + " (expected)";
-    else if (p.linkSpeedMbps > 0) spd = " — " + formatSpeed(p.linkSpeedMbps);
-    else spd = " — No link";
-    return '<option value="' + i + '">Port ' + (i + 1) + esc(camLbl) + esc(spd) + "</option>";
+    else spd = " — " + formatSpeed(p.linkSpeedMbps);
+    // Every non-suspect port is selectable — including an empty "No link" port,
+    // which is the natural swap target (you light it up by moving the camera
+    // onto it). A port's current speed reflects its current occupant, not its
+    // capacity, so it must not gate selection.
+    return '<option value="' + i + '">' + esc("Port " + (i + 1) + camLbl + spd) + "</option>";
   }
 
   // ── phase HTML ───────────────────────────────────────────────
@@ -5274,16 +5811,18 @@ function renderFaultIsolator() {
 
   } else {
     // Phases 1-3: active swap phases
-    var btnLabel = _fi.checking ? ("Checking... " + (_fi.checkElapsed || 0) + "s / 20s") : _fi.actionLabel;
+    var btnLabel = _fi.checking ? ("Checking… " + (_fi.checkElapsed || 0) + "s / " + _FI_CHECK_WINDOW + "s") : _fi.actionLabel;
     // Phase 1 (AwaitingNicPortTest): show test port dropdown so the tech can
     // change it after a pre-check failure without starting over entirely.
     // Mirrors WPF's IsPickingTestPort => Phase == AwaitingNicPortTest.
     var testPortPicker = "";
     if (_fi.phase === 1 && !_fi.checking) {
-      var testOpts = ports.map(function(p, i) { return portOption(p, i, _fi.suspectIdx); }).join("");
+      var testOpts = '<option value="-1">— Select —</option>' +
+        ports.map(function(p, i) { return portOption(p, i, _fi.suspectIdx); }).join("");
       testPortPicker = '<div style="margin:12px 0">' +
-        '<div class="text-xs text-pulse-muted mb-1">Test port (known-good)</div>' +
-        '<select id="fi-test" class="ev-select" style="width:100%;max-width:320px">' + testOpts + "</select>" +
+        '<div class="text-xs text-pulse-muted mb-1">Test port — where you\'ll move the camera</div>' +
+        '<select id="fi-test" class="ev-select" style="width:100%;max-width:360px">' + testOpts + "</select>" +
+        '<div class="text-xs text-pulse-muted" style="margin-top:4px">An empty (No link) port is fine — you light it up by moving the camera over. Pick one you expect to run at this camera\'s speed.</div>' +
         "</div>";
     }
     inner = '<div class="fi-phase-card">' +
@@ -5338,21 +5877,21 @@ function renderFaultIsolator() {
     updateBegin();
   }
 
-  // Phase 1: test port dropdown (change-only, no suspect dropdown)
+  // Phase 1: test port dropdown. No auto-default — the tech is physically
+  // relocating hardware, so the destination is a conscious choice (defaults to
+  // "— Select —"). The earlier auto-default steered toward an OCCUPIED port,
+  // which means displacing a working camera; an empty port is the better target.
   if (testSel && _fi.phase === 1) {
-    if (_fi.testIdx >= 0) testSel.value = String(_fi.testIdx);
+    if (_fi.testIdx >= 0 && _fi.testIdx !== _fi.suspectIdx) testSel.value = String(_fi.testIdx);
     testSel.addEventListener("change", function() {
       _fi.testIdx = parseInt(testSel.value);
-      // Re-capture pre-swap speed for the newly-selected test port
-      var tp = ports[_fi.testIdx];
-      _fi.testPreSpeedMbps = tp ? (tp.linkSpeedMbps || 0) : 0;
       // Visual feedback: confirm the selection by updating the instruction text
       // so the tech can see "Check Now" will use the new port.
       if (_fi.testIdx >= 0 && _fi.suspectIdx >= 0) {
         var sn = portLabel(_fi.suspectIdx);
         var tn = portLabel(_fi.testIdx);
-        _fi.phaseInstruction = "Move the SAME cable and camera from " + sn +
-          " to " + tn + " (test port). Click Check Now when ready.";
+        _fi.phaseInstruction = "Move the SAME cable + camera from " + sn +
+          " to " + tn + ", then Check Now.";
         renderFaultIsolator();
       }
     });
@@ -5371,27 +5910,71 @@ function renderFaultIsolator() {
   // expectedMbps: optional. If provided, polling exits early once peak
   // hits or exceeds the camera's expected speed. Defaults to 1 Gbps.
   async function pollPeakSpeed(portIdx, windowSec, expectedMbps) {
+    // ── Demo mode: scripted phase results so the wizard walks all 4 phases ──
+    // Static demo /api/cameras can't reflect post-swap state, so a live poll
+    // would either (a) immediately conclude on whichever test port the user
+    // picked, or (b) time out for 20s every phase. Scripting the per-phase
+    // result lets the demo show the full 4-phase narrative ending at the
+    // CAMERA verdict — the capability we want to demonstrate. Phase 0
+    // (baseline) still reads the real suspect port so picking different
+    // ports shows different baselines (Port 2 = degraded, Port 1 = healthy).
+    var fi = _fi;
+    if (dataCache.cameras && dataCache.cameras.demoMode) {
+      var btn = document.getElementById("fi-action");
+      // Brief animated "Checking..." beat so it doesn't snap; total ~2.5s.
+      for (var t = 1; t <= 3; t++) {
+        if (fi._aborted || _fi !== fi) return 0;
+        fi.checkElapsed = t;
+        if (btn) btn.textContent = "Checking... " + t + "s / 3s";
+        await new Promise(function(r) { setTimeout(r, 800); });
+      }
+      if (_fi.phase === 0) {
+        // Baseline: read the REAL suspect port speed (one fetch, no looping —
+        // demo data is static, the first sample is the final sample).
+        try {
+          var fresh0 = await api("/api/cameras");
+          dataCache.cameras = fresh0;
+          var p0 = (fresh0.ports || [])[portIdx];
+          return p0 ? (p0.linkSpeedMbps || 0) : 0;
+        } catch (e) { return 0; }
+      }
+      if (_fi.phase === 1) return 100;   // NIC Port test — still degraded
+      if (_fi.phase === 2) return 100;   // Cable test    — still degraded
+      return 1000;                       // Camera test   — restored ⇒ CAMERA verdict
+    }
+
     var threshold = expectedMbps || 1000;
     var peak = 0;
     var start = Date.now();
     var deadline = start + windowSec * 1000;
-    var fi = _fi;  // bind to this run; a reset swaps the global _fi out
-    while (Date.now() < deadline) {
-      if (fi._aborted || _fi !== fi) return peak;
-      var elapsed = Math.floor((Date.now() - start) / 1000);
+    // Smooth countdown, decoupled from the poll. The network poll below
+    // iterates roughly every (api call + 1s) — 2-3s on a real VPU — so driving
+    // the timer from it made the seconds jump 2-3 at a time. This ticker
+    // refreshes the button ~5×/sec so the count ticks fluidly every second.
+    var ticker = setInterval(function() {
+      if (fi._aborted || _fi !== fi) return;
+      var elapsed = Math.min(windowSec, Math.floor((Date.now() - start) / 1000));
       fi.checkElapsed = elapsed;
-      var btn = document.getElementById("fi-action");
-      if (btn) btn.textContent = "Checking... " + elapsed + "s / " + windowSec + "s";
-      var fresh;
-      try { fresh = await api("/api/cameras"); dataCache.cameras = fresh; }
-      catch (e) { fresh = { ports: [] }; }
-      var portData = (fresh.ports || [])[portIdx];
-      var sample = portData ? (portData.linkSpeedMbps || 0) : 0;
-      if (sample > peak) peak = sample;
-      if (peak >= threshold) return peak;
-      await new Promise(function(r) { setTimeout(r, 1000); });
+      var b = document.getElementById("fi-action");
+      if (b) b.textContent = "Checking… " + elapsed + "s / " + windowSec + "s";
+    }, 200);
+    try {
+      // bind to this run; a reset swaps the global _fi out
+      while (Date.now() < deadline) {
+        if (fi._aborted || _fi !== fi) return peak;
+        var fresh;
+        try { fresh = await api("/api/cameras"); dataCache.cameras = fresh; }
+        catch (e) { fresh = { ports: [] }; }
+        var portData = (fresh.ports || [])[portIdx];
+        var sample = portData ? (portData.linkSpeedMbps || 0) : 0;
+        if (sample > peak) peak = sample;
+        if (peak >= threshold) return peak;
+        await new Promise(function(r) { setTimeout(r, 800); });
+      }
+      return peak;
+    } finally {
+      clearInterval(ticker);
     }
-    return peak;
   }
 
   function addHistory(phaseName, config, speed, verdict, severity) {
@@ -5462,7 +6045,7 @@ function renderFaultIsolator() {
       _fi.checking = true;
       renderFaultIsolator();
 
-      var spd0 = await pollPeakSpeed(si, 20, expectedSpd);
+      var spd0 = await pollPeakSpeed(si, _FI_CHECK_WINDOW, expectedSpd);
       if (_fi !== myFi || _fi._aborted) return;
       _fi.checking = false;
       var sl0 = formatSpeed(spd0);
@@ -5472,11 +6055,11 @@ function renderFaultIsolator() {
       // Healthy if speed meets or exceeds expected for the camera type.
       if (spd0 >= expectedSpd) {
         addHistory("Phase 1 - Baseline", cfg0, sl0, "Port healthy — no fault on this port.", "Pass");
-        showResult("Baseline: " + sl0 + " — Port is operating normally.",
-          "The selected port is at the expected " + expectedLbl + ". No fault detected.", "pass");
-        _fi.phaseTitle = "BASELINE — PORT HEALTHY";
-        _fi.phaseInstruction = "Pick a different port from the dropdown above and click Run Baseline, or close the wizard.";
-        _fi.actionLabel = "Run Baseline";
+        showResult("Baseline: " + sl0 + " — port is healthy.",
+          "At the expected " + expectedLbl + " — no fault here.", "pass");
+        _fi.phaseTitle = "PORT HEALTHY — NO FAULT FOUND";
+        _fi.phaseInstruction = "This port is at its expected speed — no fault to isolate here. To test a different port, select it above and start its baseline. Otherwise close the wizard.";
+        _fi.actionLabel = "Start Baseline";
         // Reset to phase 0 so the suspect dropdown reappears for re-selection.
         _fi.phase = 0;
         renderFaultIsolator();
@@ -5485,17 +6068,16 @@ function renderFaultIsolator() {
 
       var bMsg, bInstr;
       if (spd0 <= 0) {
-        bMsg = "No link detected";
-        // Split the no-link case into a clear two-step prompt so the tech
-        // first verifies basics, then moves on to the swap test if still no link.
-        bInstr = "Step 1: Confirm the camera is powered on and the cable is firmly seated on both ends. " +
-                 "Step 2: If there's still no link, select a known-good test port below and click Check Now.";
+        bMsg = "No link";
+        bInstr = "Confirm the camera is powered and the cable seated (both ends). Still no link? Pick a test port below, move the camera over, then Check Now.";
       } else {
-        bMsg   = "Link is degraded at " + sl0 + " (expected " + expectedLbl + ")";
-        bInstr = "Select a known-good test port below, then move the SAME cable and camera from " + sn0 + " to it. Click Check Now when ready.";
+        bMsg   = "Degraded — " + sl0 + " (expected " + expectedLbl + ")";
+        bInstr = "Pick a test port below, then move the SAME cable + camera from " + sn0 + " to it. Check Now.";
       }
-      addHistory("Phase 1 - Baseline", cfg0, sl0, bMsg + " — beginning isolation.", "Fail");
-      showResult("Baseline: " + sl0 + " — " + bMsg + ".", bInstr, "fail");
+      addHistory("Phase 1 - Baseline", cfg0, sl0, bMsg + " — isolating.", "Fail");
+      // Detail omitted on purpose — the next step already shows as the phase
+      // instruction directly above this callout; repeating bInstr was clutter.
+      showResult("Baseline: " + bMsg + ".", "", "fail");
       // Remember expected speed so subsequent phases use the right pass threshold.
       _fi.expectedSpeedMbps = expectedSpd;
       // Capture the suspect's camera MAC(s) so Phase 1 can verify the swap
@@ -5505,7 +6087,7 @@ function renderFaultIsolator() {
         return String(c.mac || "").toUpperCase().replace(/-/g, ":");
       }).filter(function(m) { return m; });
       _fi.phase = 1;
-      _fi.phaseTitle = "PHASE 2 — DOES THE FAULT FOLLOW THE NIC PORT?";
+      _fi.phaseTitle = "DOES THE FAULT FOLLOW THE NIC PORT?";
       _fi.phaseInstruction = bInstr;
       _fi.actionLabel = "Check Now";
       renderFaultIsolator();
@@ -5522,26 +6104,17 @@ function renderFaultIsolator() {
         renderFaultIsolator();
         return;
       }
-      // Pre-check: was the test port already running below 1 Gbps before
-      // the swap? Even an OCR test port should provide 1 Gbps capacity once
-      // a Main camera is moved to it, so 1 Gbps is the correct sanity bar
-      // here regardless of the suspect camera's expected speed.
-      var preSpd = _fi.testPreSpeedMbps || 0;
-      if (preSpd > 0 && preSpd < 1000) {
-        showResult(
-          "Pre-check: " + portLabel(_fi.testIdx) + " was at " + preSpd + " Mbps BEFORE the swap.",
-          portLabel(_fi.testIdx) + " was already degraded before you moved anything. Phase 2 results will be unreliable — pick a different test port from the dropdown above, or click Start Over.",
-          "fail"
-        );
-        renderFaultIsolator();
-        return;
-      }
+      // No pre-check on the test port's pre-swap speed: an empty target reads
+      // "No link" and a port hosting an OCR reads 100, yet either can be a fine
+      // 1 Gbps target once the suspect camera is moved onto it. The real guards
+      // come AFTER the swap — the swap-verification (suspect MAC moved to the
+      // test port) and the post-swap speed reading interpret the result.
       // Expected speed for the suspect camera — drives the pass threshold.
       var expSpd1 = _fi.expectedSpeedMbps || 1000;
       var expLbl1 = formatSpeed(expSpd1);
       _fi.checking = true;
       renderFaultIsolator();
-      var spd1 = await pollPeakSpeed(_fi.testIdx, 20, expSpd1);
+      var spd1 = await pollPeakSpeed(_fi.testIdx, _FI_CHECK_WINDOW, expSpd1);
       if (_fi !== myFi || _fi._aborted) return;
       _fi.checking = false;
       var sl1 = formatSpeed(spd1);
@@ -5595,27 +6168,27 @@ function renderFaultIsolator() {
       }
 
       if (spd1 >= expSpd1) {
-        var v1 = "Link restored on the test port. The fault follows the original NIC port.";
+        var v1 = "Link restored on the test port — fault is the original NIC port.";
         addHistory("Phase 2 - NIC Port Test", cfg1, sl1, v1, "Pass");
-        showResult("Phase 2: " + sl1 + " — Fault follows the original NIC port.", v1, "pass");
+        showResult("Phase 2: " + sl1 + " — fault follows the NIC port.", "", "pass");
         conclude("NicPort", "CONCLUSION — FAULTY NIC PORT",
-          "Moving the cable and camera to " + tn1 + " restored the link. The original NIC port is the source of the fault. Escalate for NIC or motherboard repair.");
+          "Moving to " + tn1 + " restored the link — the original NIC port is the fault. Escalate for NIC/motherboard repair.");
         renderFaultIsolator();
         return;
       }
       if (spd1 <= 0) {
         addHistory("Phase 2 - NIC Port Test", cfg1, sl1, "No link detected — test inconclusive.", "Info");
-        _fi.phaseInstruction = "No link on " + tn1 + ". Verify the cable is fully seated on the test port and the camera is powered on, then click Check Now to re-measure.";
+        _fi.phaseInstruction = "No link on " + tn1 + ". Check the cable is seated and the camera powered, then Check Now.";
         showResult("Phase 2: No link — test inconclusive.", _fi.phaseInstruction, "info");
         renderFaultIsolator();
         return;
       }
-      var cv1 = "Fault stayed with the cable / camera. The original NIC port is not the source.";
+      var cv1 = "Fault followed the cable/camera — NIC port is fine.";
       addHistory("Phase 2 - NIC Port Test", cfg1, sl1, cv1, "Info");
-      showResult("Phase 2: " + sl1 + " — Fault follows cable / camera, not the NIC port.", cv1, "info");
+      showResult("Phase 2: " + sl1 + " — NIC port is fine; fault follows the cable/camera.", "", "info");
       _fi.phase = 2;
-      _fi.phaseTitle = "PHASE 3 — DOES THE FAULT FOLLOW THE CABLE?";
-      _fi.phaseInstruction = "Keep the camera on " + tn1 + ". Disconnect the original cable on both ends and replace it with a known-good cable. Then click Check Now.";
+      _fi.phaseTitle = "DOES THE FAULT FOLLOW THE CABLE?";
+      _fi.phaseInstruction = "Keep the camera on " + tn1 + ". Swap the original cable for a known-good one (both ends), then Check Now.";
       _fi.actionLabel = "Check Now";
       renderFaultIsolator();
       return;
@@ -5626,7 +6199,7 @@ function renderFaultIsolator() {
       var expSpd2 = _fi.expectedSpeedMbps || 1000;
       _fi.checking = true;
       renderFaultIsolator();
-      var spd2 = await pollPeakSpeed(_fi.testIdx, 20, expSpd2);
+      var spd2 = await pollPeakSpeed(_fi.testIdx, _FI_CHECK_WINDOW, expSpd2);
       if (_fi !== myFi || _fi._aborted) return;
       _fi.checking = false;
       var sl2 = formatSpeed(spd2);
@@ -5634,27 +6207,27 @@ function renderFaultIsolator() {
       var cfg2 = "Port: " + tn2 + "  |  Cable: (NEW — known good)  |  Camera: (original)";
 
       if (spd2 >= expSpd2) {
-        var v2 = "Link restored with a known-good cable. The original cable is the source of the fault.";
+        var v2 = "Link restored with a known-good cable — cable is the fault.";
         addHistory("Phase 3 - Cable Test", cfg2, sl2, v2, "Pass");
-        showResult("Phase 3: " + sl2 + " — Fault follows the cable.", v2, "pass");
+        showResult("Phase 3: " + sl2 + " — fault follows the cable.", "", "pass");
         conclude("Cable", "CONCLUSION — FAULTY CABLE",
-          "Replacing the cable restored the link. The original cable (or its termination) is the source of the fault. Re-terminate both ends or replace the cable end-to-end. Inspect the cable run for physical damage (kinks, crushing, pinch points), and verify with a cable tester if one is available.");
+          "Replacing the cable restored the link — the original cable is the fault. Re-terminate both ends or replace the run, and check it for damage (kinks, crushing, pinch points).");
         renderFaultIsolator();
         return;
       }
       if (spd2 <= 0) {
         addHistory("Phase 3 - Cable Test", cfg2, sl2, "No link detected — test inconclusive.", "Info");
-        _fi.phaseInstruction = "No link on " + tn2 + ". Verify the new cable is fully seated on both ends and the camera is powered on, then click Check Now to re-measure.";
+        _fi.phaseInstruction = "No link on " + tn2 + ". Check the new cable (both ends) and camera power, then Check Now.";
         showResult("Phase 3: No link — test inconclusive.", _fi.phaseInstruction, "info");
         renderFaultIsolator();
         return;
       }
-      var cv2 = "Fault stayed with the camera. The original cable is not the source.";
+      var cv2 = "Fault followed the camera — cable is fine.";
       addHistory("Phase 3 - Cable Test", cfg2, sl2, cv2, "Info");
-      showResult("Phase 3: " + sl2 + " — Fault is not the cable.", cv2, "info");
+      showResult("Phase 3: " + sl2 + " — cable is fine; fault follows the camera.", "", "info");
       _fi.phase = 3;
-      _fi.phaseTitle = "PHASE 4 — DOES THE FAULT FOLLOW THE CAMERA?";
-      _fi.phaseInstruction = "Stay on " + tn2 + " with the new cable. Connect a known-good camera, then click Check Now. If you don't have a spare camera, click \"No Spare CHU — Infer\" to conclude from what's already been ruled out.";
+      _fi.phaseTitle = "DOES THE FAULT FOLLOW THE CAMERA?";
+      _fi.phaseInstruction = "Keep the new cable on " + tn2 + ". Connect a known-good camera, then Check Now. No spare? Click \"No Spare CHU — Infer\".";
       _fi.actionLabel = "Check Now";
       renderFaultIsolator();
       return;
@@ -5667,7 +6240,7 @@ function renderFaultIsolator() {
     if (_fi.phase === 3) {
       _fi.checking = true;
       renderFaultIsolator();
-      var spd3 = await pollPeakSpeed(_fi.testIdx, 20);
+      var spd3 = await pollPeakSpeed(_fi.testIdx, _FI_CHECK_WINDOW);
       if (_fi !== myFi || _fi._aborted) return;
       _fi.checking = false;
       var sl3 = formatSpeed(spd3);
@@ -5675,26 +6248,26 @@ function renderFaultIsolator() {
       var cfg3 = "Port: " + tn3 + "  |  Cable: (NEW)  |  Camera: (NEW — known good)";
 
       if (spd3 >= 1000) {
-        var v3 = "Link restored with a known-good camera. The original camera is the source of the fault.";
+        var v3 = "Link restored with a known-good camera — camera is the fault.";
         addHistory("Phase 4 - Camera Test", cfg3, sl3, v3, "Pass");
-        showResult("Phase 4: " + sl3 + " — Fault follows the camera.", v3, "pass");
+        showResult("Phase 4: " + sl3 + " — fault follows the camera.", "", "pass");
         conclude("Camera", "CONCLUSION — FAULTY CAMERA (CHU)",
-          "Replacing the camera restored the link. The original camera (CHU) is the source of the fault. Replace the camera unit.");
+          "Replacing the camera restored the link — the original camera (CHU) is the fault. Replace the camera unit.");
         renderFaultIsolator();
         return;
       }
       if (spd3 <= 0) {
         addHistory("Phase 4 - Camera Test", cfg3, sl3, "No link detected — test inconclusive.", "Info");
-        _fi.phaseInstruction = "No link on " + tn3 + ". Verify the known-good camera is connected and powered on, then click Check Now to re-measure.";
+        _fi.phaseInstruction = "No link on " + tn3 + ". Check the known-good camera is connected and powered, then Check Now.";
         showResult("Phase 4: No link — test inconclusive.", _fi.phaseInstruction, "info");
         renderFaultIsolator();
         return;
       }
-      var vf3 = "Fault persists with known-good cable and camera. The fault is likely in the NIC hardware or the VPU motherboard.";
+      var vf3 = "Still failing with known-good cable and camera — likely NIC hardware or motherboard.";
       addHistory("Phase 4 - Camera Test", cfg3, sl3, vf3, "Fail");
-      showResult("Phase 4: " + sl3 + " — Fault persists with known-good equipment.", vf3, "fail");
+      showResult("Phase 4: " + sl3 + " — still failing with known-good equipment.", "", "fail");
       conclude("NicHardware", "CONCLUSION — NIC / HARDWARE FAULT",
-        "Known-good cable and camera still fail on " + tn3 + ". This indicates a fault in the NIC hardware or the VPU motherboard. Run the full diagnostic from the Camera Connectivity panel and escalate to hardware repair.");
+        "Known-good cable and camera still fail on " + tn3 + " — the fault is in the NIC hardware or motherboard. Run the full diagnostic and escalate to hardware repair.");
       renderFaultIsolator();
       return;
     }
@@ -5705,11 +6278,11 @@ function renderFaultIsolator() {
     var tn = portLabel(_fi.testIdx);
     var cfg = "Port: " + tn + "  |  Cable: (NEW)  |  Camera: (no spare available)";
     addHistory("Phase 4 - SKIPPED", cfg, "—",
-      "No spare CHU available. Conclusion inferred from Phase 2 and Phase 3 outcomes.", "Info");
+      "No spare CHU — inferred from Phase 2 and Phase 3.", "Info");
     showResult("Phase 4 skipped — inferred conclusion.",
-      "Phase 2 cleared the original NIC port; Phase 3 cleared the original cable. The remaining suspect is the camera (CHU).", "info");
+      "NIC port (Phase 2) and cable (Phase 3) are both cleared — the camera (CHU) is the remaining suspect.", "info");
     conclude("LikelyCamera", "LIKELY CAMERA (CHU) FAULT — UNVERIFIED",
-      "Cable replacement did not restore the link, and the original NIC port has already been cleared (Phase 2). The remaining suspect is the camera (CHU). Replace the camera unit when a known-good spare is available; if the link still fails with a known-good camera, the issue is likely NIC hardware and a full diagnostic + escalation is warranted.");
+      "NIC port and cable are already cleared, so the camera (CHU) is the remaining suspect. Replace it when a known-good spare is available; if a known-good camera still fails, it's likely NIC hardware — run the full diagnostic and escalate.");
     renderFaultIsolator();
   }
 }
@@ -6227,10 +6800,10 @@ function renderAbout() {
           </div>
         </div>
         <div class="about-links">
-          <a href="https://github.com/ianmoore-playon/pulse-releases" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
+          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
             ${svgIcon("globe", 14)} View Releases
           </a>
-          <a href="https://github.com/ianmoore-playon/vpu-diagnostic-tools" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
+          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
             ${svgIcon("info", 14)} Source Repo
           </a>
         </div>

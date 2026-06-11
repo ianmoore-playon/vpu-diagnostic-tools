@@ -1,9 +1,9 @@
 # Package Pulse.Web and publish as a GitHub release.
 #
-# No build step — just zip the Pulse.Web/ tree and release it.
-# Tags web-v* create a production release mirrored to pulse-releases.
-# Tags web-beta-v* create a beta pre-release mirrored to pulse-releases.
-# Tags web-dev-v* create a dev pre-release mirrored to pulse-releases.
+# No build step — just zip the Pulse.Web/ tree and publish it on this repo.
+# Tags web-v* create a production release.
+# Tags web-beta-v* create a beta pre-release.
+# Tags web-dev-v* create a dev pre-release.
 
 name: Build Pulse.Web
 
@@ -89,207 +89,55 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/web-v') && !startsWith(github.ref, 'refs/tags/web-beta-') && !startsWith(github.ref, 'refs/tags/web-dev-')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ARTIFACT_ZIP }}
+          # Ship the channel launcher alongside the app zip — testers/installers
+          # only need the .bat; downloading it from the release pins them to a
+          # known-good launcher paired with this build.
+          files: |
+            ${{ env.ARTIFACT_ZIP }}
+            runners/run_pulse.bat
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           prerelease: false
           body: |
             Pulse.Web release.
 
-            **Internal source-repo release.** The public-facing copy is mirrored
-            to ianmoore-playon/pulse-releases automatically.
+            Public release published on this repo. Field VPUs install via
+            `run_pulse.bat`, which auto-updates from here every launch.
 
             Install on a VPU:
-            - Drop `run_pulse_web.bat` on the desktop and double-click — auto-updates every launch.
-
-      - name: Mirror release to pulse-releases
-        if: startsWith(github.ref, 'refs/tags/web-v') && !startsWith(github.ref, 'refs/tags/web-beta-') && !startsWith(github.ref, 'refs/tags/web-dev-')
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          ZIP="${ARTIFACT_ZIP}"
-          PUBLIC_REPO="ianmoore-playon/pulse-releases"
-          gh release list --repo "$PUBLIC_REPO" --limit 50 \
-            | awk -F'\t' '$3 ~ /^web-v/ && $3 !~ /^web-beta-/ && $3 !~ /^web-dev-/ && $3 != "'"$TAG"'" {print $3}' \
-            | while read -r old; do
-                echo "Deleting old release: $old"
-                gh release delete "$old" --repo "$PUBLIC_REPO" --yes --cleanup-tag 2>/dev/null || true
-              done
-          gh release delete "$TAG" --repo "$PUBLIC_REPO" --yes --cleanup-tag 2>/dev/null || true
-          {
-            echo "## What's new in ${TAG}"
-            echo
-            cat CHANGELOG_BODY.md
-            echo
-            echo "---"
-            echo "**Install on a VPU** — drop \`run_pulse_web.bat\` on the desktop and double-click; it auto-updates every launch. Requires Windows 10+ (PowerShell + WMI), no .NET or Node.js."
-          } > NOTES.md
-          gh release create "$TAG" \
-            --repo "$PUBLIC_REPO" \
-            --target main \
-            --title "Pulse.Web ${TAG}" \
-            --notes-file NOTES.md \
-            "$ZIP"
-          echo "Mirrored release ${TAG} to ${PUBLIC_REPO}"
-
-      - name: Sync launcher to pulse-releases
-        if: startsWith(github.ref, 'refs/tags/web-v') && !startsWith(github.ref, 'refs/tags/web-beta-') && !startsWith(github.ref, 'refs/tags/web-dev-')
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
-        run: |
-          PUBLIC_REPO="ianmoore-playon/pulse-releases"
-          FILE="runners/run_pulse_web.bat"
-          DEST="run_pulse_web.bat"
-          CONTENT=$(base64 -w0 "$FILE")
-          EXISTING_SHA=$(gh api "repos/${PUBLIC_REPO}/contents/${DEST}" --jq '.sha' 2>/dev/null || echo "")
-          TMPFILE=$(mktemp)
-          if [ -n "$EXISTING_SHA" ]; then
-            jq -n --arg msg "Update ${DEST} from source repo" --arg c "$CONTENT" --arg sha "$EXISTING_SHA" \
-              '{message: $msg, content: $c, sha: $sha}' > "$TMPFILE"
-          else
-            jq -n --arg msg "Add ${DEST} from source repo" --arg c "$CONTENT" \
-              '{message: $msg, content: $c}' > "$TMPFILE"
-          fi
-          gh api "repos/${PUBLIC_REPO}/contents/${DEST}" -X PUT --input "$TMPFILE"
-          rm -f "$TMPFILE"
-          echo "Synced ${DEST} to ${PUBLIC_REPO}"
+            - Drop `run_pulse.bat` on the desktop and double-click — auto-updates every launch.
 
       # ── Beta pre-release (beta channel, web-beta-v* tags) ──────────────
       - name: Publish beta pre-release (source repo)
         if: startsWith(github.ref, 'refs/tags/web-beta-v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ARTIFACT_ZIP }}
+          files: |
+            ${{ env.ARTIFACT_ZIP }}
+            runners/run_pulse_beta.bat
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           prerelease: true
           body: |
             Pulse.Web beta build — not yet promoted to main.
 
-            **Internal source-repo pre-release.** Mirrored to pulse-releases
-            as a pre-release asset for testing.
-
-      - name: Mirror beta pre-release to pulse-releases
-        if: startsWith(github.ref, 'refs/tags/web-beta-v')
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          ZIP="${ARTIFACT_ZIP}"
-          PUBLIC_REPO="ianmoore-playon/pulse-releases"
-          gh release list --repo "$PUBLIC_REPO" --limit 50 \
-            | awk -F'\t' '$3 ~ /^web-beta-v/ && $3 != "'"$TAG"'" {print $3}' \
-            | while read -r old; do
-                echo "Deleting old beta release: $old"
-                gh release delete "$old" --repo "$PUBLIC_REPO" --yes --cleanup-tag 2>/dev/null || true
-              done
-          gh release delete "$TAG" --repo "$PUBLIC_REPO" --yes --cleanup-tag 2>/dev/null || true
-          {
-            echo "## What's new in ${TAG}"
-            echo
-            cat CHANGELOG_BODY.md
-            echo
-            echo "---"
-            echo "**Beta build — not yet promoted to main.** Install: drop \`run_pulse_web_beta.bat\` on the VPU desktop and double-click; it auto-updates every launch. Requires Windows 10+ (PowerShell + WMI)."
-          } > NOTES.md
-          gh release create "$TAG" \
-            --repo "$PUBLIC_REPO" \
-            --target main \
-            --prerelease \
-            --title "Pulse.Web ${TAG} (beta)" \
-            --notes-file NOTES.md \
-            "$ZIP"
-          echo "Mirrored beta pre-release ${TAG} to ${PUBLIC_REPO}"
-
-      - name: Sync beta launcher to pulse-releases
-        if: startsWith(github.ref, 'refs/tags/web-beta-v')
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
-        run: |
-          PUBLIC_REPO="ianmoore-playon/pulse-releases"
-          FILE="runners/run_pulse_web_beta.bat"
-          DEST="run_pulse_web_beta.bat"
-          CONTENT=$(base64 -w0 "$FILE")
-          EXISTING_SHA=$(gh api "repos/${PUBLIC_REPO}/contents/${DEST}" --jq '.sha' 2>/dev/null || echo "")
-          TMPFILE=$(mktemp)
-          if [ -n "$EXISTING_SHA" ]; then
-            jq -n --arg msg "Update ${DEST} from source repo" --arg c "$CONTENT" --arg sha "$EXISTING_SHA" \
-              '{message: $msg, content: $c, sha: $sha}' > "$TMPFILE"
-          else
-            jq -n --arg msg "Add ${DEST} from source repo" --arg c "$CONTENT" \
-              '{message: $msg, content: $c}' > "$TMPFILE"
-          fi
-          gh api "repos/${PUBLIC_REPO}/contents/${DEST}" -X PUT --input "$TMPFILE"
-          rm -f "$TMPFILE"
-          echo "Synced ${DEST} to ${PUBLIC_REPO}"
+            Install on a VPU (beta channel): drop `run_pulse_beta.bat` on the
+            desktop and double-click — it auto-updates from here every launch.
 
       # ── Dev pre-release (dev channel, web-dev-v* tags) ─────────────────
       - name: Publish dev pre-release (source repo)
         if: startsWith(github.ref, 'refs/tags/web-dev-v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ARTIFACT_ZIP }}
+          files: |
+            ${{ env.ARTIFACT_ZIP }}
+            runners/run_pulse_dev.bat
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           prerelease: true
           body: |
             Pulse.Web dev build — internal testing only.
 
-            **Internal source-repo pre-release.** Mirrored to pulse-releases
-            as a pre-release asset for dev testing.
+            Note: the `run_pulse_dev.bat` launcher tracks the latest `dev`-branch
+            commit directly, so dev users normally don't install from this tag.
 
-      - name: Mirror dev pre-release to pulse-releases
-        if: startsWith(github.ref, 'refs/tags/web-dev-v')
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          ZIP="${ARTIFACT_ZIP}"
-          PUBLIC_REPO="ianmoore-playon/pulse-releases"
-          # Delete ALL older dev releases so the launcher only ever finds the newest
-          gh release list --repo "$PUBLIC_REPO" --limit 50 \
-            | awk -F'\t' '$3 ~ /^web-dev-v/ && $3 != "'"$TAG"'" {print $3}' \
-            | while read -r old; do
-                echo "Deleting old dev release: $old"
-                gh release delete "$old" --repo "$PUBLIC_REPO" --yes --cleanup-tag 2>/dev/null || true
-              done
-          gh release delete "$TAG" --repo "$PUBLIC_REPO" --yes --cleanup-tag 2>/dev/null || true
-          {
-            echo "## What's new (dev — ${TAG})"
-            echo
-            cat CHANGELOG_BODY.md
-            echo
-            echo "---"
-            echo "**Dev build — internal testing only.** Install: drop \`run_pulse_web_dev.bat\` on the VPU desktop and double-click; it auto-updates every launch. Requires Windows 10+ (PowerShell + WMI)."
-          } > NOTES.md
-          gh release create "$TAG" \
-            --repo "$PUBLIC_REPO" \
-            --target main \
-            --prerelease \
-            --title "Pulse.Web ${TAG} (dev)" \
-            --notes-file NOTES.md \
-            "$ZIP"
-          echo "Mirrored dev pre-release ${TAG} to ${PUBLIC_REPO}"
-
-      - name: Sync dev launcher to pulse-releases
-        if: startsWith(github.ref, 'refs/tags/web-dev-v')
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_PAT }}
-        run: |
-          PUBLIC_REPO="ianmoore-playon/pulse-releases"
-          FILE="runners/run_pulse_web_dev.bat"
-          DEST="run_pulse_web_dev.bat"
-          CONTENT=$(base64 -w0 "$FILE")
-          EXISTING_SHA=$(gh api "repos/${PUBLIC_REPO}/contents/${DEST}" --jq '.sha' 2>/dev/null || echo "")
-          TMPFILE=$(mktemp)
-          if [ -n "$EXISTING_SHA" ]; then
-            jq -n --arg msg "Update ${DEST} from source repo" --arg c "$CONTENT" --arg sha "$EXISTING_SHA" \
-              '{message: $msg, content: $c, sha: $sha}' > "$TMPFILE"
-          else
-            jq -n --arg msg "Add ${DEST} from source repo" --arg c "$CONTENT" \
-              '{message: $msg, content: $c}' > "$TMPFILE"
-          fi
-          gh api "repos/${PUBLIC_REPO}/contents/${DEST}" -X PUT --input "$TMPFILE"
-          rm -f "$TMPFILE"
-          echo "Synced ${DEST} to ${PUBLIC_REPO}"

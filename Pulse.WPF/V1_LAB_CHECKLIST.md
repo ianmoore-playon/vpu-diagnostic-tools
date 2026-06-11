@@ -8,7 +8,7 @@ Capture notes in the support bundle whenever a step behaves unexpectedly.
 - Run the public one-liner:
 
   ```powershell
-  irm https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1 | iex
+  irm https://raw.githubusercontent.com/playon/pulse/main/install.ps1 | iex
   ```
 
 - Confirm Pulse launches from the extracted latest release.

@@ -17,6 +17,15 @@ try {
         $_.InterfaceDescription -match 'I210|I350|82574L|I211|Realtek'
     }
 
+    # PnP/driver health per network device (by instance ID) — lets us tell a
+    # driver fault from a simply-unplugged port when a port is down.
+    $pnpStatus = @{}
+    try {
+        Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.InstanceId) { $pnpStatus[$_.InstanceId.ToUpper()] = $_.Status }
+        }
+    } catch { }
+
     $ports = @()
 
     foreach ($adapter in $cameraAdapters) {
@@ -76,11 +85,23 @@ try {
         }
         catch { }
 
+        # Driver health for this adapter (OK / Error / Degraded / Unknown).
+        # NB: avoid $pid — it's a reserved PowerShell automatic variable.
+        $driverStatus = $null
+        try {
+            $pnpId = $adapter.PnPDeviceID
+            if ($pnpId -and $pnpStatus.ContainsKey($pnpId.ToUpper())) {
+                $driverStatus = $pnpStatus[$pnpId.ToUpper()]
+            }
+        } catch { }
+
         $ports += [ordered]@{
             name                = $adapter.Name
             interfaceDescription = $adapter.InterfaceDescription
             mac                 = $adapter.MacAddress
             status              = $adapter.Status
+            adminStatus         = "$($adapter.AdminStatus)"
+            driverStatus        = $driverStatus
             linkSpeedMbps       = $linkSpeedMbps
             fullDuplex          = $fullDuplex
             mediaConnectionState = $adapter.MediaConnectionState

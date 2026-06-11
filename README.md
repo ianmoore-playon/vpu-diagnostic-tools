@@ -6,53 +6,28 @@ hardware/peripherals, disk health, the Windows event log, and a Reports panel
 with support bundles — all live, with plain-language next-step guidance and
 per-panel Recommended Actions.
 
-There are two variants:
+**Pulse.Web** (`Pulse.Web/`) is the active product — a self-contained,
+browser-based diagnostic tool (Python + vanilla JS). No Node.js, npm, or
+.NET required; double-click a launcher and it bootstraps everything.
 
-- **`Pulse.WPF/`** — C# / WPF .NET Framework 4.8 desktop app (the original)
-- **`Pulse.Web/`** — Lightweight web-based version (Python + vanilla JS, no install required)
+> `Pulse.WPF/` (the original C#/WPF desktop app) is **deprecated** in favor of
+> Pulse.Web. Its source remains for reference but is no longer built or shipped.
 
 ## Install on a VPU
 
-The supported install path runs the installer from
-[`ianmoore-playon/pulse-releases`](https://github.com/ianmoore-playon/pulse-releases)
-with admin elevation so the build lands in `Program Files`.
+One launcher per channel — drop it on the VPU desktop and double-click. Each
+self-elevates (UAC), installs to `C:\Pulse`, adds a Start Menu entry, and
+auto-updates every launch.
 
-**Option 1 — elevated launcher (recommended for field use)**
+| Launcher | Channel | Pulls |
+|---|---|---|
+| [`run_pulse.bat`](https://raw.githubusercontent.com/playon/pulse/main/runners/run_pulse.bat) | **Production** | latest `web-v*` release |
+| [`run_pulse_beta.bat`](https://raw.githubusercontent.com/playon/pulse/main/runners/run_pulse_beta.bat) | **Beta** | latest `web-beta-v*` pre-release |
+| [`run_pulse_dev.bat`](https://raw.githubusercontent.com/playon/pulse/main/runners/run_pulse_dev.bat) | **Dev** | latest commit on the `dev` branch |
 
-Download [`runners/run_pulse.bat`](https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/main/runners/run_pulse.bat)
-to the VPU desktop and double-click. The launcher requests UAC
-elevation, then pulls the latest tagged release and runs
-`install.ps1` in an admin context so Pulse can install system-wide
-under `Program Files`. Subsequent double-clicks auto-update to the
-latest tag.
-
-**Option 2 — elevated PowerShell one-liner**
-
-Open an **Administrator** PowerShell and run:
-
-```powershell
-irm 'https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1' | iex
-```
-
-Same installer the launcher uses — the only difference is you provide
-the admin shell yourself instead of letting the bat trigger UAC.
-
-Requires Windows 10+ and .NET Framework 4.8 (both pre-installed on every VPU).
-
----
-
-## Pulse Web
-
-A self-contained, browser-based diagnostic tool. No Node.js, npm, or .NET
-required — just double-click and it bootstraps everything.
-
-### Install on a VPU
-
-Download [`runners/run_pulse_web.bat`](https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/main/runners/run_pulse_web.bat)
-to the VPU desktop and double-click. The launcher pulls the latest
-`web-v*` release from GitHub, extracts it to `%LOCALAPPDATA%\PulseWeb`,
-and runs the app. Subsequent double-clicks auto-update to the latest
-release.
+All three install to `C:\Pulse` (one channel at a time), so run the launcher
+for the channel you want. Field VPUs use **`run_pulse.bat`**; the beta testers
+use **`run_pulse_beta.bat`**.
 
 On first launch, the embedded `run.bat`:
 1. Downloads embedded Python 3.12.8 from python.org
@@ -137,40 +112,9 @@ Then open **http://localhost:8765** in your browser.
 
 ---
 
-## Pulse WPF (Desktop)
+## Pulse WPF (Desktop) — deprecated
 
-## Develop
-
-The project lives under `Pulse.WPF/`:
-
-```
-Pulse.WPF/
-├── Pulse.WPF.sln
-├── README.md         — architecture overview
-├── STYLE_GUIDE.md    — design tokens, naming, vocabulary
-├── UX_REVIEW.md      — running per-panel UX ledger
-└── Pulse.WPF/        — the project itself
-    ├── App.xaml      — composition root + DI
-    ├── MainWindow.xaml
-    ├── Views/        — one .xaml per panel
-    ├── ViewModels/
-    ├── Services/     — WMI, registry, network probes, etc.
-    ├── Helpers/      — converters, status helpers, OUI lookup
-    ├── Models/
-    ├── Controls/     — reusable XAML (NicCardDiagram, JackVisual, ...)
-    └── Themes/       — colours, styles, design tokens
-```
-
-Build (requires .NET 8 SDK; the SDK builds the net48 target):
-
-```bash
-dotnet build Pulse.WPF/Pulse.WPF/Pulse.WPF.csproj -c Release
-```
-
-Or rely on GitHub Actions — every push to `dev` runs the Windows build
-and uploads the runnable zip as a workflow artifact. Every `wpf-pilot-v*`
-tag push publishes a real release and mirrors it to `pulse-releases`.
-
-See `Pulse.WPF/README.md`, `Pulse.WPF/STYLE_GUIDE.md`, and
-`Pulse.WPF/UX_REVIEW.md` for the architecture, design tokens, and
-panel-by-panel UX history.
+The original C#/WPF desktop app lives under `Pulse.WPF/`. It is **no longer
+built, shipped, or supported** — Pulse.Web replaced it. The source is kept for
+reference and history; its CI and channel launchers have been removed. Don't
+build on it without first deciding to revive the line.

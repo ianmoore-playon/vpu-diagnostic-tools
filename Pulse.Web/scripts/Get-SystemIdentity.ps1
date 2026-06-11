@@ -129,6 +129,7 @@ try {
         }
         timezone = $tz.Caption
         timezoneId = $tz.StandardName  # Stable identifier — e.g. "Eastern Standard Time" — used for US-only validation
+        locale     = $(try { (Get-WinSystemLocale).Name } catch { try { (Get-Culture).Name } catch { $null } })
         uptime = [ordered]@{
             totalSeconds = [math]::Round($uptime.TotalSeconds, 0)
             formatted    = $uptimeStr

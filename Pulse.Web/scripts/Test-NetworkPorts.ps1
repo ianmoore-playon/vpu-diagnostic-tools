@@ -40,8 +40,17 @@ try {
         @{ protocol = 'TCP'; port = 443;  host = 'nfhsnetwork.com';        purpose = 'NFHS Network';      optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 's3.amazonaws.com';       purpose = 'AWS S3';            optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'service.singular.live';  purpose = 'Singular Overlay';  optional = $false }
-        @{ protocol = 'TCP'; port = 443;  host = 'logmein.com';            purpose = 'LogMeIn';           optional = $false }
+        # secure.logmein.com, not the logmein.com apex: the apex now points at
+        # GoTo's marketing site (Vercel, 76.76.21.21), so reaching it proves
+        # nothing about remote access. secure.logmein.com rides GoTo's real
+        # service block (158.120.16.0/20 — same netblock live VPU LMI sessions
+        # use, PTR lmi-www25-10.logmein.com), so this tests what techs depend on.
+        @{ protocol = 'TCP'; port = 443;  host = 'secure.logmein.com';     purpose = 'LogMeIn';           optional = $false }
         @{ protocol = 'UDP'; port = 123;  host = 'prod-echo.pixellot.tv';  purpose = 'NTP';               optional = $false }
+        # Zixi ingest caveat: live events stream to a broadcaster assigned
+        # per-event from AWS pools (observed us-east-2), not to prod-echo
+        # (us-east-1). These rows prove the venue firewall allows the PORTS;
+        # rules must therefore allow UDP 443/2088 by port, not by destination IP.
         @{ protocol = 'UDP'; port = 443;  host = 'prod-echo.pixellot.tv';  purpose = 'Zixi QUIC';         optional = $false }
         @{ protocol = 'UDP'; port = 2088; host = 'prod-echo.pixellot.tv';  purpose = 'Zixi Streaming';    optional = $false }
         # Optional — RTMP fallback (legacy ingest)
@@ -83,11 +92,18 @@ try {
             }
         }
         elseif ($test.protocol -eq 'UDP' -and $test.port -eq 123) {
-            # Real NTP UDP test — send an NTP v3 client request and verify response
+            # NTP/123 egress test — send a real NTP v3 client request, require a
+            # reply. Any reply passes: this row answers "is UDP/123 egress open",
+            # and prod-echo answers as an echo service (it returns our own mode-3
+            # packet verbatim, wire-verified) — so requiring a genuine mode-4
+            # server reply would false-fail an open port. We still send a real
+            # 48-byte NTP request (not arbitrary bytes) so NTP-aware middleboxes
+            # treat the probe as NTP. Whether time sync actually WORKS is judged
+            # separately by the w32tm status check (Time Sync on the adapter
+            # card). A retry defeats transient single-packet loss; capped at
+            # two attempts so a blocked port costs ~6s, not ~9s (the script's
+            # callers budget 30-45s for the whole port list).
             try {
-                $udp = New-Object System.Net.Sockets.UdpClient
-                $udp.Client.ReceiveTimeout = 3000
-                $udp.Client.SendTimeout = 3000
                 $addr = [System.Net.Dns]::GetHostAddresses($test.host) |
                     Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } |
                     Select-Object -First 1
@@ -96,12 +112,28 @@ try {
                     # 48-byte NTP packet: byte 0 = 0x1B (LI=0, Version=3, Mode=3 client)
                     $ntpReq = New-Object byte[] 48
                     $ntpReq[0] = 0x1B
-                    $udp.Send($ntpReq, $ntpReq.Length, $ep) | Out-Null
-                    $remoteEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
-                    $resp = $udp.Receive([ref]$remoteEP)
-                    if ($resp.Length -ge 48) { $status = 'pass' }
+                    for ($attempt = 1; ($attempt -le 2) -and ($status -ne 'pass'); $attempt++) {
+                        $udp = New-Object System.Net.Sockets.UdpClient
+                        $udp.Client.ReceiveTimeout = 3000
+                        $udp.Client.SendTimeout = 3000
+                        try {
+                            $udp.Send($ntpReq, $ntpReq.Length, $ep) | Out-Null
+                            $remoteEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+                            $resp = $udp.Receive([ref]$remoteEP)
+                            if ($resp.Length -gt 0) { $status = 'pass' }
+                        }
+                        catch [System.Net.Sockets.SocketException] {
+                            # 10054 = ICMP port unreachable — definitive reject; stop retrying.
+                            $sockErr = $_.Exception.ErrorCode
+                            if (-not $sockErr -and $_.Exception.InnerException) { $sockErr = $_.Exception.InnerException.ErrorCode }
+                            if ($sockErr -eq 10054) { break }
+                            # Otherwise a receive timeout — stay 'fail' and retry.
+                        }
+                        finally {
+                            $udp.Close()
+                        }
+                    }
                 }
-                $udp.Close()
             }
             catch {
                 $status = 'fail'
@@ -139,36 +171,49 @@ try {
             }
         }
         elseif ($test.protocol -eq 'UDP') {
-            # Generic UDP probe — send a small packet and check for ICMP port-unreachable
-            # If we get a response or timeout with no rejection, consider it open
+            # Echo-contract UDP test. The generic UDP targets (prod-echo.pixellot.tv
+            # 443/2088) run an echo service — anything sent comes back verbatim
+            # (wire-verified: a 24-byte probe to :2088 echoed back in ~20 ms). So a
+            # reply is REQUIRED to pass. The old rule treated a silent timeout as
+            # pass ("open|filtered"), which false-passed every silently-dropped
+            # port — the most common school-firewall block mode — and let a VPU
+            # show UDP/2088 green while streaming was actually blocked. Three
+            # second attempt defeats transient single-packet loss; capped at two
+            # so a silently-blocked port costs ~4s, keeping the whole list inside
+            # its callers' 30-45s budgets.
+            # NOTE: this branch assumes echo-capable endpoints; a future non-echo
+            # UDP target needs its own protocol-aware branch (like 123/53 above).
             try {
-                $udp = New-Object System.Net.Sockets.UdpClient
-                $udp.Client.ReceiveTimeout = 2000
-                $udp.Client.SendTimeout = 2000
                 $addr = [System.Net.Dns]::GetHostAddresses($test.host) |
                     Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } |
                     Select-Object -First 1
                 if ($addr) {
                     $ep = New-Object System.Net.IPEndPoint($addr, $test.port)
-                    $probe = New-Object byte[] 4
-                    $udp.Send($probe, $probe.Length, $ep) | Out-Null
-                    try {
-                        $remoteEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
-                        $resp = $udp.Receive([ref]$remoteEP)
-                        # Got a response — port is open
-                        $status = 'pass'
-                    }
-                    catch [System.Net.Sockets.SocketException] {
-                        # ErrorCode 10054 = ICMP port unreachable (connection reset) — port blocked
-                        # Timeout (no ICMP rejection) usually means open/filtered — treat as pass
-                        if ($_.Exception.InnerException -and $_.Exception.InnerException.ErrorCode -eq 10054) {
-                            $status = 'fail'
-                        } else {
-                            $status = 'pass'
+                    $payload = [System.Text.Encoding]::ASCII.GetBytes("testing UDP on port $($test.port)")
+                    for ($attempt = 1; ($attempt -le 2) -and ($status -ne 'pass'); $attempt++) {
+                        $udp = New-Object System.Net.Sockets.UdpClient
+                        $udp.Client.ReceiveTimeout = 2000
+                        $udp.Client.SendTimeout = 2000
+                        try {
+                            $udp.Send($payload, $payload.Length, $ep) | Out-Null
+                            $remoteEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+                            $resp = $udp.Receive([ref]$remoteEP)
+                            # Any datagram back proves the port is open end-to-end
+                            # (the echo service returns our payload verbatim).
+                            if ($resp.Length -gt 0) { $status = 'pass' }
+                        }
+                        catch [System.Net.Sockets.SocketException] {
+                            # 10054 = ICMP port unreachable — definitive reject; stop retrying.
+                            $sockErr = $_.Exception.ErrorCode
+                            if (-not $sockErr -and $_.Exception.InnerException) { $sockErr = $_.Exception.InnerException.ErrorCode }
+                            if ($sockErr -eq 10054) { break }
+                            # Otherwise a receive timeout — stay 'fail' and retry.
+                        }
+                        finally {
+                            $udp.Close()
                         }
                     }
                 }
-                $udp.Close()
             }
             catch {
                 $status = 'fail'

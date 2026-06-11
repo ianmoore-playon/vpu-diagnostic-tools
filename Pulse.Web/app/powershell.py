@@ -114,7 +114,7 @@ def cancel_all_tasks() -> int:
 # results, short enough that no stale snapshot ever appears in a real
 # refresh action (the user's "Refresh" button clears the client cache
 # and waits 25s+ between successive clicks in practice).
-_RESULT_CACHE: dict = {}                         # cache_key -> (expires_at, result)
+_RESULT_CACHE: dict = {}                         # cache_key -> (stored_at, result)
 _INFLIGHT: dict = {}                             # cache_key -> asyncio.Future
 _RESULT_TTL = 25.0                               # seconds
 
@@ -166,7 +166,7 @@ def _extract_json(text: str):
 
 async def run_ps(
     script_name: str, args: Optional[dict] = None, timeout: int = 30,
-    use_cache: bool = True,
+    use_cache: bool = True, cache_ttl: Optional[float] = None,
 ) -> dict:
     """Run a PowerShell script and return its parsed JSON.
 
@@ -175,13 +175,22 @@ async def run_ps(
     camera frame grabs) where a 25s-old cached result would be wrong — a
     second 'Get Camera Frames' click must capture new frames, not replay
     the previous ones.
+
+    cache_ttl overrides how old a cached result may be (in seconds) for THIS
+    call to accept it, without changing what other callers see. The cache is
+    age-based (it stores each result's timestamp), so a live poll can demand
+    near-fresh data — e.g. cache_ttl=1.5 for NIC link state so a cable
+    unplug shows up within a poll or two — while heavier callers keep reusing
+    the default 25s window. They share the key but never serve each other
+    stale data, because freshness is judged at read time, per caller.
     """
     key = _cache_key(script_name, args, timeout)
 
     if use_cache:
         # 1. Fresh cached result? Return it immediately — no semaphore, no PS.
         entry = _RESULT_CACHE.get(key)
-        if entry and entry[0] > time.monotonic():
+        ttl = cache_ttl if cache_ttl is not None else _RESULT_TTL
+        if entry and (time.monotonic() - entry[0]) < ttl:
             return entry[1]
 
         # 2. Same script already running? Await its future instead of duplicating.
@@ -209,7 +218,7 @@ async def run_ps(
             result = await _run_ps_inner(script_name, args, timeout, task_id, cancel_evt)
         # Only cache successful results. Errors should retry on next call.
         if use_cache and isinstance(result, dict) and not result.get("error"):
-            _RESULT_CACHE[key] = (time.monotonic() + _RESULT_TTL, result)
+            _RESULT_CACHE[key] = (time.monotonic(), result)
         future.set_result(result)
         return result
     except Exception as e:
