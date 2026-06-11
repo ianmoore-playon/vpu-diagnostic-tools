@@ -22,6 +22,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-11
+
+### Changed
+- The Audio tab is temporarily hidden while audio diagnostics are being
+  finished. No loss of function — audio checks were not yet in field use.
+
+### Fixed
+- Fixed an error that could appear on the Audio screen and during full
+  diagnostic collection (the audio device check failed to return results on
+  some VPUs).
+
 ## [0.3.0] - 2026-06-11
 
 ### Added

@@ -49,7 +49,9 @@ const NAV_SECTIONS = [
     { id: "network", label: "Network", icon: "wifi" },
     { id: "cameras", label: "Camera Connectivity", icon: "camera" },
     { id: "scoreconnect", label: "Score Connect", icon: "monitor" },
-    { id: "audio", label: "Audio", icon: "mic" },
+    // Audio tab hidden from nav pending further development. The full impl is
+    // still wired — renderAudio(), pageRenderers.audio, PAGE_API.audio,
+    // /api/audio, and the PS scripts — so re-add this entry to restore it.
   ]},
   { label: "SYSTEM", pages: [
     { id: "system", label: "System Overview", icon: "cpu" },

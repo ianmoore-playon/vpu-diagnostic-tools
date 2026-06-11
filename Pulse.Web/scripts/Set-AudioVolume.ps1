@@ -22,7 +22,7 @@ $ErrorActionPreference = 'Stop'
 # Clamp to 0-100
 $Volume = [Math]::Max(0, [Math]::Min(100, $Volume))
 
-# Load CoreAudio interop types (idempotent — no-op if already loaded)
+# Load CoreAudio interop types (idempotent - no-op if already loaded)
 . (Join-Path $PSScriptRoot '_AudioInterop.ps1')
 
 $comObjects = [System.Collections.ArrayList]::new()
@@ -38,7 +38,7 @@ try {
     [void]$comObjects.Add($enum)
     $iEnum = [CoreAudio.IMMDeviceEnumerator]$enum
 
-    # Search both capture and render, ALL states — a device might briefly
+    # Search both capture and render, ALL states - a device might briefly
     # transition between Active/Unplugged but still be the right target.
     $found = $false
     $appliedVolume = $null
