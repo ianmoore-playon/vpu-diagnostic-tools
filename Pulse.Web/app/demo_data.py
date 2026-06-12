@@ -227,8 +227,8 @@ DEMO = {
             # This is the demo's "click finding → jump to tab → one-click
             # restart" moment. Flip back to "Running" if you want a fully-
             # green dashboard.
-            {"name": "agent", "displayName": "Pixellot Agent", "status": "Stopped", "startType": None,
-             "kind": "process", "pid": None, "path": "C:\\Pixellot\\Bin\\Agent.exe", "memoryMB": None, "watchdog": False},
+            {"name": "agent", "displayName": "Pixellot Agent", "status": "Running", "startType": None,
+             "kind": "process", "pid": 11324, "path": "C:\\Pixellot\\Bin\\Agent.exe", "memoryMB": 184, "watchdog": False},
             {"name": "coordinator", "displayName": "Pixellot Coordinator", "status": "Running", "startType": None,
              "kind": "process", "pid": 10596, "path": "C:\\Pixellot\\Bin\\Coordinator.exe", "memoryMB": 15, "watchdog": False},
             {"name": "vpu", "displayName": "Pixellot VPU", "status": "Running", "startType": None,
@@ -251,7 +251,7 @@ DEMO = {
             # degraded — the OCR-OUI heuristic only spares ports where every
             # Pixellot MAC is Dynacolor (00:D0:89).
             {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "linkSpeedMbps": 100, "fullDuplex": True, "mac": "A4:4C:C8:12:34:02",
-             "rxBytes": 18238473625, "txBytes": 1283746281, "rxErrors": 187, "txErrors": 2, "rxPacketErrors": 187, "rxDiscards": 14, "txPacketErrors": 2, "txDiscards": 0,
+             "rxBytes": 18238473625, "txBytes": 1283746281, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0,
              "arpEntries": [{"ip": "192.168.11.100", "mac": "00:0E:53:BB:02:01"}, {"ip": "192.168.11.101", "mac": "00:0E:53:BB:02:02"}]},
             # Ethernet 3 is the OCR / scoreboard camera. OCR cameras are
              # natively 100 Mbps, so this is HEALTHY (not degraded). Uses the
@@ -337,7 +337,7 @@ DEMO = {
             {"domain": "logmein.com", "resolvedTo": "216.52.233.2", "status": "pass", "resolutionMs": round(random.uniform(5, 15), 1)},
             {"domain": "s3.amazonaws.com", "resolvedTo": "52.217.44.54", "status": "pass", "resolutionMs": round(random.uniform(4, 12), 1)},
             {"domain": "leaf-uploads.s3.amazonaws.com", "resolvedTo": "52.217.44.55", "status": "pass", "resolutionMs": round(random.uniform(6, 18), 1)},
-            {"domain": "leaf-downloads.s3.amazonaws.com", "resolvedTo": None, "status": "fail", "resolutionMs": round(random.uniform(2000, 3000), 1)},
+            {"domain": "leaf-downloads.s3.amazonaws.com", "resolvedTo": "52.217.44.55", "status": "pass", "resolutionMs": round(random.uniform(6, 18), 1)},
         ]
     },
     "Test-NetworkPorts.ps1": lambda **kw: {
@@ -351,23 +351,23 @@ DEMO = {
             {"purpose": "Singular Overlay", "host": "service.singular.live", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "LogMeIn", "host": "secure.logmein.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
-            # Demo shows the Shelton scenario: the UDP/443 backup path is
-            # blocked but the primary UDP/2088 path is open — so the stream
-            # still broadcasts. This exercises the path-aware "Streaming
-            # redundancy reduced" WARNING (amber "No failover"), not a critical
-            # "stream fails". Flip 2088 to "fail" too to see the all-blocked
-            # critical.
-            {"purpose": "Zixi Backup", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "fail", "optional": False},
-            {"purpose": "Zixi Streaming", "host": "prod-echo.pixellot.tv", "port": 2088, "protocol": "UDP", "status": "pass", "optional": False},
+            # Demo: the primary UDP/2088 streaming path is blocked, but the
+            # UDP/443 backup + TCP/443 tunnel stay open — so the stream still
+            # broadcasts. Exercises the path-aware "a backup streaming connection
+            # is blocked (broadcast still works)" WARNING, not a critical "stream
+            # fails". (Flip 443 + Pixellot Echo to "fail" too for the all-blocked
+            # critical.)
+            {"purpose": "Zixi Backup", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "pass", "optional": False},
+            {"purpose": "Zixi Streaming", "host": "prod-echo.pixellot.tv", "port": 2088, "protocol": "UDP", "status": "fail", "optional": False},
             # Optional — RTMP fallback (legacy ingest)
-            {"purpose": "RTMP Ingest", "host": "sportzcast.net", "port": 1935, "protocol": "TCP", "status": "fail", "optional": True},
+            {"purpose": "RTMP Ingest", "host": "sportzcast.net", "port": 1935, "protocol": "TCP", "status": "pass", "optional": True},
             # Optional — Sportzcast Scorebot range (ScoreConnect deployments only)
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1400, "protocol": "TCP", "status": "pass", "optional": True},
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1401, "protocol": "TCP", "status": "pass", "optional": True},
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1402, "protocol": "TCP", "status": "pass", "optional": True},
-            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1403, "protocol": "TCP", "status": "fail", "optional": True},
-            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1404, "protocol": "TCP", "status": "fail", "optional": True},
-            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1405, "protocol": "TCP", "status": "fail", "optional": True},
+            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1403, "protocol": "TCP", "status": "pass", "optional": True},
+            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1404, "protocol": "TCP", "status": "pass", "optional": True},
+            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1405, "protocol": "TCP", "status": "pass", "optional": True},
         ]
     },
     "Test-NtpDrift.ps1": lambda **kw: {"offsetSeconds": round(random.uniform(-0.3, 0.5), 3), "status": "ok", "source": "0.us.pool.ntp.org", "configuredSource": "0.us.pool.ntp.org", "networkSynced": True},
@@ -433,7 +433,7 @@ DEMO = {
         "googleServer": "8.8.8.8",
         "results": [
             {"host": "www.pixellot.tv",
-             "system": {"resolvedTo": None,             "status": "fail", "resolutionMs": round(random.uniform(2000, 3000), 1), "error": "No such host is known."},
+             "system": {"resolvedTo": "52.1.53.61",     "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
              "google": {"resolvedTo": "52.1.53.61",     "status": "pass", "resolutionMs": round(random.uniform(8, 20), 1),       "error": None}},
             {"host": "pixellot.tv",
              "system": {"resolvedTo": "52.44.182.199",  "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
