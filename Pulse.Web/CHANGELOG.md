@@ -29,6 +29,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   launcher now opens Chrome explicitly — no dialog, no IE.
 
 ### Changed
+- **Port Connectivity tiles now list in numeric order.** Within Required and
+  within Optional, ports run ascending (53, 123, 443…) so a given port is easy
+  to find at a glance.
 - The Audio tab is temporarily hidden while audio diagnostics are being
   finished. No loss of function — audio checks were not yet in field use.
 

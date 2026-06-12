@@ -2193,9 +2193,15 @@ function _renderPortConnectivity(ports) {
       var items = byHost[key];
       groups.push({ type: items.length > 1 ? "byHost" : "single", items: items, order: list.indexOf(items[0]) });
     });
-    // Natural first-appearance order — tiles are uniform now (no wide multi-host
-    // tile to anchor a row), so no special ordering is needed.
-    groups.sort(function(a, b) { return a.order - b.order; });
+    // Ascending by port number — each tile reads left-to-right in numeric order
+    // (53, 123, 443…). A group's port is its lowest member (a range tile sorts by
+    // its start). Ties (443 TCP vs 443 UDP) fall back to first-appearance order,
+    // keeping the protocols in a stable, predictable sequence.
+    groups.sort(function(a, b) {
+      var pa = Math.min.apply(null, a.items.map(function(p) { return Number(p.port) || 0; }));
+      var pb = Math.min.apply(null, b.items.map(function(p) { return Number(p.port) || 0; }));
+      return pa !== pb ? pa - pb : a.order - b.order;
+    });
     return groups;
   }
 
