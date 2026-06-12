@@ -1394,14 +1394,17 @@ html.dark .splash-logo {
 .domain-list { display: flex; flex-direction: column; gap: 2px; }
 .domain-row {
     display: grid;
-    grid-template-columns: 18px 1fr 120px 56px auto;
+    /* minmax(0,1fr) on the name lets it shrink/wrap instead of pushing the IP,
+       time and status badge past the panel edge in the narrower combined-panel
+       column (the badge was bleeding ~30px out of the card). */
+    grid-template-columns: 14px minmax(0, 1fr) 120px 56px auto;
     gap: 8px;
     align-items: center;
     padding: 5px 0;
 }
 .domain-row + .domain-row { border-top: 1px solid var(--c-border); }
 .domain-dot { width: 7px; height: 7px; border-radius: 50%; justify-self: center; }
-.domain-name { font-size: 0.8rem; color: var(--c-text); }
+.domain-name { font-size: 0.8rem; color: var(--c-text); min-width: 0; overflow-wrap: anywhere; }
 .domain-ip { font-size: 0.7rem; font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; color: var(--c-dim); }
 
 /* ── Camera page ───────────────────────────────────────────── */
