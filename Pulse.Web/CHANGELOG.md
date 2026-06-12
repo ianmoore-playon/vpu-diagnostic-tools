@@ -22,6 +22,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Fixed
+- **Pulse now opens directly in Chrome on launch.** On VPUs with no default
+  browser set, Windows used to pop a "How do you want to open this?" picker
+  (with Internet Explorer as the first option) instead of opening Pulse. The
+  launcher now opens Chrome explicitly — no dialog, no IE.
+
 ### Changed
 - The Audio tab is temporarily hidden while audio diagnostics are being
   finished. No loss of function — audio checks were not yet in field use.
