@@ -37,3 +37,20 @@ jobs:
           git tag "$TAG"
           git push origin "$TAG"
           echo "Created tag: $TAG"
+
+      - name: Prune old dev tags + releases (keep 15 newest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Keep the 15 newest web-dev-v* tags; delete older ones AND any
+          # release attached to them (gh --cleanup-tag drops the tag too).
+          # Scoped to web-dev-v* ONLY — never beta, prod, wpf, or provenance
+          # tags. A failed delete never fails the job.
+          git fetch --tags --quiet || true
+          git tag -l 'web-dev-v*' --sort=-creatordate | tail -n +16 | while read -r t; do
+            [ -z "$t" ] && continue
+            gh release delete "$t" --yes --cleanup-tag 2>/dev/null \
+              || git push origin --delete "$t" 2>/dev/null \
+              || true
+            echo "pruned $t"
+          done
