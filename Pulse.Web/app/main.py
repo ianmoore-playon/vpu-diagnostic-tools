@@ -1478,10 +1478,56 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
     # without drilling into the Network tab. Optional ports (RTMP, etc.)
     # are intentionally skipped — they vary by venue configuration.
     if port_tests and not port_tests.get("error"):
-        for r in port_tests.get("results", []):
-            if r.get("status") != "fail":
+        results = port_tests.get("results", [])
+        # The three redundant streaming transports to prod-echo (UDP/2088
+        # primary, UDP/443 backup, TCP/443 tunnel): video can ride any of them,
+        # so the broadcast only fails when ALL are blocked — one blocked path
+        # just removes failover. Keep this set in sync with STREAMING_PURPOSES
+        # in app.js and the purposes in Test-NetworkPorts.ps1.
+        streaming_purposes = {"Zixi Streaming", "Zixi Backup", "Pixellot Echo"}
+
+        def _lbl(rows):
+            return ", ".join(
+                f"{(r.get('protocol') or '').upper()}/{r.get('port')}" for r in rows
+            )
+
+        stream_paths = [
+            r for r in results
+            if r.get("purpose") in streaming_purposes and not r.get("optional")
+        ]
+        stream_blocked = [r for r in stream_paths if r.get("status") == "fail"]
+        stream_open = [r for r in stream_paths if r.get("status") != "fail"]
+
+        if stream_blocked:
+            if stream_open:
+                findings.append({
+                    "severity": "warning",
+                    "category": "Network",
+                    "title": "Streaming redundancy reduced (backup path blocked)",
+                    "recommendation": (
+                        f"The stream still has a working path ({_lbl(stream_open)}), so "
+                        f"broadcasting should work — but {_lbl(stream_blocked)} to "
+                        f"prod-echo.pixellot.tv is blocked, removing failover. Ask the "
+                        f"venue's IT team to open it."
+                    ),
+                })
+            else:
+                findings.append({
+                    "severity": "critical",
+                    "category": "Network",
+                    "title": "All streaming paths blocked — VPU cannot broadcast",
+                    "recommendation": (
+                        "Every streaming transport (UDP/2088, UDP/443, TCP/443 to "
+                        "prod-echo.pixellot.tv) is blocked, so the VPU cannot send video. "
+                        "Open at least one in the venue firewall."
+                    ),
+                })
+
+        # Non-streaming required ports — each blocked one is its own warning.
+        for r in results:
+            if r.get("status") != "fail" or r.get("optional"):
                 continue
-            if r.get("optional"):
+            if r.get("purpose") in streaming_purposes:
                 continue
             host = r.get("host", "?")
             port = r.get("port", "?")

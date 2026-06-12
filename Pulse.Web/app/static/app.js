@@ -2099,14 +2099,18 @@ function _prefixToMask(prefix) {
 const NET_PORT_IMPACT = {
   "DNS": "The VPU can't resolve any hostname, so it can't reach any service.",
   "Pixellot": "System management and software updates are blocked, and the stream fails to broadcast.",
-  "Pixellot Echo": "Stream fails to broadcast and remote support access is lost.",
+  // The three transports below are REDUNDANT streaming paths to prod-echo —
+  // the stream only fails if all three are blocked (see _streamingHealth).
+  // Wording is per-port "in isolation"; the live cross-path verdict is in the
+  // Port Connectivity finding.
+  "Pixellot Echo": "Last-resort streaming tunnel (TCP/443) plus the remote-support channel. The stream still broadcasts over UDP/2088 or UDP/443 if either is open, but remote support to prod-echo is lost.",
   "NFHS Network": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
   "AWS S3": "Recordings and clips can't upload, and software/asset downloads fail.",
   "Singular Overlay": "On-screen graphics and scorebug overlays won't load.",
   "LogMeIn": "The support team can't diagnose the VPU remotely.",
   "NTP": "The clock can drift — the VPU may miss scheduled events if no valid time server is set.",
-  "Zixi QUIC": "Stream fails to broadcast.",
-  "Zixi Streaming": "Stream fails to broadcast.",
+  "Zixi Backup": "Backup streaming path (Zixi over UDP/443). The stream keeps broadcasting over UDP/2088 or the TCP/443 tunnel if either is open — blocking this only removes failover.",
+  "Zixi Streaming": "Primary streaming path (Zixi over UDP/2088). If blocked, the stream falls back to UDP/443 or the TCP/443 tunnel; broadcasting only fails if all three paths are blocked.",
   "RTMP Ingest": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
   "Scorebot": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
 };
@@ -2122,6 +2126,33 @@ const NET_DOMAIN_IMPACT = {
   "leaf-downloads.s3.amazonaws.com": "Software, firmware, and config downloads fail.",
 };
 function _netPortImpact(p) { return (p && NET_PORT_IMPACT[p.purpose]) || ""; }
+
+// The three redundant transports that carry the live stream to prod-echo:
+// UDP/2088 (primary), UDP/443 (backup), TCP/443 (last-resort tunnel). Per the
+// NFHS firewall doc, video can ride any of them, so the broadcast only fails
+// when ALL THREE are blocked — one blocked path just removes failover. Keep
+// this set in sync with the streaming purposes in Test-NetworkPorts.ps1.
+var STREAMING_PURPOSES = ["Zixi Streaming", "Zixi Backup", "Pixellot Echo"];
+function _streamingHealth(ports) {
+  var paths = (ports || []).filter(function(p) { return STREAMING_PURPOSES.indexOf(p.purpose) !== -1; });
+  var open = paths.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; });
+  var blocked = paths.filter(function(p) { return (p.status || "").toLowerCase() !== "pass"; });
+  return {
+    paths: paths, open: open, blocked: blocked,
+    total: paths.length,
+    anyOpen: open.length > 0,
+    // A blocked path is "redundant" (warning, not critical) when the stream
+    // still has another working path. True only while at least one is open.
+    redundantBlock: open.length > 0 && blocked.length > 0,
+  };
+}
+// Is this individual blocked port a streaming path that still has an open
+// sibling? Used to soften its card from a red "Fail" to an amber "No failover".
+function _isRedundantStreamBlock(p, health) {
+  return health.anyOpen
+    && STREAMING_PURPOSES.indexOf(p.purpose) !== -1
+    && (p.status || "").toLowerCase() !== "pass";
+}
 function _netDomainImpact(d) { return (d && NET_DOMAIN_IMPACT[d.domain]) || ""; }
 
 // Port Connectivity as a single status list (Required → Optional), one row
@@ -2130,6 +2161,10 @@ function _netDomainImpact(d) { return (d && NET_DOMAIN_IMPACT[d.domain]) || ""; 
 function _renderPortConnectivity(ports) {
   ports = ports || [];
   if (!ports.length) return '<p class="text-pulse-muted text-sm mt-2">No port results.</p>';
+
+  // Streaming-path redundancy: a blocked streaming transport that still has an
+  // open sibling is "no failover" (amber), not a red "Fail" — broadcasting works.
+  var health = _streamingHealth(ports);
 
   // Combine related results into one tile: hosts sharing a protocol/port (the
   // six TCP/443 services) group together, and a single host's port range
@@ -2158,81 +2193,68 @@ function _renderPortConnectivity(ports) {
       var items = byHost[key];
       groups.push({ type: items.length > 1 ? "byHost" : "single", items: items, order: list.indexOf(items[0]) });
     });
-    // Wide multi-host (byPort) tiles first so they anchor their grid row — a
-    // span-2 tile can't fit beside a single-width tile, so if it came second it
-    // would wrap and leave an empty cell. Leading with it removes the gap.
-    groups.sort(function(a, b) {
-      var am = a.type === "byPort" ? 0 : 1, bm = b.type === "byPort" ? 0 : 1;
-      if (am !== bm) return am - bm;
-      return a.order - b.order;
-    });
+    // Natural first-appearance order — tiles are uniform now (no wide multi-host
+    // tile to anchor a row), so no special ordering is needed.
+    groups.sort(function(a, b) { return a.order - b.order; });
     return groups;
   }
 
-  function portLabel(items) {
+  // Port number (the priority) + protocol for the port-led tile. A shared port
+  // (443 across several hosts) → "443"; a range on one host (Scorebot
+  // 1400–1405) → "1400–1405". Hosts/domains are intentionally NOT shown on the
+  // tile — the domain detail lives in the Domain Reachability column.
+  function portParts(items) {
     var proto = (items[0].protocol || "TCP").toUpperCase();
-    // Unique ports: a byPort group is one shared port across many hosts
-    // (443) → "TCP/443"; a byHost group is a range on one host (Scorebot
-    // 1400–1405) → "TCP/1400–1405".
     var seen = {}, portsN = [];
     items.forEach(function(p) { if (!seen[p.port]) { seen[p.port] = 1; portsN.push(p.port); } });
     portsN.sort(function(a, b) { return a - b; });
-    if (portsN.length === 1) return proto + "/" + portsN[0];
-    var contiguous = portsN[portsN.length - 1] - portsN[0] + 1 === portsN.length;
-    return proto + "/" + (contiguous ? portsN[0] + "–" + portsN[portsN.length - 1] : portsN.join(","));
-  }
-
-  function dotColor(p) {
-    var ok = (p.status || "").toLowerCase() === "pass";
-    return ok ? "var(--c-accent-green)" : (p.optional ? "var(--c-dim)" : "var(--c-accent-red)");
+    var num;
+    if (portsN.length === 1) { num = String(portsN[0]); }
+    else {
+      var contiguous = portsN[portsN.length - 1] - portsN[0] + 1 === portsN.length;
+      num = contiguous ? portsN[0] + "–" + portsN[portsN.length - 1] : portsN.join(",");
+    }
+    return { num: num, proto: proto };
   }
 
   // Status rollup for a (possibly multi-port) group → pill + accent colour.
   function rollup(items) {
     var pass = items.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
     var total = items.length, allPass = pass === total, optional = items[0].optional;
+    // A single-port streaming transport that's blocked but still has an open
+    // sibling: not a failure, just lost failover → amber "No failover".
+    var redundant = !allPass && total === 1 && _isRedundantStreamBlock(items[0], health);
     var pillTxt, pillCls;
     if (total > 1) { pillTxt = pass + "/" + total; pillCls = allPass ? "pass" : (optional ? "muted" : "fail"); }
     else if (allPass) { pillTxt = "Pass"; pillCls = "pass"; }
+    else if (redundant) { pillTxt = "No failover"; pillCls = "warn"; }
     else { pillTxt = optional ? "Blocked" : "Fail"; pillCls = optional ? "muted" : "fail"; }
-    // Optional failures are de-emphasized (muted, not red) — they aren't a problem.
-    var accent = allPass ? "var(--c-accent-green)" : (optional ? "var(--c-dim)" : "var(--c-accent-red)");
-    // Only required failures get a class hook (red border); optional + pass are
-    // styled purely via --rowaccent, so no dead is-optional class.
-    var stateCls = (!allPass && !optional) ? " is-fail" : "";
+    // Optional failures are de-emphasized (muted, not red); redundant streaming
+    // blocks are amber. Only a real (non-redundant) required failure is red.
+    var accent = allPass ? "var(--c-accent-green)"
+      : redundant ? "var(--c-accent-amber)"
+      : (optional ? "var(--c-dim)" : "var(--c-accent-red)");
+    var stateCls = (!allPass && !optional && !redundant) ? " is-fail" : "";
     return { pillTxt: pillTxt, pillCls: pillCls, accent: accent, stateCls: stateCls };
   }
 
-  // Port-led tile. byPort groups list each host inside; single / byHost
-  // (port-range) groups show the one service + host.
+  // Port-led tile: the port number leads (priority) with the protocol beside
+  // it and a status pill — no hosts/domains (those live in Domain Reachability).
+  // A port shared by several required services (TCP/443) shows an N/M count.
   function card(group) {
-    var items = group.items, p0 = items[0], st = rollup(items);
-    var head = '<div class="net-port-card-head">' +
-        '<span class="net-port-portnum">' + esc(portLabel(items)) + '</span>' +
+    var items = group.items, p0 = items[0], st = rollup(items), pp = portParts(items);
+    // Hover only (not shown on the tile): single-service ports surface their
+    // impact; a shared port points to the domain column instead of listing hosts.
+    var tip = items.length > 1
+      ? "Required services share this port — see Domain Reachability for the hosts."
+      : (NET_PORT_IMPACT[p0.purpose] || "");
+    return '<div class="net-port-card' + st.stateCls + '" style="--rowaccent:' + st.accent + '" title="' + esc(tip) + '">' +
+      '<div class="net-port-card-head">' +
+        '<span class="net-port-num">' + esc(pp.num) + '</span>' +
         '<span class="net-port-pill net-port-pill-' + st.pillCls + '">' + esc(st.pillTxt) + '</span>' +
-      '</div>';
-    var bodyHtml, cls = "net-port-card" + st.stateCls, title;
-    if (group.type === "byPort") {
-      cls += " is-multi";
-      // Tile-level tooltip — the header and gaps between host rows would
-      // otherwise have none; each host row keeps its own service-specific impact.
-      title = ' title="Several services share this port — hover a host for its impact if blocked."';
-      bodyHtml = '<ul class="net-port-hostlist">' + items.map(function(p) {
-        // Non-colour status cue (shape, not just the colour) for accessibility.
-        var ok = (p.status || "").toLowerCase() === "pass";
-        var glyph = ok ? "✓" : (p.optional ? "–" : "✕");
-        return '<li title="' + esc(_netPortImpact(p)) + '">' +
-            '<span class="net-port-hstat" style="color:' + dotColor(p) + '">' + glyph + '</span>' +
-            '<span class="net-port-hname">' + esc(p.host || "") + '</span>' +
-            '<span class="net-port-hsvc">' + esc(p.purpose || "") + '</span>' +
-          '</li>';
-      }).join("") + '</ul>';
-    } else {
-      title = ' title="' + esc(NET_PORT_IMPACT[p0.purpose] || "") + '"';
-      bodyHtml = '<div class="net-port-card-svc">' + esc(p0.purpose || "—") + '</div>' +
-                 '<div class="net-port-card-host">' + esc(p0.host || "") + '</div>';
-    }
-    return '<div class="' + cls + '" style="--rowaccent:' + st.accent + '"' + title + '>' + head + bodyHtml + '</div>';
+      '</div>' +
+      '<span class="net-port-proto-tag">' + esc(pp.proto) + '</span>' +
+    '</div>';
   }
 
   var required = ports.filter(function(p) { return !p.optional; });
@@ -2242,12 +2264,20 @@ function _renderPortConnectivity(ports) {
   var reqPass = required.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
   var reqBlocked = required.length - reqPass;
 
+  // A required failure that ISN'T a still-redundant streaming path is a real
+  // problem (red). If the only blocks are redundant streaming paths, streaming
+  // still works — show amber, not red.
+  var nonStreamBlocked = required.filter(function(p) {
+    return (p.status || "").toLowerCase() !== "pass" && STREAMING_PURPOSES.indexOf(p.purpose) === -1;
+  }).length;
   var summary;
   if (required.length === 0) {
     // Guard the degenerate case — don't render "All 0 required reachable".
     summary = '<span class="net-port-summary net-port-summary-opt">No required ports tested</span>';
   } else if (reqBlocked === 0) {
     summary = '<span class="net-port-summary net-port-summary-ok">' + svgIcon("check", 13) + ' All ' + required.length + ' required reachable</span>';
+  } else if (nonStreamBlocked === 0 && health.anyOpen) {
+    summary = '<span class="net-port-summary net-port-summary-warn">' + svgIcon("triangle", 13) + ' Streaming OK · ' + health.blocked.length + ' backup path' + (health.blocked.length === 1 ? "" : "s") + ' blocked</span>';
   } else {
     summary = '<span class="net-port-summary net-port-summary-bad">' + svgIcon("triangle", 13) + ' ' + reqBlocked + ' of ' + required.length + ' required blocked</span>';
   }
@@ -2347,18 +2377,50 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
   // severity bucket, port blockages rank above DNS issues. The Network
   // tab's sort is stable on severity, so insertion order is the
   // tie-breaker within a bucket.
-  var reqFailed = (ports || []).filter(function(p) { return !p.optional && (p.status || "").toLowerCase() !== "pass"; });
-  var reqPass = (ports || []).filter(function(p) { return !p.optional && (p.status || "").toLowerCase() === "pass"; });
+  function _portDetail(p) {
+    var proto = (p.protocol || "TCP").toUpperCase();
+    var impact = _netPortImpact(p);
+    return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote")
+      + (impact ? " — " + impact : "");
+  }
+  function _portShort(p) { return (p.protocol || "TCP").toUpperCase() + "/" + p.port; }
+
+  // Streaming transports are redundant (UDP/2088, UDP/443, TCP/443 tunnel) —
+  // handle them as a group so a single blocked path with another still open is
+  // a warning, not a "stream fails" critical. Broadcasting only truly fails
+  // when every path is blocked.
+  var stream = _streamingHealth(ports);
+  if (stream.blocked.length > 0) {
+    if (stream.anyOpen) {
+      issues.push({
+        severity: "warning",
+        title: "Streaming redundancy reduced — " + stream.blocked.length + " of " + stream.total + " streaming paths blocked",
+        body: "The stream still has a working path (" + stream.open.map(_portShort).join(", ")
+          + "), so broadcasting should work. The blocked path(s) remove failover — if the active path degrades mid-event there's no backup. Ask the venue to open them.",
+        details: stream.blocked.map(_portDetail),
+      });
+    } else {
+      issues.push({
+        severity: "critical",
+        title: "All streaming paths blocked — the VPU cannot broadcast",
+        body: "Every transport Pixellot can use to send video (UDP/2088, UDP/443, and the TCP/443 tunnel to prod-echo.pixellot.tv) is blocked. Open at least one in the venue firewall.",
+        details: stream.blocked.map(_portDetail),
+      });
+    }
+  }
+
+  // Non-streaming required failures (DNS, NFHS, S3, Singular, LogMeIn,
+  // pixellot.tv apex) — prerequisites, not redundant paths, so any one blocked
+  // is critical on its own.
+  var reqFailed = (ports || []).filter(function(p) {
+    return !p.optional && (p.status || "").toLowerCase() !== "pass"
+      && STREAMING_PURPOSES.indexOf(p.purpose) === -1;
+  });
   if (reqFailed.length > 0) {
-    var portDetails = reqFailed.map(function(p) {
-      var proto = (p.protocol || "TCP").toUpperCase();
-      var impact = _netPortImpact(p);
-      return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote")
-        + (impact ? " — " + impact : "");
-    });
-    issues.push({ severity: "critical", title: reqFailed.length + " of " + (reqFailed.length + reqPass.length) + " required ports blocked",
+    issues.push({ severity: "critical",
+      title: reqFailed.length + " required service" + (reqFailed.length === 1 ? "" : "s") + " blocked",
       body: "Ensure these ports are allowed by the venue firewall and VLAN policy.",
-      details: portDetails });
+      details: reqFailed.map(_portDetail) });
   }
 
   // ── DNS comparison vs Google DNS (PDF #10) ──────────────
@@ -2674,10 +2736,34 @@ function renderNetwork() {
 
     ${issuesPanel}
 
-    <!-- Port Connectivity -->
+    <!-- Connectivity: Ports (left) | Domains (right) in one panel -->
     <div class="card">
-      ${sectionTitle("link", "Port Connectivity")}
-      ${_renderPortConnectivity(ports)}
+      <div class="net-conn-grid">
+        <div class="net-conn-col">
+          ${sectionTitle("link", "Port Connectivity")}
+          ${_renderPortConnectivity(ports)}
+        </div>
+        <div class="net-conn-col">
+          ${sectionTitle("wifi", "Domain Reachability")}
+          ${domains.length ? `
+            <div class="domain-list">
+              ${domains.map(function(d) {
+                const ok = (d.status || "").toLowerCase() === "pass";
+                var dnsTime = d.resolutionMs != null ? d.resolutionMs + " ms" : "";
+                var dnsSlow = d.resolutionMs != null && d.resolutionMs > 200;
+                var dotColor = ok ? "var(--c-accent-green)" : "var(--c-accent-red)";
+                return `<div class="domain-row" title="${esc(_netDomainImpact(d))}">
+                  <span class="domain-dot" style="background:${dotColor}"></span>
+                  <span class="domain-name">${esc(d.domain)}</span>
+                  <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
+                  <span class="domain-dns-time font-mono${dnsSlow ? ' status-warn' : ''}">${esc(dnsTime)}</span>
+                  ${statusBadge(d.status)}
+                </div>`;
+              }).join("")}
+            </div>
+          ` : '<p class="text-pulse-muted text-sm">No DNS data</p>'}
+        </div>
+      </div>
     </div>
 
     <!-- Local Network Health -->
@@ -2706,14 +2792,15 @@ function renderNetwork() {
       </div>
     </div>
 
-    <!-- Internet Adapter + IP Config | Domain Reachability -->
-    <div class="net-bottom-grid">
-      <div class="card">
-        ${sectionTitle("globe", "Internet Adapter & IP Configuration")}
+    <!-- Internet Adapter & IP Configuration (full width; domains moved up) -->
+    <div class="card">
+      ${sectionTitle("globe", "Internet Adapter & IP Configuration")}
         ${uplinkAdapterRow ? `
           <div class="font-semibold text-white mb-1">${esc(uplinkAdapterRow.name)}</div>
           <div class="text-pulse-muted text-xs mb-3">${esc(uplinkAdapterRow.interfaceDescription || "")}</div>` : `
           <p class="text-pulse-muted text-sm mb-3">No internet-bound adapter detected.</p>`}
+        <div class="net-adapter-grid">
+          <div class="net-adapter-section">
         <div class="net-iface-stats-title">IP Configuration</div>
         <div class="kv-grid">
           ${kvRow("IP address", adapterIp)}
@@ -2730,8 +2817,9 @@ function renderNetwork() {
           ${kvRow("Gateway", cfg.uplinkAdapter?.gateway || "—")}
           ${kvRow("DNS", dnsStr)}
         </div>
-
-        <div class="net-iface-stats-title" style="margin-top:0.85rem">Link</div>
+          </div>
+          <div class="net-adapter-section">
+        <div class="net-iface-stats-title">Link</div>
         <div class="kv-grid">
           ${kvRow("MAC address", uplinkAdapterRow?.macAddress || "—")}
           ${kvRowHtml("Link state", uplinkAdapterRow
@@ -2742,16 +2830,18 @@ function renderNetwork() {
             ? '<span class="status-warn" style="font-weight:600">Half Duplex</span>'
             : '<span style="color:var(--c-accent-green);font-weight:600">Full Duplex</span>') : ""}
         </div>
-
-        <div class="net-iface-stats-title" style="margin-top:0.85rem">Connectivity</div>
+          </div>
+          <div class="net-adapter-section">
+        <div class="net-iface-stats-title">Connectivity</div>
         <div class="kv-grid">
           ${kvRowHtml("Internet", cfg.internetReachable
             ? '<span class="status-pass">Reachable</span>'
             : '<span class="status-fail">Unreachable</span>')}
           ${kvRow("Tested host", cfg.testedHost || "—")}
         </div>
-
-        <div class="net-iface-stats-title" style="margin-top:0.85rem">Time Sync</div>
+          </div>
+          <div class="net-adapter-section">
+        <div class="net-iface-stats-title">Time Sync</div>
         <div class="kv-grid">
           ${kvRowHtml("NTP server", (function() {
             var src = cfg.ntpSource || ntp.source || "";
@@ -2769,7 +2859,7 @@ function renderNetwork() {
               chip = "";
             }
             var tooltip = "The server the VPU syncs its clock from. Drift is measured against this same source (see Time Sync under Advanced Diagnostics). The UDP/123 port test separately checks reachability to prod-echo.pixellot.tv.";
-            return '<span title="' + esc(tooltip) + '">' + esc(src) + '</span> ' + chip;
+            return '<span title="' + esc(tooltip) + '" style="white-space:nowrap">' + esc(src) + '</span> ' + chip;
           })())}
           ${kvRowHtml("NTP status", (function() {
             var s = (ntp.status || "").toLowerCase();
@@ -2779,6 +2869,8 @@ function renderNetwork() {
             if (!ntp.status) return "—";
             return '<span class="status-fail" style="font-weight:600">ERROR</span>';
           })())}
+        </div>
+          </div>
         </div>
         ${totalErrors > 0 || (uplinkStats.rxBytes != null) ? `
           <div class="net-iface-stats">
@@ -2804,27 +2896,6 @@ function renderNetwork() {
             ${totalErrors > 0 ? '<div class="net-iface-stats-warn">' + svgIcon("triangle", 12) + ' Interface errors detected — check cable, switch port, or NIC driver.</div>' : ''}
           </div>` : ""}
       </div>
-      <div class="card">
-        ${sectionTitle("wifi", "Domain Reachability")}
-        ${domains.length ? `
-          <div class="domain-list">
-            ${domains.map(function(d) {
-              const ok = (d.status || "").toLowerCase() === "pass";
-              var dnsTime = d.resolutionMs != null ? d.resolutionMs + " ms" : "";
-              var dnsSlow = d.resolutionMs != null && d.resolutionMs > 200;
-              var dotColor = ok ? "var(--c-accent-green)" : "var(--c-accent-red)";
-              return `<div class="domain-row" title="${esc(_netDomainImpact(d))}">
-                <span class="domain-dot" style="background:${dotColor}"></span>
-                <span class="domain-name">${esc(d.domain)}</span>
-                <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
-                <span class="domain-dns-time font-mono${dnsSlow ? ' status-warn' : ''}">${esc(dnsTime)}</span>
-                ${statusBadge(d.status)}
-              </div>`;
-            }).join("")}
-          </div>
-        ` : '<p class="text-pulse-muted text-sm">No DNS data</p>'}
-      </div>
-    </div>
 
     <!-- Speed Test (Speedtest.net paste-in) — promoted out of Advanced -->
     <div class="card">

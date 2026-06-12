@@ -1319,6 +1319,7 @@ html.dark .splash-logo {
 .net-port-summary { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
 .net-port-summary-ok  { color: var(--c-accent-green); }
 .net-port-summary-bad { color: var(--c-accent-red); }
+.net-port-summary-warn { color: var(--c-accent-amber); }
 .net-port-summary-opt { color: var(--c-dim); font-weight: 500; }
 .net-port-group-label {
     font-size: 0.64rem;
@@ -1332,20 +1333,20 @@ html.dark .splash-logo {
    shorter neighbours (align-items: start). */
 .net-port-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 10px;
     align-items: start;
     margin-top: 0.5rem;
 }
-/* Port-led tile: a prominent protocol/port header + status pill, then the
-   service + host (or a host list when several services share the port). A top
-   accent strip carries the status colour (green reachable / dim optional /
-   red blocked-required), driven by the per-card --rowaccent var. */
+/* Port-led tile: the port number leads (priority) with the protocol beside it
+   and a status pill — no hosts/domains (those live in Domain Reachability). A
+   top accent strip carries the status colour (green reachable / amber
+   no-failover / dim optional / red blocked-required), via --rowaccent. */
 .net-port-card {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 11px 13px 12px;
+    gap: 2px;
+    padding: 9px 12px 10px;
     background: var(--c-surface-2);
     border: 1px solid var(--c-border);
     border-top: 3px solid var(--rowaccent, var(--c-border));
@@ -1354,41 +1355,19 @@ html.dark .splash-logo {
 }
 .net-port-card:hover { border-color: var(--rowaccent, var(--c-border)); }
 .net-port-card.is-fail { border-color: rgba(220, 38, 38, 0.4); }
-/* A port shared by several services spans wider so the host list has room. */
-.net-port-card.is-multi { grid-column: span 2; }
 .net-port-card-head {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
-.net-port-portnum {
-    font-size: 0.92rem; font-weight: 700; color: var(--c-text);
+/* Port number leads (priority); protocol sits below it as a small label. */
+.net-port-num {
+    font-size: 1.1rem; font-weight: 700; color: var(--c-text);
     font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
-    letter-spacing: 0.01em;
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    letter-spacing: 0.01em; white-space: nowrap;
 }
-.net-port-card-svc {
-    font-size: 0.82rem; font-weight: 600; color: var(--c-text);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.net-port-proto-tag {
+    font-size: 0.62rem; font-weight: 600; color: var(--c-muted);
+    text-transform: uppercase; letter-spacing: 0.08em;
 }
-.net-port-card-host {
-    font-size: 0.73rem; color: var(--c-muted);
-    font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.net-port-hostlist {
-    list-style: none; margin: 1px 0 0; padding: 0;
-    display: flex; flex-direction: column; gap: 5px;
-}
-.net-port-hostlist li {
-    display: grid; grid-template-columns: 13px minmax(0, 1fr) auto;
-    align-items: center; gap: 8px;
-}
-.net-port-hstat { font-size: 0.8rem; font-weight: 700; line-height: 1; text-align: center; }
-.net-port-hname {
-    font-size: 0.73rem; color: var(--c-text);
-    font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.net-port-hsvc { font-size: 0.7rem; color: var(--c-muted); white-space: nowrap; }
 .net-port-pill {
     display: inline-block;
     font-size: 0.66rem; font-weight: 600;
@@ -1398,6 +1377,7 @@ html.dark .splash-logo {
 .net-port-pill-pass  { background: var(--c-tint-green); color: var(--c-accent-green); }
 .net-port-pill-fail  { background: var(--c-tint-red);   color: var(--c-accent-red); }
 .net-port-pill-muted { background: var(--c-surface-3);  color: var(--c-muted); border: 1px solid var(--c-border); }
+.net-port-pill-warn  { background: var(--c-tint-amber); color: var(--c-accent-amber); }
 
 /* "Requires administrator" note on the Packet Capture card. */
 .net-capture-admin-note {
@@ -2667,14 +2647,27 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 
 /* ── Network Panel ───────────────────────────────────────── */
 
-/* Bottom row: 2fr adapter+IP | 1fr domains */
-.net-bottom-grid {
+/* Combined connectivity panel: Port Connectivity (left) | Domains (right). */
+.net-conn-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 1rem;
-    margin-top: 1rem;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
 }
-@media (max-width: 1200px) { .net-bottom-grid { grid-template-columns: 1fr; } }
+@media (min-width: 1101px) {
+    .net-conn-grid > .net-conn-col:first-child {
+        padding-right: 1.5rem;
+        border-right: 1px solid var(--c-border);
+    }
+}
+@media (max-width: 1100px) {
+    /* Stack on narrow screens, with a top divider on the domains column. */
+    .net-conn-grid { grid-template-columns: 1fr; gap: 1.25rem; }
+    .net-conn-grid > .net-conn-col:last-child {
+        border-top: 1px solid var(--c-border);
+        padding-top: 1.25rem;
+    }
+}
 
 /* Compact kv-grid for use inside narrow sub-cards */
 .net-kv {
@@ -3097,6 +3090,20 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 }
 
 /* ── Interface counters (uplink adapter) ────────────────── */
+/* Adapter sections (IP Config / Link / Connectivity / Time Sync) laid side by
+   side to fill the full-width card and cut its height. Auto-fit so they reflow
+   from 4 columns on a wide screen down to 1 when narrow. */
+.net-adapter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 0.6rem 2rem;
+    align-items: start;
+    margin-top: 0.25rem;
+}
+/* Tighter label column inside the adapter sections so values (MAC, NTP host,
+   DNS pair) keep a full line in the narrower columns. */
+.net-adapter-grid .kv-grid { grid-template-columns: 76px 1fr; }
+.net-adapter-grid .kv-value { word-break: normal; overflow-wrap: anywhere; }
 .net-iface-stats {
     margin-top: 1rem;
     padding-top: 0.75rem;

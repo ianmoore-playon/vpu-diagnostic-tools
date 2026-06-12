@@ -51,7 +51,7 @@ try {
         # per-event from AWS pools (observed us-east-2), not to prod-echo
         # (us-east-1). These rows prove the venue firewall allows the PORTS;
         # rules must therefore allow UDP 443/2088 by port, not by destination IP.
-        @{ protocol = 'UDP'; port = 443;  host = 'prod-echo.pixellot.tv';  purpose = 'Zixi QUIC';         optional = $false }
+        @{ protocol = 'UDP'; port = 443;  host = 'prod-echo.pixellot.tv';  purpose = 'Zixi Backup';       optional = $false }
         @{ protocol = 'UDP'; port = 2088; host = 'prod-echo.pixellot.tv';  purpose = 'Zixi Streaming';    optional = $false }
         # Optional — RTMP fallback (legacy ingest)
         @{ protocol = 'TCP'; port = 1935; host = 'sportzcast.net';         purpose = 'RTMP Ingest';       optional = $true }
