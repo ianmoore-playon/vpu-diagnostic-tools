@@ -2,10 +2,10 @@
 
 ## Project
 
-Pulse — diagnostic tools for Pixellot VPU field support. Two variants:
+Pulse — diagnostic tools for Pixellot VPU field support.
 
-- **Pulse.WPF** (`Pulse.WPF/`) — C# / WPF / .NET Framework 4.8 desktop app
-- **Pulse.Web** (`Pulse.Web/`) — Python + vanilla JS web app (FastAPI + Uvicorn)
+- **Pulse.Web** (`Pulse.Web/`) — Python + vanilla JS web app (FastAPI + Uvicorn). **This is the product** — the only thing built, shipped, and supported.
+- **Pulse.WPF** (`Pulse.WPF/`) — the **deprecated** gen-2 C#/WPF desktop app. Not built or shipped; source kept for reference/provenance only. Ignore it unless explicitly reviving the line. (WPF = Windows Presentation Foundation, a Windows desktop-UI framework — unrelated to Pixellot cameras or the stream pipeline.)
 
 ## Multi-Session Etiquette
 
@@ -48,11 +48,9 @@ git -C /tmp/wt push origin HEAD:dev && git worktree remove --force /tmp/wt
 ## Build
 
 ```bash
-# WPF (requires .NET 8 SDK, targets net48)
-dotnet build Pulse.WPF/Pulse.WPF/Pulse.WPF.csproj -c Release
-
-# Web — no build step, just run
+# Pulse.Web — no build step. On a VPU, just run the launcher:
 cd Pulse.Web && run.bat
+# On macOS/Linux it auto-runs in demo mode: python3 app/main.py
 ```
 
 ## Branches & Releases
@@ -61,7 +59,6 @@ Code flows `dev` → `beta` → `main`. Each branch has CI builds; tags create r
 
 | App | Dev tag | Beta tag | Production tag |
 |-----|---------|----------|----------------|
-| Pulse.WPF | `dev-v*` | `beta-v*` | `wpf-pilot-v*` |
 | Pulse.Web | `web-dev-v*` | `web-beta-v*` | `web-v*` |
 
 Dev and beta tags create pre-releases. Production tags create full releases.
@@ -70,22 +67,20 @@ Launchers in `runners/` are per-channel: `run_pulse.bat` (production → latest 
 
 ### Versioning
 
-Both apps use semver (`MAJOR.MINOR.PATCH`) with a three-channel pipeline. Dev stays roughly two versions ahead of main, and beta stays one version ahead.
+Pulse.Web uses semver (`MAJOR.MINOR.PATCH`) with a three-channel pipeline. Dev stays roughly two versions ahead of main, and beta stays one version ahead.
 
-| Channel | Version format | Tag examples | Audience |
+| Channel | Version format | Tag example | Audience |
 |---------|---------------|-------------|----------|
-| Main | `X.Y.Z` | `wpf-pilot-v0.1.0` / `web-v0.1.0` | Production VPUs |
-| Beta | `X.Y.Z` | `beta-v0.2.0` / `web-beta-v0.2.0` | Field validation |
-| Dev | `X.Y.Z-dev` | `dev-v0.3.0-dev-abc1234` / `web-dev-v0.3.0-dev-abc1234` | Internal testing |
+| Main | `X.Y.Z` | `web-v0.3.0` | Production VPUs |
+| Beta | `X.Y.Z` | `web-beta-v0.3.0` | Field validation |
+| Dev | `X.Y.Z-dev` | `web-dev-v0.4.0-dev-abc1234` | Internal testing |
 
 **Version example at a point in time:**
 - Main: `0.1.0` (current stable)
-- Beta: `0.2.0` (next release, being validated)
-- Dev: `0.3.0-dev` (bleeding edge, auto-tagged with commit SHA)
+- Beta: `0.3.0` (validated, being rolled to testers)
+- Dev: `0.4.0-dev` (bleeding edge, auto-tagged with commit SHA)
 
-**Version source of truth per app:**
-- Pulse.Web: `Pulse.Web/VERSION` file
-- Pulse.WPF: `<Version>` in `Pulse.WPF/Pulse.WPF/Pulse.WPF.csproj`
+**Version source of truth:** `Pulse.Web/VERSION`.
 
 #### Promotion workflow
 
@@ -96,7 +91,7 @@ Both apps use semver (`MAJOR.MINOR.PATCH`) with a three-channel pipeline. Dev st
 #### Rules
 
 - Version bumps are manual — decide whether to increment minor or major when starting a new dev cycle.
-- Dev auto-tags on push (Web via `web-auto-tag.yml`, WPF via branch-triggered CI). Beta and main tags are pushed manually.
+- Dev auto-tags on push (via `web-auto-tag.yml`). Beta and main tags are pushed manually.
 - Only promote to main what was validated in beta. The beta tag version and main tag version should match for a given release.
 
 #### Changelog (shown to testers on update)
@@ -105,18 +100,17 @@ Both apps use semver (`MAJOR.MINOR.PATCH`) with a three-channel pipeline. Dev st
 
 ## CI Workflows
 
-- `.github/workflows/wpf-pilot-build.yml` — Windows build, triggers on `dev`/`beta`/`main` pushes (when `Pulse.WPF/` changes) and WPF tags
 - `.github/workflows/web-build.yml` — Zips `Pulse.Web/`, triggers on web tags
+- `.github/workflows/web-auto-tag.yml` — auto-tags `dev` pushes
 
-Both publish releases directly to `playon/pulse` using the workflow's built-in `GITHUB_TOKEN` — no separate PAT or mirror step required.
+They publish releases directly to `playon/pulse` using the workflow's built-in `GITHUB_TOKEN` — no separate PAT or mirror step required. (The old `wpf-pilot-build.yml` was removed with the WPF deprecation.)
 
 ## Key Directories
 
-- `runners/` — Install scripts and `.bat` launchers for all channels
-- `Pulse.Web/scripts/` — PowerShell data-collection scripts (WMI/CIM)
-- `Pulse.Web/app/static/` — Frontend SPA (vanilla JS, hash routing)
-- `Pulse.WPF/Pulse.WPF/Views/` — XAML panels
-- `Pulse.WPF/Pulse.WPF/Services/` — WMI, registry, network probes
+- `runners/` — `.bat` launchers for all channels
+- `Pulse.Web/scripts/` — PowerShell data-collection + action scripts (WMI/CIM)
+- `Pulse.Web/app/` — FastAPI backend (`main.py`, `powershell.py`) + SPA frontend (`static/`)
+- `Pulse.WPF/` — deprecated gen-2 desktop app, kept for reference only (not built/shipped)
 
 ## MCP Tools
 
