@@ -22,6 +22,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-06-12
+
+### Fixed
+- **Port Connectivity no longer warns that streaming will fail when it won't.**
+  Pixellot can broadcast over any of three paths (UDP/2088, UDP/443, or the
+  TCP/443 tunnel), so one blocked path now shows a yellow "no failover" note
+  instead of a red failure — it only flags a real "stream can't broadcast" when
+  all three are blocked. (The UDP/443 row is also renamed from the misleading
+  "Zixi QUIC" to "Zixi Backup".)
+
+### Changed
+- **Network checks combined into one panel.** Port Connectivity (left) and
+  Domain Reachability (right) now share a single card. Port tiles lead with the
+  port number and protocol — no hostnames; the domain detail is all in the
+  right-hand column. The Internet Adapter card lays its sections side by side so
+  it takes less vertical space.
+
 ## [0.3.1] - 2026-06-11
 
 ### Changed
