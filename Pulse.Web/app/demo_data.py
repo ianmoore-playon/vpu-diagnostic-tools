@@ -351,9 +351,13 @@ DEMO = {
             {"purpose": "Singular Overlay", "host": "service.singular.live", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "LogMeIn", "host": "secure.logmein.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
-            {"purpose": "Zixi QUIC", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "pass", "optional": False},
-            # Zixi (UDP 2088) is the streaming control channel. Passing in
-            # the demo — flip to "fail" to exercise the required-port finding.
+            # Demo shows the Shelton scenario: the UDP/443 backup path is
+            # blocked but the primary UDP/2088 path is open — so the stream
+            # still broadcasts. This exercises the path-aware "Streaming
+            # redundancy reduced" WARNING (amber "No failover"), not a critical
+            # "stream fails". Flip 2088 to "fail" too to see the all-blocked
+            # critical.
+            {"purpose": "Zixi Backup", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "fail", "optional": False},
             {"purpose": "Zixi Streaming", "host": "prod-echo.pixellot.tv", "port": 2088, "protocol": "UDP", "status": "pass", "optional": False},
             # Optional — RTMP fallback (legacy ingest)
             {"purpose": "RTMP Ingest", "host": "sportzcast.net", "port": 1935, "protocol": "TCP", "status": "fail", "optional": True},

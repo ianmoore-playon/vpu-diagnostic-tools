@@ -148,6 +148,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   pass while the actual LogMeIn gateways were blocked. It now tests
   secure.logmein.com, which lives on the same GoTo network the VPU's real
   LogMeIn sessions use.
+- **Port Connectivity no longer cries "stream fails" when streaming actually
+  works.** Pixellot can broadcast over any of three paths — UDP/2088 (primary),
+  UDP/443 (backup), or the TCP/443 tunnel — so the stream only fails if all
+  three are blocked. Pulse now treats one blocked streaming path with another
+  still open as a yellow "no failover" warning, not a red failure, and only
+  flags a true "stream cannot broadcast" critical when every path is down.
+  (The UDP/443 row is also renamed from the misleading "Zixi QUIC" to "Zixi
+  Backup.")
+- **Network checks now read as one panel: ports on the left, domains on the
+  right.** Port Connectivity and Domain Reachability share a single card.
+  Each port tile leads with the port number and protocol (no hostnames — the
+  domain detail all lives in the right-hand column), so the left is a clean
+  "is this port open" view and the right is the full domain list.
 
 ## [0.2.1] - 2026-06-04
 
