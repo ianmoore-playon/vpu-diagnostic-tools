@@ -2383,7 +2383,6 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote")
       + (impact ? " — " + impact : "");
   }
-  function _portShort(p) { return (p.protocol || "TCP").toUpperCase() + "/" + p.port; }
 
   // Streaming transports are redundant (UDP/2088, UDP/443, TCP/443 tunnel) —
   // handle them as a group so a single blocked path with another still open is
@@ -2391,20 +2390,32 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
   // when every path is blocked.
   var stream = _streamingHealth(ports);
   if (stream.blocked.length > 0) {
+    // Plain-language detail per blocked connection — keeps the exact port so
+    // whoever opens the firewall knows what to unblock, no jargon.
+    var streamDetails = stream.blocked.map(function(p) {
+      return (p.protocol || "TCP").toUpperCase() + " port " + p.port
+        + " to " + (p.host || "the streaming server") + " — a streaming connection";
+    });
     if (stream.anyOpen) {
+      var n = stream.blocked.length;
       issues.push({
         severity: "warning",
-        title: "Streaming redundancy reduced — " + stream.blocked.length + " of " + stream.total + " streaming paths blocked",
-        body: "The stream still has a working path (" + stream.open.map(_portShort).join(", ")
-          + "), so broadcasting should work. The blocked path(s) remove failover — if the active path degrades mid-event there's no backup. Ask the venue to open them.",
-        details: stream.blocked.map(_portDetail),
+        title: (n === 1 ? "A backup streaming connection is blocked" : n + " backup streaming connections are blocked")
+          + " — the broadcast still works",
+        body: "The game can still broadcast right now. Pixellot normally keeps a spare connection to its streaming "
+          + "service as a backup, and the venue's network is blocking that backup. Streaming will still work — but "
+          + "if the main connection runs into trouble during a game, there's no backup to fall back on and the "
+          + "broadcast could drop. Ask the venue's IT or network team to unblock the connection below.",
+        details: streamDetails,
       });
     } else {
       issues.push({
         severity: "critical",
-        title: "All streaming paths blocked — the VPU cannot broadcast",
-        body: "Every transport Pixellot can use to send video (UDP/2088, UDP/443, and the TCP/443 tunnel to prod-echo.pixellot.tv) is blocked. Open at least one in the venue firewall.",
-        details: stream.blocked.map(_portDetail),
+        title: "Streaming is blocked — the VPU can't broadcast",
+        body: "The venue's network is blocking every connection the VPU uses to send video to Pixellot's streaming "
+          + "service, so the game can't broadcast at all. The venue's IT or network team needs to unblock at least "
+          + "one of the connections listed below.",
+        details: streamDetails,
       });
     }
   }

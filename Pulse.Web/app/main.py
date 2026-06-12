@@ -1503,23 +1503,25 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 findings.append({
                     "severity": "warning",
                     "category": "Network",
-                    "title": "Streaming redundancy reduced (backup path blocked)",
+                    "title": "A backup streaming connection is blocked (broadcast still works)",
                     "recommendation": (
-                        f"The stream still has a working path ({_lbl(stream_open)}), so "
-                        f"broadcasting should work — but {_lbl(stream_blocked)} to "
-                        f"prod-echo.pixellot.tv is blocked, removing failover. Ask the "
-                        f"venue's IT team to open it."
+                        "The game can still broadcast right now. Pixellot keeps a spare "
+                        "connection to its streaming service as a backup, and the venue's "
+                        "network is blocking it — so if the main connection has trouble "
+                        f"during a game the broadcast could drop. Ask the venue's IT team to "
+                        f"unblock {_lbl(stream_blocked)} to prod-echo.pixellot.tv."
                     ),
                 })
             else:
                 findings.append({
                     "severity": "critical",
                     "category": "Network",
-                    "title": "All streaming paths blocked — VPU cannot broadcast",
+                    "title": "Streaming is blocked — VPU can't broadcast",
                     "recommendation": (
-                        "Every streaming transport (UDP/2088, UDP/443, TCP/443 to "
-                        "prod-echo.pixellot.tv) is blocked, so the VPU cannot send video. "
-                        "Open at least one in the venue firewall."
+                        "The venue's network is blocking every connection the VPU uses to "
+                        "send video to Pixellot's streaming service, so the game can't "
+                        "broadcast. The venue's IT team needs to unblock at least one of "
+                        "these to prod-echo.pixellot.tv: UDP 2088, UDP 443, or TCP 443."
                     ),
                 })
 
