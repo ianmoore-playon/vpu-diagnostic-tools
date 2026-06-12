@@ -29,11 +29,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   launcher now opens Chrome explicitly — no dialog, no IE.
 
 ### Changed
-- **Port Connectivity tiles now list in numeric order.** Within Required and
-  within Optional, ports run ascending (53, 123, 443…) so a given port is easy
-  to find at a glance.
+- **Port Connectivity tiles now list in numeric order, two per row.** Within
+  Required and within Optional, ports run ascending (53, 123, 443…) and wrap in
+  pairs, so a given port is easy to find at a glance.
 - The Audio tab is temporarily hidden while audio diagnostics are being
   finished. No loss of function — audio checks were not yet in field use.
+
+### Fixed
+- **A blocked Zixi streaming port (UDP/2088) is now flagged as a real outage.**
+  Pulse used to treat UDP/2088 as one of three interchangeable streaming paths,
+  so blocking it only showed a yellow "no failover" note. In the field the
+  live broadcast rides UDP/2088 with no failover — so a block there now reads as
+  a red "Streaming is blocked — the VPU can't broadcast." The failover/"backup
+  connection" wording now applies only to the two port-443 paths (UDP/443 and
+  the TCP/443 tunnel), which do back each other up.
 
 ### Fixed
 - Fixed an error that could appear on the Audio screen and during full

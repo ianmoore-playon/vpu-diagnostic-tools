@@ -1479,57 +1479,67 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
     # are intentionally skipped — they vary by venue configuration.
     if port_tests and not port_tests.get("error"):
         results = port_tests.get("results", [])
-        # The three redundant streaming transports to prod-echo (UDP/2088
-        # primary, UDP/443 backup, TCP/443 tunnel): video can ride any of them,
-        # so the broadcast only fails when ALL are blocked — one blocked path
-        # just removes failover. Keep this set in sync with STREAMING_PURPOSES
-        # in app.js and the purposes in Test-NetworkPorts.ps1.
-        streaming_purposes = {"Zixi Streaming", "Zixi Backup", "Pixellot Echo"}
+        # Streaming model: the live broadcast rides UDP/2088 (Zixi Streaming)
+        # with NO failover — block it and the stream can't go out (critical).
+        # The 443 pair (UDP/443 Zixi Backup + TCP/443 Pixellot Echo tunnel) is a
+        # redundant backup channel that fails over between its two transports, so
+        # a block there is a warning, not "can't broadcast". Keep these in sync
+        # with PRIMARY_STREAM_PURPOSE / STREAMING_PURPOSES in app.js and the
+        # purposes in Test-NetworkPorts.ps1.
+        primary_stream_purpose = "Zixi Streaming"
+        backup_stream_purposes = {"Zixi Backup", "Pixellot Echo"}
 
         def _lbl(rows):
             return ", ".join(
                 f"{(r.get('protocol') or '').upper()}/{r.get('port')}" for r in rows
             )
 
-        stream_paths = [
+        # (1) Primary stream (UDP/2088) — no failover, so a block stops the broadcast.
+        primary_blocked = [
             r for r in results
-            if r.get("purpose") in streaming_purposes and not r.get("optional")
+            if r.get("purpose") == primary_stream_purpose
+            and not r.get("optional") and r.get("status") == "fail"
         ]
-        stream_blocked = [r for r in stream_paths if r.get("status") == "fail"]
-        stream_open = [r for r in stream_paths if r.get("status") != "fail"]
+        if primary_blocked:
+            findings.append({
+                "severity": "critical",
+                "category": "Network",
+                "title": "Streaming is blocked — VPU can't broadcast",
+                "recommendation": (
+                    "The venue's network is blocking the connection the VPU uses to "
+                    "send the live video to Pixellot's streaming service. This connection "
+                    "has no backup, so the game can't broadcast until it's unblocked. Ask "
+                    f"the venue's IT team to open {_lbl(primary_blocked)} to prod-echo.pixellot.tv."
+                ),
+            })
 
-        if stream_blocked:
-            if stream_open:
-                findings.append({
-                    "severity": "warning",
-                    "category": "Network",
-                    "title": "A backup streaming connection is blocked (broadcast still works)",
-                    "recommendation": (
-                        "The game can still broadcast right now. Pixellot keeps a spare "
-                        "connection to its streaming service as a backup, and the venue's "
-                        "network is blocking it — so if the main connection has trouble "
-                        f"during a game the broadcast could drop. Ask the venue's IT team to "
-                        f"unblock {_lbl(stream_blocked)} to prod-echo.pixellot.tv."
-                    ),
-                })
-            else:
-                findings.append({
-                    "severity": "critical",
-                    "category": "Network",
-                    "title": "Streaming is blocked — VPU can't broadcast",
-                    "recommendation": (
-                        "The venue's network is blocking every connection the VPU uses to "
-                        "send video to Pixellot's streaming service, so the game can't "
-                        "broadcast. The venue's IT team needs to unblock at least one of "
-                        "these to prod-echo.pixellot.tv: UDP 2088, UDP 443, or TCP 443."
-                    ),
-                })
+        # (2) Backup channel (443 pair) — fails over between its transports and the
+        # broadcast rides UDP/2088, so a block here is a warning, not a critical.
+        backup_paths = [
+            r for r in results
+            if r.get("purpose") in backup_stream_purposes and not r.get("optional")
+        ]
+        backup_blocked = [r for r in backup_paths if r.get("status") == "fail"]
+        if backup_blocked:
+            findings.append({
+                "severity": "warning",
+                "category": "Network",
+                "title": "A backup streaming connection is blocked (broadcast still works)",
+                "recommendation": (
+                    "The game can still broadcast right now over its main connection. "
+                    "Pixellot also keeps a spare backup connection to its streaming service, "
+                    "and the venue's network is blocking that backup — so if the main "
+                    "connection has trouble during a game there's less to fall back on. Ask "
+                    f"the venue's IT team to unblock {_lbl(backup_blocked)} to prod-echo.pixellot.tv."
+                ),
+            })
 
-        # Non-streaming required ports — each blocked one is its own warning.
+        # Non-streaming required ports — each blocked one is its own warning. The
+        # primary stream and the 443 backup channel are handled above, so skip both.
         for r in results:
             if r.get("status") != "fail" or r.get("optional"):
                 continue
-            if r.get("purpose") in streaming_purposes:
+            if r.get("purpose") in backup_stream_purposes or r.get("purpose") == primary_stream_purpose:
                 continue
             host = r.get("host", "?")
             port = r.get("port", "?")

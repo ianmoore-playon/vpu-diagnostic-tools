@@ -351,12 +351,13 @@ DEMO = {
             {"purpose": "Singular Overlay", "host": "service.singular.live", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "LogMeIn", "host": "secure.logmein.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
-            # Demo: the primary UDP/2088 streaming path is blocked, but the
-            # UDP/443 backup + TCP/443 tunnel stay open — so the stream still
-            # broadcasts. Exercises the path-aware "a backup streaming connection
-            # is blocked (broadcast still works)" WARNING, not a critical "stream
-            # fails". (Flip 443 + Pixellot Echo to "fail" too for the all-blocked
-            # critical.)
+            # Demo: the live UDP/2088 broadcast connection is blocked. It has no
+            # failover, so this exercises the critical "Streaming is blocked — VPU
+            # can't broadcast". The 443 backup channel (UDP/443 + TCP/443 tunnel)
+            # stays open and is unaffected. (To exercise the amber "No failover"
+            # backup warning instead, set 2088 to "pass" and one of Zixi Backup /
+            # Pixellot Echo to "fail" — that leaves the broadcast up with one
+            # backup transport down.)
             {"purpose": "Zixi Backup", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "pass", "optional": False},
             {"purpose": "Zixi Streaming", "host": "prod-echo.pixellot.tv", "port": 2088, "protocol": "UDP", "status": "fail", "optional": False},
             # Optional — RTMP fallback (legacy ingest)

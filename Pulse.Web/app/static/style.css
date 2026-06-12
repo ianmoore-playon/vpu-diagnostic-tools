@@ -1329,11 +1329,13 @@ html.dark .splash-logo {
     letter-spacing: 0.06em;
     margin: 1rem 0 0.5rem;
 }
-/* Responsive grid of port tiles; tall multi-host tiles don't stretch their
+/* Grid of port tiles, two per row — tiles wrap to the next row in pairs (53 123
+   / 443 443 / 2088). minmax(0,1fr) lets them shrink instead of overflowing; a
+   lone trailing tile sits in the left cell. Tall tiles don't stretch their
    shorter neighbours (align-items: start). */
 .net-port-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
     align-items: start;
     margin-top: 0.5rem;
