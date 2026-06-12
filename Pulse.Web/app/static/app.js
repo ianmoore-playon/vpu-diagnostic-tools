@@ -2763,9 +2763,16 @@ function renderNetwork() {
                 var dnsTime = d.resolutionMs != null ? d.resolutionMs + " ms" : "";
                 var dnsSlow = d.resolutionMs != null && d.resolutionMs > 200;
                 var dotColor = ok ? "var(--c-accent-green)" : "var(--c-accent-red)";
-                return `<div class="domain-row" title="${esc(_netDomainImpact(d))}">
+                // "Impact if blocked" now lives on an explicit ? help icon next
+                // to the domain (focusable, clearly hoverable) instead of a
+                // hidden hover-anywhere title on the whole row.
+                var impact = _netDomainImpact(d);
+                var help = impact
+                  ? `<span class="domain-help" tabindex="0" title="${esc(impact)}" aria-label="Impact if blocked: ${esc(impact)}">?</span>`
+                  : "";
+                return `<div class="domain-row">
                   <span class="domain-dot" style="background:${dotColor}"></span>
-                  <span class="domain-name">${esc(d.domain)}</span>
+                  <span class="domain-name"><span class="domain-name-text">${esc(d.domain)}</span>${help}</span>
                   <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
                   <span class="domain-dns-time font-mono${dnsSlow ? ' status-warn' : ''}">${esc(dnsTime)}</span>
                   ${statusBadge(d.status)}

@@ -1404,7 +1404,21 @@ html.dark .splash-logo {
 }
 .domain-row + .domain-row { border-top: 1px solid var(--c-border); }
 .domain-dot { width: 7px; height: 7px; border-radius: 50%; justify-self: center; }
-.domain-name { font-size: 0.8rem; color: var(--c-text); min-width: 0; overflow-wrap: anywhere; }
+.domain-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.domain-name-text { font-size: 0.8rem; color: var(--c-text); min-width: 0; overflow-wrap: anywhere; }
+/* "?" impact-if-blocked affordance next to each domain (focusable; shows the
+   impact via its title on hover/focus). */
+.domain-help {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    border: 1px solid var(--c-border);
+    color: var(--c-muted);
+    font-size: 0.62rem; font-weight: 700; line-height: 1;
+    cursor: help; user-select: none;
+}
+.domain-help:hover, .domain-help:focus { color: var(--c-accent-blue); border-color: var(--c-accent-blue); outline: none; }
 .domain-ip { font-size: 0.7rem; font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; color: var(--c-dim); }
 
 /* ── Camera page ───────────────────────────────────────────── */
