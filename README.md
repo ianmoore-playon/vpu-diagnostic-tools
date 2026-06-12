@@ -1,151 +1,128 @@
 # Pulse — Pixellot VPU Diagnostic Tool
 
-A WPF diagnostic tool for Pixellot VPU field support. Covers camera-NIC and
-cable health, network connectivity, Pixellot services, system overview
-hardware/peripherals, disk health, the Windows event log, and a Reports panel
-with support bundles — all live, with plain-language next-step guidance and
-per-panel Recommended Actions.
+Diagnostic tools for Pixellot VPU field support. Covers camera-NIC and cable
+health, network connectivity, Pixellot services, system overview
+hardware/peripherals, disk health, audio, the Windows event log, and a Reports
+panel with support bundles — all live, with plain-language next-step guidance
+and per-panel Recommended Actions. Pulse also **updates itself in place**, can
+**share a diagnostic snapshot to another Pulse over the LAN**, and includes a
+guided **Fault Isolator** wizard that pinpoints a camera fault to the NIC port,
+cable, or camera.
 
-The active development line is **`Pulse.WPF/`** — a C# / WPF .NET Framework
-4.8 project. There is no longer a separate PowerShell / WinForms tool;
-the original `Pulse.ps1` + `Modules/*.psm1` tool was retired and removed in
-v0.5.3. Earlier history is preserved in git (`v1.0.0` → `v1.0.52` tags).
+**Pulse.Web** (`Pulse.Web/`) is the active product — a self-contained,
+browser-based diagnostic tool (Python + vanilla JS). No Node.js, npm, or
+.NET required; double-click a launcher and it bootstraps everything.
+
+> `Pulse.WPF/` (the original C#/WPF desktop app) is **deprecated** in favor of
+> Pulse.Web. Its source remains for reference but is no longer built or shipped.
 
 ## Install on a VPU
 
-The supported install path runs the installer from
-[`ianmoore-playon/pulse-releases`](https://github.com/ianmoore-playon/pulse-releases)
-with admin elevation so the build lands in `Program Files`.
+One launcher per channel — drop it on the VPU (or, after the first run, launch
+from the **Start Menu**: press **Win**, type "pulse", Enter). Each self-elevates
+(UAC), installs to `C:\Pulse`, adds a Start Menu entry, and auto-updates every
+launch.
 
-**Option 1 — elevated launcher (recommended for field use)**
+| Launcher | Channel | Pulls |
+|---|---|---|
+| [`run_pulse.bat`](https://raw.githubusercontent.com/playon/pulse/main/runners/run_pulse.bat) | **Production** | latest `web-v*` release |
+| [`run_pulse_beta.bat`](https://raw.githubusercontent.com/playon/pulse/main/runners/run_pulse_beta.bat) | **Beta** | latest `web-beta-v*` pre-release |
+| [`run_pulse_dev.bat`](https://raw.githubusercontent.com/playon/pulse/main/runners/run_pulse_dev.bat) | **Dev** | latest commit on the `dev` branch |
 
-Download [`runners/run_pulse.bat`](https://raw.githubusercontent.com/ianmoore-playon/vpu-diagnostic-tools/main/runners/run_pulse.bat)
-to the VPU desktop and double-click. The launcher requests UAC
-elevation, then pulls the latest tagged release and runs
-`install.ps1` in an admin context so Pulse can install system-wide
-under `Program Files`. Subsequent double-clicks auto-update to the
-latest tag.
+All three install to `C:\Pulse` (one channel at a time), so run the launcher for
+the channel you want. Field VPUs use **`run_pulse.bat`**; beta testers use
+**`run_pulse_beta.bat`**. Once installed, Pulse can update itself from
+**Settings → Check for Update** (no need to re-run the launcher).
 
-**Option 2 — elevated PowerShell one-liner**
+On first launch, the embedded `run.bat`:
+1. Downloads embedded Python 3.12.8 from python.org
+2. Installs pip and dependencies (FastAPI, Uvicorn)
+3. Starts the server at **http://localhost:8765**
+4. Opens the browser automatically
 
-Open an **Administrator** PowerShell and run:
+Subsequent launches skip the Python setup and start in seconds. Falls back to a
+cached version if the VPU is offline.
 
-```powershell
-irm 'https://raw.githubusercontent.com/ianmoore-playon/pulse-releases/main/install.ps1' | iex
+### How it works
+
+```
+Pulse.Web/
+├── run.bat                  — Windows launcher (bootstraps embedded Python)
+├── VERSION                  — semver source of truth for the build
+├── CHANGELOG.md             — per-release "what's new" (shown on update)
+├── app/
+│   ├── main.py              — FastAPI server (REST + WebSocket)
+│   ├── powershell.py        — async PowerShell subprocess runner
+│   ├── demo_data.py         — synthetic data for non-Windows demo mode
+│   ├── requirements.txt     — fastapi, uvicorn
+│   └── static/
+│       ├── index.html       — SPA shell
+│       ├── app.js           — client-side hash router + page renderers
+│       ├── tailwind-min.css — self-hosted Tailwind utilities (no CDN)
+│       └── style.css        — dark theme styles
+└── scripts/                 — 40+ PowerShell scripts: data collection (Get-*),
+                               connectivity tests (Test-*), and actions
+                               (Restart-*, Install-*, Set-*, Invoke-*)
 ```
 
-Same installer the launcher uses — the only difference is you provide
-the admin shell yourself instead of letting the bat trigger UAC.
+The backend runs PowerShell scripts to collect WMI/CIM data and returns JSON
+over REST + WebSocket. The frontend is a vanilla JS single-page app with hash
+routing — **no build step, no bundler, no CDN dependencies.**
 
-Requires Windows 10+ and .NET Framework 4.8 (both pre-installed on every VPU).
+### Pages
+
+| Page | Description |
+|------|-------------|
+| Dashboard | Live CPU / Memory / Disk / Temp gauges, VPU identity, prioritized findings |
+| Network | IP config, internet reachability, DNS, port + domain tests, NTP |
+| Camera Connectivity | Camera-NIC ports, link/speed, Pixellot camera + OCR detection; launches the Fault Isolator |
+| Score Connect | ScoreConnect service + scoreboard-camera checks |
+| Audio | Audio device detection, signal, and volume |
+| System Overview | OS, CPU, RAM, GPU, disks, installed software, Pixellot version compatibility |
+| Pixellot Services | Pixellot service status with restart controls |
+| Disk & System Health | Logical/physical disks, disk events, Pixellot directory sizes |
+| Event Viewer | Filterable Windows event log (hours, severity) |
+| Reports | Full diagnostic JSON export / support bundle |
+| Share over LAN | Send or receive a diagnostic snapshot to another Pulse on the same network |
+| Settings | ScoreConnect URL, poll interval, Check for Update |
+| About | Version and technology info |
+
+The **Fault Isolator** (opened from Camera Connectivity) is a guided swap-test
+wizard — **Baseline → NIC Port → Cable → Camera → Verdict** — that isolates a
+camera fault to the NIC port, the cable, or the camera (CHU).
+
+### Run on macOS (demo mode)
+
+On non-Windows systems Pulse runs in **demo mode** with synthetic data (the
+PowerShell scripts are stubbed via `demo_data.py`). Useful for UI development.
+
+```bash
+brew install python3
+pip3 install fastapi 'uvicorn[standard]'
+cd Pulse.Web/app
+python3 main.py
+```
+
+Then open **http://localhost:8765** in your browser.
+
+### Requirements
+
+- **VPU (production):** Windows 10+ (for PowerShell + WMI), internet on first run
+- **macOS/Linux (dev):** Python 3.10+, pip
+
+## Release channels
+
+Code flows **`dev` → `beta` → `main`**, each with its own release channel and
+launcher (above). Versions follow semver — the source of truth is
+`Pulse.Web/VERSION`, and the per-release "what's new" notes (shown by the in-app
+**Check for Update**) live in `Pulse.Web/CHANGELOG.md`. Pushing a channel tag
+(`web-v*`, `web-beta-v*`) builds and publishes the release that launcher pulls.
 
 ---
 
-## Release Process
+## Pulse WPF (Desktop) — deprecated
 
-### Branches
-
-Code flows through three branches, each with its own release channel:
-
-| Branch | Purpose | Merges to |
-|--------|---------|-----------|
-| `dev` | Active development and internal testing | `beta` |
-| `beta` | Integration testing before production | `main` |
-| `main` | Stable production releases | — |
-
-Pushing to any of these branches triggers a CI build that uploads a
-workflow artifact. To create a downloadable release, push a tag.
-
-### Release Tags
-
-Tags trigger releases that are mirrored to
-[`ianmoore-playon/pulse-releases`](https://github.com/ianmoore-playon/pulse-releases)
-for field download.
-
-| App | Dev | Beta | Production |
-|-----|-----|------|------------|
-| Pulse.WPF | `dev-v*` | `beta-v*` | `wpf-pilot-v*` |
-| Pulse.Web | `web-dev-v*` | `web-beta-v*` | `web-v*` |
-
-Dev and beta tags create **pre-releases**. Production tags create
-**full releases**.
-
-Example — cutting a dev release for both apps:
-
-```bash
-git checkout dev
-git tag dev-v0.9.0
-git tag web-dev-v0.1.0
-git push origin dev-v0.9.0 web-dev-v0.1.0
-```
-
-### Launchers
-
-Each channel has its own launcher that auto-updates from the
-corresponding release channel on every run.
-
-| App | Dev | Beta | Production |
-|-----|-----|------|------------|
-| Pulse.WPF | `run_pulse_dev.bat` | `run_pulse_beta.bat` | `run_pulse.bat` |
-| Pulse.Web | `run_pulse_web_dev.bat` | `run_pulse_web_beta.bat` | `run_pulse_web.bat` |
-
-Launchers live in `runners/` and are synced to `pulse-releases` on
-each tag push. Each channel installs to its own directory
-(`%LOCALAPPDATA%\Pulse.WPF`, `Pulse.WPF-beta`, `Pulse.WPF-dev`, etc.)
-so multiple channels can coexist on the same VPU.
-
-### CI Workflows
-
-- **`.github/workflows/wpf-pilot-build.yml`** — Builds Pulse.WPF on
-  `windows-latest`. Triggers on pushes to `dev`/`beta`/`main` (when
-  `Pulse.WPF/` changes) and on WPF release tags.
-- **`.github/workflows/web-build.yml`** — Packages Pulse.Web (no build
-  step, just zips the tree). Triggers on web release tags.
-
-Both workflows upload a zip as a workflow artifact on every run. When
-triggered by a tag, they also create a GitHub release and mirror it to
-`pulse-releases`.
-
-### Promoting a Release
-
-1. Merge `dev` → `beta`, push a beta tag to test.
-2. Merge `beta` → `main`, push a production tag to ship.
-
----
-
-## Develop
-
-The project lives under `Pulse.WPF/`:
-
-```
-Pulse.WPF/
-├── Pulse.WPF.sln
-├── README.md         — architecture overview
-├── STYLE_GUIDE.md    — design tokens, naming, vocabulary
-├── UX_REVIEW.md      — running per-panel UX ledger
-└── Pulse.WPF/        — the project itself
-    ├── App.xaml      — composition root + DI
-    ├── MainWindow.xaml
-    ├── Views/        — one .xaml per panel
-    ├── ViewModels/
-    ├── Services/     — WMI, registry, network probes, etc.
-    ├── Helpers/      — converters, status helpers, OUI lookup
-    ├── Models/
-    ├── Controls/     — reusable XAML (NicCardDiagram, JackVisual, ...)
-    └── Themes/       — colours, styles, design tokens
-```
-
-Build (requires .NET 8 SDK; the SDK builds the net48 target):
-
-```bash
-dotnet build Pulse.WPF/Pulse.WPF/Pulse.WPF.csproj -c Release
-```
-
-Or rely on GitHub Actions — every push to `dev`, `beta`, or `main` runs
-the Windows build and uploads the runnable zip as a workflow artifact.
-See [Release Process](#release-process) above for tag conventions and
-promotion flow.
-
-See `Pulse.WPF/README.md`, `Pulse.WPF/STYLE_GUIDE.md`, and
-`Pulse.WPF/UX_REVIEW.md` for the architecture, design tokens, and
-panel-by-panel UX history.
+The original C#/WPF desktop app lives under `Pulse.WPF/`. It is **no longer
+built, shipped, or supported** — Pulse.Web replaced it. The source is kept for
+reference and history; its CI and channel launchers have been removed. Don't
+build on it without first deciding to revive the line.
