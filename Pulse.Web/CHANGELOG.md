@@ -22,6 +22,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-06-15
+
+### Fixed
+- **Pulse now opens directly in Chrome on launch.** On VPUs with no default
+  browser set, Windows used to pop a "How do you want to open this?" picker
+  (Internet Explorer first) instead of opening Pulse. The launcher now opens
+  Chrome explicitly — no dialog, no IE.
+- **The launcher no longer looks frozen while starting.** It was running the
+  server in the foreground window, so it sat showing the live log and seemed
+  stuck until you pressed Ctrl+C. It now starts the server in the background,
+  opens the browser, and closes the window. Launch failures still stop and show
+  the error, and everything is logged.
+
 ## [0.3.2] - 2026-06-12
 
 ### Fixed
