@@ -115,14 +115,21 @@ jobs:
           files: |
             ${{ env.ARTIFACT_ZIP }}
             runners/run_pulse_beta.bat
+            runners/Pulse-Beta.bat
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           prerelease: true
           body: |
             Pulse.Web beta build — not yet promoted to main.
 
-            Install on a VPU (beta channel): drop `run_pulse_beta.bat` on the
-            desktop and double-click — it auto-updates from here every launch.
+            Install on a VPU (beta channel): drop a launcher on the desktop and
+            double-click — it auto-updates from here every launch.
+
+            - **`Pulse-Beta.bat`** — recommended for testers. Download once; it
+              always pulls the current launcher, so launcher fixes land
+              automatically (no re-downloading the launcher each update).
+            - `run_pulse_beta.bat` — the underlying launcher (pinned to this
+              build's assets).
 
       # ── Dev pre-release (dev channel, web-dev-v* tags) ─────────────────
       - name: Publish dev pre-release (source repo)
