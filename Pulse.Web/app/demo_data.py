@@ -486,14 +486,51 @@ DEMO = {
         "statusLabel": "ScoreLink device connected (COM7)",
     },
     "Get-PixellotConfig.ps1": lambda **kw: {
+        # Camera firmware / tvMode / serial mirror the live CGI probe
+        # (_probe_camera_ip in main.py) — Admin:1234 param.cgi, same data the
+        # Canopy getFirmwareAndTvMode.ps1 pulled. ntsc_60 = US venue.
         "cameras": [
-            {"section": "Camera1", "ip": "192.168.10.100", "mac": "00:0E:53:AA:01:01", "role": "Main"},
-            {"section": "Camera2", "ip": "192.168.10.101", "mac": "00:0E:53:AA:01:02", "role": "Panoramic"},
-            {"section": "Camera3", "ip": "192.168.10.102", "mac": "00:0E:53:AA:01:03", "role": "Tactical"},
-            {"section": "Camera4", "ip": "192.168.11.100", "mac": "00:0E:53:BB:02:01", "role": "Main"},
-            {"section": "Camera5", "ip": "192.168.11.101", "mac": "00:0E:53:BB:02:02", "role": "Panoramic"},
-            {"section": "OCR", "ip": "192.168.12.50", "mac": "00:D0:89:1B:03:01", "role": "OCR"},
+            {"section": "Camera1", "ip": "192.168.10.100", "mac": "00:0E:53:AA:01:01", "role": "Main",
+             "firmwareVersion": "1.9.13", "tvMode": "ntsc_60", "serialNumber": "MC1-7741A", "model": "Pixellot SuperBowl"},
+            {"section": "Camera2", "ip": "192.168.10.101", "mac": "00:0E:53:AA:01:02", "role": "Panoramic",
+             "firmwareVersion": "1.9.13", "tvMode": "ntsc_60", "serialNumber": "PC2-7741B", "model": "Pixellot SuperBowl"},
+            {"section": "Camera3", "ip": "192.168.10.102", "mac": "00:0E:53:AA:01:03", "role": "Tactical",
+             "firmwareVersion": "1.9.13", "tvMode": "ntsc_60", "serialNumber": "TC3-7741C", "model": "Pixellot SuperBowl"},
+            {"section": "Camera4", "ip": "192.168.11.100", "mac": "00:0E:53:BB:02:01", "role": "Main",
+             "firmwareVersion": "1.9.13", "tvMode": "ntsc_60", "serialNumber": "MC4-9920A", "model": "Pixellot SuperBowl"},
+            {"section": "Camera5", "ip": "192.168.11.101", "mac": "00:0E:53:BB:02:02", "role": "Panoramic",
+             "firmwareVersion": "1.9.13", "tvMode": "ntsc_60", "serialNumber": "PC5-9920B", "model": "Pixellot SuperBowl"},
+            {"section": "OCR", "ip": "192.168.12.50", "mac": "00:D0:89:1B:03:01", "role": "OCR",
+             "firmwareVersion": "DC-2.4.1", "tvMode": "ntsc_60", "serialNumber": "DYN-OCR-3318", "model": "Dynacolor MPC-IPC"},
         ],
+        "cameraCfgExists": True,
+        # Selected HKLM:\SOFTWARE\Pixellot values (the live script dumps ALL).
+        "registryConfig": {
+            "version": _VENUE["swVersion"],
+            "InstallPath": "C:\\Pixellot",
+            "DataPath": "C:\\Pixellot\\Data",
+            "imageVersion": _VENUE["imageVersion"],
+            "dependencies": "5.0.0",
+            "vpuName": _VENUE["vpuName"],
+            "venueId": _VENUE["venueId"],
+        },
+        # Calibration is filesystem-presence-based (see Get-PixellotConfig.ps1).
+        "calibration": {
+            "multisport": {
+                "calibrated": True,
+                "primary": "basketball",
+                "sports": [
+                    {"name": "basketball", "lastCalibrated": (datetime.now() - timedelta(days=18)).isoformat()},
+                    {"name": "volleyball", "lastCalibrated": (datetime.now() - timedelta(days=63)).isoformat()},
+                ],
+            },
+            "ocr": {
+                "calibrated": True,
+                "lastCalibrated": (datetime.now() - timedelta(days=18)).isoformat(),
+                "hasEnhancedPip": True,
+                "hasInnerObjects": True,
+            },
+        },
     },
     # Expected main-camera count from the Coordinator log. Demo box is an
     # S2 (2 main cameras + 1 OCR), matching the Get-PixellotConfig demo.

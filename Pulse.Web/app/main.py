@@ -2465,6 +2465,45 @@ async def api_system():
     }
 
 
+@app.get("/api/pixellot-config")
+async def api_pixellot_config():
+    r"""Local, on-host Pixellot configuration (NOT the Pixellot Cloud lane):
+    install/agent version + GPU-vs-version compatibility, cameras.cfg
+    (IP/MAC/role) enriched with live per-camera firmware/tvMode/serial via the
+    shared CGI probe, and calibration status (main multisport + OCR) read from
+    C:\Pixellot\Data\Configuration.
+    """
+    cfg, identity, gpu_info = await asyncio.gather(
+        run_ps("Get-PixellotConfig.ps1", timeout=20),
+        run_ps("Get-SystemIdentity.ps1"),
+        run_ps("Get-GpuInfo.ps1", timeout=15),
+    )
+    if not isinstance(cfg, dict) or cfg.get("error"):
+        return cfg
+
+    # Reuse the System Overview version-compatibility banner data.
+    cfg["compat"] = _check_pixellot_compatibility(identity, gpu_info)
+
+    # Enrich each camera with live firmware / tvMode / serial / model via the
+    # same cached CGI probe the Camera Connectivity lane uses (Admin:1234
+    # param.cgi). Skipped in demo mode — demo data already carries these.
+    cams = cfg.get("cameras") or []
+    if not DEMO_MODE and cams:
+        ocr_ips, _ = _build_ocr_sets(cfg)
+        targets = [c for c in cams if c.get("ip")]
+        probes = await asyncio.gather(
+            *[_probe_camera_ip(c["ip"], c["ip"] in ocr_ips) for c in targets]
+        )
+        for cam, probe in zip(targets, probes):
+            cam["reachable"] = bool(probe)
+            if not probe:
+                continue
+            for key in ("firmwareVersion", "tvMode", "serialNumber", "model"):
+                if probe.get(key):
+                    cam[key] = probe[key]
+    return cfg
+
+
 @app.get("/api/network")
 async def api_network():
     config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi = await asyncio.gather(

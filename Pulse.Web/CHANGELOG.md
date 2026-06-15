@@ -22,6 +22,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Added
+- **New Pixellot Configuration tab (under SYSTEM)** — camera calibration, firmware,
+  and on-box config at a glance: install/agent version with the hardware-compatibility
+  banner, a per-camera table (role / IP / MAC / firmware / TV mode / serial / calibration),
+  main-camera multisport calibration (which sports, last calibrated) and OCR scoreboard
+  calibration status, plus a one-click "Restart Pixellot Agent" action.
+
 ### Fixed
 - **Pulse now opens directly in Chrome on launch.** On VPUs with no default
   browser set, Windows used to pop a "How do you want to open this?" picker
