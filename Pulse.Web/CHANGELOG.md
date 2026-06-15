@@ -27,6 +27,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   browser set, Windows used to pop a "How do you want to open this?" picker
   (with Internet Explorer as the first option) instead of opening Pulse. The
   launcher now opens Chrome explicitly — no dialog, no IE.
+- **The launcher no longer looks frozen while starting.** It used to run the
+  server in the foreground window (a debug aid), so the window sat there
+  showing the live server log and seemed stuck until you pressed Ctrl+C. It now
+  starts the server in the background, opens the browser, and closes the window.
+  Launch failures still stop and show the error, and everything is logged.
 
 ### Changed
 - **Port Connectivity tiles now list in numeric order, two per row.** Within

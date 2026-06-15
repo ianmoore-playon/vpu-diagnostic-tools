@@ -39,11 +39,15 @@ set "EXTRACT=%TEMP%\pulse-extract"
 set "RESOLVE_OUT=%TEMP%\pulse-resolve.txt"
 
 :: -- Debug mode -----------------------------------------------------------
-::   1 = run the server in THIS window so any startup error/traceback is
-::       visible, and never close the window without a keypress. Flip to
-::       empty ("") for the quiet, hidden-server experience before wide
-::       rollout / promotion to main.
-set "PULSE_DEBUG=1"
+::   Empty ("") = the quiet tester experience: the server starts hidden, the
+::   browser opens on its own, and this window closes. Launch failures still
+::   surface — run.bat pauses on a fatal error and everything is logged to
+::   %INSTALL_DIR%\pulse-server.log.
+::   Set to 1 ONLY to chase a specific launch failure: the server then runs in
+::   THIS window so the traceback is visible and the window won't close on its
+::   own. (Foreground mode looks "frozen" to a tester — it's just the running
+::   server — so keep it off for the beta rollout.)
+set "PULSE_DEBUG="
 
 echo.
 echo  .-----------------------------------------------------.
