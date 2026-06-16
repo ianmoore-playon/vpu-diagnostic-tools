@@ -14,9 +14,9 @@
   --c-tint-red:      rgba(220,38,38,0.12);
   --c-tint-amber:    rgba(217,119,6,0.12);
   --c-tint-blue:     rgba(37,99,235,0.12);
-  --c-accent-green:  #16a34a;
+  --c-accent-green:  #15803d;  /* darkened from #16a34a for WCAG AA on light tints (5.0:1) */
   --c-accent-red:    #dc2626;
-  --c-accent-amber:  #d97706;
+  --c-accent-amber:  #b45309;  /* darkened from #d97706 for WCAG AA on light tints (5.0:1) */
   --c-accent-blue:   #2563eb;
   --c-green-soft:    #15803d;
   /* Camera status tokens — one source of truth for the port LEDs, the tile
@@ -1222,6 +1222,9 @@ html.dark .powered-by-logo { filter: none; }
 .sev-chip-warn { background: var(--c-tint-amber); color: var(--c-accent-amber); }
 .sev-chip-crit { background: var(--c-tint-red); color: var(--c-accent-red); }
 .sev-chip-info { background: var(--c-tint-blue);  color: var(--c-accent-blue); }
+/* neutral grey for "no data" / unknown states — must read as not-healthy,
+   not as the green ok-chip severityChip used to fall through to. */
+.sev-chip-muted { background: var(--c-surface-3); color: var(--c-muted); border: 1px solid var(--c-border); }
 
 /* Sub-card (inner bordered box) */
 .sub-card {
@@ -2194,18 +2197,30 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 
 .dh-summary-row {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    /* auto-fit avoids the mid-width crush (~800-1024px) where the chip
+       overflowed the card edge and titles wrapped to 3 lines. Cards stay
+       >=240px or wrap to fewer columns. */
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 0.75rem;
     margin-bottom: 1rem;
 }
-@media (max-width: 800px) { .dh-summary-row { grid-template-columns: 1fr; } }
 
 .dh-summary-card { display: flex; flex-direction: column; }
-.dh-summary-top { display: flex; align-items: center; gap: 8px; margin-bottom: 0.75rem; }
+/* wrap the title/chip row instead of pushing the chip past the edge */
+.dh-summary-top { display: flex; align-items: center; gap: 8px; margin-bottom: 0.75rem; flex-wrap: wrap; }
 .dh-summary-icon { color: #3b82f6; display: inline-flex; }
 .dh-summary-title { font-size: 0.8rem; font-weight: 600; color: var(--c-muted); }
 .dh-summary-val { font-size: 1rem; font-weight: 600; color: var(--c-text); margin-bottom: 4px; }
 .dh-summary-desc { font-size: 0.7rem; color: var(--c-dim); }
+/* Recent Disk Events message: truncate within the cell (hover title shows
+   full text) instead of forcing the table into a horizontal scroll. */
+.dh-event-msg {
+    max-width: 0;          /* let the cell shrink so table-layout can truncate */
+    width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 .dh-vol-row {
     display: grid;

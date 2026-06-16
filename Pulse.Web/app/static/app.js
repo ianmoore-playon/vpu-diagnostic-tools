@@ -1657,7 +1657,14 @@ function kvRowHtml(label, html) {
 
 function severityChip(sev, text) {
   const s = (sev || "").toLowerCase();
-  const cls = s === "critical" || s === "error" ? "sev-chip-crit" : s === "warning" ? "sev-chip-warn" : "sev-chip-ok";
+  // muted/info/none → neutral grey, so "no data" states don't masquerade as
+  // healthy green. Everything unrecognised still falls through to ok (green) —
+  // unchanged for existing callers.
+  const cls =
+    s === "critical" || s === "error" ? "sev-chip-crit" :
+    s === "warning" ? "sev-chip-warn" :
+    s === "muted" || s === "info" || s === "none" || s === "unknown" ? "sev-chip-muted" :
+    "sev-chip-ok";
   return `<span class="sev-chip ${cls}">${esc(text || sev)}</span>`;
 }
 
@@ -4401,18 +4408,26 @@ function renderDiskHealth() {
   const events = data.diskEvents || [];
   const paths = data.pixellotPaths || [];
 
-  const allHealthy = physical.every(d => (d.healthStatus || "").toLowerCase() === "healthy");
-  const smartLabel = allHealthy ? "All Disks Healthy" : "Issue Detected";
-  const smartSev = allHealthy ? "ok" : "critical";
+  // SMART: an empty physicalDisks array means collection FAILED — `every()`
+  // on [] returns true, which would otherwise show a false "all healthy".
+  const haveSmart = physical.length > 0;
+  const allHealthy = haveSmart && physical.every(d => (d.healthStatus || "").toLowerCase() === "healthy");
+  const smartSev   = !haveSmart ? "muted" : allHealthy ? "ok" : "critical";
+  const smartChip  = !haveSmart ? "No data" : allHealthy ? "Healthy" : "Issue";
+  const smartVal   = !haveSmart ? "SMART not reported" : `${physical.length} disk${physical.length === 1 ? "" : "s"} checked`;
 
   const errorCount = events.length;
-  const errorLabel = errorCount === 0 ? "No disk errors" : `${errorCount} event(s) in last 48h`;
-  const errorSev = errorCount > 5 ? "critical" : errorCount > 0 ? "warning" : "ok";
+  const errorSev  = errorCount > 5 ? "critical" : errorCount > 0 ? "warning" : "ok";
+  const errorChip = errorCount === 0 ? "Clean" : errorCount > 5 ? "High" : "Attention";
+  const errorVal  = errorCount === 0 ? "None" : `${errorCount} event${errorCount === 1 ? "" : "s"}`;
 
   const osDrive = logical.find(d => d.deviceID === "C:") || logical[0];
   const osFreeGB = osDrive?.freeSpaceGB;
   const osPct = osDrive?.usedPercent;
-  const osLabel = osDrive ? `${osFreeGB} GB free of ${osDrive.sizeGB} GB` : "No data";
+  // Guard each field so a partial payload can't render "undefined GB free…".
+  const osLabel = osDrive
+    ? `${osFreeGB != null ? osFreeGB : "—"} GB free of ${osDrive.sizeGB != null ? osDrive.sizeGB : "—"} GB`
+    : "No data";
   // Critical at >90% used (matches the volume bars, the [Storage] finding, and
   // the dashboard gauge), OR if absolute headroom drops below 50 GB (catches a
   // nearly-full large disk that's still under 90%). Warning at >80% / <100 GB.
@@ -4441,30 +4456,38 @@ function renderDiskHealth() {
 
     <!-- 3 Summary Cards -->
     <div class="dh-summary-row">
-      ${summaryCard("heartbeat", "SMART Health", smartSev, smartLabel, smartLabel, "Per-disk health attributes")}
-      ${summaryCard("alert", "Disk & Driver Errors", errorSev, errorLabel, errorLabel, "From the Windows Event Log (last 48 h)")}
-      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Over 90% used (or <50 GB free) → Critical")}
+      ${summaryCard("heartbeat", "SMART Health", smartSev, smartChip, smartVal, "Per-disk health attributes")}
+      ${summaryCard("alert", "Disk & Driver Errors", errorSev, errorChip, errorVal, "From the Windows Event Log (last 48 h)")}
+      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Critical when over 90% full or under 50 GB free")}
     </div>
 
     <!-- Volumes -->
     <div class="card">
       ${sectionTitle("database", "Volumes")}
       ${logical.length ? logical.map(d => {
-        const pct = d.usedPercent || 0;
-        const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
         const role = d.deviceID === "C:" ? "System — OS & Pixellot"
                    : d.deviceID === "D:" ? "Recordings — local VOD storage"
                    : "Storage";
-        const status = pct > 90 ? "Critical" : pct > 80 ? "Low" : "OK";
-        const statusColor = pct > 90 ? "var(--c-accent-red)" : pct > 80 ? "var(--c-accent-amber)" : "var(--c-accent-green)";
+        // Missing usedPercent = Unknown — don't default to 0% and paint a
+        // green "OK" bar that makes a no-data volume look healthy.
+        const hasPct = d.usedPercent != null;
+        const pct = hasPct ? d.usedPercent : 0;
+        // One severity drives BOTH the bar fill and the status label, in
+        // theme tokens (no hardcoded blue OK bar next to a green OK label).
+        let sevColor = "var(--c-accent-green)", status = "OK";
+        if (!hasPct) { sevColor = "var(--c-dim)"; status = "Unknown"; }
+        else if (pct > 90) { sevColor = "var(--c-accent-red)"; status = "Critical"; }
+        else if (pct > 80) { sevColor = "var(--c-accent-amber)"; status = "Low"; }
+        const freeStr = d.freeSpaceGB != null ? `${d.freeSpaceGB} GB` : "—";
+        const sizeStr = d.sizeGB != null ? `${d.sizeGB} GB` : "—";
         return `<div class="dh-vol-row">
           <span class="dh-vol-drive font-mono">${esc(d.deviceID)}</span>
           <span class="dh-vol-role">${esc(role)}</span>
           <div class="dh-vol-bar-wrap">
-            <div class="dash-vol-bar"><div class="dash-vol-fill" style="width:${Math.min(pct, 100)}%;background:${color}"></div></div>
+            <div class="dash-vol-bar"><div class="dash-vol-fill" style="width:${Math.min(pct, 100)}%;background:${sevColor}"></div></div>
           </div>
-          <span class="dh-vol-free">${d.freeSpaceGB != null ? esc(String(d.freeSpaceGB)) : "—"} free of ${d.sizeGB != null ? esc(String(d.sizeGB)) + " GB" : "—"}</span>
-          <span class="dh-vol-status" style="color:${statusColor}">${esc(status)}</span>
+          <span class="dh-vol-free">${esc(freeStr)} free of ${esc(sizeStr)}</span>
+          <span class="dh-vol-status" style="color:${sevColor}">${esc(status)}</span>
         </div>`;
       }).join("") : '<p class="text-pulse-muted text-sm">No volume data</p>'}
     </div>
@@ -4474,13 +4497,12 @@ function renderDiskHealth() {
     <div class="card mt-4">
       ${sectionTitle("file", "Pixellot Storage Paths")}
       <table class="data-table"><thead><tr>
-        <th>Path</th><th>Description</th><th>Size</th><th>Status</th>
+        <th>Path</th><th>Size</th><th>Files</th>
       </tr></thead><tbody>
       ${paths.map(p => `<tr>
         <td class="font-mono text-xs">${esc(p.path)}</td>
-        <td class="text-pulse-muted">${esc(p.description || "")}</td>
         <td class="font-semibold">${p.sizeGB != null ? esc(String(p.sizeGB)) + " GB" : esc(p.error || "—")}</td>
-        <td>${p.status ? statusBadge(p.status) : "—"}</td>
+        <td class="text-pulse-muted">${p.fileCount != null ? esc(Number(p.fileCount).toLocaleString()) : "—"}</td>
       </tr>`).join("")}
       </tbody></table>
     </div>` : ""}
@@ -4514,7 +4536,7 @@ function renderDiskHealth() {
           <td class="text-xs whitespace-nowrap">${formatTime(e.timeCreated)}</td>
           <td>${statusBadge(e.level)}</td>
           <td class="text-xs">${esc(e.source)}</td>
-          <td class="text-xs max-w-md truncate">${esc(e.message)}</td>
+          <td class="text-xs dh-event-msg" title="${esc(e.message)}">${esc(e.message)}</td>
         </tr>`).join("")}
         </tbody></table>
       </div>
