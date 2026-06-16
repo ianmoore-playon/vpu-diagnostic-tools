@@ -349,11 +349,13 @@ html.dark .demo-banner {
     opacity: 0.6;
 }
 .nav-icon svg { width: 18px; height: 18px; }
-/* Per-subsystem health dot, right-aligned on the nav link. Only shown for a
-   warning/critical subsystem — healthy (and non-subsystem) links show no dot. */
-.nav-status { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.nav-status-warn { background: var(--c-accent-amber); }
-.nav-status-crit { background: var(--c-accent-red); }
+/* Per-subsystem health flag, right-aligned on the nav link — a warning
+   triangle, amber for warning / red for critical (the triangle SVG inherits
+   currentColor). Healthy and non-subsystem links show nothing. */
+.nav-status { margin-left: auto; display: inline-flex; align-items: center; flex-shrink: 0; }
+.nav-status svg { width: 14px; height: 14px; }
+.nav-status-warn { color: var(--c-accent-amber); }
+.nav-status-crit { color: var(--c-accent-red); }
 .nav-item:hover { background: var(--c-surface); color: var(--c-text); }
 .nav-item:hover .nav-icon { opacity: 1; }
 .nav-item.active {

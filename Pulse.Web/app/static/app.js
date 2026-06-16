@@ -122,9 +122,10 @@ function updateNav() {
   });
 }
 
-// Paint a status dot on each subsystem's nav link from the dashboard findings,
-// so the sidebar doubles as the at-a-glance health map (replaces the old
-// Subsystems panel). Non-subsystem links (Dashboard, Settings, …) get no dot.
+// Flag each subsystem's nav link with a warning triangle from the dashboard
+// findings, so the sidebar doubles as the at-a-glance health map (replaces the
+// old Subsystems panel). Only warning/critical show an icon — healthy and
+// non-subsystem links (Dashboard, Settings, …) show nothing.
 function updateNavHealth() {
   const health = {};
   try {
@@ -132,15 +133,18 @@ function updateNavHealth() {
       .forEach((s) => { health[s.id] = s.health; });
   } catch (e) { return; }
   document.querySelectorAll(".nav-item").forEach((el) => {
-    const dot = el.querySelector(".nav-status");
-    if (!dot) return;
+    const slot = el.querySelector(".nav-status");
+    if (!slot) return;
     const h = health[el.dataset.page];
-    // Only flag problems — a healthy subsystem shows no dot.
-    dot.className = "nav-status" + (
-      h === "Critical" ? " nav-status-crit"
-      : h === "Warning" ? " nav-status-warn" : "");
-    if (h === "Critical" || h === "Warning") dot.title = h;
-    else dot.removeAttribute("title");
+    if (h === "Critical" || h === "Warning") {
+      slot.className = "nav-status " + (h === "Critical" ? "nav-status-crit" : "nav-status-warn");
+      slot.innerHTML = svgIcon("triangle", 14);
+      slot.title = h;
+    } else {
+      slot.className = "nav-status";
+      slot.innerHTML = "";
+      slot.removeAttribute("title");
+    }
   });
 }
 
@@ -1287,21 +1291,7 @@ function readinessCard(verdict, freshness) {
   var meta = _RDY_META[verdict.status] || _RDY_META.WARN;
   var blockers = verdict.blockers || [];
   var risks = verdict.risks || [];
-  var drivers = blockers.concat(risks);
   var asOf = verdict.timestamp ? new Date(verdict.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
-
-  var driverRows = drivers.length
-    ? drivers.map(function(d) {
-        var cls = blockers.indexOf(d) !== -1 ? "blocker" : "risk";
-        return '<div class="rdy-driver rdy-driver-' + cls + '">'
-          + '<div class="rdy-driver-head">'
-          +   '<span class="rdy-driver-tag rdy-driver-tag-' + cls + '">' + (cls === "blocker" ? "BLOCKER" : "RISK") + '</span>'
-          +   '<span class="rdy-driver-title">' + esc(d.title || "") + '</span>'
-          + '</div>'
-          + (d.recommendation ? '<p class="rdy-driver-rec">' + esc(d.recommendation) + '</p>' : '')
-          + '</div>';
-      }).join("")
-    : '<div class="rdy-clear">' + svgIcon("check", 16) + ' <span>No blockers and no risks — this VPU is ready to stream.</span></div>';
 
   var demoBar = isDemo
     ? '<div class="rdy-demo-bar"><span class="rdy-demo-label">Demo preview</span>'
@@ -1322,7 +1312,6 @@ function readinessCard(verdict, freshness) {
     +     (freshness ? '<p class="rdy-fresh">' + svgIcon("check", 12) + ' ' + esc(freshness) + '</p>' : '')
     +   '</div>'
     + '</div>'
-    + '<div class="rdy-drivers">' + driverRows + '</div>'
     + '<div class="rdy-foot">'
     +   '<span>' + blockers.length + ' blocker' + (blockers.length === 1 ? '' : 's') + ' · ' + risks.length + ' risk' + (risks.length === 1 ? '' : 's') + '</span>'
     +   '<span class="rdy-policy">policy ' + esc(verdict.policyVersion || "v1") + '</span>'
@@ -1482,6 +1471,31 @@ function renderDashboard() {
       <button class="btn-outline btn-ol-amber dash-incomplete-retry" onclick="refreshSection('dashboard')">
         ${svgIcon("refresh", 13)} Retry
       </button>
+    </div>` : ""}
+
+    ${totalFindings > 0 ? `
+    <!-- Findings — lightweight list of the active warnings/criticals -->
+    <div class="card dash-findings-card">
+      <div class="flex justify-between items-center mb-2">
+        <h3 class="card-label mb-0">FINDINGS</h3>
+        <span class="cc-findings-count">${totalFindings} issue${totalFindings === 1 ? "" : "s"}</span>
+      </div>
+      <div class="cc-findings-list">
+        ${visibleFindings.map((f, i) => {
+          const prev = visibleFindings[i - 1];
+          const groupBreak = i > 0 && prev.severity !== f.severity ? `<div class="cc-findings-divider"></div>` : "";
+          const fp = _findingPageFor(f.category);
+          const encTitle = encodeURIComponent(f.title || "");
+          return groupBreak + `
+        <a class="finding-item" href="#${esc(fp)}" onclick="event.preventDefault();findingJump('${esc(fp)}','${encTitle}')" title="Opens the ${esc(f.category)} tab and highlights this issue">
+          <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
+          <span class="finding-cat finding-cat-${esc(f.severity)}">[${esc((f.severity || "").toUpperCase())}]</span>
+          <span class="finding-title">${esc(f.title)}</span>
+          <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
+        </a>`;
+        }).join("")}
+        ${overflowCount > 0 ? `<div class="cc-findings-overflow">+${overflowCount} more — visit the relevant tab for the full list</div>` : ""}
+      </div>
     </div>` : ""}
 
     ${id.isNonVpuHost ? `
