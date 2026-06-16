@@ -1041,15 +1041,23 @@ function renderDashboard() {
   // Network config — prefer dashboard-embedded data, fall back to full network cache
   const netCfg = dash.networkConfig || net.config || {};
   const uplinkName = netCfg.uplinkAdapter?.interfaceAlias || "—";
-  // On a Pixellot VPU the uplink/gateway-bearing NIC is the motherboard's
+  // On a Pixellot VPU the uplink/gateway-bearing NIC should be the motherboard's
   // onboard port (cameras live on the dedicated multiport NIC card with
-  // link-local IPs and no gateway). Call it out by its real-world role
-  // rather than the opaque Windows alias ("Ethernet 13"), keeping the raw
-  // alias as a parenthetical for cross-reference. Only on actual VPUs.
-  const _uplinkIsOnboard = !id.isNonVpuHost && uplinkName !== "—";
-  const uplinkDisplay = _uplinkIsOnboard
-    ? `Motherboard Network Port <span class="dash-net-sub">(${esc(uplinkName)})</span>`
-    : esc(uplinkName);
+  // link-local IPs and no gateway). The backend tags adapter roles by PCI bus,
+  // so we only assert "Motherboard Network Port" when the uplink really is the
+  // onboard port — if the internet has been plugged into a camera-NIC port, say
+  // so instead of mislabeling it (the matching critical finding has the fix).
+  const _uplinkAdapter = (netCfg.adapters || []).find(
+    (a) => a.name === uplinkName || a.interfaceAlias === uplinkName);
+  const _uplinkRole = netCfg.uplinkRole || (_uplinkAdapter && _uplinkAdapter.role);
+  const _onVpu = !id.isNonVpuHost && uplinkName !== "—";
+  let uplinkDisplay;
+  if (_onVpu && _uplinkRole === "camera")
+    uplinkDisplay = `${esc(uplinkName)} <span class="dash-net-sub">(camera-NIC port — should be the motherboard port)</span>`;
+  else if (_onVpu)
+    uplinkDisplay = `Motherboard Network Port <span class="dash-net-sub">(${esc(uplinkName)})</span>`;
+  else
+    uplinkDisplay = esc(uplinkName);
   const ipConfigs = netCfg.ipConfig || netCfg.ipConfigurations || [];
   const uplinkIp = ipConfigs.find((ip) => ip.interfaceAlias === uplinkName);
   const ipAddr = _first(uplinkIp?.ipv4Address) || "—";
@@ -2333,13 +2341,49 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     issues.push({
       severity: "warning",
       title: "VPU is using Wi-Fi for its internet connection — switch to wired Ethernet",
-      body: "Connect the onboard Ethernet port to the venue network instead. Wi-Fi introduces latency and packet loss that disrupt streaming.",
+      body: "The Wi-Fi card is meant for the Pixellot Connect app, not the internet uplink — connect the motherboard Ethernet port to the venue network instead. Wi-Fi adds latency and packet loss that disrupt streaming.",
       details: wifiUplink.map(function(a) {
         var label = a.interfaceDescription || a.name || "Wi-Fi";
         var ssidPart = a.ssid ? " — SSID: " + a.ssid : "";
         return label + ssidPart;
       }),
     });
+  }
+
+  // ── Critical: internet plugged into a camera port (not the motherboard) ──
+  // Backend tags each adapter's role by PCI bus (motherboard = onboard LOM on
+  // bus 0; camera = a port on the multi-port NIC card). A camera port flags
+  // only when it's link-Up AND carrying a real gateway — a disconnected port
+  // can hold a stale gateway in the route table, so link state is the gate.
+  if (cfg && cfg.adapters) {
+    var _ipByIdx = {};
+    (cfg.ipConfig || cfg.ipConfigurations || []).forEach(function(ipc) { _ipByIdx[ipc.interfaceIndex] = ipc; });
+    function _camGw(a) {
+      var ipc = _ipByIdx[a.interfaceIndex] || {};
+      var gws = (ipc.ipv4DefaultGateway || []).filter(function(g) { return g && g.indexOf("169.254.") !== 0; });
+      return gws.length ? gws[0] : null;
+    }
+    var _misplaced = (cfg.adapters || []).filter(function(a) {
+      return a.role === "camera" && String(a.status || "").toLowerCase() === "up" && _camGw(a);
+    });
+    if (_misplaced.length) {
+      var _mobo = (cfg.adapters || []).filter(function(a) { return a.role === "motherboard"; });
+      var _moboNote = "";
+      if (_mobo.length) {
+        var _m = _mobo[0];
+        var _admin = String(_m.adminStatus || "").toLowerCase(), _st = String(_m.status || "").toLowerCase();
+        if (_admin === "down" || _st === "disabled") _moboNote = " The motherboard network port is currently disabled — enable it in Windows.";
+        else if (_st === "disconnected" || _st === "not present" || _st === "down") _moboNote = " The motherboard network port has no cable connected — move the venue/internet cable to it.";
+      } else {
+        _moboNote = " No motherboard network port was detected — it may be disabled.";
+      }
+      issues.push({
+        severity: "critical",
+        title: "Internet is plugged into a camera port, not the motherboard network port",
+        body: "The VPU's internet/venue connection is coming in on a camera-NIC port. On a Pixellot VPU the internet must connect to the motherboard network port — the 4-port NIC is only for cameras, and a venue uplink there can disrupt camera discovery and streaming." + _moboNote + " Move the cable to the motherboard network port and confirm that port is enabled. (The Wi-Fi card is for the Pixellot Connect app and should stay enabled.)",
+        details: _misplaced.map(function(a) { return (a.name || a.interfaceDescription || "?") + " — gateway " + _camGw(a) + " (a camera port)"; }),
+      });
+    }
   }
 
   // ── Critical: Gateway ────────────────────────────────────

@@ -12,15 +12,47 @@ param()
 $ErrorActionPreference = 'Stop'
 
 try {
-    # Net adapters
+    # PCI/PnP location per net device, keyed by PnPDeviceID. The onboard
+    # motherboard LOM sits on PCI bus 0; an add-in NIC card (the 4-port camera
+    # NIC) enumerates on a higher bus. That bus number is how we tell the
+    # motherboard uplink port apart from a camera port even when both use the
+    # same Intel chipset. LocationInfo reads "PCI bus 4, device 0, function 0".
+    $pnpInfo = @{}
+    try {
+        Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | ForEach-Object {
+            if (-not $_.InstanceId) { return }
+            $loc = $null
+            try { $loc = (Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName 'DEVPKEY_Device_LocationInfo' -ErrorAction Stop).Data } catch { }
+            $bus = $null; $dev = $null; $fun = $null
+            if ($loc -and ($loc -match 'PCI bus (\d+), device (\d+), function (\d+)')) {
+                $bus = [int]$Matches[1]; $dev = [int]$Matches[2]; $fun = [int]$Matches[3]
+            }
+            $pnpInfo[$_.InstanceId.ToUpper()] = [ordered]@{
+                pciBus = $bus; pciDevice = $dev; pciFunction = $fun; pnpStatus = "$($_.Status)"
+            }
+        }
+    } catch { }
+
+    # Net adapters — enriched with PCI location + media type + admin/link state
+    # so role classification (motherboard / camera / Wi-Fi) and the
+    # "internet on a camera port" check can run downstream in Python.
     $adapters = Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
+        $pdid = if ($_.PnPDeviceID) { $_.PnPDeviceID.ToUpper() } else { $null }
+        $pnp  = if ($pdid -and $pnpInfo.ContainsKey($pdid)) { $pnpInfo[$pdid] } else { $null }
         [ordered]@{
             name                 = $_.Name
             interfaceDescription = $_.InterfaceDescription
-            status               = $_.Status
+            status               = "$($_.Status)"
+            adminStatus          = "$($_.AdminStatus)"
+            mediaConnectionState = "$($_.MediaConnectionState)"
+            physicalMediaType    = "$($_.PhysicalMediaType)"
             macAddress           = $_.MacAddress
             linkSpeed            = $_.LinkSpeed
             interfaceIndex       = $_.InterfaceIndex
+            pnpDeviceId          = $_.PnPDeviceID
+            pciBus               = if ($pnp) { $pnp.pciBus } else { $null }
+            pciDevice            = if ($pnp) { $pnp.pciDevice } else { $null }
+            pciFunction          = if ($pnp) { $pnp.pciFunction } else { $null }
         }
     }
 

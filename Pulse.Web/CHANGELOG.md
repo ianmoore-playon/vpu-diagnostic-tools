@@ -22,6 +22,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Added
+- **Pulse now catches the internet being plugged into a camera port.** On a VPU
+  the internet/venue cable must go to the motherboard network port — the 4-port
+  NIC is cameras-only. If the uplink is found on a camera-NIC port instead,
+  Pulse raises a CRITICAL with the fix (move the cable to the motherboard port,
+  enable it; the Wi-Fi card is for the Pixellot Connect app and stays enabled),
+  and notes if the motherboard port is disabled or unplugged. It tells the
+  motherboard port apart from the camera card by its hardware (PCI) location, so
+  it works even when both use the same Intel chipset.
+
+### Changed
+- **The Wi-Fi warning now explains Wi-Fi's real job.** When the VPU is running
+  its internet over Wi-Fi, the message now notes the Wi-Fi card is meant for the
+  Pixellot Connect app — move the internet to the motherboard Ethernet port.
+
 ### Fixed
 - **Pulse now opens directly in Chrome on launch.** On VPUs with no default
   browser set, Windows used to pop a "How do you want to open this?" picker

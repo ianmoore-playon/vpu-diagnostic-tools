@@ -425,6 +425,97 @@ class TestWifiUplinkFinding(unittest.TestCase):
         self.assertFalse(self._has_wifi_finding(self._wifi_titles({"error": True})))
 
 
+# ── Adapter role classification + "internet on a camera port" ────────
+# Fixtures are derived from two real VPU dumps (good config + internet moved
+# onto the 4-port camera NIC). On that hardware: motherboard = Intel I219-LM on
+# PCI bus 0; the 4-port camera NIC = 4× Intel 82574L on PCI buses 4-7. The
+# disconnected port keeps a STALE gateway in the route table in both dumps, so
+# the detection must gate on link status — these fixtures lock that in.
+class TestAdapterRoles(unittest.TestCase):
+    def _adapters(self, mobo_status, cam_uplink_status):
+        # mobo = Ethernet 5 (I219-LM, bus 0); Ethernet 28 (82574L, bus 4) is the
+        # camera port the internet cable gets moved to; 29/30/31 are normal
+        # link-local camera ports.
+        return [
+            {"name": "Ethernet 5", "interfaceDescription": "Intel(R) Ethernet Connection (7) I219-LM",
+             "status": mobo_status, "adminStatus": "Up", "physicalMediaType": "802.3",
+             "macAddress": "C8-D9-D2-30-5E-4F", "interfaceIndex": 22, "pciBus": 0},
+            {"name": "Ethernet 28", "interfaceDescription": "Intel(R) 82574L Gigabit Network Connection #13",
+             "status": cam_uplink_status, "adminStatus": "Up", "physicalMediaType": "802.3",
+             "macAddress": "00-30-64-5F-61-86", "interfaceIndex": 23, "pciBus": 4},
+            {"name": "Ethernet 29", "interfaceDescription": "Intel(R) 82574L Gigabit Network Connection #14",
+             "status": "Up", "adminStatus": "Up", "physicalMediaType": "802.3",
+             "macAddress": "00-30-64-5F-61-87", "interfaceIndex": 17, "pciBus": 5},
+            {"name": "Ethernet 30", "interfaceDescription": "Intel(R) 82574L Gigabit Network Connection #15",
+             "status": "Up", "adminStatus": "Up", "physicalMediaType": "802.3",
+             "macAddress": "00-30-64-5F-61-88", "interfaceIndex": 19, "pciBus": 6},
+            {"name": "Ethernet 31", "interfaceDescription": "Intel(R) 82574L Gigabit Network Connection #16",
+             "status": "Up", "adminStatus": "Up", "physicalMediaType": "802.3",
+             "macAddress": "00-30-64-5F-61-89", "interfaceIndex": 25, "pciBus": 7},
+        ]
+
+    def _ip_configs(self):
+        # Both dumps carry the SAME ip/route rows — including a stale gateway on
+        # the camera port (idx 23) — regardless of which port is actually linked.
+        return [
+            {"interfaceAlias": "Ethernet 5", "interfaceIndex": 22, "ipv4Address": ["192.168.102.196"], "ipv4DefaultGateway": ["192.168.100.1"]},
+            {"interfaceAlias": "Ethernet 28", "interfaceIndex": 23, "ipv4Address": ["192.168.101.98"], "ipv4DefaultGateway": ["192.168.100.1"]},
+            {"interfaceAlias": "Ethernet 29", "interfaceIndex": 17, "ipv4Address": ["169.254.188.134"], "ipv4DefaultGateway": []},
+            {"interfaceAlias": "Ethernet 30", "interfaceIndex": 19, "ipv4Address": ["169.254.18.170"], "ipv4DefaultGateway": []},
+            {"interfaceAlias": "Ethernet 31", "interfaceIndex": 25, "ipv4Address": ["169.254.201.146"], "ipv4DefaultGateway": []},
+        ]
+
+    def _good(self):  # internet on motherboard (Eth5 Up), camera port Eth28 Disconnected
+        return {"adapters": self._adapters("Up", "Disconnected"), "ipConfigurations": self._ip_configs()}
+
+    def _bad(self):  # internet moved to camera port (Eth28 Up), motherboard Eth5 unplugged
+        return {"adapters": self._adapters("Disconnected", "Up"), "ipConfigurations": self._ip_configs()}
+
+    def test_roles_by_pci_bus(self):
+        cfg = self._good()
+        main._classify_network_adapters(cfg)
+        roles = {a["name"]: a["role"] for a in cfg["adapters"]}
+        self.assertEqual(roles["Ethernet 5"], "motherboard")  # I219-LM on bus 0
+        for cam in ("Ethernet 28", "Ethernet 29", "Ethernet 30", "Ethernet 31"):
+            self.assertEqual(roles[cam], "camera", cam)  # 82574L on buses 4-7
+
+    def test_wifi_role_by_media_type(self):
+        # Same chipset family, on bus 0, but Native 802.11 → wifi, not motherboard.
+        cfg = {"adapters": [{"interfaceDescription": "Intel(R) Wireless-AC 9560",
+                             "physicalMediaType": "Native 802.11", "pciBus": 0,
+                             "status": "Up", "interfaceIndex": 99}]}
+        main._classify_network_adapters(cfg)
+        self.assertEqual(cfg["adapters"][0]["role"], "wifi")
+
+    def test_good_config_no_false_positive(self):
+        # The camera port (Eth28) has a STALE gateway but is Disconnected → must
+        # NOT flag. Internet is correctly on the motherboard port.
+        self.assertIsNone(main._camera_nic_uplink_finding(self._good()))
+
+    def test_internet_on_camera_port_flags_critical(self):
+        f = main._camera_nic_uplink_finding(self._bad())
+        self.assertIsNotNone(f)
+        self.assertEqual(f["severity"], "critical")
+        self.assertIn("camera port", f["title"].lower())
+        self.assertIn("Ethernet 28", f["recommendation"])
+        self.assertIn("no cable connected", f["recommendation"])  # motherboard cable is out
+
+    def test_motherboard_disabled_note(self):
+        cfg = self._bad()
+        cfg["adapters"][0]["adminStatus"] = "Down"  # motherboard administratively disabled
+        cfg["adapters"][0]["status"] = "Disabled"
+        f = main._camera_nic_uplink_finding(cfg)
+        self.assertIn("disabled", f["recommendation"].lower())
+
+    def test_finding_surfaces_in_compute_findings(self):
+        findings = main._compute_findings(
+            identity={}, performance={}, services={}, nics={},
+            network_config=self._bad(),
+        )
+        titles = [f["title"] for f in findings if f.get("category") == "Network"]
+        self.assertTrue(any("camera port" in t.lower() for t in titles), titles)
+
+
 # ── NTP source allowlist (PDF #9) ────────────────────────────
 class TestNtpAllowlist(unittest.TestCase):
     def test_canonical_sources_approved(self):

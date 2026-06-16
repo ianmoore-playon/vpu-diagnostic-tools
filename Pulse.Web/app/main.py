@@ -1023,6 +1023,118 @@ def _total_ram_gb(hardware, performance) -> float:
     return 0.0
 
 
+# Intel/Realtek parts used on the dedicated multi-port camera NIC card. Only a
+# fallback hint when PCI bus info is missing — the authoritative signal is the
+# PCI bus number (onboard motherboard LOM = bus 0; add-in camera card = bus > 0).
+_CAMERA_NIC_CHIPSETS = ("i210", "i211", "i350", "82574l", "82576", "82580")
+
+
+def _adapter_role(a: dict) -> str:
+    """Classify a network adapter into its VPU role:
+      wifi        — the wireless card (Native 802.11), for the Pixellot Connect app
+      motherboard — the onboard Ethernet LOM (PCI bus 0), the intended internet uplink
+      camera      — a port on the dedicated multi-port camera NIC (PCI bus > 0)
+      wired-unknown / other — couldn't place it (no PCI info, or a virtual/WAN device)
+    The motherboard port and the camera card often use the SAME Intel chipset, so
+    we key on PCI bus location, not the chipset name."""
+    media = (a.get("physicalMediaType") or "").strip().lower()
+    desc = (a.get("interfaceDescription") or "").lower()
+    if "802.11" in media or "wi-fi" in desc or "wireless" in desc or "wlan" in desc:
+        return "wifi"
+    is_wired = "802.3" in media
+    bus = a.get("pciBus")
+    if is_wired and bus is not None:
+        return "motherboard" if int(bus) == 0 else "camera"
+    if is_wired:
+        return "wired-unknown"
+    return "other"
+
+
+def _classify_network_adapters(network_config):
+    """Attach a `role` to every adapter in network_config (in place). Idempotent
+    and cheap — safe to call from every consumer (findings, dashboard, network
+    payload) so the role travels to both the backend findings and the frontend."""
+    if not network_config or network_config.get("error"):
+        return network_config
+    for a in network_config.get("adapters") or []:
+        a["role"] = _adapter_role(a)
+    return network_config
+
+
+def _camera_nic_uplink_finding(network_config):
+    """Detect the wiring fault: the internet uplink is plugged into a camera-NIC
+    port instead of the motherboard network port. A camera port flags only when
+    it is link-UP and carrying a real (non-APIPA) default gateway — a disconnected
+    port can hold a stale gateway in the route table, so link state is the gate.
+    Returns a critical finding dict, or None."""
+    if not network_config or network_config.get("error"):
+        return None
+    _classify_network_adapters(network_config)
+    adapters = network_config.get("adapters") or []
+    ip_by_idx = {}
+    for ipc in network_config.get("ipConfigurations") or []:
+        ip_by_idx[ipc.get("interfaceIndex")] = ipc
+
+    def _real_gateway(a):
+        ipc = ip_by_idx.get(a.get("interfaceIndex")) or {}
+        for g in ipc.get("ipv4DefaultGateway") or []:
+            if g and not str(g).startswith("169.254."):
+                return g
+        return None
+
+    def _link_up(a):
+        return str(a.get("status") or "").strip().lower() == "up"
+
+    misplaced = []
+    for a in adapters:
+        if a.get("role") != "camera":
+            continue
+        gw = _real_gateway(a)
+        if gw and _link_up(a):
+            misplaced.append((a, gw))
+    if not misplaced:
+        return None
+
+    # Motherboard port state, for the remediation message.
+    def _mobo_state(a):
+        admin = str(a.get("adminStatus") or "").strip().lower()
+        status = str(a.get("status") or "").strip().lower()
+        if admin == "down" or status == "disabled":
+            return "disabled"
+        if status in ("disconnected", "not present", "down"):
+            return "unplugged"
+        return "ok"
+
+    mobo = [a for a in adapters if a.get("role") == "motherboard"]
+    mobo_note = ""
+    if mobo:
+        st = _mobo_state(mobo[0])
+        if st == "disabled":
+            mobo_note = " The motherboard network port is currently disabled — enable it in Windows."
+        elif st == "unplugged":
+            mobo_note = " The motherboard network port has no cable connected — move the venue/internet cable to it."
+    else:
+        mobo_note = " No motherboard network port was detected — it may be disabled."
+
+    ports_txt = ", ".join(
+        f"{a.get('name') or a.get('interfaceDescription') or '?'} (gateway {gw})"
+        for a, gw in misplaced
+    )
+    return {
+        "severity": "critical",
+        "category": "Network",
+        "title": "Internet is plugged into a camera port, not the motherboard network port",
+        "recommendation": (
+            f"The VPU's internet/venue connection is coming in on a camera-NIC port: {ports_txt}. "
+            f"On a Pixellot VPU the internet must connect to the motherboard network port — the "
+            f"4-port NIC is only for cameras, and a venue uplink there can disrupt camera "
+            f"discovery and streaming.{mobo_note} Move the cable to the motherboard network port "
+            f"and confirm that port is enabled. (The Wi-Fi card is for the Pixellot Connect app and "
+            f"should stay enabled.)"
+        ),
+    }
+
+
 def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None) -> list:
     findings = []
 
@@ -1047,11 +1159,20 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "title": "VPU is using Wi-Fi for its internet connection — switch to wired Ethernet",
                 "recommendation": (
                     f"The VPU's active internet path is over Wi-Fi: {names}{ssid_str}. "
-                    f"Connect the onboard Ethernet port to the venue network instead. "
-                    f"Wi-Fi introduces latency and packet loss that disrupt streaming."
+                    f"The Wi-Fi card is meant for the Pixellot Connect app, not the internet "
+                    f"uplink — connect the motherboard Ethernet port to the venue network "
+                    f"instead. Wi-Fi adds latency and packet loss that disrupt streaming."
                 ),
             }
         )
+
+    # ── Internet plugged into a camera port instead of the motherboard ───
+    # The internet uplink must land on the motherboard network port; the
+    # dedicated 4-port NIC is cameras-only. Detected via PCI bus role (add-in
+    # card = bus > 0) + a live default gateway on that port.
+    _cam_uplink = _camera_nic_uplink_finding(network_config)
+    if _cam_uplink:
+        findings.append(_cam_uplink)
 
     # ── NTP allowlist (PDF #9) ───────────────────────────────
     # School networks sometimes force VPUs onto an internal NTP server. If
@@ -2139,6 +2260,9 @@ def _compute_camera_findings(ports: list) -> list:
 
 
 def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None):
+    # Tag adapter roles (motherboard / camera / wifi) so both the findings and
+    # the embedded "Network config" the dashboard ships carry them.
+    _classify_network_adapters(network_config)
     flat_identity = {}
     if identity and not identity.get("error"):
         flat_identity = {
@@ -2161,9 +2285,18 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
     net_cfg = {}
     if network_config and not network_config.get("error"):
         dash_reachable, dash_tested = _internet_reachable(network_config, port_tests)
+        # Role of the adapter currently carrying the uplink, so the dashboard
+        # can avoid mislabeling a camera-NIC port as "Motherboard Network Port".
+        _uplink_alias = (network_config.get("uplinkAdapter") or {}).get("interfaceAlias")
+        _uplink_role = None
+        for a in network_config.get("adapters") or []:
+            if a.get("name") == _uplink_alias or a.get("interfaceAlias") == _uplink_alias:
+                _uplink_role = a.get("role")
+                break
         net_cfg = {
             "ipConfig": network_config.get("ipConfigurations", []),
             "uplinkAdapter": network_config.get("uplinkAdapter"),
+            "uplinkRole": _uplink_role,
             "internetReachable": dash_reachable,
             "testedHost": dash_tested,
             "ntpSource": network_config.get("ntpSource"),
@@ -2200,6 +2333,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
 
 def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None, wifi=None):
     net = {}
+    _classify_network_adapters(config)
     if config and not config.get("error"):
         ntp_src = config.get("ntpSource")
         reachable, tested_host = _internet_reachable(config, ports)

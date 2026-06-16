@@ -310,11 +310,18 @@ DEMO = {
         ],
     },
     "Get-NetworkConfig.ps1": lambda **kw: {
+        # Healthy wiring: internet on the motherboard port (onboard I219-LM on
+        # PCI bus 0), cameras on the dedicated 4-port NIC card (I210 on PCI buses
+        # 1-3). pciBus is what separates the motherboard uplink from a camera
+        # port — see _adapter_role in main.py. To DEMO the "internet on a camera
+        # port" critical: flip Ethernet 1's status to "Up", give its ipConfig a
+        # gateway (e.g. _VENUE["gatewayIp"]), and set Ethernet 4 status to
+        # "Disconnected" — that puts the live uplink on a camera-NIC port.
         "adapters": [
-            {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #4", "status": "Up", "macAddress": "A0-36-9F-11-22-33", "linkSpeed": "1 Gbps", "interfaceIndex": 4},
-            {"name": "Ethernet 1", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection", "status": "Up", "macAddress": "A0-36-9F-AA-BB-CC", "linkSpeed": "100 Mbps", "interfaceIndex": 1},
-            {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "macAddress": "A0-36-9F-DD-EE-FF", "linkSpeed": "100 Mbps", "interfaceIndex": 2},
-            {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I350 Gigabit Network Connection", "status": "Down", "macAddress": "A0-36-9F-00-11-22", "linkSpeed": "", "interfaceIndex": 3},
+            {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) Ethernet Connection (7) I219-LM", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-11-22-33", "linkSpeed": "1 Gbps", "interfaceIndex": 4, "pnpDeviceId": "PCI\\VEN_8086&DEV_15BB&SUBSYS_83E0103C&REV_10\\3&11583659&3&FE", "pciBus": 0, "pciDevice": 31, "pciFunction": 6},
+            {"name": "Ethernet 1", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-AA-BB-CC", "linkSpeed": "100 Mbps", "interfaceIndex": 1, "pnpDeviceId": "PCI\\VEN_8086&DEV_1533&SUBSYS_00000000&REV_03\\003064FFFF30C7E600", "pciBus": 1, "pciDevice": 0, "pciFunction": 0},
+            {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-DD-EE-FF", "linkSpeed": "100 Mbps", "interfaceIndex": 2, "pnpDeviceId": "PCI\\VEN_8086&DEV_1533&SUBSYS_00000000&REV_03\\003064FFFF30C7E700", "pciBus": 2, "pciDevice": 0, "pciFunction": 0},
+            {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I350 Gigabit Network Connection", "status": "Down", "adminStatus": "Up", "mediaConnectionState": "Disconnected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-00-11-22", "linkSpeed": "", "interfaceIndex": 3, "pnpDeviceId": "PCI\\VEN_8086&DEV_1521&SUBSYS_00000000&REV_01\\003064FFFF30C7E800", "pciBus": 3, "pciDevice": 0, "pciFunction": 0},
         ],
         "ipConfigurations": [
             {"interfaceAlias": "Ethernet 4 (Uplink)", "interfaceIndex": 4, "ipv4Address": [_VENUE["uplinkIp"]], "ipv4DefaultGateway": [_VENUE["gatewayIp"]], "dnsServers": ["8.8.8.8", "8.8.4.4"], "dhcpEnabled": True, "prefixLength": 24},
