@@ -516,6 +516,67 @@ class TestAdapterRoles(unittest.TestCase):
         self.assertTrue(any("camera port" in t.lower() for t in titles), titles)
 
 
+# ── Wi-Fi card disabled (Pixellot Connect) ───────────────────────────
+# Fixture from a third real VPU dump: internet correctly on the motherboard
+# (I219-LM #2 on PCI bus 0), all four 82574L camera ports link-local, and the
+# Wi-Fi card (Wireless-AC 9560, Native 802.11) administratively DISABLED. A
+# disabled Wi-Fi NIC shows status "Disabled" / adminStatus "Down"; an absent
+# card doesn't appear at all (so this never false-fires on Wi-Fi-less units).
+class TestWifiDisabled(unittest.TestCase):
+    def _cfg(self, wifi_status="Disabled", wifi_admin="Down"):
+        return {
+            "adapters": [
+                {"name": "Ethernet 13", "interfaceDescription": "Intel(R) Ethernet Connection (7) I219-LM #2",
+                 "status": "Up", "adminStatus": "Up", "physicalMediaType": "802.3",
+                 "macAddress": "9C-7B-EF-26-CB-D5", "interfaceIndex": 41, "pciBus": 0},
+                {"name": "Ethernet 31", "interfaceDescription": "Intel(R) 82574L Gigabit Network Connection #16",
+                 "status": "Up", "adminStatus": "Up", "physicalMediaType": "802.3",
+                 "macAddress": "00-30-64-36-73-AA", "interfaceIndex": 21, "pciBus": 4},
+                {"name": "Ethernet 28", "interfaceDescription": "Intel(R) 82574L Gigabit Network Connection #13",
+                 "status": "Up", "adminStatus": "Up", "physicalMediaType": "802.3",
+                 "macAddress": "00-30-64-36-73-AB", "interfaceIndex": 37, "pciBus": 5},
+                {"name": "Wi-Fi", "interfaceDescription": "Intel(R) Wireless-AC 9560 160MHz",
+                 "status": wifi_status, "adminStatus": wifi_admin, "physicalMediaType": "Native 802.11",
+                 "macAddress": "C8-58-C0-39-4D-D8", "interfaceIndex": 33, "pciBus": 0},
+            ],
+            "ipConfigurations": [
+                {"interfaceAlias": "Ethernet 13", "interfaceIndex": 41, "ipv4Address": ["192.168.101.230"], "ipv4DefaultGateway": ["192.168.100.1"]},
+                {"interfaceAlias": "Ethernet 31", "interfaceIndex": 21, "ipv4Address": ["169.254.63.3"], "ipv4DefaultGateway": []},
+                {"interfaceAlias": "Ethernet 28", "interfaceIndex": 37, "ipv4Address": ["169.254.16.100"], "ipv4DefaultGateway": []},
+            ],
+        }
+
+    def test_roles_include_wifi_and_motherboard(self):
+        cfg = self._cfg()
+        main._classify_network_adapters(cfg)
+        roles = {a["name"]: a["role"] for a in cfg["adapters"]}
+        self.assertEqual(roles["Ethernet 13"], "motherboard")  # I219-LM on bus 0
+        self.assertEqual(roles["Wi-Fi"], "wifi")               # Native 802.11
+        self.assertEqual(roles["Ethernet 28"], "camera")       # 82574L on bus 5
+
+    def test_disabled_wifi_warns(self):
+        f = main._wifi_disabled_finding(self._cfg())
+        self.assertIsNotNone(f)
+        self.assertEqual(f["severity"], "warning")
+        self.assertIn("Connect", f["recommendation"])
+        self.assertIn("Wireless-AC 9560", f["recommendation"])
+
+    def test_enabled_wifi_does_not_warn(self):
+        self.assertIsNone(main._wifi_disabled_finding(self._cfg(wifi_status="Up", wifi_admin="Up")))
+
+    def test_internet_on_motherboard_no_camera_finding(self):
+        # Internet is on the I219 motherboard port; cameras are link-local — so
+        # the camera-NIC finding must stay quiet even though Wi-Fi is disabled.
+        self.assertIsNone(main._camera_nic_uplink_finding(self._cfg()))
+
+    def test_compute_findings_warns_wifi_not_camera(self):
+        findings = main._compute_findings(
+            identity={}, performance={}, services={}, nics={}, network_config=self._cfg())
+        net = [(f["severity"], f["title"]) for f in findings if f.get("category") == "Network"]
+        self.assertTrue(any("Wi-Fi card is disabled" in t for _, t in net), net)
+        self.assertFalse(any("camera port" in t.lower() for _, t in net), net)
+
+
 # ── NTP source allowlist (PDF #9) ────────────────────────────
 class TestNtpAllowlist(unittest.TestCase):
     def test_canonical_sources_approved(self):

@@ -31,6 +31,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   and notes if the motherboard port is disabled or unplugged. It tells the
   motherboard port apart from the camera card by its hardware (PCI) location, so
   it works even when both use the same Intel chipset.
+- **Pulse now flags a disabled Wi-Fi card.** The Wi-Fi card is how the Pixellot
+  Connect app reaches the VPU. If it's been disabled in Windows, Pulse raises a
+  warning with how to turn it back on — so a unit that's invisible to Connect is
+  easy to spot. (Units without a Wi-Fi card aren't flagged.)
 
 ### Changed
 - **The Wi-Fi warning now explains Wi-Fi's real job.** When the VPU is running

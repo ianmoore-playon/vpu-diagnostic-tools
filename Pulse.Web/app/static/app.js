@@ -2384,6 +2384,24 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
         details: _misplaced.map(function(a) { return (a.name || a.interfaceDescription || "?") + " — gateway " + _camGw(a) + " (a camera port)"; }),
       });
     }
+
+    // ── Warning: Wi-Fi card disabled (Pixellot Connect can't reach the VPU) ──
+    // A disabled Wi-Fi NIC reports status "Disabled" / adminStatus "Down"; an
+    // absent card doesn't appear at all. Skip Wi-Fi Direct / virtual adapters.
+    var _wifiOff = (cfg.adapters || []).filter(function(a) {
+      if (a.role !== "wifi") return false;
+      var d = a.interfaceDescription || "";
+      if (d.indexOf("Direct") !== -1 || d.indexOf("Virtual") !== -1) return false;
+      return String(a.status || "").toLowerCase() === "disabled" || String(a.adminStatus || "").toLowerCase() === "down";
+    });
+    if (_wifiOff.length) {
+      issues.push({
+        severity: "warning",
+        title: "Wi-Fi card is disabled — the Pixellot Connect app can't reach this VPU",
+        body: "The Wi-Fi card is what the Pixellot Connect app uses to talk to the VPU, so Connect won't find this unit until it's turned back on — enable it in Windows (Network Connections → right-click the Wi-Fi adapter → Enable). The internet uplink should stay on the motherboard Ethernet port; Wi-Fi is only for Connect.",
+        details: _wifiOff.map(function(a) { return (a.interfaceDescription || a.name || "Wi-Fi") + " — disabled"; }),
+      });
+    }
   }
 
   // ── Critical: Gateway ────────────────────────────────────

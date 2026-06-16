@@ -1135,6 +1135,44 @@ def _camera_nic_uplink_finding(network_config):
     }
 
 
+def _wifi_disabled_finding(network_config):
+    """The Wi-Fi card is how the Pixellot Connect app reaches the VPU. If it's
+    administratively disabled, Connect can't find the unit. A *disabled* Wi-Fi
+    NIC shows up with status 'Disabled' / adminStatus 'Down' (an absent card
+    doesn't appear at all, so this won't false-fire on units without Wi-Fi).
+    Wi-Fi Direct / hosted-network virtual adapters are skipped. Returns a
+    warning finding, or None."""
+    if not network_config or network_config.get("error"):
+        return None
+    _classify_network_adapters(network_config)
+    disabled = []
+    for a in network_config.get("adapters") or []:
+        if a.get("role") != "wifi":
+            continue
+        desc = a.get("interfaceDescription") or ""
+        if "Direct" in desc or "Virtual" in desc:
+            continue  # Wi-Fi Direct / hosted-network plumbing, not the real card
+        status = str(a.get("status") or "").strip().lower()
+        admin = str(a.get("adminStatus") or "").strip().lower()
+        if status == "disabled" or admin == "down":
+            disabled.append(a)
+    if not disabled:
+        return None
+    names = ", ".join(a.get("interfaceDescription") or a.get("name") or "Wi-Fi" for a in disabled)
+    return {
+        "severity": "warning",
+        "category": "Network",
+        "title": "Wi-Fi card is disabled — the Pixellot Connect app can't reach this VPU",
+        "recommendation": (
+            f"The VPU's Wi-Fi adapter ({names}) is disabled. The Wi-Fi card is what the Pixellot "
+            f"Connect app uses to talk to the VPU, so Connect won't find this unit until it's "
+            f"turned back on — enable it in Windows (Network Connections → right-click the Wi-Fi "
+            f"adapter → Enable). The internet uplink should stay on the motherboard Ethernet port; "
+            f"Wi-Fi is only for Connect."
+        ),
+    }
+
+
 def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None) -> list:
     findings = []
 
@@ -1173,6 +1211,11 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
     _cam_uplink = _camera_nic_uplink_finding(network_config)
     if _cam_uplink:
         findings.append(_cam_uplink)
+
+    # ── Wi-Fi card disabled (Pixellot Connect can't reach the VPU) ───────
+    _wifi_off = _wifi_disabled_finding(network_config)
+    if _wifi_off:
+        findings.append(_wifi_off)
 
     # ── NTP allowlist (PDF #9) ───────────────────────────────
     # School networks sometimes force VPUs onto an internal NTP server. If
