@@ -349,6 +349,13 @@ html.dark .demo-banner {
     opacity: 0.6;
 }
 .nav-icon svg { width: 18px; height: 18px; }
+/* Per-subsystem health dot, right-aligned on the nav link. No background
+   (invisible) until updateNavHealth() adds a state class — non-subsystem
+   links keep the reserved space so all labels stay aligned. */
+.nav-status { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.nav-status-ok { background: var(--c-accent-green); }
+.nav-status-warn { background: var(--c-accent-amber); }
+.nav-status-crit { background: var(--c-accent-red); }
 .nav-item:hover { background: var(--c-surface); color: var(--c-text); }
 .nav-item:hover .nav-icon { opacity: 1; }
 .nav-item.active {

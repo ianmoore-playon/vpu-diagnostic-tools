@@ -122,6 +122,27 @@ function updateNav() {
   });
 }
 
+// Paint a status dot on each subsystem's nav link from the dashboard findings,
+// so the sidebar doubles as the at-a-glance health map (replaces the old
+// Subsystems panel). Non-subsystem links (Dashboard, Settings, …) get no dot.
+function updateNavHealth() {
+  const health = {};
+  try {
+    _subsystemHealth((cached("dashboard") || {}).findings || [])
+      .forEach((s) => { health[s.id] = s.health; });
+  } catch (e) { return; }
+  document.querySelectorAll(".nav-item").forEach((el) => {
+    const dot = el.querySelector(".nav-status");
+    if (!dot) return;
+    const h = health[el.dataset.page];
+    dot.className = "nav-status" + (
+      h === "Critical" ? " nav-status-crit"
+      : h === "Warning" ? " nav-status-warn"
+      : h === "Healthy" ? " nav-status-ok" : "");
+    if (h) dot.title = h; else dot.removeAttribute("title");
+  });
+}
+
 function renderPage(id) {
   const fn = pageRenderers[id];
   if (!fn) { $page().innerHTML = `<p class="text-pulse-muted">Unknown page: ${esc(id)}</p>`; return; }
@@ -347,6 +368,8 @@ function fetchSection(key) {
     if (data) {
       dataCache[key] = data;
     }
+    // Refresh the sidebar health dots when the data that drives them lands.
+    if (key === "dashboard" || key === "events") updateNavHealth();
     // Re-render the current page only when the completed fetch is relevant to it.
     // For dashboard, only its own deps trigger a refresh — non-dashboard data
     // (events, audio, scoreconnect, etc.) doesn't change anything visible.
@@ -1066,17 +1089,21 @@ function renderPixellotConfig() {
 // ── Dashboard ────────────────────────────────────────────────
 
 function _subsystemHealth(findings) {
-  // Map each finding category to the subsystem panel that owns it.
-  // Each finding lights up exactly ONE panel — no double-flagging.
-  const cats = {};
+  // Worst finding severity per category (2 = critical, 1 = warning), so a
+  // subsystem with a critical lights red and one with only warnings lights
+  // amber. Each finding maps to exactly ONE subsystem — no double-flagging.
+  const sev = {};
   (findings || []).forEach((f) => {
     const k = (f.category || "").toLowerCase();
-    cats[k] = (cats[k] || 0) + 1;
+    const rank = /^(critical|error)$/.test((f.severity || "").toLowerCase()) ? 2 : 1;
+    sev[k] = Math.max(sev[k] || 0, rank);
   });
+  const worst = (...keys) => Math.max(0, ...keys.map((k) => sev[k] || 0));
+  const lvl = (r) => (r === 2 ? "Critical" : r === 1 ? "Warning" : "Healthy");
 
   // Event Viewer doesn't generate dashboard findings of its own, so derive
   // its health from the cached event log: any recent Error-level entry
-  // turns the tile amber. (Falls back to Healthy when events aren't loaded.)
+  // turns it amber. (Falls back to Healthy when events aren't loaded.)
   const evEntries = (cached("events") || {}).entries || [];
   const evErrorCount = evEntries.filter(
     (e) => (e.level || "").toLowerCase() === "error"
@@ -1084,19 +1111,19 @@ function _subsystemHealth(findings) {
 
   return [
     { id: "system", label: "System Overview", icon: "cpu",
-      health: (cats.system || cats.hardware || cats.performance) ? "Warning" : "Healthy",
+      health: lvl(worst("system", "hardware", "performance")),
       desc: "Hardware, OS, uptime, and Pixellot software." },
     { id: "network", label: "Network", icon: "wifi",
-      health: cats.network ? "Warning" : "Healthy",
+      health: lvl(worst("network")),
       desc: "Internet, name lookups, firewall, and service ports." },
     { id: "cameras", label: "Camera Connectivity", icon: "camera",
-      health: cats.camera ? "Warning" : "Healthy",
+      health: lvl(worst("camera")),
       desc: "Camera ports — link, speed, and camera detection." },
     { id: "services", label: "Pixellot Services", icon: "server",
-      health: cats.services ? "Warning" : "Healthy",
+      health: lvl(worst("services")),
       desc: "Agent, encoder, watchdog service status." },
     { id: "disk-health", label: "Disk Health", icon: "hdd",
-      health: cats.storage ? "Warning" : "Healthy",
+      health: lvl(worst("storage")),
       desc: "Free space, drive health (SMART), and disk events." },
     { id: "events", label: "Event Viewer", icon: "triangle",
       health: evErrorCount > 0 ? "Warning" : "Healthy",
@@ -1455,21 +1482,6 @@ function renderDashboard() {
         ${svgIcon("refresh", 13)} Retry
       </button>
     </div>` : ""}
-
-      <div class="card subsystems-panel">
-        <h3 class="card-label">SUBSYSTEMS</h3>
-        <div class="dash-sub-grid dash-sub-grid-full">
-          ${subsystems.map((s) => `
-            <a class="dash-sub-tile" href="#${esc(s.id)}" onclick="event.preventDefault();navigate('${esc(s.id)}')">
-              <div class="dash-sub-top">
-                <span class="dash-sub-icon">${svgIcon(s.icon, 14)}</span>
-                <span class="dash-sub-name">${esc(s.label)}</span>
-                ${_healthBadge(s.health)}
-              </div>
-              <p class="dash-sub-desc">${esc(s.desc)}</p>
-            </a>`).join("")}
-        </div>
-      </div>
 
     ${id.isNonVpuHost ? `
     <!-- Non-VPU Host Banner -->
@@ -7470,6 +7482,7 @@ async function init() {
         `<a class="nav-item" data-page="${esc(p.id)}" href="#${esc(p.id)}">
           <span class="nav-icon">${svgIcon(p.icon, 16)}</span>
           <span>${esc(p.label)}</span>
+          <span class="nav-status"></span>
         </a>`
       ).join("")}
     </div>
