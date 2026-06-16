@@ -72,9 +72,11 @@ try {
         [ordered]@{
             interfaceAlias     = $_.InterfaceAlias
             interfaceIndex     = $idx
-            ipv4Address        = if ($_.IPv4Address) { ($_.IPv4Address | ForEach-Object { $_.IPAddress }) } else { @() }
-            ipv4DefaultGateway = if ($_.IPv4DefaultGateway) { ($_.IPv4DefaultGateway | ForEach-Object { $_.NextHop }) } else { @() }
-            dnsServers         = if ($_.DNSServer) { ($_.DNSServer | ForEach-Object { $_.ServerAddresses }) | Select-Object -Unique } else { @() }
+            # @(...) forces an array so a single IP / gateway / DNS server isn't
+            # unwrapped to a bare string in JSON — consumers expect a list.
+            ipv4Address        = @(if ($_.IPv4Address) { $_.IPv4Address | ForEach-Object { $_.IPAddress } })
+            ipv4DefaultGateway = @(if ($_.IPv4DefaultGateway) { $_.IPv4DefaultGateway | ForEach-Object { $_.NextHop } })
+            dnsServers         = @(if ($_.DNSServer) { $_.DNSServer | ForEach-Object { $_.ServerAddresses } | Select-Object -Unique })
             dhcpEnabled        = if ($iface) { $iface.Dhcp -eq 'Enabled' } else { $false }
             prefixLength       = if ($_.IPv4Address) { [int]($_.IPv4Address | Select-Object -First 1).PrefixLength } else { if ($addr) { [int]$addr.PrefixLength } else { $null } }
         }

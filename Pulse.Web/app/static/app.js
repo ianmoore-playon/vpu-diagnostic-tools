@@ -2744,8 +2744,14 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     (cfg.ipConfig || cfg.ipConfigurations || []).forEach(function(ipc) { _ipByIdx[ipc.interfaceIndex] = ipc; });
     function _camGw(a) {
       var ipc = _ipByIdx[a.interfaceIndex] || {};
-      var gws = (ipc.ipv4DefaultGateway || []).filter(function(g) { return g && g.indexOf("169.254.") !== 0; });
-      return gws.length ? gws[0] : null;
+      // PowerShell unwraps a single-element array to a scalar, so a one-gateway
+      // adapter arrives as a bare string, not an array — normalize before use.
+      var raw = ipc.ipv4DefaultGateway;
+      var gws = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+      for (var i = 0; i < gws.length; i++) {
+        if (gws[i] && String(gws[i]).indexOf("169.254.") !== 0) return gws[i];
+      }
+      return null;
     }
     var _misplaced = (cfg.adapters || []).filter(function(a) {
       return a.role === "camera" && String(a.status || "").toLowerCase() === "up" && _camGw(a);

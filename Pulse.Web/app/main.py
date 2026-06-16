@@ -1077,7 +1077,12 @@ def _camera_nic_uplink_finding(network_config):
 
     def _real_gateway(a):
         ipc = ip_by_idx.get(a.get("interfaceIndex")) or {}
-        for g in ipc.get("ipv4DefaultGateway") or []:
+        raw = ipc.get("ipv4DefaultGateway")
+        # PowerShell unwraps a single-element array to a scalar, so a one-gateway
+        # adapter arrives as a bare string — normalize before iterating (else we'd
+        # iterate the string's characters).
+        gws = raw if isinstance(raw, list) else ([raw] if raw else [])
+        for g in gws:
             if g and not str(g).startswith("169.254."):
                 return g
         return None

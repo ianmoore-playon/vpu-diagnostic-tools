@@ -515,6 +515,19 @@ class TestAdapterRoles(unittest.TestCase):
         titles = [f["title"] for f in findings if f.get("category") == "Network"]
         self.assertTrue(any("camera port" in t.lower() for t in titles), titles)
 
+    def test_scalar_gateway_is_handled(self):
+        # PowerShell unwraps a single-element array to a scalar, so a one-gateway
+        # camera port arrives with ipv4DefaultGateway as a bare STRING, not a
+        # list. The finding must still fire and report the whole gateway — not
+        # iterate the string's characters (the bug that crashed the real VPU).
+        cfg = self._bad()
+        for ipc in cfg["ipConfigurations"]:
+            if ipc["interfaceIndex"] == 23:  # the up camera port (Ethernet 28)
+                ipc["ipv4DefaultGateway"] = "192.168.100.1"   # scalar, not a list
+        f = main._camera_nic_uplink_finding(cfg)
+        self.assertIsNotNone(f)
+        self.assertIn("192.168.100.1", f["recommendation"])  # full gateway, not "1"
+
 
 # ── Wi-Fi card disabled (Pixellot Connect) ───────────────────────────
 # Fixture from a third real VPU dump: internet correctly on the motherboard
