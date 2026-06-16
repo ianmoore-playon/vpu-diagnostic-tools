@@ -1252,7 +1252,7 @@ function _demoVerdict(state) {
   ] };
 }
 
-function readinessCard(verdict) {
+function readinessCard(verdict, freshness) {
   var isDemo = (typeof window !== "undefined" && window.__PULSE_DEMO_MODE);
   if (isDemo && _readinessDemoState) verdict = _demoVerdict(_readinessDemoState);
   if (!verdict || !verdict.status) return "";
@@ -1291,6 +1291,7 @@ function readinessCard(verdict) {
     +   '<div class="rdy-headline">'
     +     '<div class="rdy-title-row"><h3 class="rdy-title">Stream Readiness</h3>' + (asOf ? '<span class="rdy-asof">as of ' + esc(asOf) + '</span>' : '') + '</div>'
     +     '<p class="rdy-tag">' + esc(meta.tag) + '</p>'
+    +     (freshness ? '<p class="rdy-fresh">' + svgIcon("check", 12) + ' ' + esc(freshness) + '</p>' : '')
     +   '</div>'
     + '</div>'
     + '<div class="rdy-drivers">' + driverRows + '</div>'
@@ -1366,6 +1367,7 @@ function renderDashboard() {
   const subsystems = _subsystemHealth(findings);
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const baselineStr = subsystems.length + " panel" + (subsystems.length === 1 ? "" : "s") + " checked";
 
   // Network config — prefer dashboard-embedded data, fall back to full network cache
   const netCfg = dash.networkConfig || net.config || {};
@@ -1422,9 +1424,6 @@ function renderDashboard() {
       <div>
         <div class="dash-title-row">
           <h2 class="text-2xl font-bold text-white">Dashboard</h2>
-          <span class="dash-sev-pill dash-sev-${sevColor}">
-            <span class="dash-sev-dot"></span> ${esc(sevLabel)}
-          </span>
         </div>
         ${vpuName ? `<p class="text-sm text-pulse-muted">${esc(vpuName)}</p>` : ""}
       </div>
@@ -1442,7 +1441,7 @@ function renderDashboard() {
     </div>
 
     <!-- Stream Readiness — lead the triage page with "are we game-ready?" -->
-    ${readinessCard(dash.readiness)}
+    ${readinessCard(dash.readiness, baselineStr)}
 
     ${(dash.sourceErrors && dash.sourceErrors.length) ? `
     <!-- Partial-failure notice — some diagnostic scripts didn't complete -->
@@ -1457,44 +1456,6 @@ function renderDashboard() {
       </button>
     </div>` : ""}
 
-    <!-- Command Center (left: severity + baseline + top findings) + Subsystems (right) -->
-    <div class="dash-top-grid">
-      <div class="card command-center">
-        <h3 class="card-label">COMMAND CENTER</h3>
-        <div class="cc-severity">${sevHtml}</div>
-        <div class="baseline-bar">
-          ${svgIcon("check", 14)}
-          Baseline completed ${esc(timeStr)} &bull; ${subsystems.length} panel${subsystems.length === 1 ? "" : "s"} checked &bull; ${totalFindings} finding${totalFindings === 1 ? "" : "s"}
-        </div>
-        <div class="cc-findings">
-          <div class="flex justify-between items-center mb-2">
-            <h3 class="card-label mb-0">FINDINGS</h3>
-            ${totalFindings > 0 ? `<span class="cc-findings-count">${totalFindings} issue${totalFindings === 1 ? "" : "s"}</span>` : ""}
-          </div>
-          <div class="cc-findings-list">
-            ${visibleFindings.length
-              ? visibleFindings.map((f, i) => {
-                  // Thin divider whenever the severity group changes, so the
-                  // critical/warning clusters read as distinct groups.
-                  const prev = visibleFindings[i - 1];
-                  const groupBreak = i > 0 && prev.severity !== f.severity
-                    ? `<div class="cc-findings-divider"></div>` : "";
-                  const fp = _findingPageFor(f.category);
-                  const encTitle = encodeURIComponent(f.title || "");
-                  return groupBreak + `
-                <a class="finding-item" href="#${esc(fp)}" onclick="event.preventDefault();findingJump('${esc(fp)}','${encTitle}')" title="Opens the ${esc(f.category)} tab and highlights this issue">
-                  <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
-                  <span class="finding-cat finding-cat-${esc(f.severity)}">[${esc((f.severity || "").toUpperCase())}]</span>
-                  <span class="finding-title">${esc(f.title)}</span>
-                  <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
-                </a>`;
-                }).join("")
-              : `<div class="dash-no-findings">${svgIcon("check", 16)} <span>No active findings detected.</span></div>`
-            }
-            ${overflowCount > 0 ? `<div class="cc-findings-overflow">+${overflowCount} more — visit the relevant tab for the full list</div>` : ""}
-          </div>
-        </div>
-      </div>
       <div class="card subsystems-panel">
         <h3 class="card-label">SUBSYSTEMS</h3>
         <div class="dash-sub-grid dash-sub-grid-full">
@@ -1509,7 +1470,6 @@ function renderDashboard() {
             </a>`).join("")}
         </div>
       </div>
-    </div>
 
     ${id.isNonVpuHost ? `
     <!-- Non-VPU Host Banner -->
