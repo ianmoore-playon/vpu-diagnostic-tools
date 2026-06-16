@@ -2882,6 +2882,20 @@ async def api_system():
     }
 
 
+@app.get("/api/users-domains")
+async def api_users_domains():
+    """Domain/workgroup membership + local user accounts for the System
+    Overview 'Users & Domains' panel. Lazy-fetched on tab visit."""
+    return await run_ps("Get-UsersAndDomains.ps1", timeout=20)
+
+
+@app.get("/api/peripherals")
+async def api_peripherals():
+    """Mouse / keyboard / monitor presence for the System Overview
+    'Peripherals' panel. Lazy-fetched on tab visit."""
+    return await run_ps("Get-Peripherals.ps1", timeout=15)
+
+
 @app.get("/api/pixellot-config")
 async def api_pixellot_config():
     r"""Local, on-host Pixellot configuration (NOT the Pixellot Cloud lane):

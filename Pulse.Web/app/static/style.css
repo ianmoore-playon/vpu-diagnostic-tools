@@ -1388,6 +1388,31 @@ html.dark .demo-banner {
 .sys-lifecycle-crit { background: var(--c-tint-red);   border-left: 3px solid var(--c-accent-red);   }
 .sys-lifecycle-crit svg { color: var(--c-accent-red); }
 
+/* Peripherals panel (mouse / keyboard / monitor) */
+.periph-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 0;
+}
+.periph-row + .periph-row { border-top: 1px solid var(--c-border); }
+.periph-icon { color: var(--c-muted); display: inline-flex; flex-shrink: 0; }
+.periph-main { flex: 1; min-width: 0; }
+.periph-label { font-size: 0.85rem; font-weight: 600; color: var(--c-text); }
+.periph-detail {
+    font-size: 0.72rem; color: var(--c-muted); margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.periph-status {
+    display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+    font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+}
+.periph-on  { background: var(--c-tint-green); color: var(--c-accent-green); }
+.periph-off { background: var(--c-surface-3); color: var(--c-muted); border: 1px solid var(--c-border); }
+.periph-note {
+    display: flex; align-items: flex-start; gap: 6px;
+    font-size: 0.68rem; color: var(--c-dim); margin-top: 10px; line-height: 1.4;
+}
+.periph-note svg { flex-shrink: 0; margin-top: 1px; }
+
 /* Software filter */
 .sw-filter-input {
     width: 100%;

@@ -31,6 +31,9 @@ function svgIcon(name, size) {
     database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
     mic: '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>',
     shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+    users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    mouse: '<rect x="6" y="3" width="12" height="18" rx="6"/><line x1="12" y1="7" x2="12" y2="11"/>',
+    keyboard: '<rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6" y2="10"/><line x1="10" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="14" y2="10"/><line x1="18" y1="10" x2="18" y2="10"/><line x1="8" y1="14" x2="16" y2="14"/>',
     volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
     "volume-x": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
     activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
@@ -1905,6 +1908,18 @@ function renderSystem() {
       })()}
     </div>
 
+    <!-- Users & Domains + Peripherals (lazy-filled below) -->
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("users", "Users & Domains")}
+        <div id="sys-users-body">${loading()}</div>
+      </div>
+      <div class="card">
+        ${sectionTitle("mouse", "Peripherals")}
+        <div id="sys-peripherals-body">${loading()}</div>
+      </div>
+    </div>
+
     <!-- Software Inventory -->
     <div class="card mt-4">
       ${sectionTitle("server", "Installed Software (" + swList.length + ")")}
@@ -1983,6 +1998,76 @@ function renderSystem() {
       }
     });
   }
+
+  // Users & Domains + Peripherals — separate endpoints (not in the cached
+  // system payload), so the tab paints immediately and these fill in.
+  // Guard on currentPage so a late response after navigating away can't
+  // write into another tab.
+  api("/api/users-domains").then(d => {
+    if (currentPage !== "system") return;
+    const el = document.getElementById("sys-users-body");
+    if (el) el.innerHTML = _usersPanelHtml(d);
+  }).catch(() => {});
+  api("/api/peripherals").then(d => {
+    if (currentPage !== "system") return;
+    const el = document.getElementById("sys-peripherals-body");
+    if (el) el.innerHTML = _peripheralsPanelHtml(d);
+  }).catch(() => {});
+}
+
+function _usersPanelHtml(d) {
+  if (!d || d.error) return `<p class="text-sm text-pulse-muted">${esc((d && d.message) || "Could not read users / domain.")}</p>`;
+  const dom = d.domain || {};
+  const users = d.users || [];
+  const membership = dom.partOfDomain
+    ? `Domain &middot; ${esc(dom.domain || "—")}`
+    : `Workgroup &middot; ${esc(dom.workgroup || "—")}`;
+  return `
+    <div class="kv-grid">
+      ${kvRow("Computer", dom.computerName)}
+      ${kvRowHtml("Membership", `<span class="${dom.partOfDomain ? "status-pass" : ""}">${membership}</span>`)}
+      ${kvRow("Role", dom.role)}
+      ${kvRow("Logged in", dom.currentUser || "— (no interactive user)")}
+    </div>
+    <div class="text-xs text-pulse-muted mt-3 mb-1">Local accounts: ${esc(String(d.userCount || 0))} &middot; ${esc(String(d.adminCount || 0))} admin</div>
+    ${users.length ? `
+      <table class="data-table"><thead><tr><th>Account</th><th>Access</th><th>Status</th></tr></thead><tbody>
+      ${users.map(u => `<tr>
+        <td><span class="font-mono">${esc(u.name)}</span>${u.fullName ? `<div class="text-xs text-pulse-muted">${esc(u.fullName)}</div>` : ""}</td>
+        <td>${u.isAdmin ? '<span class="sev-chip sev-chip-info">Admin</span>' : '<span class="text-xs text-pulse-muted">Standard</span>'}</td>
+        <td>${u.enabled ? '<span class="status-pass">Enabled</span>' : '<span class="text-pulse-muted">Disabled</span>'}${u.lockedOut ? ' <span class="status-fail">Locked</span>' : ""}</td>
+      </tr>`).join("")}
+      </tbody></table>
+    ` : '<p class="text-sm text-pulse-muted">No local accounts found.</p>'}
+  `;
+}
+
+function _peripheralsPanelHtml(d) {
+  if (!d || d.error) return `<p class="text-sm text-pulse-muted">${esc((d && d.message) || "Could not read peripherals.")}</p>`;
+  const row = (icon, label, dev) => {
+    dev = dev || {};
+    const on = !!dev.connected;
+    const detail = on
+      ? ((dev.devices && dev.devices.length) ? dev.devices.join(", ")
+         : `${dev.count || 0} connected`)
+      : "Not detected";
+    return `<div class="periph-row">
+      <span class="periph-icon">${svgIcon(icon, 18)}</span>
+      <div class="periph-main">
+        <div class="periph-label">${esc(label)}</div>
+        <div class="periph-detail" title="${esc(detail)}">${esc(detail)}</div>
+      </div>
+      <span class="periph-status ${on ? "periph-on" : "periph-off"}">
+        ${svgIcon(on ? "check" : "x", 12)} ${on ? "Connected" : "None"}
+      </span>
+    </div>`;
+  };
+  return `
+    ${row("mouse", "Mouse", d.mouse)}
+    ${row("keyboard", "Keyboard", d.keyboard)}
+    ${row("monitor", "Monitor", d.monitor)}
+    <div class="periph-note">${svgIcon("info", 12)} <span>Reflects what the OS sees. Over RDP / LogMeIn these show the remote session, not the physical VPU.</span></div>
+  `;
 }
 
 // ── Network ──────────────────────────────────────────────────

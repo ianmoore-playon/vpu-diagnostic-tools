@@ -299,6 +299,32 @@ DEMO = {
             {"model": "Samsung SSD 870 EVO 500GB", "sizeGB": 500, "interfaceType": "SATA", "serialNumber": "S3Z8NB0K901234A"}
         ],
     },
+    "Get-UsersAndDomains.ps1": lambda **kw: {
+        "domain": {
+            "computerName": _VENUE["hostname"],
+            "partOfDomain": False,
+            "domain": None,
+            "workgroup": "WORKGROUP",
+            "role": "Standalone Workstation",
+            "currentUser": f"{_VENUE['hostname']}\\pixellot",
+        },
+        "users": [
+            {"name": "pixellot", "fullName": "Pixellot Service", "enabled": True, "isAdmin": True, "lockedOut": False, "rid": 1001},
+            {"name": "Administrator", "fullName": None, "enabled": False, "isAdmin": True, "lockedOut": False, "rid": 500},
+            {"name": "support", "fullName": "PlayOn Field Support", "enabled": True, "isAdmin": False, "lockedOut": False, "rid": 1002},
+            {"name": "Guest", "fullName": None, "enabled": False, "isAdmin": False, "lockedOut": False, "rid": 501},
+        ],
+        "userCount": 4,
+        "adminCount": 2,
+        "diagnostics": {"usersError": None, "domainError": None},
+    },
+    "Get-Peripherals.ps1": lambda **kw: {
+        "mouse":    {"connected": True,  "count": 1, "devices": ["HID-compliant mouse"], "error": None},
+        "keyboard": {"connected": True,  "count": 1, "devices": ["HID Keyboard Device"], "error": None},
+        # Headless is common for VPUs — demo shows no monitor so the
+        # not-connected state is visible.
+        "monitor":  {"connected": False, "count": 0, "displays": [], "source": "pnp", "error": None},
+    },
     "Get-InstalledSoftware.ps1": lambda **kw: {
         "count": 10,
         "software": [
