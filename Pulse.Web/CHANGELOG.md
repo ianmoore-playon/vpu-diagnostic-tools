@@ -49,6 +49,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   PASS / WARN / FAIL call on whether the VPU can stream tonight's game, shown at
   the top of the Dashboard with the exact blockers and risks behind the verdict.
   FAIL means "don't expect a clean broadcast tonight."
+- **Clearer wording across Pulse.** Findings and panels now lead with plain
+  language and the fix — fewer unexplained acronyms up front, with the technical
+  detail (exact values, commands, port numbers) still right there in the detail.
 
 ### Fixed
 - **Pulse now opens directly in Chrome on launch.** On VPUs with no default

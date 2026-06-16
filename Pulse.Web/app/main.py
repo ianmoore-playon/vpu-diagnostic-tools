@@ -844,7 +844,7 @@ _CONCERNING_SOFTWARE = {
         "shortLabel": "AV/EDR",
         "reason": (
             "Pixellot VPUs only support Windows Defender. Third-party AV/EDR "
-            "products block agent.exe and force an RMA (PDF #11)."
+            "products block agent.exe and force a hardware return (RMA)."
         ),
         "patterns": [
             "CrowdStrike", "SentinelOne", "Sophos", "Carbon Black", "Bitdefender",
@@ -1231,10 +1231,11 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "ntp-unapproved",
                     "severity": "warning",
                     "category": "Network",
-                    "title": "NTP source not in approved Pixellot list",
+                    "title": "VPU clock is syncing from the wrong time source",
                     "recommendation": (
-                        f"Current source: {ntp_src}. Pixellot requires one of: {approved_list}. "
-                        f"Run `w32tm /config /manualpeerlist:\"0.us.pool.ntp.org 1.us.pool.ntp.org "
+                        f"Point the VPU's clock at an approved Pixellot time server. "
+                        f"Current source: {ntp_src}. Approved: {approved_list}. To fix, run "
+                        f"`w32tm /config /manualpeerlist:\"0.us.pool.ntp.org 1.us.pool.ntp.org "
                         f"2.us.pool.ntp.org 3.us.pool.ntp.org\" /syncfromflags:manual /update` and "
                         f"restart the Windows Time service."
                     ),
@@ -1259,9 +1260,9 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             "category": "Hardware",
             "title": "Unsupported security software detected",
             "recommendation": (
-                f"Found: {names_str}. Pixellot VPUs only support Windows Defender — "
-                f"third-party AV/EDR products block agent.exe and force an RMA. "
-                f"Uninstall the listed software immediately."
+                f"Uninstall {names_str} immediately. Pixellot VPUs only support "
+                f"Windows Defender — third-party antivirus/EDR software blocks "
+                f"agent.exe and forces a hardware return (RMA)."
             ),
         })
     for cat_key in ("crypto_miner", "torrent", "system_cleaner"):
@@ -1304,7 +1305,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "code": "ram-insufficient",
                 "severity": "warning",
                 "category": "Hardware",
-                "title": "Insufficient RAM",
+                "title": "Not enough memory for a VPU",
                 "recommendation": f"System has {total_ram:g} GB RAM; Pixellot VPUs require {PIXELLOT_MIN_RAM_GB} GB. Encoder workloads may stall or drop frames. Add memory or escalate for replacement.",
             }
         )
@@ -1317,8 +1318,8 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "uptime-high",
                     "severity": "warning",
                     "category": "System",
-                    "title": "High Uptime",
-                    "recommendation": f"System running {uptime_secs // 86400} days. Consider a reboot.",
+                    "title": "VPU hasn't been rebooted in a while",
+                    "recommendation": f"Reboot the VPU — it's been running {uptime_secs // 86400} days. A periodic reboot clears memory leaks and stuck processes.",
                 }
             )
 
@@ -1334,8 +1335,8 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "tz-non-us",
                     "severity": "critical",
                     "category": "System",
-                    "title": "Non-US Timezone",
-                    "recommendation": f"System timezone is '{shown}'. VPU must be set to a US timezone (Pacific/Mountain/Central/Eastern, or Alaska/Hawaii). Open Date & Time settings and choose a US zone.",
+                    "title": "VPU clock is set to a non-US time zone",
+                    "recommendation": f"Set the VPU to a US time zone — open Date & Time settings and choose Pacific, Mountain, Central, Eastern, Alaska, or Hawaii. Current zone: '{shown}'.",
                 }
             )
 
@@ -1354,7 +1355,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "os-eos-reached",
                     "severity": "critical",
                     "category": "System",
-                    "title": "OS end-of-support reached",
+                    "title": "Windows version is past its support date",
                     "recommendation": f"{release} reached end-of-support on {eos} ({abs(days)} days ago). This host no longer receives security updates and should be re-imaged to a supported LTSC release.",
                 })
             elif days < 90:
@@ -1362,7 +1363,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "os-eos-imminent",
                     "severity": "critical",
                     "category": "System",
-                    "title": "OS end-of-support imminent",
+                    "title": "Windows version loses support soon",
                     "recommendation": f"{release} end-of-support is {eos} — {days} days away. Plan re-imaging to a supported LTSC release before that date.",
                 })
             elif days < 365:
@@ -1371,7 +1372,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "os-eos-approaching",
                     "severity": "warning",
                     "category": "System",
-                    "title": "OS end-of-support approaching",
+                    "title": "Windows support ends within a year",
                     "recommendation": f"{release} end-of-support is {eos} (~{months} months away). Begin planning a re-image to a supported LTSC release.",
                 })
 
@@ -1385,7 +1386,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "code": "pixellot-over-cap",
                 "severity": "critical",
                 "category": "Pixellot",
-                "title": "Pixellot version exceeds hardware compatibility cap",
+                "title": "Pixellot version is too new for this VPU's hardware",
                 "recommendation": (
                     f"Installed Pixellot {compat['installedVersion']} is newer than the maximum "
                     f"supported version for {arch_str} ({compat['maxVersion']}). "
@@ -1411,7 +1412,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "code": "gpu-anomaly",
                 "severity": "critical",
                 "category": "Hardware",
-                "title": "Unexpected GPU architecture",
+                "title": "Unrecognized graphics hardware",
                 "recommendation": (
                     f"{compat['architecture']} GPU detected, which is not a known Pixellot "
                     f"deployment configuration. Escalate to support — this host may be "
@@ -1438,12 +1439,12 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "gpu-igpu-only",
                     "severity": "warning",
                     "category": "Hardware",
-                    "title": "No dedicated GPU detected",
+                    "title": "No dedicated graphics card — wrong hardware for a VPU",
                     "recommendation": (
-                        f"WMI reports only non-dedicated graphics ({vendor_str}). "
+                        f"Only built-in graphics found ({vendor_str}). "
                         f"Pixellot VPUs require a dedicated NVIDIA or AMD card for video "
                         f"encoding — this host is the wrong hardware platform for a VPU. "
-                        f"Verify the dGPU is seated, powered, and has a current driver."
+                        f"Check that the graphics card is seated, powered, and has a current driver."
                     ),
                 })
 
@@ -1457,8 +1458,8 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "cpu-critical",
                     "severity": "critical",
                     "category": "Performance",
-                    "title": "CPU Usage Critical",
-                    "recommendation": f"CPU at {cpu}%. Check for runaway processes.",
+                    "title": "CPU usage critically high",
+                    "recommendation": f"Check for runaway processes — CPU at {cpu}%.",
                 }
             )
         elif cpu is not None and cpu > 75:
@@ -1467,8 +1468,8 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "cpu-elevated",
                     "severity": "warning",
                     "category": "Performance",
-                    "title": "CPU Usage Elevated",
-                    "recommendation": f"CPU at {cpu}%. Monitor for sustained high usage.",
+                    "title": "CPU usage elevated",
+                    "recommendation": f"Monitor for sustained high usage — CPU at {cpu}%.",
                 }
             )
 
@@ -1479,8 +1480,8 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "mem-critical",
                     "severity": "critical",
                     "category": "Performance",
-                    "title": "Memory Usage Critical",
-                    "recommendation": f"Memory at {mem}%. Close apps or add RAM.",
+                    "title": "Memory usage critically high",
+                    "recommendation": f"Close apps or add memory — memory at {mem}%.",
                 }
             )
         elif mem is not None and mem > 80:
@@ -1489,8 +1490,8 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "mem-elevated",
                     "severity": "warning",
                     "category": "Performance",
-                    "title": "Memory Usage Elevated",
-                    "recommendation": f"Memory at {mem}%. Monitor for pressure.",
+                    "title": "Memory usage elevated",
+                    "recommendation": f"Monitor for memory pressure — memory at {mem}%.",
                 }
             )
 
@@ -1501,8 +1502,8 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "disk-critical",
                     "severity": "critical",
                     "category": "Storage",
-                    "title": "Disk Space Critical",
-                    "recommendation": f"Disk at {disk}%. Free space immediately.",
+                    "title": "Disk almost full",
+                    "recommendation": f"Free up space now — disk at {disk}%.",
                 }
             )
         elif disk is not None and disk > 80:
@@ -1511,8 +1512,8 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "disk-low",
                     "severity": "warning",
                     "category": "Storage",
-                    "title": "Disk Space Low",
-                    "recommendation": f"Disk at {disk}%. Plan cleanup soon.",
+                    "title": "Disk space low",
+                    "recommendation": f"Plan a cleanup soon — disk at {disk}%.",
                 }
             )
 
@@ -1523,8 +1524,8 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "temp-critical",
                     "severity": "critical",
                     "category": "Hardware",
-                    "title": "Temperature Critical",
-                    "recommendation": f"Temperature at {temp}°C. Check cooling.",
+                    "title": "VPU running hot",
+                    "recommendation": f"Check cooling — temperature at {temp}°C.",
                 }
             )
 
@@ -1625,7 +1626,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                             "code": "nic-slow",
                             "severity": "warning",
                             "category": category,
-                            "title": f"NIC {label} at {speed} Mbps (expected 1 Gbps)",
+                            "title": f"{'Camera' if has_cameras else 'Network'} port {idx + 1} is running slow — {speed} Mbps (should be 1 Gbps)",
                             "recommendation": (
                                 f"{label} ({port.get('name', 'unknown')}) negotiated to "
                                 f"{speed} Mbps instead of 1 Gbps. Camera streams on this port "
@@ -1651,12 +1652,12 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "code": "install-incomplete",
                 "severity": "warning",
                 "category": "Pixellot",
-                "title": "Half-finished Pixellot install detected",
+                "title": "Pixellot update didn't finish",
                 "recommendation": (
-                    f"{part_count} part file(s) present in C:\\pixellot\\downloadedversion "
-                    f"and {log_name} does not end with 'Rebooting...'. Last log line was: "
-                    f'"{last_excerpt}". Resume the install by re-running the installer in '
-                    f"that directory."
+                    f"A previous update stopped partway through. Re-run the installer in "
+                    f"C:\\pixellot\\downloadedversion to complete it. ({part_count} part "
+                    f"file(s) present; {log_name} didn't reach 'Rebooting...'. Last log "
+                    f'line: "{last_excerpt}".)'
                 ),
             }
         )
@@ -1695,7 +1696,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "code": "stream-2088-blocked",
                 "severity": "critical",
                 "category": "Network",
-                "title": "Streaming is blocked — VPU can't broadcast",
+                "title": "Streaming is blocked — the VPU can't broadcast",
                 "recommendation": (
                     "The venue's network is blocking the connection the VPU uses to "
                     "send the live video to Pixellot's streaming service. This connection "
@@ -1716,7 +1717,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "code": "stream-443-blocked",
                 "severity": "warning",
                 "category": "Network",
-                "title": "A backup streaming connection is blocked (broadcast still works)",
+                "title": "A backup streaming connection is blocked — the broadcast still works",
                 "recommendation": (
                     "The game can still broadcast right now over its main connection. "
                     "Pixellot also keeps a spare backup connection to its streaming service, "
@@ -1746,7 +1747,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "port-dns-blocked" if is_dns else "port-required-blocked",
                     "severity": "warning",
                     "category": "Network",
-                    "title": f"{purpose} port blocked ({proto} {port})",
+                    "title": f"{purpose} is blocked ({proto}/{port})",
                     "recommendation": (
                         f"{proto} port {port} to {host} is unreachable ({err}). "
                         f"This is a required Pixellot endpoint — ask the venue's "
