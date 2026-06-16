@@ -1094,7 +1094,7 @@ function _subsystemHealth(findings) {
       desc: "Agent, encoder, watchdog service status." },
     { id: "disk-health", label: "Disk Health", icon: "hdd",
       health: cats.storage ? "Warning" : "Healthy",
-      desc: "Free space, SMART health, disk events." },
+      desc: "Free space, drive health (SMART), and disk events." },
     { id: "events", label: "Event Viewer", icon: "triangle",
       health: evErrorCount > 0 ? "Warning" : "Healthy",
       desc: evErrorCount > 0
