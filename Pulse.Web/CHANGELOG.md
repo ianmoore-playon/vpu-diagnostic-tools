@@ -45,6 +45,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   banner, a per-camera table (role / IP / MAC / firmware / TV mode / serial / calibration),
   main-camera multisport calibration (which sports, last calibrated) and OCR scoreboard
   calibration status, plus a one-click "Restart Pixellot Agent" action.
+- **New Stream Readiness check.** Pulse now rolls every diagnostic into one
+  PASS / WARN / FAIL call on whether the VPU can stream tonight's game, shown at
+  the top of the Dashboard with the exact blockers and risks behind the verdict.
+  FAIL means "don't expect a clean broadcast tonight."
 
 ### Fixed
 - **Pulse now opens directly in Chrome on launch.** On VPUs with no default

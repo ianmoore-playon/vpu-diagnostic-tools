@@ -1195,6 +1195,86 @@ function _renderVolumes(volumes) {
   }).join("");
 }
 
+// ── Stream Readiness card ────────────────────────────────────
+// One PASS / WARN / FAIL call on whether this VPU can stream tonight's game.
+// The policy table + rollup live server-side (_compute_readiness in main.py);
+// this just renders the verdict record that rides on dash.readiness.
+var _RDY_META = {
+  PASS: { word: "PASS", icon: "check", tone: "pass", tag: "Game-ready — no blockers, no risks." },
+  WARN: { word: "WARN", icon: "alert", tone: "warn", tag: "Will likely stream, but a real risk a human should eyeball before game time." },
+  FAIL: { word: "FAIL", icon: "x",     tone: "fail", tag: "Don't expect a clean broadcast tonight — this needs pre-game attention." },
+};
+
+// Demo-only: flip the card through all three states live (e.g. in a meeting).
+// Never set outside DEMO_MODE; the live verdict is used when it's null.
+var _readinessDemoState = null;
+function previewReadiness(state) {
+  _readinessDemoState = (_readinessDemoState === state) ? null : state;
+  renderDashboard();
+}
+function _demoVerdict(state) {
+  var stamp = new Date().toISOString();
+  var nicRisk = { code: "nic-slow", category: "Camera", title: "NIC Port 2 at 100 Mbps (expected 1 Gbps)", recommendation: "Camera streams on this port drop frames at reduced bandwidth. Check the cable (Cat5e+), reseat the connector, and confirm the switch port auto-negotiates." };
+  if (state === "PASS") return { status: "PASS", policyVersion: "v1", timestamp: stamp, blockers: [], risks: [], info: [] };
+  if (state === "WARN") return { status: "WARN", policyVersion: "v1", timestamp: stamp, blockers: [], info: [], risks: [
+    nicRisk,
+    { code: "disk-d-critical", category: "Storage", title: "Recording drive (D:) almost full", recommendation: "D: is 93% full. The post-event recording (VOD) is written to D: — if it fills during the game the recording may not save. Free space on D:." },
+  ] };
+  return { status: "FAIL", policyVersion: "v1", timestamp: stamp, info: [], risks: [nicRisk], blockers: [
+    { code: "stream-2088-blocked", category: "Network", title: "Streaming is blocked — VPU can't broadcast", recommendation: "The venue's network is blocking UDP/2088 to prod-echo.pixellot.tv. This connection has no backup, so the game can't broadcast until venue IT opens it." },
+  ] };
+}
+
+function readinessCard(verdict) {
+  var isDemo = (typeof window !== "undefined" && window.__PULSE_DEMO_MODE);
+  if (isDemo && _readinessDemoState) verdict = _demoVerdict(_readinessDemoState);
+  if (!verdict || !verdict.status) return "";
+  var meta = _RDY_META[verdict.status] || _RDY_META.WARN;
+  var blockers = verdict.blockers || [];
+  var risks = verdict.risks || [];
+  var drivers = blockers.concat(risks);
+  var asOf = verdict.timestamp ? new Date(verdict.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+
+  var driverRows = drivers.length
+    ? drivers.map(function(d) {
+        var cls = blockers.indexOf(d) !== -1 ? "blocker" : "risk";
+        return '<div class="rdy-driver rdy-driver-' + cls + '">'
+          + '<div class="rdy-driver-head">'
+          +   '<span class="rdy-driver-tag rdy-driver-tag-' + cls + '">' + (cls === "blocker" ? "BLOCKER" : "RISK") + '</span>'
+          +   '<span class="rdy-driver-title">' + esc(d.title || "") + '</span>'
+          + '</div>'
+          + (d.recommendation ? '<p class="rdy-driver-rec">' + esc(d.recommendation) + '</p>' : '')
+          + '</div>';
+      }).join("")
+    : '<div class="rdy-clear">' + svgIcon("check", 16) + ' <span>No blockers and no risks — this VPU is ready to stream.</span></div>';
+
+  var demoBar = isDemo
+    ? '<div class="rdy-demo-bar"><span class="rdy-demo-label">Demo preview</span>'
+      + ["PASS", "WARN", "FAIL"].map(function(s) {
+          var active = (_readinessDemoState === s) ? " rdy-demo-chip-active" : "";
+          return '<button class="rdy-demo-chip rdy-demo-chip-' + s.toLowerCase() + active + '" onclick="previewReadiness(\'' + s + '\')">' + s + '</button>';
+        }).join("")
+      + (_readinessDemoState ? '<button class="rdy-demo-chip rdy-demo-reset" onclick="previewReadiness(null)">live</button>' : '')
+      + '</div>'
+    : "";
+
+  return '<div class="card rdy-card rdy-card-' + meta.tone + '">'
+    + '<div class="rdy-main">'
+    +   '<div class="rdy-badge rdy-badge-' + meta.tone + '">' + svgIcon(meta.icon, 28) + '<span class="rdy-badge-word">' + meta.word + '</span></div>'
+    +   '<div class="rdy-headline">'
+    +     '<div class="rdy-title-row"><h3 class="rdy-title">Stream Readiness</h3>' + (asOf ? '<span class="rdy-asof">as of ' + esc(asOf) + '</span>' : '') + '</div>'
+    +     '<p class="rdy-tag">' + esc(meta.tag) + '</p>'
+    +   '</div>'
+    + '</div>'
+    + '<div class="rdy-drivers">' + driverRows + '</div>'
+    + '<div class="rdy-foot">'
+    +   '<span>' + blockers.length + ' blocker' + (blockers.length === 1 ? '' : 's') + ' · ' + risks.length + ' risk' + (risks.length === 1 ? '' : 's') + '</span>'
+    +   '<span class="rdy-policy">policy ' + esc(verdict.policyVersion || "v1") + '</span>'
+    + '</div>'
+    + demoBar
+    + '</div>';
+}
+
 function renderDashboard() {
   const dash = cached("dashboard");
   if (!dash) { $page().innerHTML = sectionLoading("Dashboard"); fetchSection("dashboard"); return; }
@@ -1331,6 +1411,9 @@ function renderDashboard() {
         </span>
       </div>
     </div>
+
+    <!-- Stream Readiness — lead the triage page with "are we game-ready?" -->
+    ${readinessCard(dash.readiness)}
 
     ${(dash.sourceErrors && dash.sourceErrors.length) ? `
     <!-- Partial-failure notice — some diagnostic scripts didn't complete -->

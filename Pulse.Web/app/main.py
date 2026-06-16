@@ -1192,6 +1192,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         ssid_str = f" (SSID: {', '.join(ssids)})" if ssids else ""
         findings.append(
             {
+                "code": "wifi-uplink",
                 "severity": "warning",
                 "category": "Network",
                 "title": "VPU is using Wi-Fi for its internet connection — switch to wired Ethernet",
@@ -1227,6 +1228,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             approved_list = ", ".join(PIXELLOT_APPROVED_NTP_SOURCES)
             findings.append(
                 {
+                    "code": "ntp-unapproved",
                     "severity": "warning",
                     "category": "Network",
                     "title": "NTP source not in approved Pixellot list",
@@ -1252,6 +1254,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             for b in concerns["security"]
         )
         findings.append({
+            "code": "sw-security",
             "severity": "critical",
             "category": "Hardware",
             "title": "Unsupported security software detected",
@@ -1271,6 +1274,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             for h in hits
         )
         findings.append({
+            "code": f"sw-{cat_key.replace('_', '-')}",
             "severity": "critical",
             "category": "Software",
             "title": f"{cat['label']} installed",
@@ -1283,6 +1287,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         cat = _CONCERNING_SOFTWARE[cat_key]
         names_str = ", ".join(h["name"] for h in hits)
         findings.append({
+            "code": f"sw-{cat_key.replace('_', '-')}",
             "severity": "warning",
             "category": "Software",
             "title": f"{cat['label']} installed",
@@ -1296,6 +1301,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
     if total_ram > 0 and total_ram < PIXELLOT_MIN_RAM_GB - 1:  # -1 GB tolerance for OS overhead when falling back to performance.memory
         findings.append(
             {
+                "code": "ram-insufficient",
                 "severity": "warning",
                 "category": "Hardware",
                 "title": "Insufficient RAM",
@@ -1308,6 +1314,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         if uptime_secs and uptime_secs > 30 * 86400:
             findings.append(
                 {
+                    "code": "uptime-high",
                     "severity": "warning",
                     "category": "System",
                     "title": "High Uptime",
@@ -1324,6 +1331,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             shown = tz_caption or tz_id
             findings.append(
                 {
+                    "code": "tz-non-us",
                     "severity": "critical",
                     "category": "System",
                     "title": "Non-US Timezone",
@@ -1343,6 +1351,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             eos = lifecycle["eosDate"]
             if days < 0:
                 findings.append({
+                    "code": "os-eos-reached",
                     "severity": "critical",
                     "category": "System",
                     "title": "OS end-of-support reached",
@@ -1350,6 +1359,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 })
             elif days < 90:
                 findings.append({
+                    "code": "os-eos-imminent",
                     "severity": "critical",
                     "category": "System",
                     "title": "OS end-of-support imminent",
@@ -1358,6 +1368,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             elif days < 365:
                 months = days // 30
                 findings.append({
+                    "code": "os-eos-approaching",
                     "severity": "warning",
                     "category": "System",
                     "title": "OS end-of-support approaching",
@@ -1371,6 +1382,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         if compat["status"] == "over":
             arch_str = compat["architecture"] if compat["architecture"] != "Unknown" else "this hardware"
             findings.append({
+                "code": "pixellot-over-cap",
                 "severity": "critical",
                 "category": "Pixellot",
                 "title": "Pixellot version exceeds hardware compatibility cap",
@@ -1383,6 +1395,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             })
         elif compat["status"] == "no-gpu":
             findings.append({
+                "code": "gpu-none",
                 "severity": "critical",
                 "category": "Hardware",
                 "title": "No NVIDIA GPU detected",
@@ -1395,6 +1408,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         elif compat["status"] == "anomaly":
             # Volta hardware shouldn't exist in the Pixellot field — escalate.
             findings.append({
+                "code": "gpu-anomaly",
                 "severity": "critical",
                 "category": "Hardware",
                 "title": "Unexpected GPU architecture",
@@ -1421,6 +1435,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 vendors = sorted({(g.get("vendor") or "Unknown") for g in gpus})
                 vendor_str = ", ".join(vendors)
                 findings.append({
+                    "code": "gpu-igpu-only",
                     "severity": "warning",
                     "category": "Hardware",
                     "title": "No dedicated GPU detected",
@@ -1439,6 +1454,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         if cpu is not None and cpu > 90:
             findings.append(
                 {
+                    "code": "cpu-critical",
                     "severity": "critical",
                     "category": "Performance",
                     "title": "CPU Usage Critical",
@@ -1448,6 +1464,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         elif cpu is not None and cpu > 75:
             findings.append(
                 {
+                    "code": "cpu-elevated",
                     "severity": "warning",
                     "category": "Performance",
                     "title": "CPU Usage Elevated",
@@ -1459,6 +1476,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         if mem is not None and mem > 90:
             findings.append(
                 {
+                    "code": "mem-critical",
                     "severity": "critical",
                     "category": "Performance",
                     "title": "Memory Usage Critical",
@@ -1468,6 +1486,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         elif mem is not None and mem > 80:
             findings.append(
                 {
+                    "code": "mem-elevated",
                     "severity": "warning",
                     "category": "Performance",
                     "title": "Memory Usage Elevated",
@@ -1479,6 +1498,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         if disk is not None and disk > 90:
             findings.append(
                 {
+                    "code": "disk-critical",
                     "severity": "critical",
                     "category": "Storage",
                     "title": "Disk Space Critical",
@@ -1488,6 +1508,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         elif disk is not None and disk > 80:
             findings.append(
                 {
+                    "code": "disk-low",
                     "severity": "warning",
                     "category": "Storage",
                     "title": "Disk Space Low",
@@ -1499,6 +1520,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         if temp is not None and temp > 85:
             findings.append(
                 {
+                    "code": "temp-critical",
                     "severity": "critical",
                     "category": "Hardware",
                     "title": "Temperature Critical",
@@ -1522,6 +1544,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 if status != "Running":
                     findings.append(
                         {
+                            "code": "watchdog-down",
                             "severity": "warning",
                             "category": "Services",
                             "title": "Pixellot watchdog (KeepAgentUp) not running",
@@ -1540,6 +1563,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             if status in ("Stopped", "NotFound") and name_lower in critical_svcs:
                 findings.append(
                     {
+                        "code": f"{name_lower}-down",  # agent-down / coordinator-down
                         "severity": "critical",
                         "category": "Services",
                         "title": f"{display} not running",
@@ -1598,6 +1622,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     category = "Camera" if has_cameras else "Network"
                     findings.append(
                         {
+                            "code": "nic-slow",
                             "severity": "warning",
                             "category": category,
                             "title": f"NIC {label} at {speed} Mbps (expected 1 Gbps)",
@@ -1623,6 +1648,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         last_excerpt = last_line[:160] + ("…" if len(last_line) > 160 else "")
         findings.append(
             {
+                "code": "install-incomplete",
                 "severity": "warning",
                 "category": "Pixellot",
                 "title": "Half-finished Pixellot install detected",
@@ -1666,6 +1692,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         ]
         if primary_blocked:
             findings.append({
+                "code": "stream-2088-blocked",
                 "severity": "critical",
                 "category": "Network",
                 "title": "Streaming is blocked — VPU can't broadcast",
@@ -1686,6 +1713,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         backup_blocked = [r for r in backup_paths if r.get("status") == "fail"]
         if backup_blocked:
             findings.append({
+                "code": "stream-443-blocked",
                 "severity": "warning",
                 "category": "Network",
                 "title": "A backup streaming connection is blocked (broadcast still works)",
@@ -1710,8 +1738,12 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             proto = (r.get("protocol") or "").upper()
             purpose = r.get("purpose") or "service"
             err = r.get("errorMessage") or "No response"
+            # DNS (port 53) blocked breaks name resolution for everything → a
+            # readiness blocker; every other required port is a readiness risk.
+            is_dns = purpose.upper() == "DNS" or str(port) == "53"
             findings.append(
                 {
+                    "code": "port-dns-blocked" if is_dns else "port-required-blocked",
                     "severity": "warning",
                     "category": "Network",
                     "title": f"{purpose} port blocked ({proto} {port})",
@@ -1767,6 +1799,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                         f"port, or camera-power issue."
                     )
                 findings.append({
+                    "code": "cam-none" if detected_main == 0 else "cam-partial",
                     "severity": sev,
                     "category": "Camera",
                     "title": title,
@@ -1784,6 +1817,188 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         seen.add(key)
         deduped.append(f)
     return deduped
+
+
+# ── Stream Readiness Engine (policy v1) ──────────────────────────────────
+# Rolls the per-run findings above into one PASS / WARN / FAIL verdict per
+# VPU. Spec: ~/Code/Resources/stream-readiness-policy-v1.md (decided 2026-06-16).
+#
+# The policy is DATA, not code: each finding `code` maps to a readiness class
+# (blocker / risk / info). A season of calibration is table edits, not redeploys.
+#
+# Readiness class is a deliberate OVERRIDE of the diagnostic severity — they
+# diverge on purpose. OS-end-of-support is `critical` on the dashboard but
+# readiness `info` (it never stops tonight's game); iGPU-only is `warning` but
+# readiness `blocker` (wrong hardware, can't encode). Don't reuse `severity`.
+READINESS_POLICY_VERSION = "v1"
+
+_READINESS_POLICY = {
+    # ── BLOCKERS → FAIL (don't expect a clean broadcast tonight) ──
+    "stream-2088-blocked":   "blocker",  # F1  UDP/2088 Zixi Streaming, no failover
+    "agent-down":            "blocker",  # F2  core capture process down
+    "coordinator-down":      "blocker",  # F3  core capture process down
+    "cam-none":              "blocker",  # F4  0 of N main cameras present
+    "gpu-none":              "blocker",  # F5  no NVIDIA GPU — encoder can't run
+    "gpu-igpu-only":         "blocker",  # F11 Intel iGPU only — wrong hardware
+    "port-dns-blocked":      "blocker",  # F23a DNS down → name resolution fails
+    # F15a C: disk >90% is computed below from disk-health (not the aggregate
+    # `disk-critical` finding — see _compute_readiness).
+
+    # ── RISKS → WARN (will likely stream, but a human should eyeball) ──
+    "cam-partial":           "risk",     # F6  k of N present (k>0)
+    "nic-slow":              "risk",     # F7  camera NIC below gigabit
+    "stream-443-blocked":    "risk",     # F8  443 backup blocked while 2088 up
+    "watchdog-down":         "risk",     # F9  KeepAgentUp down — no self-heal
+    "pixellot-over-cap":     "risk",     # F10 build newer than GPU/OS supports
+    "gpu-anomaly":           "risk",     # F12 Volta / roster anomaly
+    "install-incomplete":    "risk",     # F13 interrupted installer, agent up
+    "disk-low":              "risk",     # F16 (aggregate) disk 80–90%
+    "ram-insufficient":      "risk",     # F21 <32 GB host
+    "ntp-unapproved":        "risk",     # F22 drift can break signed-URL stream
+    "port-required-blocked": "risk",     # F23b NTP / Pixellot cloud / etc.
+    "wifi-uplink":           "risk",     # F24 Wi-Fi uplink — latency/loss
+    # F14 temp≥90, F15b D:>90, F17 CPU sustained, F19 mem sustained are computed
+    # below (readiness-specific thresholds the dashboard findings don't surface).
+
+    # ── INFO → context only (never gates the verdict) ──
+    "cpu-elevated":          "info",     # F18 75–90% snapshot
+    "mem-elevated":          "info",     # F20 80–90% snapshot
+    "cpu-critical":          "info",     # snapshot >90% — readiness uses the average (F17)
+    "mem-critical":          "info",     # snapshot >90% — readiness uses the average (F19)
+    "disk-critical":         "info",     # all-volumes AGGREGATE >90% — readiness keys on C: (F15a)
+    "temp-critical":         "info",     # 85°C snapshot — readiness gate is 90°C (F14)
+    "tz-non-us":             "info",     # F25
+    "os-eos-reached":        "info",     # F26
+    "os-eos-imminent":       "info",     # F27
+    "os-eos-approaching":    "info",     # F28
+    "sw-security":           "info",     # F29 (if it's blocking agent.exe, that surfaces as F2)
+    "sw-crypto-miner":       "info",     # F30
+    "sw-torrent":            "info",     # F31
+    "sw-system-cleaner":     "info",     # F32
+    "sw-alt-remote":         "info",     # F33
+    "sw-game-platform":      "info",     # F34
+    "sw-consumer-sync":      "info",     # F35
+    "uptime-high":           "info",     # F36
+}
+
+
+def _readiness_class(code: str) -> str:
+    """Map a finding code to its readiness class. Unmapped / unknown codes →
+    `info` (Ian's call: note an unverifiable or new check, never gate on it)."""
+    return _READINESS_POLICY.get(code or "", "info")
+
+
+def _disk_used_by_letter(disk_health, performance):
+    """Return (cPct, dPct) used-percent for C:/D: from the disk-health
+    collection — the same per-volume source the System Disk gauge uses
+    (`_systemDiskPct` in app.js). `performance.disk.usedPercent` is an
+    ALL-VOLUMES AGGREGATE, not C:, so it's only a last-resort fallback for C:
+    when disk-health didn't run."""
+    c_pct = d_pct = None
+    if disk_health and not disk_health.get("error"):
+        for d in (disk_health.get("logicalDisks") or []):
+            letter = (d.get("deviceID") or "").rstrip(":").upper()
+            if letter == "C":
+                c_pct = d.get("usedPercent")
+            elif letter == "D":
+                d_pct = d.get("usedPercent")
+    if c_pct is None and performance and not performance.get("error"):
+        c_pct = (performance.get("disk") or {}).get("usedPercent")
+    return c_pct, d_pct
+
+
+def _compute_readiness(findings, performance=None, disk_health=None,
+                       perf_sample=None, now=None) -> dict:
+    """Roll the findings into one PASS / WARN / FAIL verdict per VPU.
+
+    Rollup: any blocker → FAIL · any risk → WARN · else PASS. The return value
+    is an auditable record — `{timestamp, policyVersion, status, blockers,
+    risks, info}` — so every FAIL says exactly which findings drove it and old
+    verdicts can be re-scored when the policy table changes.
+
+    Most classes come straight from the policy table keyed on each finding's
+    `code`. Four checks are computed here instead, because readiness uses a
+    different metric or threshold than the dashboard finding does:
+      • F17/F19 — CPU/mem averaged over a short sample (not a one-instant snapshot)
+      • F14     — temperature ≥90°C (the dashboard finding keeps its 85°C tier)
+      • F15a/b  — C:/D: by drive letter from disk-health (not the aggregate)
+    """
+    blockers, risks, info = [], [], []
+
+    def add(cls, code, title, recommendation, category=""):
+        entry = {
+            "code": code,
+            "title": title,
+            "recommendation": recommendation,
+            "category": category,
+        }
+        {"blocker": blockers, "risk": risks}.get(cls, info).append(entry)
+
+    # (1) Finding-derived classes, straight from the policy table.
+    for f in (findings or []):
+        code = f.get("code") or ""
+        add(_readiness_class(code), code, f.get("title", ""),
+            f.get("recommendation", ""), f.get("category", ""))
+
+    # (2) Readiness-specific computed checks (different metric/threshold than
+    #     the dashboard finding — see docstring).
+    # F17 — CPU sustained >90%, from the averaged sample (snapshot fallback).
+    cpu_avg = (perf_sample or {}).get("cpuAvgPercent")
+    if cpu_avg is None and performance and not performance.get("error"):
+        cpu_avg = (performance.get("cpu") or {}).get("usagePercent")
+    if isinstance(cpu_avg, (int, float)) and cpu_avg > 90:
+        add("risk", "cpu-sustained", "CPU sustained above 90%",
+            f"CPU averaged {cpu_avg:g}% over the sample window. Sustained load "
+            f"this high risks dropped frames mid-broadcast — check for a runaway "
+            f"process before game time.", "Performance")
+
+    # F19 — Memory sustained >90%, averaged (snapshot fallback).
+    mem_avg = (perf_sample or {}).get("memAvgPercent")
+    if mem_avg is None and performance and not performance.get("error"):
+        mem_avg = (performance.get("memory") or {}).get("usedPercent")
+    if isinstance(mem_avg, (int, float)) and mem_avg > 90:
+        add("risk", "mem-sustained", "Memory sustained above 90%",
+            f"Memory averaged {mem_avg:g}% over the sample window. The encoder "
+            f"can stall under sustained pressure — close apps or add RAM.",
+            "Performance")
+
+    # F14 — Temperature ≥90°C (dashboard finding still fires its own at 85°C).
+    if performance and not performance.get("error"):
+        temp = (performance.get("temperature") or {}).get("celsius")
+        if isinstance(temp, (int, float)) and temp >= 90:
+            add("risk", "temp-90", "Temperature high (≥90°C)",
+                f"Temperature at {temp:g}°C. Sustained heat throttles the encoder "
+                f"and risks frame drops — check airflow and fans.", "Hardware")
+
+    # F15a/b — C:/D: by drive letter (C: is stream-processing → blocker;
+    # D: is post-event VOD storage → risk).
+    c_pct, d_pct = _disk_used_by_letter(disk_health, performance)
+    if isinstance(c_pct, (int, float)):
+        if c_pct > 90:
+            add("blocker", "disk-c-critical", "System drive (C:) almost full",
+                f"C: is {c_pct:g}% full. The live stream is processed on C: — if it "
+                f"fills, the VPU can't process the broadcast. Free space on C: now.",
+                "Storage")
+        elif c_pct > 80:
+            add("risk", "disk-c-low", "System drive (C:) running low",
+                f"C: is {c_pct:g}% full and approaching the critical threshold. "
+                f"Clear space on C: before game time.", "Storage")
+    if isinstance(d_pct, (int, float)) and d_pct > 90:
+        add("risk", "disk-d-critical", "Recording drive (D:) almost full",
+            f"D: is {d_pct:g}% full. The post-event recording (VOD) is written to "
+            f"D: — if it fills during the game the recording may not save. Free "
+            f"space on D:.", "Storage")
+
+    status = "FAIL" if blockers else "WARN" if risks else "PASS"
+    from datetime import datetime, timezone
+    return {
+        "timestamp": (now or datetime.now(timezone.utc)).isoformat(),
+        "policyVersion": READINESS_POLICY_VERSION,
+        "status": status,
+        "blockers": blockers,
+        "risks": risks,
+        "info": info,
+    }
 
 
 def _build_camera_sets(pixellot_config=None):
@@ -2302,7 +2517,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None):
     # Tag adapter roles (motherboard / camera / wifi) so both the findings and
     # the embedded "Network config" the dashboard ships carry them.
     _classify_network_adapters(network_config)
@@ -2364,11 +2579,14 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         if isinstance(data, dict) and data.get("error")
     ]
 
+    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations)
+
     return {
         "identity": flat_identity,
         "performance": performance if not performance.get("error", False) else {},
         "services": services if not services.get("error", False) else {"services": []},
-        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations),
+        "findings": findings,
+        "readiness": _compute_readiness(findings, performance=performance, disk_health=disk_health, perf_sample=perf_sample),
         "networkConfig": net_cfg,
         "sourceErrors": source_errors,
     }
@@ -2491,7 +2709,10 @@ async def api_preload():
     probe_results_pre = await _probe_all_cameras(raw_ports_pre, ocr_ips_pre)
 
     return {
-        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi),
+        # Readiness here uses the snapshot CPU/mem (no perf_sample on the
+        # preload path) and the disk-health already gathered; the authoritative
+        # /api/dashboard fetch refines it with the averaged sample + port tests.
+        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi, disk_health=disk_health),
         "system": {
             "identity": _enrich_identity_pixellot_compat(_enrich_identity_lifecycle(identity), gpu_info),
             "hardware": hardware,
@@ -2572,9 +2793,13 @@ async def api_scripts_cancel_all():
     return {"ok": True, "cancelled": count}
 
 
-@app.get("/api/dashboard")
-async def api_dashboard():
-    identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info, wifi, pixellot_config, expectations = await asyncio.gather(
+async def _collect_dashboard() -> dict:
+    """Run the dashboard's data-collection scripts and build the payload
+    (findings + Stream Readiness verdict). Shared by `/api/dashboard` and the
+    launch check-in beacon so both score readiness with identical inputs."""
+    (identity, performance, services, nics, net_config, hardware, installed_sw,
+     install_state, port_tests, gpu_info, wifi, pixellot_config, expectations,
+     disk_health, perf_sample) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
@@ -2595,8 +2820,22 @@ async def api_dashboard():
         # the camera NIC). Same scripts the Camera Connectivity tab uses.
         run_ps("Get-PixellotConfig.ps1", timeout=15),
         run_ps("Get-CameraExpectations.ps1", timeout=10),
+        # Readiness inputs: D: volume (post-event VOD) for the C:/D: split, and
+        # a short CPU/mem sample so a one-instant spike can't move the verdict.
+        run_ps("Get-DiskHealth.ps1", timeout=15),
+        run_ps("Get-PerfSample.ps1", timeout=15),
     )
-    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations)
+    return _build_dashboard(
+        identity, performance, services, nics, net_config, hardware,
+        installed_sw, install_state, port_tests, gpu_info, wifi,
+        pixellot_config=pixellot_config, expectations=expectations,
+        disk_health=disk_health, perf_sample=perf_sample,
+    )
+
+
+@app.get("/api/dashboard")
+async def api_dashboard():
+    return await _collect_dashboard()
 
 
 def _enrich_identity_lifecycle(identity):
@@ -3325,6 +3564,22 @@ async def _send_checkin() -> None:
             "pulseVersion": APP_VERSION,
             "channel":      _update_channel(),
         }
+        # Stream Readiness verdict on the beacon → a pre-game-readiness time
+        # series at ~zero marginal cost (the beacon already fires on launch).
+        # Fail-open like everything else here: a readiness error never blocks
+        # the check-in — we just send the identity fields without the verdict.
+        try:
+            dash = await _collect_dashboard()
+            verdict = (dash or {}).get("readiness") or {}
+            if verdict:
+                payload["readiness"] = {
+                    "status":        verdict.get("status"),
+                    "policyVersion": verdict.get("policyVersion"),
+                    "blockers":      [b.get("code") for b in verdict.get("blockers", [])],
+                    "risks":         [r.get("code") for r in verdict.get("risks", [])],
+                }
+        except Exception as e:
+            _server_log.info("Check-in readiness skipped (%s)", e)
         await asyncio.to_thread(_post_checkin_sync, url, payload)
         _server_log.info("Check-in sent for %s", payload.get("hostname") or "unknown VPU")
     except Exception as e:
