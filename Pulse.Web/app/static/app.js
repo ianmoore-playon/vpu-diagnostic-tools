@@ -135,11 +135,12 @@ function updateNavHealth() {
     const dot = el.querySelector(".nav-status");
     if (!dot) return;
     const h = health[el.dataset.page];
+    // Only flag problems — a healthy subsystem shows no dot.
     dot.className = "nav-status" + (
       h === "Critical" ? " nav-status-crit"
-      : h === "Warning" ? " nav-status-warn"
-      : h === "Healthy" ? " nav-status-ok" : "");
-    if (h) dot.title = h; else dot.removeAttribute("title");
+      : h === "Warning" ? " nav-status-warn" : "");
+    if (h === "Critical" || h === "Warning") dot.title = h;
+    else dot.removeAttribute("title");
   });
 }
 
