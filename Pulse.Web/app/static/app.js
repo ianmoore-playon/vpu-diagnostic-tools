@@ -36,6 +36,8 @@ function svgIcon(name, size) {
     activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
     send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
     inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    "external-link": '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
+    copy: '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
@@ -120,6 +122,14 @@ function updateNav() {
 function renderPage(id) {
   const fn = pageRenderers[id];
   if (!fn) { $page().innerHTML = `<p class="text-pulse-muted">Unknown page: ${esc(id)}</p>`; return; }
+  // Defensive: if someone calls renderPage() without going through
+  // navigate() (e.g. via console eval or a future caller), keep the
+  // sidebar active-state and currentPage in sync so the highlight
+  // can't lie about where the user is.
+  if (id !== currentPage) {
+    currentPage = id;
+    updateNav();
+  }
   try {
     fn();
   } catch (err) {
@@ -1129,6 +1139,13 @@ function _renderNicRows(ports) {
       roles.push(null);
     }
   }
+  // Tooltips on each badge so the colored chips have plain-English meaning
+  // for techs glancing at the dashboard — was previously no legend at all.
+  const statusTip = {
+    Linked: "Link up at the expected speed",
+    Error:  "Link is up but degraded (e.g. 100 Mbps on a Gigabit port)",
+    Down:   "No physical link detected on this port",
+  };
   for (let i = 0; i < count; i++) {
     if (i < ports.length) {
       const p = ports[i];
@@ -1140,19 +1157,26 @@ function _renderNicRows(ports) {
       else if (p.isDegraded) { status = "Error"; cls = "warn"; }
       else { status = "Linked"; cls = "pass"; }
       const role = roles[i];
-      const roleBadge = role ? ` <span class="badge-ol badge-ol-info">${esc(role)}</span>` : "";
+      const roleTip = role === "OCR"
+        ? "OCR (scoreboard overlay) camera port"
+        : role
+          ? "Pixellot camera detected on this port"
+          : "";
+      const roleBadge = role
+        ? ` <span class="badge-ol badge-ol-info" title="${esc(roleTip)}">${esc(role)}</span>`
+        : "";
       rows.push(`<div class="dash-nic-row">
         <span class="dash-nic-port">Port ${i + 1}</span>
         <span class="dash-nic-name">${esc(p.name)}</span>
         <span class="dash-nic-speed">${p.isUp ? esc(speed) : "—"}</span>
-        <span class="dash-nic-badges"><span class="badge-ol badge-ol-${cls}">${esc(status)}</span>${roleBadge}</span>
+        <span class="dash-nic-badges"><span class="badge-ol badge-ol-${cls}" title="${esc(statusTip[status] || "")}">${esc(status)}</span>${roleBadge}</span>
       </div>`);
     } else {
       rows.push(`<div class="dash-nic-row">
         <span class="dash-nic-port">Port ${i + 1}</span>
         <span class="dash-nic-name" style="color:var(--c-dimmer)">Not detected</span>
         <span class="dash-nic-speed">—</span>
-        <span class="dash-nic-badges"><span class="badge-ol badge-ol-muted">—</span></span>
+        <span class="dash-nic-badges"><span class="badge-ol badge-ol-muted" title="No NIC detected at this port index">—</span></span>
       </div>`);
     }
   }
@@ -1393,7 +1417,12 @@ function renderDashboard() {
     <!-- Header -->
     <div class="dash-header">
       <div>
-        <h2 class="text-2xl font-bold text-white">Dashboard</h2>
+        <div class="dash-title-row">
+          <h2 class="text-2xl font-bold text-white">Dashboard</h2>
+          <span class="dash-sev-pill dash-sev-${sevColor}">
+            <span class="dash-sev-dot"></span> ${esc(sevLabel)}
+          </span>
+        </div>
         ${vpuName ? `<p class="text-sm text-pulse-muted">${esc(vpuName)}</p>` : ""}
       </div>
       <div class="dash-actions">
@@ -1406,9 +1435,6 @@ function renderDashboard() {
         <button class="btn-outline btn-ol-blue" onclick="dataCache.dashboard=null;renderDashboard()">
           ${svgIcon("refresh", 14)} Refresh Dashboard
         </button>
-        <span class="dash-sev-pill dash-sev-${sevColor}">
-          <span class="dash-sev-dot"></span> ${esc(sevLabel)}
-        </span>
       </div>
     </div>
 
@@ -1870,7 +1896,7 @@ function renderSystem() {
           label = `End-of-support: ${lc.eosDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
         }
         return `<div class="sys-lifecycle ${cls} mt-3">
-          ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
+          ${svgIcon(cls === "sys-lifecycle-ok" ? "info" : "alert", 14)}
           <div>
             <div class="font-semibold">${esc(lc.ltscRelease)}</div>
             <div class="text-xs mt-1">${esc(label)}${lc.endOfServicingDate ? ` &middot; End-of-servicing: ${esc(lc.endOfServicingDate)}` : ""}</div>
@@ -1899,32 +1925,33 @@ function renderSystem() {
       ${swList.length ? `
         <input type="text" id="sw-filter" placeholder="Filter software..." class="sw-filter-input"/>
         <div class="sw-table-wrap">
-          <table class="data-table" id="sw-table"><thead><tr>
-            <th>Name</th><th>Version</th><th>Publisher</th><th>Concern</th>
-          </tr></thead><tbody>
           ${(() => {
-            // Sort concerning entries to the top, critical first
+            const hasConcerns = swList.some(s => s.concern);
+            // Drop the Concern column entirely when nothing is flagged —
+            // saves a wasted column of dashes on a healthy box.
             const sevRank = { critical: 0, warning: 1 };
             const sorted = [...swList].sort((a, b) => {
               const ra = a.concern ? sevRank[a.concern.severity] ?? 9 : 99;
               const rb = b.concern ? sevRank[b.concern.severity] ?? 9 : 99;
               return ra - rb;
             });
-            return sorted.map(s => {
+            const rows = sorted.map(s => {
               const c = s.concern;
               const rowCls = c ? ` class="sw-row-${esc(c.severity)}"` : "";
-              const concernCell = c
+              const concernCell = hasConcerns ? `<td>${c
                 ? `<span class="sw-concern-badge sw-concern-${esc(c.severity)}" title="${esc(c.reason)}">${esc(c.shortLabel || c.label)}</span>`
-                : `<span class="text-pulse-muted text-xs">—</span>`;
+                : `<span class="text-pulse-muted text-xs">—</span>`}</td>` : "";
               return `<tr${rowCls}>
                 <td>${esc(s.displayName)}</td>
                 <td class="font-mono text-xs">${esc(s.displayVersion)}</td>
                 <td class="text-pulse-muted">${esc(s.publisher)}</td>
-                <td>${concernCell}</td>
+                ${concernCell}
               </tr>`;
             }).join("");
+            return `<table class="data-table" id="sw-table"><thead><tr>
+              <th>Name</th><th>Version</th><th>Publisher</th>${hasConcerns ? "<th>Concern</th>" : ""}
+            </tr></thead><tbody>${rows}</tbody></table>`;
           })()}
-          </tbody></table>
         </div>
       ` : '<p class="text-pulse-muted text-sm">No software data</p>'}
     </div>
@@ -3289,7 +3316,7 @@ function renderNetwork() {
         </div>
         ${totalErrors > 0 || (uplinkStats.rxBytes != null) ? `
           <div class="net-iface-stats">
-            <div class="net-iface-stats-title">${svgIcon("activity", 12)} Interface Counters</div>
+            <div class="net-iface-stats-title" title="Cumulative NIC counters since boot. Zero across the board is healthy; non-zero errors or discards usually mean a bad cable, dirty switch port, or NIC driver issue.">${svgIcon("activity", 12)} Interface Counters ${svgIcon("info", 12)}</div>
             <div class="net-iface-stats-grid">
               <div class="net-iface-stat">
                 <span class="net-iface-stat-label">RX Errors</span>
@@ -4159,9 +4186,14 @@ function renderServices() {
     // quick-action card above is the correct restart path for them.
     let actions = "";
     if (isProcess) {
+      // Pixellot core processes don't have an individual restart button
+      // because the KeepAgentUp watchdog supervises them — use the
+      // "Restart Agent + Coordinator" quick action above instead.  The
+      // notes here explain that to the tech so the missing button doesn't
+      // read as a gap.
       actions = s.watchdog
-        ? `<span class="svc-tile-note">${svgIcon("shield", 12)} Watchdog — keeps Agent/Coordinator alive</span>`
-        : `<span class="svc-tile-note">Managed by KeepAgentUp watchdog</span>`;
+        ? `<span class="svc-tile-note" title="This watchdog process restarts the Agent and Coordinator automatically when they exit.">${svgIcon("shield", 12)} Watchdog — restarts Agent/Coordinator on failure</span>`
+        : `<span class="svc-tile-note" title="Use the 'Restart Agent + Coordinator' button above to restart this process.">${svgIcon("shield", 12)} Managed by KeepAgentUp — use Restart action above</span>`;
     } else if (s.status !== "NotFound") {
       actions = `<button class="btn-outline btn-ol-blue svc-restart-btn" data-name="${esc(s.name)}">
           ${svgIcon("refresh", 12)} Restart
@@ -4199,7 +4231,7 @@ function renderServices() {
             Runs <span class="font-mono">c:\\pixellot\\bin\\keepagentup.exe</span> — the documented fast remedy when the Pixellot Agent or Coordinator is unresponsive. Try this before escalating to an RMA.
           </div>
         </div>
-        <button class="btn-outline btn-ol-amber" id="svc-keepagent-btn">
+        <button class="btn-outline btn-ol-blue" id="svc-keepagent-btn" title="Documented first-line remedy when Agent/Coordinator is unresponsive">
           ${svgIcon("zap", 14)} Restart Agent + Coordinator
         </button>
       </div>
@@ -4493,7 +4525,11 @@ function renderDiskHealth() {
     </div>
 
     <!-- Pixellot Storage Paths -->
-    ${paths.length ? `
+    ${paths.length ? (() => {
+      // Drop the Status column entirely when no path reports a status —
+      // saves a wasted column of dashes for the common case.
+      const hasStatus = paths.some(p => p.status);
+      return `
     <div class="card mt-4">
       ${sectionTitle("file", "Pixellot Storage Paths")}
       <table class="data-table"><thead><tr>
@@ -4505,7 +4541,8 @@ function renderDiskHealth() {
         <td class="text-pulse-muted">${p.fileCount != null ? esc(Number(p.fileCount).toLocaleString()) : "—"}</td>
       </tr>`).join("")}
       </tbody></table>
-    </div>` : ""}
+    </div>`;
+    })() : ""}
 
     <!-- Physical Disks -->
     ${physical.length ? `
@@ -4757,9 +4794,12 @@ function renderEvents() {
 
     const levelChip = (lvl) => {
       const l = (lvl || "").toLowerCase();
-      if (l === "fatal")   return '<span class="ev-level-chip ev-level-error">Fatal</span>';
+      // Distinct visual class per severity — Fatal solid-fill (showstopper),
+      // Error red-outline (single failure), Restart blue-outline (lifecycle
+      // event, not a problem). Was Fatal+Error and Warning+Restart shared.
+      if (l === "fatal")   return '<span class="ev-level-chip ev-level-fatal">Fatal</span>';
       if (l === "error")   return '<span class="ev-level-chip ev-level-error">Error</span>';
-      if (l === "restart") return '<span class="ev-level-chip ev-level-warn">Restart</span>';
+      if (l === "restart") return '<span class="ev-level-chip ev-level-restart">Restart</span>';
       return `<span class="ev-level-chip ev-level-info">${esc(l)}</span>`;
     };
 
@@ -4817,15 +4857,14 @@ function renderEvents() {
 // ── Reports ──────────────────────────────────────────────────
 
 function renderReports() {
+  // Reports page used to host both Generate Report (its primary action,
+  // in the top-right) AND Run All Diagnostics (which belongs on Dashboard
+  // — same button appears there). We move Generate Report INTO the card
+  // describing it so action sits with its explanation, and drop the
+  // redundant Run All Diagnostics button.
   $page().innerHTML = `
     ${pageHeader("Reports", "Diagnostic-run snapshots — generate and download full system reports",
-      `<button class="btn-outline btn-ol-green" id="rpt-export">
-        ${svgIcon("download", 14)} Generate Report
-      </button>
-      <button class="btn-outline btn-ol-blue" onclick="refreshAll()">
-        ${svgIcon("play", 14)} Run All Diagnostics
-      </button>
-      <button class="btn-outline btn-ol-blue" onclick="navigate('share')">
+      `<button class="btn-outline btn-ol-blue" onclick="navigate('share')" title="Hand off a generated report to another Pulse on the same network">
         ${svgIcon("send", 14)} Send to a peer
       </button>`
     )}
@@ -4833,7 +4872,10 @@ function renderReports() {
     <div class="card">
       ${sectionTitle("file", "Full Diagnostic Export")}
       <p class="text-sm text-pulse-muted mb-4">Generate a complete diagnostic report containing all system, network, and service data. This runs every data collection script and bundles the output into a downloadable JSON file.</p>
-      <span id="rpt-status" class="text-sm text-pulse-muted"></span>
+      <button class="btn-outline btn-ol-green" id="rpt-export">
+        ${svgIcon("download", 14)} Generate Report
+      </button>
+      <span id="rpt-status" class="text-sm text-pulse-muted ml-3"></span>
       <div id="rpt-result" class="mt-4"></div>
     </div>
   `;
@@ -5658,10 +5700,10 @@ function renderScoreConnect() {
       ${sectionTitle("globe", "Cloud (Bot) Status")}
       <div class="kv-grid">
         ${kvRowHtml("Connected", botStatus.isConnected
-          ? '<span class="status-pass">Yes</span>'
-          : '<span class="status-fail">No</span>')}
+          ? badge("Yes", "pass")
+          : badge("No", "fail"))}
         ${botStatus.scoreConnectId ? kvRowHtml("ScoreConnect ID",
-          `${esc(botStatus.scoreConnectId)} <span class="text-pulse-muted" style="font-size:0.75rem">(may be stale)</span>`)
+          `${esc(botStatus.scoreConnectId)} <span class="text-pulse-dim ml-1" style="font-size:0.85em;cursor:help" title="ScoreConnect III reports this ID at startup. If the BOT service has reconfigured since, the displayed value can briefly lag.">${svgIcon("info", 12)}</span>`)
           : ""}
         ${kvRow("Bot Server", botStatus.botServerAddress)}
         ${botStatus.lastErrorMessage ? kvRowHtml("Last Error", `<span class="text-pulse-muted">${esc(botStatus.lastErrorMessage)}</span>`) : ""}
@@ -5687,8 +5729,8 @@ function renderScoreConnect() {
 
   $page().innerHTML = `
     ${pageHeader("Score Connect", subtitle,
-      `${isDetected ? `<button class="btn-outline btn-ol-blue" onclick="window.open('${esc(data.baseUrl || "http://localhost:5000")}','_blank','noopener')">
-        ${svgIcon("globe", 14)} Open ScoreConnect III
+      `${isDetected ? `<button class="btn-outline btn-ol-green" onclick="window.open('${esc(data.baseUrl || "http://localhost:5000")}','_blank','noopener')" title="Opens the local ScoreConnect III web UI in a new tab">
+        ${svgIcon("external-link", 14)} Open ScoreConnect III
       </button>` : ""}
       <button class="btn-outline btn-ol-blue" onclick="dataCache.scoreconnect=null;renderScoreConnect()">
         ${svgIcon("refresh", 14)} Refresh
@@ -7017,14 +7059,17 @@ function _audioFormFactorLabel(ff) {
 function _audioDeviceRow(d) {
   const slug = _audioSlug(d.id);
   const isActive = d.state === "Active";
-  const stateClass = isActive ? "status-pass" : d.state === "Disabled" ? "status-warn" : "status-fail";
+  // Use the canonical pill component so audio state matches every other
+  // status indicator in the app (Services, Disk Health, etc.) instead of
+  // appearing as bare colored text.
+  const badgeKind = isActive ? "pass" : d.state === "Disabled" ? "warn" : "fail";
 
   return `<div class="audio-device${isActive ? "" : " audio-device-inactive"}">
     <div class="audio-device-header">
       <div class="audio-device-name">${esc(d.name || "Unknown Device")}</div>
       <div class="audio-device-badges">
         ${_audioFormFactorBadge(d.formFactor)}
-        <span class="${stateClass}">${esc(d.state)}</span>
+        ${badge(d.state, badgeKind)}
       </div>
     </div>
     ${isActive ? `
@@ -7084,10 +7129,16 @@ function renderSettings() {
     <div class="card mt-4">
       ${sectionTitle("clock", "Live Metrics")}
       <p class="text-sm text-pulse-muted mb-3">How often the WebSocket refreshes live performance metrics (1000–30000 ms).</p>
-      <input type="number" id="set-poll" value="${pollMs}" min="1000" max="30000" step="500" class="settings-input" style="max-width:200px"/>
+      <div class="settings-input-with-suffix" style="max-width:200px">
+        <input type="number" id="set-poll" value="${pollMs}" min="1000" max="30000" step="500" class="settings-input"/>
+        <span class="settings-input-suffix">ms</span>
+      </div>
       <div class="settings-actions">
         <button class="btn-outline btn-ol-blue" id="set-save-poll">
           ${svgIcon("check", 14)} Save
+        </button>
+        <button class="btn-outline btn-ol-blue" id="set-reset-poll" title="Restore the default 3000 ms refresh interval">
+          ${svgIcon("refresh", 14)} Reset to default
         </button>
         <span id="set-poll-msg" class="text-sm text-pulse-muted"></span>
       </div>
@@ -7097,13 +7148,15 @@ function renderSettings() {
     <div class="card mt-4">
       ${sectionTitle("file", "Logs & Reports")}
       <p class="text-sm text-pulse-muted mb-3">File paths used by Pulse on this VPU.</p>
-      <div class="kv-grid mb-3" style="max-width:640px">
-        ${kvRow("Server log", data._paths?.serverLog || "—")}
-        ${kvRow("Settings file", data._paths?.settingsFile || "—")}
+      <div class="settings-paths mb-3">
+        ${_settingsPathRow("Server log", data._paths?.serverLog)}
+        ${_settingsPathRow("Settings file", data._paths?.settingsFile)}
       </div>
-      <button class="btn-outline btn-ol-blue" onclick="openServerLog()">
-        ${svgIcon("file", 14)} View Server Log
-      </button>
+      <div class="settings-actions">
+        <button class="btn-outline btn-ol-blue" onclick="openServerLog()">
+          ${svgIcon("file", 14)} View Server Log
+        </button>
+      </div>
     </div>
 
     <!-- Diagnostics -->
@@ -7148,6 +7201,24 @@ function renderSettings() {
 
   document.getElementById("set-reset-url")?.addEventListener("click", () => {
     document.getElementById("set-sc-url").value = "http://localhost:5000";
+  });
+
+  document.getElementById("set-reset-poll")?.addEventListener("click", () => {
+    document.getElementById("set-poll").value = 3000;
+  });
+
+  // Path copy buttons inside the Logs & Reports card
+  document.querySelectorAll(".settings-path-copy").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const path = btn.dataset.path || "";
+      if (!path) return;
+      try {
+        await navigator.clipboard.writeText(path);
+        const old = btn.innerHTML;
+        btn.innerHTML = svgIcon("check", 12) + " Copied";
+        setTimeout(() => { btn.innerHTML = old; }, 1400);
+      } catch (e) { /* clipboard blocked — silent */ }
+    });
   });
 
   document.getElementById("set-save-poll")?.addEventListener("click", async () => {
@@ -7213,6 +7284,18 @@ function renderSettings() {
       upCheckBtn.disabled = false;
     }
   });
+}
+
+// Helper: a path row with a copy-to-clipboard button so techs can paste
+// the absolute path into Explorer / a remote session without retyping.
+function _settingsPathRow(label, path) {
+  const safe = path || "—";
+  const hasPath = !!path;
+  return `<div class="settings-path-row">
+    <span class="settings-path-label">${esc(label)}</span>
+    <span class="settings-path-value font-mono">${esc(safe)}</span>
+    ${hasPath ? `<button class="settings-path-copy btn-outline btn-ol-blue" data-path="${esc(path)}" title="Copy path to clipboard">${svgIcon("copy", 12)} Copy</button>` : ""}
+  </div>`;
 }
 
 // ── Software Update helpers (module scope so they survive a re-render) ──
@@ -7303,11 +7386,11 @@ function renderAbout() {
           </div>
         </div>
         <div class="about-links">
-          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
-            ${svgIcon("globe", 14)} View Releases
+          <a href="https://github.com/playon/pulse/releases" target="_blank" rel="noopener" class="btn-outline btn-ol-green" title="Open the GitHub releases page in a new tab">
+            ${svgIcon("external-link", 14)} View Releases
           </a>
-          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
-            ${svgIcon("info", 14)} Source Repo
+          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue" title="Open the source repository in a new tab">
+            ${svgIcon("external-link", 14)} Source Repo
           </a>
         </div>
       </div>

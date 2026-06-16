@@ -54,6 +54,13 @@ html.dark {
 html, body { height: 100%; margin: 0; }
 #app { height: 100%; }
 
+/* Sidebar sits a half-step darker than the page background so the
+   navigation chrome reads as subordinate to the content. In dark mode
+   `--c-surface-2` already differs from `--c-bg`; in light mode the two
+   variables are identical, so we override here to `--c-deep-bg`. */
+#sidebar { background: var(--c-deep-bg); }
+html.dark #sidebar { background: var(--c-surface-2); }
+
 /* ── Scrollbar ──────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -225,23 +232,36 @@ html.dark .splash-logo {
 }
 
 /* ── Theme toggle ───────────────────────────────────────────── */
+/* Sits at the bottom of the sidebar above the footer.  Styled as a
+   subtle but discoverable button: clear icon + label, soft background
+   so it's distinguishable from the footer text below it.  Hover/focus
+   bumps the contrast further. */
 .theme-toggle-btn {
     display: flex;
     align-items: center;
-    gap: 7px;
-    width: 100%;
-    padding: 8px 16px;
-    background: none;
-    border: none;
-    border-top: 1px solid var(--c-border);
-    color: var(--c-dim);
+    gap: 8px;
+    width: calc(100% - 16px);
+    margin: 8px;
+    padding: 7px 10px;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    color: var(--c-muted);
     font-size: 0.72rem;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
-    transition: color 0.15s, background 0.15s;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
     text-align: left;
 }
-.theme-toggle-btn:hover { background: var(--c-surface-2); color: var(--c-muted); }
+.theme-toggle-btn:hover {
+    background: var(--c-surface-3);
+    color: var(--c-text);
+    border-color: var(--c-dimmer);
+}
+.theme-toggle-btn:focus-visible {
+    outline: 2px solid var(--c-accent-blue);
+    outline-offset: 1px;
+}
 
 .sidebar-powered {
     display: flex;
@@ -277,16 +297,26 @@ html.dark .splash-logo {
 html.dark .powered-by-logo { filter: none; }
 
 /* ── Demo banner ──────────────────────────────────────────── */
+/* High-visibility amber band so techs reviewing screenshots can't
+   miss that the data is fake.  The tinted-amber variant blends into
+   the sidebar in light mode, so we use solid amber-100 / amber-800
+   in light and a brighter dark-mode treatment than the bare tint. */
 .demo-banner {
     padding: 6px 16px;
-    background: var(--c-tint-amber);
-    border-bottom: 1px solid var(--c-border);
-    color: var(--c-accent-amber);
+    background: #fef3c7;
+    border-top: 1px solid #fcd34d;
+    border-bottom: 1px solid #fcd34d;
+    color: #92400e;
     font-size: 0.65rem;
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     text-align: center;
+}
+html.dark .demo-banner {
+    background: #422006;
+    border-color: #b45309;
+    color: #fbbf24;
 }
 
 /* ── Nav ───────────────────────────────────────────────────── */
@@ -417,6 +447,15 @@ html.dark .powered-by-logo { filter: none; }
     margin-bottom: 1.25rem;
     flex-wrap: wrap;
     gap: 0.75rem;
+}
+/* Severity pill belongs next to the page title (state), not in the
+   button row (actions) — keeps state and verbs visually separate and
+   stops the pill from wrapping under the buttons on narrower widths. */
+.dash-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
 }
 .dash-actions {
     display: flex;
@@ -723,9 +762,9 @@ html.dark .powered-by-logo { filter: none; }
 /* ── Health badges ────────────────────────────────────────── */
 .health-badge {
     display: inline-block;
-    padding: 2px 8px;
+    padding: 2px 9px;
     border-radius: 999px;
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     font-weight: 600;
     letter-spacing: 0.02em;
 }
@@ -785,7 +824,7 @@ html.dark .powered-by-logo { filter: none; }
 .af-list { display: flex; flex-direction: column; }
 
 /* ── Content bottom padding (clear log pane) ─────────────── */
-#content { padding-bottom: 40px; }
+#content { padding-bottom: 44px; }
 
 /* ── Log pane ─────────────────────────────────────────────── */
 .log-pane {
@@ -793,7 +832,7 @@ html.dark .powered-by-logo { filter: none; }
     bottom: 0;
     left: 14rem;
     right: 0;
-    height: 32px;
+    height: 36px;
     background: var(--c-deep-bg);
     border-top: 1px solid var(--c-border);
     z-index: 50;
@@ -806,7 +845,7 @@ html.dark .powered-by-logo { filter: none; }
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0 14px 0 0;
+    padding: 0 16px 0 0;
     font-size: 0.7rem;
     font-weight: 600;
     color: var(--c-dim);
@@ -818,7 +857,7 @@ html.dark .powered-by-logo { filter: none; }
 }
 .log-tabs { display: flex; gap: 0; }
 .log-tab {
-    padding: 7px 14px;
+    padding: 8px 16px;
     cursor: pointer;
     background: none;
     border: none;
@@ -917,11 +956,15 @@ html.dark .powered-by-logo { filter: none; }
 }
 .dash-sub-grid-full .dash-sub-name { font-size: 0.85rem; }
 .dash-sub-grid-full .dash-sub-desc { font-size: 0.7rem; }
+/* Flatten the subsystem tiles — they're items inside a Subsystems card,
+   not cards themselves.  Drop the inner background+border (which read
+   as nested cards-in-cards) and use a transparent border that hover
+   tints instead of swapping background + border at once. */
 .dash-sub-tile {
     display: block;
     padding: 8px 10px;
-    background: var(--c-surface-2);
-    border: 1px solid var(--c-border);
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: 6px;
     text-decoration: none;
     color: var(--c-text);
@@ -1065,13 +1108,21 @@ html.dark .powered-by-logo { filter: none; }
     word-break: break-word;
 }
 
-/* Uptime / Internet icon tiles */
+/* Uptime / Internet icon tiles — sit beside the ring-gauge column.
+   The 7rem-ish circular bounding box mirrors the gauge size so all
+   six tiles in the row read as peers (was visually shorter). */
 .dash-icon-tile {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     padding: 6px 0;
+    width: 7rem;
+    height: 7rem;
+    border: 1px dashed var(--c-border);
+    border-radius: 999px;
+    background: var(--c-surface-2);
 }
 .dash-tile-val { font-size: 0.95rem; font-weight: 600; color: var(--c-text); }
 
@@ -1327,8 +1378,11 @@ html.dark .powered-by-logo { filter: none; }
     line-height: 1.45;
 }
 .sys-lifecycle svg { flex-shrink: 0; margin-top: 2px; }
-.sys-lifecycle-ok   { background: var(--c-tint-green); border-left: 3px solid var(--c-accent-green); }
-.sys-lifecycle-ok   svg { color: var(--c-accent-green); }
+/* "ok" used to mean green — but EOL is informational, not a celebration,
+   even when years away.  Now: blue/info for >1y or unknown, amber for
+   <1y, red for <90d or past. */
+.sys-lifecycle-ok   { background: var(--c-tint-blue);  border-left: 3px solid var(--c-accent-blue); }
+.sys-lifecycle-ok   svg { color: var(--c-accent-blue); }
 .sys-lifecycle-warn { background: var(--c-tint-amber); border-left: 3px solid var(--c-accent-amber); }
 .sys-lifecycle-warn svg { color: var(--c-accent-amber); }
 .sys-lifecycle-crit { background: var(--c-tint-red);   border-left: 3px solid var(--c-accent-red);   }
@@ -1661,16 +1715,19 @@ html.dark .powered-by-logo { filter: none; }
    bottom). Counter-rotate the port numbers so they stay upright/readable. */
 .orient-svg-rot .orient-svg { transform: rotate(-90deg); }
 .orient-svg-rot .orient-port-num { transform: rotate(90deg); transform-box: fill-box; transform-origin: center; }
-.orient-chassis { fill: var(--c-surface-2, rgba(148,163,184,0.08)); stroke: var(--c-dim); stroke-width: 1.5; }
-.orient-iozone { fill: rgba(148,163,184,0.06); stroke: var(--c-border); stroke-width: 0.75; }
-.orient-io { fill: var(--c-dimmer); }
-.orient-eth { fill: var(--c-muted); }
-.orient-fan { fill: none; stroke: var(--c-dim); stroke-width: 1; }
+/* Bumped strokes from --c-dim to --c-muted (and fills from --c-dimmer
+   to --c-dim) so the chassis lines remain crisp in both themes — the
+   dim variants were too faint against dark surfaces. */
+.orient-chassis { fill: var(--c-surface-2, rgba(148,163,184,0.08)); stroke: var(--c-muted); stroke-width: 1.5; }
+.orient-iozone { fill: rgba(148,163,184,0.06); stroke: var(--c-dim); stroke-width: 0.75; }
+.orient-io { fill: var(--c-dim); }
+.orient-eth { fill: var(--c-text); }
+.orient-fan { fill: none; stroke: var(--c-muted); stroke-width: 1; }
 .orient-portbank { fill: rgba(59,130,246,0.14); stroke: #3b82f6; stroke-width: 1.2; }
 .orient-port { fill: #3b82f6; }
 .orient-port-num { fill: #fff; font-size: 9px; font-weight: 700; text-anchor: middle; }
-.orient-acbox { fill: none; stroke: var(--c-dim); stroke-width: 1.2; }
-.orient-acpin { fill: var(--c-dim); }
+.orient-acbox { fill: none; stroke: var(--c-muted); stroke-width: 1.2; }
+.orient-acpin { fill: var(--c-muted); }
 .orient-caption { font-size: 0.66rem; line-height: 1.5; color: var(--c-muted); }
 .orient-caption strong { color: var(--c-text); font-weight: 600; }
 .nic-diagram-ports {
@@ -1889,13 +1946,17 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     flex-direction: column;
     gap: 8px;
 }
-.cam-port-active { border-color: #22c55e; }
+.cam-port-active { border-color: var(--c-accent-green); }
 .cam-port-degraded { border-color: var(--c-accent-amber); }
-.cam-port-down { border-color: var(--c-dimmer); opacity: 0.75; }
+/* Down ports keep a muted (not alarming) treatment but stay legible —
+   dashed border distinguishes them from "active" without the heavy
+   0.75 opacity that previously washed out the labels. Empty (no-NIC)
+   slots stay dashed + half-opacity to clearly read as unused. */
+.cam-port-down { border-color: var(--c-dimmer); border-style: dashed; }
 .cam-port-empty { border-style: dashed; opacity: 0.5; }
 .cam-port-header { display: flex; align-items: center; gap: 6px; }
 .cam-port-num { font-size: 0.85rem; font-weight: 700; color: var(--c-text); }
-.cam-port-name { font-size: 0.7rem; color: var(--c-dim); font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cam-port-name { font-size: 0.7rem; color: var(--c-muted); font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cam-port-status { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; }
 .cam-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .cam-dot-up { background: var(--c-status-ok); box-shadow: 0 0 6px rgba(34, 197, 94, 0.4); }
@@ -2012,7 +2073,11 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 @keyframes cam-spin { to { transform: rotate(360deg); } }
 
 /* ── Camera findings card ──────────────────────────────────── */
-.cam-finding-row { border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; }
+/* Stacked finding rows previously had nearly-identical backgrounds with
+   only an 8px gap between them, so two consecutive warnings would
+   visually merge.  Bump the gap and add a subtle inset shadow so each
+   row reads as its own card-within-card. */
+.cam-finding-row { border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; box-shadow: inset 0 0 0 1px var(--c-border); }
 .cam-finding-row:last-child { margin-bottom: 0; }
 .cam-finding-row-critical { background: var(--c-tint-red); border-left: 3px solid var(--c-accent-red); }
 .cam-finding-row-warning  { background: var(--c-tint-amber); border-left: 3px solid var(--c-accent-amber); }
@@ -2177,10 +2242,13 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     padding: 14px;
     display: flex;
     flex-direction: column;
-    border-left: 3px solid;
+    border-left: 4px solid;
 }
-.svc-tile-running { border-left-color: #22c55e; }
-.svc-tile-stopped { border-left-color: #ef4444; }
+/* Theme-aware accent colors + thicker stripe so the running/stopped
+   indicator is legible at a glance — was 3px raw hex that washed out
+   on the dark surface. */
+.svc-tile-running { border-left-color: var(--c-accent-green); }
+.svc-tile-stopped { border-left-color: var(--c-accent-red); }
 .svc-tile-muted   { border-left-color: var(--c-dimmer); }
 .svc-tile-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .svc-tile-name { font-size: 0.85rem; font-weight: 600; color: var(--c-text); }
@@ -2233,7 +2301,7 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 .dh-vol-drive { font-size: 0.85rem; font-weight: 600; color: var(--c-text); }
 .dh-vol-role { font-size: 0.75rem; color: var(--c-muted); }
 .dh-vol-free { font-size: 0.75rem; color: var(--c-muted); }
-.dh-vol-status { font-size: 0.8rem; font-weight: 600; text-align: right; }
+.dh-vol-status { display: flex; justify-content: flex-end; }
 
 /* Repair Tools (PDF #1) — DISM, sfc, chkdsk action cards */
 .dh-repair-grid {
@@ -2278,14 +2346,21 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
+/* Custom chevron — Firefox/Chrome default arrow on a dark themed
+   <select> was invisible; this draws the chevron as an inline SVG
+   background tinted via currentColor so it adapts to both themes. */
 .ev-select {
-    background: var(--c-bg);
+    appearance: none;
+    -webkit-appearance: none;
+    background: var(--c-bg) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>") no-repeat right 10px center;
+    background-size: 12px;
     border: 1px solid var(--c-border);
     border-radius: 6px;
-    padding: 6px 10px;
+    padding: 6px 28px 6px 10px;
     color: var(--c-text);
     font-size: 0.8rem;
     outline: none;
+    cursor: pointer;
 }
 .ev-select:focus { border-color: #3b82f6; }
 .ev-input {
@@ -2313,10 +2388,18 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     font-weight: 600;
     border: 1px solid;
 }
+/* Fatal vs Error vs Warning vs Restart need to read as four distinct
+   severities at a glance.  Was: Fatal+Error both red outline, Warning+
+   Restart both amber outline. Now: Fatal is solid red (showstopper),
+   Error is red outline (single failure), Warning is amber outline,
+   Restart is blue outline (lifecycle event, not a problem). */
+.ev-level-fatal { background: var(--c-accent-red); color: #fff; border-color: var(--c-accent-red); }
 .ev-level-error { border-color: #ef4444; color: #ef4444; background: rgba(239, 68, 68, 0.08); }
 .ev-level-warn  { border-color: #eab308; color: #eab308; background: rgba(234, 179, 8, 0.08); }
+.ev-level-restart { border-color: #3b82f6; color: #3b82f6; background: rgba(59, 130, 246, 0.06); }
 .ev-level-info  { border-color: #3b82f6; color: #60a5fa; background: rgba(59, 130, 246, 0.08); }
-.ev-msg-cell { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-msg-cell { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
+.ev-msg-cell:hover { white-space: normal; }
 
 /* Pixellot logs scanner (PDF #5) */
 .px-log-summary { display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -2355,7 +2438,11 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 
 /* ── ScoreConnect page ─────────────────────────────────────── */
 
-/* Scoreboard — dark themed panel that mimics a real broadcast overlay */
+/* Scoreboard — dark themed panel that mimics a real broadcast overlay.
+   Always uses the broadcast-dark palette (it's a mock of a real screen,
+   not theme-aware chrome).  Border bumped + drop shadow in light mode
+   so it clearly reads as a contained widget instead of bleeding into
+   the page; the dark border tier is fine on dark page bg already. */
 .sc-board {
     background: #0f1419;
     border: 1px solid #2a3040;
@@ -2363,7 +2450,9 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     padding: 1.25rem 1.5rem;
     color: #e8ecf1;
     font-family: "SF Mono", "Cascadia Mono", "Fira Code", monospace;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
+html.dark .sc-board { box-shadow: none; border-color: #3a4356; }
 /* Hero variant — top of page, larger everything */
 .sc-board-hero {
     border-radius: 12px;
@@ -2628,6 +2717,37 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 .settings-input:focus { border-color: #3b82f6; }
 .settings-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 
+/* Number input with a unit suffix (e.g. "3000 ms") — suffix is
+   positioned over the right padding of the input via flex layout so
+   the value stays editable and the unit is always visible. */
+.settings-input-with-suffix { position: relative; }
+.settings-input-with-suffix .settings-input { padding-right: 36px; }
+.settings-input-suffix {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.75rem;
+    color: var(--c-muted);
+    pointer-events: none;
+    margin-top: -6px;  /* offset .settings-input's margin-bottom */
+}
+
+/* File-path rows in Logs & Reports — label, monospace path, copy button */
+.settings-paths { display: flex; flex-direction: column; gap: 6px; max-width: 760px; }
+.settings-path-row {
+    display: grid;
+    grid-template-columns: 120px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--c-border);
+}
+.settings-path-row:last-child { border-bottom: none; }
+.settings-path-label { font-size: 0.75rem; color: var(--c-muted); }
+.settings-path-value { font-size: 0.78rem; color: var(--c-text); word-break: break-all; }
+.settings-path-copy { font-size: 0.7rem; padding: 3px 8px; }
+
 /* ── About page ────────────────────────────────────────────── */
 
 /* Coming-soon placeholder (gated-off tabs) */
@@ -2666,12 +2786,20 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 @media (max-width: 768px) {
   .audio-summary { grid-template-columns: 1fr; }
 }
-.audio-summary-card { text-align: center; padding: 1.25rem 1rem; }
+/* All three summary tiles render with the same centered layout
+   (icon on top, big value/label below) so they read as peers in
+   the row — was icon-on-left for the Signal tile only. */
+.audio-summary-card { text-align: center; padding: 1.25rem 1rem; display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
 .audio-summary-icon { color: var(--c-muted); margin-bottom: 0.5rem; display: flex; justify-content: center; }
 .audio-summary-num { font-size: 1.5rem; font-weight: 700; color: var(--c-text); }
-.audio-signal-card { display: flex; align-items: center; gap: 0.75rem; padding: 1.25rem 1rem; }
+.audio-signal-card {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 0.5rem;
+    padding: 1.25rem 1rem; text-align: center;
+}
 .audio-signal-dot {
-  width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  margin-bottom: 0.25rem;
 }
 .audio-signal-active { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.5); }
 .audio-signal-silent { background: var(--c-dim); }
@@ -2706,10 +2834,13 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 }
 .audio-device-name { font-weight: 600; font-size: 0.875rem; color: var(--c-text); }
 .audio-device-badges { display: flex; align-items: center; gap: 0.5rem; }
+/* Device-class label (LINE-IN / MIC / HEADSET / SPEAKERS / HDMI) — kept
+   subordinate to the status badge beside it, but with stronger border
+   contrast so it reads as informational instead of decorative. */
 .audio-port-badge {
   font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
   padding: 0.15rem 0.5rem; border-radius: 4px;
-  background: var(--c-surface-3); color: var(--c-muted); border: 1px solid var(--c-border);
+  background: var(--c-surface-2); color: var(--c-muted); border: 1px solid var(--c-dimmer);
 }
 
 .audio-device-controls { margin-top: 0.75rem; }
@@ -2754,9 +2885,11 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
   width: 16px; height: 16px; border-radius: 50%;
   background: #3b82f6; border: 2px solid var(--c-surface); cursor: pointer;
 }
-.audio-slider-muted::-webkit-slider-thumb { background: var(--c-dim); }
-.audio-slider-muted::-moz-range-thumb     { background: var(--c-dim); }
-.audio-slider-muted { opacity: 0.6; }
+/* Mute state on the slider is conveyed by the speaker-X icon next to
+   the track, not by recoloring the thumb — keeping the knob blue
+   (just on a faded track) makes all three sliders look like the same
+   control instead of three different ones. */
+.audio-slider-muted { opacity: 0.55; }
 
 /* ── Network Panel ───────────────────────────────────────── */
 
@@ -2917,8 +3050,11 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 }
 .net-ping-preset:hover { background: var(--c-border); color: var(--c-text); }
 .net-ping-preset:disabled { opacity: 0.4; cursor: not-allowed; }
-.net-ping-cont { color: #3b82f6; border-color: #3b82f6; }
-.net-ping-cont:hover { background: rgba(59, 130, 246, 0.12); }
+/* "Continuous" presets the same way as 4/10/20/50 — it's an action
+   verb, not a selected state.  The button text flips to "Stop" when
+   active, which gives the running state its own clear treatment. */
+.net-ping-cont { color: var(--c-muted); }
+.net-ping-cont:hover { background: var(--c-tint-blue); color: var(--c-accent-blue); border-color: var(--c-accent-blue); }
 .net-ping-stop { font-size: 0.7rem; padding: 3px 10px; }
 
 @keyframes spin-icon { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -3526,4 +3662,69 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     font-family: "SF Mono","Cascadia Mono","Fira Code",monospace;
     color: var(--c-text);
     outline: none;
+}
+
+/* ── Responsive collapse (below 768 px) ─────────────────────── */
+/* Pulse Web is desktop-first (VPUs run a full browser), but field techs
+   sometimes pull it up on a phone over Tailscale.  Below the tablet
+   breakpoint we collapse the sidebar to a horizontal nav strip on top
+   and let the main content take the full viewport width so cards stop
+   getting squeezed into 130-px columns. */
+@media (max-width: 767px) {
+    #app { flex-direction: column; }
+    #sidebar {
+        width: 100% !important;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        border-right: none;
+        border-bottom: 1px solid var(--c-border);
+    }
+    .sidebar-brand {
+        flex-direction: row;
+        gap: 10px;
+        padding: 10px 14px;
+        border-bottom: none;
+        flex: 0 0 auto;
+    }
+    .sidebar-brand-logo { width: 110px; margin-bottom: 0; }
+    .sidebar-brand-tagline { display: none; }
+    .demo-banner { flex: 1; padding: 6px 14px; }
+    /* Nav links + theme toggle + footer drop to a second row that
+       horizontally scrolls so the tech can still reach every page. */
+    #nav-links {
+        flex-basis: 100%;
+        order: 2;
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 4px 8px;
+        gap: 4px;
+        border-top: 1px solid var(--c-border);
+    }
+    .nav-section { display: contents; }
+    .nav-section-header { display: none; }
+    .nav-item {
+        border-left: none;
+        border-bottom: 3px solid transparent;
+        padding: 6px 10px;
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
+    .nav-item.active {
+        border-left-color: transparent;
+        border-bottom-color: var(--c-accent-blue);
+    }
+    .theme-toggle-btn {
+        order: 3;
+        width: auto;
+        margin: 8px 8px 8px auto;
+        padding: 6px 10px;
+        flex: 0 0 auto;
+    }
+    .sidebar-footer { display: none; }
+    /* Log pane spans the full width below the now-top-mounted sidebar. */
+    .log-pane { left: 0; }
 }
