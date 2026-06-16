@@ -40,6 +40,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - **The Wi-Fi warning now explains Wi-Fi's real job.** When the VPU is running
   its internet over Wi-Fi, the message now notes the Wi-Fi card is meant for the
   Pixellot Connect app — move the internet to the motherboard Ethernet port.
+- **New Pixellot Configuration tab (under SYSTEM)** — camera calibration, firmware,
+  and on-box config at a glance: install/agent version with the hardware-compatibility
+  banner, a per-camera table (role / IP / MAC / firmware / TV mode / serial / calibration),
+  main-camera multisport calibration (which sports, last calibrated) and OCR scoreboard
+  calibration status, plus a one-click "Restart Pixellot Agent" action.
 
 ### Fixed
 - **Pulse now opens directly in Chrome on launch.** On VPUs with no default

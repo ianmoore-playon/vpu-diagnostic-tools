@@ -56,6 +56,7 @@ const NAV_SECTIONS = [
   { label: "SYSTEM", pages: [
     { id: "system", label: "System Overview", icon: "cpu" },
     { id: "services", label: "Pixellot Services", icon: "server" },
+    { id: "pixellot-config", label: "Pixellot Configuration", icon: "database" },
     { id: "disk-health", label: "Disk & System Health", icon: "hdd" },
     { id: "events", label: "Event Viewer", icon: "triangle" },
   ]},
@@ -91,6 +92,7 @@ const PAGE_API = {
   events: "/api/events",
   audio: "/api/audio",
   scoreconnect: "/api/scoreconnect",
+  "pixellot-config": "/api/pixellot-config",
   settings: "/api/settings",
 };
 
@@ -823,10 +825,230 @@ const pageRenderers = {
   // intact below as the gate — swap back to it to hide the tab again.
   audio: renderAudio,
   scoreconnect: renderScoreConnect,
+  "pixellot-config": renderPixellotConfig,
   "fault-isolator": renderFaultIsolator,
   settings: renderSettings,
   about: renderAbout,
 };
+
+// ── Pixellot Configuration ───────────────────────────────────
+// Local, on-host view of how the Pixellot software has this VPU + cameras
+// configured (NOT the Pixellot Cloud lane). Data: /api/pixellot-config —
+// registry + cameras.cfg + filesystem calibration, with live per-camera
+// firmware/tvMode from the shared CGI probe.
+
+const _PC_STALE_DAYS = 180; // calibration older than this is flagged stale
+
+function _pcFmtDate(iso) {
+  if (!iso) return "—";
+  const dt = new Date(iso);
+  if (isNaN(dt.getTime())) return esc(String(iso));
+  const days = Math.floor((Date.now() - dt.getTime()) / 86400000);
+  const label = dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  let ago = "";
+  if (days === 0) ago = " (today)";
+  else if (days === 1) ago = " (1 day ago)";
+  else if (days > 1) ago = ` (${days} days ago)`;
+  return esc(label) + `<span class="text-pulse-muted">${ago}</span>`;
+}
+
+function _pcDaysSince(iso) {
+  if (!iso) return null;
+  const dt = new Date(iso);
+  if (isNaN(dt.getTime())) return null;
+  return Math.floor((Date.now() - dt.getTime()) / 86400000);
+}
+
+function renderPixellotConfig() {
+  const d = cached("pixellot-config");
+  if (!d) { $page().innerHTML = sectionLoading("Pixellot Configuration"); fetchSection("pixellot-config"); return; }
+  if (d.error) { $page().innerHTML = errorBox(d.message); return; }
+
+  const reg = d.registryConfig || {};
+  const compat = d.compat || {};
+  const cams = d.cameras || [];
+  const cal = d.calibration || {};
+  const multi = cal.multisport || {};
+  const ocr = cal.ocr || {};
+  const version = compat.installedVersion || reg.version || reg.Version || null;
+  const installPath = reg.InstallPath || reg.installPath || reg.Path || "C:\\Pixellot";
+
+  // Version-compatibility banner — same look as System Overview.
+  const compatBanner = (() => {
+    const c = compat;
+    if (!c || c.status === "skip") return "";
+    let cls = "sys-lifecycle-ok", title = "", detail = "";
+    if (c.status === "ok") {
+      cls = "sys-lifecycle-ok"; title = "Version compatible with hardware";
+      detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : " — no version limit"}.`;
+    } else if (c.status === "over") {
+      cls = "sys-lifecycle-crit"; title = "Version exceeds hardware compatibility cap";
+      detail = `Installed ${esc(c.installedVersion)} is newer than ${esc(c.maxVersion)} (max for ${esc(c.architecture)}). Downgrade to stay supported.`;
+    } else if (c.status === "no-gpu") {
+      cls = "sys-lifecycle-crit"; title = "No NVIDIA GPU detected";
+      detail = "Pixellot requires NVIDIA hardware for encoding.";
+    } else if (c.status === "anomaly") {
+      cls = "sys-lifecycle-crit"; title = "Unexpected GPU architecture";
+      detail = `${esc(c.architecture)} is not a known Pixellot deployment — escalate to support.`;
+    }
+    return `<div class="sys-lifecycle ${cls} mt-3">
+      ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
+      <div><div class="font-semibold">${esc(title)}</div><div class="text-xs mt-1">${detail}</div></div>
+    </div>`;
+  })();
+
+  // Calibration is per-FUNCTION, not per-camera: Main cameras share the
+  // multisport-stitch status; the OCR camera uses the pipdesign status.
+  function camCalCell(role) {
+    const r = (role || "").toLowerCase();
+    if (r.includes("ocr")) {
+      return ocr.calibrated ? badge("Calibrated", "pass") : badge("Not calibrated", "warn");
+    }
+    if (r.includes("main")) {
+      return multi.calibrated ? badge("Calibrated", "pass") : badge("Not calibrated", "warn");
+    }
+    return `<span class="text-pulse-muted">—</span>`;
+  }
+
+  const camRows = cams.map((c) => {
+    const fw = c.firmwareVersion
+      ? `<span class="font-mono">${esc(c.firmwareVersion)}</span>`
+      : (c.reachable === false ? `<span class="text-pulse-muted">unreachable</span>` : "—");
+    return `<tr>
+      <td>${esc(c.role || c.section || "—")}</td>
+      <td class="font-mono">${esc(c.ip || "—")}</td>
+      <td class="font-mono text-xs">${esc(c.mac || "—")}</td>
+      <td>${fw}</td>
+      <td>${c.tvMode ? esc(c.tvMode) : "—"}</td>
+      <td>${esc(c.serialNumber || "—")}</td>
+      <td>${camCalCell(c.role)}</td>
+    </tr>`;
+  }).join("");
+
+  // Multisport sports with last-calibrated dates (kv-rows must live in a kv-grid).
+  const sports = multi.sports || [];
+  const sportRows = sports.map((s) => {
+    const stale = (_pcDaysSince(s.lastCalibrated) ?? 0) > _PC_STALE_DAYS;
+    const isPrimary = multi.primary && s.name && multi.primary.toLowerCase() === String(s.name).toLowerCase();
+    return `<div class="kv-row">
+      <span class="kv-label">${esc(s.name)}${isPrimary ? ` ${badge("primary", "muted")}` : ""}</span>
+      <span class="kv-value">${_pcFmtDate(s.lastCalibrated)} ${stale ? badge("stale", "warn") : ""}</span>
+    </div>`;
+  }).join("");
+  const sportsBlock = sports.length
+    ? `<div class="kv-grid">${sportRows}</div>`
+    : `<div class="info-chip">No sports calibrated — main camera multisport calibration is empty.</div>`;
+
+  // Advisory list for Recommended Actions.
+  const advisories = [];
+  if (!multi.calibrated) advisories.push("Main camera has no multisport calibration — calibrate at least the primary sport.");
+  sports.forEach((s) => {
+    const days = _pcDaysSince(s.lastCalibrated);
+    if (days != null && days > _PC_STALE_DAYS) advisories.push(`Multisport calibration for ${s.name} is ${days} days old — re-calibrate if the venue or rig moved.`);
+  });
+  if (!ocr.calibrated) {
+    const miss = [];
+    if (!ocr.hasEnhancedPip) miss.push("enhanced_pip.txt");
+    if (!ocr.hasInnerObjects) miss.push("innerobjects.txt");
+    advisories.push(`OCR / scoreboard not calibrated${miss.length ? ` (missing ${miss.join(" + ")})` : ""}.`);
+  }
+
+  // Raw registry values (the live script dumps all of HKLM\SOFTWARE\Pixellot).
+  const regKeys = Object.keys(reg);
+  const regRows = regKeys.length
+    ? regKeys.map((k) => kvRow(k, reg[k])).join("")
+    : `<div class="info-chip">No HKLM\\SOFTWARE\\Pixellot values found.</div>`;
+
+  $page().innerHTML = `
+    ${pageHeader("Pixellot Configuration", "Local, on-host view of how Pixellot has this VPU and its cameras configured",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache['pixellot-config']=null;renderPixellotConfig()">${svgIcon("refresh", 14)} Refresh</button>`)}
+
+    <div class="card">
+      ${sectionTitle("server", "Install & Agent")}
+      <div class="kv-grid">
+        ${kvRow("Pixellot Version", version)}
+        ${kvRow("Image Version", reg.imageVersion || reg.ImageVersion)}
+        ${kvRow("Install Path", installPath)}
+        ${kvRow("Dependencies", reg.dependencies || reg.Dependencies)}
+        ${kvRowHtml("cameras.cfg", d.cameraCfgExists ? badge("Present", "pass") : badge("Missing", "fail"))}
+      </div>
+      ${compatBanner}
+    </div>
+
+    <div class="card">
+      ${sectionTitle("camera", "Cameras")}
+      <p class="text-xs text-pulse-muted mb-3">Role / IP / MAC from <span class="font-mono">cameras.cfg</span>; firmware, TV mode and serial probed live from each camera head (Admin CGI). Calibration is per-function — Main cameras share the multisport status, OCR uses the scoreboard (pipdesign) status.</p>
+      <table class="data-table"><thead><tr>
+        <th>Role</th><th>IP</th><th>MAC</th><th>Firmware</th><th>TV Mode</th><th>Serial</th><th>Calibration</th>
+      </tr></thead><tbody>${camRows || `<tr><td colspan="7" class="text-pulse-muted">No cameras found in cameras.cfg.</td></tr>`}</tbody></table>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("check", "Calibration")}
+      <div class="flex flex-wrap gap-4">
+        <div class="flex-1" style="min-width:260px">
+          <div class="flex items-center gap-2 mb-2"><span class="font-semibold">Main camera — multisport</span>${multi.calibrated ? badge("Calibrated", "pass") : badge("Not calibrated", "warn")}</div>
+          ${sportsBlock}
+        </div>
+        <div class="flex-1" style="min-width:260px">
+          <div class="flex items-center gap-2 mb-2"><span class="font-semibold">OCR / scoreboard</span>${ocr.calibrated ? badge("Calibrated", "pass") : badge("Not calibrated", "warn")}</div>
+          <div class="kv-grid">
+            ${kvRowHtml("Last calibrated", ocr.lastCalibrated ? _pcFmtDate(ocr.lastCalibrated) : "—")}
+            ${kvRowHtml("enhanced_pip.txt", ocr.hasEnhancedPip ? badge("present", "pass") : badge("missing", "warn"))}
+            ${kvRowHtml("innerobjects.txt", ocr.hasInnerObjects ? badge("present", "pass") : badge("missing", "warn"))}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card svc-quick-action">
+      ${sectionTitle("zap", "Recommended Actions")}
+      ${advisories.length ? `<div class="text-sm">${advisories.map((a) => `<div class="flex items-center gap-2 mt-2">${svgIcon("alert", 13)}<span>${esc(a)}</span></div>`).join("")}</div>` : `<div class="info-chip">${svgIcon("check", 13)} No configuration issues detected.</div>`}
+      <div class="svc-quick-action-row mt-3">
+        <div>
+          <div class="svc-quick-action-title">Restart Pixellot Agent + Coordinator</div>
+          <div class="svc-quick-action-body">Runs <span class="font-mono">keepagentup.exe</span> — the documented fast remedy for a hung agent before escalating.</div>
+        </div>
+        <button class="btn-outline btn-ol-amber" id="pc-keepagent-btn">${svgIcon("zap", 14)} Restart Agent + Coordinator</button>
+      </div>
+      <div id="pc-keepagent-result" class="svc-quick-action-result hidden"></div>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("database", "Registry — HKLM\\SOFTWARE\\Pixellot")}
+      <div class="kv-grid">${regRows}</div>
+    </div>
+  `;
+
+  // keepagentup.exe — confirm + run + inline result (mirrors the Services lane).
+  document.getElementById("pc-keepagent-btn")?.addEventListener("click", async () => {
+    const ok = confirm(
+      "Restart Pixellot Agent + Coordinator?\n\n" +
+      "This runs c:\\pixellot\\bin\\keepagentup.exe, which will briefly stop and " +
+      "relaunch both services. Recording may pause for a few seconds.\n\nProceed?"
+    );
+    if (!ok) return;
+    const btn = document.getElementById("pc-keepagent-btn");
+    const resultEl = document.getElementById("pc-keepagent-result");
+    btn.disabled = true;
+    btn.innerHTML = `${svgIcon("refresh", 14)} Running keepagentup.exe...`;
+    resultEl.classList.add("hidden");
+
+    const r = await apiPost("/api/services/restart-agent", {});
+    btn.disabled = false;
+    btn.innerHTML = `${svgIcon("zap", 14)} Restart Agent + Coordinator`;
+
+    const ok2 = r && r.success;
+    resultEl.className = "svc-quick-action-result " + (ok2 ? "svc-result-ok" : "svc-result-err");
+    resultEl.innerHTML = `
+      <div class="font-semibold">${ok2 ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
+      <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
+      ${r?.agentStatus ? `<div class="text-xs mt-2 text-pulse-muted">Agent: <span class="font-mono">${esc(r.agentStatus)}</span> &middot; Coordinator: <span class="font-mono">${esc(r.coordinatorStatus || "?")}</span></div>` : ""}
+      ${r?.stdout ? `<pre class="svc-result-output">${esc(r.stdout)}</pre>` : ""}
+      ${r?.stderr ? `<pre class="svc-result-output svc-result-stderr">${esc(r.stderr)}</pre>` : ""}
+    `;
+  });
+}
 
 // ── Dashboard ────────────────────────────────────────────────
 
