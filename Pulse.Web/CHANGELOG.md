@@ -22,6 +22,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Added
+- **New Stream Readiness check.** Pulse now rolls every diagnostic into one
+  PASS / WARN / FAIL call on whether the VPU can stream tonight's game, shown at
+  the top of the Dashboard with the exact blockers and risks behind the verdict.
+  FAIL means "don't expect a clean broadcast tonight."
+
 ### Fixed
 - **Pulse now opens directly in Chrome on launch.** On VPUs with no default
   browser set, Windows used to pop a "How do you want to open this?" picker

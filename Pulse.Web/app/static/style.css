@@ -449,6 +449,58 @@ html.dark .splash-logo {
 .dash-sev-warn     { background: var(--c-tint-amber); color: var(--c-accent-amber); }
 .dash-sev-ok       { background: var(--c-tint-green); color: var(--c-accent-green); }
 
+/* ── Stream Readiness card ────────────────────────────────────
+   The 90-second triage artifact: one big PASS/WARN/FAIL verdict at the top of
+   the Dashboard, with the blockers/risks that drove it. A left accent stripe
+   carries the verdict colour. */
+.rdy-card { margin-bottom: 1rem; border-left: 4px solid var(--c-border); padding: 1rem 1.25rem; }
+.rdy-card-pass { border-left-color: var(--c-accent-green); }
+.rdy-card-warn { border-left-color: var(--c-accent-amber); }
+.rdy-card-fail { border-left-color: var(--c-accent-red); }
+
+.rdy-main { display: flex; align-items: center; gap: 1rem; }
+.rdy-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 16px; border-radius: 10px; font-weight: 800;
+    font-size: 1.35rem; letter-spacing: 0.04em; flex: none;
+}
+.rdy-badge-pass { background: var(--c-tint-green); color: var(--c-accent-green); }
+.rdy-badge-warn { background: var(--c-tint-amber); color: var(--c-accent-amber); }
+.rdy-badge-fail { background: var(--c-tint-red);   color: var(--c-accent-red); }
+.rdy-badge-word { line-height: 1; }
+
+.rdy-headline { min-width: 0; }
+.rdy-title-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.rdy-title { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-muted); margin: 0; }
+.rdy-asof { font-size: 0.7rem; color: var(--c-muted); }
+.rdy-tag { margin: 2px 0 0; font-size: 0.92rem; color: var(--c-text); }
+
+.rdy-drivers { margin-top: 0.85rem; display: flex; flex-direction: column; gap: 8px; }
+.rdy-driver { border-radius: 8px; padding: 8px 12px; border-left: 3px solid var(--c-border); background: var(--c-bg-subtle, rgba(127,127,127,0.06)); }
+.rdy-driver-blocker { border-left-color: var(--c-accent-red); }
+.rdy-driver-risk    { border-left-color: var(--c-accent-amber); }
+.rdy-driver-head { display: flex; align-items: center; gap: 8px; }
+.rdy-driver-tag { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 999px; flex: none; }
+.rdy-driver-tag-blocker { background: var(--c-tint-red); color: var(--c-accent-red); }
+.rdy-driver-tag-risk    { background: var(--c-tint-amber); color: var(--c-accent-amber); }
+.rdy-driver-title { font-weight: 600; font-size: 0.88rem; color: var(--c-text); }
+.rdy-driver-rec { margin: 5px 0 0; font-size: 0.82rem; line-height: 1.4; color: var(--c-muted); }
+
+.rdy-clear { display: flex; align-items: center; gap: 8px; color: var(--c-accent-green); font-size: 0.88rem; padding: 4px 2px; }
+
+.rdy-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 0.85rem; font-size: 0.72rem; color: var(--c-muted); }
+.rdy-policy { font-family: var(--font-mono, monospace); }
+
+/* Demo-only state switcher — hidden entirely on real VPUs (not rendered). */
+.rdy-demo-bar { display: flex; align-items: center; gap: 6px; margin-top: 0.75rem; padding-top: 0.7rem; border-top: 1px dashed var(--c-border); }
+.rdy-demo-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--c-muted); margin-right: 2px; }
+.rdy-demo-chip { font-size: 0.68rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--c-border); background: transparent; color: var(--c-muted); cursor: pointer; }
+.rdy-demo-chip:hover { border-color: var(--c-muted); color: var(--c-text); }
+.rdy-demo-chip-active.rdy-demo-chip-pass { background: var(--c-tint-green); color: var(--c-accent-green); border-color: var(--c-accent-green); }
+.rdy-demo-chip-active.rdy-demo-chip-warn { background: var(--c-tint-amber); color: var(--c-accent-amber); border-color: var(--c-accent-amber); }
+.rdy-demo-chip-active.rdy-demo-chip-fail { background: var(--c-tint-red); color: var(--c-accent-red); border-color: var(--c-accent-red); }
+.rdy-demo-reset { font-weight: 600; }
+
 /* ── Dashboard top grid ───────────────────────────────────── */
 .dash-top-grid {
     display: grid;

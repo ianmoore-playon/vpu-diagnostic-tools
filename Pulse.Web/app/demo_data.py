@@ -217,6 +217,15 @@ DEMO = {
         "disk": {"usedPercent": round(37 + random.uniform(-1, 2), 1)},
         "temperature": {"celsius": round(47 + random.uniform(-3, 8), 0)},
     },
+    # Averaged CPU/mem for the Stream Readiness engine (F17/F19). Tighter
+    # spread than the snapshot above — it's a multi-second average, so it sits
+    # comfortably under the 90% sustained-WARN bar.
+    "Get-PerfSample.ps1": lambda **kw: {
+        "cpuAvgPercent": round(30 + random.uniform(-5, 6), 1),
+        "memAvgPercent": round(59 + random.uniform(-4, 5), 1),
+        "sampleCount": 3,
+        "windowSeconds": 3,
+    },
     "Get-Services.ps1": lambda **kw: {
         # Core Pixellot components are PROCESSES in C:\Pixellot\Bin (kind=process),
         # not Windows services — detected by process, no SCM start type.
