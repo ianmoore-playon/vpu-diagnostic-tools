@@ -12,33 +12,29 @@ param()
 $ErrorActionPreference = 'Stop'
 
 try {
-    # PCI/PnP location per net device, keyed by PnPDeviceID. The onboard
-    # motherboard LOM sits on PCI bus 0; an add-in NIC card (the 4-port camera
-    # NIC) enumerates on a higher bus. That bus number is how we tell the
-    # motherboard uplink port apart from a camera port even when both use the
-    # same Intel chipset. LocationInfo reads "PCI bus 4, device 0, function 0".
-    $pnpInfo = @{}
-    try {
-        Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | ForEach-Object {
-            if (-not $_.InstanceId) { return }
-            $loc = $null
-            try { $loc = (Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName 'DEVPKEY_Device_LocationInfo' -ErrorAction Stop).Data } catch { }
-            $bus = $null; $dev = $null; $fun = $null
-            if ($loc -and ($loc -match 'PCI bus (\d+), device (\d+), function (\d+)')) {
-                $bus = [int]$Matches[1]; $dev = [int]$Matches[2]; $fun = [int]$Matches[3]
-            }
-            $pnpInfo[$_.InstanceId.ToUpper()] = [ordered]@{
-                pciBus = $bus; pciDevice = $dev; pciFunction = $fun; pnpStatus = "$($_.Status)"
-            }
-        }
-    } catch { }
-
     # Net adapters — enriched with PCI location + media type + admin/link state
-    # so role classification (motherboard / camera / Wi-Fi) and the
-    # "internet on a camera port" check can run downstream in Python.
+    # so role classification (motherboard / camera / Wi-Fi) and the "internet on
+    # a camera port" check can run downstream in Python.
+    #
+    # PCI location resolves the motherboard uplink (onboard LOM = PCI bus 0) from
+    # a camera-NIC port (add-in card = bus > 0) even when both use the same Intel
+    # chipset. We look it up ONLY for each present adapter via its own PnPDeviceID
+    # — never by scanning Get-PnpDevice -Class Net, which on a VPU enumerates
+    # dozens of stale/ghost net devices and was slow enough to time out this whole
+    # collector on real hardware. Any failed/expensive lookup degrades to null
+    # (role classification falls back to chipset/unknown; internet detection,
+    # adapters, IP config, and reachability are all unaffected).
     $adapters = Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
-        $pdid = if ($_.PnPDeviceID) { $_.PnPDeviceID.ToUpper() } else { $null }
-        $pnp  = if ($pdid -and $pnpInfo.ContainsKey($pdid)) { $pnpInfo[$pdid] } else { $null }
+        $pciBus = $null; $pciDev = $null; $pciFun = $null
+        $pdid = $_.PnPDeviceID
+        if ($pdid -and $pdid.StartsWith('PCI\')) {
+            try {
+                $loc = (Get-PnpDeviceProperty -InstanceId $pdid -KeyName 'DEVPKEY_Device_LocationInfo' -ErrorAction Stop).Data
+                if ($loc -and ($loc -match 'PCI bus (\d+), device (\d+), function (\d+)')) {
+                    $pciBus = [int]$Matches[1]; $pciDev = [int]$Matches[2]; $pciFun = [int]$Matches[3]
+                }
+            } catch { }
+        }
         [ordered]@{
             name                 = $_.Name
             interfaceDescription = $_.InterfaceDescription
@@ -49,10 +45,10 @@ try {
             macAddress           = $_.MacAddress
             linkSpeed            = $_.LinkSpeed
             interfaceIndex       = $_.InterfaceIndex
-            pnpDeviceId          = $_.PnPDeviceID
-            pciBus               = if ($pnp) { $pnp.pciBus } else { $null }
-            pciDevice            = if ($pnp) { $pnp.pciDevice } else { $null }
-            pciFunction          = if ($pnp) { $pnp.pciFunction } else { $null }
+            pnpDeviceId          = $pdid
+            pciBus               = $pciBus
+            pciDevice            = $pciDev
+            pciFunction          = $pciFun
         }
     }
 

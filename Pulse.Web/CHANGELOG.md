@@ -54,6 +54,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   detail (exact values, commands, port numbers) still right there in the detail.
 
 ### Fixed
+- **The Network panel no longer comes up blank / "no internet" on some VPUs.**
+  The new adapter-role check was scanning every network device Windows has ever
+  seen (VPUs accumulate dozens of stale ones), which could time out the whole
+  network check — leaving the panel empty and falsely reporting "VPU has no
+  internet connection." It now reads hardware location only for the adapters
+  actually present, and a network-check hiccup no longer masquerades as "no
+  internet" (Pulse says a check couldn't complete instead).
 - **Pulse now opens directly in Chrome on launch.** On VPUs with no default
   browser set, Windows used to pop a "How do you want to open this?" picker
   (with Internet Explorer as the first option) instead of opening Pulse. The

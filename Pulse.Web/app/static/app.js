@@ -2860,9 +2860,13 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
   // ── Critical: No internet ────────────────────────────────
   // cfg.internetReachable is authoritative: the backend already treats a
   // passing required TCP/443 service test as proof of internet, so it stays
-  // True on locked-down networks that block ICMP/8.8.8.8. If it's False here,
-  // the box genuinely can't reach Pixellot services.
-  if (!cfg.internetReachable) {
+  // True on locked-down networks that block ICMP/8.8.8.8. If it's explicitly
+  // False here, the box genuinely can't reach Pixellot services.
+  // Guard on === false (not falsy): when Network config fails to collect, the
+  // field is absent — we can't conclude "no internet" from missing data (the
+  // dashboard already flags "some checks couldn't complete"), and claiming it
+  // sends a tech chasing a cable on a box that's actually online.
+  if (cfg && cfg.internetReachable === false) {
     issues.push({ severity: "critical", title: "VPU has no internet connection",
       body: "Check the internet cable and the gateway/router before going further." });
     // Sort and return early — no point checking ports/domains
