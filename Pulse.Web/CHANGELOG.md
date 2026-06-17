@@ -43,6 +43,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   "Network Test", "SportzCast ScoreConnect", "Service Status", "Disks",
   "Windows Events", and "Exports". Nothing moved out of reach; bookmarks/links
   still work.
+- **Split the big "System Overview" tab into focused tabs.** Hardware (CPU,
+  memory, graphics, storage), Applications (installed software + concern
+  flags), and Environment (Windows OS, locale, uptime, users, peripherals) are
+  now separate tabs, and Pixellot version + hardware-compatibility moved to a
+  new Pixellot Software tab. Old "System Overview" links open Hardware.
 - **The Wi-Fi warning now explains Wi-Fi's real job.** When the VPU is running
   its internet over Wi-Fi, the message now notes the Wi-Fi card is meant for the
   Pixellot Connect app — move the internet to the motherboard Ethernet port.

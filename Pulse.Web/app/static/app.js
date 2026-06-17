@@ -65,13 +65,16 @@ const NAV_SECTIONS = [
     // /api/audio, and the PS scripts — so re-add this entry to restore it.
   ]},
   { label: "PIXELLOT CONFIGURATION", pages: [
-    // Phase C splits this into pixellot-software / camera-hardware / calibrations.
+    { id: "pixellot-software", label: "Pixellot Software", icon: "zap" },
+    // Phase C splits this into camera-hardware / calibrations and folds its
+    // install/agent/registry config into Pixellot Software.
     { id: "pixellot-config", label: "Pixellot Configuration", icon: "database" },
   ]},
   { label: "SYSTEM CONFIGURATION", pages: [
-    // Phase B splits System Overview into hardware / applications / environment.
-    { id: "system", label: "System Overview", icon: "cpu" },
+    { id: "hardware", label: "Hardware", icon: "cpu" },
+    { id: "applications", label: "Applications", icon: "copy" },
     { id: "disk-health", label: "Disks", icon: "hdd" },
+    { id: "environment", label: "Environment", icon: "globe" },
   ]},
   { label: "DATA LOGS", pages: [
     // Phase D adds Pixellot Logs and Pulse Logs.
@@ -87,6 +90,9 @@ const NAV_SECTIONS = [
 const PAGES = NAV_SECTIONS.flatMap((s) => s.pages);
 // Hidden pages (accessible via hash but not in nav)
 const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Fault Isolator" }];
+// Tabs retired in the nav restructure redirect to their nearest replacement so
+// old bookmarks / deep-links don't land on an "Unknown page".
+const RETIRED_PAGE_ALIASES = { system: "hardware" };
 
 let currentPage = "";
 let ws = null;
@@ -114,6 +120,7 @@ const PAGE_API = {
 // ── Router ───────────────────────────────────────────────────
 
 function navigate(id) {
+  id = RETIRED_PAGE_ALIASES[id] || id;
   if (id === currentPage) return;
   // Abort any in-flight fault-isolator poll when navigating away.
   if (currentPage === "fault-isolator" && _fi) _fi._aborted = true;
@@ -864,7 +871,13 @@ function _updateGaugeLive(name, val, opts) {
 
 const pageRenderers = {
   dashboard: renderDashboard,
-  system: renderSystem,
+  // System Overview was split into Hardware / Applications / Environment
+  // (nav restructure v3); the `system` id is retired but its /api/system
+  // payload still feeds all three. Pixellot Software also reads it.
+  hardware: renderHardware,
+  applications: renderApplications,
+  environment: renderEnvironment,
+  "pixellot-software": renderPixellotSoftware,
   network: renderNetwork,
   cameras: renderCameras,
   services: renderServices,
@@ -1124,23 +1137,35 @@ function _subsystemHealth(findings) {
     (e) => (e.level || "").toLowerCase() === "error"
   ).length;
 
+  // ids are nav page ids — updateNavHealth() lights the matching sidebar link.
+  // Re-keyed for the 6-group IA: the old `system` panel split into hardware /
+  // applications / environment, plus a Pixellot Software panel.
   return [
-    { id: "system", label: "System Overview", icon: "cpu",
-      health: lvl(worst("system", "hardware", "performance")),
-      desc: "Hardware, OS, uptime, and Pixellot software." },
+    { id: "hardware", label: "Hardware", icon: "cpu",
+      health: lvl(worst("hardware", "performance")),
+      desc: "CPU, memory, graphics, and storage." },
+    { id: "applications", label: "Applications", icon: "copy",
+      health: lvl(worst("software")),
+      desc: "Installed software that can interfere with streaming." },
+    { id: "environment", label: "Environment", icon: "globe",
+      health: lvl(worst("system")),
+      desc: "Windows OS, locale, uptime, users, and peripherals." },
+    { id: "pixellot-software", label: "Pixellot Software", icon: "zap",
+      health: lvl(worst("pixellot")),
+      desc: "Pixellot version and hardware compatibility." },
     { id: "network", label: "Network", icon: "wifi",
       health: lvl(worst("network")),
       desc: "Internet, name lookups, firewall, and service ports." },
     { id: "cameras", label: "Camera Connectivity", icon: "camera",
       health: lvl(worst("camera")),
       desc: "Camera ports — link, speed, and camera detection." },
-    { id: "services", label: "Pixellot Services", icon: "server",
+    { id: "services", label: "Service Status", icon: "server",
       health: lvl(worst("services")),
       desc: "Agent, encoder, watchdog service status." },
-    { id: "disk-health", label: "Disk Health", icon: "hdd",
+    { id: "disk-health", label: "Disks", icon: "hdd",
       health: lvl(worst("storage")),
       desc: "Free space, drive health (SMART), and disk events." },
-    { id: "events", label: "Event Viewer", icon: "triangle",
+    { id: "events", label: "Windows Events", icon: "triangle",
       health: evErrorCount > 0 ? "Warning" : "Healthy",
       desc: evErrorCount > 0
         ? `${evErrorCount} recent OS error${evErrorCount === 1 ? "" : "s"} logged.`
@@ -1155,7 +1180,20 @@ function _healthBadge(h) {
 }
 
 function _findingPageFor(cat) {
-  const map = { network: "network", camera: "cameras", services: "services", storage: "disk-health", hardware: "system", performance: "dashboard", system: "system" };
+  // Finding category → the tab that owns the fix. Updated for the 6-group IA:
+  // System Overview split into hardware / applications / environment, and
+  // pixellot findings land on the new Pixellot Software tab.
+  const map = {
+    network: "network",
+    camera: "cameras",
+    services: "services",
+    storage: "disk-health",
+    hardware: "hardware",
+    performance: "hardware",
+    system: "environment",        // timezone / uptime / OS
+    pixellot: "pixellot-software",
+    software: "applications",     // banned / concerning installed apps
+  };
   return map[(cat || "").toLowerCase()] || "dashboard";
 }
 
@@ -1701,86 +1739,115 @@ function _debounce(fn, ms) {
 
 // ── System Overview ──────────────────────────────────────────
 
-function renderSystem() {
+// ── System Configuration tabs (split from the old System Overview) ───
+// Hardware, Applications, and Environment — plus Pixellot Software under
+// PIXELLOT CONFIGURATION — all read the shared `/api/system` payload (cached
+// under the "system" key), so one fetch feeds every tab. The page id no longer
+// matches the cache key, so each renderer kicks off the fetch and re-renders
+// itself when the data lands.
+
+// Pixellot version + GPU/OS compatibility banner. Lives on the Pixellot
+// Software tab; pulled from /api/system identity.pixellot.compat.
+function _pixCompatBannerHtml(c) {
+  if (!c || c.status === "skip") return "";
+  let cls = "sys-lifecycle-ok";
+  let title = "";
+  let detail = "";
+  if (c.status === "ok") {
+    cls = "sys-lifecycle-ok";
+    title = "Version compatible with hardware";
+    detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : " — no version limit"}.`;
+  } else if (c.status === "over") {
+    cls = "sys-lifecycle-crit";
+    title = "Version exceeds hardware compatibility cap";
+    detail = `Installed ${esc(c.installedVersion)} is newer than ${esc(c.maxVersion)} (max for ${esc(c.architecture)}). Downgrade to stay supported.`;
+  } else if (c.status === "no-gpu") {
+    cls = "sys-lifecycle-crit";
+    title = "No NVIDIA GPU detected";
+    detail = "Pixellot requires NVIDIA hardware for encoding.";
+  } else if (c.status === "anomaly") {
+    cls = "sys-lifecycle-crit";
+    title = "Unexpected GPU architecture";
+    detail = `${esc(c.architecture)} is not a known Pixellot deployment — escalate to support.`;
+  }
+  return `<div class="sys-lifecycle ${cls} mt-3">
+    ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
+    <div>
+      <div class="font-semibold">${esc(title)}</div>
+      <div class="text-xs mt-1">${detail}</div>
+    </div>
+  </div>`;
+}
+
+// Windows edition lifecycle (end-of-support) banner. Lives on the Environment
+// tab; pulled from /api/system identity.operatingSystem.lifecycle.
+function _osLifecycleBannerHtml(lc) {
+  if (!lc) return "";
+  const days = lc.daysToEos;
+  let cls = "sys-lifecycle-ok";
+  let label = "";
+  if (days == null) {
+    label = `End-of-support: ${lc.eosDate}`;
+  } else if (days < 0) {
+    cls = "sys-lifecycle-crit";
+    label = `End-of-support reached on ${lc.eosDate} (${Math.abs(days)} days ago)`;
+  } else if (days < 90) {
+    cls = "sys-lifecycle-crit";
+    label = `End-of-support in ${days} days (${lc.eosDate})`;
+  } else if (days < 365) {
+    cls = "sys-lifecycle-warn";
+    const months = Math.floor(days / 30);
+    label = `End-of-support in ~${months} months (${lc.eosDate})`;
+  } else {
+    const years = Math.floor(days / 365);
+    label = `End-of-support: ${lc.eosDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
+  }
+  return `<div class="sys-lifecycle ${cls} mt-3">
+    ${svgIcon(cls === "sys-lifecycle-ok" ? "info" : "alert", 14)}
+    <div>
+      <div class="font-semibold">${esc(lc.ltscRelease)}</div>
+      <div class="text-xs mt-1">${esc(label)}${lc.endOfServicingDate ? ` &middot; End-of-servicing: ${esc(lc.endOfServicingDate)}` : ""}</div>
+    </div>
+  </div>`;
+}
+
+// ── Hardware ─────────────────────────────────────────────────
+function renderHardware() {
   const data = cached("system");
-  if (!data) { $page().innerHTML = sectionLoading("System Overview"); fetchSection("system"); return; }
-
-  const id = data.identity || {};
-  const hw = data.hardware || {};
-  const sw = data.software || {};
-
+  if (!data) {
+    $page().innerHTML = sectionLoading("Hardware");
+    fetchSection("system").then(() => { if (currentPage === "hardware") renderHardware(); });
+    return;
+  }
   if (data.identity?.error && data.hardware?.error) {
     $page().innerHTML = errorBox(data.identity?.message || data.hardware?.message);
     return;
   }
 
-  const os = id.operatingSystem || {};
+  const id = data.identity || {};
+  const hw = data.hardware || {};
   const cs = id.computerSystem || {};
   const bios = id.bios || {};
-  const pix = id.pixellot || {};
   const procs = hw.processors || [];
   const memory = hw.memory || [];
   const gpus = hw.gpus || [];
   const drives = hw.diskDrives || [];
-  const swList = sw.software || [];
 
   $page().innerHTML = `
-    ${pageHeader("System Overview", "Hardware identity, OS, Pixellot software, and installed software",
-      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderSystem()">
+    ${pageHeader("Hardware", "CPU, memory, graphics, storage, and motherboard identity.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderHardware()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
     )}
 
-    <!-- Identity + Pixellot Software -->
-    <div class="dash-2col">
-      <div class="card">
-        ${sectionTitle("cpu", "VPU Identity")}
-        <div class="kv-grid">
-          ${kvRow("Hostname", cs.name)}
-          ${kvRow("Manufacturer", cs.manufacturer)}
-          ${kvRow("Model", cs.model)}
-          ${kvRow("Serial Number", bios.serialNumber)}
-          ${kvRow("Uptime", id.uptime?.formatted)}
-        </div>
-      </div>
-      <div class="card">
-        ${sectionTitle("server", "Pixellot Software")}
-        <div class="kv-grid">
-          ${kvRow("App Version", pix.version)}
-          ${kvRow("Image Version", pix.imageVersion)}
-        </div>
-        ${id.isNonVpuHost ? '<div class="info-chip mt-3">Not a VPU host</div>' : ""}
-        ${(() => {
-          const c = pix.compat;
-          if (!c || c.status === "skip") return "";
-          let cls = "sys-lifecycle-ok";
-          let title = "";
-          let detail = "";
-          if (c.status === "ok") {
-            cls = "sys-lifecycle-ok";
-            title = "Version compatible with hardware";
-            detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : " — no version limit"}.`;
-          } else if (c.status === "over") {
-            cls = "sys-lifecycle-crit";
-            title = "Version exceeds hardware compatibility cap";
-            detail = `Installed ${esc(c.installedVersion)} is newer than ${esc(c.maxVersion)} (max for ${esc(c.architecture)}). Downgrade to stay supported.`;
-          } else if (c.status === "no-gpu") {
-            cls = "sys-lifecycle-crit";
-            title = "No NVIDIA GPU detected";
-            detail = "Pixellot requires NVIDIA hardware for encoding.";
-          } else if (c.status === "anomaly") {
-            cls = "sys-lifecycle-crit";
-            title = "Unexpected GPU architecture";
-            detail = `${esc(c.architecture)} is not a known Pixellot deployment — escalate to support.`;
-          }
-          return `<div class="sys-lifecycle ${cls} mt-3">
-            ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
-            <div>
-              <div class="font-semibold">${esc(title)}</div>
-              <div class="text-xs mt-1">${detail}</div>
-            </div>
-          </div>`;
-        })()}
+    <!-- VPU Identity -->
+    <div class="card">
+      ${sectionTitle("cpu", "VPU Identity")}
+      <div class="kv-grid kv-grid-wide">
+        ${kvRow("Hostname", cs.name)}
+        ${kvRow("Manufacturer", cs.manufacturer)}
+        ${kvRow("Model", cs.model)}
+        ${kvRow("Serial Number", bios.serialNumber)}
       </div>
     </div>
 
@@ -1861,65 +1928,30 @@ function renderSystem() {
       </div>
     </div>
 
-    <!-- OS & Locale -->
-    <div class="card mt-4">
-      ${sectionTitle("monitor", "Operating System & Locale")}
-      <div class="kv-grid kv-grid-wide">
-        ${kvRow("OS", os.caption)}
-        ${kvRow("Version", os.version)}
-        ${kvRow("Build", os.buildNumber)}
-        ${kvRow("Architecture", os.osArchitecture)}
-        ${kvRow("Install Date", os.installDate ? String(os.installDate).slice(0, 10) : null)}
-        ${kvRow("Timezone", id.timezone)}
-        ${kvRow("Locale", id.locale)}
-      </div>
-      ${(() => {
-        const lc = os.lifecycle;
-        if (!lc) return "";
-        const days = lc.daysToEos;
-        let cls = "sys-lifecycle-ok";
-        let label = "";
-        if (days == null) {
-          label = `End-of-support: ${lc.eosDate}`;
-        } else if (days < 0) {
-          cls = "sys-lifecycle-crit";
-          label = `End-of-support reached on ${lc.eosDate} (${Math.abs(days)} days ago)`;
-        } else if (days < 90) {
-          cls = "sys-lifecycle-crit";
-          label = `End-of-support in ${days} days (${lc.eosDate})`;
-        } else if (days < 365) {
-          cls = "sys-lifecycle-warn";
-          const months = Math.floor(days / 30);
-          label = `End-of-support in ~${months} months (${lc.eosDate})`;
-        } else {
-          const years = Math.floor(days / 365);
-          label = `End-of-support: ${lc.eosDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
-        }
-        return `<div class="sys-lifecycle ${cls} mt-3">
-          ${svgIcon(cls === "sys-lifecycle-ok" ? "info" : "alert", 14)}
-          <div>
-            <div class="font-semibold">${esc(lc.ltscRelease)}</div>
-            <div class="text-xs mt-1">${esc(label)}${lc.endOfServicingDate ? ` &middot; End-of-servicing: ${esc(lc.endOfServicingDate)}` : ""}</div>
-          </div>
-        </div>`;
-      })()}
-    </div>
+  `;
+}
 
-    <!-- Users & Domains + Peripherals (lazy-filled below) -->
-    <div class="dash-2col">
-      <div class="card">
-        ${sectionTitle("users", "Users & Domains")}
-        <div id="sys-users-body">${loading()}</div>
-      </div>
-      <div class="card">
-        ${sectionTitle("mouse", "Peripherals")}
-        <div id="sys-peripherals-body">${loading()}</div>
-      </div>
-    </div>
+// ── Applications ─────────────────────────────────────────────
+function renderApplications() {
+  const data = cached("system");
+  if (!data) {
+    $page().innerHTML = sectionLoading("Applications");
+    fetchSection("system").then(() => { if (currentPage === "applications") renderApplications(); });
+    return;
+  }
+  const sw = data.software || {};
+  if (sw.error) { $page().innerHTML = errorBox(sw.message); return; }
+  const swList = sw.software || [];
 
-    <!-- Software Inventory -->
-    <div class="card mt-4">
-      ${sectionTitle("server", "Installed Software (" + swList.length + ")")}
+  $page().innerHTML = `
+    ${pageHeader("Applications", "Installed software, with anything that can interfere with streaming flagged.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderApplications()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <div class="card">
+      ${sectionTitle("copy", "Installed Software (" + swList.length + ")")}
       ${(() => {
         // Group concerning entries by severity for the summary banner.
         const flagged = swList.filter(s => s.concern);
@@ -1995,21 +2027,104 @@ function renderSystem() {
       }
     });
   }
+}
+
+// ── Environment ──────────────────────────────────────────────
+function renderEnvironment() {
+  const data = cached("system");
+  if (!data) {
+    $page().innerHTML = sectionLoading("Environment");
+    fetchSection("system").then(() => { if (currentPage === "environment") renderEnvironment(); });
+    return;
+  }
+  const id = data.identity || {};
+  if (id.error) { $page().innerHTML = errorBox(id.message); return; }
+  const os = id.operatingSystem || {};
+
+  $page().innerHTML = `
+    ${pageHeader("Environment", "Windows OS, locale, uptime, user accounts, and connected peripherals.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderEnvironment()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <!-- OS & Locale -->
+    <div class="card">
+      ${sectionTitle("globe", "Operating System & Locale")}
+      <div class="kv-grid kv-grid-wide">
+        ${kvRow("OS", os.caption)}
+        ${kvRow("Version", os.version)}
+        ${kvRow("Build", os.buildNumber)}
+        ${kvRow("Architecture", os.osArchitecture)}
+        ${kvRow("Install Date", os.installDate ? String(os.installDate).slice(0, 10) : null)}
+        ${kvRow("Uptime", id.uptime?.formatted)}
+        ${kvRow("Timezone", id.timezone)}
+        ${kvRow("Locale", id.locale)}
+      </div>
+      ${_osLifecycleBannerHtml(os.lifecycle)}
+    </div>
+
+    <!-- Users & Domains + Peripherals (lazy-filled below) -->
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("users", "Users & Domains")}
+        <div id="sys-users-body">${loading()}</div>
+      </div>
+      <div class="card">
+        ${sectionTitle("mouse", "Peripherals")}
+        <div id="sys-peripherals-body">${loading()}</div>
+      </div>
+    </div>
+  `;
 
   // Users & Domains + Peripherals — separate endpoints (not in the cached
   // system payload), so the tab paints immediately and these fill in.
   // Guard on currentPage so a late response after navigating away can't
   // write into another tab.
   api("/api/users-domains").then(d => {
-    if (currentPage !== "system") return;
+    if (currentPage !== "environment") return;
     const el = document.getElementById("sys-users-body");
     if (el) el.innerHTML = _usersPanelHtml(d);
   }).catch(() => {});
   api("/api/peripherals").then(d => {
-    if (currentPage !== "system") return;
+    if (currentPage !== "environment") return;
     const el = document.getElementById("sys-peripherals-body");
     if (el) el.innerHTML = _peripheralsPanelHtml(d);
   }).catch(() => {});
+}
+
+// ── Pixellot Software ────────────────────────────────────────
+// Pixellot application/image version + hardware-compatibility banner. Split
+// out of System Overview; Phase C adds the install/agent/registry config from
+// the old Pixellot Configuration tab.
+function renderPixellotSoftware() {
+  const data = cached("system");
+  if (!data) {
+    $page().innerHTML = sectionLoading("Pixellot Software");
+    fetchSection("system").then(() => { if (currentPage === "pixellot-software") renderPixellotSoftware(); });
+    return;
+  }
+  const id = data.identity || {};
+  if (id.error) { $page().innerHTML = errorBox(id.message); return; }
+  const pix = id.pixellot || {};
+
+  $page().innerHTML = `
+    ${pageHeader("Pixellot Software", "Pixellot application and image version, with hardware-compatibility status.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderPixellotSoftware()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <div class="card">
+      ${sectionTitle("zap", "Pixellot Software")}
+      <div class="kv-grid kv-grid-wide">
+        ${kvRow("App Version", pix.version)}
+        ${kvRow("Image Version", pix.imageVersion)}
+      </div>
+      ${id.isNonVpuHost ? '<div class="info-chip mt-3">Not a VPU host</div>' : ""}
+      ${_pixCompatBannerHtml(pix.compat)}
+    </div>
+  `;
 }
 
 function _usersPanelHtml(d) {
