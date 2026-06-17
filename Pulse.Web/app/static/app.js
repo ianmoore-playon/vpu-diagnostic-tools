@@ -68,7 +68,7 @@ const NAV_SECTIONS = [
   { label: "PIXELLOT CONFIGURATION", pages: [
     { id: "pixellot-software", label: "Pixellot Software", icon: "zap" },
     { id: "camera-hardware", label: "Camera Hardware", icon: "camera" },
-    { id: "calibrations", label: "Calibrations", icon: "activity" },
+    { id: "calibrations", label: "Camera Calibrations", icon: "activity" },
   ]},
   { label: "SYSTEM CONFIGURATION", pages: [
     { id: "hardware", label: "Hardware", icon: "cpu" },
@@ -989,7 +989,7 @@ function renderCameraHardware() {
 function renderCalibrations() {
   const d = cached("pixellot-config");
   if (!d) {
-    $page().innerHTML = sectionLoading("Calibrations");
+    $page().innerHTML = sectionLoading("Camera Calibrations");
     fetchSection("pixellot-config").then(() => { if (currentPage === "calibrations") renderCalibrations(); });
     return;
   }
@@ -1012,22 +1012,8 @@ function renderCalibrations() {
     ? `<div class="kv-grid">${sportRows}</div>`
     : `<div class="info-chip">No sports calibrated — main camera multisport calibration is empty.</div>`;
 
-  // Advisory list for Recommended Actions.
-  const advisories = [];
-  if (!multi.calibrated) advisories.push("Main camera has no multisport calibration — calibrate at least the primary sport.");
-  sports.forEach((s) => {
-    const days = _pcDaysSince(s.lastCalibrated);
-    if (days != null && days > _PC_STALE_DAYS) advisories.push(`Multisport calibration for ${s.name} is ${days} days old — re-calibrate if the venue or rig moved.`);
-  });
-  if (!ocr.calibrated) {
-    const miss = [];
-    if (!ocr.hasEnhancedPip) miss.push("enhanced_pip.txt");
-    if (!ocr.hasInnerObjects) miss.push("innerobjects.txt");
-    advisories.push(`OCR / scoreboard not calibrated${miss.length ? ` (missing ${miss.join(" + ")})` : ""}.`);
-  }
-
   $page().innerHTML = `
-    ${pageHeader("Calibrations", "Main-camera multisport stitch and OCR / scoreboard calibration status.",
+    ${pageHeader("Camera Calibrations", "Main-camera multisport stitch and OCR / scoreboard calibration status.",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache['pixellot-config']=null;renderCalibrations()">${svgIcon("refresh", 14)} Refresh</button>`)}
 
     <div class="card">
@@ -1046,11 +1032,6 @@ function renderCalibrations() {
           </div>
         </div>
       </div>
-    </div>
-
-    <div class="card">
-      ${sectionTitle("alert", "Recommended Actions")}
-      ${advisories.length ? `<div class="text-sm">${advisories.map((a) => `<div class="flex items-center gap-2 mt-2">${svgIcon("alert", 13)}<span>${esc(a)}</span></div>`).join("")}</div>` : `<div class="info-chip">${svgIcon("check", 13)} No calibration issues detected.</div>`}
     </div>
   `;
 }

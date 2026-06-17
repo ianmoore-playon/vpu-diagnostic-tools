@@ -51,8 +51,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - **Split the Pixellot Configuration tab into three.** Pixellot Software
   (version, install/agent, registry, and the Restart Agent button), Camera
   Hardware (per-camera role / IP / MAC / firmware / TV mode / serial), and
-  Calibrations (multisport + OCR status and advice) are now separate tabs. Old
-  "Pixellot Configuration" links open Pixellot Software.
+  Camera Calibrations (multisport + OCR scoreboard status) are now separate
+  tabs. Old "Pixellot Configuration" links open Pixellot Software.
 - **New Data Logs tabs.** Pixellot Logs (the Pixellot log-directory scan, moved
   off Windows Events into its own tab) and Pulse Logs (Pulse's own script-call
   and server logs) now live under Data Logs. The old slide-up log drawer at the
