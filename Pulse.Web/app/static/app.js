@@ -77,7 +77,7 @@ const NAV_SECTIONS = [
     { id: "camera-hardware", label: "Camera Hardware", icon: "camera" },
     { id: "calibrations", label: "Camera Calibrations", icon: "scale" },
   ]},
-  { label: "SYSTEM CONFIGURATION", pages: [
+  { label: "SYSTEM INFORMATION", pages: [
     { id: "hardware", label: "Hardware", icon: "cpu" },
     { id: "applications", label: "Applications", icon: "copy" },
     { id: "disk-health", label: "Disks", icon: "hdd" },
@@ -88,7 +88,7 @@ const NAV_SECTIONS = [
     { id: "events", label: "Windows Events", icon: "file-warning" },
     { id: "pulse-logs", label: "Pulse Logs", icon: "heartbeat" },
   ]},
-  { label: "PULSE CONFIGURATION", pages: [
+  { label: "PULSE", pages: [
     { id: "settings", label: "Settings", icon: "settings" },
     { id: "share", label: "Share over LAN", icon: "share-2" },
     { id: "reports", label: "Exports", icon: "file-down" },
@@ -1668,7 +1668,7 @@ function _debounce(fn, ms) {
 
 // ── System Overview ──────────────────────────────────────────
 
-// ── System Configuration tabs (split from the old System Overview) ───
+// ── System Information tabs (split from the old System Overview) ───
 // Hardware, Applications, and Environment — plus Pixellot Software under
 // PIXELLOT CONFIGURATION — all read the shared `/api/system` payload (cached
 // under the "system" key), so one fetch feeds every tab. The page id no longer
