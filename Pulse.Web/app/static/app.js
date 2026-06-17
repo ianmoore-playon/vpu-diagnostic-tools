@@ -101,7 +101,6 @@ let ws = null;
 let wsRetryTimer = null;
 let dataCache = {};
 let logEntries = [];
-let logPaneOpen = false;
 let fetchingKeys = new Set();
 let fetchPromises = {};
 
@@ -618,16 +617,16 @@ function sectionLoading(label) {
   </div>`;
 }
 
-// ── Logging Pane ────────────────────────────────────────────
-
-let activeLogTab = "script";
+// ── Log helpers ─────────────────────────────────────────────
+// The bottom log drawer was retired in favor of the full-page Pulse Logs tab
+// (see renderPulseLogs). These helpers + the live `logEntries` buffer it
+// accumulates are still shared with that tab.
 
 function _logEmptyState(message) {
   return `<div class="log-empty">${esc(message)}</div>`;
 }
 
-// One script-call log row. Shared by the bottom drawer (renderLogPane) and the
-// full-page Pulse Logs tab (_renderPulseLogsScript).
+// One script-call log row. Rendered by the Pulse Logs tab (_renderPulseLogsScript).
 function _scriptLogEntryHtml(e) {
   const statusCls = e.status === "ok" ? "log-ok"
     : e.status === "timeout" || e.status === "warn" ? "log-warn"
@@ -642,106 +641,12 @@ function _scriptLogEntryHtml(e) {
   </div>`;
 }
 
-function renderLogPane() {
-  const pane = document.getElementById("log-pane");
-  if (!pane) return;
-  const body = pane.querySelector('[data-log-body="script"]');
-  if (!body) return;
-  const entries = logEntries.slice(-200);
-  if (!entries.length) {
-    body.innerHTML = _logEmptyState("Waiting for diagnostic activity… script calls will appear here.");
-    return;
-  }
-  body.innerHTML = entries.map(_scriptLogEntryHtml).join("");
-  body.scrollTop = body.scrollHeight;
-}
-
-function renderServerLog(lines) {
-  const pane = document.getElementById("log-pane");
-  if (!pane) return;
-  const body = pane.querySelector('[data-log-body="server"]');
-  if (!body) return;
-  if (!lines || !lines.length) {
-    body.innerHTML = _logEmptyState("Server log empty. The server logs to pulse-server.log on startup and during requests.");
-    return;
-  }
-  body.innerHTML = lines.map((l) =>
-    `<div class="log-entry server-log-line">${esc(l)}</div>`
-  ).join("");
-  body.scrollTop = body.scrollHeight;
-}
-
-async function fetchServerLog() {
-  const data = await api("/api/server-log?tail=500");
-  if (data && !data.error) renderServerLog(data.lines || []);
-}
-
-// Periodically refresh the server log while the user is watching it,
-// so they see new entries appear without needing to switch tabs or
-// re-open the pane. Auto-refresh stops when pane closes or tab changes.
-let _serverLogTimer = null;
-function _startServerLogPolling() {
-  if (_serverLogTimer) return;
-  _serverLogTimer = setInterval(() => {
-    if (logPaneOpen && activeLogTab === "server") fetchServerLog();
-    else _stopServerLogPolling();
-  }, 2000);
-}
-function _stopServerLogPolling() {
-  if (_serverLogTimer) { clearInterval(_serverLogTimer); _serverLogTimer = null; }
-}
-
-function switchLogTab(tab) {
-  activeLogTab = tab;
-  // If the pane is collapsed, open it. toggleLogPane() handles the
-  // render/fetch for the now-active tab.
-  if (!logPaneOpen) { toggleLogPane(); return; }
-  const pane = document.getElementById("log-pane");
-  if (!pane) return;
-  pane.querySelectorAll(".log-tab").forEach((t) =>
-    t.classList.toggle("log-tab-active", t.dataset.logTab === tab)
-  );
-  pane.querySelectorAll("[data-log-body]").forEach((b) =>
-    b.classList.toggle("log-body-hidden", b.dataset.logBody !== tab)
-  );
-  if (tab === "server") { fetchServerLog(); _startServerLogPolling(); }
-  else { _stopServerLogPolling(); renderLogPane(); }
-}
-
 function appendLogs(newLogs) {
   if (!newLogs?.length) return;
   logEntries.push(...newLogs);
   if (logEntries.length > 500) logEntries = logEntries.slice(-500);
-  if (logPaneOpen && activeLogTab === "script") renderLogPane();
   // Keep the full-page Pulse Logs tab live as new script calls stream in.
   if (currentPage === "pulse-logs") _renderPulseLogsScript();
-}
-
-function toggleLogPane() {
-  logPaneOpen = !logPaneOpen;
-  const pane = document.getElementById("log-pane");
-  if (!pane) return;
-  pane.classList.toggle("log-pane-open", logPaneOpen);
-  // Reflect the active tab visually whenever we open — useful when a
-  // tab click is what triggered the toggle.
-  pane.querySelectorAll(".log-tab").forEach((t) =>
-    t.classList.toggle("log-tab-active", t.dataset.logTab === activeLogTab)
-  );
-  pane.querySelectorAll("[data-log-body]").forEach((b) =>
-    b.classList.toggle("log-body-hidden", b.dataset.logBody !== activeLogTab)
-  );
-  if (logPaneOpen) {
-    if (activeLogTab === "script") renderLogPane();
-    else { fetchServerLog(); _startServerLogPolling(); }
-  } else {
-    _stopServerLogPolling();
-  }
-}
-
-function openServerLog() {
-  activeLogTab = "server";
-  if (!logPaneOpen) toggleLogPane();
-  else switchLogTab("server");
 }
 
 function _updateThemeToggle() {
@@ -7505,8 +7410,8 @@ function renderSettings() {
         ${_settingsPathRow("Settings file", data._paths?.settingsFile)}
       </div>
       <div class="settings-actions">
-        <button class="btn-outline btn-ol-blue" onclick="openServerLog()">
-          ${svgIcon("file", 14)} View Server Log
+        <button class="btn-outline btn-ol-blue" onclick="navigate('pulse-logs')">
+          ${svgIcon("file", 14)} View Pulse Logs
         </button>
       </div>
     </div>

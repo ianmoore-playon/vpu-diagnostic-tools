@@ -57,19 +57,6 @@
         <main id="content" class="flex-1 overflow-y-auto p-6">
             <div class="max-w-6xl mx-auto" id="page"></div>
         </main>
-        <div id="log-pane" class="log-pane">
-            <div class="log-pane-header">
-                <div class="log-tabs">
-                    <button class="log-tab log-tab-active" data-log-tab="script" onclick="switchLogTab('script')">Script Log</button>
-                    <button class="log-tab" data-log-tab="server" onclick="switchLogTab('server')">Server Log</button>
-                </div>
-                <button class="log-toggle-icon" onclick="toggleLogPane()" title="Toggle log pane" aria-label="Toggle log pane">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
-                </button>
-            </div>
-            <div class="log-body" data-log-body="script"></div>
-            <div class="log-body log-body-hidden" data-log-body="server"></div>
-        </div>
     </div>
     <script src="/static/app.js"></script>
 </body>

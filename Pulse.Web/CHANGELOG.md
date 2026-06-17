@@ -55,7 +55,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   "Pixellot Configuration" links open Pixellot Software.
 - **New Data Logs tabs.** Pixellot Logs (the Pixellot log-directory scan, moved
   off Windows Events into its own tab) and Pulse Logs (Pulse's own script-call
-  and server logs) now live under Data Logs.
+  and server logs) now live under Data Logs. The old slide-up log drawer at the
+  bottom of the window is gone — its script + server logs are now the full-page
+  Pulse Logs tab.
 - **New Help tab.** A plain-English page covering what Pulse is, how to read the
   Dashboard, and the first things to try in the field, under Pulse Configuration.
 - **The Wi-Fi warning now explains Wi-Fi's real job.** When the VPU is running
