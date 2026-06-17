@@ -53,6 +53,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   Hardware (per-camera role / IP / MAC / firmware / TV mode / serial), and
   Calibrations (multisport + OCR status and advice) are now separate tabs. Old
   "Pixellot Configuration" links open Pixellot Software.
+- **New Data Logs tabs.** Pixellot Logs (the Pixellot log-directory scan, moved
+  off Windows Events into its own tab) and Pulse Logs (Pulse's own script-call
+  and server logs) now live under Data Logs.
+- **New Help tab.** A plain-English page covering what Pulse is, how to read the
+  Dashboard, and the first things to try in the field, under Pulse Configuration.
 - **The Wi-Fi warning now explains Wi-Fi's real job.** When the VPU is running
   its internet over Wi-Fi, the message now notes the Wi-Fi card is meant for the
   Pixellot Connect app — move the internet to the motherboard Ethernet port.

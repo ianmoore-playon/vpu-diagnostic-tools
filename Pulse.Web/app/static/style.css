@@ -918,6 +918,25 @@ html.dark .demo-banner {
 .log-err { color: var(--c-accent-red); }
 .log-detail { color: var(--c-dimmer); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Help tab — readable bulleted guidance. */
+.help-list { margin: 0; padding-left: 1.1rem; font-size: 0.875rem; line-height: 1.7; }
+.help-list li { margin-bottom: 0.5rem; color: var(--c-text); }
+.help-list li:last-child { margin-bottom: 0; }
+.help-list em { color: var(--c-muted); font-style: italic; }
+
+/* Pulse Logs tab — full-page scrollable log containers (reuse .log-entry). */
+.pulse-log-scroll {
+    max-height: 440px;
+    overflow-y: auto;
+    background: var(--c-deep-bg);
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    padding: 6px 0;
+    font-family: "SF Mono", "Cascadia Mono", "Fira Code", monospace;
+    font-size: 0.7rem;
+    line-height: 1.6;
+}
+
 /* ── Dashboard v2 — WPF-matching layout ──────────────────── */
 
 /* Severity dot in pill */

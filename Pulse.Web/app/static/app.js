@@ -41,6 +41,7 @@ function svgIcon(name, size) {
     inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
     "external-link": '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
     copy: '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+    help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
@@ -76,13 +77,15 @@ const NAV_SECTIONS = [
     { id: "environment", label: "Environment", icon: "globe" },
   ]},
   { label: "DATA LOGS", pages: [
-    // Phase D adds Pixellot Logs and Pulse Logs.
+    { id: "pixellot-logs", label: "Pixellot Logs", icon: "file" },
     { id: "events", label: "Windows Events", icon: "triangle" },
+    { id: "pulse-logs", label: "Pulse Logs", icon: "heartbeat" },
   ]},
   { label: "PULSE CONFIGURATION", pages: [
     { id: "settings", label: "Settings", icon: "cog" },
     { id: "share", label: "Share over LAN", icon: "send" },
     { id: "reports", label: "Exports", icon: "file" },
+    { id: "help", label: "Help", icon: "help" },
     { id: "about", label: "About", icon: "info" },
   ]},
 ];
@@ -623,6 +626,22 @@ function _logEmptyState(message) {
   return `<div class="log-empty">${esc(message)}</div>`;
 }
 
+// One script-call log row. Shared by the bottom drawer (renderLogPane) and the
+// full-page Pulse Logs tab (_renderPulseLogsScript).
+function _scriptLogEntryHtml(e) {
+  const statusCls = e.status === "ok" ? "log-ok"
+    : e.status === "timeout" || e.status === "warn" ? "log-warn"
+    : "log-err";
+  return `<div class="log-entry">
+    <span class="log-ts">${esc(e.ts?.split("T")[1] || "")}</span>
+    <span class="log-script">${esc(e.script)}</span>
+    <span class="log-dur">${e.durationMs != null ? e.durationMs + "ms" : ""}</span>
+    <span class="log-size">${e.bytes > 0 ? formatBytes(e.bytes) : ""}</span>
+    <span class="log-status ${statusCls}">${esc(e.status)}</span>
+    <span class="log-detail">${esc(e.detail)}</span>
+  </div>`;
+}
+
 function renderLogPane() {
   const pane = document.getElementById("log-pane");
   if (!pane) return;
@@ -633,19 +652,7 @@ function renderLogPane() {
     body.innerHTML = _logEmptyState("Waiting for diagnostic activity… script calls will appear here.");
     return;
   }
-  body.innerHTML = entries.map((e) => {
-    const statusCls = e.status === "ok" ? "log-ok"
-      : e.status === "timeout" || e.status === "warn" ? "log-warn"
-      : "log-err";
-    return `<div class="log-entry">
-      <span class="log-ts">${esc(e.ts?.split("T")[1] || "")}</span>
-      <span class="log-script">${esc(e.script)}</span>
-      <span class="log-dur">${e.durationMs != null ? e.durationMs + "ms" : ""}</span>
-      <span class="log-size">${e.bytes > 0 ? formatBytes(e.bytes) : ""}</span>
-      <span class="log-status ${statusCls}">${esc(e.status)}</span>
-      <span class="log-detail">${esc(e.detail)}</span>
-    </div>`;
-  }).join("");
+  body.innerHTML = entries.map(_scriptLogEntryHtml).join("");
   body.scrollTop = body.scrollHeight;
 }
 
@@ -706,6 +713,8 @@ function appendLogs(newLogs) {
   logEntries.push(...newLogs);
   if (logEntries.length > 500) logEntries = logEntries.slice(-500);
   if (logPaneOpen && activeLogTab === "script") renderLogPane();
+  // Keep the full-page Pulse Logs tab live as new script calls stream in.
+  if (currentPage === "pulse-logs") _renderPulseLogsScript();
 }
 
 function toggleLogPane() {
@@ -885,6 +894,9 @@ const pageRenderers = {
   services: renderServices,
   "disk-health": renderDiskHealth,
   events: renderEvents,
+  "pixellot-logs": renderPixellotLogs,
+  "pulse-logs": renderPulseLogs,
+  help: renderHelp,
   reports: renderReports,
   share: renderShare,
   // Audio diagnostics re-enabled for demo. renderAudioComingSoon() is left
@@ -4911,9 +4923,6 @@ function renderEvents() {
     </div>
 
     <div class="card mt-4" id="ev-body">${loading()}</div>
-
-    <!-- Pixellot Logs scan (PDF #5) — separate from Windows event log -->
-    <div class="card mt-4" id="ev-pixellot-body">${loading()}</div>
   `;
 
   const loadEvents = async () => {
@@ -4968,87 +4977,233 @@ function renderEvents() {
     `;
   };
 
-  // Pixellot logs scanner (PDF #5) — scans C:\Pixellot\Data\Log for
-  // error / fatal / restart markers. Surfaces CUDNN/TensorFlow patterns
-  // with a "reinstall dependencies" hint per PDF #2.
-  const loadPixellotLogs = async () => {
-    const hours = document.getElementById("ev-hours").value;
-    const body = document.getElementById("ev-pixellot-body");
-    if (!body) return;
-    body.innerHTML = loading();
-    const data = await api(`/api/pixellot-logs?hours=${encodeURIComponent(hours)}`);
-    if (currentPage !== "events") return;
-
-    if (data.error) {
-      body.innerHTML = `${sectionTitle("file", "Pixellot Logs")}
-        <p class="text-sm text-pulse-muted">${esc(data.message || "Failed to scan Pixellot logs")}</p>`;
-      return;
-    }
-
-    const entries = data.entries || [];
-    const stats = data.stats || {};
-    const depsErr = !!data.depsErrorDetected;
-
-    const levelChip = (lvl) => {
-      const l = (lvl || "").toLowerCase();
-      // Distinct visual class per severity — Fatal solid-fill (showstopper),
-      // Error red-outline (single failure), Restart blue-outline (lifecycle
-      // event, not a problem). Was Fatal+Error and Warning+Restart shared.
-      if (l === "fatal")   return '<span class="ev-level-chip ev-level-fatal">Fatal</span>';
-      if (l === "error")   return '<span class="ev-level-chip ev-level-error">Error</span>';
-      if (l === "restart") return '<span class="ev-level-chip ev-level-restart">Restart</span>';
-      return `<span class="ev-level-chip ev-level-info">${esc(l)}</span>`;
-    };
-
-    body.innerHTML = `
-      ${sectionTitle("file", "Pixellot Logs")}
-      <p class="text-xs text-pulse-muted mb-3">
-        Scanned ${esc(String(data.scannedFiles || 0))} log file(s) in <span class="font-mono">C:\\Pixellot\\Data\\Log</span> over the last ${esc(String(data.hoursBack || ""))} hour(s).
-      </p>
-
-      <div class="px-log-summary">
-        <span class="px-log-stat ${stats.fatal > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.fatal || 0))} fatal</span>
-        <span class="px-log-stat ${stats.error > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.error || 0))} error</span>
-        <span class="px-log-stat ${stats.restart > 0 ? 'px-log-stat-warn' : ''}">${esc(String(stats.restart || 0))} restart</span>
-      </div>
-
-      ${depsErr ? `<div class="px-log-deps-warn mt-3">
-        ${svgIcon("alert", 14)}
-        <div>
-          <div class="font-semibold">Pixellot video dependency error detected (CUDNN/TensorFlow)</div>
-          <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. The documented fix is to reinstall the Pixellot dependencies — see the Services tab.</div>
-        </div>
-      </div>` : ""}
-
-      ${data.warning ? `<p class="text-xs text-pulse-muted mt-2">${esc(data.warning)}</p>` : ""}
-
-      ${entries.length ? `
-        <div class="ev-table-wrap mt-3">
-          <table class="data-table ev-table"><thead><tr>
-            <th>Time</th><th>Level</th><th>File</th><th>Line</th><th>Content</th>
-          </tr></thead><tbody>
-          ${entries.map(e => `<tr class="${e.depsError ? 'px-log-row-deps' : ''}">
-            <td class="text-xs whitespace-nowrap font-mono">${esc(e.timestamp || formatTime(e.fileMTime))}</td>
-            <td>${levelChip(e.level)}</td>
-            <td class="text-xs font-mono">${esc(e.file)}</td>
-            <td class="text-xs font-mono">${esc(String(e.lineNumber || ""))}</td>
-            <td class="text-xs ev-msg-cell" title="${esc(e.content)}">${esc(e.content)}${e.depsError ? ' <span class="px-log-deps-pill">DEPS</span>' : ''}</td>
-          </tr>`).join("")}
-          </tbody></table>
-        </div>
-        ${data.truncated ? '<p class="text-xs text-pulse-muted mt-2">Results truncated at 500 matches.</p>' : ""}
-      ` : '<p class="text-sm text-pulse-muted mt-3">No matching entries.</p>'}
-    `;
-  };
-
-  document.getElementById("ev-refresh")?.addEventListener("click", () => { loadEvents(); loadPixellotLogs(); });
-  document.getElementById("ev-hours")?.addEventListener("change", () => { loadEvents(); loadPixellotLogs(); });
+  document.getElementById("ev-refresh")?.addEventListener("click", loadEvents);
+  document.getElementById("ev-hours")?.addEventListener("change", loadEvents);
   ["ev-error", "ev-warning", "ev-info"].forEach(id => {
     document.getElementById(id)?.addEventListener("change", loadEvents);
   });
   document.getElementById("ev-source")?.addEventListener("input", _debounce(loadEvents, 300));
   loadEvents();
-  loadPixellotLogs();
+}
+
+// ── Pixellot Logs ────────────────────────────────────────────
+// Scans C:\Pixellot\Data\Log for error / fatal / restart markers (PDF #5),
+// surfacing CUDNN/TensorFlow dependency errors with the reinstall remedy
+// (PDF #2). Was a card on Windows Events; now its own tab under DATA LOGS.
+function renderPixellotLogs() {
+  $page().innerHTML = `
+    ${pageHeader("Pixellot Logs", "Errors, fatals, and process restarts scanned from the Pixellot log directory.",
+      `<button class="btn-outline btn-ol-blue" id="pxl-refresh">${svgIcon("refresh", 14)} Refresh</button>`
+    )}
+
+    <div class="card ev-filter-card">
+      <div class="ev-filter-row">
+        <div class="ev-filter-group">
+          <label class="ev-filter-label">TIME WINDOW</label>
+          <select id="pxl-hours" class="ev-select">
+            <option value="12">Last 12 hours</option>
+            <option value="24" selected>Last 24 hours</option>
+            <option value="48">Last 48 hours</option>
+            <option value="168">Last 7 days</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-4" id="pxl-body">${loading()}</div>
+  `;
+
+  document.getElementById("pxl-refresh")?.addEventListener("click", _loadPixellotLogs);
+  document.getElementById("pxl-hours")?.addEventListener("change", _loadPixellotLogs);
+  _loadPixellotLogs();
+}
+
+async function _loadPixellotLogs() {
+  const hours = document.getElementById("pxl-hours")?.value || "24";
+  const body = document.getElementById("pxl-body");
+  if (!body) return;
+  body.innerHTML = loading();
+  const data = await api(`/api/pixellot-logs?hours=${encodeURIComponent(hours)}`);
+  if (currentPage !== "pixellot-logs") return;
+  const el = document.getElementById("pxl-body");
+  if (!el) return;
+
+  if (data.error) {
+    el.innerHTML = `${sectionTitle("file", "Pixellot Logs")}
+      <p class="text-sm text-pulse-muted">${esc(data.message || "Failed to scan Pixellot logs")}</p>`;
+    return;
+  }
+
+  const entries = data.entries || [];
+  const stats = data.stats || {};
+  const depsErr = !!data.depsErrorDetected;
+
+  const levelChip = (lvl) => {
+    const l = (lvl || "").toLowerCase();
+    // Distinct visual class per severity — Fatal solid-fill (showstopper),
+    // Error red-outline (single failure), Restart blue-outline (lifecycle
+    // event, not a problem).
+    if (l === "fatal")   return '<span class="ev-level-chip ev-level-fatal">Fatal</span>';
+    if (l === "error")   return '<span class="ev-level-chip ev-level-error">Error</span>';
+    if (l === "restart") return '<span class="ev-level-chip ev-level-restart">Restart</span>';
+    return `<span class="ev-level-chip ev-level-info">${esc(l)}</span>`;
+  };
+
+  el.innerHTML = `
+    ${sectionTitle("file", "Pixellot Logs")}
+    <p class="text-xs text-pulse-muted mb-3">
+      Scanned ${esc(String(data.scannedFiles || 0))} log file(s) in <span class="font-mono">C:\\Pixellot\\Data\\Log</span> over the last ${esc(String(data.hoursBack || ""))} hour(s).
+    </p>
+
+    <div class="px-log-summary">
+      <span class="px-log-stat ${stats.fatal > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.fatal || 0))} fatal</span>
+      <span class="px-log-stat ${stats.error > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.error || 0))} error</span>
+      <span class="px-log-stat ${stats.restart > 0 ? 'px-log-stat-warn' : ''}">${esc(String(stats.restart || 0))} restart</span>
+    </div>
+
+    ${depsErr ? `<div class="px-log-deps-warn mt-3">
+      ${svgIcon("alert", 14)}
+      <div>
+        <div class="font-semibold">Pixellot video dependency error detected (CUDNN/TensorFlow)</div>
+        <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. The documented fix is to reinstall the Pixellot dependencies — see the Service Status tab.</div>
+      </div>
+    </div>` : ""}
+
+    ${data.warning ? `<p class="text-xs text-pulse-muted mt-2">${esc(data.warning)}</p>` : ""}
+
+    ${entries.length ? `
+      <div class="ev-table-wrap mt-3">
+        <table class="data-table ev-table"><thead><tr>
+          <th>Time</th><th>Level</th><th>File</th><th>Line</th><th>Content</th>
+        </tr></thead><tbody>
+        ${entries.map(e => `<tr class="${e.depsError ? 'px-log-row-deps' : ''}">
+          <td class="text-xs whitespace-nowrap font-mono">${esc(e.timestamp || formatTime(e.fileMTime))}</td>
+          <td>${levelChip(e.level)}</td>
+          <td class="text-xs font-mono">${esc(e.file)}</td>
+          <td class="text-xs font-mono">${esc(String(e.lineNumber || ""))}</td>
+          <td class="text-xs ev-msg-cell" title="${esc(e.content)}">${esc(e.content)}${e.depsError ? ' <span class="px-log-deps-pill">DEPS</span>' : ''}</td>
+        </tr>`).join("")}
+        </tbody></table>
+      </div>
+      ${data.truncated ? '<p class="text-xs text-pulse-muted mt-2">Results truncated at 500 matches.</p>' : ""}
+    ` : '<p class="text-sm text-pulse-muted mt-3">No matching entries.</p>'}
+  `;
+}
+
+// ── Pulse Logs ───────────────────────────────────────────────
+// Pulse's own logs: the diagnostic script-call log (live, from logEntries) and
+// the backend server log (pulse-server.log). Full-page promotion of the bottom
+// log drawer.
+function renderPulseLogs() {
+  $page().innerHTML = `
+    ${pageHeader("Pulse Logs", "Pulse's own diagnostic script-call log and backend server log.",
+      `<button class="btn-outline btn-ol-blue" id="pulse-log-refresh">${svgIcon("refresh", 14)} Refresh</button>`
+    )}
+
+    <div class="card">
+      ${sectionTitle("activity", "Script Call Log")}
+      <p class="text-xs text-pulse-muted mb-3">Every PowerShell diagnostic script Pulse has run this session — duration, output size, and status. Updates live as checks run.</p>
+      <div class="pulse-log-scroll" id="pulse-log-script">${loading()}</div>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("file", "Server Log")}
+      <p class="text-xs text-pulse-muted mb-3">The Pulse backend's own log (<span class="font-mono">pulse-server.log</span>) — startup, requests, and errors.</p>
+      <div class="pulse-log-scroll" id="pulse-log-server">${loading()}</div>
+    </div>
+  `;
+
+  _renderPulseLogsScript();
+  _loadPulseServerLog();
+  document.getElementById("pulse-log-refresh")?.addEventListener("click", () => {
+    _renderPulseLogsScript();
+    _loadPulseServerLog();
+  });
+}
+
+function _renderPulseLogsScript() {
+  const el = document.getElementById("pulse-log-script");
+  if (!el) return;
+  const entries = logEntries.slice(-200);
+  el.innerHTML = entries.length
+    ? entries.map(_scriptLogEntryHtml).join("")
+    : _logEmptyState("Waiting for diagnostic activity… script calls will appear here.");
+  el.scrollTop = el.scrollHeight;
+}
+
+async function _loadPulseServerLog() {
+  const el = document.getElementById("pulse-log-server");
+  if (!el) return;
+  const data = await api("/api/server-log?tail=500");
+  if (currentPage !== "pulse-logs") return;
+  const el2 = document.getElementById("pulse-log-server");
+  if (!el2) return;
+  const lines = (data && !data.error) ? (data.lines || []) : null;
+  el2.innerHTML = (lines && lines.length)
+    ? lines.map((l) => `<div class="log-entry server-log-line">${esc(l)}</div>`).join("")
+    : _logEmptyState((data && data.error)
+        ? (data.message || "Could not read the server log.")
+        : "Server log empty. The server logs to pulse-server.log on startup and during requests.");
+  el2.scrollTop = el2.scrollHeight;
+}
+
+// ── Help ─────────────────────────────────────────────────────
+// Static how-to + first-line troubleshooting for field techs. No data fetch.
+function renderHelp() {
+  $page().innerHTML = `
+    ${pageHeader("Help", "What Pulse is, how to read it, and the first things to try in the field.")}
+
+    <div class="card">
+      ${sectionTitle("info", "What Pulse is")}
+      <p class="text-sm" style="line-height:1.7">Pulse is a read-only diagnostic tool for Pixellot VPUs. It collects the VPU's
+      health — network, cameras, ScoreConnect, Pixellot software, system hardware, disks, and logs — into one place so you can
+      tell, fast, whether a unit can stream tonight's game and what's standing in the way. Pulse does not change Pixellot
+      settings; the few actions it offers (restart the Pixellot Agent, restart a service) are clearly labeled.</p>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("grid", "Reading the Dashboard")}
+      <ul class="help-list">
+        <li><strong>Stream Readiness</strong> is the headline call — <span class="status-pass">PASS</span>,
+        <span class="status-warn">WARN</span>, or <span class="status-fail">FAIL</span> on whether this VPU can broadcast.
+        FAIL means don't expect a clean broadcast without pre-game attention.</li>
+        <li><strong>Findings</strong> list the specific issues behind the verdict, worst first. Click any finding to jump
+        straight to the tab that owns the fix.</li>
+        <li><strong>Sidebar warning triangles</strong> (⚠) mark which areas have an open issue, so you know where to look
+        without opening every tab.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("wifi", "First things to try")}
+      <ul class="help-list">
+        <li><strong>No internet / can't reach services</strong> — On a VPU the venue/internet cable goes to the
+        <em>motherboard</em> network port, not the 4-port camera card. Check <strong>Network Test</strong>; Pulse flags it
+        if the cable is on the wrong port.</li>
+        <li><strong>A camera is missing or slow</strong> — Check <strong>Camera Connectivity</strong> for the port's link
+        and speed (camera ports should be 1 Gbps), then <strong>Camera Hardware</strong> for firmware and reachability.</li>
+        <li><strong>Scores aren't showing</strong> — Check <strong>SportzCast ScoreConnect</strong> for the service and the
+        scoreboard feed, and confirm the OCR camera is calibrated under <strong>Calibrations</strong>.</li>
+        <li><strong>Pixellot Agent looks stuck</strong> — <strong>Service Status</strong> shows the Agent / Coordinator /
+        Watchdog. The documented first fix is <strong>Restart Agent + Coordinator</strong> on the
+        <strong>Pixellot Software</strong> tab.</li>
+        <li><strong>Recording errors / disk filling up</strong> — Check <strong>Disks</strong> for free space and drive
+        health, and scan <strong>Pixellot Logs</strong> for fatal/restart markers (it flags the known CUDNN/TensorFlow
+        dependency error).</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("inbox", "Capturing evidence for support")}
+      <ul class="help-list">
+        <li>Use <strong>Run All Diagnostics</strong> (top of the Dashboard) to refresh every check, then
+        <strong>Support Bundle</strong> / <strong>Exports</strong> to generate a downloadable report to attach to a ticket.</li>
+        <li><strong>Share over LAN</strong> sends a report to another Pulse on the same network when you can't get the file off
+        the VPU directly.</li>
+        <li><strong>Pulse Logs</strong> shows Pulse's own script and server logs if Pulse itself is misbehaving.</li>
+      </ul>
+    </div>
+  `;
 }
 
 // ── Reports ──────────────────────────────────────────────────
