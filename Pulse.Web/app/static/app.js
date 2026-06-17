@@ -66,9 +66,8 @@ const NAV_SECTIONS = [
   ]},
   { label: "PIXELLOT CONFIGURATION", pages: [
     { id: "pixellot-software", label: "Pixellot Software", icon: "zap" },
-    // Phase C splits this into camera-hardware / calibrations and folds its
-    // install/agent/registry config into Pixellot Software.
-    { id: "pixellot-config", label: "Pixellot Configuration", icon: "database" },
+    { id: "camera-hardware", label: "Camera Hardware", icon: "camera" },
+    { id: "calibrations", label: "Calibrations", icon: "activity" },
   ]},
   { label: "SYSTEM CONFIGURATION", pages: [
     { id: "hardware", label: "Hardware", icon: "cpu" },
@@ -92,7 +91,7 @@ const PAGES = NAV_SECTIONS.flatMap((s) => s.pages);
 const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Fault Isolator" }];
 // Tabs retired in the nav restructure redirect to their nearest replacement so
 // old bookmarks / deep-links don't land on an "Unknown page".
-const RETIRED_PAGE_ALIASES = { system: "hardware" };
+const RETIRED_PAGE_ALIASES = { system: "hardware", "pixellot-config": "pixellot-software" };
 
 let currentPage = "";
 let ws = null;
@@ -418,6 +417,10 @@ function _sectionLabels() {
   const map = {};
   NAV_SECTIONS.forEach((s) => s.pages.forEach((p) => { map[p.id] = p.label; }));
   HIDDEN_PAGES.forEach((p) => { map[p.id] = p.label; });
+  // Retired ids still fetched during preload (their /api/* feeds the split
+  // tabs) — give them friendly splash labels instead of raw keys.
+  map.system = map.system || "System";
+  map["pixellot-config"] = map["pixellot-config"] || "Pixellot Configuration";
   _SECTION_LABELS_CACHE = map;
   return map;
 }
@@ -873,11 +876,10 @@ const pageRenderers = {
   dashboard: renderDashboard,
   // System Overview was split into Hardware / Applications / Environment
   // (nav restructure v3); the `system` id is retired but its /api/system
-  // payload still feeds all three. Pixellot Software also reads it.
+  // payload still feeds all three (and Pixellot Software, below).
   hardware: renderHardware,
   applications: renderApplications,
   environment: renderEnvironment,
-  "pixellot-software": renderPixellotSoftware,
   network: renderNetwork,
   cameras: renderCameras,
   services: renderServices,
@@ -889,7 +891,12 @@ const pageRenderers = {
   // intact below as the gate — swap back to it to hide the tab again.
   audio: renderAudio,
   scoreconnect: renderScoreConnect,
-  "pixellot-config": renderPixellotConfig,
+  // Pixellot Configuration was split into Pixellot Software / Camera Hardware /
+  // Calibrations (nav restructure v3); the `pixellot-config` id is retired but
+  // its /api/pixellot-config payload still feeds all three.
+  "pixellot-software": renderPixellotSoftware,
+  "camera-hardware": renderCameraHardware,
+  calibrations: renderCalibrations,
   "fault-isolator": renderFaultIsolator,
   settings: renderSettings,
   about: renderAbout,
@@ -923,56 +930,113 @@ function _pcDaysSince(iso) {
   return Math.floor((Date.now() - dt.getTime()) / 86400000);
 }
 
-function renderPixellotConfig() {
-  const d = cached("pixellot-config");
-  if (!d) { $page().innerHTML = sectionLoading("Pixellot Configuration"); fetchSection("pixellot-config"); return; }
-  if (d.error) { $page().innerHTML = errorBox(d.message); return; }
+// keepagentup.exe — confirm + run + inline result (mirrors the Services lane).
+// Shared by the Pixellot Software tab; attached to #pc-keepagent-btn.
+async function _pcRestartAgentHandler() {
+  const ok = confirm(
+    "Restart Pixellot Agent + Coordinator?\n\n" +
+    "This runs c:\\pixellot\\bin\\keepagentup.exe, which will briefly stop and " +
+    "relaunch both services. Recording may pause for a few seconds.\n\nProceed?"
+  );
+  if (!ok) return;
+  const btn = document.getElementById("pc-keepagent-btn");
+  const resultEl = document.getElementById("pc-keepagent-result");
+  btn.disabled = true;
+  btn.innerHTML = `${svgIcon("refresh", 14)} Restarting...`;
+  resultEl.classList.add("hidden");
 
-  const reg = d.registryConfig || {};
-  const compat = d.compat || {};
-  const cams = d.cameras || [];
-  const cal = d.calibration || {};
-  const multi = cal.multisport || {};
-  const ocr = cal.ocr || {};
-  const version = compat.installedVersion || reg.version || reg.Version || null;
-  const installPath = reg.InstallPath || reg.installPath || reg.Path || "C:\\Pixellot";
+  const r = await apiPost("/api/services/restart-agent", {});
+  btn.disabled = false;
+  btn.innerHTML = `${svgIcon("zap", 14)} Restart Agent + Coordinator`;
 
-  // Version-compatibility banner — same look as System Overview.
-  const compatBanner = (() => {
-    const c = compat;
-    if (!c || c.status === "skip") return "";
-    let cls = "sys-lifecycle-ok", title = "", detail = "";
-    if (c.status === "ok") {
-      cls = "sys-lifecycle-ok"; title = "Version compatible with hardware";
-      detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : " — no version limit"}.`;
-    } else if (c.status === "over") {
-      cls = "sys-lifecycle-crit"; title = "Version exceeds hardware compatibility cap";
-      detail = `Installed ${esc(c.installedVersion)} is newer than ${esc(c.maxVersion)} (max for ${esc(c.architecture)}). Downgrade to stay supported.`;
-    } else if (c.status === "no-gpu") {
-      cls = "sys-lifecycle-crit"; title = "No NVIDIA GPU detected";
-      detail = "Pixellot requires NVIDIA hardware for encoding.";
-    } else if (c.status === "anomaly") {
-      cls = "sys-lifecycle-crit"; title = "Unexpected GPU architecture";
-      detail = `${esc(c.architecture)} is not a known Pixellot deployment — escalate to support.`;
-    }
-    return `<div class="sys-lifecycle ${cls} mt-3">
-      ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
-      <div><div class="font-semibold">${esc(title)}</div><div class="text-xs mt-1">${detail}</div></div>
-    </div>`;
-  })();
+  const ok2 = r && r.success;
+  resultEl.className = "svc-quick-action-result " + (ok2 ? "svc-result-ok" : "svc-result-err");
+  resultEl.innerHTML = `
+    <div class="font-semibold">${ok2 ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
+    <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
+    ${r?.agentStatus ? `<div class="text-xs mt-2 text-pulse-muted">Agent: <span class="font-mono">${esc(r.agentStatus)}</span> &middot; Coordinator: <span class="font-mono">${esc(r.coordinatorStatus || "?")}</span></div>` : ""}
+    ${r?.stdout ? `<pre class="svc-result-output">${esc(r.stdout)}</pre>` : ""}
+    ${r?.stderr ? `<pre class="svc-result-output svc-result-stderr">${esc(r.stderr)}</pre>` : ""}
+  `;
+}
 
-  // Calibration is per-FUNCTION, not per-camera: Main cameras share the
-  // multisport-stitch status; the OCR camera uses the pipdesign status.
-  function camCalCell(role) {
-    const r = (role || "").toLowerCase();
-    if (r.includes("ocr")) {
-      return ocr.calibrated ? badge("Calibrated", "pass") : badge("Not calibrated", "warn");
-    }
-    if (r.includes("main")) {
-      return multi.calibrated ? badge("Calibrated", "pass") : badge("Not calibrated", "warn");
-    }
-    return `<span class="text-pulse-muted">—</span>`;
+// ── Pixellot Software (full) ─────────────────────────────────
+// Version + GPU/OS compatibility (from /api/system) plus install/agent and the
+// raw registry dump (from /api/pixellot-config). Reads both caches; the page id
+// no longer matches either key, so it kicks off both fetches and re-renders.
+function renderPixellotSoftware() {
+  const sys = cached("system");
+  const pc = cached("pixellot-config");
+  if (!sys || !pc) {
+    $page().innerHTML = sectionLoading("Pixellot Software");
+    Promise.all([fetchSection("system"), fetchSection("pixellot-config")])
+      .then(() => { if (currentPage === "pixellot-software") renderPixellotSoftware(); });
+    return;
   }
+  const id = sys.identity || {};
+  const pix = id.pixellot || {};
+  const reg = (!pc.error && pc.registryConfig) || {};
+  const installPath = reg.InstallPath || reg.installPath || reg.Path || "C:\\Pixellot";
+  const regKeys = Object.keys(reg);
+  const regRows = regKeys.length
+    ? regKeys.map((k) => kvRow(k, reg[k])).join("")
+    : `<div class="info-chip">No HKLM\\SOFTWARE\\Pixellot values found.</div>`;
+
+  $page().innerHTML = `
+    ${pageHeader("Pixellot Software", "Pixellot version, install/agent config, and hardware compatibility.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;dataCache['pixellot-config']=null;renderPixellotSoftware()">${svgIcon("refresh", 14)} Refresh</button>`)}
+
+    <div class="card">
+      ${sectionTitle("zap", "Version & Compatibility")}
+      <div class="kv-grid kv-grid-wide">
+        ${kvRow("App Version", pix.version)}
+        ${kvRow("Image Version", pix.imageVersion)}
+      </div>
+      ${id.isNonVpuHost ? '<div class="info-chip mt-3">Not a VPU host</div>' : ""}
+      ${_pixCompatBannerHtml(pix.compat)}
+    </div>
+
+    <div class="card svc-quick-action">
+      ${sectionTitle("server", "Install & Agent")}
+      ${pc.error ? errorBox(pc.message) : `
+        <div class="kv-grid">
+          ${kvRow("Install Path", installPath)}
+          ${kvRow("Dependencies", reg.dependencies || reg.Dependencies)}
+          ${kvRowHtml("cameras.cfg", pc.cameraCfgExists ? badge("Present", "pass") : badge("Missing", "fail"))}
+        </div>
+        <div class="svc-quick-action-row mt-3">
+          <div>
+            <div class="svc-quick-action-title">Restart Pixellot Agent + Coordinator</div>
+            <div class="svc-quick-action-body">The documented first fix when the Agent or Coordinator hangs — try it before escalating. <span class="font-mono">Runs keepagentup.exe.</span></div>
+          </div>
+          <button class="btn-outline btn-ol-amber" id="pc-keepagent-btn">${svgIcon("zap", 14)} Restart Agent + Coordinator</button>
+        </div>
+        <div id="pc-keepagent-result" class="svc-quick-action-result hidden"></div>
+      `}
+    </div>
+
+    ${pc.error ? "" : `
+    <div class="card">
+      ${sectionTitle("database", "Registry — HKLM\\SOFTWARE\\Pixellot")}
+      <div class="kv-grid">${regRows}</div>
+    </div>`}
+  `;
+
+  document.getElementById("pc-keepagent-btn")?.addEventListener("click", _pcRestartAgentHandler);
+}
+
+// ── Camera Hardware ──────────────────────────────────────────
+// Per-camera role / IP / MAC / firmware / TV mode / serial from
+// /api/pixellot-config. Calibration status lives on the Calibrations tab.
+function renderCameraHardware() {
+  const d = cached("pixellot-config");
+  if (!d) {
+    $page().innerHTML = sectionLoading("Camera Hardware");
+    fetchSection("pixellot-config").then(() => { if (currentPage === "camera-hardware") renderCameraHardware(); });
+    return;
+  }
+  if (d.error) { $page().innerHTML = errorBox(d.message); return; }
+  const cams = d.cameras || [];
 
   const camRows = cams.map((c) => {
     const fw = c.firmwareVersion
@@ -985,9 +1049,37 @@ function renderPixellotConfig() {
       <td>${fw}</td>
       <td>${c.tvMode ? esc(c.tvMode) : "—"}</td>
       <td>${esc(c.serialNumber || "—")}</td>
-      <td>${camCalCell(c.role)}</td>
     </tr>`;
   }).join("");
+
+  $page().innerHTML = `
+    ${pageHeader("Camera Hardware", "Per-camera role, IP/MAC, firmware, TV mode, and serial.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache['pixellot-config']=null;renderCameraHardware()">${svgIcon("refresh", 14)} Refresh</button>`)}
+
+    <div class="card">
+      ${sectionTitle("camera", "Cameras")}
+      <p class="text-xs text-pulse-muted mb-3">Role / IP / MAC from <span class="font-mono">cameras.cfg</span>; firmware, TV mode and serial probed live from each camera head (Admin CGI). Calibration status moved to the <strong>Calibrations</strong> tab.</p>
+      <table class="data-table"><thead><tr>
+        <th>Role</th><th>IP</th><th>MAC</th><th>Firmware</th><th>TV Mode</th><th>Serial</th>
+      </tr></thead><tbody>${camRows || `<tr><td colspan="6" class="text-pulse-muted">No cameras found in cameras.cfg.</td></tr>`}</tbody></table>
+    </div>
+  `;
+}
+
+// ── Calibrations ─────────────────────────────────────────────
+// Main-camera multisport stitch + OCR / scoreboard (pipdesign) calibration
+// status and advisories, from /api/pixellot-config.
+function renderCalibrations() {
+  const d = cached("pixellot-config");
+  if (!d) {
+    $page().innerHTML = sectionLoading("Calibrations");
+    fetchSection("pixellot-config").then(() => { if (currentPage === "calibrations") renderCalibrations(); });
+    return;
+  }
+  if (d.error) { $page().innerHTML = errorBox(d.message); return; }
+  const cal = d.calibration || {};
+  const multi = cal.multisport || {};
+  const ocr = cal.ocr || {};
 
   // Multisport sports with last-calibrated dates (kv-rows must live in a kv-grid).
   const sports = multi.sports || [];
@@ -1017,35 +1109,9 @@ function renderPixellotConfig() {
     advisories.push(`OCR / scoreboard not calibrated${miss.length ? ` (missing ${miss.join(" + ")})` : ""}.`);
   }
 
-  // Raw registry values (the live script dumps all of HKLM\SOFTWARE\Pixellot).
-  const regKeys = Object.keys(reg);
-  const regRows = regKeys.length
-    ? regKeys.map((k) => kvRow(k, reg[k])).join("")
-    : `<div class="info-chip">No HKLM\\SOFTWARE\\Pixellot values found.</div>`;
-
   $page().innerHTML = `
-    ${pageHeader("Pixellot Configuration", "Local, on-host view of how Pixellot has this VPU and its cameras configured",
-      `<button class="btn-outline btn-ol-blue" onclick="dataCache['pixellot-config']=null;renderPixellotConfig()">${svgIcon("refresh", 14)} Refresh</button>`)}
-
-    <div class="card">
-      ${sectionTitle("server", "Install & Agent")}
-      <div class="kv-grid">
-        ${kvRow("Pixellot Version", version)}
-        ${kvRow("Image Version", reg.imageVersion || reg.ImageVersion)}
-        ${kvRow("Install Path", installPath)}
-        ${kvRow("Dependencies", reg.dependencies || reg.Dependencies)}
-        ${kvRowHtml("cameras.cfg", d.cameraCfgExists ? badge("Present", "pass") : badge("Missing", "fail"))}
-      </div>
-      ${compatBanner}
-    </div>
-
-    <div class="card">
-      ${sectionTitle("camera", "Cameras")}
-      <p class="text-xs text-pulse-muted mb-3">Role / IP / MAC from <span class="font-mono">cameras.cfg</span>; firmware, TV mode and serial probed live from each camera head (Admin CGI). Calibration is per-function — Main cameras share the multisport status, OCR uses the scoreboard (pipdesign) status.</p>
-      <table class="data-table"><thead><tr>
-        <th>Role</th><th>IP</th><th>MAC</th><th>Firmware</th><th>TV Mode</th><th>Serial</th><th>Calibration</th>
-      </tr></thead><tbody>${camRows || `<tr><td colspan="7" class="text-pulse-muted">No cameras found in cameras.cfg.</td></tr>`}</tbody></table>
-    </div>
+    ${pageHeader("Calibrations", "Main-camera multisport stitch and OCR / scoreboard calibration status.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache['pixellot-config']=null;renderCalibrations()">${svgIcon("refresh", 14)} Refresh</button>`)}
 
     <div class="card">
       ${sectionTitle("check", "Calibration")}
@@ -1065,53 +1131,11 @@ function renderPixellotConfig() {
       </div>
     </div>
 
-    <div class="card svc-quick-action">
-      ${sectionTitle("zap", "Recommended Actions")}
-      ${advisories.length ? `<div class="text-sm">${advisories.map((a) => `<div class="flex items-center gap-2 mt-2">${svgIcon("alert", 13)}<span>${esc(a)}</span></div>`).join("")}</div>` : `<div class="info-chip">${svgIcon("check", 13)} No configuration issues detected.</div>`}
-      <div class="svc-quick-action-row mt-3">
-        <div>
-          <div class="svc-quick-action-title">Restart Pixellot Agent + Coordinator</div>
-          <div class="svc-quick-action-body">The documented first fix when the Agent or Coordinator hangs — try it before escalating. <span class="font-mono">Runs keepagentup.exe.</span></div>
-        </div>
-        <button class="btn-outline btn-ol-amber" id="pc-keepagent-btn">${svgIcon("zap", 14)} Restart Agent + Coordinator</button>
-      </div>
-      <div id="pc-keepagent-result" class="svc-quick-action-result hidden"></div>
-    </div>
-
     <div class="card">
-      ${sectionTitle("database", "Registry — HKLM\\SOFTWARE\\Pixellot")}
-      <div class="kv-grid">${regRows}</div>
+      ${sectionTitle("alert", "Recommended Actions")}
+      ${advisories.length ? `<div class="text-sm">${advisories.map((a) => `<div class="flex items-center gap-2 mt-2">${svgIcon("alert", 13)}<span>${esc(a)}</span></div>`).join("")}</div>` : `<div class="info-chip">${svgIcon("check", 13)} No calibration issues detected.</div>`}
     </div>
   `;
-
-  // keepagentup.exe — confirm + run + inline result (mirrors the Services lane).
-  document.getElementById("pc-keepagent-btn")?.addEventListener("click", async () => {
-    const ok = confirm(
-      "Restart Pixellot Agent + Coordinator?\n\n" +
-      "This runs c:\\pixellot\\bin\\keepagentup.exe, which will briefly stop and " +
-      "relaunch both services. Recording may pause for a few seconds.\n\nProceed?"
-    );
-    if (!ok) return;
-    const btn = document.getElementById("pc-keepagent-btn");
-    const resultEl = document.getElementById("pc-keepagent-result");
-    btn.disabled = true;
-    btn.innerHTML = `${svgIcon("refresh", 14)} Restarting...`;
-    resultEl.classList.add("hidden");
-
-    const r = await apiPost("/api/services/restart-agent", {});
-    btn.disabled = false;
-    btn.innerHTML = `${svgIcon("zap", 14)} Restart Agent + Coordinator`;
-
-    const ok2 = r && r.success;
-    resultEl.className = "svc-quick-action-result " + (ok2 ? "svc-result-ok" : "svc-result-err");
-    resultEl.innerHTML = `
-      <div class="font-semibold">${ok2 ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
-      <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
-      ${r?.agentStatus ? `<div class="text-xs mt-2 text-pulse-muted">Agent: <span class="font-mono">${esc(r.agentStatus)}</span> &middot; Coordinator: <span class="font-mono">${esc(r.coordinatorStatus || "?")}</span></div>` : ""}
-      ${r?.stdout ? `<pre class="svc-result-output">${esc(r.stdout)}</pre>` : ""}
-      ${r?.stderr ? `<pre class="svc-result-output svc-result-stderr">${esc(r.stderr)}</pre>` : ""}
-    `;
-  });
 }
 
 // ── Dashboard ────────────────────────────────────────────────
@@ -2091,40 +2115,6 @@ function renderEnvironment() {
     const el = document.getElementById("sys-peripherals-body");
     if (el) el.innerHTML = _peripheralsPanelHtml(d);
   }).catch(() => {});
-}
-
-// ── Pixellot Software ────────────────────────────────────────
-// Pixellot application/image version + hardware-compatibility banner. Split
-// out of System Overview; Phase C adds the install/agent/registry config from
-// the old Pixellot Configuration tab.
-function renderPixellotSoftware() {
-  const data = cached("system");
-  if (!data) {
-    $page().innerHTML = sectionLoading("Pixellot Software");
-    fetchSection("system").then(() => { if (currentPage === "pixellot-software") renderPixellotSoftware(); });
-    return;
-  }
-  const id = data.identity || {};
-  if (id.error) { $page().innerHTML = errorBox(id.message); return; }
-  const pix = id.pixellot || {};
-
-  $page().innerHTML = `
-    ${pageHeader("Pixellot Software", "Pixellot application and image version, with hardware-compatibility status.",
-      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderPixellotSoftware()">
-        ${svgIcon("refresh", 14)} Refresh
-      </button>`
-    )}
-
-    <div class="card">
-      ${sectionTitle("zap", "Pixellot Software")}
-      <div class="kv-grid kv-grid-wide">
-        ${kvRow("App Version", pix.version)}
-        ${kvRow("Image Version", pix.imageVersion)}
-      </div>
-      ${id.isNonVpuHost ? '<div class="info-chip mt-3">Not a VPU host</div>' : ""}
-      ${_pixCompatBannerHtml(pix.compat)}
-    </div>
-  `;
 }
 
 function _usersPanelHtml(d) {

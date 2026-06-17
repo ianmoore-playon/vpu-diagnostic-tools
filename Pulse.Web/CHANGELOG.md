@@ -48,6 +48,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   flags), and Environment (Windows OS, locale, uptime, users, peripherals) are
   now separate tabs, and Pixellot version + hardware-compatibility moved to a
   new Pixellot Software tab. Old "System Overview" links open Hardware.
+- **Split the Pixellot Configuration tab into three.** Pixellot Software
+  (version, install/agent, registry, and the Restart Agent button), Camera
+  Hardware (per-camera role / IP / MAC / firmware / TV mode / serial), and
+  Calibrations (multisport + OCR status and advice) are now separate tabs. Old
+  "Pixellot Configuration" links open Pixellot Software.
 - **The Wi-Fi warning now explains Wi-Fi's real job.** When the VPU is running
   its internet over Wi-Fi, the message now notes the Wi-Fi card is meant for the
   Pixellot Connect app — move the internet to the motherboard Ethernet port.
