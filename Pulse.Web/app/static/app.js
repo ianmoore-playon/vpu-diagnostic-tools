@@ -43,6 +43,10 @@ function svgIcon(name, size) {
     copy: '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
     scale: '<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>',
+    "file-down": '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/>',
+    "share-2": '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>',
+    logs: '<path d="M13 12h8"/><path d="M13 18h8"/><path d="M13 6h8"/><path d="M3 12h1"/><path d="M3 18h1"/><path d="M3 6h1"/><path d="M8 12h1"/><path d="M8 18h1"/><path d="M8 6h1"/>',
+    "folder-code": '<path d="M10 10.5 8 13l2 2.5"/><path d="m14 10.5 2 2.5-2 2.5"/><path d="M2 6a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
@@ -67,7 +71,7 @@ const NAV_SECTIONS = [
     // /api/audio, and the PS scripts — so re-add this entry to restore it.
   ]},
   { label: "PIXELLOT CONFIGURATION", pages: [
-    { id: "pixellot-software", label: "Pixellot Software", icon: "zap" },
+    { id: "pixellot-software", label: "Pixellot Software", icon: "folder-code" },
     { id: "camera-hardware", label: "Camera Hardware", icon: "camera" },
     { id: "calibrations", label: "Camera Calibrations", icon: "scale" },
   ]},
@@ -78,14 +82,14 @@ const NAV_SECTIONS = [
     { id: "environment", label: "Environment", icon: "globe" },
   ]},
   { label: "DATA LOGS", pages: [
-    { id: "pixellot-logs", label: "Pixellot Logs", icon: "file" },
+    { id: "pixellot-logs", label: "Pixellot Logs", icon: "logs" },
     { id: "events", label: "Windows Events", icon: "triangle" },
     { id: "pulse-logs", label: "Pulse Logs", icon: "heartbeat" },
   ]},
   { label: "PULSE CONFIGURATION", pages: [
     { id: "settings", label: "Settings", icon: "cog" },
-    { id: "share", label: "Share over LAN", icon: "send" },
-    { id: "reports", label: "Exports", icon: "file" },
+    { id: "share", label: "Share over LAN", icon: "share-2" },
+    { id: "reports", label: "Exports", icon: "file-down" },
     { id: "help", label: "Help", icon: "help" },
     { id: "about", label: "About", icon: "info" },
   ]},
