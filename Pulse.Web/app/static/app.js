@@ -59,7 +59,7 @@ const NAV_SECTIONS = [
   { label: "TROUBLESHOOTING", pages: [
     { id: "network", label: "Network Test", icon: "wifi" },
     { id: "cameras", label: "Camera Connectivity", icon: "camera" },
-    { id: "scoreconnect", label: "SportzCast ScoreConnect", icon: "monitor" },
+    { id: "scoreconnect", label: "ScoreConnect", icon: "monitor" },
     { id: "services", label: "Service Status", icon: "server" },
     // Audio tab hidden from nav pending further development. The full impl is
     // still wired — renderAudio(), pageRenderers.audio, PAGE_API.audio,
@@ -5068,7 +5068,7 @@ function renderHelp() {
         if the cable is on the wrong port.</li>
         <li><strong>A camera is missing or slow</strong> — Check <strong>Camera Connectivity</strong> for the port's link
         and speed (camera ports should be 1 Gbps), then <strong>Camera Hardware</strong> for firmware and reachability.</li>
-        <li><strong>Scores aren't showing</strong> — Check <strong>SportzCast ScoreConnect</strong> for the service and the
+        <li><strong>Scores aren't showing</strong> — Check <strong>ScoreConnect</strong> for the service and the
         scoreboard feed, and confirm the OCR camera is calibrated under <strong>Calibrations</strong>.</li>
         <li><strong>Pixellot Agent looks stuck</strong> — <strong>Service Status</strong> shows the Agent / Coordinator /
         Watchdog. The documented first fix is <strong>Restart Agent + Coordinator</strong> on the
@@ -5966,7 +5966,7 @@ function renderScoreConnect() {
     : "ScoreConnect — service not detected";
 
   $page().innerHTML = `
-    ${pageHeader("SportzCast ScoreConnect", subtitle,
+    ${pageHeader("ScoreConnect", subtitle,
       `${isDetected ? `<button class="btn-outline btn-ol-green" onclick="window.open('${esc(data.baseUrl || "http://localhost:5000")}','_blank','noopener')" title="Opens the local ScoreConnect III web UI in a new tab">
         ${svgIcon("external-link", 14)} Open ScoreConnect III
       </button>` : ""}

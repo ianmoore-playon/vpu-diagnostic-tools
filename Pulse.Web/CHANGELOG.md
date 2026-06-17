@@ -40,7 +40,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - **Reorganized the sidebar into six clearer groups.** Tabs are now grouped as
   Triage, Troubleshooting, Pixellot Configuration, System Configuration, Data
   Logs, and Pulse Configuration. A few tabs were renamed to say what they do —
-  "Network Test", "SportzCast ScoreConnect", "Service Status", "Disks",
+  "Network Test", "ScoreConnect", "Service Status", "Disks",
   "Windows Events", and "Exports". Nothing moved out of reach; bookmarks/links
   still work.
 - **Split the big "System Overview" tab into focused tabs.** Hardware (CPU,
