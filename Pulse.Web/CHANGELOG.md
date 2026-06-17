@@ -37,6 +37,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   easy to spot. (Units without a Wi-Fi card aren't flagged.)
 
 ### Changed
+- **Reorganized the sidebar into six clearer groups.** Tabs are now grouped as
+  Triage, Troubleshooting, Pixellot Configuration, System Configuration, Data
+  Logs, and Pulse Configuration. A few tabs were renamed to say what they do —
+  "Network Test", "SportzCast ScoreConnect", "Service Status", "Disks",
+  "Windows Events", and "Exports". Nothing moved out of reach; bookmarks/links
+  still work.
 - **The Wi-Fi warning now explains Wi-Fi's real job.** When the VPU is running
   its internet over Wi-Fi, the message now notes the Wi-Fi card is meant for the
   Pixellot Connect app — move the internet to the motherboard Ethernet port.

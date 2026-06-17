@@ -46,31 +46,41 @@ function svgIcon(name, size) {
 }
 
 // ── Pages & Nav Sections ─────────────────────────────────────
+// 6-group IA (nav restructure v3). Phase A: regroup + rename only. The current
+// System Overview (`system`) and Pixellot Configuration (`pixellot-config`) tabs
+// are parked in their new groups as-is; later phases split them into Hardware /
+// Applications / Environment and Pixellot Software / Camera Hardware /
+// Calibrations, and add Pixellot Logs / Pulse Logs / Help.
 const NAV_SECTIONS = [
   { label: "TRIAGE", pages: [
     { id: "dashboard", label: "Dashboard", icon: "grid" },
   ]},
-  { label: "CONNECTIVITY", pages: [
-    { id: "network", label: "Network", icon: "wifi" },
+  { label: "TROUBLESHOOTING", pages: [
+    { id: "network", label: "Network Test", icon: "wifi" },
     { id: "cameras", label: "Camera Connectivity", icon: "camera" },
-    { id: "scoreconnect", label: "Score Connect", icon: "monitor" },
+    { id: "scoreconnect", label: "SportzCast ScoreConnect", icon: "monitor" },
+    { id: "services", label: "Service Status", icon: "server" },
     // Audio tab hidden from nav pending further development. The full impl is
     // still wired — renderAudio(), pageRenderers.audio, PAGE_API.audio,
     // /api/audio, and the PS scripts — so re-add this entry to restore it.
   ]},
-  { label: "SYSTEM", pages: [
-    { id: "system", label: "System Overview", icon: "cpu" },
-    { id: "services", label: "Pixellot Services", icon: "server" },
+  { label: "PIXELLOT CONFIGURATION", pages: [
+    // Phase C splits this into pixellot-software / camera-hardware / calibrations.
     { id: "pixellot-config", label: "Pixellot Configuration", icon: "database" },
-    { id: "disk-health", label: "Disk & System Health", icon: "hdd" },
-    { id: "events", label: "Event Viewer", icon: "triangle" },
   ]},
-  { label: "EVIDENCE", pages: [
-    { id: "reports", label: "Reports", icon: "file" },
-    { id: "share", label: "Share over LAN", icon: "send" },
+  { label: "SYSTEM CONFIGURATION", pages: [
+    // Phase B splits System Overview into hardware / applications / environment.
+    { id: "system", label: "System Overview", icon: "cpu" },
+    { id: "disk-health", label: "Disks", icon: "hdd" },
   ]},
-  { label: "SETUP", pages: [
+  { label: "DATA LOGS", pages: [
+    // Phase D adds Pixellot Logs and Pulse Logs.
+    { id: "events", label: "Windows Events", icon: "triangle" },
+  ]},
+  { label: "PULSE CONFIGURATION", pages: [
     { id: "settings", label: "Settings", icon: "cog" },
+    { id: "share", label: "Share over LAN", icon: "send" },
+    { id: "reports", label: "Exports", icon: "file" },
     { id: "about", label: "About", icon: "info" },
   ]},
 ];
@@ -3245,7 +3255,7 @@ function renderNetwork() {
     </div>` : "";
 
   $page().innerHTML = `
-    ${pageHeader("Network", "Internet connection, name lookups (DNS), time sync, and whether the VPU can reach the services it needs.",
+    ${pageHeader("Network Test", "Internet connection, name lookups (DNS), time sync, and whether the VPU can reach the services it needs.",
       statusChip + `<button id="net-run-test-btn" class="btn-outline btn-ol-blue" onclick="_rerunNetworkTests(this)">
         ${svgIcon("activity", 14)} <span>Run Test</span>
       </button>`
@@ -4294,7 +4304,7 @@ function renderServices() {
   }
 
   $page().innerHTML = `
-    ${pageHeader("Pixellot Services", "Pixellot Agent, VPU encoder, and related Windows services",
+    ${pageHeader("Service Status", "Pixellot Agent, VPU encoder, and related Windows services",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache.services=null;renderServices()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
@@ -4562,7 +4572,7 @@ function renderDiskHealth() {
   }
 
   $page().innerHTML = `
-    ${pageHeader("Disk & System Health", "Drive health, free space, and the Pixellot folders that fill up first",
+    ${pageHeader("Disks", "Drive health, free space, and the Pixellot folders that fill up first",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache['disk-health']=null;renderDiskHealth()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
@@ -4762,7 +4772,7 @@ function formatTime(iso) {
 
 function renderEvents() {
   $page().innerHTML = `
-    ${pageHeader("Event Viewer", "Recent Windows log entries for disk, network, Pixellot, and core services",
+    ${pageHeader("Windows Events", "Recent Windows log entries for disk, network, Pixellot, and core services",
       `<button class="btn-outline btn-ol-blue" id="ev-refresh">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
@@ -4945,7 +4955,7 @@ function renderReports() {
   // describing it so action sits with its explanation, and drop the
   // redundant Run All Diagnostics button.
   $page().innerHTML = `
-    ${pageHeader("Reports", "Diagnostic-run snapshots — generate and download full system reports",
+    ${pageHeader("Exports", "Diagnostic-run snapshots — generate and download full system reports",
       `<button class="btn-outline btn-ol-blue" onclick="navigate('share')" title="Hand off a generated report to another Pulse on the same network">
         ${svgIcon("send", 14)} Send to another Pulse
       </button>`
@@ -5810,7 +5820,7 @@ function renderScoreConnect() {
     : "ScoreConnect — service not detected";
 
   $page().innerHTML = `
-    ${pageHeader("Score Connect", subtitle,
+    ${pageHeader("SportzCast ScoreConnect", subtitle,
       `${isDetected ? `<button class="btn-outline btn-ol-green" onclick="window.open('${esc(data.baseUrl || "http://localhost:5000")}','_blank','noopener')" title="Opens the local ScoreConnect III web UI in a new tab">
         ${svgIcon("external-link", 14)} Open ScoreConnect III
       </button>` : ""}
