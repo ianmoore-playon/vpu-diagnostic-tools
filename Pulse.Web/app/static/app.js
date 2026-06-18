@@ -1521,17 +1521,6 @@ function renderDashboard() {
         </div>
         ${vpuName ? `<p class="text-sm text-pulse-muted">${esc(vpuName)}</p>` : ""}
       </div>
-      <div class="dash-actions">
-        <button class="btn-outline btn-ol-green" onclick="refreshAll()">
-          Run All Diagnostics
-        </button>
-        <button class="btn-outline btn-ol-blue" onclick="navigate('reports')">
-          Support Bundle
-        </button>
-        <button class="btn-outline btn-ol-blue" onclick="dataCache.dashboard=null;renderDashboard()">
-          Refresh Dashboard
-        </button>
-      </div>
     </div>
 
     <!-- Stream Readiness — lead the triage page with "are we game-ready?" -->
