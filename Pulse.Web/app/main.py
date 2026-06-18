@@ -1732,6 +1732,17 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 ),
             })
 
+        # Name resolution demonstrably working? Any required hostname-based port
+        # that passed proves it (you can't reach pixellot.tv:443 without resolving
+        # pixellot.tv) — so a failed UDP/53 probe must NOT be reported as DNS down
+        # (it can target a stale resolver off another adapter, or go unanswered).
+        name_resolution_ok = any(
+            r.get("status") != "fail" and not r.get("optional")
+            and (r.get("purpose") or "").upper() != "DNS"
+            and any(c.isalpha() for c in str(r.get("host") or ""))
+            for r in results
+        )
+
         # Non-streaming required ports — each blocked one is its own warning. The
         # primary stream and the 443 backup channel are handled above, so skip both.
         for r in results:
@@ -1747,6 +1758,10 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             # DNS (port 53) blocked breaks name resolution for everything → a
             # readiness blocker; every other required port is a readiness risk.
             is_dns = purpose.upper() == "DNS" or str(port) == "53"
+            # …but don't cry "DNS blocked" when names are clearly resolving — the
+            # UDP/53 probe is unreliable and can hit the wrong resolver.
+            if is_dns and name_resolution_ok:
+                continue
             findings.append(
                 {
                     "code": "port-dns-blocked" if is_dns else "port-required-blocked",

@@ -2944,14 +2944,28 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     });
   }
 
+  // Is name resolution demonstrably working? A resolved domain in Domain
+  // Reachability, or any required hostname-based port that passed (you can't
+  // reach pixellot.tv:443 without first resolving pixellot.tv), proves DNS is
+  // fine — so a failed UDP/53 probe must NOT claim "can't resolve any hostname"
+  // (that probe can target a stale resolver or just go unanswered).
+  var _dnsResolving = (domains || []).some(function(d) {
+      return d && d.resolvedTo && (d.status || "").toLowerCase() === "pass";
+    }) || (ports || []).some(function(p) {
+      return !p.optional && p.purpose !== "DNS" && (p.status || "").toLowerCase() === "pass"
+        && /[a-z]/i.test(String(p.host || ""));
+    });
+
   // Non-streaming required failures (DNS, NFHS, S3, Singular, LogMeIn,
   // pixellot.tv apex) — prerequisites, not redundant paths, so any one blocked
   // is critical on its own. The primary stream and the 443 backup channel are
-  // handled above, so exclude both here.
+  // handled above, so exclude both here; and skip a "blocked" DNS probe when
+  // resolution is clearly working.
   var reqFailed = (ports || []).filter(function(p) {
-    return !p.optional && (p.status || "").toLowerCase() !== "pass"
-      && STREAMING_PURPOSES.indexOf(p.purpose) === -1
-      && p.purpose !== PRIMARY_STREAM_PURPOSE;
+    if (p.optional || (p.status || "").toLowerCase() === "pass") return false;
+    if (STREAMING_PURPOSES.indexOf(p.purpose) !== -1 || p.purpose === PRIMARY_STREAM_PURPOSE) return false;
+    if ((p.purpose === "DNS" || String(p.port) === "53") && _dnsResolving) return false;
+    return true;
   });
   if (reqFailed.length > 0) {
     issues.push({ severity: "critical",
