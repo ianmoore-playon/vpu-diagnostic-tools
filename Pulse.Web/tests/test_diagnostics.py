@@ -590,6 +590,34 @@ class TestWifiDisabled(unittest.TestCase):
         self.assertFalse(any("camera port" in t.lower() for _, t in net), net)
 
 
+# ── DNS UDP/53 probe must not false-fire when resolution works ───────
+# Field report: the DNS probe targeted a stale resolver (10.0.0.136) off a
+# secondary adapter and failed, raising "can't resolve any hostname" — while
+# every domain on the same screen resolved fine. A failed UDP/53 probe must be
+# suppressed when names are demonstrably resolving (a hostname-based service
+# passed), but still reported when nothing resolves.
+class TestDnsProbeFalsePositive(unittest.TestCase):
+    def _ports(self, dns_status, pixellot_status):
+        return {"results": [
+            {"protocol": "UDP", "port": 53, "host": "10.0.0.136", "purpose": "DNS", "optional": False, "status": dns_status},
+            {"protocol": "TCP", "port": 443, "host": "pixellot.tv", "purpose": "Pixellot", "optional": False, "status": pixellot_status},
+        ]}
+
+    def _net_titles(self, port_tests):
+        f = main._compute_findings(identity={}, performance={}, services={}, nics={}, port_tests=port_tests)
+        return [x["title"] for x in f if x.get("category") == "Network"]
+
+    def test_dns_probe_fail_suppressed_when_resolution_works(self):
+        # DNS UDP/53 fails, but pixellot.tv:443 passed → names resolve → no DNS finding.
+        titles = self._net_titles(self._ports("fail", "pass"))
+        self.assertFalse(any("DNS" in t for t in titles), titles)
+
+    def test_dns_reported_when_nothing_resolves(self):
+        # DNS fails AND no hostname-based service passed → genuine DNS problem, still flag.
+        titles = self._net_titles(self._ports("fail", "fail"))
+        self.assertTrue(any("DNS is blocked" in t for t in titles), titles)
+
+
 # ── NTP source allowlist (PDF #9) ────────────────────────────
 class TestNtpAllowlist(unittest.TestCase):
     def test_canonical_sources_approved(self):

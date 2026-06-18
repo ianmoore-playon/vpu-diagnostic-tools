@@ -54,6 +54,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   detail (exact values, commands, port numbers) still right there in the detail.
 
 ### Fixed
+- **No more false "DNS blocked / can't resolve any hostname" alarm.** The DNS
+  check was probing whatever resolver it found first across *all* network
+  adapters — so a stale resolver on a disconnected or secondary adapter (e.g. a
+  camera NIC) could be tested instead of the one the VPU actually uses, fail,
+  and raise a critical while every domain on the same screen was resolving fine.
+  Pulse now tests the resolver on the active internet uplink, and never reports
+  DNS as blocked when name resolution is demonstrably working.
 - **The Network panel no longer comes up blank / "no internet" on some VPUs.**
   The new adapter-role check was scanning every network device Windows has ever
   seen (VPUs accumulate dozens of stale ones), which could time out the whole
