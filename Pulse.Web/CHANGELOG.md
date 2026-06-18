@@ -86,6 +86,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   detail (exact values, commands, port numbers) still right there in the detail.
 
 ### Fixed
+- **No more false "can't reach gateway" alarm when the gateway just ignores
+  pings.** Plenty of routers and firewalls are set to drop pings (ICMP) to
+  themselves while still routing traffic perfectly. Pulse used to read that as a
+  CRITICAL "VPU can't reach its gateway — check the cable/switch/VLAN," sending
+  techs to chase a fault that isn't there. Now, when the VPU is already reaching
+  the internet, an unanswered gateway ping is shown as an informational note
+  ("gateway doesn't answer ping, but traffic is routing normally") instead of a
+  critical. A real dead gateway — where the internet is also unreachable — still
+  raises the critical.
 - **No more false "DNS blocked / can't resolve any hostname" alarm.** The DNS
   check was probing whatever resolver it found first across *all* network
   adapters — so a stale resolver on a disconnected or secondary adapter (e.g. a

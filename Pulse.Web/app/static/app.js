@@ -2945,11 +2945,20 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     }
   }
 
-  // ── Critical: Gateway ────────────────────────────────────
+  // ── Gateway ──────────────────────────────────────────────
   if (gw && !gw.reachable) {
     if (!gw.target)
       issues.push({ severity: "critical", title: "VPU has no route to the network",
         body: "The internet adapter has no IPv4 default gateway. Set one (via DHCP or a static address) — the VPU can't reach the internet without it." });
+    else if (cfg && cfg.internetReachable)
+      // The gateway answers no ICMP, but the VPU is reaching the internet through
+      // it — lots of routers/firewalls (and managed venue networks) silently drop
+      // pings to the gateway itself while routing traffic fine. internetReachable
+      // is authoritative (it has a TCP/443 fallback), so a dropped ping here is
+      // filtering, not a fault — explain the red gateway test instead of falsely
+      // calling the uplink dead and sending a tech to chase a cable.
+      issues.push({ severity: "info", title: "Gateway doesn't answer ping, but traffic is routing normally (" + gw.target + ")",
+        body: "The gateway isn't replying to ping (ICMP), so the gateway test above shows red — but the VPU is reaching the internet through it. Many routers and firewalls are set to ignore pings to themselves while still forwarding traffic, so this is expected and needs no action." });
     else
       issues.push({ severity: "critical", title: "VPU can't reach its gateway (" + gw.target + ")",
         body: "Verify the uplink Ethernet cable is seated, the switch port is active, and the VLAN is correct. No traffic will leave the VPU until this is resolved." });
