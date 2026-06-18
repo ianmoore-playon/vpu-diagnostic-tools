@@ -3152,11 +3152,19 @@ async def api_cameras_s1():
 
 
 @app.post("/api/cameras/video-test")
-async def api_cameras_video_test():
+async def api_cameras_video_test(request: Request):
     """Grab a single frame from each detected camera to confirm it's
     streaming decodable video (and return it as a thumbnail). Re-derives
     the camera IPs server-side (authoritative, not client-supplied).
     Wired to an explicit 'Get Camera Frames' button — never polled.
+
+    An optional JSON body {"ips": ["<ip>", ...]} restricts the capture to
+    those cameras — this backs the per-camera 'Refresh' button. With no
+    body (or an empty one) every detected camera is captured, as before.
+
+    Each result also carries the camera's model + firmware (from the CGI
+    probe) and the VPU's systemType (S1/S2/S2S) so the UI can label the
+    snapshot fully.
 
     Two guards: refuse while vpu.exe is capturing (don't compete for the
     cameras' RTSP sessions during a live event), and a cooldown to stop
@@ -3177,6 +3185,20 @@ async def api_cameras_video_test():
                 "reason": "The Pixellot capture engine (vpu.exe) is running — "
                           "frame capture is disabled to avoid interfering with the "
                           "live stream. Stop the VPU process to capture frames."}
+
+    # Optional: restrict the capture to specific camera IPs (the per-camera
+    # 'Refresh' button posts {"ips": [...]}). No body → capture everything.
+    target_ips = None
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    if isinstance(body, dict):
+        raw = body.get("ips") or ([body["ip"]] if body.get("ip") else None)
+        if raw:
+            target_ips = {str(x).strip() for x in raw if str(x).strip()}
+
+    sys_type = expectations.get("systemType") if isinstance(expectations, dict) else None
 
     nics, pix_config = await asyncio.gather(
         run_ps("Get-NicAdapters.ps1"),
@@ -3201,9 +3223,19 @@ async def api_cameras_video_test():
                     "degraded": bool(p.get("isDegraded")),
                     "linkSpeedMbps": p.get("linkSpeedMbps"),
                     "expectedSpeedMbps": p.get("expectedSpeedMbps"),
+                    "model": c.get("model"),
+                    "firmwareVersion": c.get("firmwareVersion"),
                 }
+
+    # Single-camera refresh: keep only the requested IP(s).
+    if target_ips is not None:
+        cams = [c for c in cams if c[0] in target_ips]
+
     if not cams:
-        return {"available": True, "results": [], "reason": "No cameras detected to test."}
+        reason = ("Requested camera not detected." if target_ips
+                  else "No cameras detected to test.")
+        return {"available": True, "results": [], "reason": reason,
+                "systemType": sys_type}
 
     # Order: Main cameras first (by number), then OCRs, then anything else.
     def _cam_order(c):
@@ -3235,15 +3267,21 @@ async def api_cameras_video_test():
         timeout=budget,
         use_cache=False,
     )
-    # Merge link health onto each frame so the UI can warn that a degraded
-    # camera, while it grabbed a frame, won't stream reliably until fixed.
-    if isinstance(result, dict) and result.get("results"):
-        for r in result["results"]:
+    # Merge link health + camera identity onto each frame: link health lets
+    # the UI warn that a degraded camera, while it grabbed a frame, won't
+    # stream reliably; model/firmware label the snapshot. systemType (the
+    # VPU's camera generation — S1/S2/S2S) is the same for every camera, so
+    # it rides on the envelope, not each result.
+    if isinstance(result, dict):
+        for r in result.get("results") or []:
             meta = cam_meta.get((r.get("ip") or "").strip())
             if meta:
                 r["degraded"] = meta["degraded"]
                 r["linkSpeedMbps"] = meta["linkSpeedMbps"]
                 r["expectedSpeedMbps"] = meta["expectedSpeedMbps"]
+                r["model"] = meta.get("model")
+                r["firmwareVersion"] = meta.get("firmwareVersion")
+        result["systemType"] = sys_type
     return result
 
 

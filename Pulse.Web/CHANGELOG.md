@@ -35,8 +35,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   Connect app reaches the VPU. If it's been disabled in Windows, Pulse raises a
   warning with how to turn it back on — so a unit that's invisible to Connect is
   easy to spot. (Units without a Wi-Fi card aren't flagged.)
+- **Refresh camera stills one at a time.** The Camera Frames panel now has a
+  "Refresh all cameras" button plus a "Refresh" on each camera card, so you can
+  grab a new still from just the camera you're working on instead of re-pulling
+  every camera.
 
 ### Changed
+- **Camera Frames now show the camera type, model, and firmware.** Each
+  captured still lists the system type (S1/S2/S2S), IP address, camera model,
+  and firmware version, and is clearly marked as a point-in-time snapshot — not
+  a live stream. The status now reads "Active" instead of "Streaming".
 - **Reorganized the sidebar into six clearer groups.** Tabs are now grouped as
   Triage, Troubleshooting, Pixellot Configuration, System Information, Data
   Logs, and Pulse. A few tabs were renamed to say what they do —
