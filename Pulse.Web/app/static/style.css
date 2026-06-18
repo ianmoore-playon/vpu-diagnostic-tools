@@ -1923,6 +1923,33 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     border-color: rgba(148,163,184,0.25);
 }
 
+/* Camera Hardware tab — responsive grid of full-probe detail cards. */
+.cam-hw-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+}
+.cam-hw-port {
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: var(--c-muted);
+    border: 1px solid var(--c-border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    white-space: nowrap;
+}
+/* Connectivity → Camera Hardware pointer link (full probe moved there). */
+.cam-hw-pointer {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--c-accent-blue);
+    text-decoration: none;
+}
+.cam-hw-pointer:hover { text-decoration: underline; }
+
 .cam-port-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

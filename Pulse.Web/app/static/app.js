@@ -953,44 +953,141 @@ function renderPixellotSoftware() {
 }
 
 // ── Camera Hardware ──────────────────────────────────────────
-// Per-camera role / IP / MAC / firmware / TV mode / serial from
-// /api/pixellot-config. Calibration status lives on the Calibrations tab.
+// Full per-camera CGI probe — device identity, firmware, network config,
+// stream encoding, and image-sensor tuning — for every camera head detected
+// on an active port. Sourced from /api/cameras (the same probe the Camera
+// Connectivity lane runs), flattened across ports. Calibration status lives
+// on the Calibrations tab; role/IP/MAC live-link state lives on Connectivity.
+let _camHwHealing = false;  // one-shot guard: re-probe once when probe data is cold
+
 function renderCameraHardware() {
-  const d = cached("pixellot-config");
+  const d = cached("cameras");
   if (!d) {
     $page().innerHTML = sectionLoading("Camera Hardware");
-    fetchSection("pixellot-config").then(() => { if (currentPage === "camera-hardware") renderCameraHardware(); });
+    fetchSection("cameras").then(() => { if (currentPage === "camera-hardware") renderCameraHardware(); });
     return;
   }
   if (d.error) { $page().innerHTML = errorBox(d.message); return; }
-  const cams = d.cameras || [];
 
-  const camRows = cams.map((c) => {
-    const fw = c.firmwareVersion
-      ? `<span class="font-mono">${esc(c.firmwareVersion)}</span>`
-      : (c.reachable === false ? `<span class="text-pulse-muted">unreachable</span>` : "—");
-    return `<tr>
-      <td>${esc(c.role || c.section || "—")}</td>
-      <td class="font-mono">${esc(c.ip || "—")}</td>
-      <td class="font-mono text-xs">${esc(c.mac || "—")}</td>
-      <td>${fw}</td>
-      <td>${c.tvMode ? esc(c.tvMode) : "—"}</td>
-      <td>${esc(c.serialNumber || "—")}</td>
-    </tr>`;
-  }).join("");
+  // Flatten detected cameras across all ports, carrying port context. A down
+  // port has no live camera, so camerasDetected is already empty there.
+  const entries = [];
+  (d.ports || []).forEach((p) => {
+    (p.camerasDetected || []).forEach((c) => entries.push({ cam: c, port: p }));
+  });
+  const anyCgi = entries.some((e) => e.cam.cgiConfirmed);
+
+  const cards = entries.map((e) => _camHardwareCard(e.cam, e.port)).join("");
+  const empty = `<div class="cam-no-detect">No cameras detected on any active port.</div>`;
+  const noCgiNote = (entries.length && !anyCgi)
+    ? `<div class="cam-connecting-note">${svgIcon("refresh", 12)} Probing camera heads (Admin CGI)… identity-only data shown until probes complete. Use Refresh to force a re-probe.</div>`
+    : "";
 
   $page().innerHTML = `
-    ${pageHeader("Camera Hardware", "Per-camera role, IP/MAC, firmware, TV mode, and serial.",
-      `<button class="btn-outline btn-ol-blue" onclick="dataCache['pixellot-config']=null;renderCameraHardware()">${svgIcon("refresh", 14)} Refresh</button>`)}
+    ${pageHeader("Camera Hardware",
+      "Full CGI probe of every camera head on an active port — identity, firmware, network, stream, and sensor settings.",
+      `<button class="btn-outline btn-ol-blue" onclick="_camHwRefresh()">${svgIcon("refresh", 14)} Refresh</button>`)}
 
     <div class="card">
-      ${sectionTitle("camera", "Cameras")}
-      <p class="text-xs text-pulse-muted mb-3">Role / IP / MAC from <span class="font-mono">cameras.cfg</span>; firmware, TV mode and serial probed live from each camera head (Admin CGI). Calibration status moved to the <strong>Calibrations</strong> tab.</p>
-      <table class="data-table"><thead><tr>
-        <th>Role</th><th>IP</th><th>MAC</th><th>Firmware</th><th>TV Mode</th><th>Serial</th>
-      </tr></thead><tbody>${camRows || `<tr><td colspan="6" class="text-pulse-muted">No cameras found in cameras.cfg.</td></tr>`}</tbody></table>
+      ${sectionTitle("camera", "Detected Cameras")}
+      <p class="text-xs text-pulse-muted mb-3">Probed live from each camera head over the Admin CGI (<span class="font-mono">Admin:1234</span> · <span class="font-mono">param.cgi</span>) — the same probe the <strong>Camera Connectivity</strong> tab uses for identification. Cameras on a down port aren't probed.</p>
+      ${noCgiNote}
+      ${entries.length ? `<div class="cam-hw-grid">${cards}</div>` : empty}
     </div>
   `;
+
+  // Cold-cache heal: the first /api/cameras paint can return before the CGI
+  // probe cache is warm, so cameras arrive identity-only. Force one blocking
+  // re-probe to fill in the hardware detail, guarded so it fires at most once
+  // per cold state (a truly unreachable camera stays "No CGI", no loop).
+  if (entries.length && !anyCgi && !_camHwHealing) {
+    _camHwHealing = true;
+    _camHwRefresh();
+  } else if (anyCgi) {
+    _camHwHealing = false;
+  }
+}
+
+// One camera's full probe, laid out as a detail card. Reuses the same leaf
+// formatters (_camDetailKv / _camStreamBlock / _fmtTvMode) the Connectivity
+// lane used before this data moved here.
+function _camHardwareCard(c, port) {
+  var hasCgi = !!c.cgiConfirmed;
+  var net = c.network || {};
+  var sensor = c.sensor || {};
+  var portLabel = port ? (port.portLabel || port.name) : null;
+
+  var deviceRows =
+    _camDetailKv("IP", c.ip) +
+    _camDetailKv("MAC", c.cgiMac || c.mac) +
+    _camDetailKv("Role", c.role) +
+    _camDetailKv("Identity", c.identitySource);
+  if (hasCgi) {
+    deviceRows +=
+      _camDetailKv("Model", c.model) +
+      _camDetailKv("Model No.", c.modelNumber) +
+      _camDetailKv("Serial", c.serialNumber) +
+      _camDetailKv("Firmware", c.firmwareVersion) +
+      _camDetailKv("TV Mode", _fmtTvMode(c.tvMode)) +
+      _camDetailKv("Brand", c.brand) +
+      _camDetailKv("Type", c.productType);
+  }
+
+  return '<div class="cam-detail-camera">' +
+    '<div class="cam-detail-camera-header">' +
+      svgIcon("camera", 14) + ' ' + esc(c.ip) +
+      (c.modelNumber ? ' <span class="cam-model-label">' + esc(c.modelNumber) + '</span>' : '') +
+      (portLabel ? ' <span class="cam-hw-port">' + esc(portLabel) + '</span>' : '') +
+      (hasCgi ? ' <span class="cam-cgi-badge">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none">No CGI</span>') +
+    '</div>' +
+
+    // Device identity
+    '<div class="cam-detail-group">' +
+      '<div class="cam-detail-group-title">Device</div>' +
+      deviceRows +
+    '</div>' +
+
+    // Network config (CGI only)
+    (net.ip || net.subnet || net.gateway ? '<div class="cam-detail-group">' +
+      '<div class="cam-detail-group-title">Network Config</div>' +
+      _camDetailKv("IP Address", net.ip) +
+      _camDetailKv("Subnet", net.subnet) +
+      _camDetailKv("Gateway", net.gateway) +
+      _camDetailKv("DHCP", net.dhcp) +
+    '</div>' : '') +
+
+    // Streams (CGI only)
+    _camStreamBlock("Stream 0 — Primary", c.stream0) +
+    _camStreamBlock("Stream 1 — Secondary", c.stream1) +
+
+    // Image sensor (CGI only)
+    (sensor.exposure || sensor.brightness ? '<div class="cam-detail-group">' +
+      '<div class="cam-detail-group-title">Image Sensor</div>' +
+      _camDetailKv("Exposure", sensor.exposure) +
+      _camDetailKv("Brightness", sensor.brightness) +
+      _camDetailKv("Contrast", sensor.contrast) +
+      _camDetailKv("Saturation", sensor.colorLevel) +
+      _camDetailKv("Max Gain", sensor.maxShutterGain) +
+      _camDetailKv("Min Shutter", sensor.minShutterSpeed) +
+    '</div>' : '') +
+  '</div>';
+}
+
+// Refresh button + cold-cache heal: clears the backend CGI cache and blocks
+// on a fresh probe so the hardware detail is current (mirrors the Camera
+// Connectivity force-refresh).
+function _camHwRefresh() {
+  var btn = document.querySelector('[onclick*="_camHwRefresh"]');
+  if (btn) { btn.disabled = true; btn.style.opacity = "0.5"; }
+  api("/api/cameras?refresh=true").then(function(fresh) {
+    if (fresh && !fresh.error) {
+      dataCache.cameras = fresh;
+      if (currentPage === "camera-hardware") renderCameraHardware();
+    }
+  }).finally(function() {
+    var b = document.querySelector('[onclick*="_camHwRefresh"]');
+    if (b) { b.disabled = false; b.style.opacity = ""; }
+  });
 }
 
 // ── Calibrations ─────────────────────────────────────────────
@@ -3769,8 +3866,9 @@ function _camPortTile(port, index, ctx) {
           ${displayModel ? '<span class="cam-model-label">' + esc(displayModel) + '</span>' : ''}
           <span class="cam-entry-source text-pulse-muted">${esc(c.identitySource || '')}</span>
         </div>
+        ${cams.length > 1 ? '<div class="cam-entry-source text-pulse-muted">+' + (cams.length - 1) + ' more camera' + (cams.length > 2 ? 's' : '') + ' on this port</div>' : ''}
       </div>
-      ${_camDetailsPanel(cams, index, p)}`;
+      <div class="cam-details-toggle"><a class="cam-hw-pointer" href="#camera-hardware" onclick="navigate('camera-hardware');return false;">${svgIcon("info", 12)} Hardware details</a></div>`;
     })()
     : p.connecting ? '<div class="cam-connecting-note">' + svgIcon("refresh", 12) + ' Establishing link — waiting for camera…</div>'
     : !p.isUp ? _camDownGuidanceHtml(p, ctx)
