@@ -318,6 +318,12 @@ def _cgi_probe_sync(ip: str, timeout: float = 2.0) -> Optional[dict]:
     site has rotated camera credentials, probes will silently return None
     and identification falls back to ARP/cameras.cfg only.
     """
+    # Demo mode can't reach the synthetic camera IPs over HTTP — serve the
+    # canned probe so camerasDetected carries the full probe on a Mac.
+    if DEMO_MODE:
+        from demo_data import cgi_probe as _demo_cgi_probe
+        return _demo_cgi_probe(ip)
+
     headers = {"Authorization": "Basic " + base64.b64encode(b"Admin:1234").decode()}
 
     # Request 1: MAC address (critical — determines if camera responds)

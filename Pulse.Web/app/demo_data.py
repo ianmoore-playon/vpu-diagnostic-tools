@@ -187,6 +187,68 @@ def _demo_scoreconnect():
     }
 
 
+# ── Synthetic camera CGI probe (demo mode) ───────────────────
+# On non-Windows demo, _cgi_probe_sync() can't reach the synthetic camera
+# IPs over HTTP, so it short-circuits to cgi_probe() below. This mirrors the
+# real probe's return shape (see _cgi_probe_sync in main.py): MAC + device
+# identity + network + stream + sensor groups. Keyed by the ARP IP each
+# camera answers on, so _enrich_ports() matches it to the detected camera and
+# the Camera Hardware tab renders a full probe in demo. The modelNumbers map
+# through _CAMERA_MODELS, so role / expected-speed resolution — and the
+# Port 2 "degraded" finding (gigabit main camera negotiated to 100 Mbps) —
+# stay intact.
+def _demo_cam(ip, mac, serial, *, ocr=False, gateway=None):
+    if ocr:
+        return {
+            "mac": mac,
+            "brand": "Dynacolor",
+            "model": "Dynacolor MPC-IPC",
+            "modelNumber": "R2SD-G",  # OCR / Scoreboard, 100 Mbps native
+            "productType": "Box Scoreboard Camera",
+            "serialNumber": serial,
+            "firmwareVersion": "DC-2.4.1",
+            "tvMode": "ntsc_60",
+            "network": {"ip": ip, "subnet": "255.255.0.0", "gateway": gateway, "dhcp": "no"},
+            "stream0": {"codec": "H264", "resolution": "1920x1080", "framerate": "30"},
+            "stream1": {"enabled": "yes", "codec": "MJPEG", "resolution": "640x480", "framerate": "10"},
+            "sensor": {"exposure": "auto", "brightness": "48", "contrast": "52",
+                       "colorLevel": "50", "maxShutterGain": "30", "minShutterSpeed": "1/60"},
+        }
+    return {
+        "mac": mac,
+        "brand": "Pixellot",
+        "model": "Pixellot SuperBowl",
+        "modelNumber": "Z4SF-F",  # Main Camera, gigabit
+        "productType": "4K Panoramic Camera",
+        "serialNumber": serial,
+        "firmwareVersion": "1.9.13",
+        "tvMode": "ntsc_60",
+        "network": {"ip": ip, "subnet": "255.255.255.0", "gateway": gateway, "dhcp": "no"},
+        "stream0": {"codec": "H264", "resolution": "3840x2160", "framerate": "30"},
+        "stream1": {"enabled": "yes", "codec": "MJPEG", "resolution": "1920x1080", "framerate": "15"},
+        "sensor": {"exposure": "auto", "brightness": "50", "contrast": "50",
+                   "colorLevel": "55", "maxShutterGain": "36", "minShutterSpeed": "1/30"},
+    }
+
+
+_DEMO_CGI_PROBES = {
+    "192.168.10.100": _demo_cam("192.168.10.100", "00:0E:53:AA:01:01", "MC1-7741A", gateway="192.168.10.1"),
+    "192.168.10.101": _demo_cam("192.168.10.101", "00:0E:53:AA:01:02", "PC2-7741B", gateway="192.168.10.1"),
+    "192.168.10.102": _demo_cam("192.168.10.102", "00:0E:53:AA:01:03", "TC3-7741C", gateway="192.168.10.1"),
+    "192.168.11.100": _demo_cam("192.168.11.100", "00:0E:53:BB:02:01", "MC4-9920A", gateway="192.168.11.1"),
+    "192.168.11.101": _demo_cam("192.168.11.101", "00:0E:53:BB:02:02", "PC5-9920B", gateway="192.168.11.1"),
+    "169.254.16.52":  _demo_cam("169.254.16.52",  "00:D0:89:1B:03:01", "DYN-OCR-3318", ocr=True),
+}
+
+
+def cgi_probe(ip):
+    """Synthetic CGI probe for a known demo camera IP (else None).
+    Called by _cgi_probe_sync() when DEMO_MODE is on so camerasDetected
+    carries the full probe on a Mac, same as a real VPU."""
+    probe = _DEMO_CGI_PROBES.get(ip)
+    return dict(probe) if probe else None
+
+
 DEMO = {
     "Get-SystemIdentity.ps1": lambda **kw: {
         "computerSystem": {"name": _VENUE["hostname"], "manufacturer": "HP", "model": "HP Z2 Tower G9 Workstation Desktop PC"},
