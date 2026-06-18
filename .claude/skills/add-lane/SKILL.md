@@ -77,8 +77,9 @@ never assume an id from memory.** Anchors (@ `e695eb4`): `NAV_SECTIONS` :62,
 - Confirm: the lane renders with demo data; any finding appears/clears correctly; no
   false-positive `critical` fires against a passing sibling check.
 
-## Commit (multi-session)
+## Commit & ship (worktree-only)
 
-Commit only your files by path; `git show --stat HEAD` must list only yours. Hazard files
-(`app.js`, `main.py`, `demo_data.py`, `style.css`) — one session at a time. Add a one-line
-`CHANGELOG.md` `[Unreleased]` bullet written for a field tech.
+You're in your own worktree (step 0), so commit normally — `git add -A && git commit`,
+then `git push origin <task>` and open a PR into `dev`. Add a one-line `CHANGELOG.md`
+`[Unreleased]` bullet written for a field tech. Don't touch the main checkout; once merged,
+it picks up your work via `./sync-main.sh`. Remove your worktree when done.

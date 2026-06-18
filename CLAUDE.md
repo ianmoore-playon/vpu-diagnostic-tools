@@ -81,33 +81,34 @@ cd Pulse.Web && run.bat
 
 ## Multi-Session Etiquette
 
-Several Claude sessions often share **one** checkout of this repo — the same `.git`, working tree, staging index, and HEAD on `dev`. Every session's changes are interleaved with yours at all times. Left unmanaged this causes: staged files swept into another session's commit, a commit message landing on unrelated files, uncommitted edits wiped by another session's `checkout`/`restore`, and the shared `dev` HEAD detached or rebased mid-edit.
+Several Claude sessions share **one** repo on disk. The model that keeps them from colliding: **every session works in its own worktree; the main checkout is a read-only mirror of `origin/dev`** (served on port 8765). Nobody edits the main tree — so the shared-working-tree collisions (swept commits, clobbered WIP, `app.js` line numbers drifting mid-edit) simply can't happen.
 
-### Best fix — one worktree per session
+### Working: one worktree per task — always
 
-Before working, isolate yourself:
+Even for a one-line fix. Isolate first:
 
 ```bash
 git worktree add ../pulse-<task> -b <task> origin/dev
 ```
 
-Work there, commit, `git push origin <task>`, open a PR. Separate tree + index + HEAD = zero collisions. Prefer this for anything beyond a quick one-file edit.
+Inside your worktree you have your own tree, index, and HEAD, so **normal git is fine** (`git add -A`, `git commit -am` — nobody shares your index). When done: commit, `git push origin <task>`, open a PR into `dev`, then `git worktree remove` to clean up.
 
-### If you share the checkout
+**UI/preview work:** preview needs the server cwd *inside* the repo root, so create the worktree under `.claude/worktrees/<name>` (not `../`) and run your own port — never 8765.
 
-1. **Never stage broadly.** No `git add -A`, `git add .`, or `git commit -am` — they grab every session's WIP.
-2. **Commit only your files, by path, in one command:** `git commit <path1> <path2> -m "msg"`. A pathspec commit ignores the shared index, so a parallel `git commit` can't race in between (it *will* if you `git add` then commit as separate steps). Caveat: if another session edited the *same* file, you still co-commit their lines — so claim your lane.
-3. **One file = one session at a time.** Hazard files everyone reaches for: `Pulse.Web/app/static/app.js`, `Pulse.Web/app/main.py`, `Pulse.Web/app/demo_data.py`, `Pulse.Web/app/static/style.css`. Don't edit one another session is in.
-4. **Commit small and often.** Uncommitted work gets clobbered by another session's checkout/restore; committed work is safe.
-5. **Verify before *and* after committing:** `git show --stat HEAD` (or `git diff --cached --stat`) must list only *your* files. If others' appear, you swept them.
+### The main checkout / 8765 = read-only mirror of `origin/dev`
 
-### Never run tree-wide or history commands on the shared checkout
+Not an editing surface. **Never edit, commit, `reset`, `checkout`, `merge`, or `rebase` in the main tree** — its only job is to show the integrated state of `origin/dev`. To reflect newly-pushed work, run from anywhere in the repo:
 
-`git checkout -- .` · `git restore .` · `git reset --hard` · `git stash` (without a pathspec) · `git rebase` · `git pull --rebase` · `git checkout <branch>`. They discard or rewrite other sessions' work and move HEAD under everyone. (`git pull --rebase` also replays other sessions' unpushed commits and drops you into *their* conflicts — which is why it's no longer the recommended pre-push step here.) And never rewrite pushed `dev` history — no `commit --amend`, `rebase`, or force-push on `dev`.
+```bash
+./sync-main.sh
+```
 
-### Pushing through someone else's conflict
+It fast-forwards the main tree to `origin/dev` — refusing on any uncommitted change or divergence, never forcing — then tells you to restart 8765 (uvicorn runs with reload off, so a restart is required; gotcha #2). Restart it the right way: **agent** → `preview_stop` then `preview_start` (config `pulse-web`); **terminal** → `kill $(lsof -ti tcp:8765)` then relaunch `PORT=8765 python3 app/main.py` from `Pulse.Web/`. Treat 8765 as "latest **synced** dev," not necessarily latest dev.
 
-If a push is rejected over a conflict in another session's commit, **do not resolve their conflict.** Cherry-pick *your* commit onto `origin/dev` in a throwaway worktree and push that:
+### Pushing to `origin/dev`
+
+- **Never rewrite pushed `dev` history** — no `commit --amend`, `rebase`, or force-push on `dev`.
+- If your push is rejected over another session's conflict, **don't resolve theirs.** Cherry-pick *your* commit onto `origin/dev` in a throwaway worktree and push that:
 
 ```bash
 git worktree add --detach /tmp/wt origin/dev
