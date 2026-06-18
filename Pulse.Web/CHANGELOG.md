@@ -20,7 +20,15 @@ flow shows testers when a new build is available.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 `Pulse.Web/VERSION`.
 
-## [Unreleased]
+## [0.3.4] - 2026-06-18
+
+### Fixed
+- **No more false "DNS blocked — can't resolve any hostname" alarm.** The DNS
+  check was probing whatever resolver it found first across *all* network
+  adapters, so a stale resolver on a disconnected or secondary adapter (e.g. a
+  camera NIC or VPN) could get tested instead of the one the VPU actually uses —
+  it failed, and Pulse raised a critical even though every domain was resolving
+  fine. Pulse now tests the resolver on the active internet uplink.
 
 ## [0.3.3] - 2026-06-15
 

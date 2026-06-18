@@ -24,12 +24,30 @@ try {
     # resolver the box actually uses — not a hardcoded public IP like 8.8.8.8,
     # which locked-down venue networks block by design (the VPU resolves names
     # through the venue's internal DNS instead).
+    # Test the resolver the ACTIVE UPLINK actually uses — scope to the interface
+    # that holds the default route. Querying every interface and taking the first
+    # DNS can grab a stale resolver off a disconnected or secondary adapter (a
+    # camera NIC, VPN, etc.); that dead IP then fails the UDP/53 probe and looks
+    # like "DNS blocked" while the real resolver is working fine.
     $primaryDns = $null
     try {
-        $primaryDns = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction Stop |
+        $dnsRows = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction Stop
+        $uplinkIdx = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+            Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' } |
+            Sort-Object RouteMetric | Select-Object -First 1).InterfaceIndex
+        $scoped = if ($uplinkIdx) { $dnsRows | Where-Object { $_.InterfaceIndex -eq $uplinkIdx } } else { $dnsRows }
+        $primaryDns = $scoped |
             ForEach-Object { $_.ServerAddresses } |
             Where-Object { $_ -and -not $_.StartsWith('127.') -and -not $_.StartsWith('169.254.') } |
             Select-Object -First 1
+        # If the uplink interface carried no usable resolver, fall back to any
+        # interface's — keeps the check working on unusual routing setups.
+        if (-not $primaryDns -and $uplinkIdx) {
+            $primaryDns = $dnsRows |
+                ForEach-Object { $_.ServerAddresses } |
+                Where-Object { $_ -and -not $_.StartsWith('127.') -and -not $_.StartsWith('169.254.') } |
+                Select-Object -First 1
+        }
     }
     catch { }
 
