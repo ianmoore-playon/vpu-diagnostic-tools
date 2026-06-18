@@ -1523,13 +1523,13 @@ function renderDashboard() {
       </div>
       <div class="dash-actions">
         <button class="btn-outline btn-ol-green" onclick="refreshAll()">
-          ${svgIcon("play", 14)} Run All Diagnostics
+          Run All Diagnostics
         </button>
         <button class="btn-outline btn-ol-blue" onclick="navigate('reports')">
-          ${svgIcon("download", 14)} Support Bundle
+          Support Bundle
         </button>
         <button class="btn-outline btn-ol-blue" onclick="dataCache.dashboard=null;renderDashboard()">
-          ${svgIcon("refresh", 14)} Refresh Dashboard
+          Refresh Dashboard
         </button>
       </div>
     </div>
