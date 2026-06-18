@@ -86,6 +86,7 @@ const NAV_SECTIONS = [
     { id: "applications", label: "Applications", icon: "copy" },
     { id: "disk-health", label: "Disks", icon: "hdd" },
     { id: "environment", label: "Environment", icon: "globe" },
+    { id: "reboots", label: "Power Events", icon: "power" },
   ]},
   { label: "DATA LOGS", pages: [
     { id: "pixellot-logs", label: "Pixellot Logs", icon: "logs" },
@@ -123,6 +124,7 @@ const PAGE_API = {
   services: "/api/services",
   "disk-health": "/api/disk-health",
   events: "/api/events",
+  reboots: "/api/reboots",
   audio: "/api/audio",
   scoreconnect: "/api/scoreconnect",
   "pixellot-config": "/api/pixellot-config",
@@ -812,6 +814,7 @@ const pageRenderers = {
   services: renderServices,
   "disk-health": renderDiskHealth,
   events: renderEvents,
+  reboots: renderReboots,
   "pixellot-logs": renderPixellotLogs,
   "pulse-logs": renderPulseLogs,
   help: renderHelp,
@@ -4907,6 +4910,91 @@ function formatTime(iso) {
 }
 
 // ── Event Viewer ─────────────────────────────────────────────
+
+// ── Reboots ──────────────────────────────────────────────────
+// "Why did this VPU restart, and is one pending?" Built from the System log
+// (1074/1076/6008/41). A reboot Pulse itself triggered is positively labeled —
+// Reboot-Vpu.ps1 stamps the event Comment, so an empty/other comment is proof
+// it was external (a scheduled task, Windows Update, or a crash).
+function renderReboots() {
+  const data = cached("reboots");
+  if (!data) { $page().innerHTML = sectionLoading("Reboot History"); fetchSection("reboots"); return; }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
+
+  const pending = data.pending || {};
+  const isPending = !!pending.isPending;
+  const reasons = pending.reasons || [];
+  const history = data.history || [];
+  const diTask = data.deviceInstallRebootTaskLastRun;
+
+  function sumCard(icon, title, sev, chip, val, desc) {
+    return `<div class="card dh-summary-card">
+      <div class="dh-summary-top">
+        <span class="dh-summary-icon">${svgIcon(icon, 18)}</span>
+        <span class="dh-summary-title">${esc(title)}</span>
+        ${severityChip(sev, chip)}
+      </div>
+      <div class="dh-summary-val">${esc(val)}</div>
+      <div class="dh-summary-desc">${esc(desc)}</div>
+    </div>`;
+  }
+
+  const pendCard = sumCard(
+    isPending ? "alert" : "check", "Pending reboot",
+    isPending ? "warning" : "ok", isPending ? "Reboot pending" : "None pending",
+    isPending ? reasons.join("; ") : "Nothing is waiting on a restart",
+    isPending ? "Windows may restart on its own — reboot at a safe time to clear it."
+              : "No staged updates or pending file operations.");
+
+  const uptimeCard = sumCard(
+    "clock", "Uptime", "muted", "Since last boot",
+    data.uptime || "—",
+    data.lastBoot ? `Last boot ${formatTime(data.lastBoot)}` : "Last boot unknown");
+
+  const diCard = sumCard(
+    "zap", "Device-install reboot", diTask ? "info" : "muted", diTask ? "Has fired" : "Never",
+    diTask ? formatTime(diTask) : "Not on this box",
+    "Windows' built-in task that reboots after a driver install — the usual cause of an “unprovoked” restart at logon.");
+
+  function row(h) {
+    const typeChip = h.category === "unexpected"
+      ? severityChip("critical", "Unexpected")
+      : severityChip("muted", "Planned");
+    const src = h.byPulse
+      ? `<span class="sev-chip sev-chip-ok">${svgIcon("shield", 12)} ${esc(h.source || "Pulse")}</span>`
+      : esc(h.source || "—");
+    const reason = [h.reasonText, h.reasonCode].filter(Boolean).map(esc).join(" ");
+    return `<tr>
+      <td class="text-xs whitespace-nowrap font-mono">${formatTime(h.time)}</td>
+      <td>${typeChip}</td>
+      <td class="text-xs">${src}</td>
+      <td class="text-xs font-mono">${esc(h.user || "—")}</td>
+      <td class="text-xs">${reason || "—"}${h.process ? `<br><span class="text-pulse-muted font-mono">${esc(h.process)}</span>` : ""}</td>
+      <td class="text-xs">${h.comment ? esc(h.comment) : '<span class="text-pulse-muted">— (empty: not Pulse)</span>'}</td>
+    </tr>`;
+  }
+
+  const table = history.length ? `
+    <div class="card mt-4">
+      <div class="ev-count">${history.length} restart / shutdown event${history.length === 1 ? "" : "s"} (last 7 days)</div>
+      <div class="ev-table-wrap">
+        <table class="data-table ev-table"><thead><tr>
+          <th>When</th><th>Type</th><th>Source</th><th>User</th><th>Reason / process</th><th>Comment</th>
+        </tr></thead><tbody>
+        ${history.map(row).join("")}
+        </tbody></table>
+      </div>
+    </div>`
+    : '<div class="card mt-4"><div class="text-center py-8 text-pulse-muted">No restarts or shutdowns recorded in the last 7 days.</div></div>';
+
+  $page().innerHTML = `
+    ${pageHeader("Power Events", "Why this VPU last restarted, and whether a reboot is pending. Reboots Pulse itself triggered are labeled — everything else is external.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache['reboots']=null;renderReboots()">${svgIcon("refresh", 14)} Refresh</button>`
+    )}
+    <div class="dh-summary-row">${pendCard}${uptimeCard}${diCard}</div>
+    ${table}
+  `;
+}
 
 function renderEvents() {
   $page().innerHTML = `
