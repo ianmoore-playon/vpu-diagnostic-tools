@@ -49,6 +49,9 @@ function svgIcon(name, size) {
     "folder-code": '<path d="M10 10.5 8 13l2 2.5"/><path d="m14 10.5 2 2.5-2 2.5"/><path d="M2 6a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/>',
     settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     "file-warning": '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    "clipboard-list": '<rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
+    "id-card": '<path d="M16 10h2"/><path d="M16 14h2"/><path d="M6.17 15a3 3 0 0 1 5.66 0"/><circle cx="9" cy="11" r="2"/><rect x="2" y="5" width="20" height="14" rx="2"/>',
+    package: '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
@@ -1454,7 +1457,10 @@ function renderDashboard() {
     <!-- Findings — lightweight list of the active warnings/criticals -->
     <div class="card dash-findings-card">
       <div class="flex justify-between items-center mb-2">
-        <h3 class="card-label mb-0">FINDINGS</h3>
+        <div class="dash-card-hdr mb-0">
+          <span class="dash-hdr-icon">${svgIcon("clipboard-list", 16)}</span>
+          <h3 class="card-label mb-0">FINDINGS</h3>
+        </div>
         <span class="cc-findings-count">${totalFindings} issue${totalFindings === 1 ? "" : "s"}</span>
       </div>
       <div class="cc-findings-list">
@@ -1488,7 +1494,10 @@ function renderDashboard() {
     <!-- VPU Identity + Pixellot Software -->
     <div class="dash-2col">
       <div class="card">
-        <h3 class="card-label">VPU IDENTITY</h3>
+        <div class="dash-card-hdr">
+          <span class="dash-hdr-icon">${svgIcon("id-card", 16)}</span>
+          <h3 class="card-label mb-0">VPU IDENTITY</h3>
+        </div>
         ${vpuName ? `<div class="text-sm text-pulse-muted mb-3">${esc(vpuName)}</div>` : ""}
         <div class="dash-kv">
           <span class="dash-kv-l">Model</span><span class="dash-kv-v">${esc(id.model || "—")}</span>
@@ -1499,7 +1508,10 @@ function renderDashboard() {
         </div>
       </div>
       <div class="card">
-        <h3 class="card-label">PIXELLOT SOFTWARE</h3>
+        <div class="dash-card-hdr">
+          <span class="dash-hdr-icon">${svgIcon("package", 16)}</span>
+          <h3 class="card-label mb-0">PIXELLOT SOFTWARE</h3>
+        </div>
         <div class="text-lg font-bold text-white">${esc(id.pixellotVersion || "—")}</div>
         <div class="text-xs text-pulse-muted mb-3">App Version</div>
         <div class="dash-kv">
@@ -1512,7 +1524,10 @@ function renderDashboard() {
     <!-- System Status Gauges -->
     <div class="card dash-gauges-card">
       <div class="dash-card-hdr-row">
-        <h3 class="card-label mb-0">SYSTEM STATUS</h3>
+        <div class="dash-card-hdr mb-0">
+          <span class="dash-hdr-icon">${svgIcon("activity", 16)}</span>
+          <h3 class="card-label mb-0">SYSTEM STATUS</h3>
+        </div>
         <span id="live-indicator" class="live-indicator">${_liveIndicatorHtml()}</span>
       </div>
       <div class="dash-gauges-row" id="dash-gauges">
