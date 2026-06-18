@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh\""
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mkdir -p \"$CLAUDE_PROJECT_DIR/.claude/backups\" && jq -r '.transcript_path // empty' | { read -r t; [ -n \"$t\" ] && cp \"$t\" \"$CLAUDE_PROJECT_DIR/.claude/backups/precompact-$(date +%Y%m%d-%H%M%S).jsonl\"; true; }",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
