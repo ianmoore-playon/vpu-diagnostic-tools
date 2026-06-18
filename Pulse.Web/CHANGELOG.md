@@ -49,6 +49,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   interrupts any active recording, so it asks you to confirm first.
 
 ### Changed
+- **Clearer Stream Readiness wording.** The middle verdict now reads "WARNING"
+  instead of "WARN", and its summary explains it plainly: "Will likely stream,
+  but there are issues found that should be addressed to improve the system's
+  reliability."
 - **Slimmed down the Settings page.** Settings now shows just Software Update and
   the new Reboot Pulse panel. The ScoreConnect URL, live-metrics interval, log
   file paths, and the Run All Diagnostics button were removed to keep the page

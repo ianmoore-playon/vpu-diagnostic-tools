@@ -1343,7 +1343,7 @@ function _renderVolumes(volumes) {
 // this just renders the verdict record that rides on dash.readiness.
 var _RDY_META = {
   PASS: { word: "PASS", icon: "check", tone: "pass", tag: "Game-ready — no blockers, no risks." },
-  WARN: { word: "WARN", icon: "alert", tone: "warn", tag: "Will likely stream, but a real risk a human should eyeball before game time." },
+  WARN: { word: "WARNING", icon: "alert", tone: "warn", tag: "Will likely stream, but there are issues found that should be addressed to improve the system's reliability." },
   FAIL: { word: "FAIL", icon: "x",     tone: "fail", tag: "Don't expect a clean broadcast tonight — this needs pre-game attention." },
 };
 
