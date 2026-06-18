@@ -41,49 +41,73 @@ function svgIcon(name, size) {
     inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
     "external-link": '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
     copy: '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+    help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    scale: '<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>',
+    "file-down": '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/>',
+    "share-2": '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>',
+    logs: '<path d="M13 12h8"/><path d="M13 18h8"/><path d="M13 6h8"/><path d="M3 12h1"/><path d="M3 18h1"/><path d="M3 6h1"/><path d="M8 12h1"/><path d="M8 18h1"/><path d="M8 6h1"/>',
+    "folder-code": '<path d="M10 10.5 8 13l2 2.5"/><path d="m14 10.5 2 2.5-2 2.5"/><path d="M2 6a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/>',
+    settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+    "file-warning": '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
 
 // ── Pages & Nav Sections ─────────────────────────────────────
+// 6-group IA (nav restructure v3). Phase A: regroup + rename only. The current
+// System Overview (`system`) and Pixellot Configuration (`pixellot-config`) tabs
+// are parked in their new groups as-is; later phases split them into Hardware /
+// Applications / Environment and Pixellot Software / Camera Hardware /
+// Calibrations, and add Pixellot Logs / Pulse Logs / Help.
 const NAV_SECTIONS = [
   { label: "TRIAGE", pages: [
     { id: "dashboard", label: "Dashboard", icon: "grid" },
   ]},
-  { label: "CONNECTIVITY", pages: [
-    { id: "network", label: "Network", icon: "wifi" },
+  { label: "TROUBLESHOOTING", pages: [
+    { id: "network", label: "Network Test", icon: "wifi" },
     { id: "cameras", label: "Camera Connectivity", icon: "camera" },
-    { id: "scoreconnect", label: "Score Connect", icon: "monitor" },
+    { id: "scoreconnect", label: "ScoreConnect", icon: "monitor" },
+    { id: "services", label: "Service Status", icon: "server" },
     // Audio tab hidden from nav pending further development. The full impl is
     // still wired — renderAudio(), pageRenderers.audio, PAGE_API.audio,
     // /api/audio, and the PS scripts — so re-add this entry to restore it.
   ]},
-  { label: "SYSTEM", pages: [
-    { id: "system", label: "System Overview", icon: "cpu" },
-    { id: "services", label: "Pixellot Services", icon: "server" },
-    { id: "pixellot-config", label: "Pixellot Configuration", icon: "database" },
-    { id: "disk-health", label: "Disk & System Health", icon: "hdd" },
-    { id: "events", label: "Event Viewer", icon: "triangle" },
+  { label: "PIXELLOT CONFIGURATION", pages: [
+    { id: "pixellot-software", label: "Pixellot Software", icon: "folder-code" },
+    { id: "camera-hardware", label: "Camera Hardware", icon: "camera" },
+    { id: "calibrations", label: "Camera Calibrations", icon: "scale" },
   ]},
-  { label: "EVIDENCE", pages: [
-    { id: "reports", label: "Reports", icon: "file" },
-    { id: "share", label: "Share over LAN", icon: "send" },
+  { label: "SYSTEM INFORMATION", pages: [
+    { id: "hardware", label: "Hardware", icon: "cpu" },
+    { id: "applications", label: "Applications", icon: "copy" },
+    { id: "disk-health", label: "Disks", icon: "hdd" },
+    { id: "environment", label: "Environment", icon: "globe" },
   ]},
-  { label: "SETUP", pages: [
-    { id: "settings", label: "Settings", icon: "cog" },
+  { label: "DATA LOGS", pages: [
+    { id: "pixellot-logs", label: "Pixellot Logs", icon: "logs" },
+    { id: "events", label: "Windows Events", icon: "file-warning" },
+    { id: "pulse-logs", label: "Pulse Logs", icon: "heartbeat" },
+  ]},
+  { label: "PULSE", pages: [
+    { id: "settings", label: "Settings", icon: "settings" },
+    { id: "share", label: "Share over LAN", icon: "share-2" },
+    { id: "reports", label: "Exports", icon: "file-down" },
+    { id: "help", label: "Help", icon: "help" },
     { id: "about", label: "About", icon: "info" },
   ]},
 ];
 const PAGES = NAV_SECTIONS.flatMap((s) => s.pages);
 // Hidden pages (accessible via hash but not in nav)
 const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Fault Isolator" }];
+// Tabs retired in the nav restructure redirect to their nearest replacement so
+// old bookmarks / deep-links don't land on an "Unknown page".
+const RETIRED_PAGE_ALIASES = { system: "hardware", "pixellot-config": "pixellot-software" };
 
 let currentPage = "";
 let ws = null;
 let wsRetryTimer = null;
 let dataCache = {};
 let logEntries = [];
-let logPaneOpen = false;
 let fetchingKeys = new Set();
 let fetchPromises = {};
 
@@ -104,6 +128,7 @@ const PAGE_API = {
 // ── Router ───────────────────────────────────────────────────
 
 function navigate(id) {
+  id = RETIRED_PAGE_ALIASES[id] || id;
   if (id === currentPage) return;
   // Abort any in-flight fault-isolator poll when navigating away.
   if (currentPage === "fault-isolator" && _fi) _fi._aborted = true;
@@ -401,6 +426,10 @@ function _sectionLabels() {
   const map = {};
   NAV_SECTIONS.forEach((s) => s.pages.forEach((p) => { map[p.id] = p.label; }));
   HIDDEN_PAGES.forEach((p) => { map[p.id] = p.label; });
+  // Retired ids still fetched during preload (their /api/* feeds the split
+  // tabs) — give them friendly splash labels instead of raw keys.
+  map.system = map.system || "System";
+  map["pixellot-config"] = map["pixellot-config"] || "Pixellot Configuration";
   _SECTION_LABELS_CACHE = map;
   return map;
 }
@@ -595,124 +624,36 @@ function sectionLoading(label) {
   </div>`;
 }
 
-// ── Logging Pane ────────────────────────────────────────────
-
-let activeLogTab = "script";
+// ── Log helpers ─────────────────────────────────────────────
+// The bottom log drawer was retired in favor of the full-page Pulse Logs tab
+// (see renderPulseLogs). These helpers + the live `logEntries` buffer it
+// accumulates are still shared with that tab.
 
 function _logEmptyState(message) {
   return `<div class="log-empty">${esc(message)}</div>`;
 }
 
-function renderLogPane() {
-  const pane = document.getElementById("log-pane");
-  if (!pane) return;
-  const body = pane.querySelector('[data-log-body="script"]');
-  if (!body) return;
-  const entries = logEntries.slice(-200);
-  if (!entries.length) {
-    body.innerHTML = _logEmptyState("Waiting for diagnostic activity… script calls will appear here.");
-    return;
-  }
-  body.innerHTML = entries.map((e) => {
-    const statusCls = e.status === "ok" ? "log-ok"
-      : e.status === "timeout" || e.status === "warn" ? "log-warn"
-      : "log-err";
-    return `<div class="log-entry">
-      <span class="log-ts">${esc(e.ts?.split("T")[1] || "")}</span>
-      <span class="log-script">${esc(e.script)}</span>
-      <span class="log-dur">${e.durationMs != null ? e.durationMs + "ms" : ""}</span>
-      <span class="log-size">${e.bytes > 0 ? formatBytes(e.bytes) : ""}</span>
-      <span class="log-status ${statusCls}">${esc(e.status)}</span>
-      <span class="log-detail">${esc(e.detail)}</span>
-    </div>`;
-  }).join("");
-  body.scrollTop = body.scrollHeight;
-}
-
-function renderServerLog(lines) {
-  const pane = document.getElementById("log-pane");
-  if (!pane) return;
-  const body = pane.querySelector('[data-log-body="server"]');
-  if (!body) return;
-  if (!lines || !lines.length) {
-    body.innerHTML = _logEmptyState("Server log empty. The server logs to pulse-server.log on startup and during requests.");
-    return;
-  }
-  body.innerHTML = lines.map((l) =>
-    `<div class="log-entry server-log-line">${esc(l)}</div>`
-  ).join("");
-  body.scrollTop = body.scrollHeight;
-}
-
-async function fetchServerLog() {
-  const data = await api("/api/server-log?tail=500");
-  if (data && !data.error) renderServerLog(data.lines || []);
-}
-
-// Periodically refresh the server log while the user is watching it,
-// so they see new entries appear without needing to switch tabs or
-// re-open the pane. Auto-refresh stops when pane closes or tab changes.
-let _serverLogTimer = null;
-function _startServerLogPolling() {
-  if (_serverLogTimer) return;
-  _serverLogTimer = setInterval(() => {
-    if (logPaneOpen && activeLogTab === "server") fetchServerLog();
-    else _stopServerLogPolling();
-  }, 2000);
-}
-function _stopServerLogPolling() {
-  if (_serverLogTimer) { clearInterval(_serverLogTimer); _serverLogTimer = null; }
-}
-
-function switchLogTab(tab) {
-  activeLogTab = tab;
-  // If the pane is collapsed, open it. toggleLogPane() handles the
-  // render/fetch for the now-active tab.
-  if (!logPaneOpen) { toggleLogPane(); return; }
-  const pane = document.getElementById("log-pane");
-  if (!pane) return;
-  pane.querySelectorAll(".log-tab").forEach((t) =>
-    t.classList.toggle("log-tab-active", t.dataset.logTab === tab)
-  );
-  pane.querySelectorAll("[data-log-body]").forEach((b) =>
-    b.classList.toggle("log-body-hidden", b.dataset.logBody !== tab)
-  );
-  if (tab === "server") { fetchServerLog(); _startServerLogPolling(); }
-  else { _stopServerLogPolling(); renderLogPane(); }
+// One script-call log row. Rendered by the Pulse Logs tab (_renderPulseLogsScript).
+function _scriptLogEntryHtml(e) {
+  const statusCls = e.status === "ok" ? "log-ok"
+    : e.status === "timeout" || e.status === "warn" ? "log-warn"
+    : "log-err";
+  return `<div class="log-entry">
+    <span class="log-ts">${esc(e.ts?.split("T")[1] || "")}</span>
+    <span class="log-script">${esc(e.script)}</span>
+    <span class="log-dur">${e.durationMs != null ? e.durationMs + "ms" : ""}</span>
+    <span class="log-size">${e.bytes > 0 ? formatBytes(e.bytes) : ""}</span>
+    <span class="log-status ${statusCls}">${esc(e.status)}</span>
+    <span class="log-detail">${esc(e.detail)}</span>
+  </div>`;
 }
 
 function appendLogs(newLogs) {
   if (!newLogs?.length) return;
   logEntries.push(...newLogs);
   if (logEntries.length > 500) logEntries = logEntries.slice(-500);
-  if (logPaneOpen && activeLogTab === "script") renderLogPane();
-}
-
-function toggleLogPane() {
-  logPaneOpen = !logPaneOpen;
-  const pane = document.getElementById("log-pane");
-  if (!pane) return;
-  pane.classList.toggle("log-pane-open", logPaneOpen);
-  // Reflect the active tab visually whenever we open — useful when a
-  // tab click is what triggered the toggle.
-  pane.querySelectorAll(".log-tab").forEach((t) =>
-    t.classList.toggle("log-tab-active", t.dataset.logTab === activeLogTab)
-  );
-  pane.querySelectorAll("[data-log-body]").forEach((b) =>
-    b.classList.toggle("log-body-hidden", b.dataset.logBody !== activeLogTab)
-  );
-  if (logPaneOpen) {
-    if (activeLogTab === "script") renderLogPane();
-    else { fetchServerLog(); _startServerLogPolling(); }
-  } else {
-    _stopServerLogPolling();
-  }
-}
-
-function openServerLog() {
-  activeLogTab = "server";
-  if (!logPaneOpen) toggleLogPane();
-  else switchLogTab("server");
+  // Keep the full-page Pulse Logs tab live as new script calls stream in.
+  if (currentPage === "pulse-logs") _renderPulseLogsScript();
 }
 
 function _updateThemeToggle() {
@@ -854,19 +795,32 @@ function _updateGaugeLive(name, val, opts) {
 
 const pageRenderers = {
   dashboard: renderDashboard,
-  system: renderSystem,
+  // System Overview was split into Hardware / Applications / Environment
+  // (nav restructure v3); the `system` id is retired but its /api/system
+  // payload still feeds all three (and Pixellot Software, below).
+  hardware: renderHardware,
+  applications: renderApplications,
+  environment: renderEnvironment,
   network: renderNetwork,
   cameras: renderCameras,
   services: renderServices,
   "disk-health": renderDiskHealth,
   events: renderEvents,
+  "pixellot-logs": renderPixellotLogs,
+  "pulse-logs": renderPulseLogs,
+  help: renderHelp,
   reports: renderReports,
   share: renderShare,
   // Audio diagnostics re-enabled for demo. renderAudioComingSoon() is left
   // intact below as the gate — swap back to it to hide the tab again.
   audio: renderAudio,
   scoreconnect: renderScoreConnect,
-  "pixellot-config": renderPixellotConfig,
+  // Pixellot Configuration was split into Pixellot Software / Camera Hardware /
+  // Calibrations (nav restructure v3); the `pixellot-config` id is retired but
+  // its /api/pixellot-config payload still feeds all three.
+  "pixellot-software": renderPixellotSoftware,
+  "camera-hardware": renderCameraHardware,
+  calibrations: renderCalibrations,
   "fault-isolator": renderFaultIsolator,
   settings: renderSettings,
   about: renderAbout,
@@ -900,56 +854,113 @@ function _pcDaysSince(iso) {
   return Math.floor((Date.now() - dt.getTime()) / 86400000);
 }
 
-function renderPixellotConfig() {
-  const d = cached("pixellot-config");
-  if (!d) { $page().innerHTML = sectionLoading("Pixellot Configuration"); fetchSection("pixellot-config"); return; }
-  if (d.error) { $page().innerHTML = errorBox(d.message); return; }
+// keepagentup.exe — confirm + run + inline result (mirrors the Services lane).
+// Shared by the Pixellot Software tab; attached to #pc-keepagent-btn.
+async function _pcRestartAgentHandler() {
+  const ok = confirm(
+    "Restart Pixellot Agent + Coordinator?\n\n" +
+    "This runs c:\\pixellot\\bin\\keepagentup.exe, which will briefly stop and " +
+    "relaunch both services. Recording may pause for a few seconds.\n\nProceed?"
+  );
+  if (!ok) return;
+  const btn = document.getElementById("pc-keepagent-btn");
+  const resultEl = document.getElementById("pc-keepagent-result");
+  btn.disabled = true;
+  btn.innerHTML = `${svgIcon("refresh", 14)} Restarting...`;
+  resultEl.classList.add("hidden");
 
-  const reg = d.registryConfig || {};
-  const compat = d.compat || {};
-  const cams = d.cameras || [];
-  const cal = d.calibration || {};
-  const multi = cal.multisport || {};
-  const ocr = cal.ocr || {};
-  const version = compat.installedVersion || reg.version || reg.Version || null;
-  const installPath = reg.InstallPath || reg.installPath || reg.Path || "C:\\Pixellot";
+  const r = await apiPost("/api/services/restart-agent", {});
+  btn.disabled = false;
+  btn.innerHTML = `${svgIcon("zap", 14)} Restart Agent + Coordinator`;
 
-  // Version-compatibility banner — same look as System Overview.
-  const compatBanner = (() => {
-    const c = compat;
-    if (!c || c.status === "skip") return "";
-    let cls = "sys-lifecycle-ok", title = "", detail = "";
-    if (c.status === "ok") {
-      cls = "sys-lifecycle-ok"; title = "Version compatible with hardware";
-      detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : " — no version limit"}.`;
-    } else if (c.status === "over") {
-      cls = "sys-lifecycle-crit"; title = "Version exceeds hardware compatibility cap";
-      detail = `Installed ${esc(c.installedVersion)} is newer than ${esc(c.maxVersion)} (max for ${esc(c.architecture)}). Downgrade to stay supported.`;
-    } else if (c.status === "no-gpu") {
-      cls = "sys-lifecycle-crit"; title = "No NVIDIA GPU detected";
-      detail = "Pixellot requires NVIDIA hardware for encoding.";
-    } else if (c.status === "anomaly") {
-      cls = "sys-lifecycle-crit"; title = "Unexpected GPU architecture";
-      detail = `${esc(c.architecture)} is not a known Pixellot deployment — escalate to support.`;
-    }
-    return `<div class="sys-lifecycle ${cls} mt-3">
-      ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
-      <div><div class="font-semibold">${esc(title)}</div><div class="text-xs mt-1">${detail}</div></div>
-    </div>`;
-  })();
+  const ok2 = r && r.success;
+  resultEl.className = "svc-quick-action-result " + (ok2 ? "svc-result-ok" : "svc-result-err");
+  resultEl.innerHTML = `
+    <div class="font-semibold">${ok2 ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
+    <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
+    ${r?.agentStatus ? `<div class="text-xs mt-2 text-pulse-muted">Agent: <span class="font-mono">${esc(r.agentStatus)}</span> &middot; Coordinator: <span class="font-mono">${esc(r.coordinatorStatus || "?")}</span></div>` : ""}
+    ${r?.stdout ? `<pre class="svc-result-output">${esc(r.stdout)}</pre>` : ""}
+    ${r?.stderr ? `<pre class="svc-result-output svc-result-stderr">${esc(r.stderr)}</pre>` : ""}
+  `;
+}
 
-  // Calibration is per-FUNCTION, not per-camera: Main cameras share the
-  // multisport-stitch status; the OCR camera uses the pipdesign status.
-  function camCalCell(role) {
-    const r = (role || "").toLowerCase();
-    if (r.includes("ocr")) {
-      return ocr.calibrated ? badge("Calibrated", "pass") : badge("Not calibrated", "warn");
-    }
-    if (r.includes("main")) {
-      return multi.calibrated ? badge("Calibrated", "pass") : badge("Not calibrated", "warn");
-    }
-    return `<span class="text-pulse-muted">—</span>`;
+// ── Pixellot Software (full) ─────────────────────────────────
+// Version + GPU/OS compatibility (from /api/system) plus install/agent and the
+// raw registry dump (from /api/pixellot-config). Reads both caches; the page id
+// no longer matches either key, so it kicks off both fetches and re-renders.
+function renderPixellotSoftware() {
+  const sys = cached("system");
+  const pc = cached("pixellot-config");
+  if (!sys || !pc) {
+    $page().innerHTML = sectionLoading("Pixellot Software");
+    Promise.all([fetchSection("system"), fetchSection("pixellot-config")])
+      .then(() => { if (currentPage === "pixellot-software") renderPixellotSoftware(); });
+    return;
   }
+  const id = sys.identity || {};
+  const pix = id.pixellot || {};
+  const reg = (!pc.error && pc.registryConfig) || {};
+  const installPath = reg.InstallPath || reg.installPath || reg.Path || "C:\\Pixellot";
+  const regKeys = Object.keys(reg);
+  const regRows = regKeys.length
+    ? regKeys.map((k) => kvRow(k, reg[k])).join("")
+    : `<div class="info-chip">No HKLM\\SOFTWARE\\Pixellot values found.</div>`;
+
+  $page().innerHTML = `
+    ${pageHeader("Pixellot Software", "Pixellot version, install/agent config, and hardware compatibility.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;dataCache['pixellot-config']=null;renderPixellotSoftware()">${svgIcon("refresh", 14)} Refresh</button>`)}
+
+    <div class="card">
+      ${sectionTitle("zap", "Version & Compatibility")}
+      <div class="kv-grid kv-grid-wide">
+        ${kvRow("App Version", pix.version)}
+        ${kvRow("Image Version", pix.imageVersion)}
+      </div>
+      ${id.isNonVpuHost ? '<div class="info-chip mt-3">Not a VPU host</div>' : ""}
+      ${_pixCompatBannerHtml(pix.compat)}
+    </div>
+
+    <div class="card svc-quick-action">
+      ${sectionTitle("server", "Install & Agent")}
+      ${pc.error ? errorBox(pc.message) : `
+        <div class="kv-grid">
+          ${kvRow("Install Path", installPath)}
+          ${kvRow("Dependencies", reg.dependencies || reg.Dependencies)}
+          ${kvRowHtml("cameras.cfg", pc.cameraCfgExists ? badge("Present", "pass") : badge("Missing", "fail"))}
+        </div>
+        <div class="svc-quick-action-row mt-3">
+          <div>
+            <div class="svc-quick-action-title">Restart Pixellot Agent + Coordinator</div>
+            <div class="svc-quick-action-body">The documented first fix when the Agent or Coordinator hangs — try it before escalating. <span class="font-mono">Runs keepagentup.exe.</span></div>
+          </div>
+          <button class="btn-outline btn-ol-amber" id="pc-keepagent-btn">${svgIcon("zap", 14)} Restart Agent + Coordinator</button>
+        </div>
+        <div id="pc-keepagent-result" class="svc-quick-action-result hidden"></div>
+      `}
+    </div>
+
+    ${pc.error ? "" : `
+    <div class="card">
+      ${sectionTitle("database", "Registry — HKLM\\SOFTWARE\\Pixellot")}
+      <div class="kv-grid">${regRows}</div>
+    </div>`}
+  `;
+
+  document.getElementById("pc-keepagent-btn")?.addEventListener("click", _pcRestartAgentHandler);
+}
+
+// ── Camera Hardware ──────────────────────────────────────────
+// Per-camera role / IP / MAC / firmware / TV mode / serial from
+// /api/pixellot-config. Calibration status lives on the Calibrations tab.
+function renderCameraHardware() {
+  const d = cached("pixellot-config");
+  if (!d) {
+    $page().innerHTML = sectionLoading("Camera Hardware");
+    fetchSection("pixellot-config").then(() => { if (currentPage === "camera-hardware") renderCameraHardware(); });
+    return;
+  }
+  if (d.error) { $page().innerHTML = errorBox(d.message); return; }
+  const cams = d.cameras || [];
 
   const camRows = cams.map((c) => {
     const fw = c.firmwareVersion
@@ -962,9 +973,37 @@ function renderPixellotConfig() {
       <td>${fw}</td>
       <td>${c.tvMode ? esc(c.tvMode) : "—"}</td>
       <td>${esc(c.serialNumber || "—")}</td>
-      <td>${camCalCell(c.role)}</td>
     </tr>`;
   }).join("");
+
+  $page().innerHTML = `
+    ${pageHeader("Camera Hardware", "Per-camera role, IP/MAC, firmware, TV mode, and serial.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache['pixellot-config']=null;renderCameraHardware()">${svgIcon("refresh", 14)} Refresh</button>`)}
+
+    <div class="card">
+      ${sectionTitle("camera", "Cameras")}
+      <p class="text-xs text-pulse-muted mb-3">Role / IP / MAC from <span class="font-mono">cameras.cfg</span>; firmware, TV mode and serial probed live from each camera head (Admin CGI). Calibration status moved to the <strong>Calibrations</strong> tab.</p>
+      <table class="data-table"><thead><tr>
+        <th>Role</th><th>IP</th><th>MAC</th><th>Firmware</th><th>TV Mode</th><th>Serial</th>
+      </tr></thead><tbody>${camRows || `<tr><td colspan="6" class="text-pulse-muted">No cameras found in cameras.cfg.</td></tr>`}</tbody></table>
+    </div>
+  `;
+}
+
+// ── Calibrations ─────────────────────────────────────────────
+// Main-camera multisport stitch + OCR / scoreboard (pipdesign) calibration
+// status and advisories, from /api/pixellot-config.
+function renderCalibrations() {
+  const d = cached("pixellot-config");
+  if (!d) {
+    $page().innerHTML = sectionLoading("Camera Calibrations");
+    fetchSection("pixellot-config").then(() => { if (currentPage === "calibrations") renderCalibrations(); });
+    return;
+  }
+  if (d.error) { $page().innerHTML = errorBox(d.message); return; }
+  const cal = d.calibration || {};
+  const multi = cal.multisport || {};
+  const ocr = cal.ocr || {};
 
   // Multisport sports with last-calibrated dates (kv-rows must live in a kv-grid).
   const sports = multi.sports || [];
@@ -980,49 +1019,9 @@ function renderPixellotConfig() {
     ? `<div class="kv-grid">${sportRows}</div>`
     : `<div class="info-chip">No sports calibrated — main camera multisport calibration is empty.</div>`;
 
-  // Advisory list for Recommended Actions.
-  const advisories = [];
-  if (!multi.calibrated) advisories.push("Main camera has no multisport calibration — calibrate at least the primary sport.");
-  sports.forEach((s) => {
-    const days = _pcDaysSince(s.lastCalibrated);
-    if (days != null && days > _PC_STALE_DAYS) advisories.push(`Multisport calibration for ${s.name} is ${days} days old — re-calibrate if the venue or rig moved.`);
-  });
-  if (!ocr.calibrated) {
-    const miss = [];
-    if (!ocr.hasEnhancedPip) miss.push("enhanced_pip.txt");
-    if (!ocr.hasInnerObjects) miss.push("innerobjects.txt");
-    advisories.push(`OCR / scoreboard not calibrated${miss.length ? ` (missing ${miss.join(" + ")})` : ""}.`);
-  }
-
-  // Raw registry values (the live script dumps all of HKLM\SOFTWARE\Pixellot).
-  const regKeys = Object.keys(reg);
-  const regRows = regKeys.length
-    ? regKeys.map((k) => kvRow(k, reg[k])).join("")
-    : `<div class="info-chip">No HKLM\\SOFTWARE\\Pixellot values found.</div>`;
-
   $page().innerHTML = `
-    ${pageHeader("Pixellot Configuration", "Local, on-host view of how Pixellot has this VPU and its cameras configured",
-      `<button class="btn-outline btn-ol-blue" onclick="dataCache['pixellot-config']=null;renderPixellotConfig()">${svgIcon("refresh", 14)} Refresh</button>`)}
-
-    <div class="card">
-      ${sectionTitle("server", "Install & Agent")}
-      <div class="kv-grid">
-        ${kvRow("Pixellot Version", version)}
-        ${kvRow("Image Version", reg.imageVersion || reg.ImageVersion)}
-        ${kvRow("Install Path", installPath)}
-        ${kvRow("Dependencies", reg.dependencies || reg.Dependencies)}
-        ${kvRowHtml("cameras.cfg", d.cameraCfgExists ? badge("Present", "pass") : badge("Missing", "fail"))}
-      </div>
-      ${compatBanner}
-    </div>
-
-    <div class="card">
-      ${sectionTitle("camera", "Cameras")}
-      <p class="text-xs text-pulse-muted mb-3">Role / IP / MAC from <span class="font-mono">cameras.cfg</span>; firmware, TV mode and serial probed live from each camera head (Admin CGI). Calibration is per-function — Main cameras share the multisport status, OCR uses the scoreboard (pipdesign) status.</p>
-      <table class="data-table"><thead><tr>
-        <th>Role</th><th>IP</th><th>MAC</th><th>Firmware</th><th>TV Mode</th><th>Serial</th><th>Calibration</th>
-      </tr></thead><tbody>${camRows || `<tr><td colspan="7" class="text-pulse-muted">No cameras found in cameras.cfg.</td></tr>`}</tbody></table>
-    </div>
+    ${pageHeader("Camera Calibrations", "Main-camera multisport stitch and OCR / scoreboard calibration status.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache['pixellot-config']=null;renderCalibrations()">${svgIcon("refresh", 14)} Refresh</button>`)}
 
     <div class="card">
       ${sectionTitle("check", "Calibration")}
@@ -1041,54 +1040,7 @@ function renderPixellotConfig() {
         </div>
       </div>
     </div>
-
-    <div class="card svc-quick-action">
-      ${sectionTitle("zap", "Recommended Actions")}
-      ${advisories.length ? `<div class="text-sm">${advisories.map((a) => `<div class="flex items-center gap-2 mt-2">${svgIcon("alert", 13)}<span>${esc(a)}</span></div>`).join("")}</div>` : `<div class="info-chip">${svgIcon("check", 13)} No configuration issues detected.</div>`}
-      <div class="svc-quick-action-row mt-3">
-        <div>
-          <div class="svc-quick-action-title">Restart Pixellot Agent + Coordinator</div>
-          <div class="svc-quick-action-body">The documented first fix when the Agent or Coordinator hangs — try it before escalating. <span class="font-mono">Runs keepagentup.exe.</span></div>
-        </div>
-        <button class="btn-outline btn-ol-amber" id="pc-keepagent-btn">${svgIcon("zap", 14)} Restart Agent + Coordinator</button>
-      </div>
-      <div id="pc-keepagent-result" class="svc-quick-action-result hidden"></div>
-    </div>
-
-    <div class="card">
-      ${sectionTitle("database", "Registry — HKLM\\SOFTWARE\\Pixellot")}
-      <div class="kv-grid">${regRows}</div>
-    </div>
   `;
-
-  // keepagentup.exe — confirm + run + inline result (mirrors the Services lane).
-  document.getElementById("pc-keepagent-btn")?.addEventListener("click", async () => {
-    const ok = confirm(
-      "Restart Pixellot Agent + Coordinator?\n\n" +
-      "This runs c:\\pixellot\\bin\\keepagentup.exe, which will briefly stop and " +
-      "relaunch both services. Recording may pause for a few seconds.\n\nProceed?"
-    );
-    if (!ok) return;
-    const btn = document.getElementById("pc-keepagent-btn");
-    const resultEl = document.getElementById("pc-keepagent-result");
-    btn.disabled = true;
-    btn.innerHTML = `${svgIcon("refresh", 14)} Restarting...`;
-    resultEl.classList.add("hidden");
-
-    const r = await apiPost("/api/services/restart-agent", {});
-    btn.disabled = false;
-    btn.innerHTML = `${svgIcon("zap", 14)} Restart Agent + Coordinator`;
-
-    const ok2 = r && r.success;
-    resultEl.className = "svc-quick-action-result " + (ok2 ? "svc-result-ok" : "svc-result-err");
-    resultEl.innerHTML = `
-      <div class="font-semibold">${ok2 ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
-      <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
-      ${r?.agentStatus ? `<div class="text-xs mt-2 text-pulse-muted">Agent: <span class="font-mono">${esc(r.agentStatus)}</span> &middot; Coordinator: <span class="font-mono">${esc(r.coordinatorStatus || "?")}</span></div>` : ""}
-      ${r?.stdout ? `<pre class="svc-result-output">${esc(r.stdout)}</pre>` : ""}
-      ${r?.stderr ? `<pre class="svc-result-output svc-result-stderr">${esc(r.stderr)}</pre>` : ""}
-    `;
-  });
 }
 
 // ── Dashboard ────────────────────────────────────────────────
@@ -1114,23 +1066,35 @@ function _subsystemHealth(findings) {
     (e) => (e.level || "").toLowerCase() === "error"
   ).length;
 
+  // ids are nav page ids — updateNavHealth() lights the matching sidebar link.
+  // Re-keyed for the 6-group IA: the old `system` panel split into hardware /
+  // applications / environment, plus a Pixellot Software panel.
   return [
-    { id: "system", label: "System Overview", icon: "cpu",
-      health: lvl(worst("system", "hardware", "performance")),
-      desc: "Hardware, OS, uptime, and Pixellot software." },
+    { id: "hardware", label: "Hardware", icon: "cpu",
+      health: lvl(worst("hardware", "performance")),
+      desc: "CPU, memory, graphics, and storage." },
+    { id: "applications", label: "Applications", icon: "copy",
+      health: lvl(worst("software")),
+      desc: "Installed software that can interfere with streaming." },
+    { id: "environment", label: "Environment", icon: "globe",
+      health: lvl(worst("system")),
+      desc: "Windows OS, locale, uptime, users, and peripherals." },
+    { id: "pixellot-software", label: "Pixellot Software", icon: "zap",
+      health: lvl(worst("pixellot")),
+      desc: "Pixellot version and hardware compatibility." },
     { id: "network", label: "Network", icon: "wifi",
       health: lvl(worst("network")),
       desc: "Internet, name lookups, firewall, and service ports." },
     { id: "cameras", label: "Camera Connectivity", icon: "camera",
       health: lvl(worst("camera")),
       desc: "Camera ports — link, speed, and camera detection." },
-    { id: "services", label: "Pixellot Services", icon: "server",
+    { id: "services", label: "Service Status", icon: "server",
       health: lvl(worst("services")),
       desc: "Agent, encoder, watchdog service status." },
-    { id: "disk-health", label: "Disk Health", icon: "hdd",
+    { id: "disk-health", label: "Disks", icon: "hdd",
       health: lvl(worst("storage")),
       desc: "Free space, drive health (SMART), and disk events." },
-    { id: "events", label: "Event Viewer", icon: "triangle",
+    { id: "events", label: "Windows Events", icon: "triangle",
       health: evErrorCount > 0 ? "Warning" : "Healthy",
       desc: evErrorCount > 0
         ? `${evErrorCount} recent OS error${evErrorCount === 1 ? "" : "s"} logged.`
@@ -1145,7 +1109,20 @@ function _healthBadge(h) {
 }
 
 function _findingPageFor(cat) {
-  const map = { network: "network", camera: "cameras", services: "services", storage: "disk-health", hardware: "system", performance: "dashboard", system: "system" };
+  // Finding category → the tab that owns the fix. Updated for the 6-group IA:
+  // System Overview split into hardware / applications / environment, and
+  // pixellot findings land on the new Pixellot Software tab.
+  const map = {
+    network: "network",
+    camera: "cameras",
+    services: "services",
+    storage: "disk-health",
+    hardware: "hardware",
+    performance: "hardware",
+    system: "environment",        // timezone / uptime / OS
+    pixellot: "pixellot-software",
+    software: "applications",     // banned / concerning installed apps
+  };
   return map[(cat || "").toLowerCase()] || "dashboard";
 }
 
@@ -1691,86 +1668,115 @@ function _debounce(fn, ms) {
 
 // ── System Overview ──────────────────────────────────────────
 
-function renderSystem() {
+// ── System Information tabs (split from the old System Overview) ───
+// Hardware, Applications, and Environment — plus Pixellot Software under
+// PIXELLOT CONFIGURATION — all read the shared `/api/system` payload (cached
+// under the "system" key), so one fetch feeds every tab. The page id no longer
+// matches the cache key, so each renderer kicks off the fetch and re-renders
+// itself when the data lands.
+
+// Pixellot version + GPU/OS compatibility banner. Lives on the Pixellot
+// Software tab; pulled from /api/system identity.pixellot.compat.
+function _pixCompatBannerHtml(c) {
+  if (!c || c.status === "skip") return "";
+  let cls = "sys-lifecycle-ok";
+  let title = "";
+  let detail = "";
+  if (c.status === "ok") {
+    cls = "sys-lifecycle-ok";
+    title = "Version compatible with hardware";
+    detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : " — no version limit"}.`;
+  } else if (c.status === "over") {
+    cls = "sys-lifecycle-crit";
+    title = "Version exceeds hardware compatibility cap";
+    detail = `Installed ${esc(c.installedVersion)} is newer than ${esc(c.maxVersion)} (max for ${esc(c.architecture)}). Downgrade to stay supported.`;
+  } else if (c.status === "no-gpu") {
+    cls = "sys-lifecycle-crit";
+    title = "No NVIDIA GPU detected";
+    detail = "Pixellot requires NVIDIA hardware for encoding.";
+  } else if (c.status === "anomaly") {
+    cls = "sys-lifecycle-crit";
+    title = "Unexpected GPU architecture";
+    detail = `${esc(c.architecture)} is not a known Pixellot deployment — escalate to support.`;
+  }
+  return `<div class="sys-lifecycle ${cls} mt-3">
+    ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
+    <div>
+      <div class="font-semibold">${esc(title)}</div>
+      <div class="text-xs mt-1">${detail}</div>
+    </div>
+  </div>`;
+}
+
+// Windows edition lifecycle (end-of-support) banner. Lives on the Environment
+// tab; pulled from /api/system identity.operatingSystem.lifecycle.
+function _osLifecycleBannerHtml(lc) {
+  if (!lc) return "";
+  const days = lc.daysToEos;
+  let cls = "sys-lifecycle-ok";
+  let label = "";
+  if (days == null) {
+    label = `End-of-support: ${lc.eosDate}`;
+  } else if (days < 0) {
+    cls = "sys-lifecycle-crit";
+    label = `End-of-support reached on ${lc.eosDate} (${Math.abs(days)} days ago)`;
+  } else if (days < 90) {
+    cls = "sys-lifecycle-crit";
+    label = `End-of-support in ${days} days (${lc.eosDate})`;
+  } else if (days < 365) {
+    cls = "sys-lifecycle-warn";
+    const months = Math.floor(days / 30);
+    label = `End-of-support in ~${months} months (${lc.eosDate})`;
+  } else {
+    const years = Math.floor(days / 365);
+    label = `End-of-support: ${lc.eosDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
+  }
+  return `<div class="sys-lifecycle ${cls} mt-3">
+    ${svgIcon(cls === "sys-lifecycle-ok" ? "info" : "alert", 14)}
+    <div>
+      <div class="font-semibold">${esc(lc.ltscRelease)}</div>
+      <div class="text-xs mt-1">${esc(label)}${lc.endOfServicingDate ? ` &middot; End-of-servicing: ${esc(lc.endOfServicingDate)}` : ""}</div>
+    </div>
+  </div>`;
+}
+
+// ── Hardware ─────────────────────────────────────────────────
+function renderHardware() {
   const data = cached("system");
-  if (!data) { $page().innerHTML = sectionLoading("System Overview"); fetchSection("system"); return; }
-
-  const id = data.identity || {};
-  const hw = data.hardware || {};
-  const sw = data.software || {};
-
+  if (!data) {
+    $page().innerHTML = sectionLoading("Hardware");
+    fetchSection("system").then(() => { if (currentPage === "hardware") renderHardware(); });
+    return;
+  }
   if (data.identity?.error && data.hardware?.error) {
     $page().innerHTML = errorBox(data.identity?.message || data.hardware?.message);
     return;
   }
 
-  const os = id.operatingSystem || {};
+  const id = data.identity || {};
+  const hw = data.hardware || {};
   const cs = id.computerSystem || {};
   const bios = id.bios || {};
-  const pix = id.pixellot || {};
   const procs = hw.processors || [];
   const memory = hw.memory || [];
   const gpus = hw.gpus || [];
   const drives = hw.diskDrives || [];
-  const swList = sw.software || [];
 
   $page().innerHTML = `
-    ${pageHeader("System Overview", "Hardware identity, OS, Pixellot software, and installed software",
-      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderSystem()">
+    ${pageHeader("Hardware", "CPU, memory, graphics, storage, and motherboard identity.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderHardware()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
     )}
 
-    <!-- Identity + Pixellot Software -->
-    <div class="dash-2col">
-      <div class="card">
-        ${sectionTitle("cpu", "VPU Identity")}
-        <div class="kv-grid">
-          ${kvRow("Hostname", cs.name)}
-          ${kvRow("Manufacturer", cs.manufacturer)}
-          ${kvRow("Model", cs.model)}
-          ${kvRow("Serial Number", bios.serialNumber)}
-          ${kvRow("Uptime", id.uptime?.formatted)}
-        </div>
-      </div>
-      <div class="card">
-        ${sectionTitle("server", "Pixellot Software")}
-        <div class="kv-grid">
-          ${kvRow("App Version", pix.version)}
-          ${kvRow("Image Version", pix.imageVersion)}
-        </div>
-        ${id.isNonVpuHost ? '<div class="info-chip mt-3">Not a VPU host</div>' : ""}
-        ${(() => {
-          const c = pix.compat;
-          if (!c || c.status === "skip") return "";
-          let cls = "sys-lifecycle-ok";
-          let title = "";
-          let detail = "";
-          if (c.status === "ok") {
-            cls = "sys-lifecycle-ok";
-            title = "Version compatible with hardware";
-            detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : " — no version limit"}.`;
-          } else if (c.status === "over") {
-            cls = "sys-lifecycle-crit";
-            title = "Version exceeds hardware compatibility cap";
-            detail = `Installed ${esc(c.installedVersion)} is newer than ${esc(c.maxVersion)} (max for ${esc(c.architecture)}). Downgrade to stay supported.`;
-          } else if (c.status === "no-gpu") {
-            cls = "sys-lifecycle-crit";
-            title = "No NVIDIA GPU detected";
-            detail = "Pixellot requires NVIDIA hardware for encoding.";
-          } else if (c.status === "anomaly") {
-            cls = "sys-lifecycle-crit";
-            title = "Unexpected GPU architecture";
-            detail = `${esc(c.architecture)} is not a known Pixellot deployment — escalate to support.`;
-          }
-          return `<div class="sys-lifecycle ${cls} mt-3">
-            ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
-            <div>
-              <div class="font-semibold">${esc(title)}</div>
-              <div class="text-xs mt-1">${detail}</div>
-            </div>
-          </div>`;
-        })()}
+    <!-- VPU Identity -->
+    <div class="card">
+      ${sectionTitle("cpu", "VPU Identity")}
+      <div class="kv-grid kv-grid-wide">
+        ${kvRow("Hostname", cs.name)}
+        ${kvRow("Manufacturer", cs.manufacturer)}
+        ${kvRow("Model", cs.model)}
+        ${kvRow("Serial Number", bios.serialNumber)}
       </div>
     </div>
 
@@ -1851,65 +1857,30 @@ function renderSystem() {
       </div>
     </div>
 
-    <!-- OS & Locale -->
-    <div class="card mt-4">
-      ${sectionTitle("monitor", "Operating System & Locale")}
-      <div class="kv-grid kv-grid-wide">
-        ${kvRow("OS", os.caption)}
-        ${kvRow("Version", os.version)}
-        ${kvRow("Build", os.buildNumber)}
-        ${kvRow("Architecture", os.osArchitecture)}
-        ${kvRow("Install Date", os.installDate ? String(os.installDate).slice(0, 10) : null)}
-        ${kvRow("Timezone", id.timezone)}
-        ${kvRow("Locale", id.locale)}
-      </div>
-      ${(() => {
-        const lc = os.lifecycle;
-        if (!lc) return "";
-        const days = lc.daysToEos;
-        let cls = "sys-lifecycle-ok";
-        let label = "";
-        if (days == null) {
-          label = `End-of-support: ${lc.eosDate}`;
-        } else if (days < 0) {
-          cls = "sys-lifecycle-crit";
-          label = `End-of-support reached on ${lc.eosDate} (${Math.abs(days)} days ago)`;
-        } else if (days < 90) {
-          cls = "sys-lifecycle-crit";
-          label = `End-of-support in ${days} days (${lc.eosDate})`;
-        } else if (days < 365) {
-          cls = "sys-lifecycle-warn";
-          const months = Math.floor(days / 30);
-          label = `End-of-support in ~${months} months (${lc.eosDate})`;
-        } else {
-          const years = Math.floor(days / 365);
-          label = `End-of-support: ${lc.eosDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
-        }
-        return `<div class="sys-lifecycle ${cls} mt-3">
-          ${svgIcon(cls === "sys-lifecycle-ok" ? "info" : "alert", 14)}
-          <div>
-            <div class="font-semibold">${esc(lc.ltscRelease)}</div>
-            <div class="text-xs mt-1">${esc(label)}${lc.endOfServicingDate ? ` &middot; End-of-servicing: ${esc(lc.endOfServicingDate)}` : ""}</div>
-          </div>
-        </div>`;
-      })()}
-    </div>
+  `;
+}
 
-    <!-- Users & Domains + Peripherals (lazy-filled below) -->
-    <div class="dash-2col">
-      <div class="card">
-        ${sectionTitle("users", "Users & Domains")}
-        <div id="sys-users-body">${loading()}</div>
-      </div>
-      <div class="card">
-        ${sectionTitle("mouse", "Peripherals")}
-        <div id="sys-peripherals-body">${loading()}</div>
-      </div>
-    </div>
+// ── Applications ─────────────────────────────────────────────
+function renderApplications() {
+  const data = cached("system");
+  if (!data) {
+    $page().innerHTML = sectionLoading("Applications");
+    fetchSection("system").then(() => { if (currentPage === "applications") renderApplications(); });
+    return;
+  }
+  const sw = data.software || {};
+  if (sw.error) { $page().innerHTML = errorBox(sw.message); return; }
+  const swList = sw.software || [];
 
-    <!-- Software Inventory -->
-    <div class="card mt-4">
-      ${sectionTitle("server", "Installed Software (" + swList.length + ")")}
+  $page().innerHTML = `
+    ${pageHeader("Applications", "Installed software, with anything that can interfere with streaming flagged.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderApplications()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <div class="card">
+      ${sectionTitle("copy", "Installed Software (" + swList.length + ")")}
       ${(() => {
         // Group concerning entries by severity for the summary banner.
         const flagged = swList.filter(s => s.concern);
@@ -1985,18 +1956,67 @@ function renderSystem() {
       }
     });
   }
+}
+
+// ── Environment ──────────────────────────────────────────────
+function renderEnvironment() {
+  const data = cached("system");
+  if (!data) {
+    $page().innerHTML = sectionLoading("Environment");
+    fetchSection("system").then(() => { if (currentPage === "environment") renderEnvironment(); });
+    return;
+  }
+  const id = data.identity || {};
+  if (id.error) { $page().innerHTML = errorBox(id.message); return; }
+  const os = id.operatingSystem || {};
+
+  $page().innerHTML = `
+    ${pageHeader("Environment", "Windows OS, locale, uptime, user accounts, and connected peripherals.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderEnvironment()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <!-- OS & Locale -->
+    <div class="card">
+      ${sectionTitle("globe", "Operating System & Locale")}
+      <div class="kv-grid kv-grid-wide">
+        ${kvRow("OS", os.caption)}
+        ${kvRow("Version", os.version)}
+        ${kvRow("Build", os.buildNumber)}
+        ${kvRow("Architecture", os.osArchitecture)}
+        ${kvRow("Install Date", os.installDate ? String(os.installDate).slice(0, 10) : null)}
+        ${kvRow("Uptime", id.uptime?.formatted)}
+        ${kvRow("Timezone", id.timezone)}
+        ${kvRow("Locale", id.locale)}
+      </div>
+      ${_osLifecycleBannerHtml(os.lifecycle)}
+    </div>
+
+    <!-- Users & Domains + Peripherals (lazy-filled below) -->
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("users", "Users & Domains")}
+        <div id="sys-users-body">${loading()}</div>
+      </div>
+      <div class="card">
+        ${sectionTitle("mouse", "Peripherals")}
+        <div id="sys-peripherals-body">${loading()}</div>
+      </div>
+    </div>
+  `;
 
   // Users & Domains + Peripherals — separate endpoints (not in the cached
   // system payload), so the tab paints immediately and these fill in.
   // Guard on currentPage so a late response after navigating away can't
   // write into another tab.
   api("/api/users-domains").then(d => {
-    if (currentPage !== "system") return;
+    if (currentPage !== "environment") return;
     const el = document.getElementById("sys-users-body");
     if (el) el.innerHTML = _usersPanelHtml(d);
   }).catch(() => {});
   api("/api/peripherals").then(d => {
-    if (currentPage !== "system") return;
+    if (currentPage !== "environment") return;
     const el = document.getElementById("sys-peripherals-body");
     if (el) el.innerHTML = _peripheralsPanelHtml(d);
   }).catch(() => {});
@@ -3259,7 +3279,7 @@ function renderNetwork() {
     </div>` : "";
 
   $page().innerHTML = `
-    ${pageHeader("Network", "Internet connection, name lookups (DNS), time sync, and whether the VPU can reach the services it needs.",
+    ${pageHeader("Network Test", "Internet connection, name lookups (DNS), time sync, and whether the VPU can reach the services it needs.",
       statusChip + `<button id="net-run-test-btn" class="btn-outline btn-ol-blue" onclick="_rerunNetworkTests(this)">
         ${svgIcon("activity", 14)} <span>Run Test</span>
       </button>`
@@ -4308,7 +4328,7 @@ function renderServices() {
   }
 
   $page().innerHTML = `
-    ${pageHeader("Pixellot Services", "Pixellot Agent, VPU encoder, and related Windows services",
+    ${pageHeader("Service Status", "Pixellot Agent, VPU encoder, and related Windows services",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache.services=null;renderServices()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
@@ -4576,7 +4596,7 @@ function renderDiskHealth() {
   }
 
   $page().innerHTML = `
-    ${pageHeader("Disk & System Health", "Drive health, free space, and the Pixellot folders that fill up first",
+    ${pageHeader("Disks", "Drive health, free space, and the Pixellot folders that fill up first",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache['disk-health']=null;renderDiskHealth()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
@@ -4776,7 +4796,7 @@ function formatTime(iso) {
 
 function renderEvents() {
   $page().innerHTML = `
-    ${pageHeader("Event Viewer", "Recent Windows log entries for disk, network, Pixellot, and core services",
+    ${pageHeader("Windows Events", "Recent Windows log entries for disk, network, Pixellot, and core services",
       `<button class="btn-outline btn-ol-blue" id="ev-refresh">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
@@ -4810,9 +4830,6 @@ function renderEvents() {
     </div>
 
     <div class="card mt-4" id="ev-body">${loading()}</div>
-
-    <!-- Pixellot Logs scan (PDF #5) — separate from Windows event log -->
-    <div class="card mt-4" id="ev-pixellot-body">${loading()}</div>
   `;
 
   const loadEvents = async () => {
@@ -4867,87 +4884,233 @@ function renderEvents() {
     `;
   };
 
-  // Pixellot logs scanner (PDF #5) — scans C:\Pixellot\Data\Log for
-  // error / fatal / restart markers. Surfaces CUDNN/TensorFlow patterns
-  // with a "reinstall dependencies" hint per PDF #2.
-  const loadPixellotLogs = async () => {
-    const hours = document.getElementById("ev-hours").value;
-    const body = document.getElementById("ev-pixellot-body");
-    if (!body) return;
-    body.innerHTML = loading();
-    const data = await api(`/api/pixellot-logs?hours=${encodeURIComponent(hours)}`);
-    if (currentPage !== "events") return;
-
-    if (data.error) {
-      body.innerHTML = `${sectionTitle("file", "Pixellot Logs")}
-        <p class="text-sm text-pulse-muted">${esc(data.message || "Failed to scan Pixellot logs")}</p>`;
-      return;
-    }
-
-    const entries = data.entries || [];
-    const stats = data.stats || {};
-    const depsErr = !!data.depsErrorDetected;
-
-    const levelChip = (lvl) => {
-      const l = (lvl || "").toLowerCase();
-      // Distinct visual class per severity — Fatal solid-fill (showstopper),
-      // Error red-outline (single failure), Restart blue-outline (lifecycle
-      // event, not a problem). Was Fatal+Error and Warning+Restart shared.
-      if (l === "fatal")   return '<span class="ev-level-chip ev-level-fatal">Fatal</span>';
-      if (l === "error")   return '<span class="ev-level-chip ev-level-error">Error</span>';
-      if (l === "restart") return '<span class="ev-level-chip ev-level-restart">Restart</span>';
-      return `<span class="ev-level-chip ev-level-info">${esc(l)}</span>`;
-    };
-
-    body.innerHTML = `
-      ${sectionTitle("file", "Pixellot Logs")}
-      <p class="text-xs text-pulse-muted mb-3">
-        Scanned ${esc(String(data.scannedFiles || 0))} log file(s) in <span class="font-mono">C:\\Pixellot\\Data\\Log</span> over the last ${esc(String(data.hoursBack || ""))} hour(s).
-      </p>
-
-      <div class="px-log-summary">
-        <span class="px-log-stat ${stats.fatal > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.fatal || 0))} fatal</span>
-        <span class="px-log-stat ${stats.error > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.error || 0))} error</span>
-        <span class="px-log-stat ${stats.restart > 0 ? 'px-log-stat-warn' : ''}">${esc(String(stats.restart || 0))} restart</span>
-      </div>
-
-      ${depsErr ? `<div class="px-log-deps-warn mt-3">
-        ${svgIcon("alert", 14)}
-        <div>
-          <div class="font-semibold">Pixellot video dependency error detected (CUDNN/TensorFlow)</div>
-          <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. The documented fix is to reinstall the Pixellot dependencies — see the Services tab.</div>
-        </div>
-      </div>` : ""}
-
-      ${data.warning ? `<p class="text-xs text-pulse-muted mt-2">${esc(data.warning)}</p>` : ""}
-
-      ${entries.length ? `
-        <div class="ev-table-wrap mt-3">
-          <table class="data-table ev-table"><thead><tr>
-            <th>Time</th><th>Level</th><th>File</th><th>Line</th><th>Content</th>
-          </tr></thead><tbody>
-          ${entries.map(e => `<tr class="${e.depsError ? 'px-log-row-deps' : ''}">
-            <td class="text-xs whitespace-nowrap font-mono">${esc(e.timestamp || formatTime(e.fileMTime))}</td>
-            <td>${levelChip(e.level)}</td>
-            <td class="text-xs font-mono">${esc(e.file)}</td>
-            <td class="text-xs font-mono">${esc(String(e.lineNumber || ""))}</td>
-            <td class="text-xs ev-msg-cell" title="${esc(e.content)}">${esc(e.content)}${e.depsError ? ' <span class="px-log-deps-pill">DEPS</span>' : ''}</td>
-          </tr>`).join("")}
-          </tbody></table>
-        </div>
-        ${data.truncated ? '<p class="text-xs text-pulse-muted mt-2">Results truncated at 500 matches.</p>' : ""}
-      ` : '<p class="text-sm text-pulse-muted mt-3">No matching entries.</p>'}
-    `;
-  };
-
-  document.getElementById("ev-refresh")?.addEventListener("click", () => { loadEvents(); loadPixellotLogs(); });
-  document.getElementById("ev-hours")?.addEventListener("change", () => { loadEvents(); loadPixellotLogs(); });
+  document.getElementById("ev-refresh")?.addEventListener("click", loadEvents);
+  document.getElementById("ev-hours")?.addEventListener("change", loadEvents);
   ["ev-error", "ev-warning", "ev-info"].forEach(id => {
     document.getElementById(id)?.addEventListener("change", loadEvents);
   });
   document.getElementById("ev-source")?.addEventListener("input", _debounce(loadEvents, 300));
   loadEvents();
-  loadPixellotLogs();
+}
+
+// ── Pixellot Logs ────────────────────────────────────────────
+// Scans C:\Pixellot\Data\Log for error / fatal / restart markers (PDF #5),
+// surfacing CUDNN/TensorFlow dependency errors with the reinstall remedy
+// (PDF #2). Was a card on Windows Events; now its own tab under DATA LOGS.
+function renderPixellotLogs() {
+  $page().innerHTML = `
+    ${pageHeader("Pixellot Logs", "Errors, fatals, and process restarts scanned from the Pixellot log directory.",
+      `<button class="btn-outline btn-ol-blue" id="pxl-refresh">${svgIcon("refresh", 14)} Refresh</button>`
+    )}
+
+    <div class="card ev-filter-card">
+      <div class="ev-filter-row">
+        <div class="ev-filter-group">
+          <label class="ev-filter-label">TIME WINDOW</label>
+          <select id="pxl-hours" class="ev-select">
+            <option value="12">Last 12 hours</option>
+            <option value="24" selected>Last 24 hours</option>
+            <option value="48">Last 48 hours</option>
+            <option value="168">Last 7 days</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-4" id="pxl-body">${loading()}</div>
+  `;
+
+  document.getElementById("pxl-refresh")?.addEventListener("click", _loadPixellotLogs);
+  document.getElementById("pxl-hours")?.addEventListener("change", _loadPixellotLogs);
+  _loadPixellotLogs();
+}
+
+async function _loadPixellotLogs() {
+  const hours = document.getElementById("pxl-hours")?.value || "24";
+  const body = document.getElementById("pxl-body");
+  if (!body) return;
+  body.innerHTML = loading();
+  const data = await api(`/api/pixellot-logs?hours=${encodeURIComponent(hours)}`);
+  if (currentPage !== "pixellot-logs") return;
+  const el = document.getElementById("pxl-body");
+  if (!el) return;
+
+  if (data.error) {
+    el.innerHTML = `${sectionTitle("file", "Pixellot Logs")}
+      <p class="text-sm text-pulse-muted">${esc(data.message || "Failed to scan Pixellot logs")}</p>`;
+    return;
+  }
+
+  const entries = data.entries || [];
+  const stats = data.stats || {};
+  const depsErr = !!data.depsErrorDetected;
+
+  const levelChip = (lvl) => {
+    const l = (lvl || "").toLowerCase();
+    // Distinct visual class per severity — Fatal solid-fill (showstopper),
+    // Error red-outline (single failure), Restart blue-outline (lifecycle
+    // event, not a problem).
+    if (l === "fatal")   return '<span class="ev-level-chip ev-level-fatal">Fatal</span>';
+    if (l === "error")   return '<span class="ev-level-chip ev-level-error">Error</span>';
+    if (l === "restart") return '<span class="ev-level-chip ev-level-restart">Restart</span>';
+    return `<span class="ev-level-chip ev-level-info">${esc(l)}</span>`;
+  };
+
+  el.innerHTML = `
+    ${sectionTitle("file", "Pixellot Logs")}
+    <p class="text-xs text-pulse-muted mb-3">
+      Scanned ${esc(String(data.scannedFiles || 0))} log file(s) in <span class="font-mono">C:\\Pixellot\\Data\\Log</span> over the last ${esc(String(data.hoursBack || ""))} hour(s).
+    </p>
+
+    <div class="px-log-summary">
+      <span class="px-log-stat ${stats.fatal > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.fatal || 0))} fatal</span>
+      <span class="px-log-stat ${stats.error > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.error || 0))} error</span>
+      <span class="px-log-stat ${stats.restart > 0 ? 'px-log-stat-warn' : ''}">${esc(String(stats.restart || 0))} restart</span>
+    </div>
+
+    ${depsErr ? `<div class="px-log-deps-warn mt-3">
+      ${svgIcon("alert", 14)}
+      <div>
+        <div class="font-semibold">Pixellot video dependency error detected (CUDNN/TensorFlow)</div>
+        <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. The documented fix is to reinstall the Pixellot dependencies — see the Service Status tab.</div>
+      </div>
+    </div>` : ""}
+
+    ${data.warning ? `<p class="text-xs text-pulse-muted mt-2">${esc(data.warning)}</p>` : ""}
+
+    ${entries.length ? `
+      <div class="ev-table-wrap mt-3">
+        <table class="data-table ev-table"><thead><tr>
+          <th>Time</th><th>Level</th><th>File</th><th>Line</th><th>Content</th>
+        </tr></thead><tbody>
+        ${entries.map(e => `<tr class="${e.depsError ? 'px-log-row-deps' : ''}">
+          <td class="text-xs whitespace-nowrap font-mono">${esc(e.timestamp || formatTime(e.fileMTime))}</td>
+          <td>${levelChip(e.level)}</td>
+          <td class="text-xs font-mono">${esc(e.file)}</td>
+          <td class="text-xs font-mono">${esc(String(e.lineNumber || ""))}</td>
+          <td class="text-xs ev-msg-cell" title="${esc(e.content)}">${esc(e.content)}${e.depsError ? ' <span class="px-log-deps-pill">DEPS</span>' : ''}</td>
+        </tr>`).join("")}
+        </tbody></table>
+      </div>
+      ${data.truncated ? '<p class="text-xs text-pulse-muted mt-2">Results truncated at 500 matches.</p>' : ""}
+    ` : '<p class="text-sm text-pulse-muted mt-3">No matching entries.</p>'}
+  `;
+}
+
+// ── Pulse Logs ───────────────────────────────────────────────
+// Pulse's own logs: the diagnostic script-call log (live, from logEntries) and
+// the backend server log (pulse-server.log). Full-page promotion of the bottom
+// log drawer.
+function renderPulseLogs() {
+  $page().innerHTML = `
+    ${pageHeader("Pulse Logs", "Pulse's own diagnostic script-call log and backend server log.",
+      `<button class="btn-outline btn-ol-blue" id="pulse-log-refresh">${svgIcon("refresh", 14)} Refresh</button>`
+    )}
+
+    <div class="card">
+      ${sectionTitle("activity", "Script Call Log")}
+      <p class="text-xs text-pulse-muted mb-3">Every PowerShell diagnostic script Pulse has run this session — duration, output size, and status. Updates live as checks run.</p>
+      <div class="pulse-log-scroll" id="pulse-log-script">${loading()}</div>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("file", "Server Log")}
+      <p class="text-xs text-pulse-muted mb-3">The Pulse backend's own log (<span class="font-mono">pulse-server.log</span>) — startup, requests, and errors.</p>
+      <div class="pulse-log-scroll" id="pulse-log-server">${loading()}</div>
+    </div>
+  `;
+
+  _renderPulseLogsScript();
+  _loadPulseServerLog();
+  document.getElementById("pulse-log-refresh")?.addEventListener("click", () => {
+    _renderPulseLogsScript();
+    _loadPulseServerLog();
+  });
+}
+
+function _renderPulseLogsScript() {
+  const el = document.getElementById("pulse-log-script");
+  if (!el) return;
+  const entries = logEntries.slice(-200);
+  el.innerHTML = entries.length
+    ? entries.map(_scriptLogEntryHtml).join("")
+    : _logEmptyState("Waiting for diagnostic activity… script calls will appear here.");
+  el.scrollTop = el.scrollHeight;
+}
+
+async function _loadPulseServerLog() {
+  const el = document.getElementById("pulse-log-server");
+  if (!el) return;
+  const data = await api("/api/server-log?tail=500");
+  if (currentPage !== "pulse-logs") return;
+  const el2 = document.getElementById("pulse-log-server");
+  if (!el2) return;
+  const lines = (data && !data.error) ? (data.lines || []) : null;
+  el2.innerHTML = (lines && lines.length)
+    ? lines.map((l) => `<div class="log-entry server-log-line">${esc(l)}</div>`).join("")
+    : _logEmptyState((data && data.error)
+        ? (data.message || "Could not read the server log.")
+        : "Server log empty. The server logs to pulse-server.log on startup and during requests.");
+  el2.scrollTop = el2.scrollHeight;
+}
+
+// ── Help ─────────────────────────────────────────────────────
+// Static how-to + first-line troubleshooting for field techs. No data fetch.
+function renderHelp() {
+  $page().innerHTML = `
+    ${pageHeader("Help", "What Pulse is, how to read it, and the first things to try in the field.")}
+
+    <div class="card">
+      ${sectionTitle("info", "What Pulse is")}
+      <p class="text-sm" style="line-height:1.7">Pulse is a read-only diagnostic tool for Pixellot VPUs. It collects the VPU's
+      health — network, cameras, ScoreConnect, Pixellot software, system hardware, disks, and logs — into one place so you can
+      tell, fast, whether a unit can stream tonight's game and what's standing in the way. Pulse does not change Pixellot
+      settings; the few actions it offers (restart the Pixellot Agent, restart a service) are clearly labeled.</p>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("grid", "Reading the Dashboard")}
+      <ul class="help-list">
+        <li><strong>Stream Readiness</strong> is the headline call — <span class="status-pass">PASS</span>,
+        <span class="status-warn">WARN</span>, or <span class="status-fail">FAIL</span> on whether this VPU can broadcast.
+        FAIL means don't expect a clean broadcast without pre-game attention.</li>
+        <li><strong>Findings</strong> list the specific issues behind the verdict, worst first. Click any finding to jump
+        straight to the tab that owns the fix.</li>
+        <li><strong>Sidebar warning triangles</strong> (⚠) mark which areas have an open issue, so you know where to look
+        without opening every tab.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("wifi", "First things to try")}
+      <ul class="help-list">
+        <li><strong>No internet / can't reach services</strong> — On a VPU the venue/internet cable goes to the
+        <em>motherboard</em> network port, not the 4-port camera card. Check <strong>Network Test</strong>; Pulse flags it
+        if the cable is on the wrong port.</li>
+        <li><strong>A camera is missing or slow</strong> — Check <strong>Camera Connectivity</strong> for the port's link
+        and speed (camera ports should be 1 Gbps), then <strong>Camera Hardware</strong> for firmware and reachability.</li>
+        <li><strong>Scores aren't showing</strong> — Check <strong>ScoreConnect</strong> for the service and the
+        scoreboard feed, and confirm the OCR camera is calibrated under <strong>Calibrations</strong>.</li>
+        <li><strong>Pixellot Agent looks stuck</strong> — <strong>Service Status</strong> shows the Agent / Coordinator /
+        Watchdog. The documented first fix is <strong>Restart Agent + Coordinator</strong> on the
+        <strong>Pixellot Software</strong> tab.</li>
+        <li><strong>Recording errors / disk filling up</strong> — Check <strong>Disks</strong> for free space and drive
+        health, and scan <strong>Pixellot Logs</strong> for fatal/restart markers (it flags the known CUDNN/TensorFlow
+        dependency error).</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("inbox", "Capturing evidence for support")}
+      <ul class="help-list">
+        <li>Use <strong>Run All Diagnostics</strong> (top of the Dashboard) to refresh every check, then
+        <strong>Support Bundle</strong> / <strong>Exports</strong> to generate a downloadable report to attach to a ticket.</li>
+        <li><strong>Share over LAN</strong> sends a report to another Pulse on the same network when you can't get the file off
+        the VPU directly.</li>
+        <li><strong>Pulse Logs</strong> shows Pulse's own script and server logs if Pulse itself is misbehaving.</li>
+      </ul>
+    </div>
+  `;
 }
 
 // ── Reports ──────────────────────────────────────────────────
@@ -4959,7 +5122,7 @@ function renderReports() {
   // describing it so action sits with its explanation, and drop the
   // redundant Run All Diagnostics button.
   $page().innerHTML = `
-    ${pageHeader("Reports", "Diagnostic-run snapshots — generate and download full system reports",
+    ${pageHeader("Exports", "Diagnostic-run snapshots — generate and download full system reports",
       `<button class="btn-outline btn-ol-blue" onclick="navigate('share')" title="Hand off a generated report to another Pulse on the same network">
         ${svgIcon("send", 14)} Send to another Pulse
       </button>`
@@ -5824,7 +5987,7 @@ function renderScoreConnect() {
     : "ScoreConnect — service not detected";
 
   $page().innerHTML = `
-    ${pageHeader("Score Connect", subtitle,
+    ${pageHeader("ScoreConnect", subtitle,
       `${isDetected ? `<button class="btn-outline btn-ol-green" onclick="window.open('${esc(data.baseUrl || "http://localhost:5000")}','_blank','noopener')" title="Opens the local ScoreConnect III web UI in a new tab">
         ${svgIcon("external-link", 14)} Open ScoreConnect III
       </button>` : ""}
@@ -7249,8 +7412,8 @@ function renderSettings() {
         ${_settingsPathRow("Settings file", data._paths?.settingsFile)}
       </div>
       <div class="settings-actions">
-        <button class="btn-outline btn-ol-blue" onclick="openServerLog()">
-          ${svgIcon("file", 14)} View Server Log
+        <button class="btn-outline btn-ol-blue" onclick="navigate('pulse-logs')">
+          ${svgIcon("file", 14)} View Pulse Logs
         </button>
       </div>
     </div>
