@@ -23,6 +23,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [Unreleased]
 
 ### Added
+- **New "Power Events" tab — see why a VPU restarted, and whether one is pending.**
+  Under System Information, Power Events shows the recent restart/shutdown history
+  with the cause of each (planned vs. unexpected, who triggered it, and the
+  reason), plus an up-front "reboot pending" banner and uptime. Reboots Pulse
+  itself triggered are clearly labeled, so you can tell at a glance that an
+  "unprovoked" restart came from Windows, a driver install, or an update — not
+  from Pulse. Answers the "the box rebooted on its own" ticket in one click.
 - **Pulse now catches the internet being plugged into a camera port.** On a VPU
   the internet/venue cable must go to the motherboard network port — the 4-port
   NIC is cameras-only. If the uplink is found on a camera-NIC port instead,

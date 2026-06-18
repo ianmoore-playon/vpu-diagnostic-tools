@@ -3365,6 +3365,15 @@ async def api_events(
     return await run_ps("Get-EventLogs.ps1", {"HoursBack": hours, "Level": level})
 
 
+@app.get("/api/reboots")
+async def api_reboots(hours: int = Query(default=168)):
+    """Reboot/shutdown history with cause + a pending-reboot indicator.
+    Answers "why did this VPU restart, and is one pending?" — and positively
+    distinguishes a Pulse-initiated reboot (Reboot-Vpu.ps1 stamps the event
+    Comment) from an external one (scheduled task, Windows Update, crash)."""
+    return await run_ps("Get-RebootHistory.ps1", {"HoursBack": hours}, timeout=30)
+
+
 @app.get("/api/pixellot-logs")
 async def api_pixellot_logs(hours: int = Query(default=24)):
     """Scan C:\\Pixellot\\Data\\Log for errors, fatals, and process
