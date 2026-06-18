@@ -5205,8 +5205,8 @@ function renderHelp() {
     <div class="card">
       ${sectionTitle("inbox", "Capturing evidence for support")}
       <ul class="help-list">
-        <li>Use <strong>Run All Diagnostics</strong> (top of the Dashboard) to refresh every check, then
-        <strong>Support Bundle</strong> / <strong>Exports</strong> to generate a downloadable report to attach to a ticket.</li>
+        <li>Use <strong>Run All Diagnostics</strong> (on the Settings page) to refresh every check, then
+        <strong>Exports</strong> to generate a downloadable report to attach to a ticket.</li>
         <li><strong>Share over LAN</strong> sends a report to another Pulse on the same network when you can't get the file off
         the VPU directly.</li>
         <li><strong>Pulse Logs</strong> shows Pulse's own script and server logs if Pulse itself is misbehaving.</li>
