@@ -3740,6 +3740,64 @@ async def api_update_apply():
     return {"ok": True, "message": "Pulse is updating and will restart shortly."}
 
 
+# ── Maintenance: restart Pulse / reboot the VPU ──────────────────────────────
+@app.post("/api/maintenance/restart-app")
+async def api_restart_app():
+    """Relaunch the CURRENT Pulse build (no download). Mirrors the update
+    handoff — spawn a detached helper that lets the HTTP reply flush, taskkills
+    the server so its port frees, then re-runs the hidden launcher
+    (pulse-launch.vbs) to start the same build again. Recovers a wedged app
+    without touching the OS or any recording. The open page reloads itself once
+    the server is back (see _pollForRestart)."""
+    if _sys.platform != "win32":
+        return {"ok": False, "error": "Restarting Pulse only works on Windows VPUs."}
+    import subprocess
+    vbs = _os.path.join(_web_root, "pulse-launch.vbs")
+    if not _os.path.exists(vbs):
+        return {"ok": False, "error": "pulse-launch.vbs not found — can't relaunch the server."}
+    port = int(_os.environ.get("PORT", 8765))
+    helper = _os.path.join(_web_root, "pulse-restart.bat")
+    lines = [
+        "@echo off",
+        "rem Pulse restart helper - spawned detached by the running server.",
+        "rem 1) let the HTTP reply flush  2) stop the server so its port frees",
+        "rem 3) relaunch the SAME build via the hidden launcher (no download).",
+        "ping -n 2 127.0.0.1 >nul",
+        f"""for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":{port} " ^| findstr "LISTENING"') do taskkill /PID %%a /F >nul 2>&1""",
+        "ping -n 3 127.0.0.1 >nul",
+        f'wscript "{vbs}"',
+        "",
+    ]
+    try:
+        with open(helper, "w", newline="") as f:
+            f.write("\r\n".join(lines))
+    except Exception as e:
+        return {"ok": False, "error": f"Couldn't write the restart script: {e}"}
+    _CREATE_NEW_CONSOLE = 0x00000010
+    _CREATE_NEW_PROCESS_GROUP = 0x00000200
+    try:
+        subprocess.Popen(
+            ["cmd", "/c", helper],
+            cwd=_web_root,
+            creationflags=_CREATE_NEW_CONSOLE | _CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+    except Exception as e:
+        return {"ok": False, "error": f"Couldn't start the restart helper: {e}"}
+    return {"ok": True, "message": "Pulse is restarting and will reload shortly."}
+
+
+@app.post("/api/maintenance/reboot-vpu")
+async def api_reboot_vpu():
+    """Schedule a full VPU reboot. Uses shutdown.exe /r /t <delay> (via
+    Reboot-Vpu.ps1) so the OS reboots after a short delay and the HTTP reply
+    flushes first — Restart-Computer would kill the server before the reply
+    lands. Confirmation-gated in the UI; interrupts any active recording."""
+    if _sys.platform != "win32":
+        return {"success": False, "message": "Rebooting the VPU only works on Windows."}
+    return await run_ps("Reboot-Vpu.ps1", timeout=30)
+
+
 async def build_report() -> dict:
     """Full diagnostic bundle for offline review. Runs every (non-interactive)
     data-collection script, adds the enriched camera view and Pulse's own

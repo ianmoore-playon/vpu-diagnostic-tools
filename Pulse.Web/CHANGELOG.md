@@ -35,8 +35,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   Connect app reaches the VPU. If it's been disabled in Windows, Pulse raises a
   warning with how to turn it back on — so a unit that's invisible to Connect is
   easy to spot. (Units without a Wi-Fi card aren't flagged.)
+- **Restart Pulse or reboot the VPU from Settings.** The Settings page has a new
+  Reboot Pulse panel. "Restart Pulse app" relaunches Pulse if the page is stuck
+  or acting up — the VPU and any recording keep running, and the page reloads
+  itself once Pulse is back. "Reboot VPU" restarts Windows on the unit; it
+  interrupts any active recording, so it asks you to confirm first.
 
 ### Changed
+- **Slimmed down the Settings page.** Settings now shows just Software Update and
+  the new Reboot Pulse panel. The ScoreConnect URL, live-metrics interval, log
+  file paths, and the Run All Diagnostics button were removed to keep the page
+  focused. (Generating a report from **Exports** still re-runs every check.)
 - **Reorganized the sidebar into six clearer groups.** Tabs are now grouped as
   Triage, Troubleshooting, Pixellot Configuration, System Information, Data
   Logs, and Pulse. A few tabs were renamed to say what they do —

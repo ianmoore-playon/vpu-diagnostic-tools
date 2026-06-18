@@ -52,6 +52,7 @@ function svgIcon(name, size) {
     "clipboard-list": '<rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
     "id-card": '<path d="M16 10h2"/><path d="M16 14h2"/><path d="M6.17 15a3 3 0 0 1 5.66 0"/><circle cx="9" cy="11" r="2"/><rect x="2" y="5" width="20" height="14" rx="2"/>',
     package: '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/>',
+    power: '<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
@@ -5207,8 +5208,8 @@ function renderHelp() {
     <div class="card">
       ${sectionTitle("inbox", "Capturing evidence for support")}
       <ul class="help-list">
-        <li>Use <strong>Run All Diagnostics</strong> (on the Settings page) to refresh every check, then
-        <strong>Exports</strong> to generate a downloadable report to attach to a ticket.</li>
+        <li>Use <strong>Exports</strong> to generate a downloadable report to attach to a ticket — it re-runs
+        every check and bundles the results into one file.</li>
         <li><strong>Share over LAN</strong> sends a report to another Pulse on the same network when you can't get the file off
         the VPU directly.</li>
         <li><strong>Pulse Logs</strong> shows Pulse's own script and server logs if Pulse itself is misbehaving.</li>
@@ -7466,73 +7467,11 @@ function renderSettings() {
   const data = cached("settings");
   if (!data) { $page().innerHTML = sectionLoading("Settings"); fetchSection("settings"); return; }
 
-  const scUrl = data.scoreConnectUrl || "http://localhost:5000";
-  const pollMs = data.pollIntervalMs || 3000;
-
   $page().innerHTML = `
     ${pageHeader("Settings", "App preferences and diagnostic helpers")}
 
-    <!-- ScoreConnect III API -->
-    <div class="card">
-      ${sectionTitle("link", "ScoreConnect III API")}
-      <p class="text-sm text-pulse-muted mb-3">Where Pulse reaches the local ScoreConnect III service. Default: http://localhost:5000.</p>
-      <input type="text" id="set-sc-url" value="${esc(scUrl)}" class="settings-input"/>
-      <div class="settings-actions">
-        <button class="btn-outline btn-ol-blue" id="set-save-url">
-          ${svgIcon("check", 14)} Save
-        </button>
-        <button class="btn-outline btn-ol-blue" id="set-reset-url">
-          ${svgIcon("refresh", 14)} Reset to default
-        </button>
-        <span id="set-url-msg" class="text-sm text-pulse-muted"></span>
-      </div>
-    </div>
-
-    <!-- Poll Interval -->
-    <div class="card mt-4">
-      ${sectionTitle("clock", "Live Metrics")}
-      <p class="text-sm text-pulse-muted mb-3">How often live performance metrics refresh (1000–30000 ms).</p>
-      <div class="settings-input-with-suffix" style="max-width:200px">
-        <input type="number" id="set-poll" value="${pollMs}" min="1000" max="30000" step="500" class="settings-input"/>
-        <span class="settings-input-suffix">ms</span>
-      </div>
-      <div class="settings-actions">
-        <button class="btn-outline btn-ol-blue" id="set-save-poll">
-          ${svgIcon("check", 14)} Save
-        </button>
-        <button class="btn-outline btn-ol-blue" id="set-reset-poll" title="Restore the default 3000 ms refresh interval">
-          ${svgIcon("refresh", 14)} Reset to default
-        </button>
-        <span id="set-poll-msg" class="text-sm text-pulse-muted"></span>
-      </div>
-    </div>
-
-    <!-- Logs & Reports -->
-    <div class="card mt-4">
-      ${sectionTitle("file", "Logs & Reports")}
-      <p class="text-sm text-pulse-muted mb-3">File paths used by Pulse on this VPU.</p>
-      <div class="settings-paths mb-3">
-        ${_settingsPathRow("Server log", data._paths?.serverLog)}
-        ${_settingsPathRow("Settings file", data._paths?.settingsFile)}
-      </div>
-      <div class="settings-actions">
-        <button class="btn-outline btn-ol-blue" onclick="navigate('pulse-logs')">
-          ${svgIcon("file", 14)} View Pulse Logs
-        </button>
-      </div>
-    </div>
-
-    <!-- Diagnostics -->
-    <div class="card mt-4">
-      ${sectionTitle("zap", "Diagnostics")}
-      <p class="text-sm text-pulse-muted mb-3">Re-run all diagnostics on demand. Each check re-reads live data from the VPU.</p>
-      <button class="btn-outline btn-ol-green" onclick="refreshAll()">
-        ${svgIcon("play", 14)} Run All Diagnostics
-      </button>
-    </div>
-
     <!-- Software Update -->
-    <div class="card mt-4">
+    <div class="card">
       ${sectionTitle("refresh", "Software Update")}
       <p class="text-sm text-pulse-muted mb-3">Check for a newer Pulse build on this VPU's channel and install it. Pulse restarts and this page reloads automatically — no need to re-run the launcher.</p>
       <div class="settings-actions">
@@ -7546,50 +7485,22 @@ function renderSettings() {
       </div>
       <div id="set-update-notes" class="update-notes" style="display:none"></div>
     </div>
+
+    <!-- Reboot Pulse -->
+    <div class="card mt-4">
+      ${sectionTitle("power", "Reboot Pulse")}
+      <p class="text-sm text-pulse-muted mb-3">Restart the Pulse app if the page is stuck or behaving oddly, or reboot the whole VPU. Restarting Pulse keeps the unit running and reloads this page automatically. Rebooting the VPU restarts Windows — it interrupts any active recording and takes a few minutes to come back.</p>
+      <div class="settings-actions">
+        <button class="btn-outline btn-ol-blue" id="set-restart-app">
+          ${svgIcon("refresh", 14)} Restart Pulse app
+        </button>
+        <button class="btn-outline btn-ol-red" id="set-reboot-vpu">
+          ${svgIcon("power", 14)} Reboot VPU
+        </button>
+        <span id="set-reboot-msg" class="text-sm text-pulse-muted"></span>
+      </div>
+    </div>
   `;
-
-  async function saveSettings() {
-    return apiPost("/api/settings", {
-      scoreConnectUrl: document.getElementById("set-sc-url").value.trim(),
-      pollIntervalMs: parseInt(document.getElementById("set-poll").value, 10) || 3000,
-    });
-  }
-
-  document.getElementById("set-save-url")?.addEventListener("click", async () => {
-    const result = await saveSettings();
-    const msgEl = document.getElementById("set-url-msg");
-    msgEl.textContent = result.ok ? "Saved" : "Error saving";
-    if (result.ok) setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 2000);
-  });
-
-  document.getElementById("set-reset-url")?.addEventListener("click", () => {
-    document.getElementById("set-sc-url").value = "http://localhost:5000";
-  });
-
-  document.getElementById("set-reset-poll")?.addEventListener("click", () => {
-    document.getElementById("set-poll").value = 3000;
-  });
-
-  // Path copy buttons inside the Logs & Reports card
-  document.querySelectorAll(".settings-path-copy").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const path = btn.dataset.path || "";
-      if (!path) return;
-      try {
-        await navigator.clipboard.writeText(path);
-        const old = btn.innerHTML;
-        btn.innerHTML = svgIcon("check", 12) + " Copied";
-        setTimeout(() => { btn.innerHTML = old; }, 1400);
-      } catch (e) { /* clipboard blocked — silent */ }
-    });
-  });
-
-  document.getElementById("set-save-poll")?.addEventListener("click", async () => {
-    const result = await saveSettings();
-    const msgEl = document.getElementById("set-poll-msg");
-    msgEl.textContent = result.ok ? "Saved" : "Error saving";
-    if (result.ok) setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 2000);
-  });
 
   // ── Software Update ──
   const upCheckBtn = document.getElementById("set-update-check");
@@ -7647,18 +7558,58 @@ function renderSettings() {
       upCheckBtn.disabled = false;
     }
   });
-}
 
-// Helper: a path row with a copy-to-clipboard button so techs can paste
-// the absolute path into Explorer / a remote session without retyping.
-function _settingsPathRow(label, path) {
-  const safe = path || "—";
-  const hasPath = !!path;
-  return `<div class="settings-path-row">
-    <span class="settings-path-label">${esc(label)}</span>
-    <span class="settings-path-value font-mono">${esc(safe)}</span>
-    ${hasPath ? `<button class="settings-path-copy btn-outline btn-ol-blue" data-path="${esc(path)}" title="Copy path to clipboard">${svgIcon("copy", 12)} Copy</button>` : ""}
-  </div>`;
+  // ── Reboot Pulse / VPU ──
+  const restartBtn = document.getElementById("set-restart-app");
+  const rebootBtn = document.getElementById("set-reboot-vpu");
+  const rebootMsg = document.getElementById("set-reboot-msg");
+
+  restartBtn?.addEventListener("click", async () => {
+    if (!confirm("Restart the Pulse app?\n\nPulse closes and relaunches the same build. This page reloads automatically once it's back — usually a few seconds. The VPU and any recording keep running.")) return;
+    restartBtn.disabled = true;
+    rebootBtn.disabled = true;
+    rebootMsg.textContent = "Restarting…";
+    try {
+      const r = await apiPost("/api/maintenance/restart-app", {});
+      if (!r.ok) {
+        rebootMsg.textContent = (typeof r.error === "string" ? r.error : r.message) || "Couldn't restart Pulse.";
+        restartBtn.disabled = false;
+        rebootBtn.disabled = false;
+        return;
+      }
+      _showMaintenanceOverlay("Restarting Pulse…", "Pulse is relaunching. This page reloads automatically once it's back — usually a few seconds.");
+      _pollForRestart(dataCache._version);
+    } catch (e) {
+      rebootMsg.textContent = "Couldn't restart Pulse.";
+      restartBtn.disabled = false;
+      rebootBtn.disabled = false;
+    }
+  });
+
+  rebootBtn?.addEventListener("click", async () => {
+    if (!confirm("Reboot the whole VPU?\n\nThis restarts Windows. Any active recording is interrupted, and the unit is offline for a few minutes. Pulse won't come back on its own — reopen it from the desktop shortcut once Windows is back.")) return;
+    restartBtn.disabled = true;
+    rebootBtn.disabled = true;
+    rebootMsg.textContent = "Sending reboot…";
+    try {
+      // Reboot-Vpu.ps1 returns { success, message }; api() wraps failures in { error }.
+      const r = await apiPost("/api/maintenance/reboot-vpu", {});
+      if (r && r.success) {
+        _showMaintenanceOverlay("Rebooting the VPU…",
+          (r.message ? r.message + " " : "The VPU is restarting. ") +
+          "Reopen Pulse from the desktop shortcut once Windows is back.");
+        _pollForRestart(dataCache._version);
+      } else {
+        rebootMsg.textContent = (r && (r.message || (typeof r.error === "string" ? r.error : null))) || "Couldn't reboot the VPU.";
+        restartBtn.disabled = false;
+        rebootBtn.disabled = false;
+      }
+    } catch (e) {
+      rebootMsg.textContent = "Couldn't reboot the VPU.";
+      restartBtn.disabled = false;
+      rebootBtn.disabled = false;
+    }
+  });
 }
 
 // ── Software Update helpers (module scope so they survive a re-render) ──
@@ -7686,6 +7637,26 @@ function _showUpdateOverlay(tag) {
       <div class="update-spinner" aria-hidden="true"></div>
       <div class="update-overlay-title">Updating Pulse${tag ? " to " + esc(tag) : ""}…</div>
       <p class="update-overlay-sub" id="update-overlay-sub">Pulse is restarting. This page reloads automatically once it's back — usually under a minute.</p>
+    </div>`;
+  el.style.display = "flex";
+}
+
+// Generic full-screen "please wait, the server is coming back" overlay, shared
+// by the Restart-Pulse and Reboot-VPU actions. Same element/markup as the
+// update overlay, just with caller-supplied title + subtext.
+function _showMaintenanceOverlay(title, sub) {
+  let el = document.getElementById("pulse-update-overlay");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "pulse-update-overlay";
+    el.className = "update-overlay";
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `
+    <div class="update-overlay-box">
+      <div class="update-spinner" aria-hidden="true"></div>
+      <div class="update-overlay-title">${esc(title)}</div>
+      <p class="update-overlay-sub" id="update-overlay-sub">${esc(sub)}</p>
     </div>`;
   el.style.display = "flex";
 }
