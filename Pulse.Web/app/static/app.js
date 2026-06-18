@@ -715,11 +715,13 @@ var _prevLiveCounters = null;
 // The System Status gauges update live over the WebSocket every few
 // seconds, while the Command Center shows a one-time "Baseline completed"
 // snapshot time. This indicator makes the distinction explicit so a tech
-// knows the gauges are live ("Live") or stalled ("Reconnecting…").
+// knows the gauges are live (a green pulsing dot) or stalled ("Reconnecting…").
 var _wsEverConnected = false;
 function _liveIndicatorHtml() {
   if (_wsConnected) {
-    return `<span class="live-dot live-dot-on"></span><span>Live</span>`;
+    // Healthy = nothing shown (no dot, no label). The indicator only appears
+    // when the live stream drops, where it actually carries information.
+    return "";
   }
   // "Connecting…" on first load (never connected yet) vs "Reconnecting…"
   // after a drop — the latter implies a problem, the former is normal.

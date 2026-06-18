@@ -1053,7 +1053,10 @@ html.dark .demo-banner {
 .dash-gauges-row {
     display: flex;
     justify-content: space-around;
-    align-items: center;
+    /* Top-align the columns so every ring/tile sits on the same line.
+       (Centering let columns with more caption text push their rings to
+       different heights — the cause of the misaligned gauges.) */
+    align-items: flex-start;
     gap: 1rem;
     flex-wrap: wrap;
     padding-top: 0.5rem;
@@ -1065,7 +1068,9 @@ html.dark .demo-banner {
     min-width: 110px;
 }
 .dash-gauge-col-center {
-    justify-content: center;
+    /* Match the 0.5rem ring→label gap the gauge() markup uses (gap-2) so the
+       Uptime/Internet labels line up with the CPU/Memory/etc. labels. */
+    gap: 0.5rem;
     min-height: 7rem;
 }
 .dash-gauge-sub {
