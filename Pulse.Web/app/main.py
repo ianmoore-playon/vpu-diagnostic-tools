@@ -3196,7 +3196,20 @@ async def api_cameras_video_test(request: Request):
     if isinstance(body, dict):
         raw = body.get("ips") or ([body["ip"]] if body.get("ip") else None)
         if raw:
-            target_ips = {str(x).strip() for x in raw if str(x).strip()}
+            # Validate each client value as a real IP address at the boundary.
+            # These IPs only *filter* the server-derived camera list — the
+            # values handed to the capture command come from camerasDetected,
+            # never from the request — but rejecting anything that isn't a
+            # well-formed address keeps untrusted strings out of the selection
+            # path entirely. Malformed entries are dropped silently.
+            target_ips = set()
+            for x in raw:
+                ip = str(x).strip()
+                try:
+                    _ipaddress.ip_address(ip)
+                except ValueError:
+                    continue
+                target_ips.add(ip)
 
     sys_type = expectations.get("systemType") if isinstance(expectations, dict) else None
 
