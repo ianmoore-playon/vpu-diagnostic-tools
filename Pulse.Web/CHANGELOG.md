@@ -23,6 +23,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [Unreleased]
 
 ### Added
+- **New "Power Events" tab — see why a VPU restarted, and whether one is pending.**
+  Under System Information, Power Events shows the recent restart/shutdown history
+  with the cause of each (planned vs. unexpected, who triggered it, and the
+  reason), plus an up-front "reboot pending" banner and uptime. Reboots Pulse
+  itself triggered are clearly labeled, so you can tell at a glance that an
+  "unprovoked" restart came from Windows, a driver install, or an update — not
+  from Pulse. Answers the "the box rebooted on its own" ticket in one click.
 - **Pulse now catches the internet being plugged into a camera port.** On a VPU
   the internet/venue cable must go to the motherboard network port — the 4-port
   NIC is cameras-only. If the uplink is found on a camera-NIC port instead,
@@ -39,12 +46,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   "Refresh all cameras" button plus a "Refresh" on each camera card, so you can
   grab a new still from just the camera you're working on instead of re-pulling
   every camera.
+- **Restart Pulse or reboot the VPU from Settings.** The Settings page has a new
+  Reboot Pulse panel. "Restart Pulse app" relaunches Pulse if the page is stuck
+  or acting up — the VPU and any recording keep running, and the page reloads
+  itself once Pulse is back. "Reboot VPU" restarts Windows on the unit; it
+  interrupts any active recording, so it asks you to confirm first.
 
 ### Changed
 - **Camera Frames now show the camera type, model, and firmware.** Each
   captured still lists the system type (S1/S2/S2S), IP address, camera model,
   and firmware version, and is clearly marked as a point-in-time snapshot — not
   a live stream. The status now reads "Active" instead of "Streaming".
+- **Slimmed down the Settings page.** Settings now shows just Software Update and
+  the new Reboot Pulse panel. The ScoreConnect URL, live-metrics interval, log
+  file paths, and the Run All Diagnostics button were removed to keep the page
+  focused. (Generating a report from **Exports** still re-runs every check.)
 - **Reorganized the sidebar into six clearer groups.** Tabs are now grouped as
   Triage, Troubleshooting, Pixellot Configuration, System Information, Data
   Logs, and Pulse. A few tabs were renamed to say what they do —
@@ -85,6 +101,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   detail (exact values, commands, port numbers) still right there in the detail.
 
 ### Fixed
+- **No more false "can't reach gateway" alarm when the gateway just ignores
+  pings.** Plenty of routers and firewalls are set to drop pings (ICMP) to
+  themselves while still routing traffic perfectly. Pulse used to read that as a
+  CRITICAL "VPU can't reach its gateway — check the cable/switch/VLAN," sending
+  techs to chase a fault that isn't there. Now, when the VPU is already reaching
+  the internet, an unanswered gateway ping is shown as an informational note
+  ("gateway doesn't answer ping, but traffic is routing normally") instead of a
+  critical. A real dead gateway — where the internet is also unreachable — still
+  raises the critical.
 - **No more false "DNS blocked / can't resolve any hostname" alarm.** The DNS
   check was probing whatever resolver it found first across *all* network
   adapters — so a stale resolver on a disconnected or secondary adapter (e.g. a

@@ -587,6 +587,49 @@ DEMO = {
             {"timeCreated": (datetime.now() - timedelta(hours=24)).isoformat(), "level": "Error", "source": "PixellotEncoder", "eventId": 2001, "message": "Hardware encoder init failed — falling back to software encoding"},
         ]
     },
+    "Get-RebootHistory.ps1": lambda **kw: {
+        "pending": {
+            "isPending": True,
+            "reasons": ["Windows Update is waiting to finish"],
+        },
+        "lastBoot": (datetime.now() - timedelta(minutes=25)).isoformat(),
+        "uptime": "0d 0h 25m",
+        # The PnP task that reboots after a driver install flags reboot-required
+        # — fired ~28 min ago, the "unprovoked restart shortly after logon".
+        "deviceInstallRebootTaskLastRun": (datetime.now() - timedelta(minutes=28)).isoformat(),
+        "count": 4,
+        "history": [
+            # External planned restart — empty comment proves it was NOT Pulse.
+            {"time": (datetime.now() - timedelta(minutes=28)).isoformat(), "eventId": 1074,
+             "kind": "restart", "category": "planned",
+             "process": "C:\\Windows\\system32\\shutdown.exe (VPU)", "user": "VPU\\Pixellot",
+             "reasonCode": "0x800000ff", "reasonText": "No title for this reason could be found",
+             "comment": "", "byPulse": False, "source": "Planned - external",
+             "message": "The process C:\\Windows\\system32\\shutdown.exe (VPU) has initiated the restart of computer VPU on behalf of user VPU\\Pixellot ... Reason Code: 0x800000ff  Shutdown Type: restart  Comment:"},
+            # Pulse-initiated reboot — stamped comment, positively attributed.
+            {"time": (datetime.now() - timedelta(days=2)).isoformat(), "eventId": 1074,
+             "kind": "restart", "category": "planned",
+             "process": "C:\\Windows\\system32\\shutdown.exe (VPU)", "user": "VPU\\Pixellot",
+             "reasonCode": "0x80040002", "reasonText": "Other (Planned)",
+             "comment": "Reboot requested from Pulse diagnostics", "byPulse": True,
+             "source": "Pulse (Reboot VPU)",
+             "message": "The process C:\\Windows\\system32\\shutdown.exe (VPU) has initiated the restart ... Comment: Reboot requested from Pulse diagnostics"},
+            # Windows Update restart.
+            {"time": (datetime.now() - timedelta(days=4)).isoformat(), "eventId": 1074,
+             "kind": "restart", "category": "planned",
+             "process": "C:\\Windows\\system32\\MusNotification.exe", "user": "NT AUTHORITY\\SYSTEM",
+             "reasonCode": "0x80020002", "reasonText": "Operating System: Recovery (Planned)",
+             "comment": "", "byPulse": False, "source": "Windows Update",
+             "message": "The process MusNotification.exe has initiated the restart ... Operating System: Recovery (Planned)"},
+            # Unexpected loss (power blip / hard crash).
+            {"time": (datetime.now() - timedelta(days=6)).isoformat(), "eventId": 41,
+             "kind": "unexpected", "category": "unexpected",
+             "process": "", "user": "", "reasonCode": "", "reasonText": "",
+             "comment": "", "byPulse": False,
+             "source": "Unexpected (kernel-power: no clean shutdown)",
+             "message": "The system has rebooted without cleanly shutting down first."},
+        ],
+    },
     "Get-ScoreConnectStatus.ps1": lambda **kw: _demo_scoreconnect(),
     "Get-ScoreConnectLive.ps1": lambda **kw: _demo_scoreconnect_live(),
     "Get-ScoreLinkStatus.ps1": lambda **kw: {
