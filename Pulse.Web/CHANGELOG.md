@@ -42,6 +42,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   Connect app reaches the VPU. If it's been disabled in Windows, Pulse raises a
   warning with how to turn it back on — so a unit that's invisible to Connect is
   easy to spot. (Units without a Wi-Fi card aren't flagged.)
+- **Refresh camera stills one at a time.** The Camera Frames panel now has a
+  "Refresh all cameras" button plus a "Refresh" on each camera card, so you can
+  grab a new still from just the camera you're working on instead of re-pulling
+  every camera.
 - **Restart Pulse or reboot the VPU from Settings.** The Settings page has a new
   Reboot Pulse panel. "Restart Pulse app" relaunches Pulse if the page is stuck
   or acting up — the VPU and any recording keep running, and the page reloads
@@ -69,6 +73,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   version still shows on the Service Status tab.
 
 ### Changed
+- **Camera Frames now show the camera type, model, and firmware.** Each
+  captured still lists the system type (S1/S2/S2S), IP address, camera model,
+  and firmware version, and is clearly marked as a point-in-time snapshot — not
+  a live stream. The status now reads "Active" instead of "Streaming".
 - **"Disk & Driver Errors" now catches filesystem corruption.** The disk-events
   panel used to watch only the disk / NVMe / storage-controller logs; it now also
   includes NTFS and volume-manager events (the "run chkdsk — the file system is

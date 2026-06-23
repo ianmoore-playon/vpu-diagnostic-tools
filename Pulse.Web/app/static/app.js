@@ -4222,7 +4222,9 @@ function _camVerifyVideo() {
     // navigate-away-and-back, stamped with the time so it's clearly a
     // snapshot, not live. Cleared by a manual Refresh (_camForceRefresh).
     if (res && (res.results || []).length) {
-      res._capturedAt = new Date().toLocaleTimeString();
+      var _t = new Date().toLocaleTimeString();
+      res._capturedAt = _t;
+      res.results.forEach(function(r) { r._capturedAt = _t; });
       _camLastVideo = res;
     }
     if (currentPage === "cameras") wrap.innerHTML = _camVideoResultsHtml(res);
@@ -4242,6 +4244,68 @@ function _camVerifyVideo() {
   });
 }
 
+// Generic countdown on any button element (used for the per-camera Refresh
+// when the server's shared cooldown is still active). Re-enables itself, or
+// stops quietly if the button is re-rendered away.
+function _camCountdownBtn(btn, seconds, idleHtml) {
+  if (!btn) return;
+  var left = seconds;
+  btn.disabled = true;
+  (function tick() {
+    if (!document.body.contains(btn)) return;
+    if (left <= 0) { btn.disabled = false; btn.innerHTML = idleHtml; return; }
+    btn.innerHTML = svgIcon("refresh", 12) + " Wait " + left + "s…";
+    left -= 1;
+    setTimeout(tick, 1000);
+  })();
+}
+
+// Re-capture a single camera (the per-card Refresh button). Posts just that
+// IP so we don't pull every camera, then merges the fresh frame back into the
+// stored set and re-renders. Shares the server cooldown with the all-cameras
+// capture.
+function _camRefreshOne(ip) {
+  if (!ip) return;
+  var idle = svgIcon("refresh", 12) + " Refresh";
+  var card = document.querySelector('.cam-frame[data-ip="' + ip + '"]');
+  var btn = card ? card.querySelector(".cam-frame-refresh") : null;
+  if (btn && btn.disabled) return;
+  if (btn) { btn.disabled = true; btn.innerHTML = svgIcon("refresh", 12) + " Capturing…"; }
+  apiPost("/api/cameras/video-test", { ips: [ip] }).then(function(res) {
+    // Server refused (cooldown still ticking, or vpu.exe came up): leave the
+    // existing frame in place and tell the tech why, on the button itself.
+    if (res && res.blocked === "cooldown") {
+      _camCountdownBtn(btn, res.cooldown || 15, idle);
+      return;
+    }
+    if (res && (res.blocked === "vpu" || res.error)) {
+      if (btn) { btn.disabled = false; btn.innerHTML = idle; }
+      return;
+    }
+    var fresh = ((res && res.results) || []).filter(function(r) { return (r.ip || "") === ip; })[0];
+    if (fresh) {
+      fresh._capturedAt = new Date().toLocaleTimeString();
+      if (_camLastVideo && _camLastVideo.results) {
+        _camLastVideo.results = _camLastVideo.results.map(function(r) {
+          return (r.ip || "") === ip ? fresh : r;
+        });
+      }
+    }
+    var wrap = document.getElementById("cam-video-wrap");
+    if (wrap && currentPage === "cameras") wrap.innerHTML = _camVideoResultsHtml(_camLastVideo || res);
+  }).catch(function() {
+    if (btn) { btn.disabled = false; btn.innerHTML = idle; }
+  });
+}
+
+// One "Label  value" row inside a frame card's detail block. value is already
+// escaped by the caller; an empty value renders nothing (drops unknown fields).
+function _camFrameKv(label, value, mono) {
+  if (value == null || value === "") return "";
+  return '<div class="cam-kv-row"><span class="cam-kv-k">' + label + "</span>" +
+    '<span class="cam-kv-v' + (mono ? " font-mono" : "") + '">' + value + "</span></div>";
+}
+
 function _camVideoResultsHtml(res) {
   if (!res || res.error) {
     return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
@@ -4256,10 +4320,9 @@ function _camVideoResultsHtml(res) {
     return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
       '<div class="cam-no-detect">' + esc(res.reason || "No cameras detected to test.") + '</div></div>';
   }
+  var camType = res.systemType ? esc(res.systemType) : null;
   var cards = results.map(function(r) {
-    var meta = r.ok
-      ? (esc(r.codec || "?") + " · " + (r.frameRate != null ? r.frameRate + " fps" : "? fps") + (r.resolution ? " · " + esc(r.resolution) : ""))
-      : esc(r.error || "No video");
+    var stream = (esc(r.codec || "?") + " · " + (r.frameRate != null ? r.frameRate + " fps" : "? fps") + (r.resolution ? " · " + esc(r.resolution) : ""));
     var thumb = r.image
       ? '<img class="cam-frame-img" src="' + esc(r.image) + '" alt="' + esc(r.label || r.ip) + ' frame">'
       : '<div class="cam-frame-img cam-frame-empty">' + svgIcon("camera", 22) + '<span>No frame</span></div>';
@@ -4277,24 +4340,43 @@ function _camVideoResultsHtml(res) {
         '. A frame pulled, but the stream won\'t hold until this is fixed.</div>';
     }
     var cardCls = r.ok ? (degraded ? "cam-frame-degraded" : "") : "cam-frame-fail";
-    var statusTxt = !r.ok ? "No video" : (degraded ? "Streaming · degraded" : "Streaming");
+    var statusTxt = !r.ok ? "No video" : (degraded ? "Active · degraded" : "Active");
     var statusCls = !r.ok ? "status-fail" : (degraded ? "status-warn" : "status-pass");
-    return '<div class="cam-frame ' + cardCls + '">' +
+    // Identity block: camera type (S1/S2/S2S — system-wide), IP, model and
+    // firmware from the CGI probe, plus the live stream format when one pulled.
+    var kv =
+      _camFrameKv("Type", camType) +
+      _camFrameKv("IP", esc(r.ip), true) +
+      _camFrameKv("Model", r.model ? esc(r.model) : null) +
+      _camFrameKv("Firmware", r.firmwareVersion ? esc(r.firmwareVersion) : null) +
+      (r.ok ? _camFrameKv("Stream", stream) : "");
+    var errLine = r.ok ? "" : '<div class="cam-frame-detail cam-frame-novideo">' + esc(r.error || "No video") + "</div>";
+    var cap = r._capturedAt ? '<span class="cam-frame-cap">Captured ' + esc(r._capturedAt) + "</span>" : "";
+    var refresh = '<button class="btn-outline btn-ol-blue cam-frame-refresh" onclick="_camRefreshOne(\'' + esc(r.ip) + '\')" ' +
+      'title="Capture a fresh still from this camera">' + svgIcon("refresh", 12) + " Refresh</button>";
+    return '<div class="cam-frame ' + cardCls + '" data-ip="' + esc(r.ip) + '">' +
       thumb +
       '<div class="cam-frame-meta">' +
         '<div class="cam-frame-head">' +
           '<span class="cam-frame-label">' + esc(r.label || r.ip) + '</span>' +
           '<span class="' + statusCls + '">' + statusTxt + '</span>' +
         '</div>' +
-        '<div class="cam-frame-ip font-mono">' + esc(r.ip) + '</div>' +
-        '<div class="cam-frame-detail">' + meta + '</div>' +
+        '<div class="cam-frame-kv">' + kv + '</div>' +
+        errLine +
         warn +
+        '<div class="cam-frame-foot">' + cap + refresh + '</div>' +
       '</div></div>';
   }).join("");
-  var stamp = res._capturedAt
-    ? '<div style="font-size:0.7rem;color:var(--c-dim);margin:-2px 0 10px">Captured ' + esc(res._capturedAt) + ' — a point-in-time snapshot, not live.</div>'
-    : "";
-  return '<div class="card">' + sectionTitle("camera", "Camera Frames") + stamp +
+  // Still-image notice + an all-cameras refresh, both inside the results card
+  // so the "this isn't live, grab a new one" cue sits right next to the frames.
+  var notice = '<div class="cam-frame-notice">' + svgIcon("info", 12) +
+    ' These are still snapshots, not a live stream. To get a new image, use ' +
+    '<strong>Refresh all cameras</strong> below, or <strong>Refresh</strong> on a single camera.</div>';
+  var toolbar = '<div class="cam-frame-toolbar">' +
+    '<button class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()" ' +
+    'title="Capture a fresh still from every camera">' + svgIcon("refresh", 14) + " Refresh all cameras</button></div>";
+  return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
+    notice + toolbar +
     '<div class="cam-frame-grid">' + cards + '</div></div>';
 }
 
