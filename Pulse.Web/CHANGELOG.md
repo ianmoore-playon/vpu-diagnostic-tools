@@ -48,6 +48,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   itself once Pulse is back. "Reboot VPU" restarts Windows on the unit; it
   interrupts any active recording, so it asks you to confirm first.
 
+### Removed
+- **Removed the "Reinstall Pixellot Dependencies" button.** Reinstalling the
+  Pixellot video dependencies pauses recording for several minutes and is a
+  last-resort step, so it's no longer something Pulse can trigger. When the logs
+  show a CUDNN/TensorFlow dependency error, Pulse now points you to capture an
+  export and escalate to Pixellot support instead. The installed dependency
+  version still shows on the Service Status tab.
+
 ### Changed
 - **Clearer Stream Readiness wording.** The middle verdict now reads "WARNING"
   instead of "WARN", and its summary explains it plainly: "Will likely stream,

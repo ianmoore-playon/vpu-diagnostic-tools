@@ -4471,57 +4471,11 @@ function renderServices() {
       <div id="svc-keepagent-result" class="svc-quick-action-result hidden"></div>
     </div>
 
-    <!-- Reinstall Pixellot Dependencies — PDF #2 -->
-    <!-- HIDDEN by default. ONLY revealed if /api/pixellot-logs reports
-         depsErrorDetected=true (CUDNN/TensorFlow patterns found). Never
-         show this as a casual action — it's a tier-2 remedy. -->
-    <div class="card svc-quick-action svc-rare-action hidden" id="svc-reinstall-card">
-      <div class="svc-quick-action-row">
-        <div>
-          <div class="svc-quick-action-title">
-            Reinstall Pixellot Dependencies
-            <span class="svc-rare-pill">RARELY USED</span>
-          </div>
-          <div class="svc-quick-action-body" id="svc-reinstall-body">
-            Re-installs the Pixellot video dependencies (a documented last-resort fix). <span class="font-mono">Downloads the official installer to C:\\pixellot\\downloadedversion\\ and runs it silently.</span>
-          </div>
-          <div class="svc-rare-warn">
-            ${svgIcon("alert", 12)}
-            <span><strong>Do not run unless explicitly directed by Pixellot support or escalation.</strong> This is a last-resort remedy for confirmed CUDNN/TensorFlow dependency failures — recording is paused for 5–15 minutes and a reboot is recommended.</span>
-          </div>
-        </div>
-        <button class="btn-outline btn-ol-red" id="svc-reinstall-btn">
-          ${svgIcon("download", 14)} Reinstall Dependencies
-        </button>
-      </div>
-      <div id="svc-reinstall-result" class="svc-quick-action-result hidden"></div>
-    </div>
-
     <div class="svc-grid" id="svc-grid">
       ${svcs.map(svcTile).join("")}
       ${!svcs.length ? '<p class="text-pulse-muted text-sm">No services data</p>' : ""}
     </div>
   `;
-
-  // Check the log scanner for CUDNN/TensorFlow errors — show the reinstall
-  // card only when those errors are present so we don't suggest a 10-min
-  // install on a healthy box.
-  (async () => {
-    const r = await api("/api/pixellot-logs?hours=48");
-    if (currentPage !== "services") return;
-    const card = document.getElementById("svc-reinstall-card");
-    const body = document.getElementById("svc-reinstall-body");
-    if (!card) return;
-    if (r && !r.error && r.depsErrorDetected) {
-      card.classList.remove("hidden");
-      if (body) {
-        body.innerHTML = `
-          <span class="font-semibold" style="color:var(--c-accent-red)">${svgIcon("alert", 12)} CUDNN/TensorFlow errors detected in the VPU logs.</span>
-          Re-installs the Pixellot video dependencies (a documented last-resort fix). <span class="font-mono">Downloads the official installer to C:\\pixellot\\downloadedversion\\ and runs it silently.</span>
-        `;
-      }
-    }
-  })();
 
   // Installed Pixellot Dependencies (Canopy/Leaf/getVpuDepsFromRegistry.ps1
   // adaptation). Fills the always-visible status line at the top of the tab.
@@ -4613,51 +4567,6 @@ function renderServices() {
     }
   });
 
-  // Reinstall Pixellot Dependencies (PDF #2) — confirm + run + show result
-  document.getElementById("svc-reinstall-btn")?.addEventListener("click", async () => {
-    const ok = confirm(
-      "⚠ RARELY USED — Reinstall Pixellot Dependencies?\n\n" +
-      "This is a last-resort fix. ONLY run it when:\n" +
-      "  • Pixellot support or an escalation engineer has directed you to, OR\n" +
-      "  • You have confirmed CUDNN_STATUS_* or TensorFlow errors in the VPU logs\n" +
-      "    (see Event Viewer → Pixellot Logs).\n\n" +
-      "Effects:\n" +
-      "  • Downloads ~90 MB installer to C:\\pixellot\\downloadedversion\\\n" +
-      "  • Runs silently — recording is PAUSED for 5–15 minutes\n" +
-      "  • Reboot recommended afterward\n\n" +
-      "Proceed?"
-    );
-    if (!ok) return;
-
-    const btn = document.getElementById("svc-reinstall-btn");
-    const result = document.getElementById("svc-reinstall-result");
-    btn.disabled = true;
-    btn.innerHTML = `${svgIcon("refresh", 14)} Downloading + installing…`;
-    result.classList.remove("hidden");
-    result.className = "svc-quick-action-result";
-    result.innerHTML = `<div class="text-xs text-pulse-muted">Running — this can take 5–15 minutes. Watch the Script Log for progress.</div>`;
-
-    const r = await apiPost("/api/services/reinstall-deps", {});
-    btn.disabled = false;
-    btn.innerHTML = `${svgIcon("download", 14)} Reinstall Dependencies`;
-
-    const okState = r && r.success;
-    result.className = "svc-quick-action-result " + (okState ? "svc-result-ok" : "svc-result-err");
-    const stepsHtml = (r?.steps || []).map(s =>
-      `<li class="px-step px-step-${esc(s.status)}">
-        ${svgIcon(s.status === "ok" ? "check" : s.status === "skipped" ? "info" : "alert", 12)}
-        <span class="font-semibold">${esc(s.label)}</span>
-        <span class="text-xs text-pulse-muted">${esc(s.detail || "")}</span>
-        ${s.durationMs ? `<span class="text-xs text-pulse-muted">· ${Math.round(s.durationMs/1000)}s</span>` : ""}
-      </li>`
-    ).join("");
-    result.innerHTML = `
-      <div class="font-semibold">${okState ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
-      <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
-      ${stepsHtml ? `<ul class="px-steps mt-2">${stepsHtml}</ul>` : ""}
-      ${r?.targetFile ? `<div class="text-xs text-pulse-muted mt-2">Installer: <span class="font-mono">${esc(r.targetFile)}</span></div>` : ""}
-    `;
-  });
 }
 
 // ── Disk Health ──────────────────────────────────────────────
@@ -5097,8 +5006,8 @@ function renderEvents() {
 
 // ── Pixellot Logs ────────────────────────────────────────────
 // Scans C:\Pixellot\Data\Log for error / fatal / restart markers (PDF #5),
-// surfacing CUDNN/TensorFlow dependency errors with the reinstall remedy
-// (PDF #2). Was a card on Windows Events; now its own tab under DATA LOGS.
+// flagging CUDNN/TensorFlow dependency errors so the tech can escalate to
+// Pixellot support. Was a card on Windows Events; now its own tab under DATA LOGS.
 function renderPixellotLogs() {
   $page().innerHTML = `
     ${pageHeader("Pixellot Logs", "Errors, fatals, and process restarts scanned from the Pixellot log directory.",
@@ -5174,7 +5083,7 @@ async function _loadPixellotLogs() {
       ${svgIcon("alert", 14)}
       <div>
         <div class="font-semibold">Pixellot video dependency error detected (CUDNN/TensorFlow)</div>
-        <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. The documented fix is to reinstall the Pixellot dependencies — see the Service Status tab.</div>
+        <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. This needs a Pixellot-support-directed dependency reinstall — capture an export and escalate to Pixellot support.</div>
       </div>
     </div>` : ""}
 
