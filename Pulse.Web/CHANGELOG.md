@@ -113,6 +113,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   and raise a critical while every domain on the same screen was resolving fine.
   Pulse now tests the resolver on the active internet uplink, and never reports
   DNS as blocked when name resolution is demonstrably working.
+- **Gateway, DNS, and uplink readings now follow the active internet connection.**
+  On a VPU with more than one network connection (the camera NIC plus the
+  internet uplink, or a VPN), the Network Test could ping the gateway and DNS —
+  and read link speed and error counts — off the wrong adapter, making a healthy
+  uplink look bad or a stale one look fine. These checks now lock onto the
+  connection that actually carries the VPU's internet traffic.
+- **Dropped two dead addresses from the domain-resolution check.** Two storage
+  hostnames from a retired backend were still in the name-lookup list; they no
+  longer resolve, so they showed as meaningless red failures. Removed.
 - **The Network panel no longer comes up blank / "no internet" on some VPUs.**
   The new adapter-role check was scanning every network device Windows has ever
   seen (VPUs accumulate dozens of stale ones), which could time out the whole

@@ -20,8 +20,6 @@ try {
         'service.singular.live'
         'logmein.com'
         's3.amazonaws.com'
-        'leaf-uploads.s3.amazonaws.com'
-        'leaf-downloads.s3.amazonaws.com'
     )
 
     $results = foreach ($domain in $domains) {

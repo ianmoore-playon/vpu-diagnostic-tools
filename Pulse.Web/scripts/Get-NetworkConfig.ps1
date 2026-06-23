@@ -82,20 +82,29 @@ try {
         }
     }
 
-    # Identify uplink adapter (has a non-APIPA default gateway)
+    # Identify the uplink adapter — the interface that owns the active default
+    # route (lowest-metric 0.0.0.0/0). Taking the first ipConfig that happens to
+    # carry a gateway can pick a secondary/disconnected NIC on a multi-homed box
+    # (camera NIC, VPN), mislabeling which adapter's link/error stats we report.
     $uplinkAdapter = $null
-    foreach ($ipc in $ipConfigs) {
-        $gateways = $ipc.ipv4DefaultGateway
-        if ($gateways) {
-            $validGw = $gateways | Where-Object { $_ -and -not $_.StartsWith('169.254.') }
-            if ($validGw) {
-                $uplinkAdapter = [ordered]@{
-                    interfaceAlias = $ipc.interfaceAlias
-                    interfaceIndex = $ipc.interfaceIndex
-                    gateway        = ($validGw | Select-Object -First 1)
-                }
-                break
+    $uplinkIdx = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+        Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' -and -not $_.NextHop.StartsWith('169.254.') } |
+        Sort-Object RouteMetric | Select-Object -First 1).InterfaceIndex
+
+    # Prefer the default-route interface; fall back to the first interface with a
+    # usable (non-APIPA) gateway if the route didn't resolve.
+    $candidates = @()
+    if ($uplinkIdx) { $candidates += $ipConfigs | Where-Object { $_.interfaceIndex -eq $uplinkIdx } }
+    $candidates += $ipConfigs
+    foreach ($ipc in $candidates) {
+        $validGw = $ipc.ipv4DefaultGateway | Where-Object { $_ -and -not $_.StartsWith('169.254.') }
+        if ($validGw) {
+            $uplinkAdapter = [ordered]@{
+                interfaceAlias = $ipc.interfaceAlias
+                interfaceIndex = $ipc.interfaceIndex
+                gateway        = ($validGw | Select-Object -First 1)
             }
+            break
         }
     }
 
