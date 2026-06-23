@@ -2250,26 +2250,6 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 .svc-quick-action-title { font-weight: 600; font-size: 0.95rem; color: var(--c-text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .svc-quick-action-body  { font-size: 0.8rem; color: var(--c-muted); margin-top: 4px; max-width: 580px; line-height: 1.5; }
 
-/* "Rarely used" tier-2 action card (e.g. Reinstall Dependencies) */
-.svc-rare-action { border-left: 3px solid var(--c-accent-red); }
-.svc-rare-pill {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 3px;
-    background: var(--c-accent-red);
-    color: var(--c-on-accent);
-    font-size: 0.6rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-}
-.svc-rare-warn {
-    display: flex; align-items: flex-start; gap: 8px;
-    margin-top: 8px; padding: 8px 12px; max-width: 580px;
-    background: var(--c-tint-red); border-left: 3px solid var(--c-accent-red);
-    border-radius: 4px;
-    font-size: 0.75rem; color: var(--c-text); line-height: 1.5;
-}
-.svc-rare-warn svg { color: var(--c-accent-red); flex-shrink: 0; margin-top: 2px; }
 .svc-quick-action-result {
     margin-top: 0.75rem; padding: 0.75rem 0.875rem; border-radius: 6px;
 }
@@ -2283,21 +2263,6 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;
 }
 .svc-result-stderr { color: var(--c-accent-red); }
-
-/* Reinstall-dependencies step list (PDF #2) */
-.px-steps { list-style: none; padding: 0; margin: 0; }
-.px-step {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 0;
-    font-size: 0.8rem;
-    color: var(--c-text);
-}
-.px-step + .px-step { border-top: 1px solid var(--c-border); }
-.px-step-ok svg      { color: var(--c-accent-green); flex-shrink: 0; }
-.px-step-fail svg    { color: var(--c-accent-red);   flex-shrink: 0; }
-.px-step-skipped svg { color: var(--c-muted);        flex-shrink: 0; }
 
 .svc-grid {
     display: flex;

@@ -1184,7 +1184,7 @@ def _wifi_disabled_finding(network_config):
     }
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None) -> list:
     findings = []
 
     # ── Wi-Fi uplink detection (Canopy adoption) ─────────────
@@ -1367,7 +1367,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "critical",
                     "category": "System",
                     "title": "Windows version is past its support date",
-                    "recommendation": f"{release} reached end-of-support on {eos} ({abs(days)} days ago). This host no longer receives security updates and should be re-imaged to a supported LTSC release.",
+                    "recommendation": f"{release} reached end-of-support on {eos} ({abs(days)} days ago). This host no longer receives security updates and should be re-imaged to a supported Windows version.",
                 })
             elif days < 90:
                 findings.append({
@@ -1375,7 +1375,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "critical",
                     "category": "System",
                     "title": "Windows version loses support soon",
-                    "recommendation": f"{release} end-of-support is {eos} — {days} days away. Plan re-imaging to a supported LTSC release before that date.",
+                    "recommendation": f"{release} end-of-support is {eos} — {days} days away. Plan re-imaging to a supported Windows version before that date.",
                 })
             elif days < 365:
                 months = days // 30
@@ -1384,7 +1384,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "warning",
                     "category": "System",
                     "title": "Windows support ends within a year",
-                    "recommendation": f"{release} end-of-support is {eos} (~{months} months away). Begin planning a re-image to a supported LTSC release.",
+                    "recommendation": f"{release} end-of-support is {eos} (~{months} months away). Begin planning a re-image to a supported Windows version.",
                 })
 
         # ── Pixellot version × hardware compatibility ───────────
@@ -1412,9 +1412,10 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "category": "Hardware",
                 "title": "No NVIDIA GPU detected",
                 "recommendation": (
-                    "Pixellot requires an NVIDIA GPU for video encoding. No NVIDIA hardware was "
-                    "found via nvidia-smi or WMI. If a GPU is physically installed, check driver "
-                    "status; otherwise this VPU cannot run the encoder."
+                    "Pixellot requires an NVIDIA GPU for video encoding. No NVIDIA graphics card "
+                    "was detected on this VPU. If a card is physically installed, check that its "
+                    "driver is installed and the card is seated; otherwise this VPU cannot run "
+                    "the encoder."
                 ),
             })
         elif compat["status"] == "anomaly":
@@ -1537,6 +1538,50 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "category": "Hardware",
                     "title": "VPU running hot",
                     "recommendation": f"Check cooling — temperature at {temp}°C.",
+                }
+            )
+
+    # Drive SMART / reliability — the coarse Healthy/Unhealthy rollup plus the
+    # SSD-fleet early-warning signals (wear %, uncorrectable errors, OS pre-fail
+    # flag) from Get-DiskHealth. Pre-fail takes precedence over high wear, and we
+    # emit at most one of each so a multi-disk box doesn't spam the findings list.
+    if disk_health and not disk_health.get("error"):
+        prefail_drive = "A drive" if disk_health.get("predictFailure") else None
+        wear_drive = None  # (name, wearPercent)
+        for d in (disk_health.get("physicalDisks") or []):
+            name = d.get("friendlyName") or "A drive"
+            smart = d.get("smart") or {}
+            uncorrected = (smart.get("readErrorsUncorrected") or 0) + (smart.get("writeErrorsUncorrected") or 0)
+            health = (d.get("healthStatus") or "").strip().lower()
+            wear = smart.get("wearPercent")
+            if prefail_drive is None and (uncorrected > 0 or (health and health != "healthy")):
+                prefail_drive = name
+            if wear is not None and wear >= 80 and (wear_drive is None or wear > wear_drive[1]):
+                wear_drive = (name, wear)
+        if prefail_drive:
+            findings.append(
+                {
+                    "code": "disk-smart-prefail",
+                    "severity": "critical",
+                    "category": "Storage",
+                    "title": f"{prefail_drive} is predicting failure (SMART)",
+                    "recommendation": (
+                        "Back up recordings and plan to replace this drive — its built-in "
+                        "self-check (SMART) is reporting uncorrectable errors or a pre-failure status."
+                    ),
+                }
+            )
+        elif wear_drive:
+            findings.append(
+                {
+                    "code": "disk-smart-wear",
+                    "severity": "warning",
+                    "category": "Storage",
+                    "title": f"{wear_drive[0]} nearing end of rated life",
+                    "recommendation": (
+                        f"This SSD has used {wear_drive[1]}% of its rated write life — plan a "
+                        "replacement before it drops to read-only."
+                    ),
                 }
             )
 
@@ -1880,6 +1925,7 @@ _READINESS_POLICY = {
     "gpu-anomaly":           "risk",     # F12 Volta / roster anomaly
     "install-incomplete":    "risk",     # F13 interrupted installer, agent up
     "disk-low":              "risk",     # F16 (aggregate) disk 80–90%
+    "disk-smart-prefail":    "risk",     # F16b drive SMART pre-fail / uncorrectable errors
     "ram-insufficient":      "risk",     # F21 <32 GB host
     "ntp-unapproved":        "risk",     # F22 drift can break signed-URL stream
     "port-required-blocked": "risk",     # F23b NTP / Pixellot cloud / etc.
@@ -1893,6 +1939,7 @@ _READINESS_POLICY = {
     "cpu-critical":          "info",     # snapshot >90% — readiness uses the average (F17)
     "mem-critical":          "info",     # snapshot >90% — readiness uses the average (F19)
     "disk-critical":         "info",     # all-volumes AGGREGATE >90% — readiness keys on C: (F15a)
+    "disk-smart-wear":       "info",     # SSD ≥80% rated life — heads-up, won't stop tonight's game
     "temp-critical":         "info",     # 85°C snapshot — readiness gate is 90°C (F14)
     "tz-non-us":             "info",     # F25
     "os-eos-reached":        "info",     # F26
@@ -2606,7 +2653,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         if isinstance(data, dict) and data.get("error")
     ]
 
-    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations)
+    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health)
 
     return {
         "identity": flat_identity,
@@ -2862,6 +2909,9 @@ async def _collect_dashboard() -> dict:
 
 @app.get("/api/dashboard")
 async def api_dashboard():
+    """Top-level Dashboard payload: the aggregated system snapshot plus the
+    Stream Readiness verdict. Delegates to _collect_dashboard, which fans out to
+    the per-area collectors and rolls their results into findings."""
     return await _collect_dashboard()
 
 
@@ -2893,6 +2943,9 @@ def _enrich_identity_pixellot_compat(identity, gpu_info):
 
 @app.get("/api/system")
 async def api_system():
+    """System tab data: identity, hardware, installed software, and GPU info
+    collected in parallel, then enriched with Windows lifecycle (LTSC
+    end-of-support) and Pixellot hardware-compatibility info before returning."""
     identity, hardware, software, gpu_info = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -2963,6 +3016,9 @@ async def api_pixellot_config():
 
 @app.get("/api/network")
 async def api_network():
+    """Network tab data: gathers adapter config, domain reachability, port
+    checks, NTP drift + peers, the local-network probe, DNS resolution, and
+    Wi-Fi adapters in parallel, then assembles them into the network panel."""
     config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi = await asyncio.gather(
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Test-NetworkDomains.ps1", timeout=20),
@@ -3305,15 +3361,6 @@ async def api_restart_agent():
     return await run_ps("Restart-PixellotAgent.ps1", timeout=120)
 
 
-@app.post("/api/services/reinstall-deps")
-async def api_reinstall_deps():
-    """Downloads and runs Pixellot-Installer-Dependencies-5.0.0.exe per
-    PDF #2 — the documented remedy for CUDNN/TensorFlow errors in the
-    VPU logs. Download can take a few minutes; installer up to ~10 min."""
-    # 20 min cap covers a slow download plus the installer itself.
-    return await run_ps("Install-PixellotDependencies.ps1", timeout=1200)
-
-
 @app.get("/api/services/install-state")
 async def api_install_state():
     """PDF #3: detect a half-finished install in c:\\pixellot\\downloadedversion.
@@ -3325,8 +3372,8 @@ async def api_install_state():
 @app.get("/api/services/dependencies")
 async def api_dependencies():
     """Reads HKLM:\\SOFTWARE\\Pixellot\\dependencies to surface the installed
-    deps version next to the Pixellot Services "Reinstall Dependencies" card
-    (PDF #2). Adapted from Canopy/Leaf/getVpuDepsFromRegistry.ps1."""
+    deps version as a read-only status line on the Service Status tab.
+    Adapted from Canopy/Leaf/getVpuDepsFromRegistry.ps1."""
     return await run_ps("Get-PixellotDependencies.ps1", timeout=10)
 
 
@@ -3362,6 +3409,9 @@ async def api_disk_repair(request: Request):
 async def api_events(
     hours: int = Query(default=48), level: str = Query(default="all")
 ):
+    """Windows Event Log query — recent System/Application events within the
+    given lookback window (hours), optionally filtered by level
+    (error / warning / all)."""
     return await run_ps("Get-EventLogs.ps1", {"HoursBack": hours, "Level": level})
 
 
@@ -3378,8 +3428,8 @@ async def api_reboots(hours: int = Query(default=168)):
 async def api_pixellot_logs(hours: int = Query(default=24)):
     """Scan C:\\Pixellot\\Data\\Log for errors, fatals, and process
     restarts in the last `hours` (PDF #5). Returns up to 500 matches with
-    a `depsErrorDetected` flag that the UI uses to surface the PDF #2
-    dependency-reinstall remedy."""
+    a `depsErrorDetected` flag that the UI surfaces as a prompt to escalate
+    to Pixellot support."""
     return await run_ps("Search-PixellotLogs.ps1", {"HoursBack": hours}, timeout=30)
 
 
@@ -3883,6 +3933,7 @@ async def build_report() -> dict:
             sections.get("networkConfig"), sections.get("pixellotInstallState"),
             sections.get("networkPorts"), sections.get("gpuInfo"), sections.get("wifi"),
             pixellot_config=pix_cfg, expectations=sections.get("cameraExpectations"),
+            disk_health=sections.get("diskHealth"),
         )
     except Exception as e:
         sections["findings"] = {"error": f"findings computation failed: {type(e).__name__}: {e}"}
@@ -4090,6 +4141,10 @@ def _on_ws_disconnect(ws: WebSocket):
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    """Live-metrics WebSocket. After accept, streams periodic snapshots (CPU /
+    memory / temperature), tails new log-buffer lines, and refreshes Pixellot
+    config on the poll interval from settings (pollIntervalMs, floored at 1s)
+    until the client disconnects."""
     await ws.accept()
     _on_ws_connect(ws)
     try:

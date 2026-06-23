@@ -47,8 +47,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   or acting up — the VPU and any recording keep running, and the page reloads
   itself once Pulse is back. "Reboot VPU" restarts Windows on the unit; it
   interrupts any active recording, so it asks you to confirm first.
+- **Disks now shows real drive wear and SMART health, not just Healthy/Unhealthy.**
+  Each physical drive lists its SSD wear (percent of rated write-life used),
+  temperature, and power-on hours next to the health badge. Pulse raises a
+  warning when a drive crosses 80% wear, and a critical when a drive reports a
+  SMART pre-failure or uncorrectable errors — so you can swap a dying SSD before
+  it quits mid-game instead of after.
+- **Network Test now lists every wired port, not just the internet uplink.** A new
+  "Wired Ports" table shows each Ethernet port — the motherboard uplink and each
+  camera-NIC port — with its link state, speed, and error/discard counts, so a
+  bad cable or dirty switch port on a non-uplink port is no longer invisible. The
+  live network monitor also gained a per-interface table (queue depth, errors,
+  and packet rates per NIC).
+
+### Removed
+- **Removed the "Reinstall Pixellot Dependencies" button.** Reinstalling the
+  Pixellot video dependencies pauses recording for several minutes and is a
+  last-resort step, so it's no longer something Pulse can trigger. When the logs
+  show a CUDNN/TensorFlow dependency error, Pulse now points you to capture an
+  export and escalate to Pixellot support instead. The installed dependency
+  version still shows on the Service Status tab.
 
 ### Changed
+- **"Disk & Driver Errors" now catches filesystem corruption.** The disk-events
+  panel used to watch only the disk / NVMe / storage-controller logs; it now also
+  includes NTFS and volume-manager events (the "run chkdsk — the file system is
+  corrupt" kind), which are the ones that usually come right before data loss.
 - **Clearer Stream Readiness wording.** The middle verdict now reads "WARNING"
   instead of "WARN", and its summary explains it plainly: "Will likely stream,
   but there are issues found that should be addressed to improve the system's
@@ -73,6 +97,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   Hardware (per-camera role / IP / MAC / firmware / TV mode / serial), and
   Camera Calibrations (multisport + OCR scoreboard status) are now separate
   tabs. Old "Pixellot Configuration" links open Pixellot Software.
+- **The Camera Hardware tab now shows each camera's full details.** Every
+  camera's complete probe — device identity, network settings, stream encoding,
+  and image-sensor tuning — now appears on the Camera Hardware tab. Before, this
+  lived only inside a per-port "Details" drop-down on Camera Connectivity, which
+  now links straight to the tab and flags ports with more than one camera.
 - **New Data Logs tabs.** Pixellot Logs (the Pixellot log-directory scan, moved
   off Windows Events into its own tab) and Pulse Logs (Pulse's own script-call
   and server logs) now live under Data Logs. The old slide-up log drawer at the
@@ -83,18 +112,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - **The Wi-Fi warning now explains Wi-Fi's real job.** When the VPU is running
   its internet over Wi-Fi, the message now notes the Wi-Fi card is meant for the
   Pixellot Connect app — move the internet to the motherboard Ethernet port.
-- **New Pixellot Configuration tab (under SYSTEM)** — camera calibration, firmware,
-  and on-box config at a glance: install/agent version with the hardware-compatibility
-  banner, a per-camera table (role / IP / MAC / firmware / TV mode / serial / calibration),
-  main-camera multisport calibration (which sports, last calibrated) and OCR scoreboard
-  calibration status, plus a one-click "Restart Pixellot Agent" action.
 - **New Stream Readiness check.** Pulse now rolls every diagnostic into one
-  PASS / WARN / FAIL call on whether the VPU can stream tonight's game, shown at
-  the top of the Dashboard with the exact blockers and risks behind the verdict.
-  FAIL means "don't expect a clean broadcast tonight."
+  PASS / WARNING / FAIL call on whether the VPU can stream tonight's game, shown
+  at the top of the Dashboard with the exact blockers and risks behind the
+  verdict. FAIL means "don't expect a clean broadcast tonight."
 - **Clearer wording across Pulse.** Findings and panels now lead with plain
   language and the fix — fewer unexplained acronyms up front, with the technical
   detail (exact values, commands, port numbers) still right there in the detail.
+- **Port Connectivity tiles now list in numeric order, two per row.** Within
+  Required and within Optional, ports run ascending (53, 123, 443…) and wrap in
+  pairs, so a given port is easy to find at a glance.
+- **Tidied the Dashboard's System Status gauges.** The status rings and their
+  labels now line up evenly across the row, and the "Live" dot only shows up
+  when the live connection drops (Connecting…/Reconnecting…) instead of sitting
+  on screen at all times.
+- The Audio tab is temporarily hidden while audio diagnostics are being
+  finished. No loss of function — audio checks were not yet in field use.
 
 ### Fixed
 - **Error tabs no longer spin forever.** When a check can't run, Camera
@@ -122,6 +155,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   and raise a critical while every domain on the same screen was resolving fine.
   Pulse now tests the resolver on the active internet uplink, and never reports
   DNS as blocked when name resolution is demonstrably working.
+- **Gateway, DNS, and uplink readings now follow the active internet connection.**
+  On a VPU with more than one network connection (the camera NIC plus the
+  internet uplink, or a VPN), the Network Test could ping the gateway and DNS —
+  and read link speed and error counts — off the wrong adapter, making a healthy
+  uplink look bad or a stale one look fine. These checks now lock onto the
+  connection that actually carries the VPU's internet traffic.
+- **Dropped two dead addresses from the domain-resolution check.** Two storage
+  hostnames from a retired backend were still in the name-lookup list; they no
+  longer resolve, so they showed as meaningless red failures. Removed.
 - **The Network panel no longer comes up blank / "no internet" on some VPUs.**
   The new adapter-role check was scanning every network device Windows has ever
   seen (VPUs accumulate dozens of stale ones), which could time out the whole
@@ -138,15 +180,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   showing the live server log and seemed stuck until you pressed Ctrl+C. It now
   starts the server in the background, opens the browser, and closes the window.
   Launch failures still stop and show the error, and everything is logged.
-
-### Changed
-- **Port Connectivity tiles now list in numeric order, two per row.** Within
-  Required and within Optional, ports run ascending (53, 123, 443…) and wrap in
-  pairs, so a given port is easy to find at a glance.
-- The Audio tab is temporarily hidden while audio diagnostics are being
-  finished. No loss of function — audio checks were not yet in field use.
-
-### Fixed
 - **A blocked Zixi streaming port (UDP/2088) is now flagged as a real outage.**
   Pulse used to treat UDP/2088 as one of three interchangeable streaming paths,
   so blocking it only showed a yellow "no failover" note. In the field the
@@ -154,8 +187,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   a red "Streaming is blocked — the VPU can't broadcast." The failover/"backup
   connection" wording now applies only to the two port-443 paths (UDP/443 and
   the TCP/443 tunnel), which do back each other up.
-
-### Fixed
 - Fixed an error that could appear on the Audio screen and during full
   diagnostic collection (the audio device check failed to return results on
   some VPUs).

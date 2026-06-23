@@ -73,10 +73,9 @@ try {
         }
     }
 
-    # Monitors
-    $monitorCount = @(Get-CimInstance Win32_DesktopMonitor -ErrorAction SilentlyContinue).Count
-
-    # Disk drives (WMI)
+    # Disk drives (WMI). Physical-disk health/SMART lives in Get-DiskHealth.ps1
+    # (Get-PhysicalDisk + Get-StorageReliabilityCounter); monitor count comes from
+    # Get-Peripherals.ps1. Both were collected here but never consumed — dropped.
     $disks = Get-CimInstance Win32_DiskDrive | ForEach-Object {
         [ordered]@{
             index            = $_.Index
@@ -88,46 +87,11 @@ try {
         }
     }
 
-    # Physical disks (Storage namespace)
-    $physicalDisks = @()
-    try {
-        $physicalDisks = Get-CimInstance -Namespace root/Microsoft/Windows/Storage -ClassName MSFT_PhysicalDisk -ErrorAction Stop | ForEach-Object {
-            [ordered]@{
-                friendlyName    = $_.FriendlyName
-                busType         = $_.BusType
-                mediaType       = $_.MediaType
-                firmwareVersion = $_.FirmwareVersion
-                serialNumber    = if ($_.SerialNumber) { $_.SerialNumber.Trim() } else { $null }
-            }
-        }
-    }
-    catch { }
-
-    # Last hotfix
-    $lastKB = $null
-    try {
-        $hf = Get-CimInstance Win32_QuickFixEngineering |
-            Where-Object { $_.InstalledOn } |
-            Sort-Object InstalledOn -Descending |
-            Select-Object -First 1
-        if ($hf) {
-            $lastKB = [ordered]@{
-                hotFixID    = $hf.HotFixID
-                installedOn = $hf.InstalledOn.ToString('o')
-                description = $hf.Description
-            }
-        }
-    }
-    catch { }
-
     $result = [ordered]@{
-        processors    = @($cpus)
-        memory        = @($ram)
-        gpus          = @($gpus)
-        monitorCount  = $monitorCount
-        diskDrives    = @($disks)
-        physicalDisks = @($physicalDisks)
-        lastHotfix    = $lastKB
+        processors = @($cpus)
+        memory     = @($ram)
+        gpus       = @($gpus)
+        diskDrives = @($disks)
     }
 
     $result | ConvertTo-Json -Depth 5 -Compress
