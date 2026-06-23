@@ -22,6 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-23
+
 ### Added
 - **New "Inspection Report" tab (under Triage) — the fleet-audit fields on one screen.**
   Pools the details you'd otherwise hunt for across the Hardware, Network, Camera and
@@ -215,6 +217,70 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   a red "Streaming is blocked — the VPU can't broadcast." The failover/"backup
   connection" wording now applies only to the two port-443 paths (UDP/443 and
   the TCP/443 tunnel), which do back each other up.
+- Fixed an error that could appear on the Audio screen and during full
+  diagnostic collection (the audio device check failed to return results on
+  some VPUs).
+
+## [0.3.5] - 2026-06-23
+
+### Fixed
+- **No more false "DNS server unreachable" warning when the server just ignores
+  ping.** Many venue firewalls block ICMP (ping) to the DNS server while it
+  still answers real lookups. Pulse used to read the dead ping as a warning even
+  though domains were resolving fine. When name resolution is demonstrably
+  working, that 100%-loss ping is now reported as an INFO note ("isn't answering
+  pings, but name resolution is working — no action needed") instead of a
+  warning, and the DNS Server tile in Local Network Health turns blue/INFO with
+  a "ICMP ping blocked by firewall — name resolution is working" note instead of
+  showing red.
+
+## [0.3.4] - 2026-06-18
+
+### Fixed
+- **No more false "DNS blocked — can't resolve any hostname" alarm.** The DNS
+  check was probing whatever resolver it found first across *all* network
+  adapters, so a stale resolver on a disconnected or secondary adapter (e.g. a
+  camera NIC or VPN) could get tested instead of the one the VPU actually uses —
+  it failed, and Pulse raised a critical even though every domain was resolving
+  fine. Pulse now tests the resolver on the active internet uplink.
+
+## [0.3.3] - 2026-06-15
+
+### Fixed
+- **Pulse now opens directly in Chrome on launch.** On VPUs with no default
+  browser set, Windows used to pop a "How do you want to open this?" picker
+  (Internet Explorer first) instead of opening Pulse. The launcher now opens
+  Chrome explicitly — no dialog, no IE.
+- **The launcher no longer looks frozen while starting.** It was running the
+  server in the foreground window, so it sat showing the live log and seemed
+  stuck until you pressed Ctrl+C. It now starts the server in the background,
+  opens the browser, and closes the window. Launch failures still stop and show
+  the error, and everything is logged.
+
+## [0.3.2] - 2026-06-12
+
+### Fixed
+- **Port Connectivity no longer warns that streaming will fail when it won't.**
+  Pixellot can broadcast over any of three paths (UDP/2088, UDP/443, or the
+  TCP/443 tunnel), so one blocked path now shows a yellow "no failover" note
+  instead of a red failure — it only flags a real "stream can't broadcast" when
+  all three are blocked. (The UDP/443 row is also renamed from the misleading
+  "Zixi QUIC" to "Zixi Backup".)
+
+### Changed
+- **Network checks combined into one panel.** Port Connectivity (left) and
+  Domain Reachability (right) now share a single card. Port tiles lead with the
+  port number and protocol — no hostnames; the domain detail is all in the
+  right-hand column. The Internet Adapter card lays its sections side by side so
+  it takes less vertical space.
+
+## [0.3.1] - 2026-06-11
+
+### Changed
+- The Audio tab is temporarily hidden while audio diagnostics are being
+  finished. No loss of function — audio checks were not yet in field use.
+
+### Fixed
 - Fixed an error that could appear on the Audio screen and during full
   diagnostic collection (the audio device check failed to return results on
   some VPUs).
