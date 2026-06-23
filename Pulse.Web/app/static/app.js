@@ -116,6 +116,14 @@ let logEntries = [];
 let fetchingKeys = new Set();
 let fetchPromises = {};
 
+// PAGE_API keys are the *fetch* keys (the cache/endpoint identifiers), which
+// are NOT 1:1 with nav ids / pageRenderers. Two endpoints (`system` and
+// `pixellot-config`) each back several split pages: the nav was broken up into
+// Hardware/Applications/Environment and Pixellot Software/Camera Hardware/
+// Calibrations, but the collectors behind them weren't. So renderHardware,
+// renderApplications, renderEnvironment all fetchSection("system"), and the
+// Pixellot pages all fetchSection("pixellot-config"). Keep the retired keys
+// here; RETIRED_PAGE_ALIASES only redirects the old nav ids at the router.
 const PAGE_API = {
   dashboard: "/api/dashboard",
   system: "/api/system",
@@ -1044,7 +1052,7 @@ function _camHardwareCard(c, port) {
       svgIcon("camera", 14) + ' ' + esc(c.ip) +
       (c.modelNumber ? ' <span class="cam-model-label">' + esc(c.modelNumber) + '</span>' : '') +
       (portLabel ? ' <span class="cam-hw-port">' + esc(portLabel) + '</span>' : '') +
-      (hasCgi ? ' <span class="cam-cgi-badge">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none">No CGI</span>') +
+      (hasCgi ? ' <span class="cam-cgi-badge" title="Camera answered Pulse&#39;s admin probe (CGI)">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none" title="Camera did not answer Pulse&#39;s admin probe (CGI) — it may be offline or unreachable">No CGI</span>') +
     '</div>' +
 
     // Device identity
@@ -1317,7 +1325,7 @@ function _renderVolumes(volumes) {
   if (!volumes.length) return '<div class="text-xs text-pulse-muted py-2">No storage data</div>';
   return volumes.map((d) => {
     const pct = d.usedPercent || 0;
-    const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
+    const color = pct > 90 ? "var(--c-accent-red)" : pct > 80 ? "var(--c-accent-amber)" : "var(--c-accent-blue)";
     const role = d.deviceID === "C:" ? "System — OS & Pixellot"
                : d.deviceID === "D:" ? "Recordings — local game-video storage"
                : "Storage";
@@ -1343,7 +1351,7 @@ function _renderVolumes(volumes) {
 // this just renders the verdict record that rides on dash.readiness.
 var _RDY_META = {
   PASS: { word: "PASS", icon: "check", tone: "pass", tag: "Game-ready — no blockers, no risks." },
-  WARN: { word: "WARN", icon: "alert", tone: "warn", tag: "Will likely stream, but a real risk a human should eyeball before game time." },
+  WARN: { word: "WARNING", icon: "alert", tone: "warn", tag: "Will likely stream, but there are issues found that should be addressed to improve the system's reliability." },
   FAIL: { word: "FAIL", icon: "x",     tone: "fail", tag: "Don't expect a clean broadcast tonight — this needs pre-game attention." },
 };
 
@@ -1636,7 +1644,7 @@ function renderDashboard() {
           <div class="dash-gauge-sub">${esc(diskCaption)}</div>
         </div>
         <div class="dash-gauge-col" data-gauge="temp">
-          ${gauge("Temperature", temp != null ? Math.round(temp) : null, "°C", "#3b82f6", { max: 100, warn: 65, crit: 85 })}
+          ${gauge("Temperature", temp != null ? Math.round(temp) : null, "°C", "var(--c-accent-blue)", { max: 100, warn: 65, crit: 85 })}
         </div>
         <div class="dash-gauge-col dash-gauge-col-center">
           <div class="dash-icon-tile">
@@ -2211,7 +2219,7 @@ function _fmtMs(v) {
 function _pingCardHtml(p) {
   if (!p || !p.target) return "";
   var sc = p.status === "pass" ? "net-ping-pass" : p.status === "warn" ? "net-ping-warn" : "net-ping-fail";
-  var dot = p.status === "pass" ? "#22c55e" : p.status === "warn" ? "#eab308" : "#ef4444";
+  var dot = p.status === "pass" ? "var(--c-accent-green)" : p.status === "warn" ? "var(--c-accent-amber)" : "var(--c-accent-red)";
   var latency = _fmtMs(p.avgMs);
   var loss = p.lossPercent != null ? p.lossPercent + "%" : "—";
   var range = (p.minMs != null && p.maxMs != null) ? _fmtMs(p.minMs).replace(" ms","") + " / " + _fmtMs(p.avgMs).replace(" ms","") + " / " + _fmtMs(p.maxMs).replace(" ms","") + " ms" : "—";
@@ -2493,6 +2501,7 @@ function _renderLiveNetHealth(h) {
   if (!el) return;
   var tcp = h.tcp || {};
   var conns = h.connections || [];
+  var nics = h.nics || [];
 
   // Update stale indicator (lives in the header, outside #net-live-body)
   var ind = document.querySelector(".net-live-indicator");
@@ -2538,6 +2547,30 @@ function _renderLiveNetHealth(h) {
           '<td class="font-mono">' + esc(String(c.remotePort)) + '</td>' +
           '<td class="font-mono text-xs text-pulse-muted">' + esc(String(c.localPort || "")) + '</td>' +
           '<td class="' + stCls + '">' + esc(c.state) + '</td>' +
+        '</tr>';
+      }).join("") +
+      '</tbody></table>' +
+    '</div>' : '') +
+    // Per-NIC live health — queue depth, error counters, and packet rates for
+    // every physical interface, so a multi-NIC VPU shows per-port build-up
+    // (camera card vs motherboard port) instead of one blended number.
+    (nics.length ? '<div class="net-live-conns">' +
+      '<div class="net-live-conns-title">Network Interfaces (' + nics.length + ')</div>' +
+      '<table class="data-table"><thead><tr>' +
+        '<th>Interface</th><th title="Output queue length — sustained &gt;2 means the NIC can\'t drain fast enough">Queue</th><th>RX Err</th><th>TX Err</th><th>RX/s</th><th>TX/s</th>' +
+      '</tr></thead><tbody>' +
+      nics.map(function(n) {
+        var qCls  = (n.queueLen || 0) > 2 ? "status-warn" : "";
+        var rxCls = (n.rxErrors || 0) > 0 ? "status-warn" : "";
+        var txCls = (n.txErrors || 0) > 0 ? "status-warn" : "";
+        var nicName = String(n.name || "").replace(/\[r\]/gi, "(R)");
+        return '<tr>' +
+          '<td class="text-xs">' + esc(nicName) + '</td>' +
+          '<td class="font-mono ' + qCls + '">' + esc(String(n.queueLen || 0)) + '</td>' +
+          '<td class="font-mono ' + rxCls + '">' + esc(String(n.rxErrors || 0)) + '</td>' +
+          '<td class="font-mono ' + txCls + '">' + esc(String(n.txErrors || 0)) + '</td>' +
+          '<td class="font-mono text-xs text-pulse-muted">' + esc(String(n.rxPktSec || 0)) + '</td>' +
+          '<td class="font-mono text-xs text-pulse-muted">' + esc(String(n.txPktSec || 0)) + '</td>' +
         '</tr>';
       }).join("") +
       '</tbody></table>' +
@@ -3365,6 +3398,36 @@ function renderNetwork() {
   const duplexLabel = uplinkStats.fullDuplex === true ? "Full Duplex" : uplinkStats.fullDuplex === false ? "Half Duplex" : null;
   const totalErrors = (uplinkStats.rxErrors || 0) + (uplinkStats.txErrors || 0);
 
+  // Wired Ports — error/discard counters for EVERY wired NIC, not just the
+  // uplink. A multi-NIC VPU has the motherboard port plus the camera card; a
+  // bad cable or dirty switch port on a non-uplink port used to be invisible.
+  // Role is tagged by the backend (PCI bus: motherboard = onboard LOM bus 0).
+  const wiredPorts = (cfg.adapters || []).filter(function(a) {
+    return String(a.physicalMediaType || "").toLowerCase().indexOf("802.3") !== -1;
+  });
+  const wiredPortsCard = wiredPorts.length ? `
+    <div class="card">
+      ${sectionTitle("link", "Wired Ports")}
+      <p class="text-pulse-muted text-xs mb-3">Error and discard counters for every wired network port (cumulative since boot). Non-zero values usually mean a bad cable, a dirty switch port, or a NIC driver issue.</p>
+      <table class="data-table"><thead><tr>
+        <th>Port</th><th>Link</th><th>Speed</th><th>RX Err</th><th>TX Err</th>
+      </tr></thead><tbody>
+      ${wiredPorts.map(function(a) {
+        var roleLabel = a.role === "motherboard" ? "Motherboard (uplink)" : a.role === "camera" ? "Camera NIC" : "Wired";
+        var up = String(a.status || "").toLowerCase() === "up";
+        var rxe = a.rxErrors || 0, txe = a.txErrors || 0;
+        var rxNull = a.rxErrors == null, txNull = a.txErrors == null;
+        return `<tr>
+          <td><div class="font-semibold">${esc(roleLabel)}</div><div class="text-xs text-pulse-muted">${esc(a.interfaceDescription || a.name || "")}</div></td>
+          <td><span style="color:${up ? "var(--c-accent-green)" : "var(--c-muted)"};font-weight:600">${esc(up ? "Up" : (a.status || "—"))}</span></td>
+          <td class="text-xs">${esc(a.linkSpeed || "—")}</td>
+          <td class="font-mono ${rxe > 0 ? "status-warn" : ""}">${rxNull ? "—" : esc(String(rxe))}</td>
+          <td class="font-mono ${txe > 0 ? "status-warn" : ""}">${txNull ? "—" : esc(String(txe))}</td>
+        </tr>`;
+      }).join("")}
+      </tbody></table>
+    </div>` : "";
+
   const issuesPanel = issues.length ? `
     <div class="card">
       <div class="af-header">
@@ -3571,6 +3634,8 @@ function renderNetwork() {
           </div>` : ""}
       </div>
 
+    ${wiredPortsCard}
+
     <!-- Speed Test (Speedtest.net paste-in) — promoted out of Advanced -->
     <div class="card">
       <div class="net-ping-toolbar">
@@ -3772,7 +3837,7 @@ function _camDetailsPanel(cams, portIdx, portData) {
       '<div class="cam-detail-camera-header">' +
         svgIcon("camera", 14) + ' ' + esc(c.ip) +
         (c.modelNumber ? ' <span class="cam-model-label">' + esc(c.modelNumber) + '</span>' : '') +
-        (hasCgi ? ' <span class="cam-cgi-badge">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none">No CGI</span>') +
+        (hasCgi ? ' <span class="cam-cgi-badge" title="Camera answered Pulse&#39;s admin probe (CGI)">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none" title="Camera did not answer Pulse&#39;s admin probe (CGI) — it may be offline or unreachable">No CGI</span>') +
       '</div>' +
 
       // Device info
@@ -4343,6 +4408,7 @@ function _camS1Html(res) {
 function renderCameras() {
   const data = cached("cameras");
   if (!data) { $page().innerHTML = sectionLoading("Camera Connectivity"); fetchSection("cameras"); return; }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
 
   const ports = data.ports || [];
   const findings = data.findings || [];
@@ -4553,57 +4619,11 @@ function renderServices() {
       <div id="svc-keepagent-result" class="svc-quick-action-result hidden"></div>
     </div>
 
-    <!-- Reinstall Pixellot Dependencies — PDF #2 -->
-    <!-- HIDDEN by default. ONLY revealed if /api/pixellot-logs reports
-         depsErrorDetected=true (CUDNN/TensorFlow patterns found). Never
-         show this as a casual action — it's a tier-2 remedy. -->
-    <div class="card svc-quick-action svc-rare-action hidden" id="svc-reinstall-card">
-      <div class="svc-quick-action-row">
-        <div>
-          <div class="svc-quick-action-title">
-            Reinstall Pixellot Dependencies
-            <span class="svc-rare-pill">RARELY USED</span>
-          </div>
-          <div class="svc-quick-action-body" id="svc-reinstall-body">
-            Re-installs the Pixellot video dependencies (a documented last-resort fix). <span class="font-mono">Downloads the official installer to C:\\pixellot\\downloadedversion\\ and runs it silently.</span>
-          </div>
-          <div class="svc-rare-warn">
-            ${svgIcon("alert", 12)}
-            <span><strong>Do not run unless explicitly directed by Pixellot support or escalation.</strong> This is a last-resort remedy for confirmed CUDNN/TensorFlow dependency failures — recording is paused for 5–15 minutes and a reboot is recommended.</span>
-          </div>
-        </div>
-        <button class="btn-outline btn-ol-red" id="svc-reinstall-btn">
-          ${svgIcon("download", 14)} Reinstall Dependencies
-        </button>
-      </div>
-      <div id="svc-reinstall-result" class="svc-quick-action-result hidden"></div>
-    </div>
-
     <div class="svc-grid" id="svc-grid">
       ${svcs.map(svcTile).join("")}
       ${!svcs.length ? '<p class="text-pulse-muted text-sm">No services data</p>' : ""}
     </div>
   `;
-
-  // Check the log scanner for CUDNN/TensorFlow errors — show the reinstall
-  // card only when those errors are present so we don't suggest a 10-min
-  // install on a healthy box.
-  (async () => {
-    const r = await api("/api/pixellot-logs?hours=48");
-    if (currentPage !== "services") return;
-    const card = document.getElementById("svc-reinstall-card");
-    const body = document.getElementById("svc-reinstall-body");
-    if (!card) return;
-    if (r && !r.error && r.depsErrorDetected) {
-      card.classList.remove("hidden");
-      if (body) {
-        body.innerHTML = `
-          <span class="font-semibold" style="color:var(--c-accent-red)">${svgIcon("alert", 12)} CUDNN/TensorFlow errors detected in the VPU logs.</span>
-          Re-installs the Pixellot video dependencies (a documented last-resort fix). <span class="font-mono">Downloads the official installer to C:\\pixellot\\downloadedversion\\ and runs it silently.</span>
-        `;
-      }
-    }
-  })();
 
   // Installed Pixellot Dependencies (Canopy/Leaf/getVpuDepsFromRegistry.ps1
   // adaptation). Fills the always-visible status line at the top of the tab.
@@ -4695,51 +4715,6 @@ function renderServices() {
     }
   });
 
-  // Reinstall Pixellot Dependencies (PDF #2) — confirm + run + show result
-  document.getElementById("svc-reinstall-btn")?.addEventListener("click", async () => {
-    const ok = confirm(
-      "⚠ RARELY USED — Reinstall Pixellot Dependencies?\n\n" +
-      "This is a last-resort fix. ONLY run it when:\n" +
-      "  • Pixellot support or an escalation engineer has directed you to, OR\n" +
-      "  • You have confirmed CUDNN_STATUS_* or TensorFlow errors in the VPU logs\n" +
-      "    (see Event Viewer → Pixellot Logs).\n\n" +
-      "Effects:\n" +
-      "  • Downloads ~90 MB installer to C:\\pixellot\\downloadedversion\\\n" +
-      "  • Runs silently — recording is PAUSED for 5–15 minutes\n" +
-      "  • Reboot recommended afterward\n\n" +
-      "Proceed?"
-    );
-    if (!ok) return;
-
-    const btn = document.getElementById("svc-reinstall-btn");
-    const result = document.getElementById("svc-reinstall-result");
-    btn.disabled = true;
-    btn.innerHTML = `${svgIcon("refresh", 14)} Downloading + installing…`;
-    result.classList.remove("hidden");
-    result.className = "svc-quick-action-result";
-    result.innerHTML = `<div class="text-xs text-pulse-muted">Running — this can take 5–15 minutes. Watch the Script Log for progress.</div>`;
-
-    const r = await apiPost("/api/services/reinstall-deps", {});
-    btn.disabled = false;
-    btn.innerHTML = `${svgIcon("download", 14)} Reinstall Dependencies`;
-
-    const okState = r && r.success;
-    result.className = "svc-quick-action-result " + (okState ? "svc-result-ok" : "svc-result-err");
-    const stepsHtml = (r?.steps || []).map(s =>
-      `<li class="px-step px-step-${esc(s.status)}">
-        ${svgIcon(s.status === "ok" ? "check" : s.status === "skipped" ? "info" : "alert", 12)}
-        <span class="font-semibold">${esc(s.label)}</span>
-        <span class="text-xs text-pulse-muted">${esc(s.detail || "")}</span>
-        ${s.durationMs ? `<span class="text-xs text-pulse-muted">· ${Math.round(s.durationMs/1000)}s</span>` : ""}
-      </li>`
-    ).join("");
-    result.innerHTML = `
-      <div class="font-semibold">${okState ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
-      <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
-      ${stepsHtml ? `<ul class="px-steps mt-2">${stepsHtml}</ul>` : ""}
-      ${r?.targetFile ? `<div class="text-xs text-pulse-muted mt-2">Installer: <span class="font-mono">${esc(r.targetFile)}</span></div>` : ""}
-    `;
-  });
 }
 
 // ── Disk Health ──────────────────────────────────────────────
@@ -4757,11 +4732,27 @@ function renderDiskHealth() {
 
   // SMART: an empty physicalDisks array means collection FAILED — `every()`
   // on [] returns true, which would otherwise show a false "all healthy".
+  // Beyond the coarse Healthy/Unhealthy rollup we now factor in the SSD-fleet
+  // signals: the OS pre-fail flag, uncorrectable errors, and wear %.
   const haveSmart = physical.length > 0;
-  const allHealthy = haveSmart && physical.every(d => (d.healthStatus || "").toLowerCase() === "healthy");
-  const smartSev   = !haveSmart ? "muted" : allHealthy ? "ok" : "critical";
-  const smartChip  = !haveSmart ? "No data" : allHealthy ? "Healthy" : "Issue";
-  const smartVal   = !haveSmart ? "SMART not reported" : `${physical.length} disk${physical.length === 1 ? "" : "s"} checked`;
+  const predictFail = data.predictFailure === true;
+  const anyUnhealthy = haveSmart && physical.some(d => (d.healthStatus || "").toLowerCase() !== "healthy");
+  const anyUncorrected = haveSmart && physical.some(d => {
+    const s = d.smart || {};
+    return (s.readErrorsUncorrected || 0) + (s.writeErrorsUncorrected || 0) > 0;
+  });
+  const maxWear = haveSmart ? physical.reduce((m, d) => {
+    const w = (d.smart || {}).wearPercent;
+    return (w != null && w > m) ? w : m;
+  }, 0) : 0;
+  const smartBad  = predictFail || anyUnhealthy || anyUncorrected;
+  const smartWarn = !smartBad && maxWear >= 80;
+  const smartSev  = !haveSmart ? "muted" : smartBad ? "critical" : smartWarn ? "warning" : "ok";
+  const smartChip = !haveSmart ? "No data" : smartBad ? "Issue" : smartWarn ? "Wear high" : "Healthy";
+  const smartVal  = !haveSmart ? "SMART not reported"
+    : smartBad ? "Drive predicting failure"
+    : smartWarn ? `Highest wear ${maxWear}%`
+    : `${physical.length} disk${physical.length === 1 ? "" : "s"} checked`;
 
   const errorCount = events.length;
   const errorSev  = errorCount > 5 ? "critical" : errorCount > 0 ? "warning" : "ok";
@@ -4804,7 +4795,7 @@ function renderDiskHealth() {
     <!-- 3 Summary Cards -->
     <div class="dh-summary-row">
       ${summaryCard("heartbeat", "Drive Self-Check (SMART)", smartSev, smartChip, smartVal, "Built-in health status reported by each drive")}
-      ${summaryCard("alert", "Disk & Driver Errors", errorSev, errorChip, errorVal, "From the Windows Event Log (last 48 h)")}
+      ${summaryCard("alert", "Disk & Driver Errors", errorSev, errorChip, errorVal, "Disk, NVMe, NTFS & volume events from the Windows Event Log (last 24 h)")}
       ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Critical when over 90% full or under 50 GB free")}
     </div>
 
@@ -4864,15 +4855,32 @@ function renderDiskHealth() {
     <div class="card mt-4">
       ${sectionTitle("hdd", "Physical Disks")}
       <table class="data-table"><thead><tr>
-        <th>Name</th><th>Type</th><th>Bus</th><th>Size</th><th>Health</th>
+        <th>Name</th><th>Type</th><th>Bus</th><th>Size</th><th title="Percentage of the SSD's rated write life used. From the drive's SMART/reliability counters.">Wear</th><th>Temp</th><th title="Total powered-on hours">Power-On</th><th>Health</th>
       </tr></thead><tbody>
-      ${physical.map(d => `<tr>
+      ${physical.map(d => {
+        const s = d.smart || {};
+        const wearStr = s.wearPercent != null ? s.wearPercent + "%" : "—";
+        const wearCls = s.wearPercent != null && s.wearPercent >= 80 ? "status-warn" : "";
+        const tempStr = s.temperatureC != null ? s.temperatureC + "°C" : "—";
+        const tempCls = s.temperatureC != null && s.temperatureC >= 60 ? "status-warn" : "";
+        const hoursStr = s.powerOnHours != null ? Number(s.powerOnHours).toLocaleString() + " h" : "—";
+        // operationalStatus carries the actionable detail (e.g. "Predictive
+        // Failure") that the coarse health rollup hides — surface it only when
+        // it's not the boring "OK".
+        const op = (d.operationalStatus || "").trim();
+        const opLine = op && op.toLowerCase() !== "ok"
+          ? `<div class="text-xs status-warn">${esc(op)}</div>` : "";
+        return `<tr>
         <td>${esc(d.friendlyName)}</td>
         <td>${esc(d.mediaType)}</td>
         <td>${esc(d.busType)}</td>
         <td>${d.sizeGB != null ? esc(String(d.sizeGB)) + " GB" : "—"}</td>
-        <td>${statusBadge(d.healthStatus || "Unknown")}</td>
-      </tr>`).join("")}
+        <td class="font-mono ${wearCls}">${esc(wearStr)}</td>
+        <td class="font-mono ${tempCls}">${esc(tempStr)}</td>
+        <td class="font-mono text-xs text-pulse-muted">${esc(hoursStr)}</td>
+        <td>${statusBadge(d.healthStatus || "Unknown")}${opLine}</td>
+      </tr>`;
+      }).join("")}
       </tbody></table>
     </div>` : ""}
 
@@ -5122,6 +5130,7 @@ function renderEvents() {
     evBody.innerHTML = loading();
     const data = await api(`/api/events?hours=${encodeURIComponent(hours)}&level=all`);
     if (currentPage !== "events") return;
+    if (data.error) { evBody.innerHTML = errorBox(data.message); return; }
 
     const showError = document.getElementById("ev-error")?.checked;
     const showWarning = document.getElementById("ev-warning")?.checked;
@@ -5179,8 +5188,8 @@ function renderEvents() {
 
 // ── Pixellot Logs ────────────────────────────────────────────
 // Scans C:\Pixellot\Data\Log for error / fatal / restart markers (PDF #5),
-// surfacing CUDNN/TensorFlow dependency errors with the reinstall remedy
-// (PDF #2). Was a card on Windows Events; now its own tab under DATA LOGS.
+// flagging CUDNN/TensorFlow dependency errors so the tech can escalate to
+// Pixellot support. Was a card on Windows Events; now its own tab under DATA LOGS.
 function renderPixellotLogs() {
   $page().innerHTML = `
     ${pageHeader("Pixellot Logs", "Errors, fatals, and process restarts scanned from the Pixellot log directory.",
@@ -5256,7 +5265,7 @@ async function _loadPixellotLogs() {
       ${svgIcon("alert", 14)}
       <div>
         <div class="font-semibold">Pixellot video dependency error detected (CUDNN/TensorFlow)</div>
-        <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. The documented fix is to reinstall the Pixellot dependencies — see the Service Status tab.</div>
+        <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. This needs a Pixellot-support-directed dependency reinstall — capture an export and escalate to Pixellot support.</div>
       </div>
     </div>` : ""}
 
@@ -5488,18 +5497,6 @@ function _mk(tag, cls, text) {
   return e;
 }
 
-function _shareFmtBytes(n) {
-  if (n == null) return "—";
-  if (n < 1024) return n + " B";
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
-  return (n / (1024 * 1024)).toFixed(1) + " MB";
-}
-
-function _shareFmtTime(iso) {
-  if (!iso) return "—";
-  try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
-}
-
 function _shareSetMsg(el, text, color) {
   if (!el) return;
   el.textContent = text || "";
@@ -5578,7 +5575,7 @@ async function _shareSend() {
   if (r.ok) {
     _shareSetMsg(msg, "Sent.", "var(--c-accent-green)");
     const line = _mk("div", "text-sm text-pulse-muted");
-    line.appendChild(document.createTextNode("Delivered " + _shareFmtBytes(r.bytes) + " to "));
+    line.appendChild(document.createTextNode("Delivered " + formatBytes(r.bytes) + " to "));
     line.appendChild(_mk("strong", null, r.peer || r.address || "peer"));
     line.appendChild(document.createTextNode(". It's now in that machine's Received Reports."));
     result.appendChild(line);
@@ -5719,9 +5716,9 @@ function _shareRenderInbox(reports) {
     const head = _mk("div", "share-rx-head");
     const left = _mk("div");
     left.appendChild(_mk("div", "share-rx-host", r.vpuName || r.hostname || "Unknown host"));
-    let meta = "Received " + _shareFmtTime(r.receivedAt) + " from " + (r.senderIp || "?")
+    let meta = "Received " + formatTime(r.receivedAt) + " from " + (r.senderIp || "?")
       + " · " + r.findingCount + " finding" + (r.findingCount === 1 ? "" : "s")
-      + " · " + _shareFmtBytes(r.sizeBytes);
+      + " · " + formatBytes(r.sizeBytes);
     if (r.sourceErrorCount) meta += " · " + r.sourceErrorCount + " check" + (r.sourceErrorCount === 1 ? "" : "s") + " failed";
     left.appendChild(_mk("div", "text-sm text-pulse-muted", meta));
     const actions = _mk("div", "share-rx-actions");
@@ -6198,6 +6195,7 @@ function parseRtdScores(rawData, vendor, sport) {
 function renderScoreConnect() {
   const data = cached("scoreconnect");
   if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
 
   const sc2 = data.sc2;  // SC II data (from settings.json on disk)
   const config = data.configuration || {};
@@ -6772,6 +6770,7 @@ function renderFaultIsolator() {
     api("/api/cameras").then(function(d) { dataCache.cameras = d; renderFaultIsolator(); });
     return;
   }
+  if (cams.error) { $page().innerHTML = errorBox(cams.message); return; }
 
   var ports = cams.ports || [];
   if (!_fi) _fiReset();
@@ -7881,7 +7880,7 @@ function renderAbout() {
     <div class="about-container">
       <div class="card about-card">
         <div class="about-icon">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--c-accent-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
           </svg>
         </div>

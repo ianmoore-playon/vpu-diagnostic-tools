@@ -418,10 +418,10 @@ DEMO = {
         #   • To DEMO the "Wi-Fi card disabled" warning: set the Wi-Fi adapter's
         #     status to "Disabled" and adminStatus to "Down".
         "adapters": [
-            {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) Ethernet Connection (7) I219-LM", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-11-22-33", "linkSpeed": "1 Gbps", "interfaceIndex": 4, "pnpDeviceId": "PCI\\VEN_8086&DEV_15BB&SUBSYS_83E0103C&REV_10\\3&11583659&3&FE", "pciBus": 0, "pciDevice": 31, "pciFunction": 6},
-            {"name": "Ethernet 1", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-AA-BB-CC", "linkSpeed": "100 Mbps", "interfaceIndex": 1, "pnpDeviceId": "PCI\\VEN_8086&DEV_1533&SUBSYS_00000000&REV_03\\003064FFFF30C7E600", "pciBus": 1, "pciDevice": 0, "pciFunction": 0},
-            {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-DD-EE-FF", "linkSpeed": "100 Mbps", "interfaceIndex": 2, "pnpDeviceId": "PCI\\VEN_8086&DEV_1533&SUBSYS_00000000&REV_03\\003064FFFF30C7E700", "pciBus": 2, "pciDevice": 0, "pciFunction": 0},
-            {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I350 Gigabit Network Connection", "status": "Down", "adminStatus": "Up", "mediaConnectionState": "Disconnected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-00-11-22", "linkSpeed": "", "interfaceIndex": 3, "pnpDeviceId": "PCI\\VEN_8086&DEV_1521&SUBSYS_00000000&REV_01\\003064FFFF30C7E800", "pciBus": 3, "pciDevice": 0, "pciFunction": 0},
+            {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) Ethernet Connection (7) I219-LM", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-11-22-33", "linkSpeed": "1 Gbps", "interfaceIndex": 4, "pnpDeviceId": "PCI\\VEN_8086&DEV_15BB&SUBSYS_83E0103C&REV_10\\3&11583659&3&FE", "pciBus": 0, "pciDevice": 31, "pciFunction": 6, "fullDuplex": True, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0},
+            {"name": "Ethernet 1", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-AA-BB-CC", "linkSpeed": "100 Mbps", "interfaceIndex": 1, "pnpDeviceId": "PCI\\VEN_8086&DEV_1533&SUBSYS_00000000&REV_03\\003064FFFF30C7E600", "pciBus": 1, "pciDevice": 0, "pciFunction": 0, "fullDuplex": True, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0},
+            {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-DD-EE-FF", "linkSpeed": "100 Mbps", "interfaceIndex": 2, "pnpDeviceId": "PCI\\VEN_8086&DEV_1533&SUBSYS_00000000&REV_03\\003064FFFF30C7E700", "pciBus": 2, "pciDevice": 0, "pciFunction": 0, "fullDuplex": True, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0},
+            {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I350 Gigabit Network Connection", "status": "Down", "adminStatus": "Up", "mediaConnectionState": "Disconnected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-00-11-22", "linkSpeed": "", "interfaceIndex": 3, "pnpDeviceId": "PCI\\VEN_8086&DEV_1521&SUBSYS_00000000&REV_01\\003064FFFF30C7E800", "pciBus": 3, "pciDevice": 0, "pciFunction": 0, "fullDuplex": None, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0},
             {"name": "Wi-Fi", "interfaceDescription": "Intel(R) Wireless-AC 9560 160MHz", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "Native 802.11", "macAddress": "C8-58-C0-39-4D-D8", "linkSpeed": "866.7 Mbps", "interfaceIndex": 33, "pnpDeviceId": "PCI\\VEN_8086&DEV_A370&SUBSYS_00348086&REV_10\\3&11583659&3&A3", "pciBus": 0, "pciDevice": 20, "pciFunction": 3},
         ],
         "ipConfigurations": [
@@ -568,8 +568,12 @@ DEMO = {
             {"deviceID": "D:", "freeSpaceGB": 712, "sizeGB": 953, "usedPercent": 25, "fileSystem": "NTFS"},
         ],
         "physicalDisks": [
-            {"friendlyName": "Generic HDD", "sizeGB": 500, "mediaType": "HDD", "busType": "SATA", "serialNumber": "S3Z8NB0K901234A", "healthStatus": "Healthy"}
+            {"friendlyName": "Samsung SSD 870 EVO 500GB", "sizeGB": 465, "mediaType": "SSD", "busType": "SATA", "serialNumber": "S3Z8NB0K901234A", "healthStatus": "Healthy", "operationalStatus": "OK",
+             "smart": {"wearPercent": 11, "powerOnHours": 8423, "temperatureC": 41, "readErrorsUncorrected": 0, "writeErrorsUncorrected": 0}},
+            {"friendlyName": "Samsung SSD 870 QVO 1TB", "sizeGB": 931, "mediaType": "SSD", "busType": "SATA", "serialNumber": "S5RANG0N712345B", "healthStatus": "Healthy", "operationalStatus": "OK",
+             "smart": {"wearPercent": 23, "powerOnHours": 8101, "temperatureC": 44, "readErrorsUncorrected": 0, "writeErrorsUncorrected": 0}},
         ],
+        "predictFailure": False,
         "pixellotPaths": [
             {"path": "C:\\Pixellot", "sizeGB": 12.4, "fileCount": 847},
             {"path": "D:\\Recordings", "sizeGB": 198.7, "fileCount": 3241},
@@ -632,6 +636,12 @@ DEMO = {
     },
     "Get-ScoreConnectStatus.ps1": lambda **kw: _demo_scoreconnect(),
     "Get-ScoreConnectLive.ps1": lambda **kw: _demo_scoreconnect_live(),
+    # Steady state — no SC III install running. Mirrors the script's 'idle'
+    # branch (no status file present). Frontend only polls this after the
+    # user kicks off an install, so idle is the right resting demo value.
+    "Get-Sc3InstallStatus.ps1": lambda **kw: {
+        "stage": "idle", "percent": 0, "message": "No install in progress",
+    },
     "Get-ScoreLinkStatus.ps1": lambda **kw: {
         "connected": True, "port": "COM7", "model": "ScoreLink",
         "statusLabel": "ScoreLink device connected (COM7)",
@@ -859,8 +869,8 @@ DEMO = {
     },
     "Get-PixellotDependencies.ps1": lambda **kw: {
         # Demo shows an outdated 4.8.0 install so the "outdated" badge state
-        # is visible in demo mode. Real VPUs that ran PDF #2's reinstall
-        # action would report 5.0.0 → "current".
+        # is visible in demo mode. A VPU on the latest deps would report
+        # 5.0.0 → "current".
         "installedVersion": "4.8.0",
         "latestKnownVersion": "5.0.0",
         "status": "outdated",
@@ -883,21 +893,6 @@ DEMO = {
             "lastLine": "Install completed successfully. Rebooting...",
         },
         "message": "Last install completed cleanly. No part files remain.",
-    },
-    "Install-PixellotDependencies.ps1": lambda **kw: {
-        "success": True,
-        "targetDir": "C:\\pixellot\\downloadedversion",
-        "targetFile": "C:\\pixellot\\downloadedversion\\Pixellot-Installer-Dependencies-5.0.0.exe",
-        "installerUrl": "https://software.pixellot.tv/apps/Pixellot-Installer-Dependencies-5.0.0.exe",
-        "steps": [
-            {"label": "Download installer", "status": "ok",
-             "detail": "Downloaded 87.4 MB via curl.exe to C:\\pixellot\\downloadedversion\\Pixellot-Installer-Dependencies-5.0.0.exe",
-             "durationMs": 28400, "ts": datetime.now().isoformat()},
-            {"label": "Run installer", "status": "ok",
-             "detail": "Exit code 0 after 142s",
-             "durationMs": 142000, "ts": datetime.now().isoformat()},
-        ],
-        "message": "Pixellot dependencies installer completed. Reboot recommended.",
     },
     "Restart-PixellotAgent.ps1": lambda **kw: {
         "success": True,

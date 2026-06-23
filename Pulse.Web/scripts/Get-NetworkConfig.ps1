@@ -35,6 +35,27 @@ try {
                 }
             } catch { }
         }
+
+        # Error/discard counters for EVERY wired adapter — not just the uplink.
+        # A multi-NIC VPU has the motherboard port plus the camera card; a bad
+        # cable or dirty switch port on a non-uplink wired port was previously
+        # invisible here. Wi-Fi/virtual adapters are skipped (no useful counters).
+        $rxErr = $null; $txErr = $null
+        $rxPErr = $null; $rxDisc = $null; $txPErr = $null; $txDisc = $null
+        $fullDuplex = $null
+        if ("$($_.PhysicalMediaType)" -match '802\.3') {
+            try { $fullDuplex = $_.FullDuplex } catch { }
+            try {
+                $st = Get-NetAdapterStatistics -Name $_.Name -ErrorAction Stop
+                $rxPErr = [int]$st.ReceivedUnicastPacketsWithErrors
+                $rxDisc = [int]$st.ReceivedDiscards
+                $txPErr = [int]$st.OutboundPacketErrors
+                $txDisc = [int]$st.OutboundDiscards
+                $rxErr  = $rxPErr + $rxDisc
+                $txErr  = $txPErr + $txDisc
+            } catch { }
+        }
+
         [ordered]@{
             name                 = $_.Name
             interfaceDescription = $_.InterfaceDescription
@@ -49,6 +70,13 @@ try {
             pciBus               = $pciBus
             pciDevice            = $pciDev
             pciFunction          = $pciFun
+            fullDuplex           = $fullDuplex
+            rxErrors             = $rxErr
+            txErrors             = $txErr
+            rxPacketErrors       = $rxPErr
+            rxDiscards           = $rxDisc
+            txPacketErrors       = $txPErr
+            txDiscards           = $txDisc
         }
     }
 
@@ -82,20 +110,29 @@ try {
         }
     }
 
-    # Identify uplink adapter (has a non-APIPA default gateway)
+    # Identify the uplink adapter — the interface that owns the active default
+    # route (lowest-metric 0.0.0.0/0). Taking the first ipConfig that happens to
+    # carry a gateway can pick a secondary/disconnected NIC on a multi-homed box
+    # (camera NIC, VPN), mislabeling which adapter's link/error stats we report.
     $uplinkAdapter = $null
-    foreach ($ipc in $ipConfigs) {
-        $gateways = $ipc.ipv4DefaultGateway
-        if ($gateways) {
-            $validGw = $gateways | Where-Object { $_ -and -not $_.StartsWith('169.254.') }
-            if ($validGw) {
-                $uplinkAdapter = [ordered]@{
-                    interfaceAlias = $ipc.interfaceAlias
-                    interfaceIndex = $ipc.interfaceIndex
-                    gateway        = ($validGw | Select-Object -First 1)
-                }
-                break
+    $uplinkIdx = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+        Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' -and -not $_.NextHop.StartsWith('169.254.') } |
+        Sort-Object RouteMetric | Select-Object -First 1).InterfaceIndex
+
+    # Prefer the default-route interface; fall back to the first interface with a
+    # usable (non-APIPA) gateway if the route didn't resolve.
+    $candidates = @()
+    if ($uplinkIdx) { $candidates += $ipConfigs | Where-Object { $_.interfaceIndex -eq $uplinkIdx } }
+    $candidates += $ipConfigs
+    foreach ($ipc in $candidates) {
+        $validGw = $ipc.ipv4DefaultGateway | Where-Object { $_ -and -not $_.StartsWith('169.254.') }
+        if ($validGw) {
+            $uplinkAdapter = [ordered]@{
+                interfaceAlias = $ipc.interfaceAlias
+                interfaceIndex = $ipc.interfaceIndex
+                gateway        = ($validGw | Select-Object -First 1)
             }
+            break
         }
     }
 
