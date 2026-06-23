@@ -35,6 +35,27 @@ try {
                 }
             } catch { }
         }
+
+        # Error/discard counters for EVERY wired adapter — not just the uplink.
+        # A multi-NIC VPU has the motherboard port plus the camera card; a bad
+        # cable or dirty switch port on a non-uplink wired port was previously
+        # invisible here. Wi-Fi/virtual adapters are skipped (no useful counters).
+        $rxErr = $null; $txErr = $null
+        $rxPErr = $null; $rxDisc = $null; $txPErr = $null; $txDisc = $null
+        $fullDuplex = $null
+        if ("$($_.PhysicalMediaType)" -match '802\.3') {
+            try { $fullDuplex = $_.FullDuplex } catch { }
+            try {
+                $st = Get-NetAdapterStatistics -Name $_.Name -ErrorAction Stop
+                $rxPErr = [int]$st.ReceivedUnicastPacketsWithErrors
+                $rxDisc = [int]$st.ReceivedDiscards
+                $txPErr = [int]$st.OutboundPacketErrors
+                $txDisc = [int]$st.OutboundDiscards
+                $rxErr  = $rxPErr + $rxDisc
+                $txErr  = $txPErr + $txDisc
+            } catch { }
+        }
+
         [ordered]@{
             name                 = $_.Name
             interfaceDescription = $_.InterfaceDescription
@@ -49,6 +70,13 @@ try {
             pciBus               = $pciBus
             pciDevice            = $pciDev
             pciFunction          = $pciFun
+            fullDuplex           = $fullDuplex
+            rxErrors             = $rxErr
+            txErrors             = $txErr
+            rxPacketErrors       = $rxPErr
+            rxDiscards           = $rxDisc
+            txPacketErrors       = $txPErr
+            txDiscards           = $txDisc
         }
     }
 

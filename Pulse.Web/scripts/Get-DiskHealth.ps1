@@ -24,18 +24,51 @@ try {
         }
     }
 
-    # Physical disks via Storage namespace
+    # Physical disks via Storage namespace, enriched with SMART/reliability data.
+    # Get-PhysicalDisk only reports a coarse Healthy/Unhealthy rollup; for an SSD
+    # fleet the early-warning signals (wear %, uncorrectable errors, power-on
+    # hours, drive temperature) come from Get-StorageReliabilityCounter, piped
+    # per disk so it matches the drive cleanly without parsing the raw SMART blob.
     $physicalDisks = @()
     try {
         $physicalDisks = Get-PhysicalDisk -ErrorAction Stop | ForEach-Object {
-            [ordered]@{
-                friendlyName      = $_.FriendlyName
-                mediaType         = $_.MediaType
-                busType           = $_.BusType
-                healthStatus      = $_.HealthStatus
-                operationalStatus = $_.OperationalStatus
-                sizeGB            = [math]::Round($_.Size / 1GB, 2)
+            $pd = $_
+            $smart = $null
+            try {
+                $rc = $pd | Get-StorageReliabilityCounter -ErrorAction Stop
+                if ($rc) {
+                    $smart = [ordered]@{
+                        wearPercent            = $rc.Wear
+                        powerOnHours           = $rc.PowerOnHours
+                        temperatureC           = $rc.Temperature
+                        readErrorsUncorrected  = $rc.ReadErrorsUncorrected
+                        writeErrorsUncorrected = $rc.WriteErrorsUncorrected
+                    }
+                }
             }
+            catch { }
+            [ordered]@{
+                friendlyName      = $pd.FriendlyName
+                mediaType         = $pd.MediaType
+                busType           = $pd.BusType
+                healthStatus      = "$($pd.HealthStatus)"
+                operationalStatus = ($pd.OperationalStatus -join ', ')
+                sizeGB            = [math]::Round($pd.Size / 1GB, 2)
+                smart             = $smart
+            }
+        }
+    }
+    catch { }
+
+    # OS-level SMART pre-failure flag. MSStorageDriver_FailurePredictStatus is the
+    # inbox WMI class that surfaces each drive's own "predict failure" boolean — no
+    # kernel driver or raw register access involved. Any drive predicting failure
+    # flips the top-level flag the dashboard finding keys on.
+    $predictFailure = $false
+    try {
+        $fp = Get-CimInstance -Namespace root\WMI -ClassName MSStorageDriver_FailurePredictStatus -ErrorAction Stop
+        foreach ($f in @($fp)) {
+            if ($f.PredictFailure) { $predictFailure = $true }
         }
     }
     catch { }
@@ -44,9 +77,12 @@ try {
     $diskEvents = @()
     try {
         $startTime = (Get-Date).AddHours(-24)
+        # Include the filesystem/volume providers (Ntfs/volmgr/partmgr), not just
+        # the controller/driver ones — chkdsk-corruption and bad-block events
+        # (e.g. Ntfs eventId 55) live there and were previously never collected.
         $events = Get-WinEvent -FilterHashtable @{
             LogName      = 'System'
-            ProviderName = 'disk', 'nvme', 'iaStorAC'
+            ProviderName = 'disk', 'nvme', 'iaStorAC', 'Ntfs', 'volmgr', 'partmgr'
             Level        = 1, 2, 3
             StartTime    = $startTime
         } -MaxEvents 20 -ErrorAction SilentlyContinue
@@ -95,10 +131,11 @@ try {
     }
 
     [ordered]@{
-        logicalDisks  = @($logicalDisks)
-        physicalDisks = @($physicalDisks)
-        diskEvents    = @($diskEvents)
-        pixellotPaths = @($pathSizes)
+        logicalDisks   = @($logicalDisks)
+        physicalDisks  = @($physicalDisks)
+        predictFailure = $predictFailure
+        diskEvents     = @($diskEvents)
+        pixellotPaths  = @($pathSizes)
     } | ConvertTo-Json -Depth 5 -Compress
 }
 catch {
