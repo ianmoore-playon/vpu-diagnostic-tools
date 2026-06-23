@@ -1367,7 +1367,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "critical",
                     "category": "System",
                     "title": "Windows version is past its support date",
-                    "recommendation": f"{release} reached end-of-support on {eos} ({abs(days)} days ago). This host no longer receives security updates and should be re-imaged to a supported LTSC release.",
+                    "recommendation": f"{release} reached end-of-support on {eos} ({abs(days)} days ago). This host no longer receives security updates and should be re-imaged to a supported Windows version.",
                 })
             elif days < 90:
                 findings.append({
@@ -1375,7 +1375,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "critical",
                     "category": "System",
                     "title": "Windows version loses support soon",
-                    "recommendation": f"{release} end-of-support is {eos} — {days} days away. Plan re-imaging to a supported LTSC release before that date.",
+                    "recommendation": f"{release} end-of-support is {eos} — {days} days away. Plan re-imaging to a supported Windows version before that date.",
                 })
             elif days < 365:
                 months = days // 30
@@ -1384,7 +1384,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "warning",
                     "category": "System",
                     "title": "Windows support ends within a year",
-                    "recommendation": f"{release} end-of-support is {eos} (~{months} months away). Begin planning a re-image to a supported LTSC release.",
+                    "recommendation": f"{release} end-of-support is {eos} (~{months} months away). Begin planning a re-image to a supported Windows version.",
                 })
 
         # ── Pixellot version × hardware compatibility ───────────
@@ -1412,9 +1412,10 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "category": "Hardware",
                 "title": "No NVIDIA GPU detected",
                 "recommendation": (
-                    "Pixellot requires an NVIDIA GPU for video encoding. No NVIDIA hardware was "
-                    "found via nvidia-smi or WMI. If a GPU is physically installed, check driver "
-                    "status; otherwise this VPU cannot run the encoder."
+                    "Pixellot requires an NVIDIA GPU for video encoding. No NVIDIA graphics card "
+                    "was detected on this VPU. If a card is physically installed, check that its "
+                    "driver is installed and the card is seated; otherwise this VPU cannot run "
+                    "the encoder."
                 ),
             })
         elif compat["status"] == "anomaly":
@@ -2862,6 +2863,9 @@ async def _collect_dashboard() -> dict:
 
 @app.get("/api/dashboard")
 async def api_dashboard():
+    """Top-level Dashboard payload: the aggregated system snapshot plus the
+    Stream Readiness verdict. Delegates to _collect_dashboard, which fans out to
+    the per-area collectors and rolls their results into findings."""
     return await _collect_dashboard()
 
 
@@ -2893,6 +2897,9 @@ def _enrich_identity_pixellot_compat(identity, gpu_info):
 
 @app.get("/api/system")
 async def api_system():
+    """System tab data: identity, hardware, installed software, and GPU info
+    collected in parallel, then enriched with Windows lifecycle (LTSC
+    end-of-support) and Pixellot hardware-compatibility info before returning."""
     identity, hardware, software, gpu_info = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -2963,6 +2970,9 @@ async def api_pixellot_config():
 
 @app.get("/api/network")
 async def api_network():
+    """Network tab data: gathers adapter config, domain reachability, port
+    checks, NTP drift + peers, the local-network probe, DNS resolution, and
+    Wi-Fi adapters in parallel, then assembles them into the network panel."""
     config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi = await asyncio.gather(
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Test-NetworkDomains.ps1", timeout=20),
@@ -3362,6 +3372,9 @@ async def api_disk_repair(request: Request):
 async def api_events(
     hours: int = Query(default=48), level: str = Query(default="all")
 ):
+    """Windows Event Log query — recent System/Application events within the
+    given lookback window (hours), optionally filtered by level
+    (error / warning / all)."""
     return await run_ps("Get-EventLogs.ps1", {"HoursBack": hours, "Level": level})
 
 
@@ -4090,6 +4103,10 @@ def _on_ws_disconnect(ws: WebSocket):
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    """Live-metrics WebSocket. After accept, streams periodic snapshots (CPU /
+    memory / temperature), tails new log-buffer lines, and refreshes Pixellot
+    config on the poll interval from settings (pollIntervalMs, floored at 1s)
+    until the client disconnects."""
     await ws.accept()
     _on_ws_connect(ws)
     try:
