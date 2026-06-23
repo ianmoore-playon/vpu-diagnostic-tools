@@ -73,6 +73,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   Hardware (per-camera role / IP / MAC / firmware / TV mode / serial), and
   Camera Calibrations (multisport + OCR scoreboard status) are now separate
   tabs. Old "Pixellot Configuration" links open Pixellot Software.
+- **The Camera Hardware tab now shows each camera's full details.** Every
+  camera's complete probe — device identity, network settings, stream encoding,
+  and image-sensor tuning — now appears on the Camera Hardware tab. Before, this
+  lived only inside a per-port "Details" drop-down on Camera Connectivity, which
+  now links straight to the tab and flags ports with more than one camera.
 - **New Data Logs tabs.** Pixellot Logs (the Pixellot log-directory scan, moved
   off Windows Events into its own tab) and Pulse Logs (Pulse's own script-call
   and server logs) now live under Data Logs. The old slide-up log drawer at the
@@ -83,18 +88,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - **The Wi-Fi warning now explains Wi-Fi's real job.** When the VPU is running
   its internet over Wi-Fi, the message now notes the Wi-Fi card is meant for the
   Pixellot Connect app — move the internet to the motherboard Ethernet port.
-- **New Pixellot Configuration tab (under SYSTEM)** — camera calibration, firmware,
-  and on-box config at a glance: install/agent version with the hardware-compatibility
-  banner, a per-camera table (role / IP / MAC / firmware / TV mode / serial / calibration),
-  main-camera multisport calibration (which sports, last calibrated) and OCR scoreboard
-  calibration status, plus a one-click "Restart Pixellot Agent" action.
 - **New Stream Readiness check.** Pulse now rolls every diagnostic into one
-  PASS / WARN / FAIL call on whether the VPU can stream tonight's game, shown at
-  the top of the Dashboard with the exact blockers and risks behind the verdict.
-  FAIL means "don't expect a clean broadcast tonight."
+  PASS / WARNING / FAIL call on whether the VPU can stream tonight's game, shown
+  at the top of the Dashboard with the exact blockers and risks behind the
+  verdict. FAIL means "don't expect a clean broadcast tonight."
 - **Clearer wording across Pulse.** Findings and panels now lead with plain
   language and the fix — fewer unexplained acronyms up front, with the technical
   detail (exact values, commands, port numbers) still right there in the detail.
+- **Port Connectivity tiles now list in numeric order, two per row.** Within
+  Required and within Optional, ports run ascending (53, 123, 443…) and wrap in
+  pairs, so a given port is easy to find at a glance.
+- **Tidied the Dashboard's System Status gauges.** The status rings and their
+  labels now line up evenly across the row, and the "Live" dot only shows up
+  when the live connection drops (Connecting…/Reconnecting…) instead of sitting
+  on screen at all times.
+- The Audio tab is temporarily hidden while audio diagnostics are being
+  finished. No loss of function — audio checks were not yet in field use.
 
 ### Fixed
 - **No more false "can't reach gateway" alarm when the gateway just ignores
@@ -138,15 +147,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   showing the live server log and seemed stuck until you pressed Ctrl+C. It now
   starts the server in the background, opens the browser, and closes the window.
   Launch failures still stop and show the error, and everything is logged.
-
-### Changed
-- **Port Connectivity tiles now list in numeric order, two per row.** Within
-  Required and within Optional, ports run ascending (53, 123, 443…) and wrap in
-  pairs, so a given port is easy to find at a glance.
-- The Audio tab is temporarily hidden while audio diagnostics are being
-  finished. No loss of function — audio checks were not yet in field use.
-
-### Fixed
 - **A blocked Zixi streaming port (UDP/2088) is now flagged as a real outage.**
   Pulse used to treat UDP/2088 as one of three interchangeable streaming paths,
   so blocking it only showed a yellow "no failover" note. In the field the
@@ -154,8 +154,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   a red "Streaming is blocked — the VPU can't broadcast." The failover/"backup
   connection" wording now applies only to the two port-443 paths (UDP/443 and
   the TCP/443 tunnel), which do back each other up.
-
-### Fixed
 - Fixed an error that could appear on the Audio screen and during full
   diagnostic collection (the audio device check failed to return results on
   some VPUs).
