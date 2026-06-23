@@ -3459,6 +3459,11 @@ function renderInspectionReport() {
   var cs = id.computerSystem || {};
   var os = id.operatingSystem || {};
   var osCaption = os.caption || null;
+  // LMI name = the Pixellot device/broadcast name (always starts with "PXL"),
+  // parsed from the agent log's BROADCAST_NAME — NOT the Windows hostname, which
+  // can differ. Fall back to the hostname when the agent log isn't readable,
+  // matching the dashboard's vpuName-or-hostname treatment.
+  var lmiName = (id.pixellot && id.pixellot.vpuName) || cs.name;
   var osText = osCaption ? osCaption + (os.version ? " (" + os.version + ")" : "") : null;
   var camType = cameras.systemType
     || (cameras.expectedMainCameras != null ? cameras.expectedMainCameras + "-camera" : null);
@@ -3498,7 +3503,7 @@ function renderInspectionReport() {
       <div class="card">
         ${sectionTitle("info", "Identity")}
         <div class="kv-grid kv-grid-wide">
-          ${kvRow("LMI Name", cs.name)}
+          ${kvRow("LMI Name", lmiName)}
           ${kvRow("Camera Type", camType)}
           ${kvRow("Operating System", osText)}
           ${kvRow("VPU Type", _vpuType(osCaption))}
