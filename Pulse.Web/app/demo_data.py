@@ -632,6 +632,12 @@ DEMO = {
     },
     "Get-ScoreConnectStatus.ps1": lambda **kw: _demo_scoreconnect(),
     "Get-ScoreConnectLive.ps1": lambda **kw: _demo_scoreconnect_live(),
+    # Steady state — no SC III install running. Mirrors the script's 'idle'
+    # branch (no status file present). Frontend only polls this after the
+    # user kicks off an install, so idle is the right resting demo value.
+    "Get-Sc3InstallStatus.ps1": lambda **kw: {
+        "stage": "idle", "percent": 0, "message": "No install in progress",
+    },
     "Get-ScoreLinkStatus.ps1": lambda **kw: {
         "connected": True, "port": "COM7", "model": "ScoreLink",
         "statusLabel": "ScoreLink device connected (COM7)",
