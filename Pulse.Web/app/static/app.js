@@ -2200,12 +2200,31 @@ function _first(v) { return Array.isArray(v) ? v[0] : v != null ? String(v) : nu
 // Local ping runner — manages preset and continuous ping modes
 var _localPingState = { running: false, continuous: false, abortCtrl: null };
 
+// Canonical "is name resolution demonstrably working?" signal, shared by the
+// Issues & Recommendations DNS check and the Local Network Health ping card.
+// A resolved domain in Domain Reachability, or any required hostname-based port
+// that passed (you can't reach pixellot.tv:443 without first resolving
+// pixellot.tv), proves DNS is fine — independent of whether the DNS server
+// answers ICMP. So a dead ping to the DNS server is blocked ICMP, not a failure.
+function _dnsResolvingFrom(domains, ports) {
+  return (domains || []).some(function(d) {
+      return d && d.resolvedTo && (d.status || "").toLowerCase() === "pass";
+    }) || (ports || []).some(function(p) {
+      return !p.optional && p.purpose !== "DNS" && (p.status || "").toLowerCase() === "pass"
+        && /[a-z]/i.test(String(p.host || ""));
+    });
+}
+
 function _renderPingCards(local) {
   var gw = (local || {}).gateway;
   var dns = (local || {}).dns;
   var el = document.getElementById("net-ping-results");
   if (!el) return;
-  el.innerHTML = _pingCardHtml(gw) + _pingCardHtml(dns);
+  // The live ping loop only hands us {gateway, dns}; pull domains/ports from the
+  // cached network data so the DNS card can soften a blocked-ICMP ping.
+  var _net = cached("network") || {};
+  var _resolving = _dnsResolvingFrom((_net.domains && _net.domains.results) || [], (_net.ports && _net.ports.results) || []);
+  el.innerHTML = _pingCardHtml(gw, false) + _pingCardHtml(dns, _resolving);
 }
 
 function _fmtMs(v) {
@@ -2216,13 +2235,26 @@ function _fmtMs(v) {
   return Math.round(v) + " ms";
 }
 
-function _pingCardHtml(p) {
+function _pingCardHtml(p, resolutionWorks) {
   if (!p || !p.target) return "";
-  var sc = p.status === "pass" ? "net-ping-pass" : p.status === "warn" ? "net-ping-warn" : "net-ping-fail";
-  var dot = p.status === "pass" ? "var(--c-accent-green)" : p.status === "warn" ? "var(--c-accent-amber)" : "var(--c-accent-red)";
+  // ICMP to the DNS server is routinely firewalled even when the resolver is
+  // perfectly healthy. When name resolution is demonstrably working but the
+  // ping got no reply, present the card as a neutral INFO ("ping blocked")
+  // rather than a red failure that reads as an outage.
+  var icmpBlocked = !!resolutionWorks && !p.reachable;
+  var sc, dot;
+  if (icmpBlocked) {
+    sc = "net-ping-info"; dot = "var(--c-accent-blue)";
+  } else {
+    sc = p.status === "pass" ? "net-ping-pass" : p.status === "warn" ? "net-ping-warn" : "net-ping-fail";
+    dot = p.status === "pass" ? "var(--c-accent-green)" : p.status === "warn" ? "var(--c-accent-amber)" : "var(--c-accent-red)";
+  }
   var latency = _fmtMs(p.avgMs);
   var loss = p.lossPercent != null ? p.lossPercent + "%" : "—";
   var range = (p.minMs != null && p.maxMs != null) ? _fmtMs(p.minMs).replace(" ms","") + " / " + _fmtMs(p.avgMs).replace(" ms","") + " / " + _fmtMs(p.maxMs).replace(" ms","") + " ms" : "—";
+  var note = icmpBlocked
+    ? '<div class="net-ping-note">' + svgIcon("info", 12) + ' ICMP ping blocked by firewall — name resolution is working' + '</div>'
+    : "";
   return '<div class="net-ping-card ' + sc + '">' +
     '<div class="net-ping-header">' +
       '<span class="net-ping-dot" style="background:' + dot + '"></span>' +
@@ -2235,6 +2267,7 @@ function _pingCardHtml(p) {
       '<div class="net-ping-stat"><span class="net-ping-stat-label">Min / Avg / Max</span><span class="net-ping-stat-value font-mono">' + esc(range) + '</span></div>' +
       '<div class="net-ping-stat"><span class="net-ping-stat-label">Packets</span><span class="net-ping-stat-value">' + esc(String(p.received || 0)) + ' / ' + esc(String(p.sent || 0)) + ' received</span></div>' +
     '</div>' +
+    note +
   '</div>';
 }
 
@@ -3006,8 +3039,21 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     issues.push({ severity: "warning", title: "Unstable connection to the gateway — " + (gw.avgMs || "?") + " ms latency, " + (gw.lossPercent || 0) + "% loss",
       body: "Try a different switch port, replace the Ethernet cable, or check for broadcast storms on the venue network." });
 
-  // ── Warning/Info: DNS server ─────────────────────────────
-  if (dns && !dns.reachable)
+  // ── DNS server: blocked ICMP vs. real resolution failure ─
+  // Is name resolution demonstrably working? (Shared signal — also gates the
+  // UDP/53 probe below and the Local Network Health ping card.)
+  var _dnsResolving = _dnsResolvingFrom(domains, ports);
+
+  // A 100%-loss ping to the DNS server is NOT proof it's down — ICMP is
+  // routinely firewalled on locked-down venue networks while the resolver keeps
+  // answering real UDP/53 queries. When resolution is demonstrably working, the
+  // dead ping is just blocked ICMP: report it as INFO, not a warning that sends
+  // a tech chasing a healthy box. Only call lookups "failing" when nothing
+  // resolved either.
+  if (dns && !dns.reachable && _dnsResolving)
+    issues.push({ severity: "info", title: "DNS server " + dns.target + " isn't answering pings, but name resolution is working",
+      body: "The VPU is resolving domains normally — the DNS server just isn't replying to ICMP ping, which many venue firewalls block. No action needed." });
+  else if (dns && !dns.reachable)
     issues.push({ severity: "warning", title: "Name lookups are failing (DNS server " + dns.target + " unreachable)",
       body: "Domain resolution will fail. Check DNS server address in adapter settings or try a public DNS (8.8.8.8, 1.1.1.1)." });
   else if (dns && dns.reachable) {
@@ -3093,17 +3139,10 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     });
   }
 
-  // Is name resolution demonstrably working? A resolved domain in Domain
-  // Reachability, or any required hostname-based port that passed (you can't
-  // reach pixellot.tv:443 without first resolving pixellot.tv), proves DNS is
-  // fine — so a failed UDP/53 probe must NOT claim "can't resolve any hostname"
-  // (that probe can target a stale resolver or just go unanswered).
-  var _dnsResolving = (domains || []).some(function(d) {
-      return d && d.resolvedTo && (d.status || "").toLowerCase() === "pass";
-    }) || (ports || []).some(function(p) {
-      return !p.optional && p.purpose !== "DNS" && (p.status || "").toLowerCase() === "pass"
-        && /[a-z]/i.test(String(p.host || ""));
-    });
+  // `_dnsResolving` (hoisted above with the DNS-server ping check) also gates
+  // the UDP/53 probe here: a failed probe must NOT claim "can't resolve any
+  // hostname" when resolution is clearly working — that probe can target a
+  // stale resolver or just go unanswered.
 
   // Non-streaming required failures (DNS, NFHS, S3, Singular, LogMeIn,
   // pixellot.tv apex) — prerequisites, not redundant paths, so any one blocked
@@ -3524,7 +3563,7 @@ function renderNetwork() {
         ${local && local.error
           ? '<p class="text-sm status-fail">Local network test failed: ' + esc(local.message || 'unknown error') + '</p>'
           : (local.gateway || local.dns)
-            ? _pingCardHtml(local.gateway) + _pingCardHtml(local.dns)
+            ? _pingCardHtml(local.gateway, false) + _pingCardHtml(local.dns, _dnsResolvingFrom(domains, ports))
             : '<p class="text-pulse-muted text-sm mt-2">Select a ping count above to test local network health.</p>'}
       </div>
     </div>

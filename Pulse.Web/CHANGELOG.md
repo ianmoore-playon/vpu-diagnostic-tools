@@ -163,6 +163,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   and raise a critical while every domain on the same screen was resolving fine.
   Pulse now tests the resolver on the active internet uplink, and never reports
   DNS as blocked when name resolution is demonstrably working.
+- **No more false "DNS server unreachable" warning when the server just ignores
+  ping.** Many venue firewalls block ICMP (ping) to the DNS server while it
+  still answers real lookups. Pulse used to read the dead ping as a warning even
+  though domains were resolving fine. When name resolution is demonstrably
+  working, that 100%-loss ping is now reported as an INFO note ("isn't answering
+  pings, but name resolution is working — no action needed") instead of a
+  warning, and the DNS Server tile in Local Network Health turns blue/INFO with
+  a "ICMP ping blocked by firewall — name resolution is working" note instead of
+  showing red.
 - **Gateway, DNS, and uplink readings now follow the active internet connection.**
   On a VPU with more than one network connection (the camera NIC plus the
   internet uplink, or a VPN), the Network Test could ping the gateway and DNS —

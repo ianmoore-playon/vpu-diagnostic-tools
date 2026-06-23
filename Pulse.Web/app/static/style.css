@@ -3050,6 +3050,7 @@ html.dark .sc-board { box-shadow: none; border-color: var(--c-board-border-2); }
 .net-ping-pass { border-left: 3px solid var(--c-accent-green); }
 .net-ping-warn { border-left: 3px solid var(--c-accent-amber); }
 .net-ping-fail { border-left: 3px solid var(--c-accent-red); }
+.net-ping-info { border-left: 3px solid var(--c-accent-blue); }
 
 .net-ping-header {
     display: flex;
@@ -3092,6 +3093,15 @@ html.dark .sc-board { box-shadow: none; border-color: var(--c-board-border-2); }
     color: var(--c-text);
     margin-top: 2px;
 }
+.net-ping-note {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+    font-size: 0.7rem;
+    color: var(--c-accent-blue);
+}
+.net-ping-note svg { flex-shrink: 0; }
 
 /* Local ping toolbar */
 .net-ping-toolbar {
