@@ -1184,7 +1184,7 @@ def _wifi_disabled_finding(network_config):
     }
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None) -> list:
     findings = []
 
     # ── Wi-Fi uplink detection (Canopy adoption) ─────────────
@@ -1541,6 +1541,50 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 }
             )
 
+    # Drive SMART / reliability — the coarse Healthy/Unhealthy rollup plus the
+    # SSD-fleet early-warning signals (wear %, uncorrectable errors, OS pre-fail
+    # flag) from Get-DiskHealth. Pre-fail takes precedence over high wear, and we
+    # emit at most one of each so a multi-disk box doesn't spam the findings list.
+    if disk_health and not disk_health.get("error"):
+        prefail_drive = "A drive" if disk_health.get("predictFailure") else None
+        wear_drive = None  # (name, wearPercent)
+        for d in (disk_health.get("physicalDisks") or []):
+            name = d.get("friendlyName") or "A drive"
+            smart = d.get("smart") or {}
+            uncorrected = (smart.get("readErrorsUncorrected") or 0) + (smart.get("writeErrorsUncorrected") or 0)
+            health = (d.get("healthStatus") or "").strip().lower()
+            wear = smart.get("wearPercent")
+            if prefail_drive is None and (uncorrected > 0 or (health and health != "healthy")):
+                prefail_drive = name
+            if wear is not None and wear >= 80 and (wear_drive is None or wear > wear_drive[1]):
+                wear_drive = (name, wear)
+        if prefail_drive:
+            findings.append(
+                {
+                    "code": "disk-smart-prefail",
+                    "severity": "critical",
+                    "category": "Storage",
+                    "title": f"{prefail_drive} is predicting failure (SMART)",
+                    "recommendation": (
+                        "Back up recordings and plan to replace this drive — its built-in "
+                        "self-check (SMART) is reporting uncorrectable errors or a pre-failure status."
+                    ),
+                }
+            )
+        elif wear_drive:
+            findings.append(
+                {
+                    "code": "disk-smart-wear",
+                    "severity": "warning",
+                    "category": "Storage",
+                    "title": f"{wear_drive[0]} nearing end of rated life",
+                    "recommendation": (
+                        f"This SSD has used {wear_drive[1]}% of its rated write life — plan a "
+                        "replacement before it drops to read-only."
+                    ),
+                }
+            )
+
     if services and not services.get("error"):
         # agent + coordinator are core capture processes (in C:\Pixellot\Bin,
         # detected by process not service). vpu-not-running is normal (idle).
@@ -1881,6 +1925,7 @@ _READINESS_POLICY = {
     "gpu-anomaly":           "risk",     # F12 Volta / roster anomaly
     "install-incomplete":    "risk",     # F13 interrupted installer, agent up
     "disk-low":              "risk",     # F16 (aggregate) disk 80–90%
+    "disk-smart-prefail":    "risk",     # F16b drive SMART pre-fail / uncorrectable errors
     "ram-insufficient":      "risk",     # F21 <32 GB host
     "ntp-unapproved":        "risk",     # F22 drift can break signed-URL stream
     "port-required-blocked": "risk",     # F23b NTP / Pixellot cloud / etc.
@@ -1894,6 +1939,7 @@ _READINESS_POLICY = {
     "cpu-critical":          "info",     # snapshot >90% — readiness uses the average (F17)
     "mem-critical":          "info",     # snapshot >90% — readiness uses the average (F19)
     "disk-critical":         "info",     # all-volumes AGGREGATE >90% — readiness keys on C: (F15a)
+    "disk-smart-wear":       "info",     # SSD ≥80% rated life — heads-up, won't stop tonight's game
     "temp-critical":         "info",     # 85°C snapshot — readiness gate is 90°C (F14)
     "tz-non-us":             "info",     # F25
     "os-eos-reached":        "info",     # F26
@@ -2607,7 +2653,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         if isinstance(data, dict) and data.get("error")
     ]
 
-    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations)
+    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health)
 
     return {
         "identity": flat_identity,
@@ -3896,6 +3942,7 @@ async def build_report() -> dict:
             sections.get("networkConfig"), sections.get("pixellotInstallState"),
             sections.get("networkPorts"), sections.get("gpuInfo"), sections.get("wifi"),
             pixellot_config=pix_cfg, expectations=sections.get("cameraExpectations"),
+            disk_health=sections.get("diskHealth"),
         )
     except Exception as e:
         sections["findings"] = {"error": f"findings computation failed: {type(e).__name__}: {e}"}

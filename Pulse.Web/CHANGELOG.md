@@ -47,8 +47,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   or acting up — the VPU and any recording keep running, and the page reloads
   itself once Pulse is back. "Reboot VPU" restarts Windows on the unit; it
   interrupts any active recording, so it asks you to confirm first.
+- **Disks now shows real drive wear and SMART health, not just Healthy/Unhealthy.**
+  Each physical drive lists its SSD wear (percent of rated write-life used),
+  temperature, and power-on hours next to the health badge. Pulse raises a
+  warning when a drive crosses 80% wear, and a critical when a drive reports a
+  SMART pre-failure or uncorrectable errors — so you can swap a dying SSD before
+  it quits mid-game instead of after.
+- **Network Test now lists every wired port, not just the internet uplink.** A new
+  "Wired Ports" table shows each Ethernet port — the motherboard uplink and each
+  camera-NIC port — with its link state, speed, and error/discard counts, so a
+  bad cable or dirty switch port on a non-uplink port is no longer invisible. The
+  live network monitor also gained a per-interface table (queue depth, errors,
+  and packet rates per NIC).
 
 ### Changed
+- **"Disk & Driver Errors" now catches filesystem corruption.** The disk-events
+  panel used to watch only the disk / NVMe / storage-controller logs; it now also
+  includes NTFS and volume-manager events (the "run chkdsk — the file system is
+  corrupt" kind), which are the ones that usually come right before data loss.
 - **Clearer Stream Readiness wording.** The middle verdict now reads "WARNING"
   instead of "WARN", and its summary explains it plainly: "Will likely stream,
   but there are issues found that should be addressed to improve the system's
