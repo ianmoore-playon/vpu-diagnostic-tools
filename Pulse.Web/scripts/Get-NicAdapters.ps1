@@ -12,9 +12,11 @@ param()
 $ErrorActionPreference = 'Stop'
 
 try {
-    # Filter for camera-facing NIC chipsets
+    # Filter for camera-facing NIC chipsets. Keep this list in sync with
+    # _CAMERA_NIC_CHIPSETS in main.py — an 82576/82580 camera card must be
+    # enumerated here too, or the camera-port collector silently skips it.
     $cameraAdapters = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object {
-        $_.InterfaceDescription -match 'I210|I350|82574L|I211|Realtek'
+        $_.InterfaceDescription -match 'I210|I211|I350|82574L|82576|82580|Realtek'
     }
 
     # PnP/driver health per network device (by instance ID) — lets us tell a

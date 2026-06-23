@@ -187,6 +187,68 @@ def _demo_scoreconnect():
     }
 
 
+# ── Synthetic camera CGI probe (demo mode) ───────────────────
+# On non-Windows demo, _cgi_probe_sync() can't reach the synthetic camera
+# IPs over HTTP, so it short-circuits to cgi_probe() below. This mirrors the
+# real probe's return shape (see _cgi_probe_sync in main.py): MAC + device
+# identity + network + stream + sensor groups. Keyed by the ARP IP each
+# camera answers on, so _enrich_ports() matches it to the detected camera and
+# the Camera Hardware tab renders a full probe in demo. The modelNumbers map
+# through _CAMERA_MODELS, so role / expected-speed resolution — and the
+# Port 2 "degraded" finding (gigabit main camera negotiated to 100 Mbps) —
+# stay intact.
+def _demo_cam(ip, mac, serial, *, ocr=False, gateway=None):
+    if ocr:
+        return {
+            "mac": mac,
+            "brand": "Dynacolor",
+            "model": "Dynacolor MPC-IPC",
+            "modelNumber": "R2SD-G",  # OCR / Scoreboard, 100 Mbps native
+            "productType": "Box Scoreboard Camera",
+            "serialNumber": serial,
+            "firmwareVersion": "DC-2.4.1",
+            "tvMode": "ntsc_60",
+            "network": {"ip": ip, "subnet": "255.255.0.0", "gateway": gateway, "dhcp": "no"},
+            "stream0": {"codec": "H264", "resolution": "1920x1080", "framerate": "30"},
+            "stream1": {"enabled": "yes", "codec": "MJPEG", "resolution": "640x480", "framerate": "10"},
+            "sensor": {"exposure": "auto", "brightness": "48", "contrast": "52",
+                       "colorLevel": "50", "maxShutterGain": "30", "minShutterSpeed": "1/60"},
+        }
+    return {
+        "mac": mac,
+        "brand": "Pixellot",
+        "model": "Pixellot SuperBowl",
+        "modelNumber": "Z4SF-F",  # Main Camera, gigabit
+        "productType": "4K Panoramic Camera",
+        "serialNumber": serial,
+        "firmwareVersion": "1.9.13",
+        "tvMode": "ntsc_60",
+        "network": {"ip": ip, "subnet": "255.255.255.0", "gateway": gateway, "dhcp": "no"},
+        "stream0": {"codec": "H264", "resolution": "3840x2160", "framerate": "30"},
+        "stream1": {"enabled": "yes", "codec": "MJPEG", "resolution": "1920x1080", "framerate": "15"},
+        "sensor": {"exposure": "auto", "brightness": "50", "contrast": "50",
+                   "colorLevel": "55", "maxShutterGain": "36", "minShutterSpeed": "1/30"},
+    }
+
+
+_DEMO_CGI_PROBES = {
+    "192.168.10.100": _demo_cam("192.168.10.100", "00:0E:53:AA:01:01", "MC1-7741A", gateway="192.168.10.1"),
+    "192.168.10.101": _demo_cam("192.168.10.101", "00:0E:53:AA:01:02", "PC2-7741B", gateway="192.168.10.1"),
+    "192.168.10.102": _demo_cam("192.168.10.102", "00:0E:53:AA:01:03", "TC3-7741C", gateway="192.168.10.1"),
+    "192.168.11.100": _demo_cam("192.168.11.100", "00:0E:53:BB:02:01", "MC4-9920A", gateway="192.168.11.1"),
+    "192.168.11.101": _demo_cam("192.168.11.101", "00:0E:53:BB:02:02", "PC5-9920B", gateway="192.168.11.1"),
+    "169.254.16.52":  _demo_cam("169.254.16.52",  "00:D0:89:1B:03:01", "DYN-OCR-3318", ocr=True),
+}
+
+
+def cgi_probe(ip):
+    """Synthetic CGI probe for a known demo camera IP (else None).
+    Called by _cgi_probe_sync() when DEMO_MODE is on so camerasDetected
+    carries the full probe on a Mac, same as a real VPU."""
+    probe = _DEMO_CGI_PROBES.get(ip)
+    return dict(probe) if probe else None
+
+
 DEMO = {
     "Get-SystemIdentity.ps1": lambda **kw: {
         "computerSystem": {"name": _VENUE["hostname"], "manufacturer": "HP", "model": "HP Z2 Tower G9 Workstation Desktop PC"},
@@ -217,6 +279,15 @@ DEMO = {
         "disk": {"usedPercent": round(37 + random.uniform(-1, 2), 1)},
         "temperature": {"celsius": round(47 + random.uniform(-3, 8), 0)},
     },
+    # Averaged CPU/mem for the Stream Readiness engine (F17/F19). Tighter
+    # spread than the snapshot above — it's a multi-second average, so it sits
+    # comfortably under the 90% sustained-WARN bar.
+    "Get-PerfSample.ps1": lambda **kw: {
+        "cpuAvgPercent": round(30 + random.uniform(-5, 6), 1),
+        "memAvgPercent": round(59 + random.uniform(-4, 5), 1),
+        "sampleCount": 3,
+        "windowSeconds": 3,
+    },
     "Get-Services.ps1": lambda **kw: {
         # Core Pixellot components are PROCESSES in C:\Pixellot\Bin (kind=process),
         # not Windows services — detected by process, no SCM start type.
@@ -227,8 +298,8 @@ DEMO = {
             # This is the demo's "click finding → jump to tab → one-click
             # restart" moment. Flip back to "Running" if you want a fully-
             # green dashboard.
-            {"name": "agent", "displayName": "Pixellot Agent", "status": "Stopped", "startType": None,
-             "kind": "process", "pid": None, "path": "C:\\Pixellot\\Bin\\Agent.exe", "memoryMB": None, "watchdog": False},
+            {"name": "agent", "displayName": "Pixellot Agent", "status": "Running", "startType": None,
+             "kind": "process", "pid": 11324, "path": "C:\\Pixellot\\Bin\\Agent.exe", "memoryMB": 184, "watchdog": False},
             {"name": "coordinator", "displayName": "Pixellot Coordinator", "status": "Running", "startType": None,
              "kind": "process", "pid": 10596, "path": "C:\\Pixellot\\Bin\\Coordinator.exe", "memoryMB": 15, "watchdog": False},
             {"name": "vpu", "displayName": "Pixellot VPU", "status": "Running", "startType": None,
@@ -251,7 +322,7 @@ DEMO = {
             # degraded — the OCR-OUI heuristic only spares ports where every
             # Pixellot MAC is Dynacolor (00:D0:89).
             {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "linkSpeedMbps": 100, "fullDuplex": True, "mac": "A4:4C:C8:12:34:02",
-             "rxBytes": 18238473625, "txBytes": 1283746281, "rxErrors": 187, "txErrors": 2, "rxPacketErrors": 187, "rxDiscards": 14, "txPacketErrors": 2, "txDiscards": 0,
+             "rxBytes": 18238473625, "txBytes": 1283746281, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0,
              "arpEntries": [{"ip": "192.168.11.100", "mac": "00:0E:53:BB:02:01"}, {"ip": "192.168.11.101", "mac": "00:0E:53:BB:02:02"}]},
             # Ethernet 3 is the OCR / scoreboard camera. OCR cameras are
              # natively 100 Mbps, so this is HEALTHY (not degraded). Uses the
@@ -290,6 +361,32 @@ DEMO = {
             {"model": "Samsung SSD 870 EVO 500GB", "sizeGB": 500, "interfaceType": "SATA", "serialNumber": "S3Z8NB0K901234A"}
         ],
     },
+    "Get-UsersAndDomains.ps1": lambda **kw: {
+        "domain": {
+            "computerName": _VENUE["hostname"],
+            "partOfDomain": False,
+            "domain": None,
+            "workgroup": "WORKGROUP",
+            "role": "Standalone Workstation",
+            "currentUser": f"{_VENUE['hostname']}\\pixellot",
+        },
+        "users": [
+            {"name": "pixellot", "fullName": "Pixellot Service", "enabled": True, "isAdmin": True, "lockedOut": False, "rid": 1001},
+            {"name": "Administrator", "fullName": None, "enabled": False, "isAdmin": True, "lockedOut": False, "rid": 500},
+            {"name": "support", "fullName": "PlayOn Field Support", "enabled": True, "isAdmin": False, "lockedOut": False, "rid": 1002},
+            {"name": "Guest", "fullName": None, "enabled": False, "isAdmin": False, "lockedOut": False, "rid": 501},
+        ],
+        "userCount": 4,
+        "adminCount": 2,
+        "diagnostics": {"usersError": None, "domainError": None},
+    },
+    "Get-Peripherals.ps1": lambda **kw: {
+        "mouse":    {"connected": True,  "count": 1, "devices": ["HID-compliant mouse"], "error": None},
+        "keyboard": {"connected": True,  "count": 1, "devices": ["HID Keyboard Device"], "error": None},
+        # Headless is common for VPUs — demo shows no monitor so the
+        # not-connected state is visible.
+        "monitor":  {"connected": False, "count": 0, "displays": [], "source": "pnp", "error": None},
+    },
     "Get-InstalledSoftware.ps1": lambda **kw: {
         "count": 10,
         "software": [
@@ -310,11 +407,22 @@ DEMO = {
         ],
     },
     "Get-NetworkConfig.ps1": lambda **kw: {
+        # Healthy wiring: internet on the motherboard port (onboard I219-LM on
+        # PCI bus 0), cameras on the dedicated 4-port NIC card (I210 on PCI buses
+        # 1-3), Wi-Fi card enabled (for the Pixellot Connect app). pciBus is what
+        # separates the motherboard uplink from a camera port, and physicalMediaType
+        # picks out Wi-Fi — see _adapter_role in main.py.
+        #   • To DEMO the "internet on a camera port" critical: flip Ethernet 1's
+        #     status to "Up", give its ipConfig a gateway (e.g. _VENUE["gatewayIp"]),
+        #     and set Ethernet 4 status to "Disconnected".
+        #   • To DEMO the "Wi-Fi card disabled" warning: set the Wi-Fi adapter's
+        #     status to "Disabled" and adminStatus to "Down".
         "adapters": [
-            {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #4", "status": "Up", "macAddress": "A0-36-9F-11-22-33", "linkSpeed": "1 Gbps", "interfaceIndex": 4},
-            {"name": "Ethernet 1", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection", "status": "Up", "macAddress": "A0-36-9F-AA-BB-CC", "linkSpeed": "100 Mbps", "interfaceIndex": 1},
-            {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "macAddress": "A0-36-9F-DD-EE-FF", "linkSpeed": "100 Mbps", "interfaceIndex": 2},
-            {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I350 Gigabit Network Connection", "status": "Down", "macAddress": "A0-36-9F-00-11-22", "linkSpeed": "", "interfaceIndex": 3},
+            {"name": "Ethernet 4 (Uplink)", "interfaceDescription": "Intel(R) Ethernet Connection (7) I219-LM", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-11-22-33", "linkSpeed": "1 Gbps", "interfaceIndex": 4, "pnpDeviceId": "PCI\\VEN_8086&DEV_15BB&SUBSYS_83E0103C&REV_10\\3&11583659&3&FE", "pciBus": 0, "pciDevice": 31, "pciFunction": 6, "fullDuplex": True, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0},
+            {"name": "Ethernet 1", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-AA-BB-CC", "linkSpeed": "100 Mbps", "interfaceIndex": 1, "pnpDeviceId": "PCI\\VEN_8086&DEV_1533&SUBSYS_00000000&REV_03\\003064FFFF30C7E600", "pciBus": 1, "pciDevice": 0, "pciFunction": 0, "fullDuplex": True, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0},
+            {"name": "Ethernet 2", "interfaceDescription": "Intel(R) I210 Gigabit Network Connection #2", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-DD-EE-FF", "linkSpeed": "100 Mbps", "interfaceIndex": 2, "pnpDeviceId": "PCI\\VEN_8086&DEV_1533&SUBSYS_00000000&REV_03\\003064FFFF30C7E700", "pciBus": 2, "pciDevice": 0, "pciFunction": 0, "fullDuplex": True, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0},
+            {"name": "Ethernet 3", "interfaceDescription": "Intel(R) I350 Gigabit Network Connection", "status": "Down", "adminStatus": "Up", "mediaConnectionState": "Disconnected", "physicalMediaType": "802.3", "macAddress": "A0-36-9F-00-11-22", "linkSpeed": "", "interfaceIndex": 3, "pnpDeviceId": "PCI\\VEN_8086&DEV_1521&SUBSYS_00000000&REV_01\\003064FFFF30C7E800", "pciBus": 3, "pciDevice": 0, "pciFunction": 0, "fullDuplex": None, "rxErrors": 0, "txErrors": 0, "rxPacketErrors": 0, "rxDiscards": 0, "txPacketErrors": 0, "txDiscards": 0},
+            {"name": "Wi-Fi", "interfaceDescription": "Intel(R) Wireless-AC 9560 160MHz", "status": "Up", "adminStatus": "Up", "mediaConnectionState": "Connected", "physicalMediaType": "Native 802.11", "macAddress": "C8-58-C0-39-4D-D8", "linkSpeed": "866.7 Mbps", "interfaceIndex": 33, "pnpDeviceId": "PCI\\VEN_8086&DEV_A370&SUBSYS_00348086&REV_10\\3&11583659&3&A3", "pciBus": 0, "pciDevice": 20, "pciFunction": 3},
         ],
         "ipConfigurations": [
             {"interfaceAlias": "Ethernet 4 (Uplink)", "interfaceIndex": 4, "ipv4Address": [_VENUE["uplinkIp"]], "ipv4DefaultGateway": [_VENUE["gatewayIp"]], "dnsServers": ["8.8.8.8", "8.8.4.4"], "dhcpEnabled": True, "prefixLength": 24},
@@ -337,7 +445,7 @@ DEMO = {
             {"domain": "logmein.com", "resolvedTo": "216.52.233.2", "status": "pass", "resolutionMs": round(random.uniform(5, 15), 1)},
             {"domain": "s3.amazonaws.com", "resolvedTo": "52.217.44.54", "status": "pass", "resolutionMs": round(random.uniform(4, 12), 1)},
             {"domain": "leaf-uploads.s3.amazonaws.com", "resolvedTo": "52.217.44.55", "status": "pass", "resolutionMs": round(random.uniform(6, 18), 1)},
-            {"domain": "leaf-downloads.s3.amazonaws.com", "resolvedTo": None, "status": "fail", "resolutionMs": round(random.uniform(2000, 3000), 1)},
+            {"domain": "leaf-downloads.s3.amazonaws.com", "resolvedTo": "52.217.44.55", "status": "pass", "resolutionMs": round(random.uniform(6, 18), 1)},
         ]
     },
     "Test-NetworkPorts.ps1": lambda **kw: {
@@ -351,23 +459,24 @@ DEMO = {
             {"purpose": "Singular Overlay", "host": "service.singular.live", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "LogMeIn", "host": "secure.logmein.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
-            # Demo shows the Shelton scenario: the UDP/443 backup path is
-            # blocked but the primary UDP/2088 path is open — so the stream
-            # still broadcasts. This exercises the path-aware "Streaming
-            # redundancy reduced" WARNING (amber "No failover"), not a critical
-            # "stream fails". Flip 2088 to "fail" too to see the all-blocked
-            # critical.
-            {"purpose": "Zixi Backup", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "fail", "optional": False},
-            {"purpose": "Zixi Streaming", "host": "prod-echo.pixellot.tv", "port": 2088, "protocol": "UDP", "status": "pass", "optional": False},
+            # Demo: the live UDP/2088 broadcast connection is blocked. It has no
+            # failover, so this exercises the critical "Streaming is blocked — VPU
+            # can't broadcast". The 443 backup channel (UDP/443 + TCP/443 tunnel)
+            # stays open and is unaffected. (To exercise the amber "No failover"
+            # backup warning instead, set 2088 to "pass" and one of Zixi Backup /
+            # Pixellot Echo to "fail" — that leaves the broadcast up with one
+            # backup transport down.)
+            {"purpose": "Zixi Backup", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "pass", "optional": False},
+            {"purpose": "Zixi Streaming", "host": "prod-echo.pixellot.tv", "port": 2088, "protocol": "UDP", "status": "fail", "optional": False},
             # Optional — RTMP fallback (legacy ingest)
-            {"purpose": "RTMP Ingest", "host": "sportzcast.net", "port": 1935, "protocol": "TCP", "status": "fail", "optional": True},
+            {"purpose": "RTMP Ingest", "host": "sportzcast.net", "port": 1935, "protocol": "TCP", "status": "pass", "optional": True},
             # Optional — Sportzcast Scorebot range (ScoreConnect deployments only)
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1400, "protocol": "TCP", "status": "pass", "optional": True},
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1401, "protocol": "TCP", "status": "pass", "optional": True},
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1402, "protocol": "TCP", "status": "pass", "optional": True},
-            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1403, "protocol": "TCP", "status": "fail", "optional": True},
-            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1404, "protocol": "TCP", "status": "fail", "optional": True},
-            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1405, "protocol": "TCP", "status": "fail", "optional": True},
+            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1403, "protocol": "TCP", "status": "pass", "optional": True},
+            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1404, "protocol": "TCP", "status": "pass", "optional": True},
+            {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1405, "protocol": "TCP", "status": "pass", "optional": True},
         ]
     },
     "Test-NtpDrift.ps1": lambda **kw: {"offsetSeconds": round(random.uniform(-0.3, 0.5), 3), "status": "ok", "source": "0.us.pool.ntp.org", "configuredSource": "0.us.pool.ntp.org", "networkSynced": True},
@@ -433,7 +542,7 @@ DEMO = {
         "googleServer": "8.8.8.8",
         "results": [
             {"host": "www.pixellot.tv",
-             "system": {"resolvedTo": None,             "status": "fail", "resolutionMs": round(random.uniform(2000, 3000), 1), "error": "No such host is known."},
+             "system": {"resolvedTo": "52.1.53.61",     "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
              "google": {"resolvedTo": "52.1.53.61",     "status": "pass", "resolutionMs": round(random.uniform(8, 20), 1),       "error": None}},
             {"host": "pixellot.tv",
              "system": {"resolvedTo": "52.44.182.199",  "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
@@ -459,8 +568,12 @@ DEMO = {
             {"deviceID": "D:", "freeSpaceGB": 712, "sizeGB": 953, "usedPercent": 25, "fileSystem": "NTFS"},
         ],
         "physicalDisks": [
-            {"friendlyName": "Generic HDD", "sizeGB": 500, "mediaType": "HDD", "busType": "SATA", "serialNumber": "S3Z8NB0K901234A", "healthStatus": "Healthy"}
+            {"friendlyName": "Samsung SSD 870 EVO 500GB", "sizeGB": 465, "mediaType": "SSD", "busType": "SATA", "serialNumber": "S3Z8NB0K901234A", "healthStatus": "Healthy", "operationalStatus": "OK",
+             "smart": {"wearPercent": 11, "powerOnHours": 8423, "temperatureC": 41, "readErrorsUncorrected": 0, "writeErrorsUncorrected": 0}},
+            {"friendlyName": "Samsung SSD 870 QVO 1TB", "sizeGB": 931, "mediaType": "SSD", "busType": "SATA", "serialNumber": "S5RANG0N712345B", "healthStatus": "Healthy", "operationalStatus": "OK",
+             "smart": {"wearPercent": 23, "powerOnHours": 8101, "temperatureC": 44, "readErrorsUncorrected": 0, "writeErrorsUncorrected": 0}},
         ],
+        "predictFailure": False,
         "pixellotPaths": [
             {"path": "C:\\Pixellot", "sizeGB": 12.4, "fileCount": 847},
             {"path": "D:\\Recordings", "sizeGB": 198.7, "fileCount": 3241},
@@ -478,21 +591,107 @@ DEMO = {
             {"timeCreated": (datetime.now() - timedelta(hours=24)).isoformat(), "level": "Error", "source": "PixellotEncoder", "eventId": 2001, "message": "Hardware encoder init failed — falling back to software encoding"},
         ]
     },
+    "Get-RebootHistory.ps1": lambda **kw: {
+        "pending": {
+            "isPending": True,
+            "reasons": ["Windows Update is waiting to finish"],
+        },
+        "lastBoot": (datetime.now() - timedelta(minutes=25)).isoformat(),
+        "uptime": "0d 0h 25m",
+        # The PnP task that reboots after a driver install flags reboot-required
+        # — fired ~28 min ago, the "unprovoked restart shortly after logon".
+        "deviceInstallRebootTaskLastRun": (datetime.now() - timedelta(minutes=28)).isoformat(),
+        "count": 4,
+        "history": [
+            # External planned restart — empty comment proves it was NOT Pulse.
+            {"time": (datetime.now() - timedelta(minutes=28)).isoformat(), "eventId": 1074,
+             "kind": "restart", "category": "planned",
+             "process": "C:\\Windows\\system32\\shutdown.exe (VPU)", "user": "VPU\\Pixellot",
+             "reasonCode": "0x800000ff", "reasonText": "No title for this reason could be found",
+             "comment": "", "byPulse": False, "source": "Planned - external",
+             "message": "The process C:\\Windows\\system32\\shutdown.exe (VPU) has initiated the restart of computer VPU on behalf of user VPU\\Pixellot ... Reason Code: 0x800000ff  Shutdown Type: restart  Comment:"},
+            # Pulse-initiated reboot — stamped comment, positively attributed.
+            {"time": (datetime.now() - timedelta(days=2)).isoformat(), "eventId": 1074,
+             "kind": "restart", "category": "planned",
+             "process": "C:\\Windows\\system32\\shutdown.exe (VPU)", "user": "VPU\\Pixellot",
+             "reasonCode": "0x80040002", "reasonText": "Other (Planned)",
+             "comment": "Reboot requested from Pulse diagnostics", "byPulse": True,
+             "source": "Pulse (Reboot VPU)",
+             "message": "The process C:\\Windows\\system32\\shutdown.exe (VPU) has initiated the restart ... Comment: Reboot requested from Pulse diagnostics"},
+            # Windows Update restart.
+            {"time": (datetime.now() - timedelta(days=4)).isoformat(), "eventId": 1074,
+             "kind": "restart", "category": "planned",
+             "process": "C:\\Windows\\system32\\MusNotification.exe", "user": "NT AUTHORITY\\SYSTEM",
+             "reasonCode": "0x80020002", "reasonText": "Operating System: Recovery (Planned)",
+             "comment": "", "byPulse": False, "source": "Windows Update",
+             "message": "The process MusNotification.exe has initiated the restart ... Operating System: Recovery (Planned)"},
+            # Unexpected loss (power blip / hard crash).
+            {"time": (datetime.now() - timedelta(days=6)).isoformat(), "eventId": 41,
+             "kind": "unexpected", "category": "unexpected",
+             "process": "", "user": "", "reasonCode": "", "reasonText": "",
+             "comment": "", "byPulse": False,
+             "source": "Unexpected (kernel-power: no clean shutdown)",
+             "message": "The system has rebooted without cleanly shutting down first."},
+        ],
+    },
     "Get-ScoreConnectStatus.ps1": lambda **kw: _demo_scoreconnect(),
     "Get-ScoreConnectLive.ps1": lambda **kw: _demo_scoreconnect_live(),
+    # Steady state — no SC III install running. Mirrors the script's 'idle'
+    # branch (no status file present). Frontend only polls this after the
+    # user kicks off an install, so idle is the right resting demo value.
+    "Get-Sc3InstallStatus.ps1": lambda **kw: {
+        "stage": "idle", "percent": 0, "message": "No install in progress",
+    },
     "Get-ScoreLinkStatus.ps1": lambda **kw: {
         "connected": True, "port": "COM7", "model": "ScoreLink",
         "statusLabel": "ScoreLink device connected (COM7)",
     },
     "Get-PixellotConfig.ps1": lambda **kw: {
+        # Camera firmware / tvMode / serial mirror the live CGI probe
+        # (_probe_camera_ip in main.py) — Admin:1234 param.cgi, same data the
+        # Canopy getFirmwareAndTvMode.ps1 pulled. ntsc_60 = US venue.
         "cameras": [
-            {"section": "Camera1", "ip": "192.168.10.100", "mac": "00:0E:53:AA:01:01", "role": "Main"},
-            {"section": "Camera2", "ip": "192.168.10.101", "mac": "00:0E:53:AA:01:02", "role": "Panoramic"},
-            {"section": "Camera3", "ip": "192.168.10.102", "mac": "00:0E:53:AA:01:03", "role": "Tactical"},
-            {"section": "Camera4", "ip": "192.168.11.100", "mac": "00:0E:53:BB:02:01", "role": "Main"},
-            {"section": "Camera5", "ip": "192.168.11.101", "mac": "00:0E:53:BB:02:02", "role": "Panoramic"},
-            {"section": "OCR", "ip": "192.168.12.50", "mac": "00:D0:89:1B:03:01", "role": "OCR"},
+            {"section": "Camera1", "ip": "192.168.10.100", "mac": "00:0E:53:AA:01:01", "role": "Main",
+             "firmwareVersion": "1.9.13", "tvMode": "ntsc_60", "serialNumber": "MC1-7741A", "model": "Pixellot SuperBowl"},
+            {"section": "Camera2", "ip": "192.168.10.101", "mac": "00:0E:53:AA:01:02", "role": "Panoramic",
+             "firmwareVersion": "1.9.13", "tvMode": "ntsc_60", "serialNumber": "PC2-7741B", "model": "Pixellot SuperBowl"},
+            {"section": "Camera3", "ip": "192.168.10.102", "mac": "00:0E:53:AA:01:03", "role": "Tactical",
+             "firmwareVersion": "1.9.13", "tvMode": "ntsc_60", "serialNumber": "TC3-7741C", "model": "Pixellot SuperBowl"},
+            {"section": "Camera4", "ip": "192.168.11.100", "mac": "00:0E:53:BB:02:01", "role": "Main",
+             "firmwareVersion": "1.9.13", "tvMode": "ntsc_60", "serialNumber": "MC4-9920A", "model": "Pixellot SuperBowl"},
+            {"section": "Camera5", "ip": "192.168.11.101", "mac": "00:0E:53:BB:02:02", "role": "Panoramic",
+             "firmwareVersion": "1.9.13", "tvMode": "ntsc_60", "serialNumber": "PC5-9920B", "model": "Pixellot SuperBowl"},
+            {"section": "OCR", "ip": "192.168.12.50", "mac": "00:D0:89:1B:03:01", "role": "OCR",
+             "firmwareVersion": "DC-2.4.1", "tvMode": "ntsc_60", "serialNumber": "DYN-OCR-3318", "model": "Dynacolor MPC-IPC"},
         ],
+        "cameraCfgExists": True,
+        # Selected HKLM:\SOFTWARE\Pixellot values (the live script dumps ALL).
+        "registryConfig": {
+            "version": _VENUE["swVersion"],
+            "InstallPath": "C:\\Pixellot",
+            "DataPath": "C:\\Pixellot\\Data",
+            "imageVersion": _VENUE["imageVersion"],
+            "dependencies": "5.0.0",
+            "vpuName": _VENUE["vpuName"],
+            "venueId": _VENUE["venueId"],
+        },
+        # Calibration is filesystem-presence-based (see Get-PixellotConfig.ps1).
+        "calibration": {
+            "multisport": {
+                "calibrated": True,
+                "primary": "basketball",
+                "sports": [
+                    {"name": "basketball", "lastCalibrated": (datetime.now() - timedelta(days=18)).isoformat()},
+                    {"name": "volleyball", "lastCalibrated": (datetime.now() - timedelta(days=63)).isoformat()},
+                ],
+            },
+            "ocr": {
+                "calibrated": True,
+                "lastCalibrated": (datetime.now() - timedelta(days=18)).isoformat(),
+                "hasEnhancedPip": True,
+                "hasInnerObjects": True,
+            },
+        },
     },
     # Expected main-camera count from the Coordinator log. Demo box is an
     # S2 (2 main cameras + 1 OCR), matching the Get-PixellotConfig demo.
@@ -670,8 +869,8 @@ DEMO = {
     },
     "Get-PixellotDependencies.ps1": lambda **kw: {
         # Demo shows an outdated 4.8.0 install so the "outdated" badge state
-        # is visible in demo mode. Real VPUs that ran PDF #2's reinstall
-        # action would report 5.0.0 → "current".
+        # is visible in demo mode. A VPU on the latest deps would report
+        # 5.0.0 → "current".
         "installedVersion": "4.8.0",
         "latestKnownVersion": "5.0.0",
         "status": "outdated",
@@ -694,21 +893,6 @@ DEMO = {
             "lastLine": "Install completed successfully. Rebooting...",
         },
         "message": "Last install completed cleanly. No part files remain.",
-    },
-    "Install-PixellotDependencies.ps1": lambda **kw: {
-        "success": True,
-        "targetDir": "C:\\pixellot\\downloadedversion",
-        "targetFile": "C:\\pixellot\\downloadedversion\\Pixellot-Installer-Dependencies-5.0.0.exe",
-        "installerUrl": "https://software.pixellot.tv/apps/Pixellot-Installer-Dependencies-5.0.0.exe",
-        "steps": [
-            {"label": "Download installer", "status": "ok",
-             "detail": "Downloaded 87.4 MB via curl.exe to C:\\pixellot\\downloadedversion\\Pixellot-Installer-Dependencies-5.0.0.exe",
-             "durationMs": 28400, "ts": datetime.now().isoformat()},
-            {"label": "Run installer", "status": "ok",
-             "detail": "Exit code 0 after 142s",
-             "durationMs": 142000, "ts": datetime.now().isoformat()},
-        ],
-        "message": "Pixellot dependencies installer completed. Reboot recommended.",
     },
     "Restart-PixellotAgent.ps1": lambda **kw: {
         "success": True,

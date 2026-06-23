@@ -31,56 +31,100 @@ function svgIcon(name, size) {
     database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
     mic: '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>',
     shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+    users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    mouse: '<rect x="6" y="3" width="12" height="18" rx="6"/><line x1="12" y1="7" x2="12" y2="11"/>',
+    keyboard: '<rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6" y2="10"/><line x1="10" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="14" y2="10"/><line x1="18" y1="10" x2="18" y2="10"/><line x1="8" y1="14" x2="16" y2="14"/>',
     volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
     "volume-x": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
     activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
     send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
     inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    "external-link": '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
+    copy: '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+    help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    scale: '<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>',
+    "file-down": '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/>',
+    "share-2": '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>',
+    logs: '<path d="M13 12h8"/><path d="M13 18h8"/><path d="M13 6h8"/><path d="M3 12h1"/><path d="M3 18h1"/><path d="M3 6h1"/><path d="M8 12h1"/><path d="M8 18h1"/><path d="M8 6h1"/>',
+    "folder-code": '<path d="M10 10.5 8 13l2 2.5"/><path d="m14 10.5 2 2.5-2 2.5"/><path d="M2 6a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/>',
+    settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+    "file-warning": '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    "clipboard-list": '<rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
+    "id-card": '<path d="M16 10h2"/><path d="M16 14h2"/><path d="M6.17 15a3 3 0 0 1 5.66 0"/><circle cx="9" cy="11" r="2"/><rect x="2" y="5" width="20" height="14" rx="2"/>',
+    package: '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/>',
+    power: '<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>',
   };
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p[name] || ""}</svg>`;
 }
 
 // ── Pages & Nav Sections ─────────────────────────────────────
+// 6-group IA (nav restructure v3). Phase A: regroup + rename only. The current
+// System Overview (`system`) and Pixellot Configuration (`pixellot-config`) tabs
+// are parked in their new groups as-is; later phases split them into Hardware /
+// Applications / Environment and Pixellot Software / Camera Hardware /
+// Calibrations, and add Pixellot Logs / Pulse Logs / Help.
 const NAV_SECTIONS = [
   { label: "TRIAGE", pages: [
     { id: "dashboard", label: "Dashboard", icon: "grid" },
+    { id: "inspection-report", label: "Inspection Report", icon: "file" },
   ]},
-  { label: "CONNECTIVITY", pages: [
-    { id: "network", label: "Network", icon: "wifi" },
+  { label: "TROUBLESHOOTING", pages: [
+    { id: "network", label: "Network Test", icon: "wifi" },
     { id: "cameras", label: "Camera Connectivity", icon: "camera" },
-    { id: "scoreconnect", label: "Score Connect", icon: "monitor" },
+    { id: "scoreconnect", label: "ScoreConnect", icon: "monitor" },
+    { id: "services", label: "Service Status", icon: "server" },
     // Audio tab hidden from nav pending further development. The full impl is
     // still wired — renderAudio(), pageRenderers.audio, PAGE_API.audio,
     // /api/audio, and the PS scripts — so re-add this entry to restore it.
   ]},
-  { label: "SYSTEM", pages: [
-    { id: "system", label: "System Overview", icon: "cpu" },
-    { id: "services", label: "Pixellot Services", icon: "server" },
-    { id: "disk-health", label: "Disk & System Health", icon: "hdd" },
-    { id: "events", label: "Event Viewer", icon: "triangle" },
+  { label: "PIXELLOT CONFIGURATION", pages: [
+    { id: "pixellot-software", label: "Pixellot Software", icon: "folder-code" },
+    { id: "camera-hardware", label: "Camera Hardware", icon: "camera" },
+    { id: "calibrations", label: "Camera Calibrations", icon: "scale" },
   ]},
-  { label: "EVIDENCE", pages: [
-    { id: "reports", label: "Reports", icon: "file" },
-    { id: "share", label: "Share over LAN", icon: "send" },
+  { label: "SYSTEM INFORMATION", pages: [
+    { id: "hardware", label: "Hardware", icon: "cpu" },
+    { id: "applications", label: "Applications", icon: "copy" },
+    { id: "disk-health", label: "Disks", icon: "hdd" },
+    { id: "environment", label: "Environment", icon: "globe" },
+    { id: "reboots", label: "Power Events", icon: "power" },
   ]},
-  { label: "SETUP", pages: [
-    { id: "settings", label: "Settings", icon: "cog" },
+  { label: "DATA LOGS", pages: [
+    { id: "pixellot-logs", label: "Pixellot Logs", icon: "logs" },
+    { id: "events", label: "Windows Events", icon: "file-warning" },
+    { id: "pulse-logs", label: "Pulse Logs", icon: "heartbeat" },
+  ]},
+  { label: "PULSE", pages: [
+    { id: "settings", label: "Settings", icon: "settings" },
+    { id: "share", label: "Share over LAN", icon: "share-2" },
+    { id: "reports", label: "Exports", icon: "file-down" },
+    { id: "help", label: "Help", icon: "help" },
     { id: "about", label: "About", icon: "info" },
   ]},
 ];
 const PAGES = NAV_SECTIONS.flatMap((s) => s.pages);
 // Hidden pages (accessible via hash but not in nav)
-const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Fault Isolator" }];
+const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Camera Connection Troubleshooting" }];
+// Tabs retired in the nav restructure redirect to their nearest replacement so
+// old bookmarks / deep-links don't land on an "Unknown page".
+const RETIRED_PAGE_ALIASES = { system: "hardware", "pixellot-config": "pixellot-software" };
 
 let currentPage = "";
 let ws = null;
 let wsRetryTimer = null;
 let dataCache = {};
 let logEntries = [];
-let logPaneOpen = false;
 let fetchingKeys = new Set();
 let fetchPromises = {};
 
+// PAGE_API keys are the *fetch* keys (the cache/endpoint identifiers), which
+// are NOT 1:1 with nav ids / pageRenderers. Two endpoints (`system` and
+// `pixellot-config`) each back several split pages: the nav was broken up into
+// Hardware/Applications/Environment and Pixellot Software/Camera Hardware/
+// Calibrations, but the collectors behind them weren't. So renderHardware,
+// renderApplications, renderEnvironment all fetchSection("system"), and the
+// Pixellot pages all fetchSection("pixellot-config"). Keep the retired keys
+// here; RETIRED_PAGE_ALIASES only redirects the old nav ids at the router.
 const PAGE_API = {
   dashboard: "/api/dashboard",
   system: "/api/system",
@@ -89,14 +133,17 @@ const PAGE_API = {
   services: "/api/services",
   "disk-health": "/api/disk-health",
   events: "/api/events",
+  reboots: "/api/reboots",
   audio: "/api/audio",
   scoreconnect: "/api/scoreconnect",
+  "pixellot-config": "/api/pixellot-config",
   settings: "/api/settings",
 };
 
 // ── Router ───────────────────────────────────────────────────
 
 function navigate(id) {
+  id = RETIRED_PAGE_ALIASES[id] || id;
   if (id === currentPage) return;
   // Abort any in-flight fault-isolator poll when navigating away.
   if (currentPage === "fault-isolator" && _fi) _fi._aborted = true;
@@ -115,9 +162,43 @@ function updateNav() {
   });
 }
 
+// Flag each subsystem's nav link with a warning triangle from the dashboard
+// findings, so the sidebar doubles as the at-a-glance health map (replaces the
+// old Subsystems panel). Only warning/critical show an icon — healthy and
+// non-subsystem links (Dashboard, Settings, …) show nothing.
+function updateNavHealth() {
+  const health = {};
+  try {
+    _subsystemHealth((cached("dashboard") || {}).findings || [])
+      .forEach((s) => { health[s.id] = s.health; });
+  } catch (e) { return; }
+  document.querySelectorAll(".nav-item").forEach((el) => {
+    const slot = el.querySelector(".nav-status");
+    if (!slot) return;
+    const h = health[el.dataset.page];
+    if (h === "Critical" || h === "Warning") {
+      slot.className = "nav-status " + (h === "Critical" ? "nav-status-crit" : "nav-status-warn");
+      slot.innerHTML = svgIcon("triangle", 14);
+      slot.title = h;
+    } else {
+      slot.className = "nav-status";
+      slot.innerHTML = "";
+      slot.removeAttribute("title");
+    }
+  });
+}
+
 function renderPage(id) {
   const fn = pageRenderers[id];
   if (!fn) { $page().innerHTML = `<p class="text-pulse-muted">Unknown page: ${esc(id)}</p>`; return; }
+  // Defensive: if someone calls renderPage() without going through
+  // navigate() (e.g. via console eval or a future caller), keep the
+  // sidebar active-state and currentPage in sync so the highlight
+  // can't lie about where the user is.
+  if (id !== currentPage) {
+    currentPage = id;
+    updateNav();
+  }
   try {
     fn();
   } catch (err) {
@@ -332,6 +413,8 @@ function fetchSection(key) {
     if (data) {
       dataCache[key] = data;
     }
+    // Refresh the sidebar health dots when the data that drives them lands.
+    if (key === "dashboard" || key === "events") updateNavHealth();
     // Re-render the current page only when the completed fetch is relevant to it.
     // For dashboard, only its own deps trigger a refresh — non-dashboard data
     // (events, audio, scoreconnect, etc.) doesn't change anything visible.
@@ -358,6 +441,10 @@ function _sectionLabels() {
   const map = {};
   NAV_SECTIONS.forEach((s) => s.pages.forEach((p) => { map[p.id] = p.label; }));
   HIDDEN_PAGES.forEach((p) => { map[p.id] = p.label; });
+  // Retired ids still fetched during preload (their /api/* feeds the split
+  // tabs) — give them friendly splash labels instead of raw keys.
+  map.system = map.system || "System";
+  map["pixellot-config"] = map["pixellot-config"] || "Pixellot Configuration";
   _SECTION_LABELS_CACHE = map;
   return map;
 }
@@ -552,124 +639,36 @@ function sectionLoading(label) {
   </div>`;
 }
 
-// ── Logging Pane ────────────────────────────────────────────
-
-let activeLogTab = "script";
+// ── Log helpers ─────────────────────────────────────────────
+// The bottom log drawer was retired in favor of the full-page Pulse Logs tab
+// (see renderPulseLogs). These helpers + the live `logEntries` buffer it
+// accumulates are still shared with that tab.
 
 function _logEmptyState(message) {
   return `<div class="log-empty">${esc(message)}</div>`;
 }
 
-function renderLogPane() {
-  const pane = document.getElementById("log-pane");
-  if (!pane) return;
-  const body = pane.querySelector('[data-log-body="script"]');
-  if (!body) return;
-  const entries = logEntries.slice(-200);
-  if (!entries.length) {
-    body.innerHTML = _logEmptyState("Waiting for diagnostic activity… script calls will appear here.");
-    return;
-  }
-  body.innerHTML = entries.map((e) => {
-    const statusCls = e.status === "ok" ? "log-ok"
-      : e.status === "timeout" || e.status === "warn" ? "log-warn"
-      : "log-err";
-    return `<div class="log-entry">
-      <span class="log-ts">${esc(e.ts?.split("T")[1] || "")}</span>
-      <span class="log-script">${esc(e.script)}</span>
-      <span class="log-dur">${e.durationMs != null ? e.durationMs + "ms" : ""}</span>
-      <span class="log-size">${e.bytes > 0 ? formatBytes(e.bytes) : ""}</span>
-      <span class="log-status ${statusCls}">${esc(e.status)}</span>
-      <span class="log-detail">${esc(e.detail)}</span>
-    </div>`;
-  }).join("");
-  body.scrollTop = body.scrollHeight;
-}
-
-function renderServerLog(lines) {
-  const pane = document.getElementById("log-pane");
-  if (!pane) return;
-  const body = pane.querySelector('[data-log-body="server"]');
-  if (!body) return;
-  if (!lines || !lines.length) {
-    body.innerHTML = _logEmptyState("Server log empty. The server logs to pulse-server.log on startup and during requests.");
-    return;
-  }
-  body.innerHTML = lines.map((l) =>
-    `<div class="log-entry server-log-line">${esc(l)}</div>`
-  ).join("");
-  body.scrollTop = body.scrollHeight;
-}
-
-async function fetchServerLog() {
-  const data = await api("/api/server-log?tail=500");
-  if (data && !data.error) renderServerLog(data.lines || []);
-}
-
-// Periodically refresh the server log while the user is watching it,
-// so they see new entries appear without needing to switch tabs or
-// re-open the pane. Auto-refresh stops when pane closes or tab changes.
-let _serverLogTimer = null;
-function _startServerLogPolling() {
-  if (_serverLogTimer) return;
-  _serverLogTimer = setInterval(() => {
-    if (logPaneOpen && activeLogTab === "server") fetchServerLog();
-    else _stopServerLogPolling();
-  }, 2000);
-}
-function _stopServerLogPolling() {
-  if (_serverLogTimer) { clearInterval(_serverLogTimer); _serverLogTimer = null; }
-}
-
-function switchLogTab(tab) {
-  activeLogTab = tab;
-  // If the pane is collapsed, open it. toggleLogPane() handles the
-  // render/fetch for the now-active tab.
-  if (!logPaneOpen) { toggleLogPane(); return; }
-  const pane = document.getElementById("log-pane");
-  if (!pane) return;
-  pane.querySelectorAll(".log-tab").forEach((t) =>
-    t.classList.toggle("log-tab-active", t.dataset.logTab === tab)
-  );
-  pane.querySelectorAll("[data-log-body]").forEach((b) =>
-    b.classList.toggle("log-body-hidden", b.dataset.logBody !== tab)
-  );
-  if (tab === "server") { fetchServerLog(); _startServerLogPolling(); }
-  else { _stopServerLogPolling(); renderLogPane(); }
+// One script-call log row. Rendered by the Pulse Logs tab (_renderPulseLogsScript).
+function _scriptLogEntryHtml(e) {
+  const statusCls = e.status === "ok" ? "log-ok"
+    : e.status === "timeout" || e.status === "warn" ? "log-warn"
+    : "log-err";
+  return `<div class="log-entry">
+    <span class="log-ts">${esc(e.ts?.split("T")[1] || "")}</span>
+    <span class="log-script">${esc(e.script)}</span>
+    <span class="log-dur">${e.durationMs != null ? e.durationMs + "ms" : ""}</span>
+    <span class="log-size">${e.bytes > 0 ? formatBytes(e.bytes) : ""}</span>
+    <span class="log-status ${statusCls}">${esc(e.status)}</span>
+    <span class="log-detail">${esc(e.detail)}</span>
+  </div>`;
 }
 
 function appendLogs(newLogs) {
   if (!newLogs?.length) return;
   logEntries.push(...newLogs);
   if (logEntries.length > 500) logEntries = logEntries.slice(-500);
-  if (logPaneOpen && activeLogTab === "script") renderLogPane();
-}
-
-function toggleLogPane() {
-  logPaneOpen = !logPaneOpen;
-  const pane = document.getElementById("log-pane");
-  if (!pane) return;
-  pane.classList.toggle("log-pane-open", logPaneOpen);
-  // Reflect the active tab visually whenever we open — useful when a
-  // tab click is what triggered the toggle.
-  pane.querySelectorAll(".log-tab").forEach((t) =>
-    t.classList.toggle("log-tab-active", t.dataset.logTab === activeLogTab)
-  );
-  pane.querySelectorAll("[data-log-body]").forEach((b) =>
-    b.classList.toggle("log-body-hidden", b.dataset.logBody !== activeLogTab)
-  );
-  if (logPaneOpen) {
-    if (activeLogTab === "script") renderLogPane();
-    else { fetchServerLog(); _startServerLogPolling(); }
-  } else {
-    _stopServerLogPolling();
-  }
-}
-
-function openServerLog() {
-  activeLogTab = "server";
-  if (!logPaneOpen) toggleLogPane();
-  else switchLogTab("server");
+  // Keep the full-page Pulse Logs tab live as new script calls stream in.
+  if (currentPage === "pulse-logs") _renderPulseLogsScript();
 }
 
 function _updateThemeToggle() {
@@ -728,11 +727,13 @@ var _prevLiveCounters = null;
 // The System Status gauges update live over the WebSocket every few
 // seconds, while the Command Center shows a one-time "Baseline completed"
 // snapshot time. This indicator makes the distinction explicit so a tech
-// knows the gauges are live ("Live") or stalled ("Reconnecting…").
+// knows the gauges are live (a green pulsing dot) or stalled ("Reconnecting…").
 var _wsEverConnected = false;
 function _liveIndicatorHtml() {
   if (_wsConnected) {
-    return `<span class="live-dot live-dot-on"></span><span>Live</span>`;
+    // Healthy = nothing shown (no dot, no label). The indicator only appears
+    // when the live stream drops, where it actually carries information.
+    return "";
   }
   // "Connecting…" on first load (never connected yet) vs "Reconnecting…"
   // after a drop — the latter implies a problem, the former is normal.
@@ -811,63 +812,411 @@ function _updateGaugeLive(name, val, opts) {
 
 const pageRenderers = {
   dashboard: renderDashboard,
-  system: renderSystem,
+  // Read-only fleet-audit roll-up under TRIAGE. Reuses the cached /api/system,
+  // /api/network and /api/cameras payloads — no own endpoint (skips PAGE_API).
+  "inspection-report": renderInspectionReport,
+  // System Overview was split into Hardware / Applications / Environment
+  // (nav restructure v3); the `system` id is retired but its /api/system
+  // payload still feeds all three (and Pixellot Software, below).
+  hardware: renderHardware,
+  applications: renderApplications,
+  environment: renderEnvironment,
   network: renderNetwork,
   cameras: renderCameras,
   services: renderServices,
   "disk-health": renderDiskHealth,
   events: renderEvents,
+  reboots: renderReboots,
+  "pixellot-logs": renderPixellotLogs,
+  "pulse-logs": renderPulseLogs,
+  help: renderHelp,
   reports: renderReports,
   share: renderShare,
   // Audio diagnostics re-enabled for demo. renderAudioComingSoon() is left
   // intact below as the gate — swap back to it to hide the tab again.
   audio: renderAudio,
   scoreconnect: renderScoreConnect,
+  // Pixellot Configuration was split into Pixellot Software / Camera Hardware /
+  // Calibrations (nav restructure v3); the `pixellot-config` id is retired but
+  // its /api/pixellot-config payload still feeds all three.
+  "pixellot-software": renderPixellotSoftware,
+  "camera-hardware": renderCameraHardware,
+  calibrations: renderCalibrations,
   "fault-isolator": renderFaultIsolator,
   settings: renderSettings,
   about: renderAbout,
 };
 
+// ── Pixellot Configuration ───────────────────────────────────
+// Local, on-host view of how the Pixellot software has this VPU + cameras
+// configured (NOT the Pixellot Cloud lane). Data: /api/pixellot-config —
+// registry + cameras.cfg + filesystem calibration, with live per-camera
+// firmware/tvMode from the shared CGI probe.
+
+const _PC_STALE_DAYS = 180; // calibration older than this is flagged stale
+
+function _pcFmtDate(iso) {
+  if (!iso) return "—";
+  const dt = new Date(iso);
+  if (isNaN(dt.getTime())) return esc(String(iso));
+  const days = Math.floor((Date.now() - dt.getTime()) / 86400000);
+  const label = dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  let ago = "";
+  if (days === 0) ago = " (today)";
+  else if (days === 1) ago = " (1 day ago)";
+  else if (days > 1) ago = ` (${days} days ago)`;
+  return esc(label) + `<span class="text-pulse-muted">${ago}</span>`;
+}
+
+function _pcDaysSince(iso) {
+  if (!iso) return null;
+  const dt = new Date(iso);
+  if (isNaN(dt.getTime())) return null;
+  return Math.floor((Date.now() - dt.getTime()) / 86400000);
+}
+
+// keepagentup.exe — confirm + run + inline result (mirrors the Services lane).
+// Shared by the Pixellot Software tab; attached to #pc-keepagent-btn.
+async function _pcRestartAgentHandler() {
+  const ok = confirm(
+    "Restart Pixellot Agent + Coordinator?\n\n" +
+    "This runs c:\\pixellot\\bin\\keepagentup.exe, which will briefly stop and " +
+    "relaunch both services. Recording may pause for a few seconds.\n\nProceed?"
+  );
+  if (!ok) return;
+  const btn = document.getElementById("pc-keepagent-btn");
+  const resultEl = document.getElementById("pc-keepagent-result");
+  btn.disabled = true;
+  btn.innerHTML = `${svgIcon("refresh", 14)} Restarting...`;
+  resultEl.classList.add("hidden");
+
+  const r = await apiPost("/api/services/restart-agent", {});
+  btn.disabled = false;
+  btn.innerHTML = `${svgIcon("zap", 14)} Restart Agent + Coordinator`;
+
+  const ok2 = r && r.success;
+  resultEl.className = "svc-quick-action-result " + (ok2 ? "svc-result-ok" : "svc-result-err");
+  resultEl.innerHTML = `
+    <div class="font-semibold">${ok2 ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
+    <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
+    ${r?.agentStatus ? `<div class="text-xs mt-2 text-pulse-muted">Agent: <span class="font-mono">${esc(r.agentStatus)}</span> &middot; Coordinator: <span class="font-mono">${esc(r.coordinatorStatus || "?")}</span></div>` : ""}
+    ${r?.stdout ? `<pre class="svc-result-output">${esc(r.stdout)}</pre>` : ""}
+    ${r?.stderr ? `<pre class="svc-result-output svc-result-stderr">${esc(r.stderr)}</pre>` : ""}
+  `;
+}
+
+// ── Pixellot Software (full) ─────────────────────────────────
+// Version + GPU/OS compatibility (from /api/system) plus install/agent and the
+// raw registry dump (from /api/pixellot-config). Reads both caches; the page id
+// no longer matches either key, so it kicks off both fetches and re-renders.
+function renderPixellotSoftware() {
+  const sys = cached("system");
+  const pc = cached("pixellot-config");
+  if (!sys || !pc) {
+    $page().innerHTML = sectionLoading("Pixellot Software");
+    Promise.all([fetchSection("system"), fetchSection("pixellot-config")])
+      .then(() => { if (currentPage === "pixellot-software") renderPixellotSoftware(); });
+    return;
+  }
+  const id = sys.identity || {};
+  const pix = id.pixellot || {};
+  const reg = (!pc.error && pc.registryConfig) || {};
+  const installPath = reg.InstallPath || reg.installPath || reg.Path || "C:\\Pixellot";
+  const regKeys = Object.keys(reg);
+  const regRows = regKeys.length
+    ? regKeys.map((k) => kvRow(k, reg[k])).join("")
+    : `<div class="info-chip">No HKLM\\SOFTWARE\\Pixellot values found.</div>`;
+
+  $page().innerHTML = `
+    ${pageHeader("Pixellot Software", "Pixellot version, install/agent config, and hardware compatibility.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;dataCache['pixellot-config']=null;renderPixellotSoftware()">${svgIcon("refresh", 14)} Refresh</button>`)}
+
+    <div class="card">
+      ${sectionTitle("zap", "Version & Compatibility")}
+      <div class="kv-grid kv-grid-wide">
+        ${kvRow("App Version", pix.version)}
+        ${kvRow("Image Version", pix.imageVersion)}
+      </div>
+      ${id.isNonVpuHost ? '<div class="info-chip mt-3">Not a VPU host</div>' : ""}
+      ${_pixCompatBannerHtml(pix.compat)}
+    </div>
+
+    <div class="card svc-quick-action">
+      ${sectionTitle("server", "Install & Agent")}
+      ${pc.error ? errorBox(pc.message) : `
+        <div class="kv-grid">
+          ${kvRow("Install Path", installPath)}
+          ${kvRow("Dependencies", reg.dependencies || reg.Dependencies)}
+          ${kvRowHtml("cameras.cfg", pc.cameraCfgExists ? badge("Present", "pass") : badge("Missing", "fail"))}
+        </div>
+        <div class="svc-quick-action-row mt-3">
+          <div>
+            <div class="svc-quick-action-title">Restart Pixellot Agent + Coordinator</div>
+            <div class="svc-quick-action-body">The documented first fix when the Agent or Coordinator hangs — try it before escalating. <span class="font-mono">Runs keepagentup.exe.</span></div>
+          </div>
+          <button class="btn-outline btn-ol-amber" id="pc-keepagent-btn">${svgIcon("zap", 14)} Restart Agent + Coordinator</button>
+        </div>
+        <div id="pc-keepagent-result" class="svc-quick-action-result hidden"></div>
+      `}
+    </div>
+
+    ${pc.error ? "" : `
+    <div class="card">
+      ${sectionTitle("database", "Registry — HKLM\\SOFTWARE\\Pixellot")}
+      <div class="kv-grid">${regRows}</div>
+    </div>`}
+  `;
+
+  document.getElementById("pc-keepagent-btn")?.addEventListener("click", _pcRestartAgentHandler);
+}
+
+// ── Camera Hardware ──────────────────────────────────────────
+// Full per-camera CGI probe — device identity, firmware, network config,
+// stream encoding, and image-sensor tuning — for every camera head detected
+// on an active port. Sourced from /api/cameras (the same probe the Camera
+// Connectivity lane runs), flattened across ports. Calibration status lives
+// on the Calibrations tab; role/IP/MAC live-link state lives on Connectivity.
+let _camHwHealing = false;  // one-shot guard: re-probe once when probe data is cold
+
+function renderCameraHardware() {
+  const d = cached("cameras");
+  if (!d) {
+    $page().innerHTML = sectionLoading("Camera Hardware");
+    fetchSection("cameras").then(() => { if (currentPage === "camera-hardware") renderCameraHardware(); });
+    return;
+  }
+  if (d.error) { $page().innerHTML = errorBox(d.message); return; }
+
+  // Flatten detected cameras across all ports, carrying port context. A down
+  // port has no live camera, so camerasDetected is already empty there.
+  const entries = [];
+  (d.ports || []).forEach((p) => {
+    (p.camerasDetected || []).forEach((c) => entries.push({ cam: c, port: p }));
+  });
+  const anyCgi = entries.some((e) => e.cam.cgiConfirmed);
+
+  const cards = entries.map((e) => _camHardwareCard(e.cam, e.port)).join("");
+  const empty = `<div class="cam-no-detect">No cameras detected on any active port.</div>`;
+  const noCgiNote = (entries.length && !anyCgi)
+    ? `<div class="cam-connecting-note">${svgIcon("refresh", 12)} Probing camera heads (Admin CGI)… identity-only data shown until probes complete. Use Refresh to force a re-probe.</div>`
+    : "";
+
+  $page().innerHTML = `
+    ${pageHeader("Camera Hardware",
+      "Full CGI probe of every camera head on an active port — identity, firmware, network, stream, and sensor settings.",
+      `<button class="btn-outline btn-ol-blue" onclick="_camHwRefresh()">${svgIcon("refresh", 14)} Refresh</button>`)}
+
+    <div class="card">
+      ${sectionTitle("camera", "Detected Cameras")}
+      <p class="text-xs text-pulse-muted mb-3">Probed live from each camera head over the Admin CGI (<span class="font-mono">Admin:1234</span> · <span class="font-mono">param.cgi</span>) — the same probe the <strong>Camera Connectivity</strong> tab uses for identification. Cameras on a down port aren't probed.</p>
+      ${noCgiNote}
+      ${entries.length ? `<div class="cam-hw-grid">${cards}</div>` : empty}
+    </div>
+  `;
+
+  // Cold-cache heal: the first /api/cameras paint can return before the CGI
+  // probe cache is warm, so cameras arrive identity-only. Force one blocking
+  // re-probe to fill in the hardware detail, guarded so it fires at most once
+  // per cold state (a truly unreachable camera stays "No CGI", no loop).
+  if (entries.length && !anyCgi && !_camHwHealing) {
+    _camHwHealing = true;
+    _camHwRefresh();
+  } else if (anyCgi) {
+    _camHwHealing = false;
+  }
+}
+
+// One camera's full probe, laid out as a detail card. Reuses the same leaf
+// formatters (_camDetailKv / _camStreamBlock / _fmtTvMode) the Connectivity
+// lane used before this data moved here.
+function _camHardwareCard(c, port) {
+  var hasCgi = !!c.cgiConfirmed;
+  var net = c.network || {};
+  var sensor = c.sensor || {};
+  var portLabel = port ? (port.portLabel || port.name) : null;
+
+  var deviceRows =
+    _camDetailKv("IP", c.ip) +
+    _camDetailKv("MAC", c.cgiMac || c.mac) +
+    _camDetailKv("Role", c.role) +
+    _camDetailKv("Identity", c.identitySource);
+  if (hasCgi) {
+    deviceRows +=
+      _camDetailKv("Model", c.model) +
+      _camDetailKv("Model No.", c.modelNumber) +
+      _camDetailKv("Serial", c.serialNumber) +
+      _camDetailKv("Firmware", c.firmwareVersion) +
+      _camDetailKv("TV Mode", _fmtTvMode(c.tvMode)) +
+      _camDetailKv("Brand", c.brand) +
+      _camDetailKv("Type", c.productType);
+  }
+
+  return '<div class="cam-detail-camera">' +
+    '<div class="cam-detail-camera-header">' +
+      svgIcon("camera", 14) + ' ' + esc(c.ip) +
+      (c.modelNumber ? ' <span class="cam-model-label">' + esc(c.modelNumber) + '</span>' : '') +
+      (portLabel ? ' <span class="cam-hw-port">' + esc(portLabel) + '</span>' : '') +
+      (hasCgi ? ' <span class="cam-cgi-badge" title="Camera answered Pulse&#39;s admin probe (CGI)">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none" title="Camera did not answer Pulse&#39;s admin probe (CGI) — it may be offline or unreachable">No CGI</span>') +
+    '</div>' +
+
+    // Device identity
+    '<div class="cam-detail-group">' +
+      '<div class="cam-detail-group-title">Device</div>' +
+      deviceRows +
+    '</div>' +
+
+    // Network config (CGI only)
+    (net.ip || net.subnet || net.gateway ? '<div class="cam-detail-group">' +
+      '<div class="cam-detail-group-title">Network Config</div>' +
+      _camDetailKv("IP Address", net.ip) +
+      _camDetailKv("Subnet", net.subnet) +
+      _camDetailKv("Gateway", net.gateway) +
+      _camDetailKv("DHCP", net.dhcp) +
+    '</div>' : '') +
+
+    // Streams (CGI only)
+    _camStreamBlock("Stream 0 — Primary", c.stream0) +
+    _camStreamBlock("Stream 1 — Secondary", c.stream1) +
+
+    // Image sensor (CGI only)
+    (sensor.exposure || sensor.brightness ? '<div class="cam-detail-group">' +
+      '<div class="cam-detail-group-title">Image Sensor</div>' +
+      _camDetailKv("Exposure", sensor.exposure) +
+      _camDetailKv("Brightness", sensor.brightness) +
+      _camDetailKv("Contrast", sensor.contrast) +
+      _camDetailKv("Saturation", sensor.colorLevel) +
+      _camDetailKv("Max Gain", sensor.maxShutterGain) +
+      _camDetailKv("Min Shutter", sensor.minShutterSpeed) +
+    '</div>' : '') +
+  '</div>';
+}
+
+// Refresh button + cold-cache heal: clears the backend CGI cache and blocks
+// on a fresh probe so the hardware detail is current (mirrors the Camera
+// Connectivity force-refresh).
+function _camHwRefresh() {
+  var btn = document.querySelector('[onclick*="_camHwRefresh"]');
+  if (btn) { btn.disabled = true; btn.style.opacity = "0.5"; }
+  api("/api/cameras?refresh=true").then(function(fresh) {
+    if (fresh && !fresh.error) {
+      dataCache.cameras = fresh;
+      if (currentPage === "camera-hardware") renderCameraHardware();
+    }
+  }).finally(function() {
+    var b = document.querySelector('[onclick*="_camHwRefresh"]');
+    if (b) { b.disabled = false; b.style.opacity = ""; }
+  });
+}
+
+// ── Calibrations ─────────────────────────────────────────────
+// Main-camera multisport stitch + OCR / scoreboard (pipdesign) calibration
+// status and advisories, from /api/pixellot-config.
+function renderCalibrations() {
+  const d = cached("pixellot-config");
+  if (!d) {
+    $page().innerHTML = sectionLoading("Camera Calibrations");
+    fetchSection("pixellot-config").then(() => { if (currentPage === "calibrations") renderCalibrations(); });
+    return;
+  }
+  if (d.error) { $page().innerHTML = errorBox(d.message); return; }
+  const cal = d.calibration || {};
+  const multi = cal.multisport || {};
+  const ocr = cal.ocr || {};
+
+  // Multisport sports with last-calibrated dates (kv-rows must live in a kv-grid).
+  const sports = multi.sports || [];
+  const sportRows = sports.map((s) => {
+    const stale = (_pcDaysSince(s.lastCalibrated) ?? 0) > _PC_STALE_DAYS;
+    const isPrimary = multi.primary && s.name && multi.primary.toLowerCase() === String(s.name).toLowerCase();
+    return `<div class="kv-row">
+      <span class="kv-label">${esc(s.name)}${isPrimary ? ` ${badge("primary", "muted")}` : ""}</span>
+      <span class="kv-value">${_pcFmtDate(s.lastCalibrated)} ${stale ? badge("stale", "warn") : ""}</span>
+    </div>`;
+  }).join("");
+  const sportsBlock = sports.length
+    ? `<div class="kv-grid">${sportRows}</div>`
+    : `<div class="info-chip">No sports calibrated — main camera multisport calibration is empty.</div>`;
+
+  $page().innerHTML = `
+    ${pageHeader("Camera Calibrations", "Main-camera multisport stitch and OCR / scoreboard calibration status.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache['pixellot-config']=null;renderCalibrations()">${svgIcon("refresh", 14)} Refresh</button>`)}
+
+    <div class="card">
+      ${sectionTitle("check", "Calibration")}
+      <div class="flex flex-wrap gap-4">
+        <div class="flex-1" style="min-width:260px">
+          <div class="flex items-center gap-2 mb-2"><span class="font-semibold">Main camera — multisport</span>${multi.calibrated ? badge("Calibrated", "pass") : badge("Not calibrated", "warn")}</div>
+          ${sportsBlock}
+        </div>
+        <div class="flex-1" style="min-width:260px">
+          <div class="flex items-center gap-2 mb-2"><span class="font-semibold">OCR / scoreboard</span>${ocr.calibrated ? badge("Calibrated", "pass") : badge("Not calibrated", "warn")}</div>
+          <div class="kv-grid">
+            ${kvRowHtml("Last calibrated", ocr.lastCalibrated ? _pcFmtDate(ocr.lastCalibrated) : "—")}
+            ${kvRowHtml("enhanced_pip.txt", ocr.hasEnhancedPip ? badge("present", "pass") : badge("missing", "warn"))}
+            ${kvRowHtml("innerobjects.txt", ocr.hasInnerObjects ? badge("present", "pass") : badge("missing", "warn"))}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // ── Dashboard ────────────────────────────────────────────────
 
 function _subsystemHealth(findings) {
-  // Map each finding category to the subsystem panel that owns it.
-  // Each finding lights up exactly ONE panel — no double-flagging.
-  const cats = {};
+  // Worst finding severity per category (2 = critical, 1 = warning), so a
+  // subsystem with a critical lights red and one with only warnings lights
+  // amber. Each finding maps to exactly ONE subsystem — no double-flagging.
+  const sev = {};
   (findings || []).forEach((f) => {
     const k = (f.category || "").toLowerCase();
-    cats[k] = (cats[k] || 0) + 1;
+    const rank = /^(critical|error)$/.test((f.severity || "").toLowerCase()) ? 2 : 1;
+    sev[k] = Math.max(sev[k] || 0, rank);
   });
+  const worst = (...keys) => Math.max(0, ...keys.map((k) => sev[k] || 0));
+  const lvl = (r) => (r === 2 ? "Critical" : r === 1 ? "Warning" : "Healthy");
 
   // Event Viewer doesn't generate dashboard findings of its own, so derive
   // its health from the cached event log: any recent Error-level entry
-  // turns the tile amber. (Falls back to Healthy when events aren't loaded.)
+  // turns it amber. (Falls back to Healthy when events aren't loaded.)
   const evEntries = (cached("events") || {}).entries || [];
   const evErrorCount = evEntries.filter(
     (e) => (e.level || "").toLowerCase() === "error"
   ).length;
 
+  // ids are nav page ids — updateNavHealth() lights the matching sidebar link.
+  // Re-keyed for the 6-group IA: the old `system` panel split into hardware /
+  // applications / environment, plus a Pixellot Software panel.
   return [
-    { id: "system", label: "System Overview", icon: "cpu",
-      health: (cats.system || cats.hardware || cats.performance) ? "Warning" : "Healthy",
-      desc: "Hardware, OS, uptime, and Pixellot software." },
+    { id: "hardware", label: "Hardware", icon: "cpu",
+      health: lvl(worst("hardware", "performance")),
+      desc: "CPU, memory, graphics, and storage." },
+    { id: "applications", label: "Applications", icon: "copy",
+      health: lvl(worst("software")),
+      desc: "Installed software that can interfere with streaming." },
+    { id: "environment", label: "Environment", icon: "globe",
+      health: lvl(worst("system")),
+      desc: "Windows OS, locale, uptime, users, and peripherals." },
+    { id: "pixellot-software", label: "Pixellot Software", icon: "zap",
+      health: lvl(worst("pixellot")),
+      desc: "Pixellot version and hardware compatibility." },
     { id: "network", label: "Network", icon: "wifi",
-      health: cats.network ? "Warning" : "Healthy",
-      desc: "IP, DNS, firewall, and port connectivity." },
+      health: lvl(worst("network")),
+      desc: "Internet, name lookups, firewall, and service ports." },
     { id: "cameras", label: "Camera Connectivity", icon: "camera",
-      health: cats.camera ? "Warning" : "Healthy",
-      desc: "NICs, link status, speed, and camera detection." },
-    { id: "services", label: "Pixellot Services", icon: "server",
-      health: cats.services ? "Warning" : "Healthy",
+      health: lvl(worst("camera")),
+      desc: "Camera ports — link, speed, and camera detection." },
+    { id: "services", label: "Service Status", icon: "server",
+      health: lvl(worst("services")),
       desc: "Agent, encoder, watchdog service status." },
-    { id: "disk-health", label: "Disk Health", icon: "hdd",
-      health: cats.storage ? "Warning" : "Healthy",
-      desc: "Free space, SMART health, disk events." },
-    { id: "events", label: "Event Viewer", icon: "triangle",
+    { id: "disk-health", label: "Disks", icon: "hdd",
+      health: lvl(worst("storage")),
+      desc: "Free space, drive health (SMART), and disk events." },
+    { id: "events", label: "Windows Events", icon: "triangle",
       health: evErrorCount > 0 ? "Warning" : "Healthy",
       desc: evErrorCount > 0
         ? `${evErrorCount} recent OS error${evErrorCount === 1 ? "" : "s"} logged.`
-        : "Recent OS errors from VPU providers." },
+        : "Recent Windows errors from VPU components." },
   ];
 }
 
@@ -878,7 +1227,20 @@ function _healthBadge(h) {
 }
 
 function _findingPageFor(cat) {
-  const map = { network: "network", camera: "cameras", services: "services", storage: "disk-health", hardware: "system", performance: "dashboard", system: "system" };
+  // Finding category → the tab that owns the fix. Updated for the 6-group IA:
+  // System Overview split into hardware / applications / environment, and
+  // pixellot findings land on the new Pixellot Software tab.
+  const map = {
+    network: "network",
+    camera: "cameras",
+    services: "services",
+    storage: "disk-health",
+    hardware: "hardware",
+    performance: "hardware",
+    system: "environment",        // timezone / uptime / OS
+    pixellot: "pixellot-software",
+    software: "applications",     // banned / concerning installed apps
+  };
   return map[(cat || "").toLowerCase()] || "dashboard";
 }
 
@@ -907,6 +1269,13 @@ function _renderNicRows(ports) {
       roles.push(null);
     }
   }
+  // Tooltips on each badge so the colored chips have plain-English meaning
+  // for techs glancing at the dashboard — was previously no legend at all.
+  const statusTip = {
+    Linked: "Link up at the expected speed",
+    Error:  "Link is up but degraded (e.g. 100 Mbps on a Gigabit port)",
+    Down:   "No physical link detected on this port",
+  };
   for (let i = 0; i < count; i++) {
     if (i < ports.length) {
       const p = ports[i];
@@ -918,19 +1287,26 @@ function _renderNicRows(ports) {
       else if (p.isDegraded) { status = "Error"; cls = "warn"; }
       else { status = "Linked"; cls = "pass"; }
       const role = roles[i];
-      const roleBadge = role ? ` <span class="badge-ol badge-ol-info">${esc(role)}</span>` : "";
+      const roleTip = role === "OCR"
+        ? "OCR (scoreboard overlay) camera port"
+        : role
+          ? "Pixellot camera detected on this port"
+          : "";
+      const roleBadge = role
+        ? ` <span class="badge-ol badge-ol-info" title="${esc(roleTip)}">${esc(role)}</span>`
+        : "";
       rows.push(`<div class="dash-nic-row">
         <span class="dash-nic-port">Port ${i + 1}</span>
         <span class="dash-nic-name">${esc(p.name)}</span>
         <span class="dash-nic-speed">${p.isUp ? esc(speed) : "—"}</span>
-        <span class="dash-nic-badges"><span class="badge-ol badge-ol-${cls}">${esc(status)}</span>${roleBadge}</span>
+        <span class="dash-nic-badges"><span class="badge-ol badge-ol-${cls}" title="${esc(statusTip[status] || "")}">${esc(status)}</span>${roleBadge}</span>
       </div>`);
     } else {
       rows.push(`<div class="dash-nic-row">
         <span class="dash-nic-port">Port ${i + 1}</span>
         <span class="dash-nic-name" style="color:var(--c-dimmer)">Not detected</span>
         <span class="dash-nic-speed">—</span>
-        <span class="dash-nic-badges"><span class="badge-ol badge-ol-muted">—</span></span>
+        <span class="dash-nic-badges"><span class="badge-ol badge-ol-muted" title="No NIC detected at this port index">—</span></span>
       </div>`);
     }
   }
@@ -953,9 +1329,9 @@ function _renderVolumes(volumes) {
   if (!volumes.length) return '<div class="text-xs text-pulse-muted py-2">No storage data</div>';
   return volumes.map((d) => {
     const pct = d.usedPercent || 0;
-    const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
+    const color = pct > 90 ? "var(--c-accent-red)" : pct > 80 ? "var(--c-accent-amber)" : "var(--c-accent-blue)";
     const role = d.deviceID === "C:" ? "System — OS & Pixellot"
-               : d.deviceID === "D:" ? "Recordings — local VOD storage"
+               : d.deviceID === "D:" ? "Recordings — local game-video storage"
                : "Storage";
     return `<div class="dash-vol-row">
       <div class="dash-vol-top">
@@ -971,6 +1347,72 @@ function _renderVolumes(volumes) {
       </div>
     </div>`;
   }).join("");
+}
+
+// ── Stream Readiness card ────────────────────────────────────
+// One PASS / WARN / FAIL call on whether this VPU can stream tonight's game.
+// The policy table + rollup live server-side (_compute_readiness in main.py);
+// this just renders the verdict record that rides on dash.readiness.
+var _RDY_META = {
+  PASS: { word: "PASS", icon: "check", tone: "pass", tag: "Game-ready — no blockers, no risks." },
+  WARN: { word: "WARNING", icon: "alert", tone: "warn", tag: "Will likely stream, but there are issues found that should be addressed to improve the system's reliability." },
+  FAIL: { word: "FAIL", icon: "x",     tone: "fail", tag: "Don't expect a clean broadcast tonight — this needs pre-game attention." },
+};
+
+// Demo-only: flip the card through all three states live (e.g. in a meeting).
+// Never set outside DEMO_MODE; the live verdict is used when it's null.
+var _readinessDemoState = null;
+function previewReadiness(state) {
+  _readinessDemoState = (_readinessDemoState === state) ? null : state;
+  renderDashboard();
+}
+function _demoVerdict(state) {
+  var stamp = new Date().toISOString();
+  var nicRisk = { code: "nic-slow", category: "Camera", title: "NIC Port 2 at 100 Mbps (expected 1 Gbps)", recommendation: "Camera streams on this port drop frames at reduced bandwidth. Check the cable (Cat5e+), reseat the connector, and confirm the switch port auto-negotiates." };
+  if (state === "PASS") return { status: "PASS", policyVersion: "v1", timestamp: stamp, blockers: [], risks: [], info: [] };
+  if (state === "WARN") return { status: "WARN", policyVersion: "v1", timestamp: stamp, blockers: [], info: [], risks: [
+    nicRisk,
+    { code: "disk-d-critical", category: "Storage", title: "Recording drive (D:) almost full", recommendation: "D: is 93% full. The post-event recording (VOD) is written to D: — if it fills during the game the recording may not save. Free space on D:." },
+  ] };
+  return { status: "FAIL", policyVersion: "v1", timestamp: stamp, info: [], risks: [nicRisk], blockers: [
+    { code: "stream-2088-blocked", category: "Network", title: "Streaming is blocked — VPU can't broadcast", recommendation: "The venue's network is blocking UDP/2088 to prod-echo.pixellot.tv. This connection has no backup, so the game can't broadcast until venue IT opens it." },
+  ] };
+}
+
+function readinessCard(verdict, freshness) {
+  var isDemo = (typeof window !== "undefined" && window.__PULSE_DEMO_MODE);
+  if (isDemo && _readinessDemoState) verdict = _demoVerdict(_readinessDemoState);
+  if (!verdict || !verdict.status) return "";
+  var meta = _RDY_META[verdict.status] || _RDY_META.WARN;
+  var blockers = verdict.blockers || [];
+  var risks = verdict.risks || [];
+  var asOf = verdict.timestamp ? new Date(verdict.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+
+  var demoBar = isDemo
+    ? '<div class="rdy-demo-bar"><span class="rdy-demo-label">Demo preview</span>'
+      + ["PASS", "WARN", "FAIL"].map(function(s) {
+          var active = (_readinessDemoState === s) ? " rdy-demo-chip-active" : "";
+          return '<button class="rdy-demo-chip rdy-demo-chip-' + s.toLowerCase() + active + '" onclick="previewReadiness(\'' + s + '\')">' + s + '</button>';
+        }).join("")
+      + (_readinessDemoState ? '<button class="rdy-demo-chip rdy-demo-reset" onclick="previewReadiness(null)">live</button>' : '')
+      + '</div>'
+    : "";
+
+  return '<div class="card rdy-card rdy-card-' + meta.tone + '">'
+    + '<div class="rdy-main">'
+    +   '<div class="rdy-badge rdy-badge-' + meta.tone + '">' + svgIcon(meta.icon, 28) + '<span class="rdy-badge-word">' + meta.word + '</span></div>'
+    +   '<div class="rdy-headline">'
+    +     '<div class="rdy-title-row"><h3 class="rdy-title">Stream Readiness</h3>' + (asOf ? '<span class="rdy-asof">as of ' + esc(asOf) + '</span>' : '') + '</div>'
+    +     '<p class="rdy-tag">' + esc(meta.tag) + '</p>'
+    +     (freshness ? '<p class="rdy-fresh">' + svgIcon("check", 12) + ' ' + esc(freshness) + '</p>' : '')
+    +   '</div>'
+    + '</div>'
+    + '<div class="rdy-foot">'
+    +   '<span>' + blockers.length + ' blocker' + (blockers.length === 1 ? '' : 's') + ' · ' + risks.length + ' risk' + (risks.length === 1 ? '' : 's') + '</span>'
+    +   '<span class="rdy-policy">policy ' + esc(verdict.policyVersion || "v1") + '</span>'
+    + '</div>'
+    + demoBar
+    + '</div>';
 }
 
 function renderDashboard() {
@@ -1037,19 +1479,28 @@ function renderDashboard() {
   const subsystems = _subsystemHealth(findings);
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const baselineStr = subsystems.length + " panel" + (subsystems.length === 1 ? "" : "s") + " checked";
 
   // Network config — prefer dashboard-embedded data, fall back to full network cache
   const netCfg = dash.networkConfig || net.config || {};
   const uplinkName = netCfg.uplinkAdapter?.interfaceAlias || "—";
-  // On a Pixellot VPU the uplink/gateway-bearing NIC is the motherboard's
+  // On a Pixellot VPU the uplink/gateway-bearing NIC should be the motherboard's
   // onboard port (cameras live on the dedicated multiport NIC card with
-  // link-local IPs and no gateway). Call it out by its real-world role
-  // rather than the opaque Windows alias ("Ethernet 13"), keeping the raw
-  // alias as a parenthetical for cross-reference. Only on actual VPUs.
-  const _uplinkIsOnboard = !id.isNonVpuHost && uplinkName !== "—";
-  const uplinkDisplay = _uplinkIsOnboard
-    ? `Motherboard Network Port <span class="dash-net-sub">(${esc(uplinkName)})</span>`
-    : esc(uplinkName);
+  // link-local IPs and no gateway). The backend tags adapter roles by PCI bus,
+  // so we only assert "Motherboard Network Port" when the uplink really is the
+  // onboard port — if the internet has been plugged into a camera-NIC port, say
+  // so instead of mislabeling it (the matching critical finding has the fix).
+  const _uplinkAdapter = (netCfg.adapters || []).find(
+    (a) => a.name === uplinkName || a.interfaceAlias === uplinkName);
+  const _uplinkRole = netCfg.uplinkRole || (_uplinkAdapter && _uplinkAdapter.role);
+  const _onVpu = !id.isNonVpuHost && uplinkName !== "—";
+  let uplinkDisplay;
+  if (_onVpu && _uplinkRole === "camera")
+    uplinkDisplay = `${esc(uplinkName)} <span class="dash-net-sub">(camera-NIC port — should be the motherboard port)</span>`;
+  else if (_onVpu)
+    uplinkDisplay = `Motherboard Network Port <span class="dash-net-sub">(${esc(uplinkName)})</span>`;
+  else
+    uplinkDisplay = esc(uplinkName);
   const ipConfigs = netCfg.ipConfig || netCfg.ipConfigurations || [];
   const uplinkIp = ipConfigs.find((ip) => ip.interfaceAlias === uplinkName);
   const ipAddr = _first(uplinkIp?.ipv4Address) || "—";
@@ -1083,24 +1534,15 @@ function renderDashboard() {
     <!-- Header -->
     <div class="dash-header">
       <div>
-        <h2 class="text-2xl font-bold text-white">Dashboard</h2>
+        <div class="dash-title-row">
+          <h2 class="text-2xl font-bold text-white">Dashboard</h2>
+        </div>
         ${vpuName ? `<p class="text-sm text-pulse-muted">${esc(vpuName)}</p>` : ""}
       </div>
-      <div class="dash-actions">
-        <button class="btn-outline btn-ol-green" onclick="refreshAll()">
-          ${svgIcon("play", 14)} Run All Diagnostics
-        </button>
-        <button class="btn-outline btn-ol-blue" onclick="navigate('reports')">
-          ${svgIcon("download", 14)} Support Bundle
-        </button>
-        <button class="btn-outline btn-ol-blue" onclick="dataCache.dashboard=null;renderDashboard()">
-          ${svgIcon("refresh", 14)} Refresh Dashboard
-        </button>
-        <span class="dash-sev-pill dash-sev-${sevColor}">
-          <span class="dash-sev-dot"></span> ${esc(sevLabel)}
-        </span>
-      </div>
     </div>
+
+    <!-- Stream Readiness — lead the triage page with "are we game-ready?" -->
+    ${readinessCard(dash.readiness, baselineStr)}
 
     ${(dash.sourceErrors && dash.sourceErrors.length) ? `
     <!-- Partial-failure notice — some diagnostic scripts didn't complete -->
@@ -1115,59 +1557,33 @@ function renderDashboard() {
       </button>
     </div>` : ""}
 
-    <!-- Command Center (left: severity + baseline + top findings) + Subsystems (right) -->
-    <div class="dash-top-grid">
-      <div class="card command-center">
-        <h3 class="card-label">COMMAND CENTER</h3>
-        <div class="cc-severity">${sevHtml}</div>
-        <div class="baseline-bar">
-          ${svgIcon("check", 14)}
-          Baseline completed ${esc(timeStr)} &bull; ${subsystems.length} panel${subsystems.length === 1 ? "" : "s"} checked &bull; ${totalFindings} finding${totalFindings === 1 ? "" : "s"}
+    ${totalFindings > 0 ? `
+    <!-- Findings — lightweight list of the active warnings/criticals -->
+    <div class="card dash-findings-card">
+      <div class="flex justify-between items-center mb-2">
+        <div class="dash-card-hdr mb-0">
+          <span class="dash-hdr-icon">${svgIcon("clipboard-list", 16)}</span>
+          <h3 class="card-label mb-0">FINDINGS</h3>
         </div>
-        <div class="cc-findings">
-          <div class="flex justify-between items-center mb-2">
-            <h3 class="card-label mb-0">FINDINGS</h3>
-            ${totalFindings > 0 ? `<span class="cc-findings-count">${totalFindings} issue${totalFindings === 1 ? "" : "s"}</span>` : ""}
-          </div>
-          <div class="cc-findings-list">
-            ${visibleFindings.length
-              ? visibleFindings.map((f, i) => {
-                  // Thin divider whenever the severity group changes, so the
-                  // critical/warning clusters read as distinct groups.
-                  const prev = visibleFindings[i - 1];
-                  const groupBreak = i > 0 && prev.severity !== f.severity
-                    ? `<div class="cc-findings-divider"></div>` : "";
-                  const fp = _findingPageFor(f.category);
-                  const encTitle = encodeURIComponent(f.title || "");
-                  return groupBreak + `
-                <a class="finding-item" href="#${esc(fp)}" onclick="event.preventDefault();findingJump('${esc(fp)}','${encTitle}')" title="Opens the ${esc(f.category)} tab and highlights this issue">
-                  <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
-                  <span class="finding-cat finding-cat-${esc(f.severity)}">[${esc((f.severity || "").toUpperCase())}]</span>
-                  <span class="finding-title">${esc(f.title)}</span>
-                  <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
-                </a>`;
-                }).join("")
-              : `<div class="dash-no-findings">${svgIcon("check", 16)} <span>No active findings detected.</span></div>`
-            }
-            ${overflowCount > 0 ? `<div class="cc-findings-overflow">+${overflowCount} more — visit the relevant tab for the full list</div>` : ""}
-          </div>
-        </div>
+        <span class="cc-findings-count">${totalFindings} issue${totalFindings === 1 ? "" : "s"}</span>
       </div>
-      <div class="card subsystems-panel">
-        <h3 class="card-label">SUBSYSTEMS</h3>
-        <div class="dash-sub-grid dash-sub-grid-full">
-          ${subsystems.map((s) => `
-            <a class="dash-sub-tile" href="#${esc(s.id)}" onclick="event.preventDefault();navigate('${esc(s.id)}')">
-              <div class="dash-sub-top">
-                <span class="dash-sub-icon">${svgIcon(s.icon, 14)}</span>
-                <span class="dash-sub-name">${esc(s.label)}</span>
-                ${_healthBadge(s.health)}
-              </div>
-              <p class="dash-sub-desc">${esc(s.desc)}</p>
-            </a>`).join("")}
-        </div>
+      <div class="cc-findings-list">
+        ${visibleFindings.map((f, i) => {
+          const prev = visibleFindings[i - 1];
+          const groupBreak = i > 0 && prev.severity !== f.severity ? `<div class="cc-findings-divider"></div>` : "";
+          const fp = _findingPageFor(f.category);
+          const encTitle = encodeURIComponent(f.title || "");
+          return groupBreak + `
+        <a class="finding-item" href="#${esc(fp)}" onclick="event.preventDefault();findingJump('${esc(fp)}','${encTitle}')" title="Opens the ${esc(f.category)} tab and highlights this issue">
+          <span class="finding-dot finding-dot-${esc(f.severity)}"></span>
+          <span class="finding-cat finding-cat-${esc(f.severity)}">[${esc((f.severity || "").toUpperCase())}]</span>
+          <span class="finding-title">${esc(f.title)}</span>
+          <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
+        </a>`;
+        }).join("")}
+        ${overflowCount > 0 ? `<div class="cc-findings-overflow">+${overflowCount} more — visit the relevant tab for the full list</div>` : ""}
       </div>
-    </div>
+    </div>` : ""}
 
     ${id.isNonVpuHost ? `
     <!-- Non-VPU Host Banner -->
@@ -1182,7 +1598,10 @@ function renderDashboard() {
     <!-- VPU Identity + Pixellot Software -->
     <div class="dash-2col">
       <div class="card">
-        <h3 class="card-label">VPU IDENTITY</h3>
+        <div class="dash-card-hdr">
+          <span class="dash-hdr-icon">${svgIcon("id-card", 16)}</span>
+          <h3 class="card-label mb-0">VPU IDENTITY</h3>
+        </div>
         ${vpuName ? `<div class="text-sm text-pulse-muted mb-3">${esc(vpuName)}</div>` : ""}
         <div class="dash-kv">
           <span class="dash-kv-l">Model</span><span class="dash-kv-v">${esc(id.model || "—")}</span>
@@ -1193,7 +1612,10 @@ function renderDashboard() {
         </div>
       </div>
       <div class="card">
-        <h3 class="card-label">PIXELLOT SOFTWARE</h3>
+        <div class="dash-card-hdr">
+          <span class="dash-hdr-icon">${svgIcon("package", 16)}</span>
+          <h3 class="card-label mb-0">PIXELLOT SOFTWARE</h3>
+        </div>
         <div class="text-lg font-bold text-white">${esc(id.pixellotVersion || "—")}</div>
         <div class="text-xs text-pulse-muted mb-3">App Version</div>
         <div class="dash-kv">
@@ -1206,7 +1628,10 @@ function renderDashboard() {
     <!-- System Status Gauges -->
     <div class="card dash-gauges-card">
       <div class="dash-card-hdr-row">
-        <h3 class="card-label mb-0">SYSTEM STATUS</h3>
+        <div class="dash-card-hdr mb-0">
+          <span class="dash-hdr-icon">${svgIcon("activity", 16)}</span>
+          <h3 class="card-label mb-0">SYSTEM STATUS</h3>
+        </div>
         <span id="live-indicator" class="live-indicator">${_liveIndicatorHtml()}</span>
       </div>
       <div class="dash-gauges-row" id="dash-gauges">
@@ -1223,7 +1648,7 @@ function renderDashboard() {
           <div class="dash-gauge-sub">${esc(diskCaption)}</div>
         </div>
         <div class="dash-gauge-col" data-gauge="temp">
-          ${gauge("Temperature", temp != null ? Math.round(temp) : null, "°C", "#3b82f6", { max: 100, warn: 65, crit: 85 })}
+          ${gauge("Temperature", temp != null ? Math.round(temp) : null, "°C", "var(--c-accent-blue)", { max: 100, warn: 65, crit: 85 })}
         </div>
         <div class="dash-gauge-col dash-gauge-col-center">
           <div class="dash-icon-tile">
@@ -1344,7 +1769,14 @@ function kvRowHtml(label, html) {
 
 function severityChip(sev, text) {
   const s = (sev || "").toLowerCase();
-  const cls = s === "critical" || s === "error" ? "sev-chip-crit" : s === "warning" ? "sev-chip-warn" : "sev-chip-ok";
+  // muted/info/none → neutral grey, so "no data" states don't masquerade as
+  // healthy green. Everything unrecognised still falls through to ok (green) —
+  // unchanged for existing callers.
+  const cls =
+    s === "critical" || s === "error" ? "sev-chip-crit" :
+    s === "warning" ? "sev-chip-warn" :
+    s === "muted" || s === "info" || s === "none" || s === "unknown" ? "sev-chip-muted" :
+    "sev-chip-ok";
   return `<span class="sev-chip ${cls}">${esc(text || sev)}</span>`;
 }
 
@@ -1355,86 +1787,115 @@ function _debounce(fn, ms) {
 
 // ── System Overview ──────────────────────────────────────────
 
-function renderSystem() {
+// ── System Information tabs (split from the old System Overview) ───
+// Hardware, Applications, and Environment — plus Pixellot Software under
+// PIXELLOT CONFIGURATION — all read the shared `/api/system` payload (cached
+// under the "system" key), so one fetch feeds every tab. The page id no longer
+// matches the cache key, so each renderer kicks off the fetch and re-renders
+// itself when the data lands.
+
+// Pixellot version + GPU/OS compatibility banner. Lives on the Pixellot
+// Software tab; pulled from /api/system identity.pixellot.compat.
+function _pixCompatBannerHtml(c) {
+  if (!c || c.status === "skip") return "";
+  let cls = "sys-lifecycle-ok";
+  let title = "";
+  let detail = "";
+  if (c.status === "ok") {
+    cls = "sys-lifecycle-ok";
+    title = "Version compatible with hardware";
+    detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : " — no version limit"}.`;
+  } else if (c.status === "over") {
+    cls = "sys-lifecycle-crit";
+    title = "Version exceeds hardware compatibility cap";
+    detail = `Installed ${esc(c.installedVersion)} is newer than ${esc(c.maxVersion)} (max for ${esc(c.architecture)}). Downgrade to stay supported.`;
+  } else if (c.status === "no-gpu") {
+    cls = "sys-lifecycle-crit";
+    title = "No NVIDIA GPU detected";
+    detail = "Pixellot requires NVIDIA hardware for encoding.";
+  } else if (c.status === "anomaly") {
+    cls = "sys-lifecycle-crit";
+    title = "Unexpected GPU architecture";
+    detail = `${esc(c.architecture)} is not a known Pixellot deployment — escalate to support.`;
+  }
+  return `<div class="sys-lifecycle ${cls} mt-3">
+    ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
+    <div>
+      <div class="font-semibold">${esc(title)}</div>
+      <div class="text-xs mt-1">${detail}</div>
+    </div>
+  </div>`;
+}
+
+// Windows edition lifecycle (end-of-support) banner. Lives on the Environment
+// tab; pulled from /api/system identity.operatingSystem.lifecycle.
+function _osLifecycleBannerHtml(lc) {
+  if (!lc) return "";
+  const days = lc.daysToEos;
+  let cls = "sys-lifecycle-ok";
+  let label = "";
+  if (days == null) {
+    label = `End-of-support: ${lc.eosDate}`;
+  } else if (days < 0) {
+    cls = "sys-lifecycle-crit";
+    label = `End-of-support reached on ${lc.eosDate} (${Math.abs(days)} days ago)`;
+  } else if (days < 90) {
+    cls = "sys-lifecycle-crit";
+    label = `End-of-support in ${days} days (${lc.eosDate})`;
+  } else if (days < 365) {
+    cls = "sys-lifecycle-warn";
+    const months = Math.floor(days / 30);
+    label = `End-of-support in ~${months} months (${lc.eosDate})`;
+  } else {
+    const years = Math.floor(days / 365);
+    label = `End-of-support: ${lc.eosDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
+  }
+  return `<div class="sys-lifecycle ${cls} mt-3">
+    ${svgIcon(cls === "sys-lifecycle-ok" ? "info" : "alert", 14)}
+    <div>
+      <div class="font-semibold">${esc(lc.ltscRelease)}</div>
+      <div class="text-xs mt-1">${esc(label)}${lc.endOfServicingDate ? ` &middot; End-of-servicing: ${esc(lc.endOfServicingDate)}` : ""}</div>
+    </div>
+  </div>`;
+}
+
+// ── Hardware ─────────────────────────────────────────────────
+function renderHardware() {
   const data = cached("system");
-  if (!data) { $page().innerHTML = sectionLoading("System Overview"); fetchSection("system"); return; }
-
-  const id = data.identity || {};
-  const hw = data.hardware || {};
-  const sw = data.software || {};
-
+  if (!data) {
+    $page().innerHTML = sectionLoading("Hardware");
+    fetchSection("system").then(() => { if (currentPage === "hardware") renderHardware(); });
+    return;
+  }
   if (data.identity?.error && data.hardware?.error) {
     $page().innerHTML = errorBox(data.identity?.message || data.hardware?.message);
     return;
   }
 
-  const os = id.operatingSystem || {};
+  const id = data.identity || {};
+  const hw = data.hardware || {};
   const cs = id.computerSystem || {};
   const bios = id.bios || {};
-  const pix = id.pixellot || {};
   const procs = hw.processors || [];
   const memory = hw.memory || [];
   const gpus = hw.gpus || [];
   const drives = hw.diskDrives || [];
-  const swList = sw.software || [];
 
   $page().innerHTML = `
-    ${pageHeader("System Overview", "Hardware identity, OS, Pixellot software, and installed software",
-      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderSystem()">
+    ${pageHeader("Hardware", "CPU, memory, graphics, storage, and motherboard identity.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderHardware()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
     )}
 
-    <!-- Identity + Pixellot Software -->
-    <div class="dash-2col">
-      <div class="card">
-        ${sectionTitle("cpu", "VPU Identity")}
-        <div class="kv-grid">
-          ${kvRow("Hostname", cs.name)}
-          ${kvRow("Manufacturer", cs.manufacturer)}
-          ${kvRow("Model", cs.model)}
-          ${kvRow("Serial Number", bios.serialNumber)}
-          ${kvRow("Uptime", id.uptime?.formatted)}
-        </div>
-      </div>
-      <div class="card">
-        ${sectionTitle("server", "Pixellot Software")}
-        <div class="kv-grid">
-          ${kvRow("App Version", pix.version)}
-          ${kvRow("Image Version", pix.imageVersion)}
-        </div>
-        ${id.isNonVpuHost ? '<div class="info-chip mt-3">Not a VPU host</div>' : ""}
-        ${(() => {
-          const c = pix.compat;
-          if (!c || c.status === "skip") return "";
-          let cls = "sys-lifecycle-ok";
-          let title = "";
-          let detail = "";
-          if (c.status === "ok") {
-            cls = "sys-lifecycle-ok";
-            title = "Version compatible with hardware";
-            detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : " — no version limit"}.`;
-          } else if (c.status === "over") {
-            cls = "sys-lifecycle-crit";
-            title = "Version exceeds hardware compatibility cap";
-            detail = `Installed ${esc(c.installedVersion)} is newer than ${esc(c.maxVersion)} (max for ${esc(c.architecture)}). Downgrade to stay supported.`;
-          } else if (c.status === "no-gpu") {
-            cls = "sys-lifecycle-crit";
-            title = "No NVIDIA GPU detected";
-            detail = "Pixellot requires NVIDIA hardware for encoding.";
-          } else if (c.status === "anomaly") {
-            cls = "sys-lifecycle-crit";
-            title = "Unexpected GPU architecture";
-            detail = `${esc(c.architecture)} is not a known Pixellot deployment — escalate to support.`;
-          }
-          return `<div class="sys-lifecycle ${cls} mt-3">
-            ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
-            <div>
-              <div class="font-semibold">${esc(title)}</div>
-              <div class="text-xs mt-1">${detail}</div>
-            </div>
-          </div>`;
-        })()}
+    <!-- VPU Identity -->
+    <div class="card">
+      ${sectionTitle("cpu", "VPU Identity")}
+      <div class="kv-grid kv-grid-wide">
+        ${kvRow("Hostname", cs.name)}
+        ${kvRow("Manufacturer", cs.manufacturer)}
+        ${kvRow("Model", cs.model)}
+        ${kvRow("Serial Number", bios.serialNumber)}
       </div>
     </div>
 
@@ -1515,53 +1976,30 @@ function renderSystem() {
       </div>
     </div>
 
-    <!-- OS & Locale -->
-    <div class="card mt-4">
-      ${sectionTitle("monitor", "Operating System & Locale")}
-      <div class="kv-grid kv-grid-wide">
-        ${kvRow("OS", os.caption)}
-        ${kvRow("Version", os.version)}
-        ${kvRow("Build", os.buildNumber)}
-        ${kvRow("Architecture", os.osArchitecture)}
-        ${kvRow("Install Date", os.installDate ? String(os.installDate).slice(0, 10) : null)}
-        ${kvRow("Timezone", id.timezone)}
-        ${kvRow("Locale", id.locale)}
-      </div>
-      ${(() => {
-        const lc = os.lifecycle;
-        if (!lc) return "";
-        const days = lc.daysToEos;
-        let cls = "sys-lifecycle-ok";
-        let label = "";
-        if (days == null) {
-          label = `End-of-support: ${lc.eosDate}`;
-        } else if (days < 0) {
-          cls = "sys-lifecycle-crit";
-          label = `End-of-support reached on ${lc.eosDate} (${Math.abs(days)} days ago)`;
-        } else if (days < 90) {
-          cls = "sys-lifecycle-crit";
-          label = `End-of-support in ${days} days (${lc.eosDate})`;
-        } else if (days < 365) {
-          cls = "sys-lifecycle-warn";
-          const months = Math.floor(days / 30);
-          label = `End-of-support in ~${months} months (${lc.eosDate})`;
-        } else {
-          const years = Math.floor(days / 365);
-          label = `End-of-support: ${lc.eosDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
-        }
-        return `<div class="sys-lifecycle ${cls} mt-3">
-          ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
-          <div>
-            <div class="font-semibold">${esc(lc.ltscRelease)}</div>
-            <div class="text-xs mt-1">${esc(label)}${lc.endOfServicingDate ? ` &middot; End-of-servicing: ${esc(lc.endOfServicingDate)}` : ""}</div>
-          </div>
-        </div>`;
-      })()}
-    </div>
+  `;
+}
 
-    <!-- Software Inventory -->
-    <div class="card mt-4">
-      ${sectionTitle("server", "Installed Software (" + swList.length + ")")}
+// ── Applications ─────────────────────────────────────────────
+function renderApplications() {
+  const data = cached("system");
+  if (!data) {
+    $page().innerHTML = sectionLoading("Applications");
+    fetchSection("system").then(() => { if (currentPage === "applications") renderApplications(); });
+    return;
+  }
+  const sw = data.software || {};
+  if (sw.error) { $page().innerHTML = errorBox(sw.message); return; }
+  const swList = sw.software || [];
+
+  $page().innerHTML = `
+    ${pageHeader("Applications", "Installed software, with anything that can interfere with streaming flagged.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderApplications()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <div class="card">
+      ${sectionTitle("copy", "Installed Software (" + swList.length + ")")}
       ${(() => {
         // Group concerning entries by severity for the summary banner.
         const flagged = swList.filter(s => s.concern);
@@ -1579,32 +2017,33 @@ function renderSystem() {
       ${swList.length ? `
         <input type="text" id="sw-filter" placeholder="Filter software..." class="sw-filter-input"/>
         <div class="sw-table-wrap">
-          <table class="data-table" id="sw-table"><thead><tr>
-            <th>Name</th><th>Version</th><th>Publisher</th><th>Concern</th>
-          </tr></thead><tbody>
           ${(() => {
-            // Sort concerning entries to the top, critical first
+            const hasConcerns = swList.some(s => s.concern);
+            // Drop the Concern column entirely when nothing is flagged —
+            // saves a wasted column of dashes on a healthy box.
             const sevRank = { critical: 0, warning: 1 };
             const sorted = [...swList].sort((a, b) => {
               const ra = a.concern ? sevRank[a.concern.severity] ?? 9 : 99;
               const rb = b.concern ? sevRank[b.concern.severity] ?? 9 : 99;
               return ra - rb;
             });
-            return sorted.map(s => {
+            const rows = sorted.map(s => {
               const c = s.concern;
               const rowCls = c ? ` class="sw-row-${esc(c.severity)}"` : "";
-              const concernCell = c
+              const concernCell = hasConcerns ? `<td>${c
                 ? `<span class="sw-concern-badge sw-concern-${esc(c.severity)}" title="${esc(c.reason)}">${esc(c.shortLabel || c.label)}</span>`
-                : `<span class="text-pulse-muted text-xs">—</span>`;
+                : `<span class="text-pulse-muted text-xs">—</span>`}</td>` : "";
               return `<tr${rowCls}>
                 <td>${esc(s.displayName)}</td>
                 <td class="font-mono text-xs">${esc(s.displayVersion)}</td>
                 <td class="text-pulse-muted">${esc(s.publisher)}</td>
-                <td>${concernCell}</td>
+                ${concernCell}
               </tr>`;
             }).join("");
+            return `<table class="data-table" id="sw-table"><thead><tr>
+              <th>Name</th><th>Version</th><th>Publisher</th>${hasConcerns ? "<th>Concern</th>" : ""}
+            </tr></thead><tbody>${rows}</tbody></table>`;
           })()}
-          </tbody></table>
         </div>
       ` : '<p class="text-pulse-muted text-sm">No software data</p>'}
     </div>
@@ -1636,6 +2075,125 @@ function renderSystem() {
       }
     });
   }
+}
+
+// ── Environment ──────────────────────────────────────────────
+function renderEnvironment() {
+  const data = cached("system");
+  if (!data) {
+    $page().innerHTML = sectionLoading("Environment");
+    fetchSection("system").then(() => { if (currentPage === "environment") renderEnvironment(); });
+    return;
+  }
+  const id = data.identity || {};
+  if (id.error) { $page().innerHTML = errorBox(id.message); return; }
+  const os = id.operatingSystem || {};
+
+  $page().innerHTML = `
+    ${pageHeader("Environment", "Windows OS, locale, uptime, user accounts, and connected peripherals.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;renderEnvironment()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <!-- OS & Locale -->
+    <div class="card">
+      ${sectionTitle("globe", "Operating System & Locale")}
+      <div class="kv-grid kv-grid-wide">
+        ${kvRow("OS", os.caption)}
+        ${kvRow("Version", os.version)}
+        ${kvRow("Build", os.buildNumber)}
+        ${kvRow("Architecture", os.osArchitecture)}
+        ${kvRow("Install Date", os.installDate ? String(os.installDate).slice(0, 10) : null)}
+        ${kvRow("Uptime", id.uptime?.formatted)}
+        ${kvRow("Timezone", id.timezone)}
+        ${kvRow("Locale", id.locale)}
+      </div>
+      ${_osLifecycleBannerHtml(os.lifecycle)}
+    </div>
+
+    <!-- Users & Domains + Peripherals (lazy-filled below) -->
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("users", "Users & Domains")}
+        <div id="sys-users-body">${loading()}</div>
+      </div>
+      <div class="card">
+        ${sectionTitle("mouse", "Peripherals")}
+        <div id="sys-peripherals-body">${loading()}</div>
+      </div>
+    </div>
+  `;
+
+  // Users & Domains + Peripherals — separate endpoints (not in the cached
+  // system payload), so the tab paints immediately and these fill in.
+  // Guard on currentPage so a late response after navigating away can't
+  // write into another tab.
+  api("/api/users-domains").then(d => {
+    if (currentPage !== "environment") return;
+    const el = document.getElementById("sys-users-body");
+    if (el) el.innerHTML = _usersPanelHtml(d);
+  }).catch(() => {});
+  api("/api/peripherals").then(d => {
+    if (currentPage !== "environment") return;
+    const el = document.getElementById("sys-peripherals-body");
+    if (el) el.innerHTML = _peripheralsPanelHtml(d);
+  }).catch(() => {});
+}
+
+function _usersPanelHtml(d) {
+  if (!d || d.error) return `<p class="text-sm text-pulse-muted">${esc((d && d.message) || "Could not read users / domain.")}</p>`;
+  const dom = d.domain || {};
+  const users = d.users || [];
+  const membership = dom.partOfDomain
+    ? `Domain &middot; ${esc(dom.domain || "—")}`
+    : `Workgroup &middot; ${esc(dom.workgroup || "—")}`;
+  return `
+    <div class="kv-grid">
+      ${kvRow("Computer", dom.computerName)}
+      ${kvRowHtml("Membership", `<span class="${dom.partOfDomain ? "status-pass" : ""}">${membership}</span>`)}
+      ${kvRow("Role", dom.role)}
+      ${kvRow("Logged in", dom.currentUser || "— (no interactive user)")}
+    </div>
+    <div class="text-xs text-pulse-muted mt-3 mb-1">Local accounts: ${esc(String(d.userCount || 0))} &middot; ${esc(String(d.adminCount || 0))} admin</div>
+    ${users.length ? `
+      <table class="data-table"><thead><tr><th>Account</th><th>Access</th><th>Status</th></tr></thead><tbody>
+      ${users.map(u => `<tr>
+        <td><span class="font-mono">${esc(u.name)}</span>${u.fullName ? `<div class="text-xs text-pulse-muted">${esc(u.fullName)}</div>` : ""}</td>
+        <td>${u.isAdmin ? '<span class="sev-chip sev-chip-info">Admin</span>' : '<span class="text-xs text-pulse-muted">Standard</span>'}</td>
+        <td>${u.enabled ? '<span class="status-pass">Enabled</span>' : '<span class="text-pulse-muted">Disabled</span>'}${u.lockedOut ? ' <span class="status-fail">Locked</span>' : ""}</td>
+      </tr>`).join("")}
+      </tbody></table>
+    ` : '<p class="text-sm text-pulse-muted">No local accounts found.</p>'}
+  `;
+}
+
+function _peripheralsPanelHtml(d) {
+  if (!d || d.error) return `<p class="text-sm text-pulse-muted">${esc((d && d.message) || "Could not read peripherals.")}</p>`;
+  const row = (icon, label, dev) => {
+    dev = dev || {};
+    const on = !!dev.connected;
+    const detail = on
+      ? ((dev.devices && dev.devices.length) ? dev.devices.join(", ")
+         : `${dev.count || 0} connected`)
+      : "Not detected";
+    return `<div class="periph-row">
+      <span class="periph-icon">${svgIcon(icon, 18)}</span>
+      <div class="periph-main">
+        <div class="periph-label">${esc(label)}</div>
+        <div class="periph-detail" title="${esc(detail)}">${esc(detail)}</div>
+      </div>
+      <span class="periph-status ${on ? "periph-on" : "periph-off"}">
+        ${svgIcon(on ? "check" : "x", 12)} ${on ? "Connected" : "None"}
+      </span>
+    </div>`;
+  };
+  return `
+    ${row("mouse", "Mouse", d.mouse)}
+    ${row("keyboard", "Keyboard", d.keyboard)}
+    ${row("monitor", "Monitor", d.monitor)}
+    <div class="periph-note">${svgIcon("info", 12)} <span>Reflects what the OS sees. Over RDP / LogMeIn these show the remote session, not the physical VPU.</span></div>
+  `;
 }
 
 // ── Network ──────────────────────────────────────────────────
@@ -1690,10 +2248,10 @@ function _pingCardHtml(p, resolutionWorks) {
   var icmpBlocked = !!resolutionWorks && !p.reachable;
   var sc, dot;
   if (icmpBlocked) {
-    sc = "net-ping-info"; dot = "#3b82f6";
+    sc = "net-ping-info"; dot = "var(--c-accent-blue)";
   } else {
     sc = p.status === "pass" ? "net-ping-pass" : p.status === "warn" ? "net-ping-warn" : "net-ping-fail";
-    dot = p.status === "pass" ? "#22c55e" : p.status === "warn" ? "#eab308" : "#ef4444";
+    dot = p.status === "pass" ? "var(--c-accent-green)" : p.status === "warn" ? "var(--c-accent-amber)" : "var(--c-accent-red)";
   }
   var latency = _fmtMs(p.avgMs);
   var loss = p.lossPercent != null ? p.lossPercent + "%" : "—";
@@ -1980,6 +2538,7 @@ function _renderLiveNetHealth(h) {
   if (!el) return;
   var tcp = h.tcp || {};
   var conns = h.connections || [];
+  var nics = h.nics || [];
 
   // Update stale indicator (lives in the header, outside #net-live-body)
   var ind = document.querySelector(".net-live-indicator");
@@ -2025,6 +2584,30 @@ function _renderLiveNetHealth(h) {
           '<td class="font-mono">' + esc(String(c.remotePort)) + '</td>' +
           '<td class="font-mono text-xs text-pulse-muted">' + esc(String(c.localPort || "")) + '</td>' +
           '<td class="' + stCls + '">' + esc(c.state) + '</td>' +
+        '</tr>';
+      }).join("") +
+      '</tbody></table>' +
+    '</div>' : '') +
+    // Per-NIC live health — queue depth, error counters, and packet rates for
+    // every physical interface, so a multi-NIC VPU shows per-port build-up
+    // (camera card vs motherboard port) instead of one blended number.
+    (nics.length ? '<div class="net-live-conns">' +
+      '<div class="net-live-conns-title">Network Interfaces (' + nics.length + ')</div>' +
+      '<table class="data-table"><thead><tr>' +
+        '<th>Interface</th><th title="Output queue length — sustained &gt;2 means the NIC can\'t drain fast enough">Queue</th><th>RX Err</th><th>TX Err</th><th>RX/s</th><th>TX/s</th>' +
+      '</tr></thead><tbody>' +
+      nics.map(function(n) {
+        var qCls  = (n.queueLen || 0) > 2 ? "status-warn" : "";
+        var rxCls = (n.rxErrors || 0) > 0 ? "status-warn" : "";
+        var txCls = (n.txErrors || 0) > 0 ? "status-warn" : "";
+        var nicName = String(n.name || "").replace(/\[r\]/gi, "(R)");
+        return '<tr>' +
+          '<td class="text-xs">' + esc(nicName) + '</td>' +
+          '<td class="font-mono ' + qCls + '">' + esc(String(n.queueLen || 0)) + '</td>' +
+          '<td class="font-mono ' + rxCls + '">' + esc(String(n.rxErrors || 0)) + '</td>' +
+          '<td class="font-mono ' + txCls + '">' + esc(String(n.txErrors || 0)) + '</td>' +
+          '<td class="font-mono text-xs text-pulse-muted">' + esc(String(n.rxPktSec || 0)) + '</td>' +
+          '<td class="font-mono text-xs text-pulse-muted">' + esc(String(n.txPktSec || 0)) + '</td>' +
         '</tr>';
       }).join("") +
       '</tbody></table>' +
@@ -2132,18 +2715,19 @@ function _prefixToMask(prefix) {
 const NET_PORT_IMPACT = {
   "DNS": "The VPU can't resolve any hostname, so it can't reach any service.",
   "Pixellot": "System management and software updates are blocked, and the stream fails to broadcast.",
-  // The three transports below are REDUNDANT streaming paths to prod-echo —
-  // the stream only fails if all three are blocked (see _streamingHealth).
-  // Wording is per-port "in isolation"; the live cross-path verdict is in the
-  // Port Connectivity finding.
-  "Pixellot Echo": "Last-resort streaming tunnel (TCP/443) plus the remote-support channel. The stream still broadcasts over UDP/2088 or UDP/443 if either is open, but remote support to prod-echo is lost.",
+  // Streaming model: the live broadcast rides UDP/2088 (Zixi Streaming) with NO
+  // failover — block it and the stream can't go out. The two 443 transports
+  // below (UDP/443 backup, TCP/443 tunnel) are a redundant backup channel that
+  // fails over between themselves. Wording is per-port "in isolation"; the live
+  // verdict is in the Port Connectivity finding.
+  "Pixellot Echo": "Backup streaming connection (TCP/443 tunnel) plus the remote-support channel. It fails over with the UDP/443 backup — the live broadcast itself rides UDP/2088, so blocking this only reduces backup redundancy and remote support.",
   "NFHS Network": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
   "AWS S3": "Recordings and clips can't upload, and software/asset downloads fail.",
   "Singular Overlay": "On-screen graphics and scorebug overlays won't load.",
   "LogMeIn": "The support team can't diagnose the VPU remotely.",
   "NTP": "The clock can drift — the VPU may miss scheduled events if no valid time server is set.",
-  "Zixi Backup": "Backup streaming path (Zixi over UDP/443). The stream keeps broadcasting over UDP/2088 or the TCP/443 tunnel if either is open — blocking this only removes failover.",
-  "Zixi Streaming": "Primary streaming path (Zixi over UDP/2088). If blocked, the stream falls back to UDP/443 or the TCP/443 tunnel; broadcasting only fails if all three paths are blocked.",
+  "Zixi Backup": "Backup streaming connection (Zixi over UDP/443) that fails over with the TCP/443 tunnel. The live broadcast rides UDP/2088, so blocking this only reduces backup redundancy.",
+  "Zixi Streaming": "The live broadcast connection (Zixi over UDP/2088). It has no failover — if this is blocked, the game can't stream.",
   "RTMP Ingest": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
   "Scorebot": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
 };
@@ -2160,12 +2744,14 @@ const NET_DOMAIN_IMPACT = {
 };
 function _netPortImpact(p) { return (p && NET_PORT_IMPACT[p.purpose]) || ""; }
 
-// The three redundant transports that carry the live stream to prod-echo:
-// UDP/2088 (primary), UDP/443 (backup), TCP/443 (last-resort tunnel). Per the
-// NFHS firewall doc, video can ride any of them, so the broadcast only fails
-// when ALL THREE are blocked — one blocked path just removes failover. Keep
-// this set in sync with the streaming purposes in Test-NetworkPorts.ps1.
-var STREAMING_PURPOSES = ["Zixi Streaming", "Zixi Backup", "Pixellot Echo"];
+// The live broadcast rides UDP/2088 (Zixi Streaming) with NO failover — if it's
+// blocked the stream can't go out (handled as a standalone critical, below).
+var PRIMARY_STREAM_PURPOSE = "Zixi Streaming";
+// The 443 pair is a redundant BACKUP channel to prod-echo — UDP/443 (Zixi
+// Backup) and TCP/443 (Pixellot Echo tunnel) fail over between themselves, so
+// one blocked with the other open just removes backup redundancy; the broadcast
+// (UDP/2088) is unaffected. Keep these purposes in sync with Test-NetworkPorts.ps1.
+var STREAMING_PURPOSES = ["Zixi Backup", "Pixellot Echo"];
 function _streamingHealth(ports) {
   var paths = (ports || []).filter(function(p) { return STREAMING_PURPOSES.indexOf(p.purpose) !== -1; });
   var open = paths.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; });
@@ -2174,13 +2760,15 @@ function _streamingHealth(ports) {
     paths: paths, open: open, blocked: blocked,
     total: paths.length,
     anyOpen: open.length > 0,
-    // A blocked path is "redundant" (warning, not critical) when the stream
-    // still has another working path. True only while at least one is open.
+    // A blocked backup transport is "redundant" (warning, not failure) when its
+    // sibling is still open. True only while at least one of the pair is open.
     redundantBlock: open.length > 0 && blocked.length > 0,
   };
 }
-// Is this individual blocked port a streaming path that still has an open
-// sibling? Used to soften its card from a red "Fail" to an amber "No failover".
+// Is this individual blocked port a backup-channel transport that still has an
+// open sibling? Softens its card from a red "Fail" to an amber "No failover".
+// The primary stream (UDP/2088) is never redundant — a block there is a real
+// fail — so it is intentionally excluded from STREAMING_PURPOSES.
 function _isRedundantStreamBlock(p, health) {
   return health.anyOpen
     && STREAMING_PURPOSES.indexOf(p.purpose) !== -1
@@ -2226,9 +2814,15 @@ function _renderPortConnectivity(ports) {
       var items = byHost[key];
       groups.push({ type: items.length > 1 ? "byHost" : "single", items: items, order: list.indexOf(items[0]) });
     });
-    // Natural first-appearance order — tiles are uniform now (no wide multi-host
-    // tile to anchor a row), so no special ordering is needed.
-    groups.sort(function(a, b) { return a.order - b.order; });
+    // Ascending by port number — each tile reads left-to-right in numeric order
+    // (53, 123, 443…). A group's port is its lowest member (a range tile sorts by
+    // its start). Ties (443 TCP vs 443 UDP) fall back to first-appearance order,
+    // keeping the protocols in a stable, predictable sequence.
+    groups.sort(function(a, b) {
+      var pa = Math.min.apply(null, a.items.map(function(p) { return Number(p.port) || 0; }));
+      var pb = Math.min.apply(null, b.items.map(function(p) { return Number(p.port) || 0; }));
+      return pa !== pb ? pa - pb : a.order - b.order;
+    });
     return groups;
   }
 
@@ -2260,7 +2854,7 @@ function _renderPortConnectivity(ports) {
     var pillTxt, pillCls;
     if (total > 1) { pillTxt = pass + "/" + total; pillCls = allPass ? "pass" : (optional ? "muted" : "fail"); }
     else if (allPass) { pillTxt = "Pass"; pillCls = "pass"; }
-    else if (redundant) { pillTxt = "No failover"; pillCls = "warn"; }
+    else if (redundant) { pillTxt = "No backup"; pillCls = "warn"; }
     else { pillTxt = optional ? "Blocked" : "Fail"; pillCls = optional ? "muted" : "fail"; }
     // Optional failures are de-emphasized (muted, not red); redundant streaming
     // blocks are amber. Only a real (non-redundant) required failure is red.
@@ -2279,7 +2873,7 @@ function _renderPortConnectivity(ports) {
     // Hover only (not shown on the tile): single-service ports surface their
     // impact; a shared port points to the domain column instead of listing hosts.
     var tip = items.length > 1
-      ? "Required services share this port — see Domain Reachability for the hosts."
+      ? "Required services share this port — see Service Reachability for the hosts."
       : (NET_PORT_IMPACT[p0.purpose] || "");
     return '<div class="net-port-card' + st.stateCls + '" style="--rowaccent:' + st.accent + '" title="' + esc(tip) + '">' +
       '<div class="net-port-card-head">' +
@@ -2297,9 +2891,10 @@ function _renderPortConnectivity(ports) {
   var reqPass = required.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
   var reqBlocked = required.length - reqPass;
 
-  // A required failure that ISN'T a still-redundant streaming path is a real
-  // problem (red). If the only blocks are redundant streaming paths, streaming
-  // still works — show amber, not red.
+  // A required failure that ISN'T a still-redundant 443 backup path is a real
+  // problem (red) — including a blocked UDP/2088 primary stream. If the only
+  // blocks are 443 backup paths with a sibling still open, the broadcast still
+  // works — show amber, not red.
   var nonStreamBlocked = required.filter(function(p) {
     return (p.status || "").toLowerCase() !== "pass" && STREAMING_PURPOSES.indexOf(p.purpose) === -1;
   }).length;
@@ -2354,7 +2949,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     issues.push({
       severity: "warning",
       title: "VPU is using Wi-Fi for its internet connection — switch to wired Ethernet",
-      body: "Connect the onboard Ethernet port to the venue network instead. Wi-Fi introduces latency and packet loss that disrupt streaming.",
+      body: "The Wi-Fi card is meant for the Pixellot Connect app, not the internet uplink — connect the motherboard Ethernet port to the venue network instead. Wi-Fi adds latency and packet loss that disrupt streaming.",
       details: wifiUplink.map(function(a) {
         var label = a.interfaceDescription || a.name || "Wi-Fi";
         var ssidPart = a.ssid ? " — SSID: " + a.ssid : "";
@@ -2363,55 +2958,129 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     });
   }
 
-  // ── Critical: Gateway ────────────────────────────────────
+  // ── Critical: internet plugged into a camera port (not the motherboard) ──
+  // Backend tags each adapter's role by PCI bus (motherboard = onboard LOM on
+  // bus 0; camera = a port on the multi-port NIC card). A camera port flags
+  // only when it's link-Up AND carrying a real gateway — a disconnected port
+  // can hold a stale gateway in the route table, so link state is the gate.
+  if (cfg && cfg.adapters) {
+    var _ipByIdx = {};
+    (cfg.ipConfig || cfg.ipConfigurations || []).forEach(function(ipc) { _ipByIdx[ipc.interfaceIndex] = ipc; });
+    function _camGw(a) {
+      var ipc = _ipByIdx[a.interfaceIndex] || {};
+      // PowerShell unwraps a single-element array to a scalar, so a one-gateway
+      // adapter arrives as a bare string, not an array — normalize before use.
+      var raw = ipc.ipv4DefaultGateway;
+      var gws = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+      for (var i = 0; i < gws.length; i++) {
+        if (gws[i] && String(gws[i]).indexOf("169.254.") !== 0) return gws[i];
+      }
+      return null;
+    }
+    var _misplaced = (cfg.adapters || []).filter(function(a) {
+      return a.role === "camera" && String(a.status || "").toLowerCase() === "up" && _camGw(a);
+    });
+    if (_misplaced.length) {
+      var _mobo = (cfg.adapters || []).filter(function(a) { return a.role === "motherboard"; });
+      var _moboNote = "";
+      if (_mobo.length) {
+        var _m = _mobo[0];
+        var _admin = String(_m.adminStatus || "").toLowerCase(), _st = String(_m.status || "").toLowerCase();
+        if (_admin === "down" || _st === "disabled") _moboNote = " The motherboard network port is currently disabled — enable it in Windows.";
+        else if (_st === "disconnected" || _st === "not present" || _st === "down") _moboNote = " The motherboard network port has no cable connected — move the venue/internet cable to it.";
+      } else {
+        _moboNote = " No motherboard network port was detected — it may be disabled.";
+      }
+      issues.push({
+        severity: "critical",
+        title: "Internet is plugged into a camera port, not the motherboard network port",
+        body: "The VPU's internet/venue connection is coming in on a camera-NIC port. On a Pixellot VPU the internet must connect to the motherboard network port — the 4-port NIC is only for cameras, and a venue uplink there can disrupt camera discovery and streaming." + _moboNote + " Move the cable to the motherboard network port and confirm that port is enabled. (The Wi-Fi card is for the Pixellot Connect app and should stay enabled.)",
+        details: _misplaced.map(function(a) { return (a.name || a.interfaceDescription || "?") + " — gateway " + _camGw(a) + " (a camera port)"; }),
+      });
+    }
+
+    // ── Warning: Wi-Fi card disabled (Pixellot Connect can't reach the VPU) ──
+    // A disabled Wi-Fi NIC reports status "Disabled" / adminStatus "Down"; an
+    // absent card doesn't appear at all. Skip Wi-Fi Direct / virtual adapters.
+    var _wifiOff = (cfg.adapters || []).filter(function(a) {
+      if (a.role !== "wifi") return false;
+      var d = a.interfaceDescription || "";
+      if (d.indexOf("Direct") !== -1 || d.indexOf("Virtual") !== -1) return false;
+      return String(a.status || "").toLowerCase() === "disabled" || String(a.adminStatus || "").toLowerCase() === "down";
+    });
+    if (_wifiOff.length) {
+      issues.push({
+        severity: "warning",
+        title: "Wi-Fi card is disabled — the Pixellot Connect app can't reach this VPU",
+        body: "The Wi-Fi card is what the Pixellot Connect app uses to talk to the VPU, so Connect won't find this unit until it's turned back on — enable it in Windows (Network Connections → right-click the Wi-Fi adapter → Enable). The internet uplink should stay on the motherboard Ethernet port; Wi-Fi is only for Connect.",
+        details: _wifiOff.map(function(a) { return (a.interfaceDescription || a.name || "Wi-Fi") + " — disabled"; }),
+      });
+    }
+  }
+
+  // ── Gateway ──────────────────────────────────────────────
   if (gw && !gw.reachable) {
     if (!gw.target)
-      issues.push({ severity: "critical", title: "No default gateway configured",
-        body: "The uplink adapter has no IPv4 default gateway. Set one via DHCP or static configuration — the VPU cannot reach the internet without it." });
+      issues.push({ severity: "critical", title: "VPU has no route to the network",
+        body: "The internet adapter has no IPv4 default gateway. Set one (via DHCP or a static address) — the VPU can't reach the internet without it." });
+    else if (cfg && cfg.internetReachable)
+      // The gateway answers no ICMP, but the VPU is reaching the internet through
+      // it — lots of routers/firewalls (and managed venue networks) silently drop
+      // pings to the gateway itself while routing traffic fine. internetReachable
+      // is authoritative (it has a TCP/443 fallback), so a dropped ping here is
+      // filtering, not a fault — explain the red gateway test instead of falsely
+      // calling the uplink dead and sending a tech to chase a cable.
+      issues.push({ severity: "info", title: "Gateway doesn't answer ping, but traffic is routing normally (" + gw.target + ")",
+        body: "The gateway isn't replying to ping (ICMP), so the gateway test above shows red — but the VPU is reaching the internet through it. Many routers and firewalls are set to ignore pings to themselves while still forwarding traffic, so this is expected and needs no action." });
     else
-      issues.push({ severity: "critical", title: "Gateway unreachable (" + gw.target + ")",
+      issues.push({ severity: "critical", title: "VPU can't reach its gateway (" + gw.target + ")",
         body: "Verify the uplink Ethernet cable is seated, the switch port is active, and the VLAN is correct. No traffic will leave the VPU until this is resolved." });
   }
   // Packet loss to the first hop is the real instability signal. First-hop
   // latency varies with switch load/Wi-Fi and is harmless up to ~30 ms, so
   // only flag latency well above a healthy LAN gateway.
   else if (gw && gw.reachable && (gw.lossPercent > 0 || (gw.avgMs != null && gw.avgMs > 30)))
-    issues.push({ severity: "warning", title: "Unstable gateway — " + (gw.avgMs || "?") + " ms latency, " + (gw.lossPercent || 0) + "% loss",
+    issues.push({ severity: "warning", title: "Unstable connection to the gateway — " + (gw.avgMs || "?") + " ms latency, " + (gw.lossPercent || 0) + "% loss",
       body: "Try a different switch port, replace the Ethernet cable, or check for broadcast storms on the venue network." });
 
   // ── DNS server: blocked ICMP vs. real resolution failure ─
-  // Is name resolution demonstrably working? (Shared signal — also used by the
-  // Local Network Health ping card.)
+  // Is name resolution demonstrably working? (Shared signal — also gates the
+  // UDP/53 probe below and the Local Network Health ping card.)
   var _dnsResolving = _dnsResolvingFrom(domains, ports);
 
   // A 100%-loss ping to the DNS server is NOT proof it's down — ICMP is
   // routinely firewalled on locked-down venue networks while the resolver keeps
   // answering real UDP/53 queries. When resolution is demonstrably working, the
   // dead ping is just blocked ICMP: report it as INFO, not a warning that sends
-  // a tech chasing a healthy box.
+  // a tech chasing a healthy box. Only call lookups "failing" when nothing
+  // resolved either.
   if (dns && !dns.reachable && _dnsResolving)
     issues.push({ severity: "info", title: "DNS server " + dns.target + " isn't answering pings, but name resolution is working",
       body: "The VPU is resolving domains normally — the DNS server just isn't replying to ICMP ping, which many venue firewalls block. No action needed." });
   else if (dns && !dns.reachable)
-    issues.push({ severity: "warning", title: "DNS server unreachable (" + dns.target + ")",
+    issues.push({ severity: "warning", title: "Name lookups are failing (DNS server " + dns.target + " unreachable)",
       body: "Domain resolution will fail. Check DNS server address in adapter settings or try a public DNS (8.8.8.8, 1.1.1.1)." });
   else if (dns && dns.reachable) {
     if (dns.lossPercent > 0)
-      issues.push({ severity: "warning", title: "DNS packet loss: " + dns.lossPercent + "% to " + dns.target,
+      issues.push({ severity: "warning", title: "Name lookups are unreliable — " + dns.lossPercent + "% loss to " + dns.target,
         body: "Resolution may be unreliable. Check cable or try a different DNS server." });
     if (dns.avgMs != null && dns.avgMs > 100)
-      issues.push({ severity: "info", title: "High DNS latency: " + dns.avgMs + " ms to " + dns.target,
+      issues.push({ severity: "info", title: "Name lookups are slow — " + dns.avgMs + " ms to " + dns.target,
         body: "Consider switching to a closer DNS server (8.8.8.8 or 1.1.1.1)." });
   }
 
   // ── Critical: No internet ────────────────────────────────
   // cfg.internetReachable is authoritative: the backend already treats a
   // passing required TCP/443 service test as proof of internet, so it stays
-  // True on locked-down networks that block ICMP/8.8.8.8. If it's False here,
-  // the box genuinely can't reach Pixellot services.
-  if (!cfg.internetReachable) {
+  // True on locked-down networks that block ICMP/8.8.8.8. If it's explicitly
+  // False here, the box genuinely can't reach Pixellot services.
+  // Guard on === false (not falsy): when Network config fails to collect, the
+  // field is absent — we can't conclude "no internet" from missing data (the
+  // dashboard already flags "some checks couldn't complete"), and claiming it
+  // sends a tech chasing a cable on a box that's actually online.
+  if (cfg && cfg.internetReachable === false) {
     issues.push({ severity: "critical", title: "VPU has no internet connection",
-      body: "Verify the uplink cable and the gateway’s WAN status before further triage." });
+      body: "Check the internet cable and the gateway/router before going further." });
     // Sort and return early — no point checking ports/domains
     issues.sort(function(a, b) { return _netIssueRank(a.severity) - _netIssueRank(b.severity); });
     return issues;
@@ -2428,38 +3097,67 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote")
       + (impact ? " — " + impact : "");
   }
-  function _portShort(p) { return (p.protocol || "TCP").toUpperCase() + "/" + p.port; }
 
-  // Streaming transports are redundant (UDP/2088, UDP/443, TCP/443 tunnel) —
-  // handle them as a group so a single blocked path with another still open is
-  // a warning, not a "stream fails" critical. Broadcasting only truly fails
-  // when every path is blocked.
+  // (1) The live broadcast (UDP/2088, Zixi Streaming) has NO failover, so if
+  // it's blocked the game can't stream — a critical on its own, regardless of
+  // the 443 backup channel's state.
+  var primaryBlocked = (ports || []).filter(function(p) {
+    return p.purpose === PRIMARY_STREAM_PURPOSE && !p.optional
+      && (p.status || "").toLowerCase() !== "pass";
+  });
+  if (primaryBlocked.length > 0) {
+    issues.push({
+      severity: "critical",
+      title: "Streaming is blocked — the VPU can't broadcast",
+      body: "The venue's network is blocking the connection the VPU uses to send the live video to Pixellot's "
+        + "streaming service. This connection has no backup, so the game can't broadcast until it's unblocked. "
+        + "Ask the venue's IT or network team to open it.",
+      details: primaryBlocked.map(function(p) {
+        return (p.protocol || "UDP").toUpperCase() + " port " + p.port
+          + " to " + (p.host || "the streaming server") + " — the live streaming connection";
+      }),
+    });
+  }
+
+  // (2) The 443 backup channel (UDP/443 + TCP/443 tunnel) fails over between its
+  // two transports, and the broadcast rides UDP/2088 anyway — so a block here is
+  // a warning (lost backup redundancy), never a "can't broadcast" critical.
   var stream = _streamingHealth(ports);
   if (stream.blocked.length > 0) {
-    if (stream.anyOpen) {
-      issues.push({
-        severity: "warning",
-        title: "Streaming redundancy reduced — " + stream.blocked.length + " of " + stream.total + " streaming paths blocked",
-        body: "The stream still has a working path (" + stream.open.map(_portShort).join(", ")
-          + "), so broadcasting should work. The blocked path(s) remove failover — if the active path degrades mid-event there's no backup. Ask the venue to open them.",
-        details: stream.blocked.map(_portDetail),
-      });
-    } else {
-      issues.push({
-        severity: "critical",
-        title: "All streaming paths blocked — the VPU cannot broadcast",
-        body: "Every transport Pixellot can use to send video (UDP/2088, UDP/443, and the TCP/443 tunnel to prod-echo.pixellot.tv) is blocked. Open at least one in the venue firewall.",
-        details: stream.blocked.map(_portDetail),
-      });
-    }
+    // Plain-language detail per blocked connection — keeps the exact port so
+    // whoever opens the firewall knows what to unblock, no jargon.
+    var streamDetails = stream.blocked.map(function(p) {
+      return (p.protocol || "TCP").toUpperCase() + " port " + p.port
+        + " to " + (p.host || "the streaming server") + " — a backup streaming connection";
+    });
+    var n = stream.blocked.length;
+    issues.push({
+      severity: "warning",
+      title: (n === 1 ? "A backup streaming connection is blocked" : n + " backup streaming connections are blocked")
+        + " — the broadcast still works",
+      body: "The game can still broadcast right now over its main connection. Pixellot also keeps a spare "
+        + "backup connection to its streaming service, and the venue's network is blocking that backup. Streaming "
+        + "will still work — but if the main connection runs into trouble during a game, there's less to fall back "
+        + "on. Ask the venue's IT or network team to unblock the connection" + (n === 1 ? "" : "s") + " below.",
+      details: streamDetails,
+    });
   }
+
+  // `_dnsResolving` (hoisted above with the DNS-server ping check) also gates
+  // the UDP/53 probe here: a failed probe must NOT claim "can't resolve any
+  // hostname" when resolution is clearly working — that probe can target a
+  // stale resolver or just go unanswered.
 
   // Non-streaming required failures (DNS, NFHS, S3, Singular, LogMeIn,
   // pixellot.tv apex) — prerequisites, not redundant paths, so any one blocked
-  // is critical on its own.
+  // is critical on its own. The primary stream and the 443 backup channel are
+  // handled above, so exclude both here; and skip a "blocked" DNS probe when
+  // resolution is clearly working.
   var reqFailed = (ports || []).filter(function(p) {
-    return !p.optional && (p.status || "").toLowerCase() !== "pass"
-      && STREAMING_PURPOSES.indexOf(p.purpose) === -1;
+    if (p.optional || (p.status || "").toLowerCase() === "pass") return false;
+    if (STREAMING_PURPOSES.indexOf(p.purpose) !== -1 || p.purpose === PRIMARY_STREAM_PURPOSE) return false;
+    if ((p.purpose === "DNS" || String(p.port) === "53") && _dnsResolving) return false;
+    return true;
   });
   if (reqFailed.length > 0) {
     issues.push({ severity: "critical",
@@ -2581,7 +3279,7 @@ function _netTimeSyncCard(cfg, ntp, ntpPeers) {
 
   var peersHtml;
   if (!ntpPeers) {
-    peersHtml = '<p class="text-pulse-muted text-sm mt-2">w32tm peer data unavailable.</p>';
+    peersHtml = '<p class="text-pulse-muted text-sm mt-2">Time-server peer data unavailable.</p>';
   } else if (!peers.length) {
     peersHtml = '<p class="text-pulse-muted text-sm mt-2">No peers configured for the Windows Time service.</p>';
   } else {
@@ -2632,7 +3330,7 @@ function _netTimeSyncCard(cfg, ntp, ntpPeers) {
 function _netDnsResolutionCard(dnsResolution, cfg) {
   if (!dnsResolution) {
     return `<div class="card">
-      ${sectionTitle("globe", "DNS Resolution Comparison")}
+      ${sectionTitle("globe", "Name Lookup Check (DNS)")}
       <p class="text-pulse-muted text-sm">DNS comparison data unavailable.</p>
     </div>`;
   }
@@ -2683,7 +3381,7 @@ function _netDnsResolutionCard(dnsResolution, cfg) {
     : '<tr><td colspan="4" class="text-pulse-muted text-sm">No DNS comparison data.</td></tr>';
 
   return `<div class="card">
-    ${sectionTitle("globe", "DNS Resolution Comparison")}
+    ${sectionTitle("globe", "Name Lookup Check (DNS)")}
     <p class="text-pulse-muted text-sm">
       Compares the configured DNS (<span class="font-mono">${esc(systemDns)}</span>)
       against Google DNS (<span class="font-mono">${esc(googleSrv)}</span>) for key Pixellot hosts.
@@ -2696,6 +3394,228 @@ function _netDnsResolutionCard(dnsResolution, cfg) {
       <th></th>
     </tr></thead><tbody>${rowsHtml}</tbody></table>
   </div>`;
+}
+
+// ── Inspection Report (fleet audit roll-up) ──────────────────
+// Read-only TRIAGE tab that pools the handful of fields a fleet audit needs
+// (identity, OS, network addressing, port-test result) onto one screen, so a
+// tech auditing ~15k units doesn't have to hop across the Hardware, Network and
+// Camera tabs per unit. NO new data/collector/endpoint — it reads the same
+// cached /api/system, /api/network and /api/cameras payloads the other tabs use.
+
+// Port-test verdict from the port results alone, using the same streaming-
+// redundancy rules as the Network tab (_streamingHealth / _isRedundantStreamBlock)
+// so the two never disagree: a blocked required port is a Fail, unless it's a
+// backup stream transport whose sibling is still open (Warning); a blocked
+// optional port is a Warning. Returns a severityChip-compatible {sev, label}.
+function _portTestVerdict(ports) {
+  ports = ports || [];
+  if (!ports.length) return { sev: "muted", label: "No data" };
+  var health = _streamingHealth(ports);
+  var hasFail = false, hasWarn = false;
+  ports.forEach(function(p) {
+    if ((p.status || "").toLowerCase() === "pass") return;
+    if (p.optional || _isRedundantStreamBlock(p, health)) { hasWarn = true; return; }
+    hasFail = true;
+  });
+  if (hasFail) return { sev: "critical", label: "Fail" };
+  if (hasWarn) return { sev: "warning", label: "Warning" };
+  return { sev: "ok", label: "Pass" };
+}
+
+// Windows vs Linux from the OS caption. The current collectors only run on
+// Windows VPUs, but key off the caption so a future Linux probe surfaces
+// correctly rather than being silently mislabeled.
+function _vpuType(osCaption) {
+  var c = (osCaption || "").toLowerCase();
+  if (c.indexOf("windows") !== -1) return "Windows";
+  if (c.indexOf("linux") !== -1 || c.indexOf("ubuntu") !== -1 || c.indexOf("debian") !== -1) return "Linux";
+  return null;
+}
+
+// Camera frames for the audit. Captured once when the tab opens (cached in
+// _irFrames so a re-render doesn't re-fire), and — unlike the Camera tab —
+// posted with {force:true}, which bypasses the vpu.exe capture interlock AND
+// the cooldown so the audit always gets a frame, even on a live VPU. The frame
+// grid itself is the Camera tab's renderer, reused verbatim.
+var _irFrames = { state: "idle", data: null };
+
+function _irCaptureFrames() {
+  _irFrames = { state: "loading", data: null };
+  _irPaintFrames();
+  apiPost("/api/cameras/video-test", { force: true }).then(function(res) {
+    // Stamp the capture time onto each frame so the cards read "Captured HH:MM"
+    // — these are stills, and the audit wants to know how fresh they are.
+    if (res && (res.results || []).length) {
+      var t = new Date().toLocaleTimeString();
+      res.results.forEach(function(r) { r._capturedAt = t; });
+    }
+    _irFrames = { state: "done", data: res };
+    if (currentPage === "inspection-report") _irPaintFrames();
+  }).catch(function() {
+    _irFrames = { state: "error", data: null };
+    if (currentPage === "inspection-report") _irPaintFrames();
+  });
+}
+
+function _irPaintFrames() {
+  var wrap = document.getElementById("ir-frames-wrap");
+  if (!wrap) return;
+  if (_irFrames.state === "loading") {
+    wrap.innerHTML = '<div class="card">' + sectionTitle("camera", "Camera Frames") +
+      '<div class="cam-video-running">' + svgIcon("refresh", 14) +
+      ' Grabbing a frame from each connected camera…</div></div>';
+  } else if (_irFrames.state === "error") {
+    wrap.innerHTML = '<div class="card">' + sectionTitle("camera", "Camera Frames") +
+      '<div class="cam-video-err">Frame capture failed to run.</div></div>';
+  } else if (_irFrames.state === "done") {
+    wrap.innerHTML = _camVideoResultsHtml(_irFrames.data, { showControls: false });
+  } else {
+    wrap.innerHTML = "";
+  }
+}
+
+// Full report refresh: drop every cached payload it reads and re-capture frames.
+function _irRefresh() {
+  dataCache.system = null;
+  dataCache.network = null;
+  dataCache.cameras = null;
+  dataCache.scoreconnect = null;
+  _irFrames = { state: "idle", data: null };
+  renderInspectionReport();
+}
+
+function renderInspectionReport() {
+  // Three independent payloads back this tab; fetch any that aren't cached yet
+  // and re-render as each lands (mirrors the Hardware/Environment split-tab
+  // pattern). system/network/cameras are all in PAGE_API, so fetchSection works.
+  var system = cached("system");
+  var network = cached("network");
+  var cameras = cached("cameras");
+  var missing = [];
+  if (!system) missing.push("system");
+  if (!network) missing.push("network");
+  if (!cameras) missing.push("cameras");
+  if (missing.length) {
+    $page().innerHTML = sectionLoading("Inspection Report");
+    missing.forEach(function(k) {
+      fetchSection(k).then(function() {
+        if (currentPage === "inspection-report") renderInspectionReport();
+      });
+    });
+    return;
+  }
+
+  // Identity — /api/system (identity) + /api/cameras (system type)
+  var id = system.identity || {};
+  var cs = id.computerSystem || {};
+  var os = id.operatingSystem || {};
+  var osCaption = os.caption || null;
+  // LMI name = the Pixellot device/broadcast name (always starts with "PXL"),
+  // parsed from the agent log's BROADCAST_NAME — NOT the Windows hostname, which
+  // can differ. Fall back to the hostname when the agent log isn't readable,
+  // matching the dashboard's vpuName-or-hostname treatment.
+  var lmiName = (id.pixellot && id.pixellot.vpuName) || cs.name;
+  var osText = osCaption ? osCaption + (os.version ? " (" + os.version + ")" : "") : null;
+  var camType = cameras.systemType
+    || (cameras.expectedMainCameras != null ? cameras.expectedMainCameras + "-camera" : null);
+
+  // Network addressing — uplink adapter, joined across adapters[]/ipConfig[] the
+  // same way the Network tab does, so the addressing shown here matches it.
+  var cfg = network.config || {};
+  var ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
+  var uplinkName = cfg.uplinkAdapter && cfg.uplinkAdapter.interfaceAlias;
+  var uplinkAdapterRow = uplinkName
+    ? (cfg.adapters || []).find(function(a) { return a.name === uplinkName; }) || null
+    : null;
+  var uplinkIpCfg = uplinkName
+    ? ipConfigs.find(function(ip) { return ip.interfaceAlias === uplinkName; }) || null
+    : null;
+  var ipAddr = _first(uplinkIpCfg && uplinkIpCfg.ipv4Address);
+  var macAddr = uplinkAdapterRow && uplinkAdapterRow.macAddress;
+  var dhcpLabel = uplinkIpCfg && uplinkIpCfg.dhcpEnabled === true ? "DHCP"
+    : uplinkIpCfg && uplinkIpCfg.dhcpEnabled === false ? "Static" : null;
+  var subnetMask = uplinkIpCfg ? _prefixToMask(uplinkIpCfg.prefixLength) : null;
+  var gateway = (cfg.uplinkAdapter && cfg.uplinkAdapter.gateway)
+    || _first(uplinkIpCfg && uplinkIpCfg.ipv4DefaultGateway);
+
+  // Port test — /api/network ports, rendered with the shared port component
+  // plus a single overall verdict chip.
+  var ports = (network.ports && network.ports.results) || [];
+  var verdict = _portTestVerdict(ports);
+
+  // Scoreboard — /api/scoreconnect. Fetched lazily so a slow ScoreConnect probe
+  // never holds up the core report; the card fills in when it lands. vendor falls
+  // back to the legacy SC I/II payload (sc2) when SC III isn't the source.
+  var sc = cached("scoreconnect");
+  if (!sc) {
+    fetchSection("scoreconnect").then(function() {
+      if (currentPage === "inspection-report") renderInspectionReport();
+    });
+  }
+  var scCfg = (sc && sc.configuration) || {};
+  var scSport = scCfg.sport || null;
+  var scVendor = scCfg.vendor || (sc && sc.sc2 && sc.sc2.vendor) || null;
+  var scLinkHtml;
+  if (!sc) scLinkHtml = '<span class="text-pulse-muted">Checking…</span>';
+  else if (sc.scoreLinkConnected === true) scLinkHtml = badge("Connected", "pass");
+  else if (sc.scoreLinkConnected === false) scLinkHtml = badge("Not connected", "warn");
+  else scLinkHtml = '<span class="text-pulse-muted">Not detected</span>';
+
+  $page().innerHTML = `
+    ${pageHeader("Inspection Report", "Every field the fleet audit needs, pooled from the Hardware, Network, Camera and ScoreConnect tabs onto one screen.",
+      `<button class="btn-outline btn-ol-blue" onclick="_irRefresh()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("info", "Identity")}
+        <div class="kv-grid kv-grid-wide">
+          ${kvRow("LMI Name", lmiName)}
+          ${kvRow("Camera Type", camType)}
+          ${kvRow("Operating System", osText)}
+          ${kvRow("VPU Type", _vpuType(osCaption))}
+        </div>
+      </div>
+      <div class="card">
+        ${sectionTitle("globe", "Network")}
+        <div class="kv-grid kv-grid-wide">
+          ${kvRow("IP Address", ipAddr)}
+          ${kvRow("MAC Address", macAddr)}
+          ${kvRow("Static / DHCP", dhcpLabel)}
+          ${kvRow("Subnet Mask", subnetMask)}
+          ${kvRow("Gateway", gateway)}
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("monitor", "Scoreboard")}
+        <div class="kv-grid kv-grid-wide">
+          ${kvRow("Sport", scSport)}
+          ${kvRow("Vendor", scVendor)}
+          ${kvRowHtml("ScoreLink", scLinkHtml)}
+        </div>
+      </div>
+      <div class="card">
+        <div class="flex items-center justify-between">
+          ${sectionTitle("link", "Network Port Test")}
+          ${severityChip(verdict.sev, verdict.label)}
+        </div>
+        ${_renderPortConnectivity(ports)}
+      </div>
+    </div>
+
+    <div id="ir-frames-wrap"></div>
+  `;
+
+  // Capture frames on first open; a later re-render (e.g. ScoreConnect data
+  // landing) just repaints the existing capture rather than firing another.
+  if (_irFrames.state === "idle") _irCaptureFrames();
+  else _irPaintFrames();
 }
 
 function renderNetwork() {
@@ -2743,6 +3663,36 @@ function renderNetwork() {
   const duplexLabel = uplinkStats.fullDuplex === true ? "Full Duplex" : uplinkStats.fullDuplex === false ? "Half Duplex" : null;
   const totalErrors = (uplinkStats.rxErrors || 0) + (uplinkStats.txErrors || 0);
 
+  // Wired Ports — error/discard counters for EVERY wired NIC, not just the
+  // uplink. A multi-NIC VPU has the motherboard port plus the camera card; a
+  // bad cable or dirty switch port on a non-uplink port used to be invisible.
+  // Role is tagged by the backend (PCI bus: motherboard = onboard LOM bus 0).
+  const wiredPorts = (cfg.adapters || []).filter(function(a) {
+    return String(a.physicalMediaType || "").toLowerCase().indexOf("802.3") !== -1;
+  });
+  const wiredPortsCard = wiredPorts.length ? `
+    <div class="card">
+      ${sectionTitle("link", "Wired Ports")}
+      <p class="text-pulse-muted text-xs mb-3">Error and discard counters for every wired network port (cumulative since boot). Non-zero values usually mean a bad cable, a dirty switch port, or a NIC driver issue.</p>
+      <table class="data-table"><thead><tr>
+        <th>Port</th><th>Link</th><th>Speed</th><th>RX Err</th><th>TX Err</th>
+      </tr></thead><tbody>
+      ${wiredPorts.map(function(a) {
+        var roleLabel = a.role === "motherboard" ? "Motherboard (uplink)" : a.role === "camera" ? "Camera NIC" : "Wired";
+        var up = String(a.status || "").toLowerCase() === "up";
+        var rxe = a.rxErrors || 0, txe = a.txErrors || 0;
+        var rxNull = a.rxErrors == null, txNull = a.txErrors == null;
+        return `<tr>
+          <td><div class="font-semibold">${esc(roleLabel)}</div><div class="text-xs text-pulse-muted">${esc(a.interfaceDescription || a.name || "")}</div></td>
+          <td><span style="color:${up ? "var(--c-accent-green)" : "var(--c-muted)"};font-weight:600">${esc(up ? "Up" : (a.status || "—"))}</span></td>
+          <td class="text-xs">${esc(a.linkSpeed || "—")}</td>
+          <td class="font-mono ${rxe > 0 ? "status-warn" : ""}">${rxNull ? "—" : esc(String(rxe))}</td>
+          <td class="font-mono ${txe > 0 ? "status-warn" : ""}">${txNull ? "—" : esc(String(txe))}</td>
+        </tr>`;
+      }).join("")}
+      </tbody></table>
+    </div>` : "";
+
   const issuesPanel = issues.length ? `
     <div class="card">
       <div class="af-header">
@@ -2773,7 +3723,7 @@ function renderNetwork() {
     </div>` : "";
 
   $page().innerHTML = `
-    ${pageHeader("Network", "Adapters, IP configuration, NTP, and reachability for required services.",
+    ${pageHeader("Network Test", "Internet connection, name lookups (DNS), time sync, and whether the VPU can reach the services it needs.",
       statusChip + `<button id="net-run-test-btn" class="btn-outline btn-ol-blue" onclick="_rerunNetworkTests(this)">
         ${svgIcon("activity", 14)} <span>Run Test</span>
       </button>`
@@ -2789,7 +3739,7 @@ function renderNetwork() {
           ${_renderPortConnectivity(ports)}
         </div>
         <div class="net-conn-col">
-          ${sectionTitle("wifi", "Domain Reachability")}
+          ${sectionTitle("wifi", "Service Reachability")}
           ${domains.length ? `
             <div class="domain-list">
               ${domains.map(function(d) {
@@ -2797,9 +3747,16 @@ function renderNetwork() {
                 var dnsTime = d.resolutionMs != null ? d.resolutionMs + " ms" : "";
                 var dnsSlow = d.resolutionMs != null && d.resolutionMs > 200;
                 var dotColor = ok ? "var(--c-accent-green)" : "var(--c-accent-red)";
-                return `<div class="domain-row" title="${esc(_netDomainImpact(d))}">
+                // "Impact if blocked" now lives on an explicit ? help icon next
+                // to the domain (focusable, clearly hoverable) instead of a
+                // hidden hover-anywhere title on the whole row.
+                var impact = _netDomainImpact(d);
+                var help = impact
+                  ? `<span class="domain-help" tabindex="0" title="${esc(impact)}" aria-label="Impact if blocked: ${esc(impact)}">?</span>`
+                  : "";
+                return `<div class="domain-row">
                   <span class="domain-dot" style="background:${dotColor}"></span>
-                  <span class="domain-name">${esc(d.domain)}</span>
+                  <span class="domain-name"><span class="domain-name-text">${esc(d.domain)}</span>${help}</span>
                   <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
                   <span class="domain-dns-time font-mono${dnsSlow ? ' status-warn' : ''}">${esc(dnsTime)}</span>
                   ${statusBadge(d.status)}
@@ -2919,7 +3876,7 @@ function renderNetwork() {
         </div>
         ${totalErrors > 0 || (uplinkStats.rxBytes != null) ? `
           <div class="net-iface-stats">
-            <div class="net-iface-stats-title">${svgIcon("activity", 12)} Interface Counters</div>
+            <div class="net-iface-stats-title" title="Cumulative NIC counters since boot. Zero across the board is healthy; non-zero errors or discards usually mean a bad cable, dirty switch port, or NIC driver issue.">${svgIcon("activity", 12)} Network Errors (this adapter) ${svgIcon("info", 12)}</div>
             <div class="net-iface-stats-grid">
               <div class="net-iface-stat">
                 <span class="net-iface-stat-label">RX Errors</span>
@@ -2938,9 +3895,11 @@ function renderNetwork() {
                 <span class="net-iface-stat-val ${uplinkStats.txDiscards > 0 ? 'status-warn' : ''}">${uplinkStats.txDiscards || 0}</span>
               </div>
             </div>
-            ${totalErrors > 0 ? '<div class="net-iface-stats-warn">' + svgIcon("triangle", 12) + ' Interface errors detected — check cable, switch port, or NIC driver.</div>' : ''}
+            ${totalErrors > 0 ? '<div class="net-iface-stats-warn">' + svgIcon("triangle", 12) + ' Network errors on this connection — check the cable, the switch port, or the network driver.</div>' : ''}
           </div>` : ""}
       </div>
+
+    ${wiredPortsCard}
 
     <!-- Speed Test (Speedtest.net paste-in) — promoted out of Advanced -->
     <div class="card">
@@ -2969,7 +3928,7 @@ function renderNetwork() {
       <div class="net-adv-toggle-inner">
         <span class="net-adv-toggle-icon" id="net-adv-arrow">${svgIcon("chevron", 14)}</span>
         <span class="net-adv-toggle-label">Advanced Diagnostics</span>
-        <span class="text-xs text-pulse-muted">Time sync, DNS comparison, packet capture, traceroute, live monitoring</span>
+        <span class="text-xs text-pulse-muted">Time sync, name-lookup checks, traffic capture, route tracing, and live monitoring</span>
       </div>
     </div>
 
@@ -2983,7 +3942,7 @@ function renderNetwork() {
       <!-- Packet Capture -->
       <div class="card">
         <div class="net-ping-toolbar">
-          ${sectionTitle("shield", "Packet Capture")}
+          ${sectionTitle("shield", "Network Traffic Capture (advanced)")}
           <div id="net-capture-controls" class="net-ping-btns">
             <button class="net-ping-preset" onclick="_runCapture(10)">10s</button>
             <button class="net-ping-preset net-ping-preset-active" onclick="_runCapture(30)">30s</button>
@@ -2991,7 +3950,7 @@ function renderNetwork() {
             <span id="net-capture-status" class="net-ping-spin" style="display:none">${svgIcon("refresh", 14)}</span>
           </div>
         </div>
-        <p class="text-pulse-muted text-sm">Captures TCP packet headers using Windows pktmon (ports 443, 1935, 80, UDP 2088). Analyzes retransmissions, resets, and drops.</p>
+        <p class="text-pulse-muted text-sm">Watches outbound streaming traffic for dropped or retried connections. (Uses Windows pktmon on ports 443, 1935, 80, and UDP/2088.)</p>
         <p class="net-capture-admin-note">${svgIcon("shield", 12)} Requires Pulse to be running as administrator.</p>
         <div id="net-capture-results"></div>
       </div>
@@ -3109,7 +4068,7 @@ function _camDetailsPanel(cams, portIdx, portData) {
       ? 'RX ' + rxPktErr + ' / TX ' + txPktErr + ' / Discards ' + (rxDisc + txDisc)
       : 'None';
     nicGroup = '<div class="cam-detail-group">' +
-      '<div class="cam-detail-group-title">NIC Adapter</div>' +
+      '<div class="cam-detail-group-title">Network Interface Card (NIC)</div>' +
       _camDetailKv("Adapter", portData.name) +
       _camDetailKv("MAC", portData.mac) +
       _camDetailKv("Duplex", duplexVal) +
@@ -3143,7 +4102,7 @@ function _camDetailsPanel(cams, portIdx, portData) {
       '<div class="cam-detail-camera-header">' +
         svgIcon("camera", 14) + ' ' + esc(c.ip) +
         (c.modelNumber ? ' <span class="cam-model-label">' + esc(c.modelNumber) + '</span>' : '') +
-        (hasCgi ? ' <span class="cam-cgi-badge">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none">No CGI</span>') +
+        (hasCgi ? ' <span class="cam-cgi-badge" title="Camera answered Pulse&#39;s admin probe (CGI)">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none" title="Camera did not answer Pulse&#39;s admin probe (CGI) — it may be offline or unreachable">No CGI</span>') +
       '</div>' +
 
       // Device info
@@ -3241,8 +4200,9 @@ function _camPortTile(port, index, ctx) {
           ${displayModel ? '<span class="cam-model-label">' + esc(displayModel) + '</span>' : ''}
           <span class="cam-entry-source text-pulse-muted">${esc(c.identitySource || '')}</span>
         </div>
+        ${cams.length > 1 ? '<div class="cam-entry-source text-pulse-muted">+' + (cams.length - 1) + ' more camera' + (cams.length > 2 ? 's' : '') + ' on this port</div>' : ''}
       </div>
-      ${_camDetailsPanel(cams, index, p)}`;
+      <div class="cam-details-toggle"><a class="cam-hw-pointer" href="#camera-hardware" onclick="navigate('camera-hardware');return false;">${svgIcon("info", 12)} Hardware details</a></div>`;
     })()
     : p.connecting ? '<div class="cam-connecting-note">' + svgIcon("refresh", 12) + ' Establishing link — waiting for camera…</div>'
     : !p.isUp ? _camDownGuidanceHtml(p, ctx)
@@ -3264,11 +4224,11 @@ function _camDownGuidanceHtml(p, ctx) {
     var othersUp = ctx && ctx.total > 1 && ctx.upCount >= 1;
     var allDown = ctx && ctx.total > 1 && ctx.upCount === 0;
     if (allDown) {
-      msg = "No signal — and every NIC port is down. Suspect the NIC card, its driver, or power to the camera bank, not a single cable.";
+      msg = "No signal — and every camera port is down. This points to the network card, its driver, or power to the camera bank — not one cable.";
     } else if (othersUp) {
-      msg = "No signal on this port. The other ports are linked, so this is likely isolated to this cable, camera, or port — not a card-wide failure. Check the cable (both ends) and the camera's power, then use Fault Isolator.";
+      msg = "Check this cable (both ends) and the camera's power, then run Camera Connection Troubleshooting. The other ports are linked, so the problem is likely just this cable, camera, or port — not a card-wide failure.";
     } else {
-      msg = "No signal detected. Check the cable is seated both ends and the camera has power, then use Fault Isolator.";
+      msg = "No signal detected. Check the cable is seated both ends and the camera has power, then use Camera Connection Troubleshooting.";
     }
   }
   return '<div class="cam-down-guide">' + svgIcon("alert", 12) + ' <span>' + esc(msg) + '</span></div>';
@@ -3461,7 +4421,7 @@ function _camOrientationPanelHtml() {
         '<div class="orient-fig-label">On its side</div></div>' +
     '</div>' +
     '<div class="orient-caption">' +
-      'Camera (POE) ports are the highlighted bank above the <strong>AC power inlet</strong>. ' +
+      'Camera ports (PoE — Power over Ethernet) are the highlighted bank above the <strong>AC power inlet</strong>. ' +
       '<strong>Tip:</strong> a lit jack matches the linked port above — use it to confirm regardless of mounting.' +
     '</div>' +
   '</div>';
@@ -3527,7 +4487,9 @@ function _camVerifyVideo() {
     // navigate-away-and-back, stamped with the time so it's clearly a
     // snapshot, not live. Cleared by a manual Refresh (_camForceRefresh).
     if (res && (res.results || []).length) {
-      res._capturedAt = new Date().toLocaleTimeString();
+      var _t = new Date().toLocaleTimeString();
+      res._capturedAt = _t;
+      res.results.forEach(function(r) { r._capturedAt = _t; });
       _camLastVideo = res;
     }
     if (currentPage === "cameras") wrap.innerHTML = _camVideoResultsHtml(res);
@@ -3547,24 +4509,89 @@ function _camVerifyVideo() {
   });
 }
 
-function _camVideoResultsHtml(res) {
+// Generic countdown on any button element (used for the per-camera Refresh
+// when the server's shared cooldown is still active). Re-enables itself, or
+// stops quietly if the button is re-rendered away.
+function _camCountdownBtn(btn, seconds, idleHtml) {
+  if (!btn) return;
+  var left = seconds;
+  btn.disabled = true;
+  (function tick() {
+    if (!document.body.contains(btn)) return;
+    if (left <= 0) { btn.disabled = false; btn.innerHTML = idleHtml; return; }
+    btn.innerHTML = svgIcon("refresh", 12) + " Wait " + left + "s…";
+    left -= 1;
+    setTimeout(tick, 1000);
+  })();
+}
+
+// Re-capture a single camera (the per-card Refresh button). Posts just that
+// IP so we don't pull every camera, then merges the fresh frame back into the
+// stored set and re-renders. Shares the server cooldown with the all-cameras
+// capture.
+function _camRefreshOne(ip) {
+  if (!ip) return;
+  var idle = svgIcon("refresh", 12) + " Refresh";
+  var card = document.querySelector('.cam-frame[data-ip="' + ip + '"]');
+  var btn = card ? card.querySelector(".cam-frame-refresh") : null;
+  if (btn && btn.disabled) return;
+  if (btn) { btn.disabled = true; btn.innerHTML = svgIcon("refresh", 12) + " Capturing…"; }
+  apiPost("/api/cameras/video-test", { ips: [ip] }).then(function(res) {
+    // Server refused (cooldown still ticking, or vpu.exe came up): leave the
+    // existing frame in place and tell the tech why, on the button itself.
+    if (res && res.blocked === "cooldown") {
+      _camCountdownBtn(btn, res.cooldown || 15, idle);
+      return;
+    }
+    if (res && (res.blocked === "vpu" || res.error)) {
+      if (btn) { btn.disabled = false; btn.innerHTML = idle; }
+      return;
+    }
+    var fresh = ((res && res.results) || []).filter(function(r) { return (r.ip || "") === ip; })[0];
+    if (fresh) {
+      fresh._capturedAt = new Date().toLocaleTimeString();
+      if (_camLastVideo && _camLastVideo.results) {
+        _camLastVideo.results = _camLastVideo.results.map(function(r) {
+          return (r.ip || "") === ip ? fresh : r;
+        });
+      }
+    }
+    var wrap = document.getElementById("cam-video-wrap");
+    if (wrap && currentPage === "cameras") wrap.innerHTML = _camVideoResultsHtml(_camLastVideo || res);
+  }).catch(function() {
+    if (btn) { btn.disabled = false; btn.innerHTML = idle; }
+  });
+}
+
+// One "Label  value" row inside a frame card's detail block. value is already
+// escaped by the caller; an empty value renders nothing (drops unknown fields).
+function _camFrameKv(label, value, mono) {
+  if (value == null || value === "") return "";
+  return '<div class="cam-kv-row"><span class="cam-kv-k">' + label + "</span>" +
+    '<span class="cam-kv-v' + (mono ? " font-mono" : "") + '">' + value + "</span></div>";
+}
+
+function _camVideoResultsHtml(res, opts) {
+  // showControls=false (Inspection Report) drops the per-camera + all-cameras
+  // Refresh buttons — they're wired to the Camera tab's DOM (#cam-video-wrap)
+  // and would be dead on any other page; that tab's own Refresh re-captures.
+  var showControls = !opts || opts.showControls !== false;
   if (!res || res.error) {
     return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
       '<div class="cam-video-err">Error: ' + esc((res && res.message) || "unknown") + '</div></div>';
   }
   if (res.available === false) {
     return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
-      '<div class="cam-no-detect">' + esc(res.reason || "ffmpeg/ffprobe not available on this VPU.") + '</div></div>';
+      '<div class="cam-no-detect">' + esc(res.reason || "Couldn't read frame details on this VPU.") + '</div></div>';
   }
   var results = res.results || [];
   if (!results.length) {
     return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
       '<div class="cam-no-detect">' + esc(res.reason || "No cameras detected to test.") + '</div></div>';
   }
+  var camType = res.systemType ? esc(res.systemType) : null;
   var cards = results.map(function(r) {
-    var meta = r.ok
-      ? (esc(r.codec || "?") + " · " + (r.frameRate != null ? r.frameRate + " fps" : "? fps") + (r.resolution ? " · " + esc(r.resolution) : ""))
-      : esc(r.error || "No video");
+    var stream = (esc(r.codec || "?") + " · " + (r.frameRate != null ? r.frameRate + " fps" : "? fps") + (r.resolution ? " · " + esc(r.resolution) : ""));
     var thumb = r.image
       ? '<img class="cam-frame-img" src="' + esc(r.image) + '" alt="' + esc(r.label || r.ip) + ' frame">'
       : '<div class="cam-frame-img cam-frame-empty">' + svgIcon("camera", 22) + '<span>No frame</span></div>';
@@ -3582,24 +4609,50 @@ function _camVideoResultsHtml(res) {
         '. A frame pulled, but the stream won\'t hold until this is fixed.</div>';
     }
     var cardCls = r.ok ? (degraded ? "cam-frame-degraded" : "") : "cam-frame-fail";
-    var statusTxt = !r.ok ? "No video" : (degraded ? "Streaming · degraded" : "Streaming");
+    var statusTxt = !r.ok ? "No video" : (degraded ? "Active · degraded" : "Active");
     var statusCls = !r.ok ? "status-fail" : (degraded ? "status-warn" : "status-pass");
-    return '<div class="cam-frame ' + cardCls + '">' +
+    // Identity block: camera type (S1/S2/S2S — system-wide), IP, model and
+    // firmware from the CGI probe, plus the live stream format when one pulled.
+    var kv =
+      _camFrameKv("Type", camType) +
+      _camFrameKv("IP", esc(r.ip), true) +
+      _camFrameKv("Model", r.model ? esc(r.model) : null) +
+      _camFrameKv("Firmware", r.firmwareVersion ? esc(r.firmwareVersion) : null) +
+      (r.ok ? _camFrameKv("Stream", stream) : "");
+    var errLine = r.ok ? "" : '<div class="cam-frame-detail cam-frame-novideo">' + esc(r.error || "No video") + "</div>";
+    var cap = r._capturedAt ? '<span class="cam-frame-cap">Captured ' + esc(r._capturedAt) + "</span>" : "";
+    var refresh = showControls
+      ? '<button class="btn-outline btn-ol-blue cam-frame-refresh" onclick="_camRefreshOne(\'' + esc(r.ip) + '\')" ' +
+        'title="Capture a fresh still from this camera">' + svgIcon("refresh", 12) + " Refresh</button>"
+      : "";
+    return '<div class="cam-frame ' + cardCls + '" data-ip="' + esc(r.ip) + '">' +
       thumb +
       '<div class="cam-frame-meta">' +
         '<div class="cam-frame-head">' +
           '<span class="cam-frame-label">' + esc(r.label || r.ip) + '</span>' +
           '<span class="' + statusCls + '">' + statusTxt + '</span>' +
         '</div>' +
-        '<div class="cam-frame-ip font-mono">' + esc(r.ip) + '</div>' +
-        '<div class="cam-frame-detail">' + meta + '</div>' +
+        '<div class="cam-frame-kv">' + kv + '</div>' +
+        errLine +
         warn +
+        '<div class="cam-frame-foot">' + cap + refresh + '</div>' +
       '</div></div>';
   }).join("");
-  var stamp = res._capturedAt
-    ? '<div style="font-size:0.7rem;color:var(--c-dim);margin:-2px 0 10px">Captured ' + esc(res._capturedAt) + ' — a point-in-time snapshot, not live.</div>'
+  // Still-image notice + an all-cameras refresh, both inside the results card
+  // so the "this isn't live, grab a new one" cue sits right next to the frames.
+  var notice = showControls
+    ? '<div class="cam-frame-notice">' + svgIcon("info", 12) +
+      ' These are still snapshots, not a live stream. To get a new image, use ' +
+      '<strong>Refresh all cameras</strong> below, or <strong>Refresh</strong> on a single camera.</div>'
+    : '<div class="cam-frame-notice">' + svgIcon("info", 12) +
+      ' These are still snapshots, not a live stream — use <strong>Refresh</strong> above to recapture.</div>';
+  var toolbar = showControls
+    ? '<div class="cam-frame-toolbar">' +
+      '<button class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()" ' +
+      'title="Capture a fresh still from every camera">' + svgIcon("refresh", 14) + " Refresh all cameras</button></div>"
     : "";
-  return '<div class="card">' + sectionTitle("camera", "Camera Frames") + stamp +
+  return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
+    notice + toolbar +
     '<div class="cam-frame-grid">' + cards + '</div></div>';
 }
 
@@ -3631,6 +4684,7 @@ function _camS1Html(res) {
 function renderCameras() {
   const data = cached("cameras");
   if (!data) { $page().innerHTML = sectionLoading("Camera Connectivity"); fetchSection("cameras"); return; }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
 
   const ports = data.ports || [];
   const findings = data.findings || [];
@@ -3641,7 +4695,7 @@ function renderCameras() {
   }
 
   $page().innerHTML = `
-    ${pageHeader("Camera Connectivity", "NIC ports, link status, speed, and Pixellot camera detection",
+    ${pageHeader("Camera Connectivity", "Camera ports — link status, speed, and which cameras are detected.",
       `<button class="btn-outline btn-ol-blue" onclick="_camForceRefresh()">
         ${svgIcon("refresh", 14)} Refresh
       </button>
@@ -3650,7 +4704,7 @@ function renderCameras() {
         ${svgIcon("camera", 14)} Get Camera Frames
       </button>
       <button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
-        ${svgIcon("zap", 14)} Fault Isolator
+        ${svgIcon("zap", 14)} Camera Connection Troubleshooting
       </button>`
     )}
 
@@ -3789,9 +4843,14 @@ function renderServices() {
     // quick-action card above is the correct restart path for them.
     let actions = "";
     if (isProcess) {
+      // Pixellot core processes don't have an individual restart button
+      // because the KeepAgentUp watchdog supervises them — use the
+      // "Restart Agent + Coordinator" quick action above instead.  The
+      // notes here explain that to the tech so the missing button doesn't
+      // read as a gap.
       actions = s.watchdog
-        ? `<span class="svc-tile-note">${svgIcon("shield", 12)} Watchdog — keeps Agent/Coordinator alive</span>`
-        : `<span class="svc-tile-note">Managed by KeepAgentUp watchdog</span>`;
+        ? `<span class="svc-tile-note" title="This watchdog process restarts the Agent and Coordinator automatically when they exit.">${svgIcon("shield", 12)} Watchdog — restarts Agent/Coordinator on failure</span>`
+        : `<span class="svc-tile-note" title="Use the 'Restart Agent + Coordinator' button above to restart this process.">${svgIcon("shield", 12)} Managed by KeepAgentUp — use Restart action above</span>`;
     } else if (s.status !== "NotFound") {
       actions = `<button class="btn-outline btn-ol-blue svc-restart-btn" data-name="${esc(s.name)}">
           ${svgIcon("refresh", 12)} Restart
@@ -3810,7 +4869,7 @@ function renderServices() {
   }
 
   $page().innerHTML = `
-    ${pageHeader("Pixellot Services", "Pixellot Agent, VPU encoder, and related Windows services",
+    ${pageHeader("Service Status", "Pixellot Agent, VPU encoder, and related Windows services",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache.services=null;renderServices()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
@@ -3826,40 +4885,14 @@ function renderServices() {
         <div>
           <div class="svc-quick-action-title">Restart Agent + Coordinator</div>
           <div class="svc-quick-action-body">
-            Runs <span class="font-mono">c:\\pixellot\\bin\\keepagentup.exe</span> — the documented fast remedy when the Pixellot Agent or Coordinator is unresponsive. Try this before escalating to an RMA.
+            The documented first fix when the Pixellot Agent or Coordinator stops responding — try it before escalating for a hardware return (RMA). <span class="font-mono">Runs c:\\pixellot\\bin\\keepagentup.exe.</span>
           </div>
         </div>
-        <button class="btn-outline btn-ol-amber" id="svc-keepagent-btn">
+        <button class="btn-outline btn-ol-blue" id="svc-keepagent-btn" title="Documented first-line remedy when Agent/Coordinator is unresponsive">
           ${svgIcon("zap", 14)} Restart Agent + Coordinator
         </button>
       </div>
       <div id="svc-keepagent-result" class="svc-quick-action-result hidden"></div>
-    </div>
-
-    <!-- Reinstall Pixellot Dependencies — PDF #2 -->
-    <!-- HIDDEN by default. ONLY revealed if /api/pixellot-logs reports
-         depsErrorDetected=true (CUDNN/TensorFlow patterns found). Never
-         show this as a casual action — it's a tier-2 remedy. -->
-    <div class="card svc-quick-action svc-rare-action hidden" id="svc-reinstall-card">
-      <div class="svc-quick-action-row">
-        <div>
-          <div class="svc-quick-action-title">
-            Reinstall Pixellot Dependencies
-            <span class="svc-rare-pill">RARELY USED</span>
-          </div>
-          <div class="svc-quick-action-body" id="svc-reinstall-body">
-            Downloads <span class="font-mono">Pixellot-Installer-Dependencies-5.0.0.exe</span> to <span class="font-mono">C:\\pixellot\\downloadedversion\\</span> and runs it silently — documented remedy per PDF #2.
-          </div>
-          <div class="svc-rare-warn">
-            ${svgIcon("alert", 12)}
-            <span><strong>Do not run unless explicitly directed by Pixellot support or escalation.</strong> This is a last-resort remedy for confirmed CUDNN/TensorFlow dependency failures — recording is paused for 5–15 minutes and a reboot is recommended.</span>
-          </div>
-        </div>
-        <button class="btn-outline btn-ol-red" id="svc-reinstall-btn">
-          ${svgIcon("download", 14)} Reinstall Dependencies
-        </button>
-      </div>
-      <div id="svc-reinstall-result" class="svc-quick-action-result hidden"></div>
     </div>
 
     <div class="svc-grid" id="svc-grid">
@@ -3867,26 +4900,6 @@ function renderServices() {
       ${!svcs.length ? '<p class="text-pulse-muted text-sm">No services data</p>' : ""}
     </div>
   `;
-
-  // Check the log scanner for CUDNN/TensorFlow errors — show the reinstall
-  // card only when those errors are present so we don't suggest a 10-min
-  // install on a healthy box.
-  (async () => {
-    const r = await api("/api/pixellot-logs?hours=48");
-    if (currentPage !== "services") return;
-    const card = document.getElementById("svc-reinstall-card");
-    const body = document.getElementById("svc-reinstall-body");
-    if (!card) return;
-    if (r && !r.error && r.depsErrorDetected) {
-      card.classList.remove("hidden");
-      if (body) {
-        body.innerHTML = `
-          <span class="font-semibold" style="color:var(--c-accent-red)">${svgIcon("alert", 12)} CUDNN/TensorFlow errors detected in the VPU logs.</span>
-          Downloads <span class="font-mono">Pixellot-Installer-Dependencies-5.0.0.exe</span> to <span class="font-mono">C:\\pixellot\\downloadedversion\\</span> and runs it silently — documented remedy per PDF #2.
-        `;
-      }
-    }
-  })();
 
   // Installed Pixellot Dependencies (Canopy/Leaf/getVpuDepsFromRegistry.ps1
   // adaptation). Fills the always-visible status line at the top of the tab.
@@ -3950,7 +4963,7 @@ function renderServices() {
     const btn = document.getElementById("svc-keepagent-btn");
     const resultEl = document.getElementById("svc-keepagent-result");
     btn.disabled = true;
-    btn.innerHTML = `${svgIcon("refresh", 14)} Running keepagentup.exe...`;
+    btn.innerHTML = `${svgIcon("refresh", 14)} Restarting...`;
     resultEl.classList.add("hidden");
 
     const r = await apiPost("/api/services/restart-agent", {});
@@ -3978,51 +4991,6 @@ function renderServices() {
     }
   });
 
-  // Reinstall Pixellot Dependencies (PDF #2) — confirm + run + show result
-  document.getElementById("svc-reinstall-btn")?.addEventListener("click", async () => {
-    const ok = confirm(
-      "⚠ RARELY USED — Reinstall Pixellot Dependencies?\n\n" +
-      "This is a tier-2 remedy. ONLY run it when:\n" +
-      "  • Pixellot support or an escalation engineer has directed you to, OR\n" +
-      "  • You have confirmed CUDNN_STATUS_* or TensorFlow errors in the VPU logs\n" +
-      "    (see Event Viewer → Pixellot Logs).\n\n" +
-      "Effects:\n" +
-      "  • Downloads ~90 MB installer to C:\\pixellot\\downloadedversion\\\n" +
-      "  • Runs silently — recording is PAUSED for 5–15 minutes\n" +
-      "  • Reboot recommended afterward\n\n" +
-      "Proceed?"
-    );
-    if (!ok) return;
-
-    const btn = document.getElementById("svc-reinstall-btn");
-    const result = document.getElementById("svc-reinstall-result");
-    btn.disabled = true;
-    btn.innerHTML = `${svgIcon("refresh", 14)} Downloading + installing…`;
-    result.classList.remove("hidden");
-    result.className = "svc-quick-action-result";
-    result.innerHTML = `<div class="text-xs text-pulse-muted">Running — this can take 5–15 minutes. Watch the Script Log for progress.</div>`;
-
-    const r = await apiPost("/api/services/reinstall-deps", {});
-    btn.disabled = false;
-    btn.innerHTML = `${svgIcon("download", 14)} Reinstall Dependencies`;
-
-    const okState = r && r.success;
-    result.className = "svc-quick-action-result " + (okState ? "svc-result-ok" : "svc-result-err");
-    const stepsHtml = (r?.steps || []).map(s =>
-      `<li class="px-step px-step-${esc(s.status)}">
-        ${svgIcon(s.status === "ok" ? "check" : s.status === "skipped" ? "info" : "alert", 12)}
-        <span class="font-semibold">${esc(s.label)}</span>
-        <span class="text-xs text-pulse-muted">${esc(s.detail || "")}</span>
-        ${s.durationMs ? `<span class="text-xs text-pulse-muted">· ${Math.round(s.durationMs/1000)}s</span>` : ""}
-      </li>`
-    ).join("");
-    result.innerHTML = `
-      <div class="font-semibold">${okState ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
-      <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
-      ${stepsHtml ? `<ul class="px-steps mt-2">${stepsHtml}</ul>` : ""}
-      ${r?.targetFile ? `<div class="text-xs text-pulse-muted mt-2">Installer: <span class="font-mono">${esc(r.targetFile)}</span></div>` : ""}
-    `;
-  });
 }
 
 // ── Disk Health ──────────────────────────────────────────────
@@ -4038,18 +5006,42 @@ function renderDiskHealth() {
   const events = data.diskEvents || [];
   const paths = data.pixellotPaths || [];
 
-  const allHealthy = physical.every(d => (d.healthStatus || "").toLowerCase() === "healthy");
-  const smartLabel = allHealthy ? "All Disks Healthy" : "Issue Detected";
-  const smartSev = allHealthy ? "ok" : "critical";
+  // SMART: an empty physicalDisks array means collection FAILED — `every()`
+  // on [] returns true, which would otherwise show a false "all healthy".
+  // Beyond the coarse Healthy/Unhealthy rollup we now factor in the SSD-fleet
+  // signals: the OS pre-fail flag, uncorrectable errors, and wear %.
+  const haveSmart = physical.length > 0;
+  const predictFail = data.predictFailure === true;
+  const anyUnhealthy = haveSmart && physical.some(d => (d.healthStatus || "").toLowerCase() !== "healthy");
+  const anyUncorrected = haveSmart && physical.some(d => {
+    const s = d.smart || {};
+    return (s.readErrorsUncorrected || 0) + (s.writeErrorsUncorrected || 0) > 0;
+  });
+  const maxWear = haveSmart ? physical.reduce((m, d) => {
+    const w = (d.smart || {}).wearPercent;
+    return (w != null && w > m) ? w : m;
+  }, 0) : 0;
+  const smartBad  = predictFail || anyUnhealthy || anyUncorrected;
+  const smartWarn = !smartBad && maxWear >= 80;
+  const smartSev  = !haveSmart ? "muted" : smartBad ? "critical" : smartWarn ? "warning" : "ok";
+  const smartChip = !haveSmart ? "No data" : smartBad ? "Issue" : smartWarn ? "Wear high" : "Healthy";
+  const smartVal  = !haveSmart ? "SMART not reported"
+    : smartBad ? "Drive predicting failure"
+    : smartWarn ? `Highest wear ${maxWear}%`
+    : `${physical.length} disk${physical.length === 1 ? "" : "s"} checked`;
 
   const errorCount = events.length;
-  const errorLabel = errorCount === 0 ? "No disk errors" : `${errorCount} event(s) in last 48h`;
-  const errorSev = errorCount > 5 ? "critical" : errorCount > 0 ? "warning" : "ok";
+  const errorSev  = errorCount > 5 ? "critical" : errorCount > 0 ? "warning" : "ok";
+  const errorChip = errorCount === 0 ? "Clean" : errorCount > 5 ? "High" : "Attention";
+  const errorVal  = errorCount === 0 ? "None" : `${errorCount} event${errorCount === 1 ? "" : "s"}`;
 
   const osDrive = logical.find(d => d.deviceID === "C:") || logical[0];
   const osFreeGB = osDrive?.freeSpaceGB;
   const osPct = osDrive?.usedPercent;
-  const osLabel = osDrive ? `${osFreeGB} GB free of ${osDrive.sizeGB} GB` : "No data";
+  // Guard each field so a partial payload can't render "undefined GB free…".
+  const osLabel = osDrive
+    ? `${osFreeGB != null ? osFreeGB : "—"} GB free of ${osDrive.sizeGB != null ? osDrive.sizeGB : "—"} GB`
+    : "No data";
   // Critical at >90% used (matches the volume bars, the [Storage] finding, and
   // the dashboard gauge), OR if absolute headroom drops below 50 GB (catches a
   // nearly-full large disk that's still under 90%). Warning at >80% / <100 GB.
@@ -4070,7 +5062,7 @@ function renderDiskHealth() {
   }
 
   $page().innerHTML = `
-    ${pageHeader("Disk & System Health", "SMART, free space, and the Pixellot data paths that fill up first",
+    ${pageHeader("Disks", "Drive health, free space, and the Pixellot folders that fill up first",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache['disk-health']=null;renderDiskHealth()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
@@ -4078,64 +5070,93 @@ function renderDiskHealth() {
 
     <!-- 3 Summary Cards -->
     <div class="dh-summary-row">
-      ${summaryCard("heartbeat", "SMART Health", smartSev, smartLabel, smartLabel, "Per-disk health attributes")}
-      ${summaryCard("alert", "Disk & Driver Errors", errorSev, errorLabel, errorLabel, "From the Windows Event Log (last 48 h)")}
-      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Over 90% used (or <50 GB free) → Critical")}
+      ${summaryCard("heartbeat", "Drive Self-Check (SMART)", smartSev, smartChip, smartVal, "Built-in health status reported by each drive")}
+      ${summaryCard("alert", "Disk & Driver Errors", errorSev, errorChip, errorVal, "Disk, NVMe, NTFS & volume events from the Windows Event Log (last 24 h)")}
+      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Critical when over 90% full or under 50 GB free")}
     </div>
 
     <!-- Volumes -->
     <div class="card">
       ${sectionTitle("database", "Volumes")}
       ${logical.length ? logical.map(d => {
-        const pct = d.usedPercent || 0;
-        const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
         const role = d.deviceID === "C:" ? "System — OS & Pixellot"
-                   : d.deviceID === "D:" ? "Recordings — local VOD storage"
+                   : d.deviceID === "D:" ? "Recordings — local game-video storage"
                    : "Storage";
-        const status = pct > 90 ? "Critical" : pct > 80 ? "Low" : "OK";
-        const statusColor = pct > 90 ? "var(--c-accent-red)" : pct > 80 ? "var(--c-accent-amber)" : "var(--c-accent-green)";
+        // Missing usedPercent = Unknown — don't default to 0% and paint a
+        // green "OK" bar that makes a no-data volume look healthy.
+        const hasPct = d.usedPercent != null;
+        const pct = hasPct ? d.usedPercent : 0;
+        // One severity drives BOTH the bar fill and the status label, in
+        // theme tokens (no hardcoded blue OK bar next to a green OK label).
+        let sevColor = "var(--c-accent-green)", status = "OK";
+        if (!hasPct) { sevColor = "var(--c-dim)"; status = "Unknown"; }
+        else if (pct > 90) { sevColor = "var(--c-accent-red)"; status = "Critical"; }
+        else if (pct > 80) { sevColor = "var(--c-accent-amber)"; status = "Low"; }
+        const freeStr = d.freeSpaceGB != null ? `${d.freeSpaceGB} GB` : "—";
+        const sizeStr = d.sizeGB != null ? `${d.sizeGB} GB` : "—";
         return `<div class="dh-vol-row">
           <span class="dh-vol-drive font-mono">${esc(d.deviceID)}</span>
           <span class="dh-vol-role">${esc(role)}</span>
           <div class="dh-vol-bar-wrap">
-            <div class="dash-vol-bar"><div class="dash-vol-fill" style="width:${Math.min(pct, 100)}%;background:${color}"></div></div>
+            <div class="dash-vol-bar"><div class="dash-vol-fill" style="width:${Math.min(pct, 100)}%;background:${sevColor}"></div></div>
           </div>
-          <span class="dh-vol-free">${d.freeSpaceGB != null ? esc(String(d.freeSpaceGB)) : "—"} free of ${d.sizeGB != null ? esc(String(d.sizeGB)) + " GB" : "—"}</span>
-          <span class="dh-vol-status" style="color:${statusColor}">${esc(status)}</span>
+          <span class="dh-vol-free">${esc(freeStr)} free of ${esc(sizeStr)}</span>
+          <span class="dh-vol-status" style="color:${sevColor}">${esc(status)}</span>
         </div>`;
       }).join("") : '<p class="text-pulse-muted text-sm">No volume data</p>'}
     </div>
 
     <!-- Pixellot Storage Paths -->
-    ${paths.length ? `
+    ${paths.length ? (() => {
+      // Drop the Status column entirely when no path reports a status —
+      // saves a wasted column of dashes for the common case.
+      const hasStatus = paths.some(p => p.status);
+      return `
     <div class="card mt-4">
       ${sectionTitle("file", "Pixellot Storage Paths")}
       <table class="data-table"><thead><tr>
-        <th>Path</th><th>Description</th><th>Size</th><th>Status</th>
+        <th>Path</th><th>Size</th><th>Files</th>
       </tr></thead><tbody>
       ${paths.map(p => `<tr>
         <td class="font-mono text-xs">${esc(p.path)}</td>
-        <td class="text-pulse-muted">${esc(p.description || "")}</td>
         <td class="font-semibold">${p.sizeGB != null ? esc(String(p.sizeGB)) + " GB" : esc(p.error || "—")}</td>
-        <td>${p.status ? statusBadge(p.status) : "—"}</td>
+        <td class="text-pulse-muted">${p.fileCount != null ? esc(Number(p.fileCount).toLocaleString()) : "—"}</td>
       </tr>`).join("")}
       </tbody></table>
-    </div>` : ""}
+    </div>`;
+    })() : ""}
 
     <!-- Physical Disks -->
     ${physical.length ? `
     <div class="card mt-4">
       ${sectionTitle("hdd", "Physical Disks")}
       <table class="data-table"><thead><tr>
-        <th>Name</th><th>Type</th><th>Bus</th><th>Size</th><th>Health</th>
+        <th>Name</th><th>Type</th><th>Bus</th><th>Size</th><th title="Percentage of the SSD's rated write life used. From the drive's SMART/reliability counters.">Wear</th><th>Temp</th><th title="Total powered-on hours">Power-On</th><th>Health</th>
       </tr></thead><tbody>
-      ${physical.map(d => `<tr>
+      ${physical.map(d => {
+        const s = d.smart || {};
+        const wearStr = s.wearPercent != null ? s.wearPercent + "%" : "—";
+        const wearCls = s.wearPercent != null && s.wearPercent >= 80 ? "status-warn" : "";
+        const tempStr = s.temperatureC != null ? s.temperatureC + "°C" : "—";
+        const tempCls = s.temperatureC != null && s.temperatureC >= 60 ? "status-warn" : "";
+        const hoursStr = s.powerOnHours != null ? Number(s.powerOnHours).toLocaleString() + " h" : "—";
+        // operationalStatus carries the actionable detail (e.g. "Predictive
+        // Failure") that the coarse health rollup hides — surface it only when
+        // it's not the boring "OK".
+        const op = (d.operationalStatus || "").trim();
+        const opLine = op && op.toLowerCase() !== "ok"
+          ? `<div class="text-xs status-warn">${esc(op)}</div>` : "";
+        return `<tr>
         <td>${esc(d.friendlyName)}</td>
         <td>${esc(d.mediaType)}</td>
         <td>${esc(d.busType)}</td>
         <td>${d.sizeGB != null ? esc(String(d.sizeGB)) + " GB" : "—"}</td>
-        <td>${statusBadge(d.healthStatus || "Unknown")}</td>
-      </tr>`).join("")}
+        <td class="font-mono ${wearCls}">${esc(wearStr)}</td>
+        <td class="font-mono ${tempCls}">${esc(tempStr)}</td>
+        <td class="font-mono text-xs text-pulse-muted">${esc(hoursStr)}</td>
+        <td>${statusBadge(d.healthStatus || "Unknown")}${opLine}</td>
+      </tr>`;
+      }).join("")}
       </tbody></table>
     </div>` : ""}
 
@@ -4151,7 +5172,7 @@ function renderDiskHealth() {
           <td class="text-xs whitespace-nowrap">${formatTime(e.timeCreated)}</td>
           <td>${statusBadge(e.level)}</td>
           <td class="text-xs">${esc(e.source)}</td>
-          <td class="text-xs max-w-md truncate">${esc(e.message)}</td>
+          <td class="text-xs dh-event-msg" title="${esc(e.message)}">${esc(e.message)}</td>
         </tr>`).join("")}
         </tbody></table>
       </div>
@@ -4190,7 +5211,7 @@ async function _runRepairTool(action) {
     CheckHealth: "Check Image Health",
     RestoreHealth: "Restore Image",
     SfcScan: "Scan System Files",
-    ChkdskSchedule: "Schedule chkdsk",
+    ChkdskSchedule: "Schedule a disk check (chkdsk)",
   };
   const slow = action === "RestoreHealth" || action === "SfcScan";
   if (slow) {
@@ -4256,9 +5277,94 @@ function formatTime(iso) {
 
 // ── Event Viewer ─────────────────────────────────────────────
 
+// ── Reboots ──────────────────────────────────────────────────
+// "Why did this VPU restart, and is one pending?" Built from the System log
+// (1074/1076/6008/41). A reboot Pulse itself triggered is positively labeled —
+// Reboot-Vpu.ps1 stamps the event Comment, so an empty/other comment is proof
+// it was external (a scheduled task, Windows Update, or a crash).
+function renderReboots() {
+  const data = cached("reboots");
+  if (!data) { $page().innerHTML = sectionLoading("Reboot History"); fetchSection("reboots"); return; }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
+
+  const pending = data.pending || {};
+  const isPending = !!pending.isPending;
+  const reasons = pending.reasons || [];
+  const history = data.history || [];
+  const diTask = data.deviceInstallRebootTaskLastRun;
+
+  function sumCard(icon, title, sev, chip, val, desc) {
+    return `<div class="card dh-summary-card">
+      <div class="dh-summary-top">
+        <span class="dh-summary-icon">${svgIcon(icon, 18)}</span>
+        <span class="dh-summary-title">${esc(title)}</span>
+        ${severityChip(sev, chip)}
+      </div>
+      <div class="dh-summary-val">${esc(val)}</div>
+      <div class="dh-summary-desc">${esc(desc)}</div>
+    </div>`;
+  }
+
+  const pendCard = sumCard(
+    isPending ? "alert" : "check", "Pending reboot",
+    isPending ? "warning" : "ok", isPending ? "Reboot pending" : "None pending",
+    isPending ? reasons.join("; ") : "Nothing is waiting on a restart",
+    isPending ? "Windows may restart on its own — reboot at a safe time to clear it."
+              : "No staged updates or pending file operations.");
+
+  const uptimeCard = sumCard(
+    "clock", "Uptime", "muted", "Since last boot",
+    data.uptime || "—",
+    data.lastBoot ? `Last boot ${formatTime(data.lastBoot)}` : "Last boot unknown");
+
+  const diCard = sumCard(
+    "zap", "Device-install reboot", diTask ? "info" : "muted", diTask ? "Has fired" : "Never",
+    diTask ? formatTime(diTask) : "Not on this box",
+    "Windows' built-in task that reboots after a driver install — the usual cause of an “unprovoked” restart at logon.");
+
+  function row(h) {
+    const typeChip = h.category === "unexpected"
+      ? severityChip("critical", "Unexpected")
+      : severityChip("muted", "Planned");
+    const src = h.byPulse
+      ? `<span class="sev-chip sev-chip-ok">${svgIcon("shield", 12)} ${esc(h.source || "Pulse")}</span>`
+      : esc(h.source || "—");
+    const reason = [h.reasonText, h.reasonCode].filter(Boolean).map(esc).join(" ");
+    return `<tr>
+      <td class="text-xs whitespace-nowrap font-mono">${formatTime(h.time)}</td>
+      <td>${typeChip}</td>
+      <td class="text-xs">${src}</td>
+      <td class="text-xs font-mono">${esc(h.user || "—")}</td>
+      <td class="text-xs">${reason || "—"}${h.process ? `<br><span class="text-pulse-muted font-mono">${esc(h.process)}</span>` : ""}</td>
+      <td class="text-xs">${h.comment ? esc(h.comment) : '<span class="text-pulse-muted">— (empty: not Pulse)</span>'}</td>
+    </tr>`;
+  }
+
+  const table = history.length ? `
+    <div class="card mt-4">
+      <div class="ev-count">${history.length} restart / shutdown event${history.length === 1 ? "" : "s"} (last 7 days)</div>
+      <div class="ev-table-wrap">
+        <table class="data-table ev-table"><thead><tr>
+          <th>When</th><th>Type</th><th>Source</th><th>User</th><th>Reason / process</th><th>Comment</th>
+        </tr></thead><tbody>
+        ${history.map(row).join("")}
+        </tbody></table>
+      </div>
+    </div>`
+    : '<div class="card mt-4"><div class="text-center py-8 text-pulse-muted">No restarts or shutdowns recorded in the last 7 days.</div></div>';
+
+  $page().innerHTML = `
+    ${pageHeader("Power Events", "Why this VPU last restarted, and whether a reboot is pending. Reboots Pulse itself triggered are labeled — everything else is external.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache['reboots']=null;renderReboots()">${svgIcon("refresh", 14)} Refresh</button>`
+    )}
+    <div class="dh-summary-row">${pendCard}${uptimeCard}${diCard}</div>
+    ${table}
+  `;
+}
+
 function renderEvents() {
   $page().innerHTML = `
-    ${pageHeader("Event Viewer", "Filtered Windows event-log entries for disk, NIC, Pixellot, and core service sources",
+    ${pageHeader("Windows Events", "Recent Windows log entries for disk, network, Pixellot, and core services",
       `<button class="btn-outline btn-ol-blue" id="ev-refresh">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
@@ -4286,15 +5392,12 @@ function renderEvents() {
         </div>
         <div class="ev-filter-group ev-filter-grow">
           <label class="ev-filter-label">SOURCE OR MESSAGE CONTAINS</label>
-          <input type="text" id="ev-source" placeholder="e.g. disk, Pixellot, WHEA" class="ev-input"/>
+          <input type="text" id="ev-source" placeholder="e.g. disk, Pixellot, hardware error" class="ev-input"/>
         </div>
       </div>
     </div>
 
     <div class="card mt-4" id="ev-body">${loading()}</div>
-
-    <!-- Pixellot Logs scan (PDF #5) — separate from Windows event log -->
-    <div class="card mt-4" id="ev-pixellot-body">${loading()}</div>
   `;
 
   const loadEvents = async () => {
@@ -4303,6 +5406,7 @@ function renderEvents() {
     evBody.innerHTML = loading();
     const data = await api(`/api/events?hours=${encodeURIComponent(hours)}&level=all`);
     if (currentPage !== "events") return;
+    if (data.error) { evBody.innerHTML = errorBox(data.message); return; }
 
     const showError = document.getElementById("ev-error")?.checked;
     const showWarning = document.getElementById("ev-warning")?.checked;
@@ -4349,106 +5453,257 @@ function renderEvents() {
     `;
   };
 
-  // Pixellot logs scanner (PDF #5) — scans C:\Pixellot\Data\Log for
-  // error / fatal / restart markers. Surfaces CUDNN/TensorFlow patterns
-  // with a "reinstall dependencies" hint per PDF #2.
-  const loadPixellotLogs = async () => {
-    const hours = document.getElementById("ev-hours").value;
-    const body = document.getElementById("ev-pixellot-body");
-    if (!body) return;
-    body.innerHTML = loading();
-    const data = await api(`/api/pixellot-logs?hours=${encodeURIComponent(hours)}`);
-    if (currentPage !== "events") return;
-
-    if (data.error) {
-      body.innerHTML = `${sectionTitle("file", "Pixellot Logs")}
-        <p class="text-sm text-pulse-muted">${esc(data.message || "Failed to scan Pixellot logs")}</p>`;
-      return;
-    }
-
-    const entries = data.entries || [];
-    const stats = data.stats || {};
-    const depsErr = !!data.depsErrorDetected;
-
-    const levelChip = (lvl) => {
-      const l = (lvl || "").toLowerCase();
-      if (l === "fatal")   return '<span class="ev-level-chip ev-level-error">Fatal</span>';
-      if (l === "error")   return '<span class="ev-level-chip ev-level-error">Error</span>';
-      if (l === "restart") return '<span class="ev-level-chip ev-level-warn">Restart</span>';
-      return `<span class="ev-level-chip ev-level-info">${esc(l)}</span>`;
-    };
-
-    body.innerHTML = `
-      ${sectionTitle("file", "Pixellot Logs")}
-      <p class="text-xs text-pulse-muted mb-3">
-        Scanned ${esc(String(data.scannedFiles || 0))} log file(s) in <span class="font-mono">C:\\Pixellot\\Data\\Log</span> over the last ${esc(String(data.hoursBack || ""))} hour(s).
-      </p>
-
-      <div class="px-log-summary">
-        <span class="px-log-stat ${stats.fatal > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.fatal || 0))} fatal</span>
-        <span class="px-log-stat ${stats.error > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.error || 0))} error</span>
-        <span class="px-log-stat ${stats.restart > 0 ? 'px-log-stat-warn' : ''}">${esc(String(stats.restart || 0))} restart</span>
-      </div>
-
-      ${depsErr ? `<div class="px-log-deps-warn mt-3">
-        ${svgIcon("alert", 14)}
-        <div>
-          <div class="font-semibold">CUDNN / TensorFlow failure detected</div>
-          <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. The documented remedy is to reinstall the Pixellot dependencies installer — see PDF #2.</div>
-        </div>
-      </div>` : ""}
-
-      ${data.warning ? `<p class="text-xs text-pulse-muted mt-2">${esc(data.warning)}</p>` : ""}
-
-      ${entries.length ? `
-        <div class="ev-table-wrap mt-3">
-          <table class="data-table ev-table"><thead><tr>
-            <th>Time</th><th>Level</th><th>File</th><th>Line</th><th>Content</th>
-          </tr></thead><tbody>
-          ${entries.map(e => `<tr class="${e.depsError ? 'px-log-row-deps' : ''}">
-            <td class="text-xs whitespace-nowrap font-mono">${esc(e.timestamp || formatTime(e.fileMTime))}</td>
-            <td>${levelChip(e.level)}</td>
-            <td class="text-xs font-mono">${esc(e.file)}</td>
-            <td class="text-xs font-mono">${esc(String(e.lineNumber || ""))}</td>
-            <td class="text-xs ev-msg-cell" title="${esc(e.content)}">${esc(e.content)}${e.depsError ? ' <span class="px-log-deps-pill">DEPS</span>' : ''}</td>
-          </tr>`).join("")}
-          </tbody></table>
-        </div>
-        ${data.truncated ? '<p class="text-xs text-pulse-muted mt-2">Results truncated at 500 matches.</p>' : ""}
-      ` : '<p class="text-sm text-pulse-muted mt-3">No matching entries.</p>'}
-    `;
-  };
-
-  document.getElementById("ev-refresh")?.addEventListener("click", () => { loadEvents(); loadPixellotLogs(); });
-  document.getElementById("ev-hours")?.addEventListener("change", () => { loadEvents(); loadPixellotLogs(); });
+  document.getElementById("ev-refresh")?.addEventListener("click", loadEvents);
+  document.getElementById("ev-hours")?.addEventListener("change", loadEvents);
   ["ev-error", "ev-warning", "ev-info"].forEach(id => {
     document.getElementById(id)?.addEventListener("change", loadEvents);
   });
   document.getElementById("ev-source")?.addEventListener("input", _debounce(loadEvents, 300));
   loadEvents();
-  loadPixellotLogs();
+}
+
+// ── Pixellot Logs ────────────────────────────────────────────
+// Scans C:\Pixellot\Data\Log for error / fatal / restart markers (PDF #5),
+// flagging CUDNN/TensorFlow dependency errors so the tech can escalate to
+// Pixellot support. Was a card on Windows Events; now its own tab under DATA LOGS.
+function renderPixellotLogs() {
+  $page().innerHTML = `
+    ${pageHeader("Pixellot Logs", "Errors, fatals, and process restarts scanned from the Pixellot log directory.",
+      `<button class="btn-outline btn-ol-blue" id="pxl-refresh">${svgIcon("refresh", 14)} Refresh</button>`
+    )}
+
+    <div class="card ev-filter-card">
+      <div class="ev-filter-row">
+        <div class="ev-filter-group">
+          <label class="ev-filter-label">TIME WINDOW</label>
+          <select id="pxl-hours" class="ev-select">
+            <option value="12">Last 12 hours</option>
+            <option value="24" selected>Last 24 hours</option>
+            <option value="48">Last 48 hours</option>
+            <option value="168">Last 7 days</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-4" id="pxl-body">${loading()}</div>
+  `;
+
+  document.getElementById("pxl-refresh")?.addEventListener("click", _loadPixellotLogs);
+  document.getElementById("pxl-hours")?.addEventListener("change", _loadPixellotLogs);
+  _loadPixellotLogs();
+}
+
+async function _loadPixellotLogs() {
+  const hours = document.getElementById("pxl-hours")?.value || "24";
+  const body = document.getElementById("pxl-body");
+  if (!body) return;
+  body.innerHTML = loading();
+  const data = await api(`/api/pixellot-logs?hours=${encodeURIComponent(hours)}`);
+  if (currentPage !== "pixellot-logs") return;
+  const el = document.getElementById("pxl-body");
+  if (!el) return;
+
+  if (data.error) {
+    el.innerHTML = `${sectionTitle("file", "Pixellot Logs")}
+      <p class="text-sm text-pulse-muted">${esc(data.message || "Failed to scan Pixellot logs")}</p>`;
+    return;
+  }
+
+  const entries = data.entries || [];
+  const stats = data.stats || {};
+  const depsErr = !!data.depsErrorDetected;
+
+  const levelChip = (lvl) => {
+    const l = (lvl || "").toLowerCase();
+    // Distinct visual class per severity — Fatal solid-fill (showstopper),
+    // Error red-outline (single failure), Restart blue-outline (lifecycle
+    // event, not a problem).
+    if (l === "fatal")   return '<span class="ev-level-chip ev-level-fatal">Fatal</span>';
+    if (l === "error")   return '<span class="ev-level-chip ev-level-error">Error</span>';
+    if (l === "restart") return '<span class="ev-level-chip ev-level-restart">Restart</span>';
+    return `<span class="ev-level-chip ev-level-info">${esc(l)}</span>`;
+  };
+
+  el.innerHTML = `
+    ${sectionTitle("file", "Pixellot Logs")}
+    <p class="text-xs text-pulse-muted mb-3">
+      Scanned ${esc(String(data.scannedFiles || 0))} log file(s) in <span class="font-mono">C:\\Pixellot\\Data\\Log</span> over the last ${esc(String(data.hoursBack || ""))} hour(s).
+    </p>
+
+    <div class="px-log-summary">
+      <span class="px-log-stat ${stats.fatal > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.fatal || 0))} fatal</span>
+      <span class="px-log-stat ${stats.error > 0 ? 'px-log-stat-bad' : ''}">${esc(String(stats.error || 0))} error</span>
+      <span class="px-log-stat ${stats.restart > 0 ? 'px-log-stat-warn' : ''}">${esc(String(stats.restart || 0))} restart</span>
+    </div>
+
+    ${depsErr ? `<div class="px-log-deps-warn mt-3">
+      ${svgIcon("alert", 14)}
+      <div>
+        <div class="font-semibold">Pixellot video dependency error detected (CUDNN/TensorFlow)</div>
+        <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. This needs a Pixellot-support-directed dependency reinstall — capture an export and escalate to Pixellot support.</div>
+      </div>
+    </div>` : ""}
+
+    ${data.warning ? `<p class="text-xs text-pulse-muted mt-2">${esc(data.warning)}</p>` : ""}
+
+    ${entries.length ? `
+      <div class="ev-table-wrap mt-3">
+        <table class="data-table ev-table"><thead><tr>
+          <th>Time</th><th>Level</th><th>File</th><th>Line</th><th>Content</th>
+        </tr></thead><tbody>
+        ${entries.map(e => `<tr class="${e.depsError ? 'px-log-row-deps' : ''}">
+          <td class="text-xs whitespace-nowrap font-mono">${esc(e.timestamp || formatTime(e.fileMTime))}</td>
+          <td>${levelChip(e.level)}</td>
+          <td class="text-xs font-mono">${esc(e.file)}</td>
+          <td class="text-xs font-mono">${esc(String(e.lineNumber || ""))}</td>
+          <td class="text-xs ev-msg-cell" title="${esc(e.content)}">${esc(e.content)}${e.depsError ? ' <span class="px-log-deps-pill">DEPS</span>' : ''}</td>
+        </tr>`).join("")}
+        </tbody></table>
+      </div>
+      ${data.truncated ? '<p class="text-xs text-pulse-muted mt-2">Results truncated at 500 matches.</p>' : ""}
+    ` : '<p class="text-sm text-pulse-muted mt-3">No matching entries.</p>'}
+  `;
+}
+
+// ── Pulse Logs ───────────────────────────────────────────────
+// Pulse's own logs: the diagnostic script-call log (live, from logEntries) and
+// the backend server log (pulse-server.log). Full-page promotion of the bottom
+// log drawer.
+function renderPulseLogs() {
+  $page().innerHTML = `
+    ${pageHeader("Pulse Logs", "Pulse's own diagnostic script-call log and backend server log.",
+      `<button class="btn-outline btn-ol-blue" id="pulse-log-refresh">${svgIcon("refresh", 14)} Refresh</button>`
+    )}
+
+    <div class="card">
+      ${sectionTitle("activity", "Script Call Log")}
+      <p class="text-xs text-pulse-muted mb-3">Every PowerShell diagnostic script Pulse has run this session — duration, output size, and status. Updates live as checks run.</p>
+      <div class="pulse-log-scroll" id="pulse-log-script">${loading()}</div>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("file", "Server Log")}
+      <p class="text-xs text-pulse-muted mb-3">The Pulse backend's own log (<span class="font-mono">pulse-server.log</span>) — startup, requests, and errors.</p>
+      <div class="pulse-log-scroll" id="pulse-log-server">${loading()}</div>
+    </div>
+  `;
+
+  _renderPulseLogsScript();
+  _loadPulseServerLog();
+  document.getElementById("pulse-log-refresh")?.addEventListener("click", () => {
+    _renderPulseLogsScript();
+    _loadPulseServerLog();
+  });
+}
+
+function _renderPulseLogsScript() {
+  const el = document.getElementById("pulse-log-script");
+  if (!el) return;
+  const entries = logEntries.slice(-200);
+  el.innerHTML = entries.length
+    ? entries.map(_scriptLogEntryHtml).join("")
+    : _logEmptyState("Waiting for diagnostic activity… script calls will appear here.");
+  el.scrollTop = el.scrollHeight;
+}
+
+async function _loadPulseServerLog() {
+  const el = document.getElementById("pulse-log-server");
+  if (!el) return;
+  const data = await api("/api/server-log?tail=500");
+  if (currentPage !== "pulse-logs") return;
+  const el2 = document.getElementById("pulse-log-server");
+  if (!el2) return;
+  const lines = (data && !data.error) ? (data.lines || []) : null;
+  el2.innerHTML = (lines && lines.length)
+    ? lines.map((l) => `<div class="log-entry server-log-line">${esc(l)}</div>`).join("")
+    : _logEmptyState((data && data.error)
+        ? (data.message || "Could not read the server log.")
+        : "Server log empty. The server logs to pulse-server.log on startup and during requests.");
+  el2.scrollTop = el2.scrollHeight;
+}
+
+// ── Help ─────────────────────────────────────────────────────
+// Static how-to + first-line troubleshooting for field techs. No data fetch.
+function renderHelp() {
+  $page().innerHTML = `
+    ${pageHeader("Help", "What Pulse is, how to read it, and the first things to try in the field.")}
+
+    <div class="card">
+      ${sectionTitle("info", "What Pulse is")}
+      <p class="text-sm" style="line-height:1.7">Pulse is a read-only diagnostic tool for Pixellot VPUs. It collects the VPU's
+      health — network, cameras, ScoreConnect, Pixellot software, system hardware, disks, and logs — into one place so you can
+      tell, fast, whether a unit can stream tonight's game and what's standing in the way. Pulse does not change Pixellot
+      settings; the few actions it offers (restart the Pixellot Agent, restart a service) are clearly labeled.</p>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("grid", "Reading the Dashboard")}
+      <ul class="help-list">
+        <li><strong>Stream Readiness</strong> is the headline call — <span class="status-pass">PASS</span>,
+        <span class="status-warn">WARN</span>, or <span class="status-fail">FAIL</span> on whether this VPU can broadcast.
+        FAIL means don't expect a clean broadcast without pre-game attention.</li>
+        <li><strong>Findings</strong> list the specific issues behind the verdict, worst first. Click any finding to jump
+        straight to the tab that owns the fix.</li>
+        <li><strong>Sidebar warning triangles</strong> (⚠) mark which areas have an open issue, so you know where to look
+        without opening every tab.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("wifi", "First things to try")}
+      <ul class="help-list">
+        <li><strong>No internet / can't reach services</strong> — On a VPU the venue/internet cable goes to the
+        <em>motherboard</em> network port, not the 4-port camera card. Check <strong>Network Test</strong>; Pulse flags it
+        if the cable is on the wrong port.</li>
+        <li><strong>A camera is missing or slow</strong> — Check <strong>Camera Connectivity</strong> for the port's link
+        and speed (camera ports should be 1 Gbps), then <strong>Camera Hardware</strong> for firmware and reachability.</li>
+        <li><strong>Scores aren't showing</strong> — Check <strong>ScoreConnect</strong> for the service and the
+        scoreboard feed, and confirm the OCR camera is calibrated under <strong>Calibrations</strong>.</li>
+        <li><strong>Pixellot Agent looks stuck</strong> — <strong>Service Status</strong> shows the Agent / Coordinator /
+        Watchdog. The documented first fix is <strong>Restart Agent + Coordinator</strong> on the
+        <strong>Pixellot Software</strong> tab.</li>
+        <li><strong>Recording errors / disk filling up</strong> — Check <strong>Disks</strong> for free space and drive
+        health, and scan <strong>Pixellot Logs</strong> for fatal/restart markers (it flags the known CUDNN/TensorFlow
+        dependency error).</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("inbox", "Capturing evidence for support")}
+      <ul class="help-list">
+        <li>Use <strong>Exports</strong> to generate a downloadable report to attach to a ticket — it re-runs
+        every check and bundles the results into one file.</li>
+        <li><strong>Share over LAN</strong> sends a report to another Pulse on the same network when you can't get the file off
+        the VPU directly.</li>
+        <li><strong>Pulse Logs</strong> shows Pulse's own script and server logs if Pulse itself is misbehaving.</li>
+      </ul>
+    </div>
+  `;
 }
 
 // ── Reports ──────────────────────────────────────────────────
 
 function renderReports() {
+  // Reports page used to host both Generate Report (its primary action,
+  // in the top-right) AND Run All Diagnostics (which belongs on Dashboard
+  // — same button appears there). We move Generate Report INTO the card
+  // describing it so action sits with its explanation, and drop the
+  // redundant Run All Diagnostics button.
   $page().innerHTML = `
-    ${pageHeader("Reports", "Diagnostic-run snapshots — generate and download full system reports",
-      `<button class="btn-outline btn-ol-green" id="rpt-export">
-        ${svgIcon("download", 14)} Generate Report
-      </button>
-      <button class="btn-outline btn-ol-blue" onclick="refreshAll()">
-        ${svgIcon("play", 14)} Run All Diagnostics
-      </button>
-      <button class="btn-outline btn-ol-blue" onclick="navigate('share')">
-        ${svgIcon("send", 14)} Send to a peer
+    ${pageHeader("Exports", "Diagnostic-run snapshots — generate and download full system reports",
+      `<button class="btn-outline btn-ol-blue" onclick="navigate('share')" title="Hand off a generated report to another Pulse on the same network">
+        ${svgIcon("send", 14)} Send to another Pulse
       </button>`
     )}
 
     <div class="card">
       ${sectionTitle("file", "Full Diagnostic Export")}
-      <p class="text-sm text-pulse-muted mb-4">Generate a complete diagnostic report containing all system, network, and service data. This runs every data collection script and bundles the output into a downloadable JSON file.</p>
-      <span id="rpt-status" class="text-sm text-pulse-muted"></span>
+      <p class="text-sm text-pulse-muted mb-4">Generate a complete diagnostic report covering system, network, and service data. This runs every check and bundles the results into one downloadable file.</p>
+      <button class="btn-outline btn-ol-green" id="rpt-export">
+        ${svgIcon("download", 14)} Generate Report
+      </button>
+      <span id="rpt-status" class="text-sm text-pulse-muted ml-3"></span>
       <div id="rpt-result" class="mt-4"></div>
     </div>
   `;
@@ -4457,7 +5712,7 @@ function renderReports() {
     const btn = document.getElementById("rpt-export");
     const status = document.getElementById("rpt-status");
     btn.disabled = true;
-    status.textContent = "Collecting data from all scripts...";
+    status.textContent = "Running all checks...";
     const data = await api("/api/reports/export");
     btn.disabled = false;
     if (data.error) {
@@ -4474,8 +5729,8 @@ function renderReports() {
       <div class="text-sm text-pulse-muted mb-3">
         ${sectionCount} sections · ${findingCount} finding${findingCount === 1 ? "" : "s"} ·
         ${errKeys.length
-          ? `<span style="color:var(--c-accent-amber)">${errKeys.length} collector${errKeys.length === 1 ? "" : "s"} failed: ${esc(errKeys.join(", "))}</span>`
-          : "all collectors OK"}
+          ? `<span style="color:var(--c-accent-amber)">${errKeys.length} check${errKeys.length === 1 ? "" : "s"} failed: ${esc(errKeys.join(", "))}</span>`
+          : "all checks ran"}
         ${meta.pulseVersion ? " · " + esc(meta.pulseVersion) : ""}${meta.hostname ? " · " + esc(meta.hostname) : ""}
       </div>`;
 
@@ -4518,18 +5773,6 @@ function _mk(tag, cls, text) {
   return e;
 }
 
-function _shareFmtBytes(n) {
-  if (n == null) return "—";
-  if (n < 1024) return n + " B";
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
-  return (n / (1024 * 1024)).toFixed(1) + " MB";
-}
-
-function _shareFmtTime(iso) {
-  if (!iso) return "—";
-  try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
-}
-
 function _shareSetMsg(el, text, color) {
   if (!el) return;
   el.textContent = text || "";
@@ -4542,7 +5785,7 @@ function renderShare() {
 
     <div class="card">
       ${sectionTitle("send", "Send to another Pulse")}
-      <p class="text-sm text-pulse-muted mb-3">Paste the <strong>pairing code</strong> shown on the receiving Pulse (its Share over LAN page, with "Receive over LAN" enabled). Pulse builds the full snapshot and pushes it straight there — no file to move.</p>
+      <p class="text-sm text-pulse-muted mb-3">Paste the <strong>pairing code</strong> from the receiving Pulse, then Send. (On that machine: Share over LAN → enable "Receive over LAN".) No file to move — Pulse sends the snapshot straight over.</p>
       <input type="text" id="share-code" class="settings-input" placeholder="Pairing code, e.g. tiger maple river copper dust" autocomplete="off" spellcheck="false" style="max-width:480px"/>
       <details class="mt-2" style="max-width:420px">
         <summary class="text-sm text-pulse-muted cursor-pointer">Receiver has more than one network? Override the address</summary>
@@ -4608,7 +5851,7 @@ async function _shareSend() {
   if (r.ok) {
     _shareSetMsg(msg, "Sent.", "var(--c-accent-green)");
     const line = _mk("div", "text-sm text-pulse-muted");
-    line.appendChild(document.createTextNode("Delivered " + _shareFmtBytes(r.bytes) + " to "));
+    line.appendChild(document.createTextNode("Delivered " + formatBytes(r.bytes) + " to "));
     line.appendChild(_mk("strong", null, r.peer || r.address || "peer"));
     line.appendChild(document.createTextNode(". It's now in that machine's Received Reports."));
     result.appendChild(line);
@@ -4749,10 +5992,10 @@ function _shareRenderInbox(reports) {
     const head = _mk("div", "share-rx-head");
     const left = _mk("div");
     left.appendChild(_mk("div", "share-rx-host", r.vpuName || r.hostname || "Unknown host"));
-    let meta = "Received " + _shareFmtTime(r.receivedAt) + " from " + (r.senderIp || "?")
+    let meta = "Received " + formatTime(r.receivedAt) + " from " + (r.senderIp || "?")
       + " · " + r.findingCount + " finding" + (r.findingCount === 1 ? "" : "s")
-      + " · " + _shareFmtBytes(r.sizeBytes);
-    if (r.sourceErrorCount) meta += " · " + r.sourceErrorCount + " collector" + (r.sourceErrorCount === 1 ? "" : "s") + " failed";
+      + " · " + formatBytes(r.sizeBytes);
+    if (r.sourceErrorCount) meta += " · " + r.sourceErrorCount + " check" + (r.sourceErrorCount === 1 ? "" : "s") + " failed";
     left.appendChild(_mk("div", "text-sm text-pulse-muted", meta));
     const actions = _mk("div", "share-rx-actions");
     const viewBtn = _mk("button", "btn-outline btn-ol-blue", "View");
@@ -4780,11 +6023,11 @@ function _shareSummaryEl(data) {
   wrap.appendChild(document.createTextNode(
     sectionCount + " sections · " + findingCount + " finding" + (findingCount === 1 ? "" : "s") + " · "));
   if (errKeys.length) {
-    const e = _mk("span", null, errKeys.length + " collector" + (errKeys.length === 1 ? "" : "s") + " failed: " + errKeys.join(", "));
+    const e = _mk("span", null, errKeys.length + " check" + (errKeys.length === 1 ? "" : "s") + " failed: " + errKeys.join(", "));
     e.style.color = "var(--c-accent-amber)";
     wrap.appendChild(e);
   } else {
-    wrap.appendChild(document.createTextNode("all collectors OK"));
+    wrap.appendChild(document.createTextNode("all checks ran"));
   }
   const vpuName = data.identity && data.identity.pixellot && data.identity.pixellot.vpuName;
   const name = vpuName || meta.hostname;
@@ -5228,6 +6471,7 @@ function parseRtdScores(rawData, vendor, sport) {
 function renderScoreConnect() {
   const data = cached("scoreconnect");
   if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
 
   const sc2 = data.sc2;  // SC II data (from settings.json on disk)
   const config = data.configuration || {};
@@ -5273,10 +6517,10 @@ function renderScoreConnect() {
       ${sectionTitle("globe", "Cloud (Bot) Status")}
       <div class="kv-grid">
         ${kvRowHtml("Connected", botStatus.isConnected
-          ? '<span class="status-pass">Yes</span>'
-          : '<span class="status-fail">No</span>')}
+          ? badge("Yes", "pass")
+          : badge("No", "fail"))}
         ${botStatus.scoreConnectId ? kvRowHtml("ScoreConnect ID",
-          `${esc(botStatus.scoreConnectId)} <span class="text-pulse-muted" style="font-size:0.75rem">(may be stale)</span>`)
+          `${esc(botStatus.scoreConnectId)} <span class="text-pulse-dim ml-1" style="font-size:0.85em;cursor:help" title="ScoreConnect III reports this ID at startup. If the BOT service has reconfigured since, the displayed value can briefly lag.">${svgIcon("info", 12)}</span>`)
           : ""}
         ${kvRow("Bot Server", botStatus.botServerAddress)}
         ${botStatus.lastErrorMessage ? kvRowHtml("Last Error", `<span class="text-pulse-muted">${esc(botStatus.lastErrorMessage)}</span>`) : ""}
@@ -5301,9 +6545,9 @@ function renderScoreConnect() {
     : "ScoreConnect — service not detected";
 
   $page().innerHTML = `
-    ${pageHeader("Score Connect", subtitle,
-      `${isDetected ? `<button class="btn-outline btn-ol-blue" onclick="window.open('${esc(data.baseUrl || "http://localhost:5000")}','_blank','noopener')">
-        ${svgIcon("globe", 14)} Open ScoreConnect III
+    ${pageHeader("ScoreConnect", subtitle,
+      `${isDetected ? `<button class="btn-outline btn-ol-green" onclick="window.open('${esc(data.baseUrl || "http://localhost:5000")}','_blank','noopener')" title="Opens the local ScoreConnect III web UI in a new tab">
+        ${svgIcon("external-link", 14)} Open ScoreConnect III
       </button>` : ""}
       <button class="btn-outline btn-ol-blue" onclick="dataCache.scoreconnect=null;renderScoreConnect()">
         ${svgIcon("refresh", 14)} Refresh
@@ -5369,7 +6613,7 @@ function renderScoreConnect() {
           <div class="font-semibold" style="margin-bottom:0.25rem">Upgrade to ScoreConnect III</div>
           <div class="text-pulse-muted" style="font-size:0.8rem;line-height:1.5">
             ScoreConnect III is the preferred version. It provides live scoreboard data, parsed
-            scores, and real-time status through a REST API — no interference with the data stream.
+            scores, and live status — with no interference to the data stream.
           </div>
           <div style="margin-top:0.75rem">
             <button class="btn-outline btn-ol-blue" id="btn-install-sc3" onclick="installSc3(this)">
@@ -5377,8 +6621,8 @@ function renderScoreConnect() {
             </button>
           </div>
           <div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.5rem">
-            Downloads the official installer from the Canopy CDN and runs it in the background.
-            A UAC prompt will appear on the VPU desktop to approve elevation.
+            Downloads the official installer and runs it in the background. A Windows
+            administrator prompt appears on the VPU desktop — approve it to continue.
           </div>
         </div>
       </div>
@@ -5798,10 +7042,11 @@ function _fiReset() {
 function renderFaultIsolator() {
   var cams = cached("cameras");
   if (!cams) {
-    $page().innerHTML = sectionLoading("Camera Fault Isolator");
+    $page().innerHTML = sectionLoading("Camera Connection Troubleshooting");
     api("/api/cameras").then(function(d) { dataCache.cameras = d; renderFaultIsolator(); });
     return;
   }
+  if (cams.error) { $page().innerHTML = errorBox(cams.message); return; }
 
   var ports = cams.ports || [];
   if (!_fi) _fiReset();
@@ -5964,8 +7209,8 @@ function renderFaultIsolator() {
     : '';
 
   $page().innerHTML = pageHeader(
-    "Camera Fault Isolator",
-    "Process-of-elimination swap test — isolate a camera fault to NIC port, cable, or camera (CHU).",
+    "Camera Connection Troubleshooting",
+    "Swap test that pins a camera fault to the port, the cable, or the camera (CHU).",
     '<button class="btn-outline btn-ol-blue" onclick="navigate(\'cameras\')">' + svgIcon("arrow-left", 14) + " Back to Camera Connectivity</button>"
   ) + diagramCard + '<div class="card">' + stepDots() + inner + historyTable() + "</div>" +
     '<div id="fi-history-wrap">' + _fiHistoryHtml(_fiHistoryCache || []) + '</div>';
@@ -6277,7 +7522,7 @@ function renderFaultIsolator() {
             "The suspect camera (" + suspectMac + ") still appears on " + sn1 +
             " and was not detected on " + tn1 + ". Please physically move the cable and camera from " +
             sn1 + " to " + tn1 + ", then click Check Now again. " +
-            "Note: ARP can take up to 30 seconds to refresh after a swap.",
+            "Note: the network can take up to 30 seconds to register the move.",
             "fail"
           );
           renderFaultIsolator();
@@ -6438,7 +7683,7 @@ function renderAudio() {
   _audioFetchInFlight = false;
 
   // Hard error — show errorBox like other renderers
-  if (data.error) { $page().innerHTML = errorBox(data.message || "Failed to enumerate audio devices"); return; }
+  if (data.error) { $page().innerHTML = errorBox(data.message || "Couldn't detect audio devices"); return; }
 
   const devices = data.devices || [];
   const inputs = devices.filter(d => d.dataFlow === "Input");
@@ -6497,7 +7742,7 @@ function renderAudio() {
 
     ${others.length ? `<div class="card mt-4">
       ${sectionTitle("info", "Other Devices")}
-      <p class="text-xs text-pulse-muted mb-2">Devices reported by WMI without input/output direction.</p>
+      <p class="text-xs text-pulse-muted mb-2">Devices Windows reports without an input or output direction.</p>
       ${others.map(d => _audioDeviceRow(d)).join("")}
     </div>` : ""}
   `;
@@ -6584,7 +7829,7 @@ function _audioFindings(devices, data) {
     out.push({
       severity: "info",
       title: "Limited device info",
-      body: "CoreAudio enumeration failed — falling back to WMI. Volume, mute, and peak meters are unavailable."
+      body: "Couldn't read full device details — volume, mute, and signal meters are unavailable."
     });
   }
   return out;
@@ -6632,14 +7877,17 @@ function _audioFormFactorLabel(ff) {
 function _audioDeviceRow(d) {
   const slug = _audioSlug(d.id);
   const isActive = d.state === "Active";
-  const stateClass = isActive ? "status-pass" : d.state === "Disabled" ? "status-warn" : "status-fail";
+  // Use the canonical pill component so audio state matches every other
+  // status indicator in the app (Services, Disk Health, etc.) instead of
+  // appearing as bare colored text.
+  const badgeKind = isActive ? "pass" : d.state === "Disabled" ? "warn" : "fail";
 
   return `<div class="audio-device${isActive ? "" : " audio-device-inactive"}">
     <div class="audio-device-header">
       <div class="audio-device-name">${esc(d.name || "Unknown Device")}</div>
       <div class="audio-device-badges">
         ${_audioFormFactorBadge(d.formFactor)}
-        <span class="${stateClass}">${esc(d.state)}</span>
+        ${badge(d.state, badgeKind)}
       </div>
     </div>
     ${isActive ? `
@@ -6673,65 +7921,11 @@ function renderSettings() {
   const data = cached("settings");
   if (!data) { $page().innerHTML = sectionLoading("Settings"); fetchSection("settings"); return; }
 
-  const scUrl = data.scoreConnectUrl || "http://localhost:5000";
-  const pollMs = data.pollIntervalMs || 3000;
-
   $page().innerHTML = `
     ${pageHeader("Settings", "App preferences and diagnostic helpers")}
 
-    <!-- ScoreConnect III API -->
-    <div class="card">
-      ${sectionTitle("link", "ScoreConnect III API")}
-      <p class="text-sm text-pulse-muted mb-3">Base URL Pulse uses to talk to the local ScoreConnect III service. Default is http://localhost:5000.</p>
-      <input type="text" id="set-sc-url" value="${esc(scUrl)}" class="settings-input"/>
-      <div class="settings-actions">
-        <button class="btn-outline btn-ol-blue" id="set-save-url">
-          ${svgIcon("check", 14)} Save
-        </button>
-        <button class="btn-outline btn-ol-blue" id="set-reset-url">
-          ${svgIcon("refresh", 14)} Reset to default
-        </button>
-        <span id="set-url-msg" class="text-sm text-pulse-muted"></span>
-      </div>
-    </div>
-
-    <!-- Poll Interval -->
-    <div class="card mt-4">
-      ${sectionTitle("clock", "Live Metrics")}
-      <p class="text-sm text-pulse-muted mb-3">How often the WebSocket refreshes live performance metrics (1000–30000 ms).</p>
-      <input type="number" id="set-poll" value="${pollMs}" min="1000" max="30000" step="500" class="settings-input" style="max-width:200px"/>
-      <div class="settings-actions">
-        <button class="btn-outline btn-ol-blue" id="set-save-poll">
-          ${svgIcon("check", 14)} Save
-        </button>
-        <span id="set-poll-msg" class="text-sm text-pulse-muted"></span>
-      </div>
-    </div>
-
-    <!-- Logs & Reports -->
-    <div class="card mt-4">
-      ${sectionTitle("file", "Logs & Reports")}
-      <p class="text-sm text-pulse-muted mb-3">File paths used by Pulse on this VPU.</p>
-      <div class="kv-grid mb-3" style="max-width:640px">
-        ${kvRow("Server log", data._paths?.serverLog || "—")}
-        ${kvRow("Settings file", data._paths?.settingsFile || "—")}
-      </div>
-      <button class="btn-outline btn-ol-blue" onclick="openServerLog()">
-        ${svgIcon("file", 14)} View Server Log
-      </button>
-    </div>
-
-    <!-- Diagnostics -->
-    <div class="card mt-4">
-      ${sectionTitle("zap", "Diagnostics")}
-      <p class="text-sm text-pulse-muted mb-3">Re-run all diagnostics on demand. Each script re-collects live data from the VPU.</p>
-      <button class="btn-outline btn-ol-green" onclick="refreshAll()">
-        ${svgIcon("play", 14)} Run All Diagnostics
-      </button>
-    </div>
-
     <!-- Software Update -->
-    <div class="card mt-4">
+    <div class="card">
       ${sectionTitle("refresh", "Software Update")}
       <p class="text-sm text-pulse-muted mb-3">Check for a newer Pulse build on this VPU's channel and install it. Pulse restarts and this page reloads automatically — no need to re-run the launcher.</p>
       <div class="settings-actions">
@@ -6745,32 +7939,22 @@ function renderSettings() {
       </div>
       <div id="set-update-notes" class="update-notes" style="display:none"></div>
     </div>
+
+    <!-- Reboot Pulse -->
+    <div class="card mt-4">
+      ${sectionTitle("power", "Reboot Pulse")}
+      <p class="text-sm text-pulse-muted mb-3">Restart the Pulse app if the page is stuck or behaving oddly, or reboot the whole VPU. Restarting Pulse keeps the unit running and reloads this page automatically. Rebooting the VPU restarts Windows — it interrupts any active recording and takes a few minutes to come back.</p>
+      <div class="settings-actions">
+        <button class="btn-outline btn-ol-blue" id="set-restart-app">
+          ${svgIcon("refresh", 14)} Restart Pulse app
+        </button>
+        <button class="btn-outline btn-ol-red" id="set-reboot-vpu">
+          ${svgIcon("power", 14)} Reboot VPU
+        </button>
+        <span id="set-reboot-msg" class="text-sm text-pulse-muted"></span>
+      </div>
+    </div>
   `;
-
-  async function saveSettings() {
-    return apiPost("/api/settings", {
-      scoreConnectUrl: document.getElementById("set-sc-url").value.trim(),
-      pollIntervalMs: parseInt(document.getElementById("set-poll").value, 10) || 3000,
-    });
-  }
-
-  document.getElementById("set-save-url")?.addEventListener("click", async () => {
-    const result = await saveSettings();
-    const msgEl = document.getElementById("set-url-msg");
-    msgEl.textContent = result.ok ? "Saved" : "Error saving";
-    if (result.ok) setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 2000);
-  });
-
-  document.getElementById("set-reset-url")?.addEventListener("click", () => {
-    document.getElementById("set-sc-url").value = "http://localhost:5000";
-  });
-
-  document.getElementById("set-save-poll")?.addEventListener("click", async () => {
-    const result = await saveSettings();
-    const msgEl = document.getElementById("set-poll-msg");
-    msgEl.textContent = result.ok ? "Saved" : "Error saving";
-    if (result.ok) setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 2000);
-  });
 
   // ── Software Update ──
   const upCheckBtn = document.getElementById("set-update-check");
@@ -6828,6 +8012,58 @@ function renderSettings() {
       upCheckBtn.disabled = false;
     }
   });
+
+  // ── Reboot Pulse / VPU ──
+  const restartBtn = document.getElementById("set-restart-app");
+  const rebootBtn = document.getElementById("set-reboot-vpu");
+  const rebootMsg = document.getElementById("set-reboot-msg");
+
+  restartBtn?.addEventListener("click", async () => {
+    if (!confirm("Restart the Pulse app?\n\nPulse closes and relaunches the same build. This page reloads automatically once it's back — usually a few seconds. The VPU and any recording keep running.")) return;
+    restartBtn.disabled = true;
+    rebootBtn.disabled = true;
+    rebootMsg.textContent = "Restarting…";
+    try {
+      const r = await apiPost("/api/maintenance/restart-app", {});
+      if (!r.ok) {
+        rebootMsg.textContent = (typeof r.error === "string" ? r.error : r.message) || "Couldn't restart Pulse.";
+        restartBtn.disabled = false;
+        rebootBtn.disabled = false;
+        return;
+      }
+      _showMaintenanceOverlay("Restarting Pulse…", "Pulse is relaunching. This page reloads automatically once it's back — usually a few seconds.");
+      _pollForRestart(dataCache._version);
+    } catch (e) {
+      rebootMsg.textContent = "Couldn't restart Pulse.";
+      restartBtn.disabled = false;
+      rebootBtn.disabled = false;
+    }
+  });
+
+  rebootBtn?.addEventListener("click", async () => {
+    if (!confirm("Reboot the whole VPU?\n\nThis restarts Windows. Any active recording is interrupted, and the unit is offline for a few minutes. Pulse won't come back on its own — reopen it from the desktop shortcut once Windows is back.")) return;
+    restartBtn.disabled = true;
+    rebootBtn.disabled = true;
+    rebootMsg.textContent = "Sending reboot…";
+    try {
+      // Reboot-Vpu.ps1 returns { success, message }; api() wraps failures in { error }.
+      const r = await apiPost("/api/maintenance/reboot-vpu", {});
+      if (r && r.success) {
+        _showMaintenanceOverlay("Rebooting the VPU…",
+          (r.message ? r.message + " " : "The VPU is restarting. ") +
+          "Reopen Pulse from the desktop shortcut once Windows is back.");
+        _pollForRestart(dataCache._version);
+      } else {
+        rebootMsg.textContent = (r && (r.message || (typeof r.error === "string" ? r.error : null))) || "Couldn't reboot the VPU.";
+        restartBtn.disabled = false;
+        rebootBtn.disabled = false;
+      }
+    } catch (e) {
+      rebootMsg.textContent = "Couldn't reboot the VPU.";
+      restartBtn.disabled = false;
+      rebootBtn.disabled = false;
+    }
+  });
 }
 
 // ── Software Update helpers (module scope so they survive a re-render) ──
@@ -6855,6 +8091,26 @@ function _showUpdateOverlay(tag) {
       <div class="update-spinner" aria-hidden="true"></div>
       <div class="update-overlay-title">Updating Pulse${tag ? " to " + esc(tag) : ""}…</div>
       <p class="update-overlay-sub" id="update-overlay-sub">Pulse is restarting. This page reloads automatically once it's back — usually under a minute.</p>
+    </div>`;
+  el.style.display = "flex";
+}
+
+// Generic full-screen "please wait, the server is coming back" overlay, shared
+// by the Restart-Pulse and Reboot-VPU actions. Same element/markup as the
+// update overlay, just with caller-supplied title + subtext.
+function _showMaintenanceOverlay(title, sub) {
+  let el = document.getElementById("pulse-update-overlay");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "pulse-update-overlay";
+    el.className = "update-overlay";
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `
+    <div class="update-overlay-box">
+      <div class="update-spinner" aria-hidden="true"></div>
+      <div class="update-overlay-title">${esc(title)}</div>
+      <p class="update-overlay-sub" id="update-overlay-sub">${esc(sub)}</p>
     </div>`;
   el.style.display = "flex";
 }
@@ -6900,7 +8156,7 @@ function renderAbout() {
     <div class="about-container">
       <div class="card about-card">
         <div class="about-icon">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--c-accent-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
           </svg>
         </div>
@@ -6918,11 +8174,11 @@ function renderAbout() {
           </div>
         </div>
         <div class="about-links">
-          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
-            ${svgIcon("globe", 14)} View Releases
+          <a href="https://github.com/playon/pulse/releases" target="_blank" rel="noopener" class="btn-outline btn-ol-green" title="Open the GitHub releases page in a new tab">
+            ${svgIcon("external-link", 14)} View Releases
           </a>
-          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue">
-            ${svgIcon("info", 14)} Source Repo
+          <a href="https://github.com/playon/pulse" target="_blank" rel="noopener" class="btn-outline btn-ol-blue" title="Open the source repository in a new tab">
+            ${svgIcon("external-link", 14)} Source Repo
           </a>
         </div>
       </div>
@@ -6947,6 +8203,7 @@ async function init() {
         `<a class="nav-item" data-page="${esc(p.id)}" href="#${esc(p.id)}">
           <span class="nav-icon">${svgIcon(p.icon, 16)}</span>
           <span>${esc(p.label)}</span>
+          <span class="nav-status"></span>
         </a>`
       ).join("")}
     </div>

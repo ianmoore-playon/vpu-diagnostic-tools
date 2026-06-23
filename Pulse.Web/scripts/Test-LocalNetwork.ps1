@@ -88,21 +88,36 @@ try {
     $gateway = $null
     $dns = $null
 
-    $ipConfigs = Get-NetIPConfiguration -ErrorAction SilentlyContinue
-    foreach ($ipc in $ipConfigs) {
-        if ($ipc.IPv4DefaultGateway) {
-            $gw = $ipc.IPv4DefaultGateway | Where-Object {
-                $_.NextHop -and -not $_.NextHop.StartsWith('169.254.')
-            } | Select-Object -First 1
-            if ($gw) {
-                $gateway = $gw.NextHop
-                # Get DNS from the same interface
-                if ($ipc.DNSServer) {
-                    $dns = ($ipc.DNSServer | ForEach-Object { $_.ServerAddresses } |
-                            Select-Object -Unique -First 1)
-                }
-                break
-            }
+    # Scope to the interface that owns the active default route (lowest-metric
+    # 0.0.0.0/0). Walking Get-NetIPConfiguration and taking the first interface
+    # with any gateway can land on a secondary/disconnected NIC (camera port,
+    # VPN) and ping the wrong gateway/DNS — reporting local-network health for
+    # an adapter that isn't actually carrying traffic.
+    $uplinkIdx = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+        Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' -and -not $_.NextHop.StartsWith('169.254.') } |
+        Sort-Object RouteMetric | Select-Object -First 1).InterfaceIndex
+
+    $ipc = $null
+    if ($uplinkIdx) {
+        $ipc = Get-NetIPConfiguration -InterfaceIndex $uplinkIdx -ErrorAction SilentlyContinue
+    }
+    if (-not $ipc) {
+        # No default route resolved — fall back to the first interface that has a
+        # usable (non-APIPA) gateway, preserving the prior behaviour.
+        $ipc = Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object {
+            $_.IPv4DefaultGateway | Where-Object { $_.NextHop -and -not $_.NextHop.StartsWith('169.254.') }
+        } | Select-Object -First 1
+    }
+
+    if ($ipc) {
+        $gw = $ipc.IPv4DefaultGateway | Where-Object {
+            $_.NextHop -and -not $_.NextHop.StartsWith('169.254.')
+        } | Select-Object -First 1
+        if ($gw) { $gateway = $gw.NextHop }
+        # DNS from the same (uplink) interface
+        if ($ipc.DNSServer) {
+            $dns = ($ipc.DNSServer | ForEach-Object { $_.ServerAddresses } |
+                    Select-Object -Unique -First 1)
         }
     }
 

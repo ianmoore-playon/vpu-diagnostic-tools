@@ -12,15 +12,71 @@ param()
 $ErrorActionPreference = 'Stop'
 
 try {
-    # Net adapters
+    # Net adapters — enriched with PCI location + media type + admin/link state
+    # so role classification (motherboard / camera / Wi-Fi) and the "internet on
+    # a camera port" check can run downstream in Python.
+    #
+    # PCI location resolves the motherboard uplink (onboard LOM = PCI bus 0) from
+    # a camera-NIC port (add-in card = bus > 0) even when both use the same Intel
+    # chipset. We look it up ONLY for each present adapter via its own PnPDeviceID
+    # — never by scanning Get-PnpDevice -Class Net, which on a VPU enumerates
+    # dozens of stale/ghost net devices and was slow enough to time out this whole
+    # collector on real hardware. Any failed/expensive lookup degrades to null
+    # (role classification falls back to chipset/unknown; internet detection,
+    # adapters, IP config, and reachability are all unaffected).
     $adapters = Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
+        $pciBus = $null; $pciDev = $null; $pciFun = $null
+        $pdid = $_.PnPDeviceID
+        if ($pdid -and $pdid.StartsWith('PCI\')) {
+            try {
+                $loc = (Get-PnpDeviceProperty -InstanceId $pdid -KeyName 'DEVPKEY_Device_LocationInfo' -ErrorAction Stop).Data
+                if ($loc -and ($loc -match 'PCI bus (\d+), device (\d+), function (\d+)')) {
+                    $pciBus = [int]$Matches[1]; $pciDev = [int]$Matches[2]; $pciFun = [int]$Matches[3]
+                }
+            } catch { }
+        }
+
+        # Error/discard counters for EVERY wired adapter — not just the uplink.
+        # A multi-NIC VPU has the motherboard port plus the camera card; a bad
+        # cable or dirty switch port on a non-uplink wired port was previously
+        # invisible here. Wi-Fi/virtual adapters are skipped (no useful counters).
+        $rxErr = $null; $txErr = $null
+        $rxPErr = $null; $rxDisc = $null; $txPErr = $null; $txDisc = $null
+        $fullDuplex = $null
+        if ("$($_.PhysicalMediaType)" -match '802\.3') {
+            try { $fullDuplex = $_.FullDuplex } catch { }
+            try {
+                $st = Get-NetAdapterStatistics -Name $_.Name -ErrorAction Stop
+                $rxPErr = [int]$st.ReceivedUnicastPacketsWithErrors
+                $rxDisc = [int]$st.ReceivedDiscards
+                $txPErr = [int]$st.OutboundPacketErrors
+                $txDisc = [int]$st.OutboundDiscards
+                $rxErr  = $rxPErr + $rxDisc
+                $txErr  = $txPErr + $txDisc
+            } catch { }
+        }
+
         [ordered]@{
             name                 = $_.Name
             interfaceDescription = $_.InterfaceDescription
-            status               = $_.Status
+            status               = "$($_.Status)"
+            adminStatus          = "$($_.AdminStatus)"
+            mediaConnectionState = "$($_.MediaConnectionState)"
+            physicalMediaType    = "$($_.PhysicalMediaType)"
             macAddress           = $_.MacAddress
             linkSpeed            = $_.LinkSpeed
             interfaceIndex       = $_.InterfaceIndex
+            pnpDeviceId          = $pdid
+            pciBus               = $pciBus
+            pciDevice            = $pciDev
+            pciFunction          = $pciFun
+            fullDuplex           = $fullDuplex
+            rxErrors             = $rxErr
+            txErrors             = $txErr
+            rxPacketErrors       = $rxPErr
+            rxDiscards           = $rxDisc
+            txPacketErrors       = $txPErr
+            txDiscards           = $txDisc
         }
     }
 
@@ -44,28 +100,39 @@ try {
         [ordered]@{
             interfaceAlias     = $_.InterfaceAlias
             interfaceIndex     = $idx
-            ipv4Address        = if ($_.IPv4Address) { ($_.IPv4Address | ForEach-Object { $_.IPAddress }) } else { @() }
-            ipv4DefaultGateway = if ($_.IPv4DefaultGateway) { ($_.IPv4DefaultGateway | ForEach-Object { $_.NextHop }) } else { @() }
-            dnsServers         = if ($_.DNSServer) { ($_.DNSServer | ForEach-Object { $_.ServerAddresses }) | Select-Object -Unique } else { @() }
+            # @(...) forces an array so a single IP / gateway / DNS server isn't
+            # unwrapped to a bare string in JSON — consumers expect a list.
+            ipv4Address        = @(if ($_.IPv4Address) { $_.IPv4Address | ForEach-Object { $_.IPAddress } })
+            ipv4DefaultGateway = @(if ($_.IPv4DefaultGateway) { $_.IPv4DefaultGateway | ForEach-Object { $_.NextHop } })
+            dnsServers         = @(if ($_.DNSServer) { $_.DNSServer | ForEach-Object { $_.ServerAddresses } | Select-Object -Unique })
             dhcpEnabled        = if ($iface) { $iface.Dhcp -eq 'Enabled' } else { $false }
             prefixLength       = if ($_.IPv4Address) { [int]($_.IPv4Address | Select-Object -First 1).PrefixLength } else { if ($addr) { [int]$addr.PrefixLength } else { $null } }
         }
     }
 
-    # Identify uplink adapter (has a non-APIPA default gateway)
+    # Identify the uplink adapter — the interface that owns the active default
+    # route (lowest-metric 0.0.0.0/0). Taking the first ipConfig that happens to
+    # carry a gateway can pick a secondary/disconnected NIC on a multi-homed box
+    # (camera NIC, VPN), mislabeling which adapter's link/error stats we report.
     $uplinkAdapter = $null
-    foreach ($ipc in $ipConfigs) {
-        $gateways = $ipc.ipv4DefaultGateway
-        if ($gateways) {
-            $validGw = $gateways | Where-Object { $_ -and -not $_.StartsWith('169.254.') }
-            if ($validGw) {
-                $uplinkAdapter = [ordered]@{
-                    interfaceAlias = $ipc.interfaceAlias
-                    interfaceIndex = $ipc.interfaceIndex
-                    gateway        = ($validGw | Select-Object -First 1)
-                }
-                break
+    $uplinkIdx = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+        Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' -and -not $_.NextHop.StartsWith('169.254.') } |
+        Sort-Object RouteMetric | Select-Object -First 1).InterfaceIndex
+
+    # Prefer the default-route interface; fall back to the first interface with a
+    # usable (non-APIPA) gateway if the route didn't resolve.
+    $candidates = @()
+    if ($uplinkIdx) { $candidates += $ipConfigs | Where-Object { $_.interfaceIndex -eq $uplinkIdx } }
+    $candidates += $ipConfigs
+    foreach ($ipc in $candidates) {
+        $validGw = $ipc.ipv4DefaultGateway | Where-Object { $_ -and -not $_.StartsWith('169.254.') }
+        if ($validGw) {
+            $uplinkAdapter = [ordered]@{
+                interfaceAlias = $ipc.interfaceAlias
+                interfaceIndex = $ipc.interfaceIndex
+                gateway        = ($validGw | Select-Object -First 1)
             }
+            break
         }
     }
 

@@ -20,6 +20,205 @@ flow shows testers when a new build is available.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 `Pulse.Web/VERSION`.
 
+## [0.4.0] - 2026-06-23
+
+### Added
+- **New "Inspection Report" tab (under Triage) — the fleet-audit fields on one screen.**
+  Pools the details you'd otherwise hunt for across the Hardware, Network, Camera and
+  ScoreConnect tabs — LMI name, camera type, OS / VPU type, the uplink's IP, MAC,
+  static-vs-DHCP, subnet mask and gateway, the network port test with an overall
+  Pass/Warning/Fail result, the scoreboard's sport / vendor / ScoreLink status, and a
+  live frame grab from every connected camera. Unlike the Camera tab, it captures
+  frames even while the VPU is recording. Built for working through a large fleet audit
+  one VPU at a time.
+- **New "Power Events" tab — see why a VPU restarted, and whether one is pending.**
+  Under System Information, Power Events shows the recent restart/shutdown history
+  with the cause of each (planned vs. unexpected, who triggered it, and the
+  reason), plus an up-front "reboot pending" banner and uptime. Reboots Pulse
+  itself triggered are clearly labeled, so you can tell at a glance that an
+  "unprovoked" restart came from Windows, a driver install, or an update — not
+  from Pulse. Answers the "the box rebooted on its own" ticket in one click.
+- **Pulse now catches the internet being plugged into a camera port.** On a VPU
+  the internet/venue cable must go to the motherboard network port — the 4-port
+  NIC is cameras-only. If the uplink is found on a camera-NIC port instead,
+  Pulse raises a CRITICAL with the fix (move the cable to the motherboard port,
+  enable it; the Wi-Fi card is for the Pixellot Connect app and stays enabled),
+  and notes if the motherboard port is disabled or unplugged. It tells the
+  motherboard port apart from the camera card by its hardware (PCI) location, so
+  it works even when both use the same Intel chipset.
+- **Pulse now flags a disabled Wi-Fi card.** The Wi-Fi card is how the Pixellot
+  Connect app reaches the VPU. If it's been disabled in Windows, Pulse raises a
+  warning with how to turn it back on — so a unit that's invisible to Connect is
+  easy to spot. (Units without a Wi-Fi card aren't flagged.)
+- **Refresh camera stills one at a time.** The Camera Frames panel now has a
+  "Refresh all cameras" button plus a "Refresh" on each camera card, so you can
+  grab a new still from just the camera you're working on instead of re-pulling
+  every camera.
+- **Restart Pulse or reboot the VPU from Settings.** The Settings page has a new
+  Reboot Pulse panel. "Restart Pulse app" relaunches Pulse if the page is stuck
+  or acting up — the VPU and any recording keep running, and the page reloads
+  itself once Pulse is back. "Reboot VPU" restarts Windows on the unit; it
+  interrupts any active recording, so it asks you to confirm first.
+- **Disks now shows real drive wear and SMART health, not just Healthy/Unhealthy.**
+  Each physical drive lists its SSD wear (percent of rated write-life used),
+  temperature, and power-on hours next to the health badge. Pulse raises a
+  warning when a drive crosses 80% wear, and a critical when a drive reports a
+  SMART pre-failure or uncorrectable errors — so you can swap a dying SSD before
+  it quits mid-game instead of after.
+- **Network Test now lists every wired port, not just the internet uplink.** A new
+  "Wired Ports" table shows each Ethernet port — the motherboard uplink and each
+  camera-NIC port — with its link state, speed, and error/discard counts, so a
+  bad cable or dirty switch port on a non-uplink port is no longer invisible. The
+  live network monitor also gained a per-interface table (queue depth, errors,
+  and packet rates per NIC).
+
+### Removed
+- **Removed the "Reinstall Pixellot Dependencies" button.** Reinstalling the
+  Pixellot video dependencies pauses recording for several minutes and is a
+  last-resort step, so it's no longer something Pulse can trigger. When the logs
+  show a CUDNN/TensorFlow dependency error, Pulse now points you to capture an
+  export and escalate to Pixellot support instead. The installed dependency
+  version still shows on the Service Status tab.
+
+### Changed
+- **Renamed the "Fault Isolator" tool to "Camera Connection Troubleshooting".**
+  The swap-test tool on the Camera Connectivity tab (and the button that opens it)
+  now uses a plainer name — same step-by-step test, clearer label.
+- **Camera Frames now show the camera type, model, and firmware.** Each
+  captured still lists the system type (S1/S2/S2S), IP address, camera model,
+  and firmware version, and is clearly marked as a point-in-time snapshot — not
+  a live stream. The status now reads "Active" instead of "Streaming".
+- **"Disk & Driver Errors" now catches filesystem corruption.** The disk-events
+  panel used to watch only the disk / NVMe / storage-controller logs; it now also
+  includes NTFS and volume-manager events (the "run chkdsk — the file system is
+  corrupt" kind), which are the ones that usually come right before data loss.
+- **Clearer Stream Readiness wording.** The middle verdict now reads "WARNING"
+  instead of "WARN", and its summary explains it plainly: "Will likely stream,
+  but there are issues found that should be addressed to improve the system's
+  reliability."
+- **Slimmed down the Settings page.** Settings now shows just Software Update and
+  the new Reboot Pulse panel. The ScoreConnect URL, live-metrics interval, log
+  file paths, and the Run All Diagnostics button were removed to keep the page
+  focused. (Generating a report from **Exports** still re-runs every check.)
+- **Reorganized the sidebar into six clearer groups.** Tabs are now grouped as
+  Triage, Troubleshooting, Pixellot Configuration, System Information, Data
+  Logs, and Pulse. A few tabs were renamed to say what they do —
+  "Network Test", "ScoreConnect", "Service Status", "Disks",
+  "Windows Events", and "Exports". Nothing moved out of reach; bookmarks/links
+  still work.
+- **Split the big "System Overview" tab into focused tabs.** Hardware (CPU,
+  memory, graphics, storage), Applications (installed software + concern
+  flags), and Environment (Windows OS, locale, uptime, users, peripherals) are
+  now separate tabs, and Pixellot version + hardware-compatibility moved to a
+  new Pixellot Software tab. Old "System Overview" links open Hardware.
+- **Split the Pixellot Configuration tab into three.** Pixellot Software
+  (version, install/agent, registry, and the Restart Agent button), Camera
+  Hardware (per-camera role / IP / MAC / firmware / TV mode / serial), and
+  Camera Calibrations (multisport + OCR scoreboard status) are now separate
+  tabs. Old "Pixellot Configuration" links open Pixellot Software.
+- **The Camera Hardware tab now shows each camera's full details.** Every
+  camera's complete probe — device identity, network settings, stream encoding,
+  and image-sensor tuning — now appears on the Camera Hardware tab. Before, this
+  lived only inside a per-port "Details" drop-down on Camera Connectivity, which
+  now links straight to the tab and flags ports with more than one camera.
+- **New Data Logs tabs.** Pixellot Logs (the Pixellot log-directory scan, moved
+  off Windows Events into its own tab) and Pulse Logs (Pulse's own script-call
+  and server logs) now live under Data Logs. The old slide-up log drawer at the
+  bottom of the window is gone — its script + server logs are now the full-page
+  Pulse Logs tab.
+- **New Help tab.** A plain-English page covering what Pulse is, how to read the
+  Dashboard, and the first things to try in the field, under the Pulse group.
+- **The Wi-Fi warning now explains Wi-Fi's real job.** When the VPU is running
+  its internet over Wi-Fi, the message now notes the Wi-Fi card is meant for the
+  Pixellot Connect app — move the internet to the motherboard Ethernet port.
+- **New Stream Readiness check.** Pulse now rolls every diagnostic into one
+  PASS / WARNING / FAIL call on whether the VPU can stream tonight's game, shown
+  at the top of the Dashboard with the exact blockers and risks behind the
+  verdict. FAIL means "don't expect a clean broadcast tonight."
+- **Clearer wording across Pulse.** Findings and panels now lead with plain
+  language and the fix — fewer unexplained acronyms up front, with the technical
+  detail (exact values, commands, port numbers) still right there in the detail.
+- **Port Connectivity tiles now list in numeric order, two per row.** Within
+  Required and within Optional, ports run ascending (53, 123, 443…) and wrap in
+  pairs, so a given port is easy to find at a glance.
+- **Tidied the Dashboard's System Status gauges.** The status rings and their
+  labels now line up evenly across the row, and the "Live" dot only shows up
+  when the live connection drops (Connecting…/Reconnecting…) instead of sitting
+  on screen at all times.
+- The Audio tab is temporarily hidden while audio diagnostics are being
+  finished. No loss of function — audio checks were not yet in field use.
+
+### Fixed
+- **Error tabs no longer spin forever.** When a check can't run, Camera
+  Connectivity, ScoreConnect, the Camera Fault Isolator, and Windows Events now
+  show a clear error message instead of an endless loading spinner.
+- **Cleaner light mode.** A few dashboard elements (the storage bars, the
+  temperature gauge, and some status colors) were using dark-theme shades while
+  in light mode; they now match the rest of the page in both light and dark.
+- **Received report sizes now read correctly.** In Share over LAN, a
+  multi-gigabyte snapshot showed an oversized "MB" figure in the received list;
+  it now displays in GB.
+- **No more false "can't reach gateway" alarm when the gateway just ignores
+  pings.** Plenty of routers and firewalls are set to drop pings (ICMP) to
+  themselves while still routing traffic perfectly. Pulse used to read that as a
+  CRITICAL "VPU can't reach its gateway — check the cable/switch/VLAN," sending
+  techs to chase a fault that isn't there. Now, when the VPU is already reaching
+  the internet, an unanswered gateway ping is shown as an informational note
+  ("gateway doesn't answer ping, but traffic is routing normally") instead of a
+  critical. A real dead gateway — where the internet is also unreachable — still
+  raises the critical.
+- **No more false "DNS blocked / can't resolve any hostname" alarm.** The DNS
+  check was probing whatever resolver it found first across *all* network
+  adapters — so a stale resolver on a disconnected or secondary adapter (e.g. a
+  camera NIC) could be tested instead of the one the VPU actually uses, fail,
+  and raise a critical while every domain on the same screen was resolving fine.
+  Pulse now tests the resolver on the active internet uplink, and never reports
+  DNS as blocked when name resolution is demonstrably working.
+- **No more false "DNS server unreachable" warning when the server just ignores
+  ping.** Many venue firewalls block ICMP (ping) to the DNS server while it
+  still answers real lookups. Pulse used to read the dead ping as a warning even
+  though domains were resolving fine. When name resolution is demonstrably
+  working, that 100%-loss ping is now reported as an INFO note ("isn't answering
+  pings, but name resolution is working — no action needed") instead of a
+  warning, and the DNS Server tile in Local Network Health turns blue/INFO with
+  a "ICMP ping blocked by firewall — name resolution is working" note instead of
+  showing red.
+- **Gateway, DNS, and uplink readings now follow the active internet connection.**
+  On a VPU with more than one network connection (the camera NIC plus the
+  internet uplink, or a VPN), the Network Test could ping the gateway and DNS —
+  and read link speed and error counts — off the wrong adapter, making a healthy
+  uplink look bad or a stale one look fine. These checks now lock onto the
+  connection that actually carries the VPU's internet traffic.
+- **Dropped two dead addresses from the domain-resolution check.** Two storage
+  hostnames from a retired backend were still in the name-lookup list; they no
+  longer resolve, so they showed as meaningless red failures. Removed.
+- **The Network panel no longer comes up blank / "no internet" on some VPUs.**
+  The new adapter-role check was scanning every network device Windows has ever
+  seen (VPUs accumulate dozens of stale ones), which could time out the whole
+  network check — leaving the panel empty and falsely reporting "VPU has no
+  internet connection." It now reads hardware location only for the adapters
+  actually present, and a network-check hiccup no longer masquerades as "no
+  internet" (Pulse says a check couldn't complete instead).
+- **Pulse now opens directly in Chrome on launch.** On VPUs with no default
+  browser set, Windows used to pop a "How do you want to open this?" picker
+  (with Internet Explorer as the first option) instead of opening Pulse. The
+  launcher now opens Chrome explicitly — no dialog, no IE.
+- **The launcher no longer looks frozen while starting.** It used to run the
+  server in the foreground window (a debug aid), so the window sat there
+  showing the live server log and seemed stuck until you pressed Ctrl+C. It now
+  starts the server in the background, opens the browser, and closes the window.
+  Launch failures still stop and show the error, and everything is logged.
+- **A blocked Zixi streaming port (UDP/2088) is now flagged as a real outage.**
+  Pulse used to treat UDP/2088 as one of three interchangeable streaming paths,
+  so blocking it only showed a yellow "no failover" note. In the field the
+  live broadcast rides UDP/2088 with no failover — so a block there now reads as
+  a red "Streaming is blocked — the VPU can't broadcast." The failover/"backup
+  connection" wording now applies only to the two port-443 paths (UDP/443 and
+  the TCP/443 tunnel), which do back each other up.
+- Fixed an error that could appear on the Audio screen and during full
+  diagnostic collection (the audio device check failed to return results on
+  some VPUs).
+
 ## [0.3.5] - 2026-06-23
 
 ### Fixed

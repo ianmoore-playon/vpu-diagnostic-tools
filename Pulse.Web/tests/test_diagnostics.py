@@ -425,6 +425,199 @@ class TestWifiUplinkFinding(unittest.TestCase):
         self.assertFalse(self._has_wifi_finding(self._wifi_titles({"error": True})))
 
 
+# ── Adapter role classification + "internet on a camera port" ────────
+# Fixtures are derived from two real VPU dumps (good config + internet moved
+# onto the 4-port camera NIC). On that hardware: motherboard = Intel I219-LM on
+# PCI bus 0; the 4-port camera NIC = 4× Intel 82574L on PCI buses 4-7. The
+# disconnected port keeps a STALE gateway in the route table in both dumps, so
+# the detection must gate on link status — these fixtures lock that in.
+class TestAdapterRoles(unittest.TestCase):
+    def _adapters(self, mobo_status, cam_uplink_status):
+        # mobo = Ethernet 5 (I219-LM, bus 0); Ethernet 28 (82574L, bus 4) is the
+        # camera port the internet cable gets moved to; 29/30/31 are normal
+        # link-local camera ports.
+        return [
+            {"name": "Ethernet 5", "interfaceDescription": "Intel(R) Ethernet Connection (7) I219-LM",
+             "status": mobo_status, "adminStatus": "Up", "physicalMediaType": "802.3",
+             "macAddress": "C8-D9-D2-30-5E-4F", "interfaceIndex": 22, "pciBus": 0},
+            {"name": "Ethernet 28", "interfaceDescription": "Intel(R) 82574L Gigabit Network Connection #13",
+             "status": cam_uplink_status, "adminStatus": "Up", "physicalMediaType": "802.3",
+             "macAddress": "00-30-64-5F-61-86", "interfaceIndex": 23, "pciBus": 4},
+            {"name": "Ethernet 29", "interfaceDescription": "Intel(R) 82574L Gigabit Network Connection #14",
+             "status": "Up", "adminStatus": "Up", "physicalMediaType": "802.3",
+             "macAddress": "00-30-64-5F-61-87", "interfaceIndex": 17, "pciBus": 5},
+            {"name": "Ethernet 30", "interfaceDescription": "Intel(R) 82574L Gigabit Network Connection #15",
+             "status": "Up", "adminStatus": "Up", "physicalMediaType": "802.3",
+             "macAddress": "00-30-64-5F-61-88", "interfaceIndex": 19, "pciBus": 6},
+            {"name": "Ethernet 31", "interfaceDescription": "Intel(R) 82574L Gigabit Network Connection #16",
+             "status": "Up", "adminStatus": "Up", "physicalMediaType": "802.3",
+             "macAddress": "00-30-64-5F-61-89", "interfaceIndex": 25, "pciBus": 7},
+        ]
+
+    def _ip_configs(self):
+        # Both dumps carry the SAME ip/route rows — including a stale gateway on
+        # the camera port (idx 23) — regardless of which port is actually linked.
+        return [
+            {"interfaceAlias": "Ethernet 5", "interfaceIndex": 22, "ipv4Address": ["192.168.102.196"], "ipv4DefaultGateway": ["192.168.100.1"]},
+            {"interfaceAlias": "Ethernet 28", "interfaceIndex": 23, "ipv4Address": ["192.168.101.98"], "ipv4DefaultGateway": ["192.168.100.1"]},
+            {"interfaceAlias": "Ethernet 29", "interfaceIndex": 17, "ipv4Address": ["169.254.188.134"], "ipv4DefaultGateway": []},
+            {"interfaceAlias": "Ethernet 30", "interfaceIndex": 19, "ipv4Address": ["169.254.18.170"], "ipv4DefaultGateway": []},
+            {"interfaceAlias": "Ethernet 31", "interfaceIndex": 25, "ipv4Address": ["169.254.201.146"], "ipv4DefaultGateway": []},
+        ]
+
+    def _good(self):  # internet on motherboard (Eth5 Up), camera port Eth28 Disconnected
+        return {"adapters": self._adapters("Up", "Disconnected"), "ipConfigurations": self._ip_configs()}
+
+    def _bad(self):  # internet moved to camera port (Eth28 Up), motherboard Eth5 unplugged
+        return {"adapters": self._adapters("Disconnected", "Up"), "ipConfigurations": self._ip_configs()}
+
+    def test_roles_by_pci_bus(self):
+        cfg = self._good()
+        main._classify_network_adapters(cfg)
+        roles = {a["name"]: a["role"] for a in cfg["adapters"]}
+        self.assertEqual(roles["Ethernet 5"], "motherboard")  # I219-LM on bus 0
+        for cam in ("Ethernet 28", "Ethernet 29", "Ethernet 30", "Ethernet 31"):
+            self.assertEqual(roles[cam], "camera", cam)  # 82574L on buses 4-7
+
+    def test_wifi_role_by_media_type(self):
+        # Same chipset family, on bus 0, but Native 802.11 → wifi, not motherboard.
+        cfg = {"adapters": [{"interfaceDescription": "Intel(R) Wireless-AC 9560",
+                             "physicalMediaType": "Native 802.11", "pciBus": 0,
+                             "status": "Up", "interfaceIndex": 99}]}
+        main._classify_network_adapters(cfg)
+        self.assertEqual(cfg["adapters"][0]["role"], "wifi")
+
+    def test_good_config_no_false_positive(self):
+        # The camera port (Eth28) has a STALE gateway but is Disconnected → must
+        # NOT flag. Internet is correctly on the motherboard port.
+        self.assertIsNone(main._camera_nic_uplink_finding(self._good()))
+
+    def test_internet_on_camera_port_flags_critical(self):
+        f = main._camera_nic_uplink_finding(self._bad())
+        self.assertIsNotNone(f)
+        self.assertEqual(f["severity"], "critical")
+        self.assertIn("camera port", f["title"].lower())
+        self.assertIn("Ethernet 28", f["recommendation"])
+        self.assertIn("no cable connected", f["recommendation"])  # motherboard cable is out
+
+    def test_motherboard_disabled_note(self):
+        cfg = self._bad()
+        cfg["adapters"][0]["adminStatus"] = "Down"  # motherboard administratively disabled
+        cfg["adapters"][0]["status"] = "Disabled"
+        f = main._camera_nic_uplink_finding(cfg)
+        self.assertIn("disabled", f["recommendation"].lower())
+
+    def test_finding_surfaces_in_compute_findings(self):
+        findings = main._compute_findings(
+            identity={}, performance={}, services={}, nics={},
+            network_config=self._bad(),
+        )
+        titles = [f["title"] for f in findings if f.get("category") == "Network"]
+        self.assertTrue(any("camera port" in t.lower() for t in titles), titles)
+
+    def test_scalar_gateway_is_handled(self):
+        # PowerShell unwraps a single-element array to a scalar, so a one-gateway
+        # camera port arrives with ipv4DefaultGateway as a bare STRING, not a
+        # list. The finding must still fire and report the whole gateway — not
+        # iterate the string's characters (the bug that crashed the real VPU).
+        cfg = self._bad()
+        for ipc in cfg["ipConfigurations"]:
+            if ipc["interfaceIndex"] == 23:  # the up camera port (Ethernet 28)
+                ipc["ipv4DefaultGateway"] = "192.168.100.1"   # scalar, not a list
+        f = main._camera_nic_uplink_finding(cfg)
+        self.assertIsNotNone(f)
+        self.assertIn("192.168.100.1", f["recommendation"])  # full gateway, not "1"
+
+
+# ── Wi-Fi card disabled (Pixellot Connect) ───────────────────────────
+# Fixture from a third real VPU dump: internet correctly on the motherboard
+# (I219-LM #2 on PCI bus 0), all four 82574L camera ports link-local, and the
+# Wi-Fi card (Wireless-AC 9560, Native 802.11) administratively DISABLED. A
+# disabled Wi-Fi NIC shows status "Disabled" / adminStatus "Down"; an absent
+# card doesn't appear at all (so this never false-fires on Wi-Fi-less units).
+class TestWifiDisabled(unittest.TestCase):
+    def _cfg(self, wifi_status="Disabled", wifi_admin="Down"):
+        return {
+            "adapters": [
+                {"name": "Ethernet 13", "interfaceDescription": "Intel(R) Ethernet Connection (7) I219-LM #2",
+                 "status": "Up", "adminStatus": "Up", "physicalMediaType": "802.3",
+                 "macAddress": "9C-7B-EF-26-CB-D5", "interfaceIndex": 41, "pciBus": 0},
+                {"name": "Ethernet 31", "interfaceDescription": "Intel(R) 82574L Gigabit Network Connection #16",
+                 "status": "Up", "adminStatus": "Up", "physicalMediaType": "802.3",
+                 "macAddress": "00-30-64-36-73-AA", "interfaceIndex": 21, "pciBus": 4},
+                {"name": "Ethernet 28", "interfaceDescription": "Intel(R) 82574L Gigabit Network Connection #13",
+                 "status": "Up", "adminStatus": "Up", "physicalMediaType": "802.3",
+                 "macAddress": "00-30-64-36-73-AB", "interfaceIndex": 37, "pciBus": 5},
+                {"name": "Wi-Fi", "interfaceDescription": "Intel(R) Wireless-AC 9560 160MHz",
+                 "status": wifi_status, "adminStatus": wifi_admin, "physicalMediaType": "Native 802.11",
+                 "macAddress": "C8-58-C0-39-4D-D8", "interfaceIndex": 33, "pciBus": 0},
+            ],
+            "ipConfigurations": [
+                {"interfaceAlias": "Ethernet 13", "interfaceIndex": 41, "ipv4Address": ["192.168.101.230"], "ipv4DefaultGateway": ["192.168.100.1"]},
+                {"interfaceAlias": "Ethernet 31", "interfaceIndex": 21, "ipv4Address": ["169.254.63.3"], "ipv4DefaultGateway": []},
+                {"interfaceAlias": "Ethernet 28", "interfaceIndex": 37, "ipv4Address": ["169.254.16.100"], "ipv4DefaultGateway": []},
+            ],
+        }
+
+    def test_roles_include_wifi_and_motherboard(self):
+        cfg = self._cfg()
+        main._classify_network_adapters(cfg)
+        roles = {a["name"]: a["role"] for a in cfg["adapters"]}
+        self.assertEqual(roles["Ethernet 13"], "motherboard")  # I219-LM on bus 0
+        self.assertEqual(roles["Wi-Fi"], "wifi")               # Native 802.11
+        self.assertEqual(roles["Ethernet 28"], "camera")       # 82574L on bus 5
+
+    def test_disabled_wifi_warns(self):
+        f = main._wifi_disabled_finding(self._cfg())
+        self.assertIsNotNone(f)
+        self.assertEqual(f["severity"], "warning")
+        self.assertIn("Connect", f["recommendation"])
+        self.assertIn("Wireless-AC 9560", f["recommendation"])
+
+    def test_enabled_wifi_does_not_warn(self):
+        self.assertIsNone(main._wifi_disabled_finding(self._cfg(wifi_status="Up", wifi_admin="Up")))
+
+    def test_internet_on_motherboard_no_camera_finding(self):
+        # Internet is on the I219 motherboard port; cameras are link-local — so
+        # the camera-NIC finding must stay quiet even though Wi-Fi is disabled.
+        self.assertIsNone(main._camera_nic_uplink_finding(self._cfg()))
+
+    def test_compute_findings_warns_wifi_not_camera(self):
+        findings = main._compute_findings(
+            identity={}, performance={}, services={}, nics={}, network_config=self._cfg())
+        net = [(f["severity"], f["title"]) for f in findings if f.get("category") == "Network"]
+        self.assertTrue(any("Wi-Fi card is disabled" in t for _, t in net), net)
+        self.assertFalse(any("camera port" in t.lower() for _, t in net), net)
+
+
+# ── DNS UDP/53 probe must not false-fire when resolution works ───────
+# Field report: the DNS probe targeted a stale resolver (10.0.0.136) off a
+# secondary adapter and failed, raising "can't resolve any hostname" — while
+# every domain on the same screen resolved fine. A failed UDP/53 probe must be
+# suppressed when names are demonstrably resolving (a hostname-based service
+# passed), but still reported when nothing resolves.
+class TestDnsProbeFalsePositive(unittest.TestCase):
+    def _ports(self, dns_status, pixellot_status):
+        return {"results": [
+            {"protocol": "UDP", "port": 53, "host": "10.0.0.136", "purpose": "DNS", "optional": False, "status": dns_status},
+            {"protocol": "TCP", "port": 443, "host": "pixellot.tv", "purpose": "Pixellot", "optional": False, "status": pixellot_status},
+        ]}
+
+    def _net_titles(self, port_tests):
+        f = main._compute_findings(identity={}, performance={}, services={}, nics={}, port_tests=port_tests)
+        return [x["title"] for x in f if x.get("category") == "Network"]
+
+    def test_dns_probe_fail_suppressed_when_resolution_works(self):
+        # DNS UDP/53 fails, but pixellot.tv:443 passed → names resolve → no DNS finding.
+        titles = self._net_titles(self._ports("fail", "pass"))
+        self.assertFalse(any("DNS" in t for t in titles), titles)
+
+    def test_dns_reported_when_nothing_resolves(self):
+        # DNS fails AND no hostname-based service passed → genuine DNS problem, still flag.
+        titles = self._net_titles(self._ports("fail", "fail"))
+        self.assertTrue(any("DNS is blocked" in t for t in titles), titles)
+
+
 # ── NTP source allowlist (PDF #9) ────────────────────────────
 class TestNtpAllowlist(unittest.TestCase):
     def test_canonical_sources_approved(self):

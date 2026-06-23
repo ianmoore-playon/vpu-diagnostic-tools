@@ -318,6 +318,12 @@ def _cgi_probe_sync(ip: str, timeout: float = 2.0) -> Optional[dict]:
     site has rotated camera credentials, probes will silently return None
     and identification falls back to ARP/cameras.cfg only.
     """
+    # Demo mode can't reach the synthetic camera IPs over HTTP — serve the
+    # canned probe so camerasDetected carries the full probe on a Mac.
+    if DEMO_MODE:
+        from demo_data import cgi_probe as _demo_cgi_probe
+        return _demo_cgi_probe(ip)
+
     headers = {"Authorization": "Basic " + base64.b64encode(b"Admin:1234").decode()}
 
     # Request 1: MAC address (critical — determines if camera responds)
@@ -844,7 +850,7 @@ _CONCERNING_SOFTWARE = {
         "shortLabel": "AV/EDR",
         "reason": (
             "Pixellot VPUs only support Windows Defender. Third-party AV/EDR "
-            "products block agent.exe and force an RMA (PDF #11)."
+            "products block agent.exe and force a hardware return (RMA)."
         ),
         "patterns": [
             "CrowdStrike", "SentinelOne", "Sophos", "Carbon Black", "Bitdefender",
@@ -1023,7 +1029,162 @@ def _total_ram_gb(hardware, performance) -> float:
     return 0.0
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None) -> list:
+# Intel/Realtek parts used on the dedicated multi-port camera NIC card. Only a
+# fallback hint when PCI bus info is missing — the authoritative signal is the
+# PCI bus number (onboard motherboard LOM = bus 0; add-in camera card = bus > 0).
+_CAMERA_NIC_CHIPSETS = ("i210", "i211", "i350", "82574l", "82576", "82580")
+
+
+def _adapter_role(a: dict) -> str:
+    """Classify a network adapter into its VPU role:
+      wifi        — the wireless card (Native 802.11), for the Pixellot Connect app
+      motherboard — the onboard Ethernet LOM (PCI bus 0), the intended internet uplink
+      camera      — a port on the dedicated multi-port camera NIC (PCI bus > 0)
+      wired-unknown / other — couldn't place it (no PCI info, or a virtual/WAN device)
+    The motherboard port and the camera card often use the SAME Intel chipset, so
+    we key on PCI bus location, not the chipset name."""
+    media = (a.get("physicalMediaType") or "").strip().lower()
+    desc = (a.get("interfaceDescription") or "").lower()
+    if "802.11" in media or "wi-fi" in desc or "wireless" in desc or "wlan" in desc:
+        return "wifi"
+    is_wired = "802.3" in media
+    bus = a.get("pciBus")
+    if is_wired and bus is not None:
+        return "motherboard" if int(bus) == 0 else "camera"
+    if is_wired:
+        return "wired-unknown"
+    return "other"
+
+
+def _classify_network_adapters(network_config):
+    """Attach a `role` to every adapter in network_config (in place). Idempotent
+    and cheap — safe to call from every consumer (findings, dashboard, network
+    payload) so the role travels to both the backend findings and the frontend."""
+    if not network_config or network_config.get("error"):
+        return network_config
+    for a in network_config.get("adapters") or []:
+        a["role"] = _adapter_role(a)
+    return network_config
+
+
+def _camera_nic_uplink_finding(network_config):
+    """Detect the wiring fault: the internet uplink is plugged into a camera-NIC
+    port instead of the motherboard network port. A camera port flags only when
+    it is link-UP and carrying a real (non-APIPA) default gateway — a disconnected
+    port can hold a stale gateway in the route table, so link state is the gate.
+    Returns a critical finding dict, or None."""
+    if not network_config or network_config.get("error"):
+        return None
+    _classify_network_adapters(network_config)
+    adapters = network_config.get("adapters") or []
+    ip_by_idx = {}
+    for ipc in network_config.get("ipConfigurations") or []:
+        ip_by_idx[ipc.get("interfaceIndex")] = ipc
+
+    def _real_gateway(a):
+        ipc = ip_by_idx.get(a.get("interfaceIndex")) or {}
+        raw = ipc.get("ipv4DefaultGateway")
+        # PowerShell unwraps a single-element array to a scalar, so a one-gateway
+        # adapter arrives as a bare string — normalize before iterating (else we'd
+        # iterate the string's characters).
+        gws = raw if isinstance(raw, list) else ([raw] if raw else [])
+        for g in gws:
+            if g and not str(g).startswith("169.254."):
+                return g
+        return None
+
+    def _link_up(a):
+        return str(a.get("status") or "").strip().lower() == "up"
+
+    misplaced = []
+    for a in adapters:
+        if a.get("role") != "camera":
+            continue
+        gw = _real_gateway(a)
+        if gw and _link_up(a):
+            misplaced.append((a, gw))
+    if not misplaced:
+        return None
+
+    # Motherboard port state, for the remediation message.
+    def _mobo_state(a):
+        admin = str(a.get("adminStatus") or "").strip().lower()
+        status = str(a.get("status") or "").strip().lower()
+        if admin == "down" or status == "disabled":
+            return "disabled"
+        if status in ("disconnected", "not present", "down"):
+            return "unplugged"
+        return "ok"
+
+    mobo = [a for a in adapters if a.get("role") == "motherboard"]
+    mobo_note = ""
+    if mobo:
+        st = _mobo_state(mobo[0])
+        if st == "disabled":
+            mobo_note = " The motherboard network port is currently disabled — enable it in Windows."
+        elif st == "unplugged":
+            mobo_note = " The motherboard network port has no cable connected — move the venue/internet cable to it."
+    else:
+        mobo_note = " No motherboard network port was detected — it may be disabled."
+
+    ports_txt = ", ".join(
+        f"{a.get('name') or a.get('interfaceDescription') or '?'} (gateway {gw})"
+        for a, gw in misplaced
+    )
+    return {
+        "severity": "critical",
+        "category": "Network",
+        "title": "Internet is plugged into a camera port, not the motherboard network port",
+        "recommendation": (
+            f"The VPU's internet/venue connection is coming in on a camera-NIC port: {ports_txt}. "
+            f"On a Pixellot VPU the internet must connect to the motherboard network port — the "
+            f"4-port NIC is only for cameras, and a venue uplink there can disrupt camera "
+            f"discovery and streaming.{mobo_note} Move the cable to the motherboard network port "
+            f"and confirm that port is enabled. (The Wi-Fi card is for the Pixellot Connect app and "
+            f"should stay enabled.)"
+        ),
+    }
+
+
+def _wifi_disabled_finding(network_config):
+    """The Wi-Fi card is how the Pixellot Connect app reaches the VPU. If it's
+    administratively disabled, Connect can't find the unit. A *disabled* Wi-Fi
+    NIC shows up with status 'Disabled' / adminStatus 'Down' (an absent card
+    doesn't appear at all, so this won't false-fire on units without Wi-Fi).
+    Wi-Fi Direct / hosted-network virtual adapters are skipped. Returns a
+    warning finding, or None."""
+    if not network_config or network_config.get("error"):
+        return None
+    _classify_network_adapters(network_config)
+    disabled = []
+    for a in network_config.get("adapters") or []:
+        if a.get("role") != "wifi":
+            continue
+        desc = a.get("interfaceDescription") or ""
+        if "Direct" in desc or "Virtual" in desc:
+            continue  # Wi-Fi Direct / hosted-network plumbing, not the real card
+        status = str(a.get("status") or "").strip().lower()
+        admin = str(a.get("adminStatus") or "").strip().lower()
+        if status == "disabled" or admin == "down":
+            disabled.append(a)
+    if not disabled:
+        return None
+    names = ", ".join(a.get("interfaceDescription") or a.get("name") or "Wi-Fi" for a in disabled)
+    return {
+        "severity": "warning",
+        "category": "Network",
+        "title": "Wi-Fi card is disabled — the Pixellot Connect app can't reach this VPU",
+        "recommendation": (
+            f"The VPU's Wi-Fi adapter ({names}) is disabled. The Wi-Fi card is what the Pixellot "
+            f"Connect app uses to talk to the VPU, so Connect won't find this unit until it's "
+            f"turned back on — enable it in Windows (Network Connections → right-click the Wi-Fi "
+            f"adapter → Enable). The internet uplink should stay on the motherboard Ethernet port; "
+            f"Wi-Fi is only for Connect."
+        ),
+    }
+
+
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None) -> list:
     findings = []
 
     # ── Wi-Fi uplink detection (Canopy adoption) ─────────────
@@ -1042,16 +1203,31 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         ssid_str = f" (SSID: {', '.join(ssids)})" if ssids else ""
         findings.append(
             {
+                "code": "wifi-uplink",
                 "severity": "warning",
                 "category": "Network",
                 "title": "VPU is using Wi-Fi for its internet connection — switch to wired Ethernet",
                 "recommendation": (
                     f"The VPU's active internet path is over Wi-Fi: {names}{ssid_str}. "
-                    f"Connect the onboard Ethernet port to the venue network instead. "
-                    f"Wi-Fi introduces latency and packet loss that disrupt streaming."
+                    f"The Wi-Fi card is meant for the Pixellot Connect app, not the internet "
+                    f"uplink — connect the motherboard Ethernet port to the venue network "
+                    f"instead. Wi-Fi adds latency and packet loss that disrupt streaming."
                 ),
             }
         )
+
+    # ── Internet plugged into a camera port instead of the motherboard ───
+    # The internet uplink must land on the motherboard network port; the
+    # dedicated 4-port NIC is cameras-only. Detected via PCI bus role (add-in
+    # card = bus > 0) + a live default gateway on that port.
+    _cam_uplink = _camera_nic_uplink_finding(network_config)
+    if _cam_uplink:
+        findings.append(_cam_uplink)
+
+    # ── Wi-Fi card disabled (Pixellot Connect can't reach the VPU) ───────
+    _wifi_off = _wifi_disabled_finding(network_config)
+    if _wifi_off:
+        findings.append(_wifi_off)
 
     # ── NTP allowlist (PDF #9) ───────────────────────────────
     # School networks sometimes force VPUs onto an internal NTP server. If
@@ -1063,12 +1239,14 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             approved_list = ", ".join(PIXELLOT_APPROVED_NTP_SOURCES)
             findings.append(
                 {
+                    "code": "ntp-unapproved",
                     "severity": "warning",
                     "category": "Network",
-                    "title": "NTP source not in approved Pixellot list",
+                    "title": "VPU clock is syncing from the wrong time source",
                     "recommendation": (
-                        f"Current source: {ntp_src}. Pixellot requires one of: {approved_list}. "
-                        f"Run `w32tm /config /manualpeerlist:\"0.us.pool.ntp.org 1.us.pool.ntp.org "
+                        f"Point the VPU's clock at an approved Pixellot time server. "
+                        f"Current source: {ntp_src}. Approved: {approved_list}. To fix, run "
+                        f"`w32tm /config /manualpeerlist:\"0.us.pool.ntp.org 1.us.pool.ntp.org "
                         f"2.us.pool.ntp.org 3.us.pool.ntp.org\" /syncfromflags:manual /update` and "
                         f"restart the Windows Time service."
                     ),
@@ -1088,13 +1266,14 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             for b in concerns["security"]
         )
         findings.append({
+            "code": "sw-security",
             "severity": "critical",
             "category": "Hardware",
             "title": "Unsupported security software detected",
             "recommendation": (
-                f"Found: {names_str}. Pixellot VPUs only support Windows Defender — "
-                f"third-party AV/EDR products block agent.exe and force an RMA. "
-                f"Uninstall the listed software immediately."
+                f"Uninstall {names_str} immediately. Pixellot VPUs only support "
+                f"Windows Defender — third-party antivirus/EDR software blocks "
+                f"agent.exe and forces a hardware return (RMA)."
             ),
         })
     for cat_key in ("crypto_miner", "torrent", "system_cleaner"):
@@ -1107,6 +1286,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             for h in hits
         )
         findings.append({
+            "code": f"sw-{cat_key.replace('_', '-')}",
             "severity": "critical",
             "category": "Software",
             "title": f"{cat['label']} installed",
@@ -1119,6 +1299,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         cat = _CONCERNING_SOFTWARE[cat_key]
         names_str = ", ".join(h["name"] for h in hits)
         findings.append({
+            "code": f"sw-{cat_key.replace('_', '-')}",
             "severity": "warning",
             "category": "Software",
             "title": f"{cat['label']} installed",
@@ -1132,9 +1313,10 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
     if total_ram > 0 and total_ram < PIXELLOT_MIN_RAM_GB - 1:  # -1 GB tolerance for OS overhead when falling back to performance.memory
         findings.append(
             {
+                "code": "ram-insufficient",
                 "severity": "warning",
                 "category": "Hardware",
-                "title": "Insufficient RAM",
+                "title": "Not enough memory for a VPU",
                 "recommendation": f"System has {total_ram:g} GB RAM; Pixellot VPUs require {PIXELLOT_MIN_RAM_GB} GB. Encoder workloads may stall or drop frames. Add memory or escalate for replacement.",
             }
         )
@@ -1144,10 +1326,11 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         if uptime_secs and uptime_secs > 30 * 86400:
             findings.append(
                 {
+                    "code": "uptime-high",
                     "severity": "warning",
                     "category": "System",
-                    "title": "High Uptime",
-                    "recommendation": f"System running {uptime_secs // 86400} days. Consider a reboot.",
+                    "title": "VPU hasn't been rebooted in a while",
+                    "recommendation": f"Reboot the VPU — it's been running {uptime_secs // 86400} days. A periodic reboot clears memory leaks and stuck processes.",
                 }
             )
 
@@ -1160,10 +1343,11 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             shown = tz_caption or tz_id
             findings.append(
                 {
+                    "code": "tz-non-us",
                     "severity": "critical",
                     "category": "System",
-                    "title": "Non-US Timezone",
-                    "recommendation": f"System timezone is '{shown}'. VPU must be set to a US timezone (Pacific/Mountain/Central/Eastern, or Alaska/Hawaii). Open Date & Time settings and choose a US zone.",
+                    "title": "VPU clock is set to a non-US time zone",
+                    "recommendation": f"Set the VPU to a US time zone — open Date & Time settings and choose Pacific, Mountain, Central, Eastern, Alaska, or Hawaii. Current zone: '{shown}'.",
                 }
             )
 
@@ -1179,25 +1363,28 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             eos = lifecycle["eosDate"]
             if days < 0:
                 findings.append({
+                    "code": "os-eos-reached",
                     "severity": "critical",
                     "category": "System",
-                    "title": "OS end-of-support reached",
-                    "recommendation": f"{release} reached end-of-support on {eos} ({abs(days)} days ago). This host no longer receives security updates and should be re-imaged to a supported LTSC release.",
+                    "title": "Windows version is past its support date",
+                    "recommendation": f"{release} reached end-of-support on {eos} ({abs(days)} days ago). This host no longer receives security updates and should be re-imaged to a supported Windows version.",
                 })
             elif days < 90:
                 findings.append({
+                    "code": "os-eos-imminent",
                     "severity": "critical",
                     "category": "System",
-                    "title": "OS end-of-support imminent",
-                    "recommendation": f"{release} end-of-support is {eos} — {days} days away. Plan re-imaging to a supported LTSC release before that date.",
+                    "title": "Windows version loses support soon",
+                    "recommendation": f"{release} end-of-support is {eos} — {days} days away. Plan re-imaging to a supported Windows version before that date.",
                 })
             elif days < 365:
                 months = days // 30
                 findings.append({
+                    "code": "os-eos-approaching",
                     "severity": "warning",
                     "category": "System",
-                    "title": "OS end-of-support approaching",
-                    "recommendation": f"{release} end-of-support is {eos} (~{months} months away). Begin planning a re-image to a supported LTSC release.",
+                    "title": "Windows support ends within a year",
+                    "recommendation": f"{release} end-of-support is {eos} (~{months} months away). Begin planning a re-image to a supported Windows version.",
                 })
 
         # ── Pixellot version × hardware compatibility ───────────
@@ -1207,9 +1394,10 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         if compat["status"] == "over":
             arch_str = compat["architecture"] if compat["architecture"] != "Unknown" else "this hardware"
             findings.append({
+                "code": "pixellot-over-cap",
                 "severity": "critical",
                 "category": "Pixellot",
-                "title": "Pixellot version exceeds hardware compatibility cap",
+                "title": "Pixellot version is too new for this VPU's hardware",
                 "recommendation": (
                     f"Installed Pixellot {compat['installedVersion']} is newer than the maximum "
                     f"supported version for {arch_str} ({compat['maxVersion']}). "
@@ -1219,21 +1407,24 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             })
         elif compat["status"] == "no-gpu":
             findings.append({
+                "code": "gpu-none",
                 "severity": "critical",
                 "category": "Hardware",
                 "title": "No NVIDIA GPU detected",
                 "recommendation": (
-                    "Pixellot requires an NVIDIA GPU for video encoding. No NVIDIA hardware was "
-                    "found via nvidia-smi or WMI. If a GPU is physically installed, check driver "
-                    "status; otherwise this VPU cannot run the encoder."
+                    "Pixellot requires an NVIDIA GPU for video encoding. No NVIDIA graphics card "
+                    "was detected on this VPU. If a card is physically installed, check that its "
+                    "driver is installed and the card is seated; otherwise this VPU cannot run "
+                    "the encoder."
                 ),
             })
         elif compat["status"] == "anomaly":
             # Volta hardware shouldn't exist in the Pixellot field — escalate.
             findings.append({
+                "code": "gpu-anomaly",
                 "severity": "critical",
                 "category": "Hardware",
-                "title": "Unexpected GPU architecture",
+                "title": "Unrecognized graphics hardware",
                 "recommendation": (
                     f"{compat['architecture']} GPU detected, which is not a known Pixellot "
                     f"deployment configuration. Escalate to support — this host may be "
@@ -1257,14 +1448,15 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 vendors = sorted({(g.get("vendor") or "Unknown") for g in gpus})
                 vendor_str = ", ".join(vendors)
                 findings.append({
+                    "code": "gpu-igpu-only",
                     "severity": "warning",
                     "category": "Hardware",
-                    "title": "No dedicated GPU detected",
+                    "title": "No dedicated graphics card — wrong hardware for a VPU",
                     "recommendation": (
-                        f"WMI reports only non-dedicated graphics ({vendor_str}). "
+                        f"Only built-in graphics found ({vendor_str}). "
                         f"Pixellot VPUs require a dedicated NVIDIA or AMD card for video "
                         f"encoding — this host is the wrong hardware platform for a VPU. "
-                        f"Verify the dGPU is seated, powered, and has a current driver."
+                        f"Check that the graphics card is seated, powered, and has a current driver."
                     ),
                 })
 
@@ -1275,19 +1467,21 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         if cpu is not None and cpu > 90:
             findings.append(
                 {
+                    "code": "cpu-critical",
                     "severity": "critical",
                     "category": "Performance",
-                    "title": "CPU Usage Critical",
-                    "recommendation": f"CPU at {cpu}%. Check for runaway processes.",
+                    "title": "CPU usage critically high",
+                    "recommendation": f"Check for runaway processes — CPU at {cpu}%.",
                 }
             )
         elif cpu is not None and cpu > 75:
             findings.append(
                 {
+                    "code": "cpu-elevated",
                     "severity": "warning",
                     "category": "Performance",
-                    "title": "CPU Usage Elevated",
-                    "recommendation": f"CPU at {cpu}%. Monitor for sustained high usage.",
+                    "title": "CPU usage elevated",
+                    "recommendation": f"Monitor for sustained high usage — CPU at {cpu}%.",
                 }
             )
 
@@ -1295,19 +1489,21 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         if mem is not None and mem > 90:
             findings.append(
                 {
+                    "code": "mem-critical",
                     "severity": "critical",
                     "category": "Performance",
-                    "title": "Memory Usage Critical",
-                    "recommendation": f"Memory at {mem}%. Close apps or add RAM.",
+                    "title": "Memory usage critically high",
+                    "recommendation": f"Close apps or add memory — memory at {mem}%.",
                 }
             )
         elif mem is not None and mem > 80:
             findings.append(
                 {
+                    "code": "mem-elevated",
                     "severity": "warning",
                     "category": "Performance",
-                    "title": "Memory Usage Elevated",
-                    "recommendation": f"Memory at {mem}%. Monitor for pressure.",
+                    "title": "Memory usage elevated",
+                    "recommendation": f"Monitor for memory pressure — memory at {mem}%.",
                 }
             )
 
@@ -1315,19 +1511,21 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         if disk is not None and disk > 90:
             findings.append(
                 {
+                    "code": "disk-critical",
                     "severity": "critical",
                     "category": "Storage",
-                    "title": "Disk Space Critical",
-                    "recommendation": f"Disk at {disk}%. Free space immediately.",
+                    "title": "Disk almost full",
+                    "recommendation": f"Free up space now — disk at {disk}%.",
                 }
             )
         elif disk is not None and disk > 80:
             findings.append(
                 {
+                    "code": "disk-low",
                     "severity": "warning",
                     "category": "Storage",
-                    "title": "Disk Space Low",
-                    "recommendation": f"Disk at {disk}%. Plan cleanup soon.",
+                    "title": "Disk space low",
+                    "recommendation": f"Plan a cleanup soon — disk at {disk}%.",
                 }
             )
 
@@ -1335,10 +1533,55 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         if temp is not None and temp > 85:
             findings.append(
                 {
+                    "code": "temp-critical",
                     "severity": "critical",
                     "category": "Hardware",
-                    "title": "Temperature Critical",
-                    "recommendation": f"Temperature at {temp}°C. Check cooling.",
+                    "title": "VPU running hot",
+                    "recommendation": f"Check cooling — temperature at {temp}°C.",
+                }
+            )
+
+    # Drive SMART / reliability — the coarse Healthy/Unhealthy rollup plus the
+    # SSD-fleet early-warning signals (wear %, uncorrectable errors, OS pre-fail
+    # flag) from Get-DiskHealth. Pre-fail takes precedence over high wear, and we
+    # emit at most one of each so a multi-disk box doesn't spam the findings list.
+    if disk_health and not disk_health.get("error"):
+        prefail_drive = "A drive" if disk_health.get("predictFailure") else None
+        wear_drive = None  # (name, wearPercent)
+        for d in (disk_health.get("physicalDisks") or []):
+            name = d.get("friendlyName") or "A drive"
+            smart = d.get("smart") or {}
+            uncorrected = (smart.get("readErrorsUncorrected") or 0) + (smart.get("writeErrorsUncorrected") or 0)
+            health = (d.get("healthStatus") or "").strip().lower()
+            wear = smart.get("wearPercent")
+            if prefail_drive is None and (uncorrected > 0 or (health and health != "healthy")):
+                prefail_drive = name
+            if wear is not None and wear >= 80 and (wear_drive is None or wear > wear_drive[1]):
+                wear_drive = (name, wear)
+        if prefail_drive:
+            findings.append(
+                {
+                    "code": "disk-smart-prefail",
+                    "severity": "critical",
+                    "category": "Storage",
+                    "title": f"{prefail_drive} is predicting failure (SMART)",
+                    "recommendation": (
+                        "Back up recordings and plan to replace this drive — its built-in "
+                        "self-check (SMART) is reporting uncorrectable errors or a pre-failure status."
+                    ),
+                }
+            )
+        elif wear_drive:
+            findings.append(
+                {
+                    "code": "disk-smart-wear",
+                    "severity": "warning",
+                    "category": "Storage",
+                    "title": f"{wear_drive[0]} nearing end of rated life",
+                    "recommendation": (
+                        f"This SSD has used {wear_drive[1]}% of its rated write life — plan a "
+                        "replacement before it drops to read-only."
+                    ),
                 }
             )
 
@@ -1358,6 +1601,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 if status != "Running":
                     findings.append(
                         {
+                            "code": "watchdog-down",
                             "severity": "warning",
                             "category": "Services",
                             "title": "Pixellot watchdog (KeepAgentUp) not running",
@@ -1376,6 +1620,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             if status in ("Stopped", "NotFound") and name_lower in critical_svcs:
                 findings.append(
                     {
+                        "code": f"{name_lower}-down",  # agent-down / coordinator-down
                         "severity": "critical",
                         "category": "Services",
                         "title": f"{display} not running",
@@ -1434,9 +1679,10 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     category = "Camera" if has_cameras else "Network"
                     findings.append(
                         {
+                            "code": "nic-slow",
                             "severity": "warning",
                             "category": category,
-                            "title": f"NIC {label} at {speed} Mbps (expected 1 Gbps)",
+                            "title": f"{'Camera' if has_cameras else 'Network'} port {idx + 1} is running slow — {speed} Mbps (should be 1 Gbps)",
                             "recommendation": (
                                 f"{label} ({port.get('name', 'unknown')}) negotiated to "
                                 f"{speed} Mbps instead of 1 Gbps. Camera streams on this port "
@@ -1459,14 +1705,15 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         last_excerpt = last_line[:160] + ("…" if len(last_line) > 160 else "")
         findings.append(
             {
+                "code": "install-incomplete",
                 "severity": "warning",
                 "category": "Pixellot",
-                "title": "Half-finished Pixellot install detected",
+                "title": "Pixellot update didn't finish",
                 "recommendation": (
-                    f"{part_count} part file(s) present in C:\\pixellot\\downloadedversion "
-                    f"and {log_name} does not end with 'Rebooting...'. Last log line was: "
-                    f'"{last_excerpt}". Resume the install by re-running the installer in '
-                    f"that directory."
+                    f"A previous update stopped partway through. Re-run the installer in "
+                    f"C:\\pixellot\\downloadedversion to complete it. ({part_count} part "
+                    f"file(s) present; {log_name} didn't reach 'Rebooting...'. Last log "
+                    f'line: "{last_excerpt}".)'
                 ),
             }
         )
@@ -1479,66 +1726,99 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
     # are intentionally skipped — they vary by venue configuration.
     if port_tests and not port_tests.get("error"):
         results = port_tests.get("results", [])
-        # The three redundant streaming transports to prod-echo (UDP/2088
-        # primary, UDP/443 backup, TCP/443 tunnel): video can ride any of them,
-        # so the broadcast only fails when ALL are blocked — one blocked path
-        # just removes failover. Keep this set in sync with STREAMING_PURPOSES
-        # in app.js and the purposes in Test-NetworkPorts.ps1.
-        streaming_purposes = {"Zixi Streaming", "Zixi Backup", "Pixellot Echo"}
+        # Streaming model: the live broadcast rides UDP/2088 (Zixi Streaming)
+        # with NO failover — block it and the stream can't go out (critical).
+        # The 443 pair (UDP/443 Zixi Backup + TCP/443 Pixellot Echo tunnel) is a
+        # redundant backup channel that fails over between its two transports, so
+        # a block there is a warning, not "can't broadcast". Keep these in sync
+        # with PRIMARY_STREAM_PURPOSE / STREAMING_PURPOSES in app.js and the
+        # purposes in Test-NetworkPorts.ps1.
+        primary_stream_purpose = "Zixi Streaming"
+        backup_stream_purposes = {"Zixi Backup", "Pixellot Echo"}
 
         def _lbl(rows):
             return ", ".join(
                 f"{(r.get('protocol') or '').upper()}/{r.get('port')}" for r in rows
             )
 
-        stream_paths = [
+        # (1) Primary stream (UDP/2088) — no failover, so a block stops the broadcast.
+        primary_blocked = [
             r for r in results
-            if r.get("purpose") in streaming_purposes and not r.get("optional")
+            if r.get("purpose") == primary_stream_purpose
+            and not r.get("optional") and r.get("status") == "fail"
         ]
-        stream_blocked = [r for r in stream_paths if r.get("status") == "fail"]
-        stream_open = [r for r in stream_paths if r.get("status") != "fail"]
+        if primary_blocked:
+            findings.append({
+                "code": "stream-2088-blocked",
+                "severity": "critical",
+                "category": "Network",
+                "title": "Streaming is blocked — the VPU can't broadcast",
+                "recommendation": (
+                    "The venue's network is blocking the connection the VPU uses to "
+                    "send the live video to Pixellot's streaming service. This connection "
+                    "has no backup, so the game can't broadcast until it's unblocked. Ask "
+                    f"the venue's IT team to open {_lbl(primary_blocked)} to prod-echo.pixellot.tv."
+                ),
+            })
 
-        if stream_blocked:
-            if stream_open:
-                findings.append({
-                    "severity": "warning",
-                    "category": "Network",
-                    "title": "Streaming redundancy reduced (backup path blocked)",
-                    "recommendation": (
-                        f"The stream still has a working path ({_lbl(stream_open)}), so "
-                        f"broadcasting should work — but {_lbl(stream_blocked)} to "
-                        f"prod-echo.pixellot.tv is blocked, removing failover. Ask the "
-                        f"venue's IT team to open it."
-                    ),
-                })
-            else:
-                findings.append({
-                    "severity": "critical",
-                    "category": "Network",
-                    "title": "All streaming paths blocked — VPU cannot broadcast",
-                    "recommendation": (
-                        "Every streaming transport (UDP/2088, UDP/443, TCP/443 to "
-                        "prod-echo.pixellot.tv) is blocked, so the VPU cannot send video. "
-                        "Open at least one in the venue firewall."
-                    ),
-                })
+        # (2) Backup channel (443 pair) — fails over between its transports and the
+        # broadcast rides UDP/2088, so a block here is a warning, not a critical.
+        backup_paths = [
+            r for r in results
+            if r.get("purpose") in backup_stream_purposes and not r.get("optional")
+        ]
+        backup_blocked = [r for r in backup_paths if r.get("status") == "fail"]
+        if backup_blocked:
+            findings.append({
+                "code": "stream-443-blocked",
+                "severity": "warning",
+                "category": "Network",
+                "title": "A backup streaming connection is blocked — the broadcast still works",
+                "recommendation": (
+                    "The game can still broadcast right now over its main connection. "
+                    "Pixellot also keeps a spare backup connection to its streaming service, "
+                    "and the venue's network is blocking that backup — so if the main "
+                    "connection has trouble during a game there's less to fall back on. Ask "
+                    f"the venue's IT team to unblock {_lbl(backup_blocked)} to prod-echo.pixellot.tv."
+                ),
+            })
 
-        # Non-streaming required ports — each blocked one is its own warning.
+        # Name resolution demonstrably working? Any required hostname-based port
+        # that passed proves it (you can't reach pixellot.tv:443 without resolving
+        # pixellot.tv) — so a failed UDP/53 probe must NOT be reported as DNS down
+        # (it can target a stale resolver off another adapter, or go unanswered).
+        name_resolution_ok = any(
+            r.get("status") != "fail" and not r.get("optional")
+            and (r.get("purpose") or "").upper() != "DNS"
+            and any(c.isalpha() for c in str(r.get("host") or ""))
+            for r in results
+        )
+
+        # Non-streaming required ports — each blocked one is its own warning. The
+        # primary stream and the 443 backup channel are handled above, so skip both.
         for r in results:
             if r.get("status") != "fail" or r.get("optional"):
                 continue
-            if r.get("purpose") in streaming_purposes:
+            if r.get("purpose") in backup_stream_purposes or r.get("purpose") == primary_stream_purpose:
                 continue
             host = r.get("host", "?")
             port = r.get("port", "?")
             proto = (r.get("protocol") or "").upper()
             purpose = r.get("purpose") or "service"
             err = r.get("errorMessage") or "No response"
+            # DNS (port 53) blocked breaks name resolution for everything → a
+            # readiness blocker; every other required port is a readiness risk.
+            is_dns = purpose.upper() == "DNS" or str(port) == "53"
+            # …but don't cry "DNS blocked" when names are clearly resolving — the
+            # UDP/53 probe is unreliable and can hit the wrong resolver.
+            if is_dns and name_resolution_ok:
+                continue
             findings.append(
                 {
+                    "code": "port-dns-blocked" if is_dns else "port-required-blocked",
                     "severity": "warning",
                     "category": "Network",
-                    "title": f"{purpose} port blocked ({proto} {port})",
+                    "title": f"{purpose} is blocked ({proto}/{port})",
                     "recommendation": (
                         f"{proto} port {port} to {host} is unreachable ({err}). "
                         f"This is a required Pixellot endpoint — ask the venue's "
@@ -1591,6 +1871,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                         f"port, or camera-power issue."
                     )
                 findings.append({
+                    "code": "cam-none" if detected_main == 0 else "cam-partial",
                     "severity": sev,
                     "category": "Camera",
                     "title": title,
@@ -1608,6 +1889,190 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         seen.add(key)
         deduped.append(f)
     return deduped
+
+
+# ── Stream Readiness Engine (policy v1) ──────────────────────────────────
+# Rolls the per-run findings above into one PASS / WARN / FAIL verdict per
+# VPU. Spec: ~/Code/Resources/stream-readiness-policy-v1.md (decided 2026-06-16).
+#
+# The policy is DATA, not code: each finding `code` maps to a readiness class
+# (blocker / risk / info). A season of calibration is table edits, not redeploys.
+#
+# Readiness class is a deliberate OVERRIDE of the diagnostic severity — they
+# diverge on purpose. OS-end-of-support is `critical` on the dashboard but
+# readiness `info` (it never stops tonight's game); iGPU-only is `warning` but
+# readiness `blocker` (wrong hardware, can't encode). Don't reuse `severity`.
+READINESS_POLICY_VERSION = "v1"
+
+_READINESS_POLICY = {
+    # ── BLOCKERS → FAIL (don't expect a clean broadcast tonight) ──
+    "stream-2088-blocked":   "blocker",  # F1  UDP/2088 Zixi Streaming, no failover
+    "agent-down":            "blocker",  # F2  core capture process down
+    "coordinator-down":      "blocker",  # F3  core capture process down
+    "cam-none":              "blocker",  # F4  0 of N main cameras present
+    "gpu-none":              "blocker",  # F5  no NVIDIA GPU — encoder can't run
+    "gpu-igpu-only":         "blocker",  # F11 Intel iGPU only — wrong hardware
+    "port-dns-blocked":      "blocker",  # F23a DNS down → name resolution fails
+    # F15a C: disk >90% is computed below from disk-health (not the aggregate
+    # `disk-critical` finding — see _compute_readiness).
+
+    # ── RISKS → WARN (will likely stream, but a human should eyeball) ──
+    "cam-partial":           "risk",     # F6  k of N present (k>0)
+    "nic-slow":              "risk",     # F7  camera NIC below gigabit
+    "stream-443-blocked":    "risk",     # F8  443 backup blocked while 2088 up
+    "watchdog-down":         "risk",     # F9  KeepAgentUp down — no self-heal
+    "pixellot-over-cap":     "risk",     # F10 build newer than GPU/OS supports
+    "gpu-anomaly":           "risk",     # F12 Volta / roster anomaly
+    "install-incomplete":    "risk",     # F13 interrupted installer, agent up
+    "disk-low":              "risk",     # F16 (aggregate) disk 80–90%
+    "disk-smart-prefail":    "risk",     # F16b drive SMART pre-fail / uncorrectable errors
+    "ram-insufficient":      "risk",     # F21 <32 GB host
+    "ntp-unapproved":        "risk",     # F22 drift can break signed-URL stream
+    "port-required-blocked": "risk",     # F23b NTP / Pixellot cloud / etc.
+    "wifi-uplink":           "risk",     # F24 Wi-Fi uplink — latency/loss
+    # F14 temp≥90, F15b D:>90, F17 CPU sustained, F19 mem sustained are computed
+    # below (readiness-specific thresholds the dashboard findings don't surface).
+
+    # ── INFO → context only (never gates the verdict) ──
+    "cpu-elevated":          "info",     # F18 75–90% snapshot
+    "mem-elevated":          "info",     # F20 80–90% snapshot
+    "cpu-critical":          "info",     # snapshot >90% — readiness uses the average (F17)
+    "mem-critical":          "info",     # snapshot >90% — readiness uses the average (F19)
+    "disk-critical":         "info",     # all-volumes AGGREGATE >90% — readiness keys on C: (F15a)
+    "disk-smart-wear":       "info",     # SSD ≥80% rated life — heads-up, won't stop tonight's game
+    "temp-critical":         "info",     # 85°C snapshot — readiness gate is 90°C (F14)
+    "tz-non-us":             "info",     # F25
+    "os-eos-reached":        "info",     # F26
+    "os-eos-imminent":       "info",     # F27
+    "os-eos-approaching":    "info",     # F28
+    "sw-security":           "info",     # F29 (if it's blocking agent.exe, that surfaces as F2)
+    "sw-crypto-miner":       "info",     # F30
+    "sw-torrent":            "info",     # F31
+    "sw-system-cleaner":     "info",     # F32
+    "sw-alt-remote":         "info",     # F33
+    "sw-game-platform":      "info",     # F34
+    "sw-consumer-sync":      "info",     # F35
+    "uptime-high":           "info",     # F36
+}
+
+
+def _readiness_class(code: str) -> str:
+    """Map a finding code to its readiness class. Unmapped / unknown codes →
+    `info` (Ian's call: note an unverifiable or new check, never gate on it)."""
+    return _READINESS_POLICY.get(code or "", "info")
+
+
+def _disk_used_by_letter(disk_health, performance):
+    """Return (cPct, dPct) used-percent for C:/D: from the disk-health
+    collection — the same per-volume source the System Disk gauge uses
+    (`_systemDiskPct` in app.js). `performance.disk.usedPercent` is an
+    ALL-VOLUMES AGGREGATE, not C:, so it's only a last-resort fallback for C:
+    when disk-health didn't run."""
+    c_pct = d_pct = None
+    if disk_health and not disk_health.get("error"):
+        for d in (disk_health.get("logicalDisks") or []):
+            letter = (d.get("deviceID") or "").rstrip(":").upper()
+            if letter == "C":
+                c_pct = d.get("usedPercent")
+            elif letter == "D":
+                d_pct = d.get("usedPercent")
+    if c_pct is None and performance and not performance.get("error"):
+        c_pct = (performance.get("disk") or {}).get("usedPercent")
+    return c_pct, d_pct
+
+
+def _compute_readiness(findings, performance=None, disk_health=None,
+                       perf_sample=None, now=None) -> dict:
+    """Roll the findings into one PASS / WARN / FAIL verdict per VPU.
+
+    Rollup: any blocker → FAIL · any risk → WARN · else PASS. The return value
+    is an auditable record — `{timestamp, policyVersion, status, blockers,
+    risks, info}` — so every FAIL says exactly which findings drove it and old
+    verdicts can be re-scored when the policy table changes.
+
+    Most classes come straight from the policy table keyed on each finding's
+    `code`. Four checks are computed here instead, because readiness uses a
+    different metric or threshold than the dashboard finding does:
+      • F17/F19 — CPU/mem averaged over a short sample (not a one-instant snapshot)
+      • F14     — temperature ≥90°C (the dashboard finding keeps its 85°C tier)
+      • F15a/b  — C:/D: by drive letter from disk-health (not the aggregate)
+    """
+    blockers, risks, info = [], [], []
+
+    def add(cls, code, title, recommendation, category=""):
+        entry = {
+            "code": code,
+            "title": title,
+            "recommendation": recommendation,
+            "category": category,
+        }
+        {"blocker": blockers, "risk": risks}.get(cls, info).append(entry)
+
+    # (1) Finding-derived classes, straight from the policy table.
+    for f in (findings or []):
+        code = f.get("code") or ""
+        add(_readiness_class(code), code, f.get("title", ""),
+            f.get("recommendation", ""), f.get("category", ""))
+
+    # (2) Readiness-specific computed checks (different metric/threshold than
+    #     the dashboard finding — see docstring).
+    # F17 — CPU sustained >90%, from the averaged sample (snapshot fallback).
+    cpu_avg = (perf_sample or {}).get("cpuAvgPercent")
+    if cpu_avg is None and performance and not performance.get("error"):
+        cpu_avg = (performance.get("cpu") or {}).get("usagePercent")
+    if isinstance(cpu_avg, (int, float)) and cpu_avg > 90:
+        add("risk", "cpu-sustained", "CPU sustained above 90%",
+            f"CPU averaged {cpu_avg:g}% over the sample window. Sustained load "
+            f"this high risks dropped frames mid-broadcast — check for a runaway "
+            f"process before game time.", "Performance")
+
+    # F19 — Memory sustained >90%, averaged (snapshot fallback).
+    mem_avg = (perf_sample or {}).get("memAvgPercent")
+    if mem_avg is None and performance and not performance.get("error"):
+        mem_avg = (performance.get("memory") or {}).get("usedPercent")
+    if isinstance(mem_avg, (int, float)) and mem_avg > 90:
+        add("risk", "mem-sustained", "Memory sustained above 90%",
+            f"Memory averaged {mem_avg:g}% over the sample window. The encoder "
+            f"can stall under sustained pressure — close apps or add RAM.",
+            "Performance")
+
+    # F14 — Temperature ≥90°C (dashboard finding still fires its own at 85°C).
+    if performance and not performance.get("error"):
+        temp = (performance.get("temperature") or {}).get("celsius")
+        if isinstance(temp, (int, float)) and temp >= 90:
+            add("risk", "temp-90", "Temperature high (≥90°C)",
+                f"Temperature at {temp:g}°C. Sustained heat throttles the encoder "
+                f"and risks frame drops — check airflow and fans.", "Hardware")
+
+    # F15a/b — C:/D: by drive letter (C: is stream-processing → blocker;
+    # D: is post-event VOD storage → risk).
+    c_pct, d_pct = _disk_used_by_letter(disk_health, performance)
+    if isinstance(c_pct, (int, float)):
+        if c_pct > 90:
+            add("blocker", "disk-c-critical", "System drive (C:) almost full",
+                f"C: is {c_pct:g}% full. The live stream is processed on C: — if it "
+                f"fills, the VPU can't process the broadcast. Free space on C: now.",
+                "Storage")
+        elif c_pct > 80:
+            add("risk", "disk-c-low", "System drive (C:) running low",
+                f"C: is {c_pct:g}% full and approaching the critical threshold. "
+                f"Clear space on C: before game time.", "Storage")
+    if isinstance(d_pct, (int, float)) and d_pct > 90:
+        add("risk", "disk-d-critical", "Recording drive (D:) almost full",
+            f"D: is {d_pct:g}% full. The post-event recording (VOD) is written to "
+            f"D: — if it fills during the game the recording may not save. Free "
+            f"space on D:.", "Storage")
+
+    status = "FAIL" if blockers else "WARN" if risks else "PASS"
+    from datetime import datetime, timezone
+    return {
+        "timestamp": (now or datetime.now(timezone.utc)).isoformat(),
+        "policyVersion": READINESS_POLICY_VERSION,
+        "status": status,
+        "blockers": blockers,
+        "risks": risks,
+        "info": info,
+    }
 
 
 def _build_camera_sets(pixellot_config=None):
@@ -2078,7 +2543,7 @@ def _compute_camera_findings(ports: list) -> list:
                     "title": f"{label} — camera dropped",
                     "body": f"A camera{ipinfo} was streaming on this port "
                             "earlier this session and is no longer detected. Check the "
-                            "cable and camera power, or use Fault Isolator.",
+                            "cable and camera power, or use Camera Connection Troubleshooting.",
                 })
 
         # Skip transient findings for a freshly-changed port. A port that
@@ -2126,7 +2591,10 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None):
+    # Tag adapter roles (motherboard / camera / wifi) so both the findings and
+    # the embedded "Network config" the dashboard ships carry them.
+    _classify_network_adapters(network_config)
     flat_identity = {}
     if identity and not identity.get("error"):
         flat_identity = {
@@ -2149,9 +2617,18 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
     net_cfg = {}
     if network_config and not network_config.get("error"):
         dash_reachable, dash_tested = _internet_reachable(network_config, port_tests)
+        # Role of the adapter currently carrying the uplink, so the dashboard
+        # can avoid mislabeling a camera-NIC port as "Motherboard Network Port".
+        _uplink_alias = (network_config.get("uplinkAdapter") or {}).get("interfaceAlias")
+        _uplink_role = None
+        for a in network_config.get("adapters") or []:
+            if a.get("name") == _uplink_alias or a.get("interfaceAlias") == _uplink_alias:
+                _uplink_role = a.get("role")
+                break
         net_cfg = {
             "ipConfig": network_config.get("ipConfigurations", []),
             "uplinkAdapter": network_config.get("uplinkAdapter"),
+            "uplinkRole": _uplink_role,
             "internetReachable": dash_reachable,
             "testedHost": dash_tested,
             "ntpSource": network_config.get("ntpSource"),
@@ -2176,11 +2653,14 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         if isinstance(data, dict) and data.get("error")
     ]
 
+    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health)
+
     return {
         "identity": flat_identity,
         "performance": performance if not performance.get("error", False) else {},
         "services": services if not services.get("error", False) else {"services": []},
-        "findings": _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations),
+        "findings": findings,
+        "readiness": _compute_readiness(findings, performance=performance, disk_health=disk_health, perf_sample=perf_sample),
         "networkConfig": net_cfg,
         "sourceErrors": source_errors,
     }
@@ -2188,6 +2668,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
 
 def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None, wifi=None):
     net = {}
+    _classify_network_adapters(config)
     if config and not config.get("error"):
         ntp_src = config.get("ntpSource")
         reachable, tested_host = _internet_reachable(config, ports)
@@ -2302,7 +2783,10 @@ async def api_preload():
     probe_results_pre = await _probe_all_cameras(raw_ports_pre, ocr_ips_pre)
 
     return {
-        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi),
+        # Readiness here uses the snapshot CPU/mem (no perf_sample on the
+        # preload path) and the disk-health already gathered; the authoritative
+        # /api/dashboard fetch refines it with the averaged sample + port tests.
+        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi, disk_health=disk_health),
         "system": {
             "identity": _enrich_identity_pixellot_compat(_enrich_identity_lifecycle(identity), gpu_info),
             "hardware": hardware,
@@ -2383,9 +2867,13 @@ async def api_scripts_cancel_all():
     return {"ok": True, "cancelled": count}
 
 
-@app.get("/api/dashboard")
-async def api_dashboard():
-    identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info, wifi, pixellot_config, expectations = await asyncio.gather(
+async def _collect_dashboard() -> dict:
+    """Run the dashboard's data-collection scripts and build the payload
+    (findings + Stream Readiness verdict). Shared by `/api/dashboard` and the
+    launch check-in beacon so both score readiness with identical inputs."""
+    (identity, performance, services, nics, net_config, hardware, installed_sw,
+     install_state, port_tests, gpu_info, wifi, pixellot_config, expectations,
+     disk_health, perf_sample) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
@@ -2406,8 +2894,25 @@ async def api_dashboard():
         # the camera NIC). Same scripts the Camera Connectivity tab uses.
         run_ps("Get-PixellotConfig.ps1", timeout=15),
         run_ps("Get-CameraExpectations.ps1", timeout=10),
+        # Readiness inputs: D: volume (post-event VOD) for the C:/D: split, and
+        # a short CPU/mem sample so a one-instant spike can't move the verdict.
+        run_ps("Get-DiskHealth.ps1", timeout=15),
+        run_ps("Get-PerfSample.ps1", timeout=15),
     )
-    return _build_dashboard(identity, performance, services, nics, net_config, hardware, installed_sw, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations)
+    return _build_dashboard(
+        identity, performance, services, nics, net_config, hardware,
+        installed_sw, install_state, port_tests, gpu_info, wifi,
+        pixellot_config=pixellot_config, expectations=expectations,
+        disk_health=disk_health, perf_sample=perf_sample,
+    )
+
+
+@app.get("/api/dashboard")
+async def api_dashboard():
+    """Top-level Dashboard payload: the aggregated system snapshot plus the
+    Stream Readiness verdict. Delegates to _collect_dashboard, which fans out to
+    the per-area collectors and rolls their results into findings."""
+    return await _collect_dashboard()
 
 
 def _enrich_identity_lifecycle(identity):
@@ -2438,6 +2943,9 @@ def _enrich_identity_pixellot_compat(identity, gpu_info):
 
 @app.get("/api/system")
 async def api_system():
+    """System tab data: identity, hardware, installed software, and GPU info
+    collected in parallel, then enriched with Windows lifecycle (LTSC
+    end-of-support) and Pixellot hardware-compatibility info before returning."""
     identity, hardware, software, gpu_info = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -2453,8 +2961,64 @@ async def api_system():
     }
 
 
+@app.get("/api/users-domains")
+async def api_users_domains():
+    """Domain/workgroup membership + local user accounts for the System
+    Overview 'Users & Domains' panel. Lazy-fetched on tab visit."""
+    return await run_ps("Get-UsersAndDomains.ps1", timeout=20)
+
+
+@app.get("/api/peripherals")
+async def api_peripherals():
+    """Mouse / keyboard / monitor presence for the System Overview
+    'Peripherals' panel. Lazy-fetched on tab visit."""
+    return await run_ps("Get-Peripherals.ps1", timeout=15)
+
+
+@app.get("/api/pixellot-config")
+async def api_pixellot_config():
+    r"""Local, on-host Pixellot configuration (NOT the Pixellot Cloud lane):
+    install/agent version + GPU-vs-version compatibility, cameras.cfg
+    (IP/MAC/role) enriched with live per-camera firmware/tvMode/serial via the
+    shared CGI probe, and calibration status (main multisport + OCR) read from
+    C:\Pixellot\Data\Configuration.
+    """
+    cfg, identity, gpu_info = await asyncio.gather(
+        run_ps("Get-PixellotConfig.ps1", timeout=20),
+        run_ps("Get-SystemIdentity.ps1"),
+        run_ps("Get-GpuInfo.ps1", timeout=15),
+    )
+    if not isinstance(cfg, dict) or cfg.get("error"):
+        return cfg
+
+    # Reuse the System Overview version-compatibility banner data.
+    cfg["compat"] = _check_pixellot_compatibility(identity, gpu_info)
+
+    # Enrich each camera with live firmware / tvMode / serial / model via the
+    # same cached CGI probe the Camera Connectivity lane uses (Admin:1234
+    # param.cgi). Skipped in demo mode — demo data already carries these.
+    cams = cfg.get("cameras") or []
+    if not DEMO_MODE and cams:
+        ocr_ips, _ = _build_ocr_sets(cfg)
+        targets = [c for c in cams if c.get("ip")]
+        probes = await asyncio.gather(
+            *[_probe_camera_ip(c["ip"], c["ip"] in ocr_ips) for c in targets]
+        )
+        for cam, probe in zip(targets, probes):
+            cam["reachable"] = bool(probe)
+            if not probe:
+                continue
+            for key in ("firmwareVersion", "tvMode", "serialNumber", "model"):
+                if probe.get(key):
+                    cam[key] = probe[key]
+    return cfg
+
+
 @app.get("/api/network")
 async def api_network():
+    """Network tab data: gathers adapter config, domain reachability, port
+    checks, NTP drift + peers, the local-network probe, DNS resolution, and
+    Wi-Fi adapters in parallel, then assembles them into the network panel."""
     config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi = await asyncio.gather(
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Test-NetworkDomains.ps1", timeout=20),
@@ -2644,31 +3208,74 @@ async def api_cameras_s1():
 
 
 @app.post("/api/cameras/video-test")
-async def api_cameras_video_test():
+async def api_cameras_video_test(request: Request):
     """Grab a single frame from each detected camera to confirm it's
     streaming decodable video (and return it as a thumbnail). Re-derives
     the camera IPs server-side (authoritative, not client-supplied).
     Wired to an explicit 'Get Camera Frames' button — never polled.
+
+    An optional JSON body {"ips": ["<ip>", ...]} restricts the capture to
+    those cameras — this backs the per-camera 'Refresh' button. With no
+    body (or an empty one) every detected camera is captured, as before.
+
+    Each result also carries the camera's model + firmware (from the CGI
+    probe) and the VPU's systemType (S1/S2/S2S) so the UI can label the
+    snapshot fully.
 
     Two guards: refuse while vpu.exe is capturing (don't compete for the
     cameras' RTSP sessions during a live event), and a cooldown to stop
     the button being spammed."""
     global _LAST_FRAME_CAPTURE
 
-    # Rate limit first — cheap, no PowerShell needed.
+    # Parse the body up front. {"ips": [...]} restricts the capture (per-camera
+    # Refresh); {"force": true} is an explicit override — the Inspection Report's
+    # fleet audit posts it to grab a frame from every camera even on a live VPU.
+    # force relaxes BOTH guards below (cooldown + the vpu.exe interlock); the
+    # Camera tab posts neither flag, so it still respects both.
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    force = bool(body.get("force")) if isinstance(body, dict) else False
+
+    # Rate limit first — cheap, no PowerShell needed. (force bypasses it.)
     remaining = _frame_cooldown_remaining(time.monotonic())
-    if remaining > 0:
+    if remaining > 0 and not force:
         return {"available": True, "results": [], "blocked": "cooldown",
                 "cooldown": remaining,
                 "reason": f"Please wait {remaining}s before capturing frames again."}
 
-    # Don't capture while the Pixellot capture engine owns the streams.
+    # Don't capture while the Pixellot capture engine owns the streams — unless
+    # the caller forces it (the fleet audit explicitly accepts the risk).
     expectations = await run_ps("Get-CameraExpectations.ps1", timeout=10, use_cache=False)
-    if expectations and not expectations.get("error") and expectations.get("vpuRunning"):
+    if not force and expectations and not expectations.get("error") and expectations.get("vpuRunning"):
         return {"available": False, "results": [], "blocked": "vpu",
                 "reason": "The Pixellot capture engine (vpu.exe) is running — "
                           "frame capture is disabled to avoid interfering with the "
                           "live stream. Stop the VPU process to capture frames."}
+
+    # Optional: restrict the capture to specific camera IPs (the per-camera
+    # 'Refresh' button posts {"ips": [...]}). No body → capture everything.
+    target_ips = None
+    if isinstance(body, dict):
+        raw = body.get("ips") or ([body["ip"]] if body.get("ip") else None)
+        if raw:
+            # Validate each client value as a real IP address at the boundary.
+            # These IPs only *filter* the server-derived camera list — the
+            # values handed to the capture command come from camerasDetected,
+            # never from the request — but rejecting anything that isn't a
+            # well-formed address keeps untrusted strings out of the selection
+            # path entirely. Malformed entries are dropped silently.
+            target_ips = set()
+            for x in raw:
+                ip = str(x).strip()
+                try:
+                    _ipaddress.ip_address(ip)
+                except ValueError:
+                    continue
+                target_ips.add(ip)
+
+    sys_type = expectations.get("systemType") if isinstance(expectations, dict) else None
 
     nics, pix_config = await asyncio.gather(
         run_ps("Get-NicAdapters.ps1"),
@@ -2693,9 +3300,19 @@ async def api_cameras_video_test():
                     "degraded": bool(p.get("isDegraded")),
                     "linkSpeedMbps": p.get("linkSpeedMbps"),
                     "expectedSpeedMbps": p.get("expectedSpeedMbps"),
+                    "model": c.get("model"),
+                    "firmwareVersion": c.get("firmwareVersion"),
                 }
+
+    # Single-camera refresh: keep only the requested IP(s).
+    if target_ips is not None:
+        cams = [c for c in cams if c[0] in target_ips]
+
     if not cams:
-        return {"available": True, "results": [], "reason": "No cameras detected to test."}
+        reason = ("Requested camera not detected." if target_ips
+                  else "No cameras detected to test.")
+        return {"available": True, "results": [], "reason": reason,
+                "systemType": sys_type}
 
     # Order: Main cameras first (by number), then OCRs, then anything else.
     def _cam_order(c):
@@ -2727,15 +3344,21 @@ async def api_cameras_video_test():
         timeout=budget,
         use_cache=False,
     )
-    # Merge link health onto each frame so the UI can warn that a degraded
-    # camera, while it grabbed a frame, won't stream reliably until fixed.
-    if isinstance(result, dict) and result.get("results"):
-        for r in result["results"]:
+    # Merge link health + camera identity onto each frame: link health lets
+    # the UI warn that a degraded camera, while it grabbed a frame, won't
+    # stream reliably; model/firmware label the snapshot. systemType (the
+    # VPU's camera generation — S1/S2/S2S) is the same for every camera, so
+    # it rides on the envelope, not each result.
+    if isinstance(result, dict):
+        for r in result.get("results") or []:
             meta = cam_meta.get((r.get("ip") or "").strip())
             if meta:
                 r["degraded"] = meta["degraded"]
                 r["linkSpeedMbps"] = meta["linkSpeedMbps"]
                 r["expectedSpeedMbps"] = meta["expectedSpeedMbps"]
+                r["model"] = meta.get("model")
+                r["firmwareVersion"] = meta.get("firmwareVersion")
+        result["systemType"] = sys_type
     return result
 
 
@@ -2797,15 +3420,6 @@ async def api_restart_agent():
     return await run_ps("Restart-PixellotAgent.ps1", timeout=120)
 
 
-@app.post("/api/services/reinstall-deps")
-async def api_reinstall_deps():
-    """Downloads and runs Pixellot-Installer-Dependencies-5.0.0.exe per
-    PDF #2 — the documented remedy for CUDNN/TensorFlow errors in the
-    VPU logs. Download can take a few minutes; installer up to ~10 min."""
-    # 20 min cap covers a slow download plus the installer itself.
-    return await run_ps("Install-PixellotDependencies.ps1", timeout=1200)
-
-
 @app.get("/api/services/install-state")
 async def api_install_state():
     """PDF #3: detect a half-finished install in c:\\pixellot\\downloadedversion.
@@ -2817,8 +3431,8 @@ async def api_install_state():
 @app.get("/api/services/dependencies")
 async def api_dependencies():
     """Reads HKLM:\\SOFTWARE\\Pixellot\\dependencies to surface the installed
-    deps version next to the Pixellot Services "Reinstall Dependencies" card
-    (PDF #2). Adapted from Canopy/Leaf/getVpuDepsFromRegistry.ps1."""
+    deps version as a read-only status line on the Service Status tab.
+    Adapted from Canopy/Leaf/getVpuDepsFromRegistry.ps1."""
     return await run_ps("Get-PixellotDependencies.ps1", timeout=10)
 
 
@@ -2854,15 +3468,27 @@ async def api_disk_repair(request: Request):
 async def api_events(
     hours: int = Query(default=48), level: str = Query(default="all")
 ):
+    """Windows Event Log query — recent System/Application events within the
+    given lookback window (hours), optionally filtered by level
+    (error / warning / all)."""
     return await run_ps("Get-EventLogs.ps1", {"HoursBack": hours, "Level": level})
+
+
+@app.get("/api/reboots")
+async def api_reboots(hours: int = Query(default=168)):
+    """Reboot/shutdown history with cause + a pending-reboot indicator.
+    Answers "why did this VPU restart, and is one pending?" — and positively
+    distinguishes a Pulse-initiated reboot (Reboot-Vpu.ps1 stamps the event
+    Comment) from an external one (scheduled task, Windows Update, crash)."""
+    return await run_ps("Get-RebootHistory.ps1", {"HoursBack": hours}, timeout=30)
 
 
 @app.get("/api/pixellot-logs")
 async def api_pixellot_logs(hours: int = Query(default=24)):
     """Scan C:\\Pixellot\\Data\\Log for errors, fatals, and process
     restarts in the last `hours` (PDF #5). Returns up to 500 matches with
-    a `depsErrorDetected` flag that the UI uses to surface the PDF #2
-    dependency-reinstall remedy."""
+    a `depsErrorDetected` flag that the UI surfaces as a prompt to escalate
+    to Pixellot support."""
     return await run_ps("Search-PixellotLogs.ps1", {"HoursBack": hours}, timeout=30)
 
 
@@ -3097,6 +3723,22 @@ async def _send_checkin() -> None:
             "pulseVersion": APP_VERSION,
             "channel":      _update_channel(),
         }
+        # Stream Readiness verdict on the beacon → a pre-game-readiness time
+        # series at ~zero marginal cost (the beacon already fires on launch).
+        # Fail-open like everything else here: a readiness error never blocks
+        # the check-in — we just send the identity fields without the verdict.
+        try:
+            dash = await _collect_dashboard()
+            verdict = (dash or {}).get("readiness") or {}
+            if verdict:
+                payload["readiness"] = {
+                    "status":        verdict.get("status"),
+                    "policyVersion": verdict.get("policyVersion"),
+                    "blockers":      [b.get("code") for b in verdict.get("blockers", [])],
+                    "risks":         [r.get("code") for r in verdict.get("risks", [])],
+                }
+        except Exception as e:
+            _server_log.info("Check-in readiness skipped (%s)", e)
         await asyncio.to_thread(_post_checkin_sync, url, payload)
         _server_log.info("Check-in sent for %s", payload.get("hostname") or "unknown VPU")
     except Exception as e:
@@ -3216,6 +3858,64 @@ async def api_update_apply():
     return {"ok": True, "message": "Pulse is updating and will restart shortly."}
 
 
+# ── Maintenance: restart Pulse / reboot the VPU ──────────────────────────────
+@app.post("/api/maintenance/restart-app")
+async def api_restart_app():
+    """Relaunch the CURRENT Pulse build (no download). Mirrors the update
+    handoff — spawn a detached helper that lets the HTTP reply flush, taskkills
+    the server so its port frees, then re-runs the hidden launcher
+    (pulse-launch.vbs) to start the same build again. Recovers a wedged app
+    without touching the OS or any recording. The open page reloads itself once
+    the server is back (see _pollForRestart)."""
+    if _sys.platform != "win32":
+        return {"ok": False, "error": "Restarting Pulse only works on Windows VPUs."}
+    import subprocess
+    vbs = _os.path.join(_web_root, "pulse-launch.vbs")
+    if not _os.path.exists(vbs):
+        return {"ok": False, "error": "pulse-launch.vbs not found — can't relaunch the server."}
+    port = int(_os.environ.get("PORT", 8765))
+    helper = _os.path.join(_web_root, "pulse-restart.bat")
+    lines = [
+        "@echo off",
+        "rem Pulse restart helper - spawned detached by the running server.",
+        "rem 1) let the HTTP reply flush  2) stop the server so its port frees",
+        "rem 3) relaunch the SAME build via the hidden launcher (no download).",
+        "ping -n 2 127.0.0.1 >nul",
+        f"""for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":{port} " ^| findstr "LISTENING"') do taskkill /PID %%a /F >nul 2>&1""",
+        "ping -n 3 127.0.0.1 >nul",
+        f'wscript "{vbs}"',
+        "",
+    ]
+    try:
+        with open(helper, "w", newline="") as f:
+            f.write("\r\n".join(lines))
+    except Exception as e:
+        return {"ok": False, "error": f"Couldn't write the restart script: {e}"}
+    _CREATE_NEW_CONSOLE = 0x00000010
+    _CREATE_NEW_PROCESS_GROUP = 0x00000200
+    try:
+        subprocess.Popen(
+            ["cmd", "/c", helper],
+            cwd=_web_root,
+            creationflags=_CREATE_NEW_CONSOLE | _CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+    except Exception as e:
+        return {"ok": False, "error": f"Couldn't start the restart helper: {e}"}
+    return {"ok": True, "message": "Pulse is restarting and will reload shortly."}
+
+
+@app.post("/api/maintenance/reboot-vpu")
+async def api_reboot_vpu():
+    """Schedule a full VPU reboot. Uses shutdown.exe /r /t <delay> (via
+    Reboot-Vpu.ps1) so the OS reboots after a short delay and the HTTP reply
+    flushes first — Restart-Computer would kill the server before the reply
+    lands. Confirmation-gated in the UI; interrupts any active recording."""
+    if _sys.platform != "win32":
+        return {"success": False, "message": "Rebooting the VPU only works on Windows."}
+    return await run_ps("Reboot-Vpu.ps1", timeout=30)
+
+
 async def build_report() -> dict:
     """Full diagnostic bundle for offline review. Runs every (non-interactive)
     data-collection script, adds the enriched camera view and Pulse's own
@@ -3292,6 +3992,7 @@ async def build_report() -> dict:
             sections.get("networkConfig"), sections.get("pixellotInstallState"),
             sections.get("networkPorts"), sections.get("gpuInfo"), sections.get("wifi"),
             pixellot_config=pix_cfg, expectations=sections.get("cameraExpectations"),
+            disk_health=sections.get("diskHealth"),
         )
     except Exception as e:
         sections["findings"] = {"error": f"findings computation failed: {type(e).__name__}: {e}"}
@@ -3499,6 +4200,10 @@ def _on_ws_disconnect(ws: WebSocket):
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    """Live-metrics WebSocket. After accept, streams periodic snapshots (CPU /
+    memory / temperature), tails new log-buffer lines, and refreshes Pixellot
+    config on the poll interval from settings (pollIntervalMs, floored at 1s)
+    until the client disconnects."""
     await ws.accept()
     _on_ws_connect(ws)
     try:
