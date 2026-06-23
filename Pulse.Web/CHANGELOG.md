@@ -20,6 +20,19 @@ flow shows testers when a new build is available.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 `Pulse.Web/VERSION`.
 
+## [0.3.5] - 2026-06-23
+
+### Fixed
+- **No more false "DNS server unreachable" warning when the server just ignores
+  ping.** Many venue firewalls block ICMP (ping) to the DNS server while it
+  still answers real lookups. Pulse used to read the dead ping as a warning even
+  though domains were resolving fine. When name resolution is demonstrably
+  working, that 100%-loss ping is now reported as an INFO note ("isn't answering
+  pings, but name resolution is working — no action needed") instead of a
+  warning, and the DNS Server tile in Local Network Health turns blue/INFO with
+  a "ICMP ping blocked by firewall — name resolution is working" note instead of
+  showing red.
+
 ## [0.3.4] - 2026-06-18
 
 ### Fixed

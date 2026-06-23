@@ -2734,6 +2734,7 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 .net-ping-pass { border-left: 3px solid #22c55e; }
 .net-ping-warn { border-left: 3px solid #eab308; }
 .net-ping-fail { border-left: 3px solid #ef4444; }
+.net-ping-info { border-left: 3px solid #3b82f6; }
 
 .net-ping-header {
     display: flex;
@@ -2776,6 +2777,15 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     color: var(--c-text);
     margin-top: 2px;
 }
+.net-ping-note {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+    font-size: 0.7rem;
+    color: #3b82f6;
+}
+.net-ping-note svg { flex-shrink: 0; }
 
 /* Local ping toolbar */
 .net-ping-toolbar {
