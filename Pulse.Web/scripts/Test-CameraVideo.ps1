@@ -15,6 +15,11 @@
     RTSP auth: Dynacolor/Pixellot cameras require credentials on the RTSP
     stream (same Admin/1234 as the CGI probe), so they're baked into the URL.
 
+    RTSP path varies by camera OEM: Pixellot's own cameras answer on
+    "stream1", but some box cameras (e.g. nessyMediaServer-based units) only
+    serve "h264". We try the preferred path first and, on a 404, fall back
+    through a short list of known paths, recording which one decoded.
+
     ffmpeg/ffprobe ship with Pixellot at C:\Pixellot\Bin\ffmpeg. If they're
     missing we report available=false. -hide_banner keeps the version banner
     out of the output; stderr is captured to a file so a real failure reason
@@ -27,14 +32,17 @@
 .PARAMETER Labels
     Optional comma-separated labels parallel to CameraIps.
 .PARAMETER StreamPath
-    RTSP stream path. Default "stream1" (Pixellot/Dynacolor primary).
+    Preferred RTSP stream path, tried first. Default "stream1"
+    (Pixellot/Dynacolor primary). On a 404 a short list of other known OEM
+    paths (h264, stream0, live, …) is tried before giving up.
 .PARAMETER RtspUser / RtspPass
     RTSP credentials. Default Admin / 1234 (Pixellot factory default).
 .PARAMETER MaxWidth
     Thumbnail width in px (height auto). Default 640.
 .OUTPUTS
     { available, results: [ { ip, label, ok, codec, frameRate, resolution,
-      image, error } ] }   # image = "data:image/jpeg;base64,..." or null
+      streamPath, image, error } ] }   # image = "data:image/jpeg;base64,..."
+      # or null; streamPath = the RTSP path that decoded (e.g. "h264")
 #>
 [CmdletBinding()]
 param(
@@ -96,50 +104,77 @@ try {
     $tmpDir = Join-Path $env:TEMP "pulse-frametest"
     New-Item -Path $tmpDir -ItemType Directory -Force | Out-Null
 
+    # RTSP stream path varies by camera OEM. Try the preferred path first
+    # (StreamPath, default "stream1" for Pixellot/Dynacolor), then fall back
+    # through other known paths. Dedupe but keep order so the preferred path
+    # always wins when it works.
+    $fallbackPaths = @('stream1', 'h264', 'stream0', 'live', 'media/video1', 'video1', 'live/ch0')
+    $candidatePaths = @()
+    foreach ($p in (@($StreamPath) + $fallbackPaths)) {
+        $p = "$p".Trim().Trim('/')
+        if ($p -and ($candidatePaths -notcontains $p)) { $candidatePaths += $p }
+    }
+
     $results = @()
     for ($i = 0; $i -lt $ips.Count; $i++) {
         $ip    = $ips[$i]
         $label = if ($i -lt $lbls.Count -and $lbls[$i]) { $lbls[$i] } else { $ip }
         $frame   = Join-Path $tmpDir ("cam_" + ($ip -replace '[^0-9A-Za-z]', '_') + ".jpg")
         $errFile = Join-Path $tmpDir ("cam_" + ($ip -replace '[^0-9A-Za-z]', '_') + ".err")
-        $url     = "rtsp://$($RtspUser):$($RtspPass)@$ip/$StreamPath"
-
         $entry = [ordered]@{
             ip = $ip; label = $label; ok = $false
             codec = $null; frameRate = $null; resolution = $null
-            image = $null; error = $null
+            streamPath = $null; image = $null; error = $null
         }
 
         try {
-            # Stream metadata (fast header read; -stimeout bounds a hung camera).
-            $probeRaw = & $ffprobe -hide_banner -loglevel error -rtsp_transport tcp `
-                -stimeout 6000000 `
-                -show_entries "stream=codec_type,codec_name,avg_frame_rate,width,height" `
-                -of json -i $url 2>$errFile
-            if ($probeRaw) {
-                $probe = $probeRaw | ConvertFrom-Json
-                $vstream = $probe.streams | Where-Object { $_.codec_type -eq 'video' } | Select-Object -First 1
-                if ($vstream) {
-                    $entry.codec     = $vstream.codec_name
-                    $entry.frameRate = Convert-FrameRate $vstream.avg_frame_rate
-                    if ($vstream.width -and $vstream.height) {
-                        $entry.resolution = "$($vstream.width)x$($vstream.height)"
-                    }
+            # Walk candidate paths until one decodes a frame. ffmpeg is the
+            # real test (a header read can pass where decode fails), so grab
+            # the frame per path and probe metadata only for the winner.
+            $usedPath = $null
+            $reason   = $null
+            foreach ($path in $candidatePaths) {
+                $url = "rtsp://$($RtspUser):$($RtspPass)@$ip/$path"
+                if (Test-Path $frame) { Remove-Item $frame -Force -ErrorAction SilentlyContinue }
+                & $ffmpeg -hide_banner -loglevel error -rtsp_transport tcp -stimeout 8000000 `
+                    -y -i $url -frames:v 1 -an -vf "scale=$($MaxWidth):-1" -q:v 4 $frame 2>$errFile 1>$null
+                if ((Test-Path $frame) -and (Get-Item $frame).Length -gt 0) {
+                    $usedPath = $path
+                    break
                 }
+                # Keep trying other paths only while the server answers 404
+                # (up, but no such stream). A timeout/refused/401 won't improve
+                # with a different path, so stop and report that reason.
+                $reason = Get-FailReason $errFile
+                if ($reason -notmatch '404|not found') { break }
             }
 
-            # Grab a single decoded frame, scaled down for a thumbnail.
-            if (Test-Path $frame) { Remove-Item $frame -Force -ErrorAction SilentlyContinue }
-            & $ffmpeg -hide_banner -loglevel error -rtsp_transport tcp -stimeout 8000000 `
-                -y -i $url -frames:v 1 -an -vf "scale=$($MaxWidth):-1" -q:v 4 $frame 2>$errFile 1>$null
-
-            if ((Test-Path $frame) -and (Get-Item $frame).Length -gt 0) {
+            if ($usedPath) {
+                $entry.streamPath = $usedPath
+                $url = "rtsp://$($RtspUser):$($RtspPass)@$ip/$usedPath"
+                # Stream metadata for the path that worked (fast header read).
+                $probeRaw = & $ffprobe -hide_banner -loglevel error -rtsp_transport tcp `
+                    -stimeout 6000000 `
+                    -show_entries "stream=codec_type,codec_name,avg_frame_rate,width,height" `
+                    -of json -i $url 2>$null
+                if ($probeRaw) {
+                    $probe = $probeRaw | ConvertFrom-Json
+                    $vstream = $probe.streams | Where-Object { $_.codec_type -eq 'video' } | Select-Object -First 1
+                    if ($vstream) {
+                        $entry.codec     = $vstream.codec_name
+                        $entry.frameRate = Convert-FrameRate $vstream.avg_frame_rate
+                        if ($vstream.width -and $vstream.height) {
+                            $entry.resolution = "$($vstream.width)x$($vstream.height)"
+                        }
+                    }
+                }
                 $bytes = [System.IO.File]::ReadAllBytes($frame)
                 $entry.image = "data:image/jpeg;base64," + [System.Convert]::ToBase64String($bytes)
                 $entry.ok = $true
             } else {
-                $reason = Get-FailReason $errFile
-                $entry.error = if ($reason) { $reason } else { "No frame captured (camera not streaming)." }
+                $tried = $candidatePaths -join ', '
+                $entry.error = if ($reason) { "$reason (tried paths: $tried)" }
+                               else { "No frame captured (tried paths: $tried)." }
             }
         }
         catch {

@@ -20,6 +20,16 @@ flow shows testers when a new build is available.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 `Pulse.Web/VERSION`.
 
+## [0.4.1] - 2026-06-23
+
+### Fixed
+- **Camera Frames now works with cameras that use a different stream path.**
+  Some cameras serve their video on a different RTSP path than the usual one,
+  so Camera Frames showed "No frame" even though the camera was online and
+  viewable in a browser. Pulse now tries the common stream paths and uses
+  whichever one the camera answers on, and when none work it lists the paths it
+  tried so the camera can be flagged.
+
 ## [0.4.0] - 2026-06-23
 
 ### Added
