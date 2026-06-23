@@ -157,6 +157,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   viewable in a browser. Pulse now tries the common stream paths and uses
   whichever one the camera answers on, and when none work it lists the paths it
   tried so the camera can be flagged.
+- **Update no longer fails on some networks with a "certificate check failed"
+  error.** On certain VPUs the download step (curl) would abort with
+  `SEC_E_WRONG_PRINCIPAL` / "SNI or certificate check failed" and report that no
+  build could be downloaded, even though the unit was online. The launcher now
+  automatically retries the download a second way (PowerShell) when that
+  happens, so the update goes through.
 - **Error tabs no longer spin forever.** When a check can't run, Camera
   Connectivity, ScoreConnect, the Camera Fault Isolator, and Windows Events now
   show a clear error message instead of an endless loading spinner.
