@@ -3433,6 +3433,58 @@ function _vpuType(osCaption) {
   return null;
 }
 
+// Camera frames for the audit. Captured once when the tab opens (cached in
+// _irFrames so a re-render doesn't re-fire), and — unlike the Camera tab —
+// posted with {force:true}, which bypasses the vpu.exe capture interlock AND
+// the cooldown so the audit always gets a frame, even on a live VPU. The frame
+// grid itself is the Camera tab's renderer, reused verbatim.
+var _irFrames = { state: "idle", data: null };
+
+function _irCaptureFrames() {
+  _irFrames = { state: "loading", data: null };
+  _irPaintFrames();
+  apiPost("/api/cameras/video-test", { force: true }).then(function(res) {
+    // Stamp the capture time onto each frame so the cards read "Captured HH:MM"
+    // — these are stills, and the audit wants to know how fresh they are.
+    if (res && (res.results || []).length) {
+      var t = new Date().toLocaleTimeString();
+      res.results.forEach(function(r) { r._capturedAt = t; });
+    }
+    _irFrames = { state: "done", data: res };
+    if (currentPage === "inspection-report") _irPaintFrames();
+  }).catch(function() {
+    _irFrames = { state: "error", data: null };
+    if (currentPage === "inspection-report") _irPaintFrames();
+  });
+}
+
+function _irPaintFrames() {
+  var wrap = document.getElementById("ir-frames-wrap");
+  if (!wrap) return;
+  if (_irFrames.state === "loading") {
+    wrap.innerHTML = '<div class="card">' + sectionTitle("camera", "Camera Frames") +
+      '<div class="cam-video-running">' + svgIcon("refresh", 14) +
+      ' Grabbing a frame from each connected camera…</div></div>';
+  } else if (_irFrames.state === "error") {
+    wrap.innerHTML = '<div class="card">' + sectionTitle("camera", "Camera Frames") +
+      '<div class="cam-video-err">Frame capture failed to run.</div></div>';
+  } else if (_irFrames.state === "done") {
+    wrap.innerHTML = _camVideoResultsHtml(_irFrames.data, { showControls: false });
+  } else {
+    wrap.innerHTML = "";
+  }
+}
+
+// Full report refresh: drop every cached payload it reads and re-capture frames.
+function _irRefresh() {
+  dataCache.system = null;
+  dataCache.network = null;
+  dataCache.cameras = null;
+  dataCache.scoreconnect = null;
+  _irFrames = { state: "idle", data: null };
+  renderInspectionReport();
+}
+
 function renderInspectionReport() {
   // Three independent payloads back this tab; fetch any that aren't cached yet
   // and re-render as each lands (mirrors the Hardware/Environment split-tab
@@ -3492,9 +3544,27 @@ function renderInspectionReport() {
   var ports = (network.ports && network.ports.results) || [];
   var verdict = _portTestVerdict(ports);
 
+  // Scoreboard — /api/scoreconnect. Fetched lazily so a slow ScoreConnect probe
+  // never holds up the core report; the card fills in when it lands. vendor falls
+  // back to the legacy SC I/II payload (sc2) when SC III isn't the source.
+  var sc = cached("scoreconnect");
+  if (!sc) {
+    fetchSection("scoreconnect").then(function() {
+      if (currentPage === "inspection-report") renderInspectionReport();
+    });
+  }
+  var scCfg = (sc && sc.configuration) || {};
+  var scSport = scCfg.sport || null;
+  var scVendor = scCfg.vendor || (sc && sc.sc2 && sc.sc2.vendor) || null;
+  var scLinkHtml;
+  if (!sc) scLinkHtml = '<span class="text-pulse-muted">Checking…</span>';
+  else if (sc.scoreLinkConnected === true) scLinkHtml = badge("Connected", "pass");
+  else if (sc.scoreLinkConnected === false) scLinkHtml = badge("Not connected", "warn");
+  else scLinkHtml = '<span class="text-pulse-muted">Not detected</span>';
+
   $page().innerHTML = `
-    ${pageHeader("Inspection Report", "Every field the fleet audit needs, pooled from the Hardware, Network and Camera tabs onto one screen.",
-      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;dataCache.network=null;dataCache.cameras=null;renderInspectionReport()">
+    ${pageHeader("Inspection Report", "Every field the fleet audit needs, pooled from the Hardware, Network, Camera and ScoreConnect tabs onto one screen.",
+      `<button class="btn-outline btn-ol-blue" onclick="_irRefresh()">
         ${svgIcon("refresh", 14)} Refresh
       </button>`
     )}
@@ -3521,14 +3591,31 @@ function renderInspectionReport() {
       </div>
     </div>
 
-    <div class="card">
-      <div class="flex items-center justify-between">
-        ${sectionTitle("link", "Network Port Test")}
-        ${severityChip(verdict.sev, verdict.label)}
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("monitor", "Scoreboard")}
+        <div class="kv-grid kv-grid-wide">
+          ${kvRow("Sport", scSport)}
+          ${kvRow("Vendor", scVendor)}
+          ${kvRowHtml("ScoreLink", scLinkHtml)}
+        </div>
       </div>
-      ${_renderPortConnectivity(ports)}
+      <div class="card">
+        <div class="flex items-center justify-between">
+          ${sectionTitle("link", "Network Port Test")}
+          ${severityChip(verdict.sev, verdict.label)}
+        </div>
+        ${_renderPortConnectivity(ports)}
+      </div>
     </div>
+
+    <div id="ir-frames-wrap"></div>
   `;
+
+  // Capture frames on first open; a later re-render (e.g. ScoreConnect data
+  // landing) just repaints the existing capture rather than firing another.
+  if (_irFrames.state === "idle") _irCaptureFrames();
+  else _irPaintFrames();
 }
 
 function renderNetwork() {
@@ -4484,7 +4571,11 @@ function _camFrameKv(label, value, mono) {
     '<span class="cam-kv-v' + (mono ? " font-mono" : "") + '">' + value + "</span></div>";
 }
 
-function _camVideoResultsHtml(res) {
+function _camVideoResultsHtml(res, opts) {
+  // showControls=false (Inspection Report) drops the per-camera + all-cameras
+  // Refresh buttons — they're wired to the Camera tab's DOM (#cam-video-wrap)
+  // and would be dead on any other page; that tab's own Refresh re-captures.
+  var showControls = !opts || opts.showControls !== false;
   if (!res || res.error) {
     return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
       '<div class="cam-video-err">Error: ' + esc((res && res.message) || "unknown") + '</div></div>';
@@ -4530,8 +4621,10 @@ function _camVideoResultsHtml(res) {
       (r.ok ? _camFrameKv("Stream", stream) : "");
     var errLine = r.ok ? "" : '<div class="cam-frame-detail cam-frame-novideo">' + esc(r.error || "No video") + "</div>";
     var cap = r._capturedAt ? '<span class="cam-frame-cap">Captured ' + esc(r._capturedAt) + "</span>" : "";
-    var refresh = '<button class="btn-outline btn-ol-blue cam-frame-refresh" onclick="_camRefreshOne(\'' + esc(r.ip) + '\')" ' +
-      'title="Capture a fresh still from this camera">' + svgIcon("refresh", 12) + " Refresh</button>";
+    var refresh = showControls
+      ? '<button class="btn-outline btn-ol-blue cam-frame-refresh" onclick="_camRefreshOne(\'' + esc(r.ip) + '\')" ' +
+        'title="Capture a fresh still from this camera">' + svgIcon("refresh", 12) + " Refresh</button>"
+      : "";
     return '<div class="cam-frame ' + cardCls + '" data-ip="' + esc(r.ip) + '">' +
       thumb +
       '<div class="cam-frame-meta">' +
@@ -4547,12 +4640,17 @@ function _camVideoResultsHtml(res) {
   }).join("");
   // Still-image notice + an all-cameras refresh, both inside the results card
   // so the "this isn't live, grab a new one" cue sits right next to the frames.
-  var notice = '<div class="cam-frame-notice">' + svgIcon("info", 12) +
-    ' These are still snapshots, not a live stream. To get a new image, use ' +
-    '<strong>Refresh all cameras</strong> below, or <strong>Refresh</strong> on a single camera.</div>';
-  var toolbar = '<div class="cam-frame-toolbar">' +
-    '<button class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()" ' +
-    'title="Capture a fresh still from every camera">' + svgIcon("refresh", 14) + " Refresh all cameras</button></div>";
+  var notice = showControls
+    ? '<div class="cam-frame-notice">' + svgIcon("info", 12) +
+      ' These are still snapshots, not a live stream. To get a new image, use ' +
+      '<strong>Refresh all cameras</strong> below, or <strong>Refresh</strong> on a single camera.</div>'
+    : '<div class="cam-frame-notice">' + svgIcon("info", 12) +
+      ' These are still snapshots, not a live stream — use <strong>Refresh</strong> above to recapture.</div>';
+  var toolbar = showControls
+    ? '<div class="cam-frame-toolbar">' +
+      '<button class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()" ' +
+      'title="Capture a fresh still from every camera">' + svgIcon("refresh", 14) + " Refresh all cameras</button></div>"
+    : "";
   return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
     notice + toolbar +
     '<div class="cam-frame-grid">' + cards + '</div></div>';

@@ -24,10 +24,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ### Added
 - **New "Inspection Report" tab (under Triage) — the fleet-audit fields on one screen.**
-  Pools the details you'd otherwise hunt for across the Hardware, Network and Camera
-  tabs — LMI name, camera type, OS / VPU type, and the uplink's IP, MAC, static-vs-DHCP,
-  subnet mask and gateway — plus the network port test with an overall Pass/Warning/Fail
-  result. Built for working through a large fleet audit one VPU at a time.
+  Pools the details you'd otherwise hunt for across the Hardware, Network, Camera and
+  ScoreConnect tabs — LMI name, camera type, OS / VPU type, the uplink's IP, MAC,
+  static-vs-DHCP, subnet mask and gateway, the network port test with an overall
+  Pass/Warning/Fail result, the scoreboard's sport / vendor / ScoreLink status, and a
+  live frame grab from every connected camera. Unlike the Camera tab, it captures
+  frames even while the VPU is recording. Built for working through a large fleet audit
+  one VPU at a time.
 - **New "Power Events" tab — see why a VPU restarted, and whether one is pending.**
   Under System Information, Power Events shows the recent restart/shutdown history
   with the cause of each (planned vs. unexpected, who triggered it, and the

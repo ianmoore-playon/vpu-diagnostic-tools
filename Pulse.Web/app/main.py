@@ -3227,16 +3227,28 @@ async def api_cameras_video_test(request: Request):
     the button being spammed."""
     global _LAST_FRAME_CAPTURE
 
-    # Rate limit first — cheap, no PowerShell needed.
+    # Parse the body up front. {"ips": [...]} restricts the capture (per-camera
+    # Refresh); {"force": true} is an explicit override — the Inspection Report's
+    # fleet audit posts it to grab a frame from every camera even on a live VPU.
+    # force relaxes BOTH guards below (cooldown + the vpu.exe interlock); the
+    # Camera tab posts neither flag, so it still respects both.
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    force = bool(body.get("force")) if isinstance(body, dict) else False
+
+    # Rate limit first — cheap, no PowerShell needed. (force bypasses it.)
     remaining = _frame_cooldown_remaining(time.monotonic())
-    if remaining > 0:
+    if remaining > 0 and not force:
         return {"available": True, "results": [], "blocked": "cooldown",
                 "cooldown": remaining,
                 "reason": f"Please wait {remaining}s before capturing frames again."}
 
-    # Don't capture while the Pixellot capture engine owns the streams.
+    # Don't capture while the Pixellot capture engine owns the streams — unless
+    # the caller forces it (the fleet audit explicitly accepts the risk).
     expectations = await run_ps("Get-CameraExpectations.ps1", timeout=10, use_cache=False)
-    if expectations and not expectations.get("error") and expectations.get("vpuRunning"):
+    if not force and expectations and not expectations.get("error") and expectations.get("vpuRunning"):
         return {"available": False, "results": [], "blocked": "vpu",
                 "reason": "The Pixellot capture engine (vpu.exe) is running — "
                           "frame capture is disabled to avoid interfering with the "
@@ -3245,10 +3257,6 @@ async def api_cameras_video_test(request: Request):
     # Optional: restrict the capture to specific camera IPs (the per-camera
     # 'Refresh' button posts {"ips": [...]}). No body → capture everything.
     target_ips = None
-    try:
-        body = await request.json()
-    except Exception:
-        body = None
     if isinstance(body, dict):
         raw = body.get("ips") or ([body["ip"]] if body.get("ip") else None)
         if raw:
