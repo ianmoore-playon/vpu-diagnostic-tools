@@ -73,6 +73,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   version still shows on the Service Status tab.
 
 ### Changed
+- **Renamed the "Fault Isolator" tool to "Camera Connection Troubleshooting".**
+  The swap-test tool on the Camera Connectivity tab (and the button that opens it)
+  now uses a plainer name — same step-by-step test, clearer label.
 - **Camera Frames now show the camera type, model, and firmware.** Each
   captured still lists the system type (S1/S2/S2S), IP address, camera model,
   and firmware version, and is clearly marked as a point-in-time snapshot — not

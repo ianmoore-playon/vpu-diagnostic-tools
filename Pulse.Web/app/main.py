@@ -2543,7 +2543,7 @@ def _compute_camera_findings(ports: list) -> list:
                     "title": f"{label} — camera dropped",
                     "body": f"A camera{ipinfo} was streaming on this port "
                             "earlier this session and is no longer detected. Check the "
-                            "cable and camera power, or use Fault Isolator.",
+                            "cable and camera power, or use Camera Connection Troubleshooting.",
                 })
 
         # Skip transient findings for a freshly-changed port. A port that
