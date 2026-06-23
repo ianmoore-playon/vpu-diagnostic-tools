@@ -66,6 +66,7 @@ function svgIcon(name, size) {
 const NAV_SECTIONS = [
   { label: "TRIAGE", pages: [
     { id: "dashboard", label: "Dashboard", icon: "grid" },
+    { id: "inspection-report", label: "Inspection Report", icon: "file" },
   ]},
   { label: "TROUBLESHOOTING", pages: [
     { id: "network", label: "Network Test", icon: "wifi" },
@@ -811,6 +812,9 @@ function _updateGaugeLive(name, val, opts) {
 
 const pageRenderers = {
   dashboard: renderDashboard,
+  // Read-only fleet-audit roll-up under TRIAGE. Reuses the cached /api/system,
+  // /api/network and /api/cameras payloads — no own endpoint (skips PAGE_API).
+  "inspection-report": renderInspectionReport,
   // System Overview was split into Hardware / Applications / Environment
   // (nav restructure v3); the `system` id is retired but its /api/system
   // payload still feeds all three (and Pixellot Software, below).
@@ -3390,6 +3394,136 @@ function _netDnsResolutionCard(dnsResolution, cfg) {
       <th></th>
     </tr></thead><tbody>${rowsHtml}</tbody></table>
   </div>`;
+}
+
+// ── Inspection Report (fleet audit roll-up) ──────────────────
+// Read-only TRIAGE tab that pools the handful of fields a fleet audit needs
+// (identity, OS, network addressing, port-test result) onto one screen, so a
+// tech auditing ~15k units doesn't have to hop across the Hardware, Network and
+// Camera tabs per unit. NO new data/collector/endpoint — it reads the same
+// cached /api/system, /api/network and /api/cameras payloads the other tabs use.
+
+// Port-test verdict from the port results alone, using the same streaming-
+// redundancy rules as the Network tab (_streamingHealth / _isRedundantStreamBlock)
+// so the two never disagree: a blocked required port is a Fail, unless it's a
+// backup stream transport whose sibling is still open (Warning); a blocked
+// optional port is a Warning. Returns a severityChip-compatible {sev, label}.
+function _portTestVerdict(ports) {
+  ports = ports || [];
+  if (!ports.length) return { sev: "muted", label: "No data" };
+  var health = _streamingHealth(ports);
+  var hasFail = false, hasWarn = false;
+  ports.forEach(function(p) {
+    if ((p.status || "").toLowerCase() === "pass") return;
+    if (p.optional || _isRedundantStreamBlock(p, health)) { hasWarn = true; return; }
+    hasFail = true;
+  });
+  if (hasFail) return { sev: "critical", label: "Fail" };
+  if (hasWarn) return { sev: "warning", label: "Warning" };
+  return { sev: "ok", label: "Pass" };
+}
+
+// Windows vs Linux from the OS caption. The current collectors only run on
+// Windows VPUs, but key off the caption so a future Linux probe surfaces
+// correctly rather than being silently mislabeled.
+function _vpuType(osCaption) {
+  var c = (osCaption || "").toLowerCase();
+  if (c.indexOf("windows") !== -1) return "Windows";
+  if (c.indexOf("linux") !== -1 || c.indexOf("ubuntu") !== -1 || c.indexOf("debian") !== -1) return "Linux";
+  return null;
+}
+
+function renderInspectionReport() {
+  // Three independent payloads back this tab; fetch any that aren't cached yet
+  // and re-render as each lands (mirrors the Hardware/Environment split-tab
+  // pattern). system/network/cameras are all in PAGE_API, so fetchSection works.
+  var system = cached("system");
+  var network = cached("network");
+  var cameras = cached("cameras");
+  var missing = [];
+  if (!system) missing.push("system");
+  if (!network) missing.push("network");
+  if (!cameras) missing.push("cameras");
+  if (missing.length) {
+    $page().innerHTML = sectionLoading("Inspection Report");
+    missing.forEach(function(k) {
+      fetchSection(k).then(function() {
+        if (currentPage === "inspection-report") renderInspectionReport();
+      });
+    });
+    return;
+  }
+
+  // Identity — /api/system (identity) + /api/cameras (system type)
+  var id = system.identity || {};
+  var cs = id.computerSystem || {};
+  var os = id.operatingSystem || {};
+  var osCaption = os.caption || null;
+  var osText = osCaption ? osCaption + (os.version ? " (" + os.version + ")" : "") : null;
+  var camType = cameras.systemType
+    || (cameras.expectedMainCameras != null ? cameras.expectedMainCameras + "-camera" : null);
+
+  // Network addressing — uplink adapter, joined across adapters[]/ipConfig[] the
+  // same way the Network tab does, so the addressing shown here matches it.
+  var cfg = network.config || {};
+  var ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
+  var uplinkName = cfg.uplinkAdapter && cfg.uplinkAdapter.interfaceAlias;
+  var uplinkAdapterRow = uplinkName
+    ? (cfg.adapters || []).find(function(a) { return a.name === uplinkName; }) || null
+    : null;
+  var uplinkIpCfg = uplinkName
+    ? ipConfigs.find(function(ip) { return ip.interfaceAlias === uplinkName; }) || null
+    : null;
+  var ipAddr = _first(uplinkIpCfg && uplinkIpCfg.ipv4Address);
+  var macAddr = uplinkAdapterRow && uplinkAdapterRow.macAddress;
+  var dhcpLabel = uplinkIpCfg && uplinkIpCfg.dhcpEnabled === true ? "DHCP"
+    : uplinkIpCfg && uplinkIpCfg.dhcpEnabled === false ? "Static" : null;
+  var subnetMask = uplinkIpCfg ? _prefixToMask(uplinkIpCfg.prefixLength) : null;
+  var gateway = (cfg.uplinkAdapter && cfg.uplinkAdapter.gateway)
+    || _first(uplinkIpCfg && uplinkIpCfg.ipv4DefaultGateway);
+
+  // Port test — /api/network ports, rendered with the shared port component
+  // plus a single overall verdict chip.
+  var ports = (network.ports && network.ports.results) || [];
+  var verdict = _portTestVerdict(ports);
+
+  $page().innerHTML = `
+    ${pageHeader("Inspection Report", "Every field the fleet audit needs, pooled from the Hardware, Network and Camera tabs onto one screen.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache.system=null;dataCache.network=null;dataCache.cameras=null;renderInspectionReport()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <div class="dash-2col">
+      <div class="card">
+        ${sectionTitle("info", "Identity")}
+        <div class="kv-grid kv-grid-wide">
+          ${kvRow("LMI Name", cs.name)}
+          ${kvRow("Camera Type", camType)}
+          ${kvRow("Operating System", osText)}
+          ${kvRow("VPU Type", _vpuType(osCaption))}
+        </div>
+      </div>
+      <div class="card">
+        ${sectionTitle("globe", "Network")}
+        <div class="kv-grid kv-grid-wide">
+          ${kvRow("IP Address", ipAddr)}
+          ${kvRow("MAC Address", macAddr)}
+          ${kvRow("Static / DHCP", dhcpLabel)}
+          ${kvRow("Subnet Mask", subnetMask)}
+          ${kvRow("Gateway", gateway)}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="flex items-center justify-between">
+        ${sectionTitle("link", "Network Port Test")}
+        ${severityChip(verdict.sev, verdict.label)}
+      </div>
+      ${_renderPortConnectivity(ports)}
+    </div>
+  `;
 }
 
 function renderNetwork() {
