@@ -97,6 +97,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   detail (exact values, commands, port numbers) still right there in the detail.
 
 ### Fixed
+- **Error tabs no longer spin forever.** When a check can't run, Camera
+  Connectivity, ScoreConnect, the Camera Fault Isolator, and Windows Events now
+  show a clear error message instead of an endless loading spinner.
+- **Cleaner light mode.** A few dashboard elements (the storage bars, the
+  temperature gauge, and some status colors) were using dark-theme shades while
+  in light mode; they now match the rest of the page in both light and dark.
+- **Received report sizes now read correctly.** In Share over LAN, a
+  multi-gigabyte snapshot showed an oversized "MB" figure in the received list;
+  it now displays in GB.
 - **No more false "can't reach gateway" alarm when the gateway just ignores
   pings.** Plenty of routers and firewalls are set to drop pings (ICMP) to
   themselves while still routing traffic perfectly. Pulse used to read that as a
