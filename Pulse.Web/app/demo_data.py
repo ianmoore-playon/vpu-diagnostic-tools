@@ -869,8 +869,8 @@ DEMO = {
     },
     "Get-PixellotDependencies.ps1": lambda **kw: {
         # Demo shows an outdated 4.8.0 install so the "outdated" badge state
-        # is visible in demo mode. Real VPUs that ran PDF #2's reinstall
-        # action would report 5.0.0 → "current".
+        # is visible in demo mode. A VPU on the latest deps would report
+        # 5.0.0 → "current".
         "installedVersion": "4.8.0",
         "latestKnownVersion": "5.0.0",
         "status": "outdated",
@@ -893,21 +893,6 @@ DEMO = {
             "lastLine": "Install completed successfully. Rebooting...",
         },
         "message": "Last install completed cleanly. No part files remain.",
-    },
-    "Install-PixellotDependencies.ps1": lambda **kw: {
-        "success": True,
-        "targetDir": "C:\\pixellot\\downloadedversion",
-        "targetFile": "C:\\pixellot\\downloadedversion\\Pixellot-Installer-Dependencies-5.0.0.exe",
-        "installerUrl": "https://software.pixellot.tv/apps/Pixellot-Installer-Dependencies-5.0.0.exe",
-        "steps": [
-            {"label": "Download installer", "status": "ok",
-             "detail": "Downloaded 87.4 MB via curl.exe to C:\\pixellot\\downloadedversion\\Pixellot-Installer-Dependencies-5.0.0.exe",
-             "durationMs": 28400, "ts": datetime.now().isoformat()},
-            {"label": "Run installer", "status": "ok",
-             "detail": "Exit code 0 after 142s",
-             "durationMs": 142000, "ts": datetime.now().isoformat()},
-        ],
-        "message": "Pixellot dependencies installer completed. Reboot recommended.",
     },
     "Restart-PixellotAgent.ps1": lambda **kw: {
         "success": True,

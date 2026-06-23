@@ -10,19 +10,19 @@
 
         HKLM:\SOFTWARE\Pixellot   (value name: `dependencies`)
 
-    The "latest" string is the version filename Pulse currently knows how to
-    download (PDF #2 — see Install-PixellotDependencies.ps1). When the
-    installed version is older than that, the Pixellot Services tab can
-    surface a soft "outdated" hint next to the reinstall card.
+    The "latest" string is the most recent dependency version Pulse knows
+    about (PDF #2). When the installed version is older than that, the
+    Service Status tab surfaces a read-only "outdated" hint. Reinstalling
+    dependencies is a Pixellot-support-directed action and is not performed
+    by Pulse.
 
     Outputs JSON to stdout. Always emits JSON even on registry-missing,
     matching the Audio script's resilient pattern.
 #>
 [CmdletBinding()]
 param(
-    # Bumping this constant on a new dependency-installer drop is the only
-    # change needed when Pixellot ships a new version. Keep in sync with
-    # the URL hardcoded in Install-PixellotDependencies.ps1.
+    # Bump this constant when Pixellot ships a new dependency version so the
+    # "outdated" hint stays accurate.
     [string]$LatestKnownVersion = '5.0.0'
 )
 

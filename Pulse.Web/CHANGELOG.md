@@ -60,6 +60,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   live network monitor also gained a per-interface table (queue depth, errors,
   and packet rates per NIC).
 
+### Removed
+- **Removed the "Reinstall Pixellot Dependencies" button.** Reinstalling the
+  Pixellot video dependencies pauses recording for several minutes and is a
+  last-resort step, so it's no longer something Pulse can trigger. When the logs
+  show a CUDNN/TensorFlow dependency error, Pulse now points you to capture an
+  export and escalate to Pixellot support instead. The installed dependency
+  version still shows on the Service Status tab.
+
 ### Changed
 - **"Disk & Driver Errors" now catches filesystem corruption.** The disk-events
   panel used to watch only the disk / NVMe / storage-controller logs; it now also

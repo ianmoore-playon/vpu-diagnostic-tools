@@ -3361,15 +3361,6 @@ async def api_restart_agent():
     return await run_ps("Restart-PixellotAgent.ps1", timeout=120)
 
 
-@app.post("/api/services/reinstall-deps")
-async def api_reinstall_deps():
-    """Downloads and runs Pixellot-Installer-Dependencies-5.0.0.exe per
-    PDF #2 — the documented remedy for CUDNN/TensorFlow errors in the
-    VPU logs. Download can take a few minutes; installer up to ~10 min."""
-    # 20 min cap covers a slow download plus the installer itself.
-    return await run_ps("Install-PixellotDependencies.ps1", timeout=1200)
-
-
 @app.get("/api/services/install-state")
 async def api_install_state():
     """PDF #3: detect a half-finished install in c:\\pixellot\\downloadedversion.
@@ -3381,8 +3372,8 @@ async def api_install_state():
 @app.get("/api/services/dependencies")
 async def api_dependencies():
     """Reads HKLM:\\SOFTWARE\\Pixellot\\dependencies to surface the installed
-    deps version next to the Pixellot Services "Reinstall Dependencies" card
-    (PDF #2). Adapted from Canopy/Leaf/getVpuDepsFromRegistry.ps1."""
+    deps version as a read-only status line on the Service Status tab.
+    Adapted from Canopy/Leaf/getVpuDepsFromRegistry.ps1."""
     return await run_ps("Get-PixellotDependencies.ps1", timeout=10)
 
 
@@ -3437,8 +3428,8 @@ async def api_reboots(hours: int = Query(default=168)):
 async def api_pixellot_logs(hours: int = Query(default=24)):
     """Scan C:\\Pixellot\\Data\\Log for errors, fatals, and process
     restarts in the last `hours` (PDF #5). Returns up to 500 matches with
-    a `depsErrorDetected` flag that the UI uses to surface the PDF #2
-    dependency-reinstall remedy."""
+    a `depsErrorDetected` flag that the UI surfaces as a prompt to escalate
+    to Pixellot support."""
     return await run_ps("Search-PixellotLogs.ps1", {"HoursBack": hours}, timeout=30)
 
 
