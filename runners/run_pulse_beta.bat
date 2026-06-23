@@ -124,12 +124,20 @@ if exist "%INSTALL_DIR%\VERSION" (
 )
 
 :: -- Download -------------------------------------------------------------
+:: curl is primary (clean progress bar), but the Windows-bundled curl+schannel
+:: can fail the GitHub release-asset CDN redirect with SEC_E_WRONG_PRINCIPAL.
+:: If curl yields no usable zip (failed or absent), fall back to PowerShell,
+:: whose .NET stack uses the Windows cert store and follows the redirect cleanly.
 echo   Update ......................... downloading !REL_TAG!
-where curl.exe >nul 2>&1 && (set "HAS_CURL=1") || (set "HAS_CURL=")
-if defined HAS_CURL (
-    curl.exe -L --progress-bar -o "%ZIPFILE%" "!ASSET_URL!"
-) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '!ASSET_URL!' -OutFile '%ZIPFILE%'"
+if exist "%ZIPFILE%" del "%ZIPFILE%" 2>nul
+where curl.exe >nul 2>&1 && curl.exe -L --progress-bar -o "%ZIPFILE%" "!ASSET_URL!"
+
+set "DL_OK="
+if exist "%ZIPFILE%" for %%A in ("%ZIPFILE%") do if %%~zA GEQ 1000 set "DL_OK=1"
+if not defined DL_OK (
+    echo   Update ......................... retrying via PowerShell
+    if exist "%ZIPFILE%" del "%ZIPFILE%" 2>nul
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue';[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try{ Invoke-WebRequest -UseBasicParsing -Uri '!ASSET_URL!' -OutFile '%ZIPFILE%' }catch{ exit 1 }"
 )
 
 if not exist "%ZIPFILE%" goto :dl_failed
