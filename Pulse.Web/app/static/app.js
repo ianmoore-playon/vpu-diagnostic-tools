@@ -103,7 +103,7 @@ const NAV_SECTIONS = [
 ];
 const PAGES = NAV_SECTIONS.flatMap((s) => s.pages);
 // Hidden pages (accessible via hash but not in nav)
-const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Fault Isolator" }];
+const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Camera Connection Troubleshooting" }];
 // Tabs retired in the nav restructure redirect to their nearest replacement so
 // old bookmarks / deep-links don't land on an "Unknown page".
 const RETIRED_PAGE_ALIASES = { system: "hardware", "pixellot-config": "pixellot-software" };
@@ -4000,9 +4000,9 @@ function _camDownGuidanceHtml(p, ctx) {
     if (allDown) {
       msg = "No signal — and every camera port is down. This points to the network card, its driver, or power to the camera bank — not one cable.";
     } else if (othersUp) {
-      msg = "Check this cable (both ends) and the camera's power, then run Fault Isolator. The other ports are linked, so the problem is likely just this cable, camera, or port — not a card-wide failure.";
+      msg = "Check this cable (both ends) and the camera's power, then run Camera Connection Troubleshooting. The other ports are linked, so the problem is likely just this cable, camera, or port — not a card-wide failure.";
     } else {
-      msg = "No signal detected. Check the cable is seated both ends and the camera has power, then use Fault Isolator.";
+      msg = "No signal detected. Check the cable is seated both ends and the camera has power, then use Camera Connection Troubleshooting.";
     }
   }
   return '<div class="cam-down-guide">' + svgIcon("alert", 12) + ' <span>' + esc(msg) + '</span></div>';
@@ -4467,7 +4467,7 @@ function renderCameras() {
         ${svgIcon("camera", 14)} Get Camera Frames
       </button>
       <button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
-        ${svgIcon("zap", 14)} Fault Isolator
+        ${svgIcon("zap", 14)} Camera Connection Troubleshooting
       </button>`
     )}
 
@@ -6805,7 +6805,7 @@ function _fiReset() {
 function renderFaultIsolator() {
   var cams = cached("cameras");
   if (!cams) {
-    $page().innerHTML = sectionLoading("Camera Fault Isolator");
+    $page().innerHTML = sectionLoading("Camera Connection Troubleshooting");
     api("/api/cameras").then(function(d) { dataCache.cameras = d; renderFaultIsolator(); });
     return;
   }
@@ -6972,7 +6972,7 @@ function renderFaultIsolator() {
     : '';
 
   $page().innerHTML = pageHeader(
-    "Camera Fault Isolator",
+    "Camera Connection Troubleshooting",
     "Swap test that pins a camera fault to the port, the cable, or the camera (CHU).",
     '<button class="btn-outline btn-ol-blue" onclick="navigate(\'cameras\')">' + svgIcon("arrow-left", 14) + " Back to Camera Connectivity</button>"
   ) + diagramCard + '<div class="card">' + stepDots() + inner + historyTable() + "</div>" +
