@@ -151,6 +151,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   finished. No loss of function — audio checks were not yet in field use.
 
 ### Fixed
+- **Camera Frames now works with cameras that use a different stream path.**
+  Some cameras serve their video on a different RTSP path than the usual one,
+  so Camera Frames showed "No frame" even though the camera was online and
+  viewable in a browser. Pulse now tries the common stream paths and uses
+  whichever one the camera answers on, and when none work it lists the paths it
+  tried so the camera can be flagged.
 - **Error tabs no longer spin forever.** When a check can't run, Camera
   Connectivity, ScoreConnect, the Camera Fault Isolator, and Windows Events now
   show a clear error message instead of an endless loading spinner.
