@@ -116,6 +116,14 @@ let logEntries = [];
 let fetchingKeys = new Set();
 let fetchPromises = {};
 
+// PAGE_API keys are the *fetch* keys (the cache/endpoint identifiers), which
+// are NOT 1:1 with nav ids / pageRenderers. Two endpoints (`system` and
+// `pixellot-config`) each back several split pages: the nav was broken up into
+// Hardware/Applications/Environment and Pixellot Software/Camera Hardware/
+// Calibrations, but the collectors behind them weren't. So renderHardware,
+// renderApplications, renderEnvironment all fetchSection("system"), and the
+// Pixellot pages all fetchSection("pixellot-config"). Keep the retired keys
+// here; RETIRED_PAGE_ALIASES only redirects the old nav ids at the router.
 const PAGE_API = {
   dashboard: "/api/dashboard",
   system: "/api/system",
@@ -1317,7 +1325,7 @@ function _renderVolumes(volumes) {
   if (!volumes.length) return '<div class="text-xs text-pulse-muted py-2">No storage data</div>';
   return volumes.map((d) => {
     const pct = d.usedPercent || 0;
-    const color = pct > 90 ? "#ef4444" : pct > 80 ? "#eab308" : "#3b82f6";
+    const color = pct > 90 ? "var(--c-accent-red)" : pct > 80 ? "var(--c-accent-amber)" : "var(--c-accent-blue)";
     const role = d.deviceID === "C:" ? "System — OS & Pixellot"
                : d.deviceID === "D:" ? "Recordings — local game-video storage"
                : "Storage";
@@ -1636,7 +1644,7 @@ function renderDashboard() {
           <div class="dash-gauge-sub">${esc(diskCaption)}</div>
         </div>
         <div class="dash-gauge-col" data-gauge="temp">
-          ${gauge("Temperature", temp != null ? Math.round(temp) : null, "°C", "#3b82f6", { max: 100, warn: 65, crit: 85 })}
+          ${gauge("Temperature", temp != null ? Math.round(temp) : null, "°C", "var(--c-accent-blue)", { max: 100, warn: 65, crit: 85 })}
         </div>
         <div class="dash-gauge-col dash-gauge-col-center">
           <div class="dash-icon-tile">
@@ -2211,7 +2219,7 @@ function _fmtMs(v) {
 function _pingCardHtml(p) {
   if (!p || !p.target) return "";
   var sc = p.status === "pass" ? "net-ping-pass" : p.status === "warn" ? "net-ping-warn" : "net-ping-fail";
-  var dot = p.status === "pass" ? "#22c55e" : p.status === "warn" ? "#eab308" : "#ef4444";
+  var dot = p.status === "pass" ? "var(--c-accent-green)" : p.status === "warn" ? "var(--c-accent-amber)" : "var(--c-accent-red)";
   var latency = _fmtMs(p.avgMs);
   var loss = p.lossPercent != null ? p.lossPercent + "%" : "—";
   var range = (p.minMs != null && p.maxMs != null) ? _fmtMs(p.minMs).replace(" ms","") + " / " + _fmtMs(p.avgMs).replace(" ms","") + " / " + _fmtMs(p.maxMs).replace(" ms","") + " ms" : "—";
@@ -4318,6 +4326,7 @@ function _camS1Html(res) {
 function renderCameras() {
   const data = cached("cameras");
   if (!data) { $page().innerHTML = sectionLoading("Camera Connectivity"); fetchSection("cameras"); return; }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
 
   const ports = data.ports || [];
   const findings = data.findings || [];
@@ -5039,6 +5048,7 @@ function renderEvents() {
     evBody.innerHTML = loading();
     const data = await api(`/api/events?hours=${encodeURIComponent(hours)}&level=all`);
     if (currentPage !== "events") return;
+    if (data.error) { evBody.innerHTML = errorBox(data.message); return; }
 
     const showError = document.getElementById("ev-error")?.checked;
     const showWarning = document.getElementById("ev-warning")?.checked;
@@ -5405,18 +5415,6 @@ function _mk(tag, cls, text) {
   return e;
 }
 
-function _shareFmtBytes(n) {
-  if (n == null) return "—";
-  if (n < 1024) return n + " B";
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
-  return (n / (1024 * 1024)).toFixed(1) + " MB";
-}
-
-function _shareFmtTime(iso) {
-  if (!iso) return "—";
-  try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
-}
-
 function _shareSetMsg(el, text, color) {
   if (!el) return;
   el.textContent = text || "";
@@ -5495,7 +5493,7 @@ async function _shareSend() {
   if (r.ok) {
     _shareSetMsg(msg, "Sent.", "var(--c-accent-green)");
     const line = _mk("div", "text-sm text-pulse-muted");
-    line.appendChild(document.createTextNode("Delivered " + _shareFmtBytes(r.bytes) + " to "));
+    line.appendChild(document.createTextNode("Delivered " + formatBytes(r.bytes) + " to "));
     line.appendChild(_mk("strong", null, r.peer || r.address || "peer"));
     line.appendChild(document.createTextNode(". It's now in that machine's Received Reports."));
     result.appendChild(line);
@@ -5636,9 +5634,9 @@ function _shareRenderInbox(reports) {
     const head = _mk("div", "share-rx-head");
     const left = _mk("div");
     left.appendChild(_mk("div", "share-rx-host", r.vpuName || r.hostname || "Unknown host"));
-    let meta = "Received " + _shareFmtTime(r.receivedAt) + " from " + (r.senderIp || "?")
+    let meta = "Received " + formatTime(r.receivedAt) + " from " + (r.senderIp || "?")
       + " · " + r.findingCount + " finding" + (r.findingCount === 1 ? "" : "s")
-      + " · " + _shareFmtBytes(r.sizeBytes);
+      + " · " + formatBytes(r.sizeBytes);
     if (r.sourceErrorCount) meta += " · " + r.sourceErrorCount + " check" + (r.sourceErrorCount === 1 ? "" : "s") + " failed";
     left.appendChild(_mk("div", "text-sm text-pulse-muted", meta));
     const actions = _mk("div", "share-rx-actions");
@@ -6115,6 +6113,7 @@ function parseRtdScores(rawData, vendor, sport) {
 function renderScoreConnect() {
   const data = cached("scoreconnect");
   if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
 
   const sc2 = data.sc2;  // SC II data (from settings.json on disk)
   const config = data.configuration || {};
@@ -6689,6 +6688,7 @@ function renderFaultIsolator() {
     api("/api/cameras").then(function(d) { dataCache.cameras = d; renderFaultIsolator(); });
     return;
   }
+  if (cams.error) { $page().innerHTML = errorBox(cams.message); return; }
 
   var ports = cams.ports || [];
   if (!_fi) _fiReset();
@@ -7798,7 +7798,7 @@ function renderAbout() {
     <div class="about-container">
       <div class="card about-card">
         <div class="about-icon">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--c-accent-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
           </svg>
         </div>
