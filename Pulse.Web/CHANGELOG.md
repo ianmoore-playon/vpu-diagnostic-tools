@@ -157,6 +157,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   viewable in a browser. Pulse now tries the common stream paths and uses
   whichever one the camera answers on, and when none work it lists the paths it
   tried so the camera can be flagged.
+- **ScoreConnect tab no longer shows an "Invalid JSON" error on some VPUs.** The
+  scoreboard's raw data feed — and bot numbers read from older ScoreConnect logs
+  — can carry hidden control characters that broke the data hand-off, so the tab
+  failed with a raw `Invalid JSON from Get-ScoreConnectStatus.ps1` message and no
+  data. Pulse now handles those characters, so the ScoreConnect tab loads
+  normally.
 - **Update no longer fails on some networks with a "certificate check failed"
   error.** On certain VPUs the download step (curl) would abort with
   `SEC_E_WRONG_PRINCIPAL` / "SNI or certificate check failed" and report that no

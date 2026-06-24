@@ -276,6 +276,18 @@ class TestExtractJson(unittest.TestCase):
     def test_array_payload(self):
         self.assertEqual(powershell._extract_json('[1, 2, 3]'), [1, 2, 3])
 
+    def test_literal_control_chars_tolerated(self):
+        # Windows PowerShell 5.1's ConvertTo-Json leaves literal C0 bytes
+        # unescaped inside strings — e.g. STX/ETX in a raw Daktronics RTD
+        # string, or a NUL scraped by findstr from a UTF-16 SC I log. Python's
+        # default strict parse rejects these ("Invalid control character"); the
+        # extractor must still recover the payload.
+        blob = '{"reachable":false,"rawData":"02\x025728\x03","error":null}'
+        self.assertEqual(
+            powershell._extract_json(blob),
+            {"reachable": False, "rawData": "02\x025728\x03", "error": None},
+        )
+
 
 # ── DNS discrepancy classification (PDF #10) ─────────────────
 class TestDnsDiscrepancy(unittest.TestCase):
