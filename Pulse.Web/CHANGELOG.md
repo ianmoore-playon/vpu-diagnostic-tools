@@ -27,6 +27,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   launcher now repairs its own Start-menu target on every launch and won't
   leave a dead shortcut behind if a step fails — search "pulse" and hit Enter
   and it just opens.
+- **Peripherals panel on the Environment tab no longer hangs on "Loading…".**
+  On a real VPU with a single mouse or keyboard the panel would spin forever; it
+  now shows the connected mouse, keyboard, and monitor (with device names).
 
 ## [0.4.0] - 2026-06-23
 
