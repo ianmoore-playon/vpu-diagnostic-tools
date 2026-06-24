@@ -22,6 +22,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Fixed
+- **No more "Missing Shortcut" when opening Pulse from the Start menu.** The
+  launcher now repairs its own Start-menu target on every launch and won't
+  leave a dead shortcut behind if a step fails — search "pulse" and hit Enter
+  and it just opens.
+
 ## [0.4.0] - 2026-06-23
 
 ### Added
