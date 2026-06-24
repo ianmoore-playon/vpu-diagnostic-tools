@@ -3207,6 +3207,101 @@ async def api_cameras_s1():
     return await run_ps("Get-S1Cameras.ps1", timeout=15)
 
 
+# ── Black-frame diagnosis ────────────────────────────────────────────
+# A camera can grab a frame fine (ok=true, "Active") yet send a black picture —
+# the exact symptom techs hit on OCR/scoreboard cameras whose picture settings
+# need adjusting. ffmpeg's signalstats (Test-CameraVideo.ps1) gives us the
+# frame's average luminance, so we can call this out instead of letting a black
+# thumbnail pass as healthy. Luma is 0-255; chroma centres on 128.
+_DARK_FRAME_YAVG = 16     # at/below this average brightness the frame reads black
+_LIT_FRAME_YAVG = 50      # at/above this a frame is clearly showing the room
+_BRIGHT_PIXEL_YMAX = 230  # a near-white pixel present → a bright light in view
+
+
+def _to_float(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _frame_yavg(r):
+    """Average luminance of a captured frame, or None if unmeasured."""
+    luma = r.get("luma") if isinstance(r, dict) else None
+    return _to_float(luma.get("yavg")) if isinstance(luma, dict) else None
+
+
+def _frame_settings_hint(target, results):
+    """Plain-English note on how a black camera's picture settings differ from
+    the cameras that returned a normal picture in the same room (the 'B' half:
+    same-room settings comparison). Reads the CGI sensor block already merged
+    onto each result. Returns None when nothing notable stands out."""
+    tsen = target.get("sensor") or {}
+    peers = [r.get("sensor") or {} for r in results
+             if r is not target and r.get("ok")
+             and (_frame_yavg(r) or 0) >= _LIT_FRAME_YAVG]
+    if not peers:
+        return None
+    notes = []
+    # Exposure left on Manual in a venue whose lighting changes is a classic
+    # black-picture cause.
+    texp = str(tsen.get("exposure") or "").strip().lower()
+    peer_auto = any(str(s.get("exposure") or "").strip().lower() == "auto" for s in peers)
+    if texp and texp != "auto" and peer_auto:
+        notes.append(f"Its exposure is set to {tsen.get('exposure')}, "
+                     "while the cameras that look fine are on Auto.")
+    # Brightness dialled well below the working cameras.
+    tb = _to_float(tsen.get("brightness"))
+    pbs = [v for v in (_to_float(s.get("brightness")) for s in peers) if v is not None]
+    if tb is not None and pbs:
+        pavg = sum(pbs) / len(pbs)
+        if tb <= pavg - 15:
+            notes.append(f"Its brightness setting ({tsen.get('brightness')}) is "
+                         f"lower than the cameras that look fine (about {round(pavg)}).")
+    return " ".join(notes) or None
+
+
+def _diagnose_camera_frames(results):
+    """Flag cameras that captured a frame but the picture came back black, in
+    words a field tech can act on. Mutates each affected result in place, adding
+    diagnosis = { severity, summary, detail? }. No-op when nothing looks black."""
+    if not isinstance(results, list):
+        return
+    # Any camera clearly showing a lit room is proof the lights are on and the
+    # venue is fine — so a black camera is a camera problem, not the room.
+    lit = None
+    for r in results:
+        if r.get("ok") and (_frame_yavg(r) or 0) >= _LIT_FRAME_YAVG:
+            lit = r.get("label") or "another camera"
+            break
+    for r in results:
+        if not r.get("ok"):
+            continue
+        y = _frame_yavg(r)
+        if y is None or y > _DARK_FRAME_YAVG:
+            continue  # bright enough to read — nothing to flag
+        label = r.get("label") or "This camera"
+        ymax = _to_float((r.get("luma") or {}).get("ymax"))
+        if ymax is not None and ymax >= _BRIGHT_PIXEL_YMAX:
+            summary = (f"{label} is sending an almost black picture, but there's a "
+                       "bright light in view — usually the scoreboard. The camera is "
+                       "darkening the whole picture to cope with that one bright spot, "
+                       "so everything else disappears. Adjust this camera's picture "
+                       "settings (exposure/brightness) so the rest of the scene shows.")
+        else:
+            summary = (f"{label} is sending an almost black picture. Its picture is "
+                       "set too dark for this room — turn up the brightness/exposure "
+                       "in this camera's picture settings.")
+        if lit:
+            summary += (f" The room lights are on ({lit} is showing a normal picture "
+                        "in the same room), so this is a camera setting, not the venue.")
+        diag = {"severity": "warn", "summary": summary}
+        hint = _frame_settings_hint(r, results)
+        if hint:
+            diag["detail"] = hint
+        r["diagnosis"] = diag
+
+
 @app.post("/api/cameras/video-test")
 async def api_cameras_video_test(request: Request):
     """Grab a single frame from each detected camera to confirm it's
@@ -3302,6 +3397,7 @@ async def api_cameras_video_test(request: Request):
                     "expectedSpeedMbps": p.get("expectedSpeedMbps"),
                     "model": c.get("model"),
                     "firmwareVersion": c.get("firmwareVersion"),
+                    "sensor": c.get("sensor"),
                 }
 
     # Single-camera refresh: keep only the requested IP(s).
@@ -3358,7 +3454,11 @@ async def api_cameras_video_test(request: Request):
                 r["expectedSpeedMbps"] = meta["expectedSpeedMbps"]
                 r["model"] = meta.get("model")
                 r["firmwareVersion"] = meta.get("firmwareVersion")
+                r["sensor"] = meta.get("sensor")
         result["systemType"] = sys_type
+        # Look inside the captured frames: flag any camera that grabbed a frame
+        # but the picture came back black (the OCR/scoreboard symptom).
+        _diagnose_camera_frames(result.get("results"))
     return result
 
 

@@ -22,6 +22,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Added
+- **Camera Frames now spots a black picture and tells you why.** When a camera
+  grabs a frame but the picture comes back black (the OCR/scoreboard symptom),
+  Pulse flags it as "Black picture" instead of a green "Active", explains it in
+  plain terms — usually the camera darkening everything to cope with a bright
+  scoreboard, or its picture set too dark — and notes when the other cameras
+  prove the room lights are on, so you know it's a camera setting, not the venue.
+
 ## [0.4.0] - 2026-06-23
 
 ### Added

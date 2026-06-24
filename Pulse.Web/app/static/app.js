@@ -4608,9 +4608,19 @@ function _camVideoResultsHtml(res, opts) {
         ' Degraded link — ' + spd + (exp ? ", expected " + exp : "") +
         '. A frame pulled, but the stream won\'t hold until this is fixed.</div>';
     }
-    var cardCls = r.ok ? (degraded ? "cam-frame-degraded" : "") : "cam-frame-fail";
-    var statusTxt = !r.ok ? "No video" : (degraded ? "Active · degraded" : "Active");
-    var statusCls = !r.ok ? "status-fail" : (degraded ? "status-warn" : "status-pass");
+    // Black-picture diagnosis: the frame grabbed (so it reads "Active"), but the
+    // server found the picture is near-black — surface it instead of a false OK.
+    var hasDiag = r.ok && r.diagnosis && r.diagnosis.summary;
+    var diag = "";
+    if (hasDiag) {
+      diag = '<div class="cam-frame-diag">' + svgIcon("alert", 11) +
+        ' <span>' + esc(r.diagnosis.summary) +
+        (r.diagnosis.detail ? ' <span class="cam-frame-diag-detail">' + esc(r.diagnosis.detail) + '</span>' : "") +
+        '</span></div>';
+    }
+    var cardCls = r.ok ? ((degraded || hasDiag) ? "cam-frame-degraded" : "") : "cam-frame-fail";
+    var statusTxt = !r.ok ? "No video" : (hasDiag ? "Black picture" : (degraded ? "Active · degraded" : "Active"));
+    var statusCls = !r.ok ? "status-fail" : ((hasDiag || degraded) ? "status-warn" : "status-pass");
     // Identity block: camera type (S1/S2/S2S — system-wide), IP, model and
     // firmware from the CGI probe, plus the live stream format when one pulled.
     var kv =
@@ -4634,6 +4644,7 @@ function _camVideoResultsHtml(res, opts) {
         '</div>' +
         '<div class="cam-frame-kv">' + kv + '</div>' +
         errLine +
+        diag +
         warn +
         '<div class="cam-frame-foot">' + cap + refresh + '</div>' +
       '</div></div>';

@@ -388,5 +388,83 @@ class TestResultCacheAge(unittest.TestCase):
         self.assertTrue(refetched, "cache_ttl=1.5 must reject a 3s-old entry and refetch")
 
 
+def _frame(label, ok=True, yavg=None, ymax=None, sensor=None):
+    """A Test-CameraVideo result row, as the video-test endpoint hands it to
+    the black-frame diagnosis (luma + merged CGI sensor block)."""
+    r = {"label": label, "ip": "0.0.0.0", "ok": ok}
+    if yavg is not None:
+        r["luma"] = {"yavg": yavg, "ymin": 0, "ymax": ymax if ymax is not None else yavg}
+    if sensor is not None:
+        r["sensor"] = sensor
+    return r
+
+
+class TestBlackFrameDiagnosis(unittest.TestCase):
+    """_diagnose_camera_frames: a camera can grab a frame ('Active') yet send a
+    black picture. Lock in when it fires, the variant it picks, and that a lit
+    camera in the same venue isn't flagged."""
+
+    def test_bright_camera_not_flagged(self):
+        results = [_frame("Main Camera 1", yavg=112), _frame("Main Camera 2", yavg=96)]
+        main._diagnose_camera_frames(results)
+        self.assertNotIn("diagnosis", results[0])
+        self.assertNotIn("diagnosis", results[1])
+
+    def test_black_frame_with_bright_spot_blames_bright_light(self):
+        # Near-black average but a near-white pixel present → bright-light/scoreboard.
+        results = [_frame("Main Camera 1", yavg=110), _frame("OCR", yavg=5, ymax=238)]
+        main._diagnose_camera_frames(results)
+        diag = results[1]["diagnosis"]
+        self.assertEqual(diag["severity"], "warn")
+        self.assertIn("bright light", diag["summary"])
+        # Same-room proof: a lit camera means it's a setting, not the venue.
+        self.assertIn("Main Camera 1", diag["summary"])
+
+    def test_uniformly_dark_frame_blames_picture_settings(self):
+        # Dark with no bright pixel → "too dark", not the bright-light variant.
+        results = [_frame("Main Camera 1", yavg=110), _frame("OCR", yavg=4, ymax=20)]
+        main._diagnose_camera_frames(results)
+        summary = results[1]["diagnosis"]["summary"]
+        self.assertIn("too dark", summary)
+        self.assertNotIn("bright light", summary)
+
+    def test_no_lit_peer_still_flags_but_omits_room_claim(self):
+        # Every camera black (e.g. lights genuinely off) — still flag the dark
+        # frame, but don't claim the room is lit.
+        results = [_frame("OCR", yavg=3, ymax=10)]
+        main._diagnose_camera_frames(results)
+        summary = results[0]["diagnosis"]["summary"]
+        self.assertNotIn("room lights are on", summary)
+
+    def test_settings_comparison_flags_lower_brightness(self):
+        # B half: black camera's brightness dialled below the cameras that look fine.
+        results = [
+            _frame("Main Camera 1", yavg=110, sensor={"exposure": "auto", "brightness": "50"}),
+            _frame("OCR", yavg=5, ymax=238, sensor={"exposure": "auto", "brightness": "20"}),
+        ]
+        main._diagnose_camera_frames(results)
+        self.assertIn("brightness", results[1]["diagnosis"].get("detail", ""))
+
+    def test_settings_comparison_flags_manual_exposure(self):
+        results = [
+            _frame("Main Camera 1", yavg=110, sensor={"exposure": "auto", "brightness": "50"}),
+            _frame("OCR", yavg=5, ymax=238, sensor={"exposure": "manual", "brightness": "50"}),
+        ]
+        main._diagnose_camera_frames(results)
+        self.assertIn("Auto", results[1]["diagnosis"].get("detail", ""))
+
+    def test_unmeasured_luma_is_skipped(self):
+        # No luma (old script / analysis failed) → can't judge, don't false-flag.
+        results = [_frame("OCR", ok=True)]
+        main._diagnose_camera_frames(results)
+        self.assertNotIn("diagnosis", results[0])
+
+    def test_failed_capture_is_not_diagnosed(self):
+        # No frame at all → handled by the existing "No video" path, not this.
+        results = [_frame("OCR", ok=False)]
+        main._diagnose_camera_frames(results)
+        self.assertNotIn("diagnosis", results[0])
+
+
 if __name__ == "__main__":
     unittest.main()

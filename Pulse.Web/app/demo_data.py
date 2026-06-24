@@ -17,6 +17,19 @@ def _demo_frame(label, color):
     )
     return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
 
+
+def _demo_black_frame(label):
+    """A near-black frame with one bright spot (a stand-in scoreboard) — the
+    OCR 'black picture' symptom, so the black-frame diagnosis renders in demo."""
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg' width='480' height='270'>"
+        "<rect width='480' height='270' fill='#050608'/>"
+        "<rect x='360' y='24' width='84' height='38' rx='3' fill='#f4d35e'/>"
+        "<text x='240' y='150' font-family='sans-serif' font-size='15' "
+        f"fill='#3a3f47' text-anchor='middle'>{label}</text></svg>"
+    )
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
+
 # ── Demo venue identity ──────────────────────────────────────
 # Picked once at module load so all scripts return consistent data
 # for a single Pulse session. Each session re-imports → fresh pick.
@@ -211,7 +224,9 @@ def _demo_cam(ip, mac, serial, *, ocr=False, gateway=None):
             "network": {"ip": ip, "subnet": "255.255.0.0", "gateway": gateway, "dhcp": "no"},
             "stream0": {"codec": "H264", "resolution": "1920x1080", "framerate": "30"},
             "stream1": {"enabled": "yes", "codec": "MJPEG", "resolution": "640x480", "framerate": "10"},
-            "sensor": {"exposure": "auto", "brightness": "48", "contrast": "52",
+            # Brightness dialled well below the main cameras — drives the
+            # same-room settings comparison in the black-frame diagnosis.
+            "sensor": {"exposure": "auto", "brightness": "20", "contrast": "52",
                        "colorLevel": "50", "maxShutterGain": "30", "minShutterSpeed": "1/60"},
         }
     return {
@@ -717,13 +732,19 @@ DEMO = {
         "results": [
             {"ip": "192.168.10.100", "label": "Main Camera 1", "ok": True,
              "codec": "h264", "frameRate": 30.0, "resolution": "3840x2160",
-             "image": _demo_frame("Main Camera 1", "#1f3a5f"), "error": None},
+             "image": _demo_frame("Main Camera 1", "#1f3a5f"), "error": None,
+             "luma": {"yavg": 112, "ymin": 6, "ymax": 240, "uavg": 124, "vavg": 132}},
             {"ip": "192.168.11.100", "label": "Main Camera 2", "ok": True,
              "codec": "h264", "frameRate": 30.0, "resolution": "3840x2160",
-             "image": _demo_frame("Main Camera 2", "#244a36"), "error": None},
-            {"ip": "169.254.16.52", "label": "OCR", "ok": False,
-             "codec": None, "frameRate": None, "resolution": None, "image": None,
-             "error": "No frame captured (camera not streaming on rtsp://169.254.16.52/stream1)."},
+             "image": _demo_frame("Main Camera 2", "#244a36"), "error": None,
+             "luma": {"yavg": 96, "ymin": 4, "ymax": 232, "uavg": 120, "vavg": 136}},
+            # The OCR grabs a frame (reads "Active") but the picture is black —
+            # the reported symptom. Low yavg + a near-white spot (the scoreboard)
+            # drives the black-frame diagnosis.
+            {"ip": "169.254.16.52", "label": "OCR", "ok": True,
+             "codec": "h264", "frameRate": 10.0, "resolution": "1920x1080",
+             "image": _demo_black_frame("OCR"), "error": None,
+             "luma": {"yavg": 5, "ymin": 0, "ymax": 238, "uavg": 127, "vavg": 129}},
         ],
     },
     "Get-NetworkHealth.ps1": lambda **kw: {
