@@ -22,6 +22,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Fixed
+- **Peripherals panel on the Environment tab no longer hangs on "Loading…".**
+  On a real VPU with a single mouse or keyboard the panel would spin forever; it
+  now shows the connected mouse, keyboard, and monitor (with device names).
+
 ## [0.4.0] - 2026-06-23
 
 ### Added
