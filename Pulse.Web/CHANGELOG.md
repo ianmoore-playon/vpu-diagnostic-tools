@@ -31,6 +31,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   prove the room lights are on, so you know it's a camera setting, not the venue.
 
 ### Fixed
+- **ScoreConnect tab no longer shows "Failed to load data" on VPUs running an
+  older ScoreConnect.** On a unit running ScoreConnect I or II (not III) — for
+  example one with several versions installed — the tab failed outright instead
+  of showing the version it found. It now displays the detected ScoreConnect I/II
+  configuration, and a genuine probe failure shows the real reason rather than
+  the generic message.
 - **No more "Missing Shortcut" when opening Pulse from the Start menu.** The
   launcher now repairs its own Start-menu target on every launch and won't
   leave a dead shortcut behind if a step fails — search "pulse" and hit Enter

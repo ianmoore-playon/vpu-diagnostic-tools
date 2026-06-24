@@ -453,9 +453,14 @@ try {
         if ($sr2.ok) { $reachable = $true }
     }
 
-    if (-not $reachable) {
-        $errorMsg = "ScoreConnect III not reachable at $BaseUrl"
-    }
+    # NOTE: do NOT set $errorMsg here just because SC III isn't answering on
+    # :5000. SC III being absent is an expected state on a legacy box — this
+    # VPU may be running SC I or SC II, which we still detect and report below
+    # in the `sc2`/legacy slot. The `reachable` flag already conveys SC III's
+    # status; the top-level `error` field is reserved for a genuine probe
+    # failure (the catch block). Setting it here made the frontend treat a
+    # legacy-only VPU as a fatal "Failed to load data" and discard the SC I/II
+    # data we collected.
 
     # Version: get-status has no version field — always use exe on disk.
     $version = Get-ScoreConnectExeVersion
