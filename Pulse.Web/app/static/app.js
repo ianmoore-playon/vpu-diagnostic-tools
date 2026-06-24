@@ -6480,7 +6480,15 @@ function parseRtdScores(rawData, vendor, sport) {
 function renderScoreConnect() {
   const data = cached("scoreconnect");
   if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
-  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
+  // Only fatal when there's nothing to render. A legacy SC I/II box reports the
+  // SC III endpoint as unreachable but still returns usable `sc2` data — don't
+  // discard it. run_ps transport failures set `message`; the script's own
+  // `error` is a string — surface whichever exists rather than the generic
+  // "Failed to load data" fallback.
+  if (data.error && !data.reachable && !(data.sc2 && data.sc2.reachable)) {
+    $page().innerHTML = errorBox(data.message || (typeof data.error === "string" ? data.error : null));
+    return;
+  }
 
   const sc2 = data.sc2;  // SC II data (from settings.json on disk)
   const config = data.configuration || {};
