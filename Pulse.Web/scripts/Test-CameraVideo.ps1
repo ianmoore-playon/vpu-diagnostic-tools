@@ -41,8 +41,10 @@
     Thumbnail width in px (height auto). Default 640.
 .OUTPUTS
     { available, results: [ { ip, label, ok, codec, frameRate, resolution,
-      streamPath, image, error } ] }   # image = "data:image/jpeg;base64,..."
-      # or null; streamPath = the RTSP path that decoded (e.g. "h264")
+      streamPath, image, error, luma } ] }   # image = "data:image/jpeg;base64,..."
+      # or null; streamPath = the RTSP path that decoded (e.g. "h264");
+      # luma = { yavg, ymin, ymax, uavg, vavg } 0-255 brightness/chroma of the
+      # captured frame (or null) so the server can spot a genuinely black image.
 #>
 [CmdletBinding()]
 param(
@@ -73,6 +75,35 @@ function Get-FailReason($errFile) {
     $last = ($lines | Select-Object -Last 1).Trim()
     if ($last.Length -gt 180) { $last = $last.Substring(0, 180) + "…" }
     return $last
+}
+
+# Average/min/max luminance (0-255) and mean chroma of a captured frame, via
+# ffmpeg's signalstats filter. The "metadata=print" sink writes "key=value"
+# lines (no file= option, so we sidestep the Windows drive-colon escaping trap
+# in the filtergraph); *> captures them whether the build prints to stdout or
+# the log. Returns $null if stats can't be read — never throws, so a frame
+# still surfaces even if this analysis pass fails.
+function Get-FrameLuma($framePath) {
+    $statsFile = "$framePath.stats"
+    try {
+        & $ffmpeg -hide_banner -loglevel error -i $framePath `
+            -vf "signalstats,metadata=print" -an -f null NUL *> $statsFile
+        if (-not (Test-Path $statsFile)) { return $null }
+        $txt = Get-Content $statsFile -Raw -ErrorAction SilentlyContinue
+        if (-not $txt) { return $null }
+        $luma = [ordered]@{ yavg = $null; ymin = $null; ymax = $null; uavg = $null; vavg = $null }
+        foreach ($k in @('YAVG', 'YMIN', 'YMAX', 'UAVG', 'VAVG')) {
+            if ($txt -match "lavfi\.signalstats\.$k=([0-9.]+)") {
+                $luma[$k.ToLower()] = [math]::Round([double]$matches[1], 1)
+            }
+        }
+        if ($null -eq $luma.yavg) { return $null }
+        return $luma
+    } catch {
+        return $null
+    } finally {
+        if (Test-Path $statsFile) { Remove-Item $statsFile -Force -ErrorAction SilentlyContinue }
+    }
 }
 
 try {
@@ -124,7 +155,7 @@ try {
         $entry = [ordered]@{
             ip = $ip; label = $label; ok = $false
             codec = $null; frameRate = $null; resolution = $null
-            streamPath = $null; image = $null; error = $null
+            streamPath = $null; image = $null; error = $null; luma = $null
         }
 
         try {
@@ -170,6 +201,10 @@ try {
                 }
                 $bytes = [System.IO.File]::ReadAllBytes($frame)
                 $entry.image = "data:image/jpeg;base64," + [System.Convert]::ToBase64String($bytes)
+                # Look inside the pixels: a black thumbnail otherwise renders as
+                # "Active" and hides the fault. The server uses this to tell a
+                # genuinely black picture from a normally-lit one.
+                $entry.luma = Get-FrameLuma $frame
                 $entry.ok = $true
             } else {
                 $tried = $candidatePaths -join ', '
