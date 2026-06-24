@@ -2129,16 +2129,21 @@ function renderEnvironment() {
   // system payload), so the tab paints immediately and these fill in.
   // Guard on currentPage so a late response after navigating away can't
   // write into another tab.
+  const _panelFail = (id, what) => {
+    if (currentPage !== "environment") return;
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = `<p class="text-sm text-pulse-muted">Could not load ${what}.</p>`;
+  };
   api("/api/users-domains").then(d => {
     if (currentPage !== "environment") return;
     const el = document.getElementById("sys-users-body");
     if (el) el.innerHTML = _usersPanelHtml(d);
-  }).catch(() => {});
+  }).catch(() => _panelFail("sys-users-body", "users / domain"));
   api("/api/peripherals").then(d => {
     if (currentPage !== "environment") return;
     const el = document.getElementById("sys-peripherals-body");
     if (el) el.innerHTML = _peripheralsPanelHtml(d);
-  }).catch(() => {});
+  }).catch(() => _panelFail("sys-peripherals-body", "peripherals"));
 }
 
 function _usersPanelHtml(d) {
@@ -2173,9 +2178,13 @@ function _peripheralsPanelHtml(d) {
   const row = (icon, label, dev) => {
     dev = dev || {};
     const on = !!dev.connected;
+    // Names live under `devices` (mouse/keyboard) or `displays` (monitor).
+    // PS 5.1 ConvertTo-Json unwraps a single-element array to a bare string,
+    // so coerce back to an array before .join (see _first, above).
+    const raw = dev.devices != null ? dev.devices : dev.displays;
+    const names = Array.isArray(raw) ? raw : (raw ? [raw] : []);
     const detail = on
-      ? ((dev.devices && dev.devices.length) ? dev.devices.join(", ")
-         : `${dev.count || 0} connected`)
+      ? (names.length ? names.join(", ") : `${dev.count || 0} connected`)
       : "Not detected";
     return `<div class="periph-row">
       <span class="periph-icon">${svgIcon(icon, 18)}</span>
