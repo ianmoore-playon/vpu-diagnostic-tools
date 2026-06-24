@@ -218,7 +218,7 @@ class TestComputeFindings(unittest.TestCase):
                       "gpus": [{"vendor": "NVIDIA", "isDedicated": True}]},
             gpu_info=_gpu("Turing"),
         )
-        self.assertIn("Insufficient RAM", titles)
+        self.assertIn("Not enough memory for a VPU", titles)
 
     def test_no_dedicated_gpu_flagged(self):
         titles = self._titles(
@@ -228,7 +228,7 @@ class TestComputeFindings(unittest.TestCase):
                       "gpus": [{"vendor": "Intel", "isDedicated": False}]},
             gpu_info=_gpu("Turing"),
         )
-        self.assertIn("No dedicated GPU detected", titles)
+        self.assertIn("No dedicated graphics card — wrong hardware for a VPU", titles)
 
     def test_findings_have_required_shape(self):
         # Every finding must carry severity + title so the dashboard can render it.
@@ -651,7 +651,6 @@ class TestDemoDataContract(unittest.TestCase):
     # demo data lands (test_exempt_list_has_no_stale_entries enforces that).
     _DEMO_EXEMPT = {
         # Owned by the ScoreConnect session — demo entries pending.
-        "Get-Sc3InstallStatus.ps1",
         "Install-ScoreConnectIII.ps1",
     }
 
@@ -662,6 +661,8 @@ class TestDemoDataContract(unittest.TestCase):
     _ACTION_SCRIPTS = {
         # Opens a Windows firewall port when the user enables report sharing.
         "Set-PulseShareFirewall.ps1",
+        # Reboots the VPU — a side effect, returns no diagnostic data to mock.
+        "Reboot-Vpu.ps1",
     }
 
     def _referenced_scripts(self):
