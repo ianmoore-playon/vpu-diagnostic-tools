@@ -193,6 +193,23 @@ async def _on_startup():
     except Exception:
         pass
 
+    # Proactive-monitoring loop (PULSEDEV-50/51). Unattended service mode only:
+    # enabled when PULSE_MONITOR is set (the NSSM service sets it) and never in
+    # demo/dev, so a tech opening Pulse interactively doesn't spin up a second
+    # looping/beaconing instance. Scheduled so it can't delay startup.
+    if _monitor_enabled():
+        try:
+            global _monitor_task, _monitor_stop
+            _monitor_stop = asyncio.Event()
+            _monitor_task = asyncio.create_task(
+                _monitor.run_monitor(_build_monitor_deps(), MONITOR_STATE_PATH, _monitor_stop)
+            )
+            for m in ("Proactive monitor enabled (PULSE_MONITOR set)",):
+                ps_log("server", 0, "ok", m)
+                _server_log.info(m)
+        except Exception as e:
+            _server_log.warning("Proactive monitor failed to start (%s)", e)
+
 
 def load_settings() -> dict:
     try:
@@ -2867,10 +2884,21 @@ async def api_scripts_cancel_all():
     return {"ok": True, "cancelled": count}
 
 
-async def _collect_dashboard() -> dict:
+async def _collect_dashboard(skip_intrusive: bool = False) -> dict:
     """Run the dashboard's data-collection scripts and build the payload
     (findings + Stream Readiness verdict). Shared by `/api/dashboard` and the
-    launch check-in beacon so both score readiness with identical inputs."""
+    launch check-in beacon so both score readiness with identical inputs.
+
+    `skip_intrusive=True` is the proactive monitor's recording-aware backoff: it
+    omits the only intrusive collector (Test-NetworkPorts, which fires live
+    UDP/TCP probes incl. the 2088 echo) so a background recompute can't perturb
+    a live encode. Every other collector here is a pure read (services, perf
+    sample, disk SMART, nvidia-smi, registry) and is safe during a game. The
+    skipped probe's codes are carried forward by the monitor's diff
+    (`INTRUSIVE_PORT_CODES`), so dropping it never false-resolves a blocker."""
+    async def _skip():
+        return None
+    port_probe = _skip() if skip_intrusive else run_ps("Test-NetworkPorts.ps1", timeout=30)
     (identity, performance, services, nics, net_config, hardware, installed_sw,
      install_state, port_tests, gpu_info, wifi, pixellot_config, expectations,
      disk_health, perf_sample) = await asyncio.gather(
@@ -2885,8 +2913,9 @@ async def _collect_dashboard() -> dict:
         # 30s for dashboard use — UDP rows now require an echoed reply and
         # retry once (a blocked-UDP venue costs ~14s in port checks alone),
         # so 20s would expire on exactly the venues the test exists to catch.
-        # Healthy connections still finish in well under 15s.
-        run_ps("Test-NetworkPorts.ps1", timeout=30),
+        # Healthy connections still finish in well under 15s. Skipped entirely
+        # while recording (see skip_intrusive above).
+        port_probe,
         run_ps("Get-GpuInfo.ps1", timeout=15),
         run_ps("Get-WifiAdapters.ps1", timeout=10),
         # Pixellot config + expected camera count feed the dashboard's new
@@ -3801,7 +3830,32 @@ def _post_checkin_sync(url: str, payload: dict) -> None:
         resp.read(256)
 
 
-async def _send_checkin() -> None:
+async def _send_checkin(dashboard: dict = None, delta: dict = None,
+                        reason: str = "startup") -> None:
+    """Post the identity + readiness beacon to the check-in Apps Script.
+
+    Fires three ways (PULSEDEV-53):
+      • startup       — once at launch (the original behavior), no delta.
+      • periodic      — the monitor loop's full-recompute heartbeat.
+      • state-change  — the monitor loop on an opened/resolved transition.
+
+    `dashboard` lets a caller that already collected the snapshot (the monitor
+    loop) reuse it instead of re-collecting; if None we collect it ourselves so
+    the startup path is unchanged. `delta` (from monitor.compute_delta) carries
+    the opened/resolved transitions the Sheet→Slack relay routes on.
+
+    ── Locked payload shape (the contract the Apps Script relay parses; keep new
+    fields additive so PULSEDEV-54's parsing doesn't break) ──
+        secret, hostname, serialNumber, venueId, vpuName, model, pulseVersion,
+        channel, reason,
+        readiness: {status, policyVersion, blockers:[code], risks:[code]},
+        delta: {                         # omitted on startup beacons
+            opened:[{code,fingerprint,class,route,title,category,recommendation,since}],
+            resolved:[{…}], persisting:[code],
+            status, prevStatus, statusChanged, alert
+        }
+
+    Fail-open in every branch + never in demo/dev — same guarantees as before."""
     url = (_os.environ.get("PULSE_CHECKIN_URL") or _CHECKIN_URL).strip()
     secret = (_os.environ.get("PULSE_CHECKIN_SECRET") or _CHECKIN_SECRET).strip()
     if not url or not secret or secret == "PASTE_CHECKIN_SECRET_HERE" or DEMO_MODE:
@@ -3822,13 +3876,14 @@ async def _send_checkin() -> None:
             "model":        cs.get("model"),
             "pulseVersion": APP_VERSION,
             "channel":      _update_channel(),
+            "reason":       reason,
         }
         # Stream Readiness verdict on the beacon → a pre-game-readiness time
         # series at ~zero marginal cost (the beacon already fires on launch).
         # Fail-open like everything else here: a readiness error never blocks
         # the check-in — we just send the identity fields without the verdict.
         try:
-            dash = await _collect_dashboard()
+            dash = dashboard if dashboard is not None else await _collect_dashboard()
             verdict = (dash or {}).get("readiness") or {}
             if verdict:
                 payload["readiness"] = {
@@ -3839,12 +3894,87 @@ async def _send_checkin() -> None:
                 }
         except Exception as e:
             _server_log.info("Check-in readiness skipped (%s)", e)
+        if delta is not None:
+            payload["delta"] = delta
         await asyncio.to_thread(_post_checkin_sync, url, payload)
-        _server_log.info("Check-in sent for %s", payload.get("hostname") or "unknown VPU")
+        _server_log.info("Check-in sent for %s (reason=%s)",
+                         payload.get("hostname") or "unknown VPU", reason)
     except Exception as e:
         # Fail-open: the beacon must never affect Pulse.
         try:
             _server_log.info("Check-in skipped (%s)", e)
+        except Exception:
+            pass
+
+
+# ── Proactive monitoring loop (PULSEDEV-50/51) ──────────────────────────────
+# Wires the dependency-free monitor engine (app/monitor.py) to Pulse's
+# collectors + beacon. The loop runs ONLY in unattended service mode
+# (PULSE_MONITOR set) and never in demo/dev — see _on_startup. State persists to
+# the install tree so it survives a restart but a reinstall (which re-downloads
+# C:\Pulse) clears it.
+import monitor as _monitor
+
+MONITOR_STATE_PATH = _os.path.join(_web_root, "pulse-monitor-state.json")
+_monitor_task = None
+_monitor_stop = None
+
+
+def _monitor_enabled() -> bool:
+    if DEMO_MODE:
+        return False
+    return (_os.environ.get("PULSE_MONITOR") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+async def _is_recording() -> bool:
+    """True if the GPU encoder is actively working (a game is being recorded or
+    streamed). Drives the loop's recording-aware backoff. Fail-open to False: we
+    would rather run a normal recompute (which is still non-intrusive) than
+    freeze the port probe forever on an unreadable signal."""
+    try:
+        rec = await run_ps("Get-RecordingState.ps1", timeout=10)
+        return bool(isinstance(rec, dict) and rec.get("recording"))
+    except Exception:
+        return False
+
+
+async def _service_tripwire() -> bool:
+    """Cheap heartbeat check: True if a core capture process (agent/coordinator)
+    is not Running. Runs only Get-Services — no network, no cameras — so it is
+    safe to fire every few minutes and during a live game. A trip forces an
+    immediate full recompute, which does the authoritative diff + beacon."""
+    try:
+        svc = await run_ps("Get-Services.ps1", timeout=10)
+        if not isinstance(svc, dict) or svc.get("error"):
+            return False
+        for s in svc.get("services", []):
+            if (s.get("name") or "").lower() in ("agent", "coordinator") \
+                    and s.get("status") != "Running":
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _build_monitor_deps():
+    return _monitor.MonitorDeps(
+        collect_dashboard=lambda skip_intrusive: _collect_dashboard(skip_intrusive=skip_intrusive),
+        send_checkin=_send_checkin,
+        is_recording=_is_recording,
+        service_tripwire=_service_tripwire,
+        get_serial=lambda d: (d.get("identity") or {}).get("serialNumber"),
+        clear_cache=clear_ps_cache,
+    )
+
+
+@app.on_event("shutdown")
+async def _on_shutdown():
+    """Stop the monitor loop cleanly so the NSSM service shuts down promptly."""
+    if _monitor_stop is not None:
+        _monitor_stop.set()
+    if _monitor_task is not None:
+        try:
+            await asyncio.wait_for(_monitor_task, timeout=10)
         except Exception:
             pass
 

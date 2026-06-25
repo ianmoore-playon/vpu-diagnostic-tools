@@ -303,6 +303,17 @@ DEMO = {
         "sampleCount": 3,
         "windowSeconds": 3,
     },
+    # Encoder-activity probe for the proactive-monitoring backoff. Demo box is
+    # idle (not mid-game), so recording=false — the monitor would run a normal
+    # full recompute. (The loop itself never runs in demo; this just keeps the
+    # collector demoable.)
+    "Get-RecordingState.ps1": lambda **kw: {
+        "recording": False,
+        "detectable": True,
+        "source": "nvidia-smi",
+        "sessionCount": 0,
+        "encoderUtilizationPercent": 0,
+    },
     "Get-Services.ps1": lambda **kw: {
         # Core Pixellot components are PROCESSES in C:\Pixellot\Bin (kind=process),
         # not Windows services — detected by process, no SCM start type.

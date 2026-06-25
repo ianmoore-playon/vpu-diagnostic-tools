@@ -66,62 +66,70 @@ class TestComputeDelta(unittest.TestCase):
     def test_opened_blocker_sets_alert(self):
         prev = {}
         cur = self._codes(_verdict("FAIL", blockers=["agent-down"]))
-        new_open, delta = monitor.compute_delta(prev, cur, "PASS", "FAIL", "SN1", now="T0")
+        new_open, delta = monitor.compute_delta(prev, cur, "PASS", "SN1", now="T0")
         self.assertEqual([e["code"] for e in delta["opened"]], ["agent-down"])
         self.assertEqual(delta["opened"][0]["fingerprint"], "SN1:agent-down")
         self.assertEqual(delta["opened"][0]["route"], "alert")
         self.assertTrue(delta["alert"])
-        self.assertTrue(delta["statusChanged"])
+        self.assertEqual(delta["status"], "FAIL")       # derived from the open set
+        self.assertTrue(delta["statusChanged"])         # PASS → FAIL
         self.assertEqual(new_open["agent-down"]["since"], "T0")
 
     def test_resolved_when_code_absent(self):
         prev = {"agent-down": {"class": "blocker", "title": "t", "category": "Services",
                                "recommendation": "r", "since": "T0"}}
         cur = self._codes(_verdict("PASS"))
-        new_open, delta = monitor.compute_delta(prev, cur, "FAIL", "PASS", "SN1", now="T1")
+        new_open, delta = monitor.compute_delta(prev, cur, "FAIL", "SN1", now="T1")
         self.assertEqual([e["code"] for e in delta["resolved"]], ["agent-down"])
         self.assertTrue(delta["alert"])
+        self.assertEqual(delta["status"], "PASS")       # nothing left open
         self.assertEqual(new_open, {})
 
     def test_persisting_is_silent_and_keeps_since(self):
         prev = {"nic-slow": {"class": "risk", "title": "t", "category": "Network",
                              "recommendation": "r", "since": "T0"}}
         cur = self._codes(_verdict("WARN", risks=["nic-slow"]))
-        new_open, delta = monitor.compute_delta(prev, cur, "WARN", "WARN", "SN1", now="T9")
+        new_open, delta = monitor.compute_delta(prev, cur, "WARN", "SN1", now="T9")
         self.assertEqual(delta["opened"], [])
         self.assertEqual(delta["resolved"], [])
         self.assertEqual(delta["persisting"], ["nic-slow"])
+        self.assertEqual(delta["status"], "WARN")
         self.assertFalse(delta["statusChanged"])
         self.assertEqual(new_open["nic-slow"]["since"], "T0")  # carried forward, not reset
 
     def test_info_only_transition_does_not_alert(self):
         prev = {}
         cur = self._codes(_verdict("PASS", info=["tz-non-us"]))
-        _, delta = monitor.compute_delta(prev, cur, "PASS", "PASS", "SN1", now="T0")
+        _, delta = monitor.compute_delta(prev, cur, "PASS", "SN1", now="T0")
         self.assertEqual([e["code"] for e in delta["opened"]], ["tz-non-us"])
         self.assertFalse(delta["alert"])            # info never sets the blocker alert flag
+        self.assertEqual(delta["status"], "PASS")   # info never gates the verdict
         self.assertFalse(delta["statusChanged"])
         self.assertFalse(monitor.should_alert_now(delta))   # info-only → wait for periodic
 
     def test_risk_transition_alerts_now_without_blocker_flag(self):
         prev = {}
         cur = self._codes(_verdict("WARN", risks=["nic-slow"]))
-        _, delta = monitor.compute_delta(prev, cur, "PASS", "WARN", "SN1", now="T0")
+        _, delta = monitor.compute_delta(prev, cur, "PASS", "SN1", now="T0")
         self.assertFalse(delta["alert"])            # alert flag is blocker-only
+        self.assertEqual(delta["status"], "WARN")
         self.assertTrue(monitor.should_alert_now(delta))    # but a risk still warrants an immediate beacon
 
     def test_out_of_scope_code_carried_forward_not_resolved(self):
         # Recording-aware backoff: the port probe was skipped, so its blocker is
-        # absent from the current verdict. It must NOT be reported resolved.
+        # absent from the current verdict. It must NOT be reported resolved, and
+        # the status must stay FAIL (the carried blocker still counts).
         prev = {"stream-2088-blocked": {"class": "blocker", "title": "t",
                                         "category": "Network", "recommendation": "r", "since": "T0"}}
         cur = self._codes(_verdict("PASS"))  # port probe skipped → no port codes
         new_open, delta = monitor.compute_delta(
-            prev, cur, "FAIL", "PASS", "SN1",
+            prev, cur, "FAIL", "SN1",
             out_of_scope=monitor.INTRUSIVE_PORT_CODES, now="T1")
         self.assertEqual(delta["resolved"], [])
         self.assertIn("stream-2088-blocked", new_open)
         self.assertEqual(new_open["stream-2088-blocked"]["since"], "T0")
+        self.assertEqual(delta["status"], "FAIL")       # carried blocker keeps it FAIL
+        self.assertFalse(delta["statusChanged"])        # no FAIL→WARN flap mid-recording
 
     def test_out_of_scope_still_resolves_non_port_codes(self):
         prev = {
@@ -131,7 +139,7 @@ class TestComputeDelta(unittest.TestCase):
         }
         cur = self._codes(_verdict("PASS"))
         new_open, delta = monitor.compute_delta(
-            prev, cur, "FAIL", "PASS", "SN1",
+            prev, cur, "FAIL", "SN1",
             out_of_scope=monitor.INTRUSIVE_PORT_CODES, now="T1")
         self.assertEqual([e["code"] for e in delta["resolved"]], ["agent-down"])
         self.assertIn("stream-2088-blocked", new_open)   # carried
@@ -231,6 +239,54 @@ class TestFullRecompute(unittest.IsolatedAsyncioTestCase):
         await monitor.run_full_recompute(deps, self.path, recording=True)
         self.assertEqual(deps.cache_cleared, 0)        # don't disturb a live encode
         self.assertEqual(deps.collected_with, [True])  # skip_intrusive passed through
+
+
+class TestMonitorLoop(unittest.IsolatedAsyncioTestCase):
+    """Exercise the async scheduler end-to-end with a tiny cadence: it should do
+    a full recompute on start, beacon, and stop cleanly on the stop event."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, "state.json")
+        # Shrink cadence for the test; restore afterward so other tests are unaffected.
+        self._saved = {k: getattr(monitor, k) for k in
+                       ("STARTUP_DELAY_SECONDS", "HEARTBEAT_SECONDS", "FULL_SECONDS", "INCIDENT_SECONDS")}
+        monitor.STARTUP_DELAY_SECONDS = 0
+        monitor.HEARTBEAT_SECONDS = 0
+        monitor.FULL_SECONDS = 0
+        monitor.INCIDENT_SECONDS = 0
+
+        def restore():
+            for k, v in self._saved.items():
+                setattr(monitor, k, v)
+        self.addCleanup(restore)
+
+    async def test_loop_runs_full_recompute_then_stops(self):
+        stop = asyncio.Event()
+        deps = _FakeDeps({"readiness": _verdict("FAIL", blockers=["agent-down"])})
+
+        # Stop the loop the moment its first beacon fires.
+        inner_send = deps.send_checkin
+
+        async def send(dashboard=None, delta=None, reason=None):
+            await inner_send(dashboard=dashboard, delta=delta, reason=reason)
+            stop.set()
+        deps.send_checkin = send
+
+        await asyncio.wait_for(monitor.run_monitor(deps, self.path, stop), timeout=2.0)
+        self.assertGreaterEqual(len(deps.beacons), 1)
+        self.assertEqual(deps.beacons[0]["reason"], "state-change")
+        self.assertIn("agent-down", monitor.load_state(self.path)["open"])
+
+    async def test_loop_stops_during_startup_delay(self):
+        # A stop during the settle delay must exit without ever collecting.
+        monitor.STARTUP_DELAY_SECONDS = 30
+        stop = asyncio.Event()
+        stop.set()
+        deps = _FakeDeps({"readiness": _verdict("PASS")})
+        await asyncio.wait_for(monitor.run_monitor(deps, self.path, stop), timeout=2.0)
+        self.assertEqual(deps.beacons, [])
+        self.assertEqual(deps.collected_with, [])
 
 
 if __name__ == "__main__":

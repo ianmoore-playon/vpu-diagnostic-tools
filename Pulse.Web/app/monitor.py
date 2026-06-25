@@ -111,6 +111,23 @@ def route_for(cls: str) -> str:
     return _ROUTE.get(cls or "", "log")
 
 
+def status_from_open(open_map: dict) -> str:
+    """Roll the open finding set into one verdict — same rule as the readiness
+    engine (any blocker → FAIL, any risk → WARN, else PASS).
+
+    Derived from the open set rather than the raw verdict on purpose: while
+    recording we skip the port probe and carry its blocker forward, so the raw
+    verdict would read WARN while a blocker is still open. Keying status on the
+    open set keeps it honest and stops a FAIL↔WARN flap at recording boundaries.
+    """
+    classes = {info.get("class") for info in open_map.values()}
+    if "blocker" in classes:
+        return "FAIL"
+    if "risk" in classes:
+        return "WARN"
+    return "PASS"
+
+
 def _fingerprint(serial: Optional[str], code: str) -> str:
     """Cross-fleet identity for one open finding: ``serial:code``.
 
@@ -121,8 +138,8 @@ def _fingerprint(serial: Optional[str], code: str) -> str:
 
 
 def compute_delta(prev_open: dict, current: dict, prev_status: Optional[str],
-                  status: Optional[str], serial: Optional[str],
-                  out_of_scope: frozenset = frozenset(), now: Optional[str] = None):
+                  serial: Optional[str], out_of_scope: frozenset = frozenset(),
+                  now: Optional[str] = None):
     """Diff the prior open-set against the current verdict.
 
     Returns ``(new_open, delta)`` where:
@@ -131,8 +148,9 @@ def compute_delta(prev_open: dict, current: dict, prev_status: Optional[str],
         ``out_of_scope`` codes carried forward unevaluated.
       * ``delta`` is the structured transition record the beacon sends:
         ``opened`` / ``resolved`` lists (each entry tagged with its class +
-        fingerprint + routing), ``persisting`` codes, the status flip, and an
-        ``alert`` flag set when any *blocker* opened or resolved.
+        fingerprint + routing), ``persisting`` codes, the status flip
+        (``status`` derived from the resulting open set), and an ``alert`` flag
+        set when any *blocker* opened or resolved.
 
     ``out_of_scope`` codes (e.g. the port probe was skipped while recording) are
     never resolved — a check we didn't run can't have "cleared". They carry
@@ -164,6 +182,7 @@ def compute_delta(prev_open: dict, current: dict, prev_status: Optional[str],
     alert = any(e["class"] == "blocker" for e in opened) or \
             any(e["class"] == "blocker" for e in resolved)
 
+    status = status_from_open(new_open)
     delta = {
         "opened": opened,
         "resolved": resolved,
@@ -300,9 +319,9 @@ async def run_full_recompute(deps: MonitorDeps, state_path: str,
     current = codes_from_verdict(verdict)
     new_open, delta = compute_delta(
         state.get("open", {}), current, state.get("status"),
-        verdict.get("status"), serial, out_of_scope=out_of_scope,
+        serial, out_of_scope=out_of_scope,
     )
-    save_state(state_path, new_open, verdict.get("status"), serial)
+    save_state(state_path, new_open, delta["status"], serial)
 
     reason = "state-change" if should_alert_now(delta) else "periodic"
     _log.info("Monitor recompute: %s (reason=%s, recording=%s)",
