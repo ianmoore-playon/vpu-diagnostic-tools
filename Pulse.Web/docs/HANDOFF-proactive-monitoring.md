@@ -22,7 +22,7 @@ VPU service loop ──(snapshot every ~20 min / on change)──▶ Google Shee
 | Story | What | Where |
 | --- | --- | --- |
 | **52** | Finding-state diff + severity gate (pure, unit-tested) | `app/monitor.py` |
-| **51** | Service loop, recording-aware backoff, NSSM packaging | `app/main.py`, `scripts/Get-RecordingState.ps1`, `runners/install_pulse_service.ps1` |
+| **51** | Service loop, recording-aware backoff, NSSM packaging | `app/main.py`, `scripts/Get-RecordingState.ps1`, `deploy/install_pulse_service.ps1` |
 | **53** | Periodic + state-change beacon; locked payload shape | `app/main.py` `_send_checkin` |
 | **54** | Sheet → Slack relay (Apps Script reference) | `integrations/checkin_relay.gs` |
 | tests | 20 unit tests for the engine | `tests/test_monitor.py` |
@@ -97,14 +97,17 @@ Keep additions **additive** so the relay's parsing never breaks.
 1. **⚠️ Confirm the LMI shell is elevated** — see open questions. `nssm install`
    needs admin; `install_pulse_service.ps1` hard-fails fast if not elevated.
 2. Ensure Pulse is installed (`C:\Pulse`) and has run once (bootstraps embedded
-   Python). The `_CHECKIN_SECRET` in `main.py` must be the real secret (not the
-   placeholder) or the beacon stays inert by design.
+   Python). The launcher ships this installer to `C:\Pulse\deploy\`. The
+   `_CHECKIN_SECRET` in `main.py` must be the real secret (not the placeholder)
+   or the beacon stays inert by design.
 3. From the elevated LMI shell:
    ```powershell
-   powershell -ExecutionPolicy Bypass -File C:\Pulse\runners\install_pulse_service.ps1 -DownloadNssm
+   powershell -ExecutionPolicy Bypass -File C:\Pulse\deploy\install_pulse_service.ps1 -DownloadNssm
    ```
    Installs the `Pulse` service with `PULSE_MONITOR=1` + `PORT=8765`, auto-start,
-   restart-on-crash, logging to `C:\Pulse\pulse-service.log`.
+   restart-on-crash, logging to `C:\Pulse\pulse-service.log`. Add `-FastTest` in
+   the lab for short cadences (heartbeat 60s / full 120s / incident 30s) so you
+   don't wait 20 min to see a recompute.
 4. The service **owns port 8765** — don't also run the interactive launcher on a
    pilot box (`run.bat` frees the port on start and would kill the service).
 

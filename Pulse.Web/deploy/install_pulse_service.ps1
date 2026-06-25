@@ -50,7 +50,10 @@ param(
     [string]$ServiceName = 'Pulse',
     [string]$NssmPath,
     [switch]$DownloadNssm,
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    # Lab affordance: short cadences so you don't wait ~20 min to see a recompute
+    # (heartbeat 60 s / full 120 s / incident 30 s). Don't use in production.
+    [switch]$FastTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -134,8 +137,17 @@ if ($LASTEXITCODE -eq 0 -and $existing) {
 & $nssm set $ServiceName DisplayName 'Pulse VPU Monitor'   | Out-Null
 & $nssm set $ServiceName Description 'Pulse proactive monitoring — unattended readiness loop + check-in beacon (PULSEDEV-50).' | Out-Null
 & $nssm set $ServiceName Start SERVICE_AUTO_START          | Out-Null
-# PULSE_MONITOR=1 is what enables the loop; PORT pins the bind.
-& $nssm set $ServiceName AppEnvironmentExtra "PULSE_MONITOR=1" "PORT=$Port" | Out-Null
+# PULSE_MONITOR=1 is what enables the loop; PORT pins the bind. -FastTest adds
+# short cadences so a lab run shows a recompute in a minute, not twenty.
+$envExtra = @("PULSE_MONITOR=1", "PORT=$Port")
+if ($FastTest) {
+    $envExtra += @("PULSE_MONITOR_HEARTBEAT_SECONDS=60",
+                   "PULSE_MONITOR_FULL_SECONDS=120",
+                   "PULSE_MONITOR_INCIDENT_SECONDS=30",
+                   "PULSE_MONITOR_STARTUP_DELAY_SECONDS=5")
+    Info "FastTest cadences: heartbeat 60s / full 120s / incident 30s"
+}
+& $nssm set $ServiceName AppEnvironmentExtra $envExtra | Out-Null
 & $nssm set $ServiceName AppStdout $svcLog                 | Out-Null
 & $nssm set $ServiceName AppStderr $svcLog                 | Out-Null
 & $nssm set $ServiceName AppRotateFiles 1                  | Out-Null
