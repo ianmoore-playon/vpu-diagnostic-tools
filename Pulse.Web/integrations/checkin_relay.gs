@@ -86,9 +86,16 @@ function doPost(e) {
 function logStatusChanges(b, now) {
   const delta = b && b.delta;
   if (!delta) return;
-  const opened = delta.opened || [];
-  const resolved = delta.resolved || [];
-  if (!opened.length && !resolved.length) return;
+
+  // Skip info-class transitions (route === 'log'). Info findings are chronic and
+  // flappy (e.g. cpu-elevated crossing 75%); logging them here buries the
+  // actionable blocker/risk changes. They still appear in the VPU's own server
+  // log -- Fleet Status stays an actionable changelog.
+  const events = []
+    .concat((delta.opened || []).map((ev) => ({ ev: ev, transition: 'opened' })))
+    .concat((delta.resolved || []).map((ev) => ({ ev: ev, transition: 'resolved' })))
+    .filter((x) => x.ev.route !== 'log');
+  if (!events.length) return;
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(FLEET_SHEET_NAME);
@@ -101,10 +108,7 @@ function logStatusChanges(b, now) {
     delta.status || '', ev.recommendation || '', ev.fingerprint || ''
   ];
 
-  const rows = [];
-  opened.forEach((ev) => rows.push(rowFor(ev, 'opened')));
-  resolved.forEach((ev) => rows.push(rowFor(ev, 'resolved')));
-
+  const rows = events.map((x) => rowFor(x.ev, x.transition));
   sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, FLEET_HEADERS.length).setValues(rows);
 }
 

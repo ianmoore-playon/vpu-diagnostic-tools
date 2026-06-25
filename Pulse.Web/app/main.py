@@ -186,12 +186,17 @@ async def _on_startup():
         ps_log("server", 0, "ok", msg)
         _server_log.info(msg)
 
-    # Fire-and-forget run-tracking check-in (no-op until the check-in secret is
-    # filled in, and never in demo/dev). Scheduled so it can't delay startup.
-    try:
-        asyncio.create_task(_send_checkin())
-    except Exception:
-        pass
+    # Run-tracking check-in (no-op until configured, and never in demo/dev).
+    # Only fire the standalone startup beacon when the monitor loop is OFF —
+    # when it's on, the loop owns all beaconing, so firing here too would
+    # double-collect and race a second near-simultaneous POST against the Apps
+    # Script lock (which shows up as a spurious "Check-in skipped: timed out").
+    # Scheduled so it can't delay startup.
+    if not _monitor_enabled():
+        try:
+            asyncio.create_task(_send_checkin())
+        except Exception:
+            pass
 
     # Proactive-monitoring loop (PULSEDEV-50/51). Unattended service mode only:
     # enabled when PULSE_MONITOR is set (the NSSM service sets it) and never in
@@ -3828,7 +3833,13 @@ def _post_checkin_sync(url: str, payload: dict) -> None:
     )
     # Apps Script 302-redirects the POST to a result URL; urllib follows it as a
     # GET and reads the JSON ack. We don't need the body — just don't error.
-    with urllib.request.urlopen(req, timeout=4) as resp:
+    # 15s, not 4s: the bound script now serializes writes behind a LockService
+    # lock and does two sheet writes (Runs upsert + Fleet Status log), so the
+    # round trip (POST -> 302 -> GET ack) can exceed a few seconds under
+    # concurrent posts. The row still lands server-side even if we time out
+    # reading the ack — a longer read just keeps the log honest ("sent" vs a
+    # misleading "skipped").
+    with urllib.request.urlopen(req, timeout=15) as resp:
         resp.read(256)
 
 
