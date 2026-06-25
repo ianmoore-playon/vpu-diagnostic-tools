@@ -3810,12 +3810,14 @@ def _update_channel():
 # work on any installed build, even one missing an optional pip dependency.
 #
 # ============================================================================
-#  >>> PASTE YOUR APPS SCRIPT SECRET HERE <<<
-#  Replace PASTE_CHECKIN_SECRET_HERE below with the secret from your Apps Script
-#  deployment. The URL is already set. Until then, check-in stays inert (it
-#  won't send with the placeholder).
+#  Apps Script web app (bound to the "Pulse VPU Run Log" Sheet on the
+#  playonsports.com Workspace account). doPost upserts the per-VPU run ledger
+#  ("Runs" tab) and logs readiness transitions ("Fleet Status" tab) — see
+#  Pulse.Web/integrations/checkin_relay.gs. The secret below must match the
+#  SECRET const in that script. Override per-box with PULSE_CHECKIN_URL /
+#  PULSE_CHECKIN_SECRET env vars.
 # ============================================================================
-_CHECKIN_URL    = "https://script.google.com/macros/s/AKfycbworYEcINtNfd1R6sTvHFDFqOHzYVA1XxHZRStB54T2GcTgQ8JvE0lxnboJ9q_jEFS4/exec"
+_CHECKIN_URL    = "https://script.google.com/macros/s/AKfycby7AtD-ySeUfJPILOGM-OXzwqHmMoRieFK5rCNIT1sz1ESJGdf5HpU6FmvG2tAyjrEp/exec"
 _CHECKIN_SECRET = "7a161bad7765fc5078b8375007999160c5687bf5da52ae1ca717ebbad628e648"
 
 
