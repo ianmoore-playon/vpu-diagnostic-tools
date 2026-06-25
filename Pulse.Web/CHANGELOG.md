@@ -23,6 +23,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [Unreleased]
 
 ### Added
+- **Pulse can now run in the background and alert us when a VPU develops a
+  problem (pilot).** On opted-in boxes, Pulse runs as a Windows service that
+  re-checks Stream Readiness on a schedule and posts a Slack alert when a new
+  blocker appears (and a note when it clears) — so issues surface days before a
+  game instead of at kickoff. It backs off its heavier checks while the VPU is
+  recording, and normal interactive use of Pulse is unchanged.
 - **Camera Frames now spots a black picture and tells you why.** When a camera
   grabs a frame but the picture comes back black (the OCR/scoreboard symptom),
   Pulse flags it as "Black picture" instead of a green "Active", explains it in
