@@ -8,7 +8,7 @@
     Wraps the existing embedded-Python server (app\python\python.exe app\main.py)
     in a Windows service via NSSM, so Pulse runs headless, survives logout and
     reboot, and runs the background readiness loop. The service sets
-    PULSE_MONITOR=1 — the ONLY thing that turns the loop on — so an interactive
+    PULSE_MONITOR=1 - the ONLY thing that turns the loop on - so an interactive
     launch of run.bat is completely unaffected (no loop, no extra beacons).
 
     The service still serves the localhost UI on the same port, so it composes
@@ -19,7 +19,7 @@
     reinstall (which re-downloads C:\Pulse) clears the ledger cleanly.
 
 .PARAMETER InstallDir
-    Pulse install root (default C:\Pulse — what the channel launchers use).
+    Pulse install root (default C:\Pulse - what the channel launchers use).
 
 .PARAMETER Port
     Port the service binds (default 8765, the canonical Pulse port). On a pilot
@@ -37,7 +37,7 @@
     Stop and remove the service instead of installing.
 
 .EXAMPLE
-    # From an ELEVATED shell on the VPU (LMI must be elevated — see runbook):
+    # From an ELEVATED shell on the VPU (LMI must be elevated - see runbook):
     powershell -ExecutionPolicy Bypass -File install_pulse_service.ps1 -DownloadNssm
 
 .EXAMPLE
@@ -61,7 +61,7 @@ $ErrorActionPreference = 'Stop'
 function Fail($msg) { Write-Host "  [ERROR] $msg" -ForegroundColor Red; exit 1 }
 function Info($msg) { Write-Host "  $msg" }
 
-# ── Elevation gate ───────────────────────────────────────────────────────────
+# -- Elevation gate -----------------------------------------------------------
 # Registering a service requires admin. This is the open question for the LMI
 # pilot (PULSEDEV-55): if the LMI shell is NOT elevated, this stops here with a
 # clear message rather than half-installing.
@@ -71,7 +71,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     Fail "Not elevated. Service install/removal needs admin rights. Re-run this from an elevated shell (the LMI session must be elevated)."
 }
 
-# ── Locate nssm ──────────────────────────────────────────────────────────────
+# -- Locate nssm --------------------------------------------------------------
 function Resolve-Nssm {
     if ($NssmPath -and (Test-Path -LiteralPath $NssmPath)) { return (Resolve-Path $NssmPath).Path }
     $local = Join-Path $InstallDir 'tools\nssm.exe'
@@ -83,7 +83,7 @@ function Resolve-Nssm {
         if (-not (Test-Path $toolsDir)) { New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null }
         $zip = Join-Path $env:TEMP 'nssm.zip'
         $extract = Join-Path $env:TEMP 'nssm-extract'
-        Info "nssm not found — downloading the official release ..."
+        Info "nssm not found - downloading the official release ..."
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri 'https://nssm.cc/release/nssm-2.24.zip' -OutFile $zip
         if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
@@ -103,7 +103,7 @@ function Resolve-Nssm {
 $nssm = Resolve-Nssm
 Info "Using nssm: $nssm"
 
-# ── Uninstall path ───────────────────────────────────────────────────────────
+# -- Uninstall path -----------------------------------------------------------
 if ($Uninstall) {
     Info "Stopping + removing service '$ServiceName' ..."
     & $nssm stop $ServiceName 2>$null | Out-Null
@@ -112,7 +112,7 @@ if ($Uninstall) {
     exit 0
 }
 
-# ── Validate the install layout ──────────────────────────────────────────────
+# -- Validate the install layout ----------------------------------------------
 $pyExe  = Join-Path $InstallDir 'app\python\python.exe'
 $mainPy = Join-Path $InstallDir 'app\main.py'
 if (-not (Test-Path -LiteralPath $pyExe))  { Fail "Embedded Python not found at $pyExe. Run the Pulse launcher once first so the runtime bootstraps." }
@@ -120,10 +120,10 @@ if (-not (Test-Path -LiteralPath $mainPy)) { Fail "app\main.py not found at $mai
 
 $svcLog = Join-Path $InstallDir 'pulse-service.log'
 
-# ── Install / reconfigure (idempotent) ───────────────────────────────────────
+# -- Install / reconfigure (idempotent) ---------------------------------------
 $existing = & $nssm status $ServiceName 2>$null
 if ($LASTEXITCODE -eq 0 -and $existing) {
-    Info "Service exists — stopping to reconfigure ..."
+    Info "Service exists - stopping to reconfigure ..."
     & $nssm stop $ServiceName 2>$null | Out-Null
 } else {
     Info "Installing service '$ServiceName' ..."
@@ -135,7 +135,7 @@ if ($LASTEXITCODE -eq 0 -and $existing) {
 & $nssm set $ServiceName AppParameters "`"$mainPy`""        | Out-Null
 & $nssm set $ServiceName AppDirectory $InstallDir          | Out-Null
 & $nssm set $ServiceName DisplayName 'Pulse VPU Monitor'   | Out-Null
-& $nssm set $ServiceName Description 'Pulse proactive monitoring — unattended readiness loop + check-in beacon (PULSEDEV-50).' | Out-Null
+& $nssm set $ServiceName Description 'Pulse proactive monitoring - unattended readiness loop + check-in beacon (PULSEDEV-50).' | Out-Null
 & $nssm set $ServiceName Start SERVICE_AUTO_START          | Out-Null
 # PULSE_MONITOR=1 is what enables the loop; PORT pins the bind. -FastTest adds
 # short cadences so a lab run shows a recompute in a minute, not twenty.

@@ -9,11 +9,11 @@
 
     Pixellot encodes on the NVIDIA GPU (the readiness engine treats an NVIDIA GPU
     as the required encoder). A live capture holds an NVENC session and drives
-    the hardware encoder, so we read that directly with nvidia-smi — the same
+    the hardware encoder, so we read that directly with nvidia-smi - the same
     tool Get-GpuInfo.ps1 already depends on, no new footprint:
 
-        encoder.stats.sessionCount  → active NVENC sessions
-        utilization.encoder         → % the encoder is busy (sampled)
+        encoder.stats.sessionCount  -> active NVENC sessions
+        utilization.encoder         -> % the encoder is busy (sampled)
 
     "Recording" = the encoder is actually doing work. We prefer encoder
     utilization (a held-but-idle session reads 0%); if the driver doesn't expose
@@ -21,7 +21,7 @@
     across GPUs (a multi-GPU box only needs one encoder busy to be "recording").
 
     Fail-open: if nvidia-smi is missing or errors we report recording=false with
-    detectable=false — the loop then runs its normal recompute. (Freezing on
+    detectable=false - the loop then runs its normal recompute. (Freezing on
     "unknown" would mean the port probe never runs; on a real VPU nvidia-smi is
     present, and the soak validates the idle-vs-recording reading.)
 
@@ -53,7 +53,7 @@ try {
             recording   = $false
             detectable  = $false
             source      = 'none'
-            note        = 'nvidia-smi not found — cannot detect encoder activity'
+            note        = 'nvidia-smi not found - cannot detect encoder activity'
         } | ConvertTo-Json -Compress
         return
     }
@@ -91,7 +91,7 @@ try {
     } elseif ($null -ne $maxSessions) {
         $recording = ($maxSessions -gt 0)
     } else {
-        # Encoder fields unsupported on this driver/GPU — can't tell.
+        # Encoder fields unsupported on this driver/GPU - can't tell.
         [ordered]@{
             recording   = $false
             detectable  = $false
