@@ -30,10 +30,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   scoreboard, or its picture set too dark — and notes when the other cameras
   prove the room lights are on, so you know it's a camera setting, not the venue.
 
+### Changed
+- **Service Status now lists Pixellot programs and Windows services in separate
+  areas.** The tab is split into "Pixellot Core Processes" (Agent, Coordinator,
+  VPU, and the KeepAgentUp watchdog) and "Windows Services" (ScoreConnect,
+  LogMeIn), so it's clear at a glance which is a background program and which is
+  a Windows service — and a service that's missing no longer reads like a
+  stopped program.
+- **Removed the duplicate "Restart Agent + Coordinator" button from the Pixellot
+  Software tab.** The same action lives on the Service Status tab; it now appears
+  in just one place.
+
 ### Removed
 - Dropped the redundant "Network Errors (this adapter)" counters from the Internet Adapter card on the Network Test page. The same RX/TX error and discard counts are already shown per port under Wired Ports.
 
 ### Fixed
+- **ScoreConnect no longer shows "Not Found" on Service Status when it's
+  actually running.** Newer ScoreConnect (III) registers under a different
+  Windows service name; the tab now detects ScoreConnect I, II, or III, shows
+  its real status, and its Restart button works for every version.
 - **ScoreConnect tab no longer shows "Failed to load data" on VPUs running an
   older ScoreConnect.** On a unit running ScoreConnect I or II (not III) — for
   example one with several versions installed — the tab failed outright instead

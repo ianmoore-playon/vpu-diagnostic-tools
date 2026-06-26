@@ -875,36 +875,6 @@ function _pcDaysSince(iso) {
   return Math.floor((Date.now() - dt.getTime()) / 86400000);
 }
 
-// keepagentup.exe — confirm + run + inline result (mirrors the Services lane).
-// Shared by the Pixellot Software tab; attached to #pc-keepagent-btn.
-async function _pcRestartAgentHandler() {
-  const ok = confirm(
-    "Restart Pixellot Agent + Coordinator?\n\n" +
-    "This runs c:\\pixellot\\bin\\keepagentup.exe, which will briefly stop and " +
-    "relaunch both services. Recording may pause for a few seconds.\n\nProceed?"
-  );
-  if (!ok) return;
-  const btn = document.getElementById("pc-keepagent-btn");
-  const resultEl = document.getElementById("pc-keepagent-result");
-  btn.disabled = true;
-  btn.innerHTML = `${svgIcon("refresh", 14)} Restarting...`;
-  resultEl.classList.add("hidden");
-
-  const r = await apiPost("/api/services/restart-agent", {});
-  btn.disabled = false;
-  btn.innerHTML = `${svgIcon("zap", 14)} Restart Agent + Coordinator`;
-
-  const ok2 = r && r.success;
-  resultEl.className = "svc-quick-action-result " + (ok2 ? "svc-result-ok" : "svc-result-err");
-  resultEl.innerHTML = `
-    <div class="font-semibold">${ok2 ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
-    <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
-    ${r?.agentStatus ? `<div class="text-xs mt-2 text-pulse-muted">Agent: <span class="font-mono">${esc(r.agentStatus)}</span> &middot; Coordinator: <span class="font-mono">${esc(r.coordinatorStatus || "?")}</span></div>` : ""}
-    ${r?.stdout ? `<pre class="svc-result-output">${esc(r.stdout)}</pre>` : ""}
-    ${r?.stderr ? `<pre class="svc-result-output svc-result-stderr">${esc(r.stderr)}</pre>` : ""}
-  `;
-}
-
 // ── Pixellot Software (full) ─────────────────────────────────
 // Version + GPU/OS compatibility (from /api/system) plus install/agent and the
 // raw registry dump (from /api/pixellot-config). Reads both caches; the page id
@@ -941,7 +911,7 @@ function renderPixellotSoftware() {
       ${_pixCompatBannerHtml(pix.compat)}
     </div>
 
-    <div class="card svc-quick-action">
+    <div class="card">
       ${sectionTitle("server", "Install & Agent")}
       ${pc.error ? errorBox(pc.message) : `
         <div class="kv-grid">
@@ -949,14 +919,6 @@ function renderPixellotSoftware() {
           ${kvRow("Dependencies", reg.dependencies || reg.Dependencies)}
           ${kvRowHtml("cameras.cfg", pc.cameraCfgExists ? badge("Present", "pass") : badge("Missing", "fail"))}
         </div>
-        <div class="svc-quick-action-row mt-3">
-          <div>
-            <div class="svc-quick-action-title">Restart Pixellot Agent + Coordinator</div>
-            <div class="svc-quick-action-body">The documented first fix when the Agent or Coordinator hangs — try it before escalating. <span class="font-mono">Runs keepagentup.exe.</span></div>
-          </div>
-          <button class="btn-outline btn-ol-amber" id="pc-keepagent-btn">${svgIcon("zap", 14)} Restart Agent + Coordinator</button>
-        </div>
-        <div id="pc-keepagent-result" class="svc-quick-action-result hidden"></div>
       `}
     </div>
 
@@ -966,8 +928,6 @@ function renderPixellotSoftware() {
       <div class="kv-grid">${regRows}</div>
     </div>`}
   `;
-
-  document.getElementById("pc-keepagent-btn")?.addEventListener("click", _pcRestartAgentHandler);
 }
 
 // ── Camera Hardware ──────────────────────────────────────────
@@ -4864,6 +4824,36 @@ function renderServices() {
     </div>`;
   }
 
+  // Two separate areas: Pixellot core *processes* (Agent/Coordinator/VPU/
+  // watchdog — executables in C:\Pixellot\Bin, not services) and real Windows
+  // *services* (ScoreConnect, LogMeIn) queried through the SCM. Keeping them
+  // apart stops a "Not Found" service from reading as a stopped process and
+  // vice-versa. Re-used on the post-restart in-place refresh below.
+  function svcSectionsHtml(list) {
+    function section(title, subtitle, items, emptyMsg) {
+      return `<section class="svc-section">
+        <div class="svc-section-head">
+          <h3 class="svc-section-title">${esc(title)}</h3>
+          <p class="svc-section-sub">${esc(subtitle)}</p>
+        </div>
+        <div class="svc-grid">
+          ${items.map(svcTile).join("")}
+          ${!items.length ? `<p class="text-pulse-muted text-sm">${esc(emptyMsg)}</p>` : ""}
+        </div>
+      </section>`;
+    }
+    const procs = list.filter(s => s.kind === "process");
+    const services = list.filter(s => s.kind !== "process");
+    return (
+      section("Pixellot Core Processes",
+        "Launched and supervised by the KeepAgentUp watchdog — these are executables in C:\\Pixellot\\Bin, not Windows services. Restart them with the action above.",
+        procs, "No process data") +
+      section("Windows Services",
+        "Real Windows services queried through the Service Control Manager (SCM). Each can be restarted individually.",
+        services, "No service data")
+    );
+  }
+
   $page().innerHTML = `
     ${pageHeader("Service Status", "Pixellot Agent, VPU encoder, and related Windows services",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache.services=null;renderServices()">
@@ -4891,9 +4881,8 @@ function renderServices() {
       <div id="svc-keepagent-result" class="svc-quick-action-result hidden"></div>
     </div>
 
-    <div class="svc-grid" id="svc-grid">
-      ${svcs.map(svcTile).join("")}
-      ${!svcs.length ? '<p class="text-pulse-muted text-sm">No services data</p>' : ""}
+    <div id="svc-sections">
+      ${svcSectionsHtml(svcs)}
     </div>
   `;
 
@@ -4928,7 +4917,7 @@ function renderServices() {
     `;
   })();
 
-  document.getElementById("svc-grid")?.addEventListener("click", async (e) => {
+  document.getElementById("svc-sections")?.addEventListener("click", async (e) => {
     const btn = e.target.closest(".svc-restart-btn");
     if (!btn) return;
     const name = btn.dataset.name;
@@ -4981,8 +4970,8 @@ function renderServices() {
       api("/api/services").then(fresh => {
         if (!fresh || fresh.error || currentPage !== "services") return;
         dataCache.services = fresh;
-        const grid = document.getElementById("svc-grid");
-        if (grid) grid.innerHTML = (fresh.services || []).map(svcTile).join("");
+        const sections = document.getElementById("svc-sections");
+        if (sections) sections.innerHTML = svcSectionsHtml(fresh.services || []);
       });
     }
   });

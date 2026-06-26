@@ -321,7 +321,10 @@ DEMO = {
              "kind": "process", "pid": 12044, "path": "C:\\Pixellot\\Bin\\vpu.exe", "memoryMB": 240, "watchdog": False},
             {"name": "keepagentup", "displayName": "Pixellot Watchdog (KeepAgentUp)", "status": "Running", "startType": None,
              "kind": "process", "pid": 9940, "path": "C:\\Pixellot\\Bin\\KeepAgentUp.exe", "memoryMB": 9, "watchdog": True},
-            {"name": "scoreconnect", "displayName": "ScoreConnect", "status": "Running", "startType": "Automatic",
+            # Real SCM identity of an SC III box: service name "ScoreConnectIII",
+            # display "Sportzcast ScoreConnect III". The collector probes the
+            # versioned names (SC I/II/III) and reports whichever is installed.
+            {"name": "ScoreConnectIII", "displayName": "Sportzcast ScoreConnect III", "status": "Running", "startType": "Automatic",
              "kind": "service", "pid": None, "path": None, "memoryMB": None, "watchdog": False},
             {"name": "LogMeIn", "displayName": "LogMeIn Remote Access", "status": "Running", "startType": "Automatic",
              "kind": "service", "pid": None, "path": None, "memoryMB": None, "watchdog": False},
