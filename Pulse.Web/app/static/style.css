@@ -252,20 +252,97 @@ html.dark .splash-logo {
     font-weight: 500;
     letter-spacing: 0.02em;
 }
-.splash-section {
-    font-size: 1.05rem;
-    color: var(--c-text);
-    font-weight: 600;
-    letter-spacing: 0.01em;
-    min-height: 1.4em;       /* reserve the row so layout doesn't jump */
-    transition: opacity 0.2s ease-out;
-}
-.splash-pct {
-    font-size: 0.75rem;
+.splash-count {
+    font-size: 0.8rem;
     color: var(--c-dim);
     font-weight: 500;
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
+    min-height: 1.2em;       /* reserve the row so layout doesn't jump */
+}
+/* Live section checklist — two columns of compact rows, each ticked off
+   as its diagnostic settles. Width matches the progress bar above it. */
+.splash-checklist {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.32rem 1.5rem;
+    width: min(420px, 78vw);
+    margin-top: 0.1rem;
+}
+.splash-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;                /* let the label ellipsize instead of overflowing */
+    font-size: 0.78rem;
+    color: var(--c-dim);
+    transition: color 0.3s ease-out;
+}
+.splash-check-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.splash-check-mark {
+    position: relative;
+    flex: 0 0 auto;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 1.5px solid var(--c-border);
+    transition: background 0.3s ease-out, border-color 0.3s ease-out;
+}
+.splash-check.done {
+    color: var(--c-muted);
+}
+.splash-check.done .splash-check-mark {
+    background: var(--c-accent-blue);
+    border-color: var(--c-accent-blue);
+}
+.splash-check.done .splash-check-mark::after {  /* the checkmark */
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 3px;
+    height: 6.5px;
+    border: solid #fff;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+}
+/* Issue banner — a severity-tinted pill that appears only when the dashboard
+   reports critical/warning findings. Mirrors the app's .sev-* token palette. */
+.splash-issues {
+    display: none;             /* hidden until _setSplashIssues() adds .is-visible */
+    align-items: center;
+    gap: 0.45rem;
+    max-width: min(420px, 78vw);
+    padding: 0.28rem 0.75rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+.splash-issues.is-visible { display: inline-flex; }
+.splash-issues svg { flex: 0 0 auto; }
+.splash-issues-crit {
+    color: var(--c-accent-red);
+    background: var(--c-tint-red);
+    border-color: var(--c-tint-red-border);
+}
+.splash-issues-warn {
+    color: var(--c-accent-amber);
+    background: var(--c-tint-amber);
+    border-color: var(--c-tint-amber-border);
+}
+.splash-note {
+    max-width: min(420px, 78vw);
+    text-align: center;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--c-dim);
+    letter-spacing: 0.01em;
 }
 .splash-hidden {
     opacity: 0;

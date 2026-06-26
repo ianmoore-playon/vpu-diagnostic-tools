@@ -427,14 +427,16 @@ function fetchSection(key) {
 }
 
 // ── Splash status helpers ──────────────────────────────────────────────
-// Three independently-updatable lines: verb (Loading/Running diagnostics),
-// section (the human-readable name of the panel currently being fetched),
-// and percentage (animated via tabular-nums so digits don't jiggle).
+// The splash shows, top to bottom: the verb (Loading/Running diagnostics),
+// an "X of N systems" count, a live checklist that ticks each section off in
+// boot order, an issue banner (critical/warning findings, surfaced as soon
+// as the dashboard lands), and a reassurance note that escalates if a slow
+// box runs long.
 //
-// The section label uses the friendly nav title (e.g. "Disk & System
-// Health") rather than the API key (e.g. "disk-health") — we build the
-// lookup from NAV_SECTIONS on first use so it stays in sync with the
-// sidebar even if labels change later.
+// Section labels use the friendly nav title (e.g. "Disk & System Health")
+// rather than the API key (e.g. "disk-health") — we build the lookup from
+// NAV_SECTIONS on first use so it stays in sync with the sidebar even if
+// labels change later.
 let _SECTION_LABELS_CACHE = null;
 function _sectionLabels() {
   if (_SECTION_LABELS_CACHE) return _SECTION_LABELS_CACHE;
@@ -454,14 +456,88 @@ function _setSplashVerb(text) {
   if (el) el.textContent = text;
 }
 
-function _setSplashSection(key) {
-  const el = document.getElementById("splash-section");
+// The reassurance line under the checklist. Defaults to the up-front
+// expectation; escalates to SLOW if a box runs long (see preloadProgressive).
+// SPLASH_NOTE_DEFAULT must match the static text in index.html.
+const SPLASH_NOTE_DEFAULT = "Running a full diagnostic sweep — this can take a moment.";
+const SPLASH_NOTE_SLOW    = "Still working — some checks (camera frames, speed test) take longer on slower units.";
+
+// Ordered preload sections: dashboard first, then everything else fetched
+// during cold start. Single source for both the checklist and the X-of-Y
+// count, so they can't drift from each other or from what's actually fetched.
+function _splashSectionKeys() {
+  return Object.keys(PAGE_API);
+}
+function _splashSectionLabel(key) {
+  return _sectionLabels()[key] || key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+// (Re)build the checklist with every section pending, and reset the count.
+function _buildSplashChecklist() {
+  const wrap = document.getElementById("splash-checklist");
+  if (wrap) {
+    wrap.innerHTML = _splashSectionKeys().map((key) =>
+      `<div class="splash-check" data-key="${esc(key)}">`
+      +   `<span class="splash-check-mark"></span>`
+      +   `<span class="splash-check-label">${esc(_splashSectionLabel(key))}</span>`
+      + `</div>`
+    ).join("");
+  }
+  _setSplashCount(0, _splashSectionKeys().length);
+}
+
+function _markSplashSectionDone(key) {
+  if (!key) return;
+  const wrap = document.getElementById("splash-checklist");
+  const row = wrap && wrap.querySelector(`.splash-check[data-key="${key}"]`);
+  if (row) row.classList.add("done");
+}
+
+// Final frame before the splash fades: everything checked, count full.
+function _completeSplashChecklist() {
+  const wrap = document.getElementById("splash-checklist");
+  if (wrap) wrap.querySelectorAll(".splash-check").forEach((r) => r.classList.add("done"));
+  const total = _splashSectionKeys().length;
+  _setSplashCount(total, total);
+}
+
+function _setSplashCount(done, total) {
+  const el = document.getElementById("splash-count");
+  if (el) el.textContent = `Checked ${done} of ${total} system${total === 1 ? "" : "s"}`;
+}
+
+function _setSplashNote(text) {
+  const el = document.getElementById("splash-note");
+  if (el) el.textContent = text;
+}
+
+// Surface critical/warning findings on the splash. Driven by the dashboard
+// payload (fetched first), whose findings already aggregate every subsystem
+// — the same source the dashboard headline and nav health dots use. Hidden
+// on a clean box; pass a falsy/empty payload to clear it.
+function _setSplashIssues(dash) {
+  const el = document.getElementById("splash-issues");
   if (!el) return;
-  // Empty/blank → keep the row reserved (non-breaking space) so layout
-  // doesn't bounce when the splash first appears.
-  if (!key) { el.innerHTML = "&nbsp;"; return; }
-  const label = _sectionLabels()[key] || key.charAt(0).toUpperCase() + key.slice(1);
-  el.textContent = label;
+  const findings = (dash && dash.findings) || [];
+  const crit = findings.filter((f) => f.severity === "critical").length;
+  const warn = findings.filter((f) => f.severity === "warning").length;
+  if (!crit && !warn) { el.className = "splash-issues"; el.innerHTML = ""; return; }
+  const parts = [];
+  if (crit) parts.push(`${crit} Critical`);
+  if (warn) parts.push(`${warn} Warning${warn === 1 ? "" : "s"}`);
+  el.className = "splash-issues is-visible " + (crit ? "splash-issues-crit" : "splash-issues-warn");
+  el.innerHTML = `${svgIcon("triangle", 14)}<span>${parts.join(" · ")} found — details on the Dashboard</span>`;
+}
+
+// "Still working" escalation timer. Armed only on real (non-demo) loads —
+// demo finishes in ~3s, so the slow note would never legitimately fire there.
+let _splashSlowTimer = null;
+function _armSplashSlowTimer(active) {
+  if (_splashSlowTimer) { clearTimeout(_splashSlowTimer); _splashSlowTimer = null; }
+  if (active) _splashSlowTimer = setTimeout(() => _setSplashNote(SPLASH_NOTE_SLOW), 20000);
+}
+function _clearSplashSlowTimer() {
+  if (_splashSlowTimer) { clearTimeout(_splashSlowTimer); _splashSlowTimer = null; }
 }
 
 let _splashPctAnim = null;
@@ -492,7 +568,9 @@ function showSplash(verbText) {
   const splash = document.getElementById("splash");
   if (!splash) return;
   _setSplashVerb(verbText || "Loading diagnostics…");
-  _setSplashSection(null);
+  _setSplashNote(SPLASH_NOTE_DEFAULT);   // reset any prior "still working" escalation
+  _setSplashIssues(null);                // clear a prior run's findings banner
+  _buildSplashChecklist();               // all sections pending, count 0 of N
   _setSplashPct(0);
   splash.classList.remove("splash-hidden");
 }
@@ -500,7 +578,8 @@ function showSplash(verbText) {
 function hideSplash() {
   const splash = document.getElementById("splash");
   if (!splash) return;
-  _setSplashSection(null);
+  _clearSplashSlowTimer();
+  _completeSplashChecklist();   // last visible frame: everything checked
   _setSplashPct(100);
   _setSplashVerb("Ready");
   splash.classList.add("splash-hidden");
@@ -518,31 +597,50 @@ function preloadProgressive(opts) {
   const o = opts || {};
   const verb = o.verb || "Loading diagnostics";
   const deferred = Object.keys(PAGE_API).filter((k) => k !== "dashboard");
-  const totalSections = 1 + deferred.length;   // dashboard + deferred
-  let completedSections = 0;
-  // Demo mode: serialize ticks with a small delay so the splash actually
+  // Demo mode: pace each reveal with a small delay so the splash actually
   // SHOWS each section being checked instead of flashing past. Real cold
-  // start is naturally ~5-15s, so the demo's ~2.5s artificial pacing
-  // mirrors the field UX. window.__PULSE_DEMO_MODE is injected into the
-  // HTML at render time so we know synchronously — relying on the
-  // /api/version response races with the first tick and (in practice)
-  // loses, leaving the bar flashing to 100% with no delay.
+  // start is naturally ~5-15s, so the demo's ~3s artificial pacing mirrors
+  // the field UX. window.__PULSE_DEMO_MODE is injected into the HTML at
+  // render time so we know synchronously — relying on the /api/version
+  // response races with the first reveal and (in practice) loses.
   let _demoTickDelayMs = (typeof window !== "undefined" && window.__PULSE_DEMO_MODE) ? 280 : 0;
-  let _tickChain = Promise.resolve();
-  const tick = (key) => {
-    _tickChain = _tickChain.then(async () => {
-      if (_demoTickDelayMs > 0) {
-        await new Promise((r) => setTimeout(r, _demoTickDelayMs));
-      }
-      completedSections++;
-      _setSplashSection(key);
-      _setSplashPct((completedSections / totalSections) * 100);
-    });
-  };
+
+  // Sections are fetched in parallel below (fast — the server caps the real
+  // work with a 4-slot PowerShell semaphore), so they SETTLE in arbitrary
+  // order. The checklist, though, reveals strictly in PAGE_API order so it
+  // reads as steady top-to-bottom progress instead of checks popping in at
+  // random. We decouple "data arrived" (markReady) from "shown checked" (the
+  // reveal loop): each step is ticked off only once it AND every step before
+  // it has landed — a deterministic boot sequence without serializing (and
+  // thus slowing) the actual fetches.
+  const order = _splashSectionKeys();   // dashboard, system, network, … (boot order)
+  const total = order.length;
+  const _resolveReady = {};
+  const _ready = {};
+  order.forEach((k) => { _ready[k] = new Promise((res) => { _resolveReady[k] = res; }); });
+  // Idempotent and failure-safe: a rejected fetch must still mark its step
+  // ready, or the in-order reveal would wait on it forever and the splash
+  // would never hide.
+  const markReady = (key) => { const r = _resolveReady[key]; if (r) { _resolveReady[key] = null; r(); } };
+  const _reveal = (async () => {
+    for (let i = 0; i < order.length; i++) {
+      const key = order[i];
+      await _ready[key];
+      if (_demoTickDelayMs > 0) await new Promise((r) => setTimeout(r, _demoTickDelayMs));
+      _markSplashSectionDone(key);
+      _setSplashCount(i + 1, total);
+      _setSplashPct(((i + 1) / total) * 100);
+    }
+  })();
 
   _setSplashVerb(`${verb}…`);
-  _setSplashSection(null);
+  _setSplashNote(SPLASH_NOTE_DEFAULT);
+  _setSplashIssues(null);
+  _buildSplashChecklist();
   _setSplashPct(0);
+  // Real boxes only: if the sweep runs long, soften the note so a slow
+  // load never looks like a hang. Demo finishes in ~3s, so don't arm it.
+  _armSplashSlowTimer(!(typeof window !== "undefined" && window.__PULSE_DEMO_MODE));
 
   // Version + log endpoints — run in parallel, not gated on dashboard.
   const versionPromise = api("/api/version").then((data) => {
@@ -564,27 +662,33 @@ function preloadProgressive(opts) {
     }
   });
 
-  // Dashboard first — its result lets us start the WebSocket for live
-  // metric updates as soon as it returns.
+  // Dashboard first — its result lets us start the WebSocket for live metric
+  // updates, and surfaces any critical/warning findings on the splash right
+  // away (its findings already aggregate every subsystem). The second
+  // (rejection) handler still markReady-s so a failed dashboard can't stall
+  // the in-order reveal.
   const dashboardPromise = fetchSection("dashboard").then((res) => {
-    tick("dashboard");
+    markReady("dashboard");
+    try { _setSplashIssues(res); } catch (e) {}
     connectWS();
     return res;
-  });
+  }, () => { markReady("dashboard"); });
 
-  // All other sections fire immediately. Identical-script requests
-  // dedupe server-side, so this doesn't trigger duplicate PS work.
+  // All other sections fire immediately. Identical-script requests dedupe
+  // server-side, so this doesn't trigger duplicate PS work. markReady on both
+  // outcomes, for the same no-stall reason as the dashboard above.
   const deferredPromises = deferred.map((key) =>
-    fetchSection(key).then((res) => { tick(key); return res; })
+    fetchSection(key).then((res) => { markReady(key); return res; }, () => { markReady(key); })
   );
 
-  // allSettled so one failing endpoint can't trap the splash. Also wait
-  // on _tickChain so the splash stays up until the (demo-paced) progress
-  // bar has actually FINISHED animating — not just when the fetches return.
+  // allSettled so one failing endpoint can't trap the splash. Also wait on
+  // the reveal so the splash stays up until the (demo-paced) checklist has
+  // actually FINISHED ticking through — not just when the fetches return.
   return Promise.allSettled([
     dashboardPromise, versionPromise, logsPromise, ...deferredPromises,
   ]).then(async (results) => {
-    await _tickChain;
+    await _reveal;
+    _clearSplashSlowTimer();   // finished in time — no "still working" needed
     return results;
   });
 }

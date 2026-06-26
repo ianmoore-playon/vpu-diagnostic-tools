@@ -41,6 +41,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   Software tab.** The same action lives on the Service Status tab; it now appears
   in just one place.
 - Settings now puts "Restart Pulse App" and "Reboot VPU" in separate panels, so the low-risk app restart isn't visually grouped with the full Windows reboot.
+- **The startup screen now shows what Pulse is checking.** As Pulse loads it
+  lists each diagnostic and ticks it off in a fixed top-to-bottom order, with
+  an "X of 12 systems" counter and a note that the full sweep can take a
+  moment — so a slower first load reads as steady progress, not a hang. If a
+  critical or warning issue is detected it's flagged right on the loading
+  screen, and on a genuinely slow unit the note switches to a "still working"
+  message instead of looking stuck.
 
 ### Removed
 - Dropped the redundant "Network Errors (this adapter)" counters from the Internet Adapter card on the Network Test page. The same RX/TX error and discard counts are already shown per port under Wired Ports.
