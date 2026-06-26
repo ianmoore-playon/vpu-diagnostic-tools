@@ -3667,10 +3667,9 @@ function renderNetwork() {
     ? String(uplinkIpCfg.dnsServers).split(",").map(function(s) { return s.trim(); }).filter(Boolean).join(", ")
     : "—";
 
-  // Uplink adapter stats (duplex, error counters)
+  // Uplink adapter stats (duplex)
   const uplinkStats = cfg.uplinkStats || {};
   const duplexLabel = uplinkStats.fullDuplex === true ? "Full Duplex" : uplinkStats.fullDuplex === false ? "Half Duplex" : null;
-  const totalErrors = (uplinkStats.rxErrors || 0) + (uplinkStats.txErrors || 0);
 
   // Wired Ports — error/discard counters for EVERY wired NIC, not just the
   // uplink. A multi-NIC VPU has the motherboard port plus the camera card; a
@@ -3883,29 +3882,6 @@ function renderNetwork() {
         </div>
           </div>
         </div>
-        ${totalErrors > 0 || (uplinkStats.rxBytes != null) ? `
-          <div class="net-iface-stats">
-            <div class="net-iface-stats-title" title="Cumulative NIC counters since boot. Zero across the board is healthy; non-zero errors or discards usually mean a bad cable, dirty switch port, or NIC driver issue.">${svgIcon("activity", 12)} Network Errors (this adapter) ${svgIcon("info", 12)}</div>
-            <div class="net-iface-stats-grid">
-              <div class="net-iface-stat">
-                <span class="net-iface-stat-label">RX Errors</span>
-                <span class="net-iface-stat-val ${uplinkStats.rxPacketErrors > 0 ? 'status-warn' : ''}">${uplinkStats.rxPacketErrors || 0}</span>
-              </div>
-              <div class="net-iface-stat">
-                <span class="net-iface-stat-label">RX Discards</span>
-                <span class="net-iface-stat-val ${uplinkStats.rxDiscards > 0 ? 'status-warn' : ''}">${uplinkStats.rxDiscards || 0}</span>
-              </div>
-              <div class="net-iface-stat">
-                <span class="net-iface-stat-label">TX Errors</span>
-                <span class="net-iface-stat-val ${uplinkStats.txPacketErrors > 0 ? 'status-warn' : ''}">${uplinkStats.txPacketErrors || 0}</span>
-              </div>
-              <div class="net-iface-stat">
-                <span class="net-iface-stat-label">TX Discards</span>
-                <span class="net-iface-stat-val ${uplinkStats.txDiscards > 0 ? 'status-warn' : ''}">${uplinkStats.txDiscards || 0}</span>
-              </div>
-            </div>
-            ${totalErrors > 0 ? '<div class="net-iface-stats-warn">' + svgIcon("triangle", 12) + ' Network errors on this connection — check the cable, the switch port, or the network driver.</div>' : ''}
-          </div>` : ""}
       </div>
 
     ${wiredPortsCard}

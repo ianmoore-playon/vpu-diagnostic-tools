@@ -30,6 +30,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   scoreboard, or its picture set too dark — and notes when the other cameras
   prove the room lights are on, so you know it's a camera setting, not the venue.
 
+### Removed
+- Dropped the redundant "Network Errors (this adapter)" counters from the Internet Adapter card on the Network Test page. The same RX/TX error and discard counts are already shown per port under Wired Ports.
+
 ### Fixed
 - **ScoreConnect tab no longer shows "Failed to load data" on VPUs running an
   older ScoreConnect.** On a unit running ScoreConnect I or II (not III) — for
