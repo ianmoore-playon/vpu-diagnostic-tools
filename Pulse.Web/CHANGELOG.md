@@ -40,6 +40,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - **Removed the duplicate "Restart Agent + Coordinator" button from the Pixellot
   Software tab.** The same action lives on the Service Status tab; it now appears
   in just one place.
+- Settings now puts "Restart Pulse App" and "Reboot VPU" in separate panels, so the low-risk app restart isn't visually grouped with the full Windows reboot.
 
 ### Removed
 - Dropped the redundant "Network Errors (this adapter)" counters from the Internet Adapter card on the Network Test page. The same RX/TX error and discard counts are already shown per port under Wired Ports.

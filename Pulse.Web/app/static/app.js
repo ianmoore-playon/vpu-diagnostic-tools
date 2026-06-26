@@ -7933,14 +7933,23 @@ function renderSettings() {
       <div id="set-update-notes" class="update-notes" style="display:none"></div>
     </div>
 
-    <!-- Reboot Pulse -->
+    <!-- Restart Pulse app -->
     <div class="card mt-4">
-      ${sectionTitle("power", "Reboot Pulse")}
-      <p class="text-sm text-pulse-muted mb-3">Restart the Pulse app if the page is stuck or behaving oddly, or reboot the whole VPU. Restarting Pulse keeps the unit running and reloads this page automatically. Rebooting the VPU restarts Windows — it interrupts any active recording and takes a few minutes to come back.</p>
+      ${sectionTitle("refresh", "Restart Pulse App")}
+      <p class="text-sm text-pulse-muted mb-3">Restart the Pulse app if the page is stuck or behaving oddly. The VPU and any active recording keep running, and this page reloads automatically once Pulse is back — usually a few seconds.</p>
       <div class="settings-actions">
         <button class="btn-outline btn-ol-blue" id="set-restart-app">
           ${svgIcon("refresh", 14)} Restart Pulse app
         </button>
+        <span id="set-restart-msg" class="text-sm text-pulse-muted"></span>
+      </div>
+    </div>
+
+    <!-- Reboot VPU -->
+    <div class="card mt-4">
+      ${sectionTitle("power", "Reboot VPU")}
+      <p class="text-sm text-pulse-muted mb-3">Reboot the whole VPU to restart Windows. This interrupts any active recording and the unit is offline for a few minutes. Pulse won't reopen on its own — relaunch it from the desktop shortcut once Windows is back.</p>
+      <div class="settings-actions">
         <button class="btn-outline btn-ol-red" id="set-reboot-vpu">
           ${svgIcon("power", 14)} Reboot VPU
         </button>
@@ -8006,20 +8015,21 @@ function renderSettings() {
     }
   });
 
-  // ── Reboot Pulse / VPU ──
+  // ── Restart Pulse app / Reboot VPU ──
   const restartBtn = document.getElementById("set-restart-app");
   const rebootBtn = document.getElementById("set-reboot-vpu");
+  const restartMsg = document.getElementById("set-restart-msg");
   const rebootMsg = document.getElementById("set-reboot-msg");
 
   restartBtn?.addEventListener("click", async () => {
     if (!confirm("Restart the Pulse app?\n\nPulse closes and relaunches the same build. This page reloads automatically once it's back — usually a few seconds. The VPU and any recording keep running.")) return;
     restartBtn.disabled = true;
     rebootBtn.disabled = true;
-    rebootMsg.textContent = "Restarting…";
+    restartMsg.textContent = "Restarting…";
     try {
       const r = await apiPost("/api/maintenance/restart-app", {});
       if (!r.ok) {
-        rebootMsg.textContent = (typeof r.error === "string" ? r.error : r.message) || "Couldn't restart Pulse.";
+        restartMsg.textContent = (typeof r.error === "string" ? r.error : r.message) || "Couldn't restart Pulse.";
         restartBtn.disabled = false;
         rebootBtn.disabled = false;
         return;
@@ -8027,7 +8037,7 @@ function renderSettings() {
       _showMaintenanceOverlay("Restarting Pulse…", "Pulse is relaunching. This page reloads automatically once it's back — usually a few seconds.");
       _pollForRestart(dataCache._version);
     } catch (e) {
-      rebootMsg.textContent = "Couldn't restart Pulse.";
+      restartMsg.textContent = "Couldn't restart Pulse.";
       restartBtn.disabled = false;
       rebootBtn.disabled = false;
     }
