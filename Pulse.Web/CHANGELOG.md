@@ -44,6 +44,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - **Peripherals panel on the Environment tab no longer hangs on "Loading…".**
   On a real VPU with a single mouse or keyboard the panel would spin forever; it
   now shows the connected mouse, keyboard, and monitor (with device names).
+- Dashboard no longer flickers a false "port running slow" warning for the OCR / scoreboard camera. The OCR runs at 100 Mbps by design; the warning now stays away even when the camera is briefly quiet, instead of appearing on launch and vanishing on refresh.
 
 ## [0.4.0] - 2026-06-23
 

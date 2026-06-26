@@ -1184,7 +1184,7 @@ def _wifi_disabled_finding(network_config):
     }
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, probe_results=None) -> list:
     findings = []
 
     # ── Wi-Fi uplink detection (Canopy adoption) ─────────────
@@ -1638,6 +1638,14 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         # adapter name ("Ethernet 30") is meaningless to a field tech; the
         # physical port number is what they need to check.
         ordered_ports = _order_ports_physically(nics.get("ports", []))
+        # A CGI probe confirms the OCR/scoreboard camera regardless of the live
+        # ARP cache — the probe always tries the default OCR IPs (.52/.53/.60)
+        # whether or not a neighbor entry exists. We use this below so the OCR's
+        # transient ARP entry can't flip the slow-port finding on and off
+        # between dashboard polls. None/empty (callers that don't probe) →
+        # falls back to the ARP-only behavior.
+        probe_results = probe_results or {}
+        ocr_confirmed = any(r.get("is_ocr") for r in probe_results.values())
         for idx, port in enumerate(ordered_ports):
             label = f"Port {idx + 1}"
             is_up = port.get("status") == "Up"
@@ -1671,6 +1679,33 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     (a.get("ip") or "").strip() in _DEFAULT_OCR_IPS
                     for a in pixellot_arps
                 )
+                # ARP-independent OCR guard. The OCR is natively 100 Mbps, and
+                # its neighbor entry ages out when the camera is quiet — so a
+                # cold poll can show its port at 100 Mbps with an EMPTY ARP
+                # list, and the check above (which needs a default-OCR-IP ARP
+                # entry) would then wrongly flag it as "running slow". The
+                # finding then vanishes on the next poll once a camera probe
+                # re-warms ARP — the flicker field techs reported. When a CGI
+                # probe confirms an OCR is present and this 100 Mbps port
+                # carries no identified MAIN camera, treat the link as the
+                # expected OCR, matching the Camera Connectivity tab (which
+                # uses the same probe and never flags it).
+                if speed == 100 and ocr_confirmed and not port_is_ocr:
+                    port_has_main = False
+                    for a in pixellot_arps:
+                        if (a.get("ip") or "").strip() in _DEFAULT_MAIN_IPS:
+                            port_has_main = True
+                            break
+                        pr = probe_results.get(
+                            (a.get("mac") or "").strip().upper().replace("-", ":")
+                        )
+                        if pr:
+                            role, _ = _lookup_camera_model(pr.get("modelNumber"))
+                            if role and "OCR" not in role:
+                                port_has_main = True
+                                break
+                    if not port_has_main:
+                        port_is_ocr = True
                 only_ocr_at_100 = speed == 100 and port_is_ocr
                 if not only_ocr_at_100:
                     has_cameras = bool(pixellot_arps)
@@ -2591,7 +2626,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None, probe_results=None):
     # Tag adapter roles (motherboard / camera / wifi) so both the findings and
     # the embedded "Network config" the dashboard ships carry them.
     _classify_network_adapters(network_config)
@@ -2653,7 +2688,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         if isinstance(data, dict) and data.get("error")
     ]
 
-    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health)
+    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health, probe_results=probe_results)
 
     return {
         "identity": flat_identity,
@@ -2786,7 +2821,7 @@ async def api_preload():
         # Readiness here uses the snapshot CPU/mem (no perf_sample on the
         # preload path) and the disk-health already gathered; the authoritative
         # /api/dashboard fetch refines it with the averaged sample + port tests.
-        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi, disk_health=disk_health),
+        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi, disk_health=disk_health, probe_results=probe_results_pre),
         "system": {
             "identity": _enrich_identity_pixellot_compat(_enrich_identity_lifecycle(identity), gpu_info),
             "hardware": hardware,
@@ -2899,11 +2934,19 @@ async def _collect_dashboard() -> dict:
         run_ps("Get-DiskHealth.ps1", timeout=15),
         run_ps("Get-PerfSample.ps1", timeout=15),
     )
+    # CGI probe (cached 30s; usually already warm from preload) so the
+    # slow-port finding identifies the OCR by its actual camera model, not a
+    # transient ARP entry — keeping the dashboard consistent with the Camera
+    # Connectivity tab and free of the OCR "running slow" flicker.
+    ocr_ips, _ = _build_ocr_sets(pixellot_config)
+    raw_ports = nics.get("ports", []) if nics and not nics.get("error") else []
+    probe_results = await _probe_all_cameras(raw_ports, ocr_ips)
     return _build_dashboard(
         identity, performance, services, nics, net_config, hardware,
         installed_sw, install_state, port_tests, gpu_info, wifi,
         pixellot_config=pixellot_config, expectations=expectations,
         disk_health=disk_health, perf_sample=perf_sample,
+        probe_results=probe_results,
     )
 
 
