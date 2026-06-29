@@ -3642,7 +3642,7 @@ function renderInspectionReport() {
       </button>`
     )}
 
-    <div class="dash-2col">
+    <div class="dash-2col ir-block">
       <div class="card">
         ${sectionTitle("info", "Identity")}
         <div class="kv-grid kv-grid-wide">
@@ -3664,7 +3664,7 @@ function renderInspectionReport() {
       </div>
     </div>
 
-    <div class="dash-2col">
+    <div class="dash-2col ir-block">
       <div class="card">
         ${sectionTitle("monitor", "Scoreboard")}
         <div class="kv-grid kv-grid-wide">
