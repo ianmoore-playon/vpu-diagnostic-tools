@@ -410,13 +410,15 @@ class TestBlackFrameDiagnosis(unittest.TestCase):
         self.assertNotIn("diagnosis", results[0])
         self.assertNotIn("diagnosis", results[1])
 
-    def test_black_frame_with_bright_spot_blames_bright_light(self):
-        # Near-black average but a near-white pixel present → bright-light/scoreboard.
+    def test_black_frame_with_bright_spot_uses_adjust_exposure_variant(self):
+        # Near-black average but a near-white pixel present → the "adjust exposure
+        # so the rest of the scene shows" variant, not the plain "too dark" one.
         results = [_frame("Main Camera 1", yavg=110), _frame("OCR", yavg=5, ymax=238)]
         main._diagnose_camera_frames(results)
         diag = results[1]["diagnosis"]
         self.assertEqual(diag["severity"], "warn")
-        self.assertIn("bright light", diag["summary"])
+        self.assertIn("rest of the scene", diag["summary"])
+        self.assertNotIn("too dark", diag["summary"])
         # Same-room proof: a lit camera means it's a setting, not the venue.
         self.assertIn("Main Camera 1", diag["summary"])
 
@@ -434,7 +436,7 @@ class TestBlackFrameDiagnosis(unittest.TestCase):
         results = [_frame("OCR", yavg=3, ymax=10)]
         main._diagnose_camera_frames(results)
         summary = results[0]["diagnosis"]["summary"]
-        self.assertNotIn("room lights are on", summary)
+        self.assertNotIn("same room", summary)
 
     def test_settings_comparison_flags_lower_brightness(self):
         # B half: black camera's brightness dialled below the cameras that look fine.

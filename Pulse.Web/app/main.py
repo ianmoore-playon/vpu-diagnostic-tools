@@ -3291,16 +3291,16 @@ def _frame_settings_hint(target, results):
     texp = str(tsen.get("exposure") or "").strip().lower()
     peer_auto = any(str(s.get("exposure") or "").strip().lower() == "auto" for s in peers)
     if texp and texp != "auto" and peer_auto:
-        notes.append(f"Its exposure is set to {tsen.get('exposure')}, "
-                     "while the cameras that look fine are on Auto.")
+        notes.append(f"Its exposure is {tsen.get('exposure')}, but the cameras "
+                     "that look fine are on Auto.")
     # Brightness dialled well below the working cameras.
     tb = _to_float(tsen.get("brightness"))
     pbs = [v for v in (_to_float(s.get("brightness")) for s in peers) if v is not None]
     if tb is not None and pbs:
         pavg = sum(pbs) / len(pbs)
         if tb <= pavg - 15:
-            notes.append(f"Its brightness setting ({tsen.get('brightness')}) is "
-                         f"lower than the cameras that look fine (about {round(pavg)}).")
+            notes.append(f"Its brightness ({tsen.get('brightness')}) is lower than "
+                         f"the cameras that look fine (~{round(pavg)}).")
     return " ".join(notes) or None
 
 
@@ -3326,18 +3326,14 @@ def _diagnose_camera_frames(results):
         label = r.get("label") or "This camera"
         ymax = _to_float((r.get("luma") or {}).get("ymax"))
         if ymax is not None and ymax >= _BRIGHT_PIXEL_YMAX:
-            summary = (f"{label} is sending an almost black picture, but there's a "
-                       "bright light in view — usually the scoreboard. The camera is "
-                       "darkening the whole picture to cope with that one bright spot, "
-                       "so everything else disappears. Adjust this camera's picture "
-                       "settings (exposure/brightness) so the rest of the scene shows.")
+            summary = (f"{label} is sending an almost black picture. Adjust its "
+                       "exposure/brightness so the rest of the scene shows.")
         else:
-            summary = (f"{label} is sending an almost black picture. Its picture is "
-                       "set too dark for this room — turn up the brightness/exposure "
-                       "in this camera's picture settings.")
+            summary = (f"{label} is sending an almost black picture — set too dark for "
+                       "this room. Turn up its brightness/exposure.")
         if lit:
-            summary += (f" The room lights are on ({lit} is showing a normal picture "
-                        "in the same room), so this is a camera setting, not the venue.")
+            summary += (f" {lit} looks normal in the same room, so it's a camera "
+                        "setting, not the venue.")
         diag = {"severity": "warn", "summary": summary}
         hint = _frame_settings_hint(r, results)
         if hint:
