@@ -53,6 +53,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - Dropped the redundant "Network Errors (this adapter)" counters from the Internet Adapter card on the Network Test page. The same RX/TX error and discard counts are already shown per port under Wired Ports.
 
 ### Fixed
+- **Pulse no longer needs two launches to open on a freshly set-up VPU.** On a
+  new unit the first launch would start the server, say "Pulse is running," and
+  close — but no browser window appeared, so you had to run it again. The cold
+  Chrome profile was eating the first open; Pulse now opens straight to the page
+  on the first try.
 - **ScoreConnect no longer shows "Not Found" on Service Status when it's
   actually running.** Newer ScoreConnect (III) registers under a different
   Windows service name; the tab now detects ScoreConnect I, II, or III, shows
