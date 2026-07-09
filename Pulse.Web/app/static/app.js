@@ -73,9 +73,7 @@ const NAV_SECTIONS = [
     { id: "cameras", label: "Camera Connectivity", icon: "camera" },
     { id: "scoreconnect", label: "ScoreConnect", icon: "monitor" },
     { id: "services", label: "Service Status", icon: "server" },
-    // Audio tab hidden from nav pending further development. The full impl is
-    // still wired — renderAudio(), pageRenderers.audio, PAGE_API.audio,
-    // /api/audio, and the PS scripts — so re-add this entry to restore it.
+    { id: "audio", label: "Audio", icon: "mic" },
   ]},
   { label: "PIXELLOT CONFIGURATION", pages: [
     { id: "pixellot-software", label: "Pixellot Software", icon: "folder-code" },
