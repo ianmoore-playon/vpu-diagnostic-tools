@@ -2932,15 +2932,6 @@ html.dark .sc-board { box-shadow: none; border-color: var(--c-board-border-2); }
 
 /* ── About page ────────────────────────────────────────────── */
 
-/* Coming-soon placeholder (gated-off tabs) */
-.coming-soon {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    text-align: center; min-height: 50vh; gap: 0.5rem;
-}
-.coming-soon-icon { color: var(--c-dim); margin-bottom: 0.5rem; }
-.coming-soon-title { font-size: 1.5rem; font-weight: 700; color: var(--c-text); margin: 0; }
-.coming-soon-text { font-size: 0.9rem; color: var(--c-muted); max-width: 380px; line-height: 1.5; }
-
 .about-container { display: flex; justify-content: center; align-items: center; min-height: 60vh; }
 .about-card { max-width: 480px; padding: 2rem; text-align: center; }
 .about-icon { margin-bottom: 1rem; }
