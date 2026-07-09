@@ -252,20 +252,97 @@ html.dark .splash-logo {
     font-weight: 500;
     letter-spacing: 0.02em;
 }
-.splash-section {
-    font-size: 1.05rem;
-    color: var(--c-text);
-    font-weight: 600;
-    letter-spacing: 0.01em;
-    min-height: 1.4em;       /* reserve the row so layout doesn't jump */
-    transition: opacity 0.2s ease-out;
-}
-.splash-pct {
-    font-size: 0.75rem;
+.splash-count {
+    font-size: 0.8rem;
     color: var(--c-dim);
     font-weight: 500;
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
+    min-height: 1.2em;       /* reserve the row so layout doesn't jump */
+}
+/* Live section checklist — two columns of compact rows, each ticked off
+   as its diagnostic settles. Width matches the progress bar above it. */
+.splash-checklist {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.32rem 1.5rem;
+    width: min(420px, 78vw);
+    margin-top: 0.1rem;
+}
+.splash-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;                /* let the label ellipsize instead of overflowing */
+    font-size: 0.78rem;
+    color: var(--c-dim);
+    transition: color 0.3s ease-out;
+}
+.splash-check-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.splash-check-mark {
+    position: relative;
+    flex: 0 0 auto;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 1.5px solid var(--c-border);
+    transition: background 0.3s ease-out, border-color 0.3s ease-out;
+}
+.splash-check.done {
+    color: var(--c-muted);
+}
+.splash-check.done .splash-check-mark {
+    background: var(--c-accent-blue);
+    border-color: var(--c-accent-blue);
+}
+.splash-check.done .splash-check-mark::after {  /* the checkmark */
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 3px;
+    height: 6.5px;
+    border: solid #fff;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+}
+/* Issue banner — a severity-tinted pill that appears only when the dashboard
+   reports critical/warning findings. Mirrors the app's .sev-* token palette. */
+.splash-issues {
+    display: none;             /* hidden until _setSplashIssues() adds .is-visible */
+    align-items: center;
+    gap: 0.45rem;
+    max-width: min(420px, 78vw);
+    padding: 0.28rem 0.75rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+.splash-issues.is-visible { display: inline-flex; }
+.splash-issues svg { flex: 0 0 auto; }
+.splash-issues-crit {
+    color: var(--c-accent-red);
+    background: var(--c-tint-red);
+    border-color: var(--c-tint-red-border);
+}
+.splash-issues-warn {
+    color: var(--c-accent-amber);
+    background: var(--c-tint-amber);
+    border-color: var(--c-tint-amber-border);
+}
+.splash-note {
+    max-width: min(420px, 78vw);
+    text-align: center;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--c-dim);
+    letter-spacing: 0.01em;
 }
 .splash-hidden {
     opacity: 0;
@@ -1046,6 +1123,13 @@ html.dark .demo-banner {
     margin-top: 1rem;
 }
 @media (max-width: 900px) { .dash-2col { grid-template-columns: 1fr; } }
+
+/* Inspection Report rows use the app-standard 1.25rem card rhythm (not the
+   denser 1rem dashboard grid), and the Camera Frames wrapper gets the same gap
+   above it — its inner card isn't a direct #page > .card child, so the normal
+   card-stacking rule doesn't reach it. */
+.dash-2col.ir-block { gap: 1.25rem; margin-top: 1.25rem; }
+#ir-frames-wrap:not(:empty) { margin-top: 1.25rem; }
 
 /* Narrow screens: let wide data tables scroll horizontally instead of
    forcing the whole page wider (System Overview, Disk Health, etc.). */
@@ -2132,6 +2216,22 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
     line-height: 1.35;
 }
 .cam-frame-warn svg { flex-shrink: 0; margin-top: 1px; }
+/* Black-picture diagnosis: a frame grabbed but the picture came back black. */
+.cam-frame-diag {
+    display: flex;
+    align-items: flex-start;
+    gap: 5px;
+    margin-top: 6px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: var(--c-tint-amber);
+    color: var(--c-accent-amber);
+    font-size: 0.7rem;
+    font-weight: 500;
+    line-height: 1.4;
+}
+.cam-frame-diag svg { flex-shrink: 0; margin-top: 2px; }
+.cam-frame-diag-detail { display: block; margin-top: 3px; opacity: 0.85; }
 /* Identity block: Type / IP / Model / Firmware / Stream rows. */
 .cam-frame-kv { margin-top: 6px; display: grid; gap: 2px; }
 .cam-kv-row { display: flex; gap: 8px; font-size: 0.72rem; line-height: 1.3; }
@@ -2297,6 +2397,18 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;
 }
 .svc-result-stderr { color: var(--c-accent-red); }
+
+/* Grouped areas: Pixellot core processes vs. real Windows services. */
+.svc-section { margin-bottom: 1.5rem; }
+.svc-section:last-child { margin-bottom: 0; }
+.svc-section-head { margin-bottom: 0.6rem; }
+.svc-section-title {
+    font-size: 0.95rem; font-weight: 600; color: var(--c-text); margin: 0;
+}
+.svc-section-sub {
+    font-size: 0.78rem; color: var(--c-muted);
+    margin: 2px 0 0; max-width: 640px; line-height: 1.45;
+}
 
 .svc-grid {
     display: flex;
@@ -3050,6 +3162,7 @@ html.dark .sc-board { box-shadow: none; border-color: var(--c-board-border-2); }
 .net-ping-pass { border-left: 3px solid var(--c-accent-green); }
 .net-ping-warn { border-left: 3px solid var(--c-accent-amber); }
 .net-ping-fail { border-left: 3px solid var(--c-accent-red); }
+.net-ping-info { border-left: 3px solid var(--c-accent-blue); }
 
 .net-ping-header {
     display: flex;
@@ -3092,6 +3205,15 @@ html.dark .sc-board { box-shadow: none; border-color: var(--c-board-border-2); }
     color: var(--c-text);
     margin-top: 2px;
 }
+.net-ping-note {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+    font-size: 0.7rem;
+    color: var(--c-accent-blue);
+}
+.net-ping-note svg { flex-shrink: 0; }
 
 /* Local ping toolbar */
 .net-ping-toolbar {

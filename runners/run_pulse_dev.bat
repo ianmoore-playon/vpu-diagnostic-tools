@@ -38,6 +38,9 @@ set "INSTALL_DIR=C:\Pulse"
 set "REPO=playon/pulse"
 set "ZIPFILE=%TEMP%\pulse-dl.zip"
 set "EXTRACT=%TEMP%\pulse-extract"
+:: Repo copy of THIS launcher (on whichever branch we're tracking) -- used to
+:: repair %INSTALL_DIR%\Pulse.bat if the runtime self-copy ever fails (see :shortcut).
+set "LAUNCHER_URL=https://raw.githubusercontent.com/playon/pulse/%BRANCH%/runners/run_pulse_dev.bat"
 
 echo.
 echo  .-----------------------------------------------------.
@@ -106,12 +109,20 @@ if defined COMMIT_SHA (
 )
 
 :: -- Download -------------------------------------------------------------
+:: curl is primary (clean progress bar), but the Windows-bundled curl+schannel
+:: can fail the GitHub archive CDN redirect with SEC_E_WRONG_PRINCIPAL.
+:: If curl yields no usable zip (failed or absent), fall back to PowerShell,
+:: whose .NET stack uses the Windows cert store and follows the redirect cleanly.
 echo   Update ......................... downloading %BRANCH%
-where curl.exe >nul 2>&1 && (set "HAS_CURL=1") || (set "HAS_CURL=")
-if defined HAS_CURL (
-    curl.exe -L --progress-bar -o "%ZIPFILE%" "!ASSET_URL!"
-) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '!ASSET_URL!' -OutFile '%ZIPFILE%'"
+if exist "%ZIPFILE%" del "%ZIPFILE%" 2>nul
+where curl.exe >nul 2>&1 && curl.exe -L --progress-bar -o "%ZIPFILE%" "!ASSET_URL!"
+
+set "DL_OK="
+if exist "%ZIPFILE%" for %%A in ("%ZIPFILE%") do if %%~zA GEQ 1000 set "DL_OK=1"
+if not defined DL_OK (
+    echo   Update ......................... retrying via PowerShell
+    if exist "%ZIPFILE%" del "%ZIPFILE%" 2>nul
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue';[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try{ Invoke-WebRequest -UseBasicParsing -Uri '!ASSET_URL!' -OutFile '%ZIPFILE%' }catch{ exit 1 }"
 )
 
 if not exist "%ZIPFILE%" goto :dl_failed
@@ -173,15 +184,32 @@ echo   Version ........................ %BRANCH%-!SHORT_SHA!
 :: Copy this launcher into the install dir so the shortcut has a stable
 :: target. Guard against copying onto itself (when launched FROM the
 :: shortcut, %~f0 already IS the install copy).
-if /I not "%~f0"=="%INSTALL_DIR%\Pulse.bat" copy /y "%~f0" "%INSTALL_DIR%\Pulse.bat" >nul 2>&1
+::
+:: If that copy is ever missing, the shortcut points at nothing and the Start
+:: Menu entry dies ("Missing Shortcut - Windows is searching for Pulse.bat").
+:: So: self-copy; if it didn't land, fetch the launcher from the repo; and only
+:: (re)create the shortcut AFTER confirming the target exists -- never orphan it.
+if /I not "%~f0"=="%INSTALL_DIR%\Pulse.bat" copy /y "%~f0" "%INSTALL_DIR%\Pulse.bat" >nul
+if not exist "%INSTALL_DIR%\Pulse.bat" (
+    echo   Launcher self-copy ............. failed - fetching from repo
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue';[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try{ Invoke-WebRequest -UseBasicParsing -Uri '%LAUNCHER_URL%' -OutFile '%INSTALL_DIR%\Pulse.bat' }catch{}" 2>nul
+)
 :: Record the channel so the in-app "Check for update" knows which release line to track
 >"%INSTALL_DIR%\CHANNEL" echo dev
 
 set "ICON=%INSTALL_DIR%\app\static\img\pulse.ico"
 if not exist "%ICON%" set "ICON=%INSTALL_DIR%\Pulse.bat"
+:: Only (re)create the shortcut once its target is confirmed present -- never
+:: orphan it. (goto, not an if/else block: keeps the powershell line below in
+:: top-level parse context so its quoted parens and ^ continuation are safe.)
+if not exist "%INSTALL_DIR%\Pulse.bat" goto :no_shortcut
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$old=[Environment]::GetFolderPath('DesktopDirectory')+'\Pulse.lnk'; if (Test-Path $old) { Remove-Item $old -Force -ErrorAction SilentlyContinue }; $d=[Environment]::GetFolderPath('Programs'); $s=(New-Object -ComObject WScript.Shell).CreateShortcut(\"$d\Pulse.lnk\"); $s.TargetPath='%INSTALL_DIR%\Pulse.bat'; $s.WorkingDirectory='%INSTALL_DIR%'; $s.IconLocation='%ICON%'; $s.Description='Pulse - VPU Diagnostics'; $s.Save()" 2>nul
 echo   Start Menu shortcut ............ ready
+goto :after_shortcut
+:no_shortcut
+echo   Start Menu shortcut ............ SKIPPED - launcher copy unavailable
+:after_shortcut
 
 :: -- Hand off to the runtime launcher -------------------------------------
 echo.

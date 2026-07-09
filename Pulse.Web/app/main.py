@@ -1184,7 +1184,7 @@ def _wifi_disabled_finding(network_config):
     }
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, probe_results=None) -> list:
     findings = []
 
     # ── Wi-Fi uplink detection (Canopy adoption) ─────────────
@@ -1638,6 +1638,14 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         # adapter name ("Ethernet 30") is meaningless to a field tech; the
         # physical port number is what they need to check.
         ordered_ports = _order_ports_physically(nics.get("ports", []))
+        # A CGI probe confirms the OCR/scoreboard camera regardless of the live
+        # ARP cache — the probe always tries the default OCR IPs (.52/.53/.60)
+        # whether or not a neighbor entry exists. We use this below so the OCR's
+        # transient ARP entry can't flip the slow-port finding on and off
+        # between dashboard polls. None/empty (callers that don't probe) →
+        # falls back to the ARP-only behavior.
+        probe_results = probe_results or {}
+        ocr_confirmed = any(r.get("is_ocr") for r in probe_results.values())
         for idx, port in enumerate(ordered_ports):
             label = f"Port {idx + 1}"
             is_up = port.get("status") == "Up"
@@ -1671,6 +1679,33 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     (a.get("ip") or "").strip() in _DEFAULT_OCR_IPS
                     for a in pixellot_arps
                 )
+                # ARP-independent OCR guard. The OCR is natively 100 Mbps, and
+                # its neighbor entry ages out when the camera is quiet — so a
+                # cold poll can show its port at 100 Mbps with an EMPTY ARP
+                # list, and the check above (which needs a default-OCR-IP ARP
+                # entry) would then wrongly flag it as "running slow". The
+                # finding then vanishes on the next poll once a camera probe
+                # re-warms ARP — the flicker field techs reported. When a CGI
+                # probe confirms an OCR is present and this 100 Mbps port
+                # carries no identified MAIN camera, treat the link as the
+                # expected OCR, matching the Camera Connectivity tab (which
+                # uses the same probe and never flags it).
+                if speed == 100 and ocr_confirmed and not port_is_ocr:
+                    port_has_main = False
+                    for a in pixellot_arps:
+                        if (a.get("ip") or "").strip() in _DEFAULT_MAIN_IPS:
+                            port_has_main = True
+                            break
+                        pr = probe_results.get(
+                            (a.get("mac") or "").strip().upper().replace("-", ":")
+                        )
+                        if pr:
+                            role, _ = _lookup_camera_model(pr.get("modelNumber"))
+                            if role and "OCR" not in role:
+                                port_has_main = True
+                                break
+                    if not port_has_main:
+                        port_is_ocr = True
                 only_ocr_at_100 = speed == 100 and port_is_ocr
                 if not only_ocr_at_100:
                     has_cameras = bool(pixellot_arps)
@@ -2543,7 +2578,7 @@ def _compute_camera_findings(ports: list) -> list:
                     "title": f"{label} — camera dropped",
                     "body": f"A camera{ipinfo} was streaming on this port "
                             "earlier this session and is no longer detected. Check the "
-                            "cable and camera power, or use Fault Isolator.",
+                            "cable and camera power, or use Camera Connection Troubleshooting.",
                 })
 
         # Skip transient findings for a freshly-changed port. A port that
@@ -2591,7 +2626,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None, probe_results=None):
     # Tag adapter roles (motherboard / camera / wifi) so both the findings and
     # the embedded "Network config" the dashboard ships carry them.
     _classify_network_adapters(network_config)
@@ -2653,7 +2688,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         if isinstance(data, dict) and data.get("error")
     ]
 
-    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health)
+    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health, probe_results=probe_results)
 
     return {
         "identity": flat_identity,
@@ -2786,7 +2821,7 @@ async def api_preload():
         # Readiness here uses the snapshot CPU/mem (no perf_sample on the
         # preload path) and the disk-health already gathered; the authoritative
         # /api/dashboard fetch refines it with the averaged sample + port tests.
-        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi, disk_health=disk_health),
+        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi, disk_health=disk_health, probe_results=probe_results_pre),
         "system": {
             "identity": _enrich_identity_pixellot_compat(_enrich_identity_lifecycle(identity), gpu_info),
             "hardware": hardware,
@@ -2899,11 +2934,19 @@ async def _collect_dashboard() -> dict:
         run_ps("Get-DiskHealth.ps1", timeout=15),
         run_ps("Get-PerfSample.ps1", timeout=15),
     )
+    # CGI probe (cached 30s; usually already warm from preload) so the
+    # slow-port finding identifies the OCR by its actual camera model, not a
+    # transient ARP entry — keeping the dashboard consistent with the Camera
+    # Connectivity tab and free of the OCR "running slow" flicker.
+    ocr_ips, _ = _build_ocr_sets(pixellot_config)
+    raw_ports = nics.get("ports", []) if nics and not nics.get("error") else []
+    probe_results = await _probe_all_cameras(raw_ports, ocr_ips)
     return _build_dashboard(
         identity, performance, services, nics, net_config, hardware,
         installed_sw, install_state, port_tests, gpu_info, wifi,
         pixellot_config=pixellot_config, expectations=expectations,
         disk_health=disk_health, perf_sample=perf_sample,
+        probe_results=probe_results,
     )
 
 
@@ -3207,6 +3250,97 @@ async def api_cameras_s1():
     return await run_ps("Get-S1Cameras.ps1", timeout=15)
 
 
+# ── Black-frame diagnosis ────────────────────────────────────────────
+# A camera can grab a frame fine (ok=true, "Active") yet send a black picture —
+# the exact symptom techs hit on OCR/scoreboard cameras whose picture settings
+# need adjusting. ffmpeg's signalstats (Test-CameraVideo.ps1) gives us the
+# frame's average luminance, so we can call this out instead of letting a black
+# thumbnail pass as healthy. Luma is 0-255; chroma centres on 128.
+_DARK_FRAME_YAVG = 16     # at/below this average brightness the frame reads black
+_LIT_FRAME_YAVG = 50      # at/above this a frame is clearly showing the room
+_BRIGHT_PIXEL_YMAX = 230  # a near-white pixel present → a bright light in view
+
+
+def _to_float(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _frame_yavg(r):
+    """Average luminance of a captured frame, or None if unmeasured."""
+    luma = r.get("luma") if isinstance(r, dict) else None
+    return _to_float(luma.get("yavg")) if isinstance(luma, dict) else None
+
+
+def _frame_settings_hint(target, results):
+    """Plain-English note on how a black camera's picture settings differ from
+    the cameras that returned a normal picture in the same room (the 'B' half:
+    same-room settings comparison). Reads the CGI sensor block already merged
+    onto each result. Returns None when nothing notable stands out."""
+    tsen = target.get("sensor") or {}
+    peers = [r.get("sensor") or {} for r in results
+             if r is not target and r.get("ok")
+             and (_frame_yavg(r) or 0) >= _LIT_FRAME_YAVG]
+    if not peers:
+        return None
+    notes = []
+    # Exposure left on Manual in a venue whose lighting changes is a classic
+    # black-picture cause.
+    texp = str(tsen.get("exposure") or "").strip().lower()
+    peer_auto = any(str(s.get("exposure") or "").strip().lower() == "auto" for s in peers)
+    if texp and texp != "auto" and peer_auto:
+        notes.append(f"Its exposure is {tsen.get('exposure')}, but the cameras "
+                     "that look fine are on Auto.")
+    # Brightness dialled well below the working cameras.
+    tb = _to_float(tsen.get("brightness"))
+    pbs = [v for v in (_to_float(s.get("brightness")) for s in peers) if v is not None]
+    if tb is not None and pbs:
+        pavg = sum(pbs) / len(pbs)
+        if tb <= pavg - 15:
+            notes.append(f"Its brightness ({tsen.get('brightness')}) is lower than "
+                         f"the cameras that look fine (~{round(pavg)}).")
+    return " ".join(notes) or None
+
+
+def _diagnose_camera_frames(results):
+    """Flag cameras that captured a frame but the picture came back black, in
+    words a field tech can act on. Mutates each affected result in place, adding
+    diagnosis = { severity, summary, detail? }. No-op when nothing looks black."""
+    if not isinstance(results, list):
+        return
+    # Any camera clearly showing a lit room is proof the lights are on and the
+    # venue is fine — so a black camera is a camera problem, not the room.
+    lit = None
+    for r in results:
+        if r.get("ok") and (_frame_yavg(r) or 0) >= _LIT_FRAME_YAVG:
+            lit = r.get("label") or "another camera"
+            break
+    for r in results:
+        if not r.get("ok"):
+            continue
+        y = _frame_yavg(r)
+        if y is None or y > _DARK_FRAME_YAVG:
+            continue  # bright enough to read — nothing to flag
+        label = r.get("label") or "This camera"
+        ymax = _to_float((r.get("luma") or {}).get("ymax"))
+        if ymax is not None and ymax >= _BRIGHT_PIXEL_YMAX:
+            summary = (f"{label} is sending an almost black picture. Adjust its "
+                       "exposure/brightness so the rest of the scene shows.")
+        else:
+            summary = (f"{label} is sending an almost black picture — set too dark for "
+                       "this room. Turn up its brightness/exposure.")
+        if lit:
+            summary += (f" {lit} looks normal in the same room, so it's a camera "
+                        "setting, not the venue.")
+        diag = {"severity": "warn", "summary": summary}
+        hint = _frame_settings_hint(r, results)
+        if hint:
+            diag["detail"] = hint
+        r["diagnosis"] = diag
+
+
 @app.post("/api/cameras/video-test")
 async def api_cameras_video_test(request: Request):
     """Grab a single frame from each detected camera to confirm it's
@@ -3227,16 +3361,28 @@ async def api_cameras_video_test(request: Request):
     the button being spammed."""
     global _LAST_FRAME_CAPTURE
 
-    # Rate limit first — cheap, no PowerShell needed.
+    # Parse the body up front. {"ips": [...]} restricts the capture (per-camera
+    # Refresh); {"force": true} is an explicit override — the Inspection Report's
+    # fleet audit posts it to grab a frame from every camera even on a live VPU.
+    # force relaxes BOTH guards below (cooldown + the vpu.exe interlock); the
+    # Camera tab posts neither flag, so it still respects both.
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    force = bool(body.get("force")) if isinstance(body, dict) else False
+
+    # Rate limit first — cheap, no PowerShell needed. (force bypasses it.)
     remaining = _frame_cooldown_remaining(time.monotonic())
-    if remaining > 0:
+    if remaining > 0 and not force:
         return {"available": True, "results": [], "blocked": "cooldown",
                 "cooldown": remaining,
                 "reason": f"Please wait {remaining}s before capturing frames again."}
 
-    # Don't capture while the Pixellot capture engine owns the streams.
+    # Don't capture while the Pixellot capture engine owns the streams — unless
+    # the caller forces it (the fleet audit explicitly accepts the risk).
     expectations = await run_ps("Get-CameraExpectations.ps1", timeout=10, use_cache=False)
-    if expectations and not expectations.get("error") and expectations.get("vpuRunning"):
+    if not force and expectations and not expectations.get("error") and expectations.get("vpuRunning"):
         return {"available": False, "results": [], "blocked": "vpu",
                 "reason": "The Pixellot capture engine (vpu.exe) is running — "
                           "frame capture is disabled to avoid interfering with the "
@@ -3245,10 +3391,6 @@ async def api_cameras_video_test(request: Request):
     # Optional: restrict the capture to specific camera IPs (the per-camera
     # 'Refresh' button posts {"ips": [...]}). No body → capture everything.
     target_ips = None
-    try:
-        body = await request.json()
-    except Exception:
-        body = None
     if isinstance(body, dict):
         raw = body.get("ips") or ([body["ip"]] if body.get("ip") else None)
         if raw:
@@ -3294,6 +3436,7 @@ async def api_cameras_video_test(request: Request):
                     "expectedSpeedMbps": p.get("expectedSpeedMbps"),
                     "model": c.get("model"),
                     "firmwareVersion": c.get("firmwareVersion"),
+                    "sensor": c.get("sensor"),
                 }
 
     # Single-camera refresh: keep only the requested IP(s).
@@ -3350,7 +3493,11 @@ async def api_cameras_video_test(request: Request):
                 r["expectedSpeedMbps"] = meta["expectedSpeedMbps"]
                 r["model"] = meta.get("model")
                 r["firmwareVersion"] = meta.get("firmwareVersion")
+                r["sensor"] = meta.get("sensor")
         result["systemType"] = sys_type
+        # Look inside the captured frames: flag any camera that grabbed a frame
+        # but the picture came back black (the OCR/scoreboard symptom).
+        _diagnose_camera_frames(result.get("results"))
     return result
 
 

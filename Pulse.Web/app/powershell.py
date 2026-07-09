@@ -140,25 +140,34 @@ def _extract_json(text: str):
          object/array — recovers the canonical "JSON on the last line" case.
       3. Substring from first '{' to last '}' as a last resort.
     Returns the parsed object, or None if nothing parses.
+
+    All three stages parse with strict=False. Windows PowerShell 5.1's
+    ConvertTo-Json (unlike PS 7's) leaves literal C0 control bytes
+    unescaped inside string values — e.g. the STX/ETX framing in a raw
+    Daktronics RTD scoreboard string, or a NUL scraped by findstr from a
+    UTF-16 log. Python's default strict parse rejects those ("Invalid
+    control character"), discarding otherwise-good data; strict=False
+    accepts them. It only relaxes the in-string control-char rule, so
+    valid JSON still parses identically — no downside.
     """
     text = (text or "").strip()
     if not text:
         return None
     try:
-        return json.loads(text)
+        return json.loads(text, strict=False)
     except json.JSONDecodeError:
         pass
     for line in reversed(text.splitlines()):
         candidate = line.strip()
         if candidate[:1] in ("{", "["):
             try:
-                return json.loads(candidate)
+                return json.loads(candidate, strict=False)
             except json.JSONDecodeError:
                 continue
     start, end = text.find("{"), text.rfind("}")
     if start != -1 and end > start:
         try:
-            return json.loads(text[start:end + 1])
+            return json.loads(text[start:end + 1], strict=False)
         except json.JSONDecodeError:
             pass
     return None

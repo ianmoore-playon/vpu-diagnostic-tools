@@ -37,6 +37,21 @@ $ErrorActionPreference = 'Stop'
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+# Emit an object as compressed JSON with any literal C0 control bytes escaped.
+# Windows PowerShell 5.1's ConvertTo-Json (unlike PS 7's) leaves control bytes
+# unescaped inside strings — the raw Daktronics RTD scoreboard string uses
+# STX/ETX framing, and findstr scraping a UTF-16 SC I log can yield embedded
+# NULs. The server parses our stdout with a strict JSON reader that rejects
+# literal control characters, so a single stray byte voids the whole payload
+# ("Invalid JSON from Get-ScoreConnectStatus.ps1"). Replacing only literal
+# bytes is idempotent: anything ConvertTo-Json already escaped is a two-char
+# backslash sequence, not a literal byte, so it's untouched. No-op on PS 7+.
+function Out-StatusJson {
+    param($Obj, [int]$Depth = 10)
+    $json = $Obj | ConvertTo-Json -Depth $Depth -Compress
+    [regex]::Replace($json, '[\x00-\x1F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value[0] })
+}
+
 function Invoke-SafeGet {
     param([string]$Url, [int]$TimeoutSec = 2)
     try {
@@ -438,9 +453,14 @@ try {
         if ($sr2.ok) { $reachable = $true }
     }
 
-    if (-not $reachable) {
-        $errorMsg = "ScoreConnect III not reachable at $BaseUrl"
-    }
+    # NOTE: do NOT set $errorMsg here just because SC III isn't answering on
+    # :5000. SC III being absent is an expected state on a legacy box — this
+    # VPU may be running SC I or SC II, which we still detect and report below
+    # in the `sc2`/legacy slot. The `reachable` flag already conveys SC III's
+    # status; the top-level `error` field is reserved for a genuine probe
+    # failure (the catch block). Setting it here made the frontend treat a
+    # legacy-only VPU as a fatal "Failed to load data" and discard the SC I/II
+    # data we collected.
 
     # Version: get-status has no version field — always use exe on disk.
     $version = Get-ScoreConnectExeVersion
@@ -751,7 +771,7 @@ try {
     }
 
     # ── 7. Output ────────────────────────────────────────────────────────────
-    [ordered]@{
+    $result = [ordered]@{
         reachable            = $reachable
         baseUrl              = $BaseUrl
         version              = $version
@@ -768,10 +788,11 @@ try {
         services             = $svc.running
         error                = $errorMsg
         sc2                  = $legacyData
-    } | ConvertTo-Json -Depth 10 -Compress
+    }
+    Out-StatusJson $result
 }
 catch {
-    [ordered]@{
+    $errResult = [ordered]@{
         reachable            = $false
         baseUrl              = $BaseUrl
         version              = $null
@@ -787,5 +808,6 @@ catch {
         scoreLinkStatusLabel = 'ScoreLink not connected'
         error                = $_.Exception.Message
         sc2                  = $null
-    } | ConvertTo-Json -Compress
+    }
+    Out-StatusJson $errResult
 }

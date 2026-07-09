@@ -66,6 +66,7 @@ function svgIcon(name, size) {
 const NAV_SECTIONS = [
   { label: "TRIAGE", pages: [
     { id: "dashboard", label: "Dashboard", icon: "grid" },
+    { id: "inspection-report", label: "Inspection Report", icon: "file" },
   ]},
   { label: "TROUBLESHOOTING", pages: [
     { id: "network", label: "Network Test", icon: "wifi" },
@@ -103,7 +104,7 @@ const NAV_SECTIONS = [
 ];
 const PAGES = NAV_SECTIONS.flatMap((s) => s.pages);
 // Hidden pages (accessible via hash but not in nav)
-const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Fault Isolator" }];
+const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Camera Connection Troubleshooting" }];
 // Tabs retired in the nav restructure redirect to their nearest replacement so
 // old bookmarks / deep-links don't land on an "Unknown page".
 const RETIRED_PAGE_ALIASES = { system: "hardware", "pixellot-config": "pixellot-software" };
@@ -426,14 +427,16 @@ function fetchSection(key) {
 }
 
 // ── Splash status helpers ──────────────────────────────────────────────
-// Three independently-updatable lines: verb (Loading/Running diagnostics),
-// section (the human-readable name of the panel currently being fetched),
-// and percentage (animated via tabular-nums so digits don't jiggle).
+// The splash shows, top to bottom: the verb (Loading/Running diagnostics),
+// an "X of N systems" count, a live checklist that ticks each section off in
+// boot order, an issue banner (critical/warning findings, surfaced as soon
+// as the dashboard lands), and a reassurance note that escalates if a slow
+// box runs long.
 //
-// The section label uses the friendly nav title (e.g. "Disk & System
-// Health") rather than the API key (e.g. "disk-health") — we build the
-// lookup from NAV_SECTIONS on first use so it stays in sync with the
-// sidebar even if labels change later.
+// Section labels use the friendly nav title (e.g. "Disk & System Health")
+// rather than the API key (e.g. "disk-health") — we build the lookup from
+// NAV_SECTIONS on first use so it stays in sync with the sidebar even if
+// labels change later.
 let _SECTION_LABELS_CACHE = null;
 function _sectionLabels() {
   if (_SECTION_LABELS_CACHE) return _SECTION_LABELS_CACHE;
@@ -453,14 +456,88 @@ function _setSplashVerb(text) {
   if (el) el.textContent = text;
 }
 
-function _setSplashSection(key) {
-  const el = document.getElementById("splash-section");
+// The reassurance line under the checklist. Defaults to the up-front
+// expectation; escalates to SLOW if a box runs long (see preloadProgressive).
+// SPLASH_NOTE_DEFAULT must match the static text in index.html.
+const SPLASH_NOTE_DEFAULT = "Running a full diagnostic sweep — this can take a moment.";
+const SPLASH_NOTE_SLOW    = "Still working — some checks (camera frames, speed test) take longer on slower units.";
+
+// Ordered preload sections: dashboard first, then everything else fetched
+// during cold start. Single source for both the checklist and the X-of-Y
+// count, so they can't drift from each other or from what's actually fetched.
+function _splashSectionKeys() {
+  return Object.keys(PAGE_API);
+}
+function _splashSectionLabel(key) {
+  return _sectionLabels()[key] || key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+// (Re)build the checklist with every section pending, and reset the count.
+function _buildSplashChecklist() {
+  const wrap = document.getElementById("splash-checklist");
+  if (wrap) {
+    wrap.innerHTML = _splashSectionKeys().map((key) =>
+      `<div class="splash-check" data-key="${esc(key)}">`
+      +   `<span class="splash-check-mark"></span>`
+      +   `<span class="splash-check-label">${esc(_splashSectionLabel(key))}</span>`
+      + `</div>`
+    ).join("");
+  }
+  _setSplashCount(0, _splashSectionKeys().length);
+}
+
+function _markSplashSectionDone(key) {
+  if (!key) return;
+  const wrap = document.getElementById("splash-checklist");
+  const row = wrap && wrap.querySelector(`.splash-check[data-key="${key}"]`);
+  if (row) row.classList.add("done");
+}
+
+// Final frame before the splash fades: everything checked, count full.
+function _completeSplashChecklist() {
+  const wrap = document.getElementById("splash-checklist");
+  if (wrap) wrap.querySelectorAll(".splash-check").forEach((r) => r.classList.add("done"));
+  const total = _splashSectionKeys().length;
+  _setSplashCount(total, total);
+}
+
+function _setSplashCount(done, total) {
+  const el = document.getElementById("splash-count");
+  if (el) el.textContent = `Checked ${done} of ${total} system${total === 1 ? "" : "s"}`;
+}
+
+function _setSplashNote(text) {
+  const el = document.getElementById("splash-note");
+  if (el) el.textContent = text;
+}
+
+// Surface critical/warning findings on the splash. Driven by the dashboard
+// payload (fetched first), whose findings already aggregate every subsystem
+// — the same source the dashboard headline and nav health dots use. Hidden
+// on a clean box; pass a falsy/empty payload to clear it.
+function _setSplashIssues(dash) {
+  const el = document.getElementById("splash-issues");
   if (!el) return;
-  // Empty/blank → keep the row reserved (non-breaking space) so layout
-  // doesn't bounce when the splash first appears.
-  if (!key) { el.innerHTML = "&nbsp;"; return; }
-  const label = _sectionLabels()[key] || key.charAt(0).toUpperCase() + key.slice(1);
-  el.textContent = label;
+  const findings = (dash && dash.findings) || [];
+  const crit = findings.filter((f) => f.severity === "critical").length;
+  const warn = findings.filter((f) => f.severity === "warning").length;
+  if (!crit && !warn) { el.className = "splash-issues"; el.innerHTML = ""; return; }
+  const parts = [];
+  if (crit) parts.push(`${crit} Critical`);
+  if (warn) parts.push(`${warn} Warning${warn === 1 ? "" : "s"}`);
+  el.className = "splash-issues is-visible " + (crit ? "splash-issues-crit" : "splash-issues-warn");
+  el.innerHTML = `${svgIcon("triangle", 14)}<span>${parts.join(" · ")} found — details on the Dashboard</span>`;
+}
+
+// "Still working" escalation timer. Armed only on real (non-demo) loads —
+// demo finishes in ~3s, so the slow note would never legitimately fire there.
+let _splashSlowTimer = null;
+function _armSplashSlowTimer(active) {
+  if (_splashSlowTimer) { clearTimeout(_splashSlowTimer); _splashSlowTimer = null; }
+  if (active) _splashSlowTimer = setTimeout(() => _setSplashNote(SPLASH_NOTE_SLOW), 20000);
+}
+function _clearSplashSlowTimer() {
+  if (_splashSlowTimer) { clearTimeout(_splashSlowTimer); _splashSlowTimer = null; }
 }
 
 let _splashPctAnim = null;
@@ -491,7 +568,9 @@ function showSplash(verbText) {
   const splash = document.getElementById("splash");
   if (!splash) return;
   _setSplashVerb(verbText || "Loading diagnostics…");
-  _setSplashSection(null);
+  _setSplashNote(SPLASH_NOTE_DEFAULT);   // reset any prior "still working" escalation
+  _setSplashIssues(null);                // clear a prior run's findings banner
+  _buildSplashChecklist();               // all sections pending, count 0 of N
   _setSplashPct(0);
   splash.classList.remove("splash-hidden");
 }
@@ -499,7 +578,8 @@ function showSplash(verbText) {
 function hideSplash() {
   const splash = document.getElementById("splash");
   if (!splash) return;
-  _setSplashSection(null);
+  _clearSplashSlowTimer();
+  _completeSplashChecklist();   // last visible frame: everything checked
   _setSplashPct(100);
   _setSplashVerb("Ready");
   splash.classList.add("splash-hidden");
@@ -517,31 +597,50 @@ function preloadProgressive(opts) {
   const o = opts || {};
   const verb = o.verb || "Loading diagnostics";
   const deferred = Object.keys(PAGE_API).filter((k) => k !== "dashboard");
-  const totalSections = 1 + deferred.length;   // dashboard + deferred
-  let completedSections = 0;
-  // Demo mode: serialize ticks with a small delay so the splash actually
+  // Demo mode: pace each reveal with a small delay so the splash actually
   // SHOWS each section being checked instead of flashing past. Real cold
-  // start is naturally ~5-15s, so the demo's ~2.5s artificial pacing
-  // mirrors the field UX. window.__PULSE_DEMO_MODE is injected into the
-  // HTML at render time so we know synchronously — relying on the
-  // /api/version response races with the first tick and (in practice)
-  // loses, leaving the bar flashing to 100% with no delay.
+  // start is naturally ~5-15s, so the demo's ~3s artificial pacing mirrors
+  // the field UX. window.__PULSE_DEMO_MODE is injected into the HTML at
+  // render time so we know synchronously — relying on the /api/version
+  // response races with the first reveal and (in practice) loses.
   let _demoTickDelayMs = (typeof window !== "undefined" && window.__PULSE_DEMO_MODE) ? 280 : 0;
-  let _tickChain = Promise.resolve();
-  const tick = (key) => {
-    _tickChain = _tickChain.then(async () => {
-      if (_demoTickDelayMs > 0) {
-        await new Promise((r) => setTimeout(r, _demoTickDelayMs));
-      }
-      completedSections++;
-      _setSplashSection(key);
-      _setSplashPct((completedSections / totalSections) * 100);
-    });
-  };
+
+  // Sections are fetched in parallel below (fast — the server caps the real
+  // work with a 4-slot PowerShell semaphore), so they SETTLE in arbitrary
+  // order. The checklist, though, reveals strictly in PAGE_API order so it
+  // reads as steady top-to-bottom progress instead of checks popping in at
+  // random. We decouple "data arrived" (markReady) from "shown checked" (the
+  // reveal loop): each step is ticked off only once it AND every step before
+  // it has landed — a deterministic boot sequence without serializing (and
+  // thus slowing) the actual fetches.
+  const order = _splashSectionKeys();   // dashboard, system, network, … (boot order)
+  const total = order.length;
+  const _resolveReady = {};
+  const _ready = {};
+  order.forEach((k) => { _ready[k] = new Promise((res) => { _resolveReady[k] = res; }); });
+  // Idempotent and failure-safe: a rejected fetch must still mark its step
+  // ready, or the in-order reveal would wait on it forever and the splash
+  // would never hide.
+  const markReady = (key) => { const r = _resolveReady[key]; if (r) { _resolveReady[key] = null; r(); } };
+  const _reveal = (async () => {
+    for (let i = 0; i < order.length; i++) {
+      const key = order[i];
+      await _ready[key];
+      if (_demoTickDelayMs > 0) await new Promise((r) => setTimeout(r, _demoTickDelayMs));
+      _markSplashSectionDone(key);
+      _setSplashCount(i + 1, total);
+      _setSplashPct(((i + 1) / total) * 100);
+    }
+  })();
 
   _setSplashVerb(`${verb}…`);
-  _setSplashSection(null);
+  _setSplashNote(SPLASH_NOTE_DEFAULT);
+  _setSplashIssues(null);
+  _buildSplashChecklist();
   _setSplashPct(0);
+  // Real boxes only: if the sweep runs long, soften the note so a slow
+  // load never looks like a hang. Demo finishes in ~3s, so don't arm it.
+  _armSplashSlowTimer(!(typeof window !== "undefined" && window.__PULSE_DEMO_MODE));
 
   // Version + log endpoints — run in parallel, not gated on dashboard.
   const versionPromise = api("/api/version").then((data) => {
@@ -563,27 +662,33 @@ function preloadProgressive(opts) {
     }
   });
 
-  // Dashboard first — its result lets us start the WebSocket for live
-  // metric updates as soon as it returns.
+  // Dashboard first — its result lets us start the WebSocket for live metric
+  // updates, and surfaces any critical/warning findings on the splash right
+  // away (its findings already aggregate every subsystem). The second
+  // (rejection) handler still markReady-s so a failed dashboard can't stall
+  // the in-order reveal.
   const dashboardPromise = fetchSection("dashboard").then((res) => {
-    tick("dashboard");
+    markReady("dashboard");
+    try { _setSplashIssues(res); } catch (e) {}
     connectWS();
     return res;
-  });
+  }, () => { markReady("dashboard"); });
 
-  // All other sections fire immediately. Identical-script requests
-  // dedupe server-side, so this doesn't trigger duplicate PS work.
+  // All other sections fire immediately. Identical-script requests dedupe
+  // server-side, so this doesn't trigger duplicate PS work. markReady on both
+  // outcomes, for the same no-stall reason as the dashboard above.
   const deferredPromises = deferred.map((key) =>
-    fetchSection(key).then((res) => { tick(key); return res; })
+    fetchSection(key).then((res) => { markReady(key); return res; }, () => { markReady(key); })
   );
 
-  // allSettled so one failing endpoint can't trap the splash. Also wait
-  // on _tickChain so the splash stays up until the (demo-paced) progress
-  // bar has actually FINISHED animating — not just when the fetches return.
+  // allSettled so one failing endpoint can't trap the splash. Also wait on
+  // the reveal so the splash stays up until the (demo-paced) checklist has
+  // actually FINISHED ticking through — not just when the fetches return.
   return Promise.allSettled([
     dashboardPromise, versionPromise, logsPromise, ...deferredPromises,
   ]).then(async (results) => {
-    await _tickChain;
+    await _reveal;
+    _clearSplashSlowTimer();   // finished in time — no "still working" needed
     return results;
   });
 }
@@ -811,6 +916,9 @@ function _updateGaugeLive(name, val, opts) {
 
 const pageRenderers = {
   dashboard: renderDashboard,
+  // Read-only fleet-audit roll-up under TRIAGE. Reuses the cached /api/system,
+  // /api/network and /api/cameras payloads — no own endpoint (skips PAGE_API).
+  "inspection-report": renderInspectionReport,
   // System Overview was split into Hardware / Applications / Environment
   // (nav restructure v3); the `system` id is retired but its /api/system
   // payload still feeds all three (and Pixellot Software, below).
@@ -871,36 +979,6 @@ function _pcDaysSince(iso) {
   return Math.floor((Date.now() - dt.getTime()) / 86400000);
 }
 
-// keepagentup.exe — confirm + run + inline result (mirrors the Services lane).
-// Shared by the Pixellot Software tab; attached to #pc-keepagent-btn.
-async function _pcRestartAgentHandler() {
-  const ok = confirm(
-    "Restart Pixellot Agent + Coordinator?\n\n" +
-    "This runs c:\\pixellot\\bin\\keepagentup.exe, which will briefly stop and " +
-    "relaunch both services. Recording may pause for a few seconds.\n\nProceed?"
-  );
-  if (!ok) return;
-  const btn = document.getElementById("pc-keepagent-btn");
-  const resultEl = document.getElementById("pc-keepagent-result");
-  btn.disabled = true;
-  btn.innerHTML = `${svgIcon("refresh", 14)} Restarting...`;
-  resultEl.classList.add("hidden");
-
-  const r = await apiPost("/api/services/restart-agent", {});
-  btn.disabled = false;
-  btn.innerHTML = `${svgIcon("zap", 14)} Restart Agent + Coordinator`;
-
-  const ok2 = r && r.success;
-  resultEl.className = "svc-quick-action-result " + (ok2 ? "svc-result-ok" : "svc-result-err");
-  resultEl.innerHTML = `
-    <div class="font-semibold">${ok2 ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
-    <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
-    ${r?.agentStatus ? `<div class="text-xs mt-2 text-pulse-muted">Agent: <span class="font-mono">${esc(r.agentStatus)}</span> &middot; Coordinator: <span class="font-mono">${esc(r.coordinatorStatus || "?")}</span></div>` : ""}
-    ${r?.stdout ? `<pre class="svc-result-output">${esc(r.stdout)}</pre>` : ""}
-    ${r?.stderr ? `<pre class="svc-result-output svc-result-stderr">${esc(r.stderr)}</pre>` : ""}
-  `;
-}
-
 // ── Pixellot Software (full) ─────────────────────────────────
 // Version + GPU/OS compatibility (from /api/system) plus install/agent and the
 // raw registry dump (from /api/pixellot-config). Reads both caches; the page id
@@ -937,7 +1015,7 @@ function renderPixellotSoftware() {
       ${_pixCompatBannerHtml(pix.compat)}
     </div>
 
-    <div class="card svc-quick-action">
+    <div class="card">
       ${sectionTitle("server", "Install & Agent")}
       ${pc.error ? errorBox(pc.message) : `
         <div class="kv-grid">
@@ -945,14 +1023,6 @@ function renderPixellotSoftware() {
           ${kvRow("Dependencies", reg.dependencies || reg.Dependencies)}
           ${kvRowHtml("cameras.cfg", pc.cameraCfgExists ? badge("Present", "pass") : badge("Missing", "fail"))}
         </div>
-        <div class="svc-quick-action-row mt-3">
-          <div>
-            <div class="svc-quick-action-title">Restart Pixellot Agent + Coordinator</div>
-            <div class="svc-quick-action-body">The documented first fix when the Agent or Coordinator hangs — try it before escalating. <span class="font-mono">Runs keepagentup.exe.</span></div>
-          </div>
-          <button class="btn-outline btn-ol-amber" id="pc-keepagent-btn">${svgIcon("zap", 14)} Restart Agent + Coordinator</button>
-        </div>
-        <div id="pc-keepagent-result" class="svc-quick-action-result hidden"></div>
       `}
     </div>
 
@@ -962,8 +1032,6 @@ function renderPixellotSoftware() {
       <div class="kv-grid">${regRows}</div>
     </div>`}
   `;
-
-  document.getElementById("pc-keepagent-btn")?.addEventListener("click", _pcRestartAgentHandler);
 }
 
 // ── Camera Hardware ──────────────────────────────────────────
@@ -2125,16 +2193,21 @@ function renderEnvironment() {
   // system payload), so the tab paints immediately and these fill in.
   // Guard on currentPage so a late response after navigating away can't
   // write into another tab.
+  const _panelFail = (id, what) => {
+    if (currentPage !== "environment") return;
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = `<p class="text-sm text-pulse-muted">Could not load ${what}.</p>`;
+  };
   api("/api/users-domains").then(d => {
     if (currentPage !== "environment") return;
     const el = document.getElementById("sys-users-body");
     if (el) el.innerHTML = _usersPanelHtml(d);
-  }).catch(() => {});
+  }).catch(() => _panelFail("sys-users-body", "users / domain"));
   api("/api/peripherals").then(d => {
     if (currentPage !== "environment") return;
     const el = document.getElementById("sys-peripherals-body");
     if (el) el.innerHTML = _peripheralsPanelHtml(d);
-  }).catch(() => {});
+  }).catch(() => _panelFail("sys-peripherals-body", "peripherals"));
 }
 
 function _usersPanelHtml(d) {
@@ -2169,9 +2242,13 @@ function _peripheralsPanelHtml(d) {
   const row = (icon, label, dev) => {
     dev = dev || {};
     const on = !!dev.connected;
+    // Names live under `devices` (mouse/keyboard) or `displays` (monitor).
+    // PS 5.1 ConvertTo-Json unwraps a single-element array to a bare string,
+    // so coerce back to an array before .join (see _first, above).
+    const raw = dev.devices != null ? dev.devices : dev.displays;
+    const names = Array.isArray(raw) ? raw : (raw ? [raw] : []);
     const detail = on
-      ? ((dev.devices && dev.devices.length) ? dev.devices.join(", ")
-         : `${dev.count || 0} connected`)
+      ? (names.length ? names.join(", ") : `${dev.count || 0} connected`)
       : "Not detected";
     return `<div class="periph-row">
       <span class="periph-icon">${svgIcon(icon, 18)}</span>
@@ -2200,12 +2277,31 @@ function _first(v) { return Array.isArray(v) ? v[0] : v != null ? String(v) : nu
 // Local ping runner — manages preset and continuous ping modes
 var _localPingState = { running: false, continuous: false, abortCtrl: null };
 
+// Canonical "is name resolution demonstrably working?" signal, shared by the
+// Issues & Recommendations DNS check and the Local Network Health ping card.
+// A resolved domain in Domain Reachability, or any required hostname-based port
+// that passed (you can't reach pixellot.tv:443 without first resolving
+// pixellot.tv), proves DNS is fine — independent of whether the DNS server
+// answers ICMP. So a dead ping to the DNS server is blocked ICMP, not a failure.
+function _dnsResolvingFrom(domains, ports) {
+  return (domains || []).some(function(d) {
+      return d && d.resolvedTo && (d.status || "").toLowerCase() === "pass";
+    }) || (ports || []).some(function(p) {
+      return !p.optional && p.purpose !== "DNS" && (p.status || "").toLowerCase() === "pass"
+        && /[a-z]/i.test(String(p.host || ""));
+    });
+}
+
 function _renderPingCards(local) {
   var gw = (local || {}).gateway;
   var dns = (local || {}).dns;
   var el = document.getElementById("net-ping-results");
   if (!el) return;
-  el.innerHTML = _pingCardHtml(gw) + _pingCardHtml(dns);
+  // The live ping loop only hands us {gateway, dns}; pull domains/ports from the
+  // cached network data so the DNS card can soften a blocked-ICMP ping.
+  var _net = cached("network") || {};
+  var _resolving = _dnsResolvingFrom((_net.domains && _net.domains.results) || [], (_net.ports && _net.ports.results) || []);
+  el.innerHTML = _pingCardHtml(gw, false) + _pingCardHtml(dns, _resolving);
 }
 
 function _fmtMs(v) {
@@ -2216,13 +2312,26 @@ function _fmtMs(v) {
   return Math.round(v) + " ms";
 }
 
-function _pingCardHtml(p) {
+function _pingCardHtml(p, resolutionWorks) {
   if (!p || !p.target) return "";
-  var sc = p.status === "pass" ? "net-ping-pass" : p.status === "warn" ? "net-ping-warn" : "net-ping-fail";
-  var dot = p.status === "pass" ? "var(--c-accent-green)" : p.status === "warn" ? "var(--c-accent-amber)" : "var(--c-accent-red)";
+  // ICMP to the DNS server is routinely firewalled even when the resolver is
+  // perfectly healthy. When name resolution is demonstrably working but the
+  // ping got no reply, present the card as a neutral INFO ("ping blocked")
+  // rather than a red failure that reads as an outage.
+  var icmpBlocked = !!resolutionWorks && !p.reachable;
+  var sc, dot;
+  if (icmpBlocked) {
+    sc = "net-ping-info"; dot = "var(--c-accent-blue)";
+  } else {
+    sc = p.status === "pass" ? "net-ping-pass" : p.status === "warn" ? "net-ping-warn" : "net-ping-fail";
+    dot = p.status === "pass" ? "var(--c-accent-green)" : p.status === "warn" ? "var(--c-accent-amber)" : "var(--c-accent-red)";
+  }
   var latency = _fmtMs(p.avgMs);
   var loss = p.lossPercent != null ? p.lossPercent + "%" : "—";
   var range = (p.minMs != null && p.maxMs != null) ? _fmtMs(p.minMs).replace(" ms","") + " / " + _fmtMs(p.avgMs).replace(" ms","") + " / " + _fmtMs(p.maxMs).replace(" ms","") + " ms" : "—";
+  var note = icmpBlocked
+    ? '<div class="net-ping-note">' + svgIcon("info", 12) + ' ICMP ping blocked by firewall — name resolution is working' + '</div>'
+    : "";
   return '<div class="net-ping-card ' + sc + '">' +
     '<div class="net-ping-header">' +
       '<span class="net-ping-dot" style="background:' + dot + '"></span>' +
@@ -2235,6 +2344,7 @@ function _pingCardHtml(p) {
       '<div class="net-ping-stat"><span class="net-ping-stat-label">Min / Avg / Max</span><span class="net-ping-stat-value font-mono">' + esc(range) + '</span></div>' +
       '<div class="net-ping-stat"><span class="net-ping-stat-label">Packets</span><span class="net-ping-stat-value">' + esc(String(p.received || 0)) + ' / ' + esc(String(p.sent || 0)) + ' received</span></div>' +
     '</div>' +
+    note +
   '</div>';
 }
 
@@ -3006,8 +3116,21 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     issues.push({ severity: "warning", title: "Unstable connection to the gateway — " + (gw.avgMs || "?") + " ms latency, " + (gw.lossPercent || 0) + "% loss",
       body: "Try a different switch port, replace the Ethernet cable, or check for broadcast storms on the venue network." });
 
-  // ── Warning/Info: DNS server ─────────────────────────────
-  if (dns && !dns.reachable)
+  // ── DNS server: blocked ICMP vs. real resolution failure ─
+  // Is name resolution demonstrably working? (Shared signal — also gates the
+  // UDP/53 probe below and the Local Network Health ping card.)
+  var _dnsResolving = _dnsResolvingFrom(domains, ports);
+
+  // A 100%-loss ping to the DNS server is NOT proof it's down — ICMP is
+  // routinely firewalled on locked-down venue networks while the resolver keeps
+  // answering real UDP/53 queries. When resolution is demonstrably working, the
+  // dead ping is just blocked ICMP: report it as INFO, not a warning that sends
+  // a tech chasing a healthy box. Only call lookups "failing" when nothing
+  // resolved either.
+  if (dns && !dns.reachable && _dnsResolving)
+    issues.push({ severity: "info", title: "DNS server " + dns.target + " isn't answering pings, but name resolution is working",
+      body: "The VPU is resolving domains normally — the DNS server just isn't replying to ICMP ping, which many venue firewalls block. No action needed." });
+  else if (dns && !dns.reachable)
     issues.push({ severity: "warning", title: "Name lookups are failing (DNS server " + dns.target + " unreachable)",
       body: "Domain resolution will fail. Check DNS server address in adapter settings or try a public DNS (8.8.8.8, 1.1.1.1)." });
   else if (dns && dns.reachable) {
@@ -3093,17 +3216,10 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     });
   }
 
-  // Is name resolution demonstrably working? A resolved domain in Domain
-  // Reachability, or any required hostname-based port that passed (you can't
-  // reach pixellot.tv:443 without first resolving pixellot.tv), proves DNS is
-  // fine — so a failed UDP/53 probe must NOT claim "can't resolve any hostname"
-  // (that probe can target a stale resolver or just go unanswered).
-  var _dnsResolving = (domains || []).some(function(d) {
-      return d && d.resolvedTo && (d.status || "").toLowerCase() === "pass";
-    }) || (ports || []).some(function(p) {
-      return !p.optional && p.purpose !== "DNS" && (p.status || "").toLowerCase() === "pass"
-        && /[a-z]/i.test(String(p.host || ""));
-    });
+  // `_dnsResolving` (hoisted above with the DNS-server ping check) also gates
+  // the UDP/53 probe here: a failed probe must NOT claim "can't resolve any
+  // hostname" when resolution is clearly working — that probe can target a
+  // stale resolver or just go unanswered.
 
   // Non-streaming required failures (DNS, NFHS, S3, Singular, LogMeIn,
   // pixellot.tv apex) — prerequisites, not redundant paths, so any one blocked
@@ -3353,6 +3469,228 @@ function _netDnsResolutionCard(dnsResolution, cfg) {
   </div>`;
 }
 
+// ── Inspection Report (fleet audit roll-up) ──────────────────
+// Read-only TRIAGE tab that pools the handful of fields a fleet audit needs
+// (identity, OS, network addressing, port-test result) onto one screen, so a
+// tech auditing ~15k units doesn't have to hop across the Hardware, Network and
+// Camera tabs per unit. NO new data/collector/endpoint — it reads the same
+// cached /api/system, /api/network and /api/cameras payloads the other tabs use.
+
+// Port-test verdict from the port results alone, using the same streaming-
+// redundancy rules as the Network tab (_streamingHealth / _isRedundantStreamBlock)
+// so the two never disagree: a blocked required port is a Fail, unless it's a
+// backup stream transport whose sibling is still open (Warning); a blocked
+// optional port is a Warning. Returns a severityChip-compatible {sev, label}.
+function _portTestVerdict(ports) {
+  ports = ports || [];
+  if (!ports.length) return { sev: "muted", label: "No data" };
+  var health = _streamingHealth(ports);
+  var hasFail = false, hasWarn = false;
+  ports.forEach(function(p) {
+    if ((p.status || "").toLowerCase() === "pass") return;
+    if (p.optional || _isRedundantStreamBlock(p, health)) { hasWarn = true; return; }
+    hasFail = true;
+  });
+  if (hasFail) return { sev: "critical", label: "Fail" };
+  if (hasWarn) return { sev: "warning", label: "Warning" };
+  return { sev: "ok", label: "Pass" };
+}
+
+// Windows vs Linux from the OS caption. The current collectors only run on
+// Windows VPUs, but key off the caption so a future Linux probe surfaces
+// correctly rather than being silently mislabeled.
+function _vpuType(osCaption) {
+  var c = (osCaption || "").toLowerCase();
+  if (c.indexOf("windows") !== -1) return "Windows";
+  if (c.indexOf("linux") !== -1 || c.indexOf("ubuntu") !== -1 || c.indexOf("debian") !== -1) return "Linux";
+  return null;
+}
+
+// Camera frames for the audit. Captured once when the tab opens (cached in
+// _irFrames so a re-render doesn't re-fire), and — unlike the Camera tab —
+// posted with {force:true}, which bypasses the vpu.exe capture interlock AND
+// the cooldown so the audit always gets a frame, even on a live VPU. The frame
+// grid itself is the Camera tab's renderer, reused verbatim.
+var _irFrames = { state: "idle", data: null };
+
+function _irCaptureFrames() {
+  _irFrames = { state: "loading", data: null };
+  _irPaintFrames();
+  apiPost("/api/cameras/video-test", { force: true }).then(function(res) {
+    // Stamp the capture time onto each frame so the cards read "Captured HH:MM"
+    // — these are stills, and the audit wants to know how fresh they are.
+    if (res && (res.results || []).length) {
+      var t = new Date().toLocaleTimeString();
+      res.results.forEach(function(r) { r._capturedAt = t; });
+    }
+    _irFrames = { state: "done", data: res };
+    if (currentPage === "inspection-report") _irPaintFrames();
+  }).catch(function() {
+    _irFrames = { state: "error", data: null };
+    if (currentPage === "inspection-report") _irPaintFrames();
+  });
+}
+
+function _irPaintFrames() {
+  var wrap = document.getElementById("ir-frames-wrap");
+  if (!wrap) return;
+  if (_irFrames.state === "loading") {
+    wrap.innerHTML = '<div class="card">' + sectionTitle("camera", "Camera Frames") +
+      '<div class="cam-video-running">' + svgIcon("refresh", 14) +
+      ' Grabbing a frame from each connected camera…</div></div>';
+  } else if (_irFrames.state === "error") {
+    wrap.innerHTML = '<div class="card">' + sectionTitle("camera", "Camera Frames") +
+      '<div class="cam-video-err">Frame capture failed to run.</div></div>';
+  } else if (_irFrames.state === "done") {
+    wrap.innerHTML = _camVideoResultsHtml(_irFrames.data, { showControls: false });
+  } else {
+    wrap.innerHTML = "";
+  }
+}
+
+// Full report refresh: drop every cached payload it reads and re-capture frames.
+function _irRefresh() {
+  dataCache.system = null;
+  dataCache.network = null;
+  dataCache.cameras = null;
+  dataCache.scoreconnect = null;
+  _irFrames = { state: "idle", data: null };
+  renderInspectionReport();
+}
+
+function renderInspectionReport() {
+  // Three independent payloads back this tab; fetch any that aren't cached yet
+  // and re-render as each lands (mirrors the Hardware/Environment split-tab
+  // pattern). system/network/cameras are all in PAGE_API, so fetchSection works.
+  var system = cached("system");
+  var network = cached("network");
+  var cameras = cached("cameras");
+  var missing = [];
+  if (!system) missing.push("system");
+  if (!network) missing.push("network");
+  if (!cameras) missing.push("cameras");
+  if (missing.length) {
+    $page().innerHTML = sectionLoading("Inspection Report");
+    missing.forEach(function(k) {
+      fetchSection(k).then(function() {
+        if (currentPage === "inspection-report") renderInspectionReport();
+      });
+    });
+    return;
+  }
+
+  // Identity — /api/system (identity) + /api/cameras (system type)
+  var id = system.identity || {};
+  var cs = id.computerSystem || {};
+  var os = id.operatingSystem || {};
+  var osCaption = os.caption || null;
+  // LMI name = the Pixellot device/broadcast name (always starts with "PXL"),
+  // parsed from the agent log's BROADCAST_NAME — NOT the Windows hostname, which
+  // can differ. Fall back to the hostname when the agent log isn't readable,
+  // matching the dashboard's vpuName-or-hostname treatment.
+  var lmiName = (id.pixellot && id.pixellot.vpuName) || cs.name;
+  var osText = osCaption ? osCaption + (os.version ? " (" + os.version + ")" : "") : null;
+  var camType = cameras.systemType
+    || (cameras.expectedMainCameras != null ? cameras.expectedMainCameras + "-camera" : null);
+
+  // Network addressing — uplink adapter, joined across adapters[]/ipConfig[] the
+  // same way the Network tab does, so the addressing shown here matches it.
+  var cfg = network.config || {};
+  var ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
+  var uplinkName = cfg.uplinkAdapter && cfg.uplinkAdapter.interfaceAlias;
+  var uplinkAdapterRow = uplinkName
+    ? (cfg.adapters || []).find(function(a) { return a.name === uplinkName; }) || null
+    : null;
+  var uplinkIpCfg = uplinkName
+    ? ipConfigs.find(function(ip) { return ip.interfaceAlias === uplinkName; }) || null
+    : null;
+  var ipAddr = _first(uplinkIpCfg && uplinkIpCfg.ipv4Address);
+  var macAddr = uplinkAdapterRow && uplinkAdapterRow.macAddress;
+  var dhcpLabel = uplinkIpCfg && uplinkIpCfg.dhcpEnabled === true ? "DHCP"
+    : uplinkIpCfg && uplinkIpCfg.dhcpEnabled === false ? "Static" : null;
+  var subnetMask = uplinkIpCfg ? _prefixToMask(uplinkIpCfg.prefixLength) : null;
+  var gateway = (cfg.uplinkAdapter && cfg.uplinkAdapter.gateway)
+    || _first(uplinkIpCfg && uplinkIpCfg.ipv4DefaultGateway);
+
+  // Port test — /api/network ports, rendered with the shared port component
+  // plus a single overall verdict chip.
+  var ports = (network.ports && network.ports.results) || [];
+  var verdict = _portTestVerdict(ports);
+
+  // Scoreboard — /api/scoreconnect. Fetched lazily so a slow ScoreConnect probe
+  // never holds up the core report; the card fills in when it lands. vendor falls
+  // back to the legacy SC I/II payload (sc2) when SC III isn't the source.
+  var sc = cached("scoreconnect");
+  if (!sc) {
+    fetchSection("scoreconnect").then(function() {
+      if (currentPage === "inspection-report") renderInspectionReport();
+    });
+  }
+  var scCfg = (sc && sc.configuration) || {};
+  var scSport = scCfg.sport || null;
+  var scVendor = scCfg.vendor || (sc && sc.sc2 && sc.sc2.vendor) || null;
+  var scLinkHtml;
+  if (!sc) scLinkHtml = '<span class="text-pulse-muted">Checking…</span>';
+  else if (sc.scoreLinkConnected === true) scLinkHtml = badge("Connected", "pass");
+  else if (sc.scoreLinkConnected === false) scLinkHtml = badge("Not connected", "warn");
+  else scLinkHtml = '<span class="text-pulse-muted">Not detected</span>';
+
+  $page().innerHTML = `
+    ${pageHeader("Inspection Report", "Every field the fleet audit needs, pooled from the Hardware, Network, Camera and ScoreConnect tabs onto one screen.",
+      `<button class="btn-outline btn-ol-blue" onclick="_irRefresh()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <div class="dash-2col ir-block">
+      <div class="card">
+        ${sectionTitle("info", "Identity")}
+        <div class="kv-grid kv-grid-wide">
+          ${kvRow("LMI Name", lmiName)}
+          ${kvRow("Camera Type", camType)}
+          ${kvRow("Operating System", osText)}
+          ${kvRow("VPU Type", _vpuType(osCaption))}
+        </div>
+      </div>
+      <div class="card">
+        ${sectionTitle("globe", "Network")}
+        <div class="kv-grid kv-grid-wide">
+          ${kvRow("IP Address", ipAddr)}
+          ${kvRow("MAC Address", macAddr)}
+          ${kvRow("Static / DHCP", dhcpLabel)}
+          ${kvRow("Subnet Mask", subnetMask)}
+          ${kvRow("Gateway", gateway)}
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-2col ir-block">
+      <div class="card">
+        ${sectionTitle("monitor", "Scoreboard")}
+        <div class="kv-grid kv-grid-wide">
+          ${kvRow("Sport", scSport)}
+          ${kvRow("Vendor", scVendor)}
+          ${kvRowHtml("ScoreLink", scLinkHtml)}
+        </div>
+      </div>
+      <div class="card">
+        <div class="flex items-center justify-between">
+          ${sectionTitle("link", "Network Port Test")}
+          ${severityChip(verdict.sev, verdict.label)}
+        </div>
+        ${_renderPortConnectivity(ports)}
+      </div>
+    </div>
+
+    <div id="ir-frames-wrap"></div>
+  `;
+
+  // Capture frames on first open; a later re-render (e.g. ScoreConnect data
+  // landing) just repaints the existing capture rather than firing another.
+  if (_irFrames.state === "idle") _irCaptureFrames();
+  else _irPaintFrames();
+}
+
 function renderNetwork() {
   const data = cached("network");
   if (!data) { $page().innerHTML = sectionLoading("Network"); fetchSection("network"); return; }
@@ -3393,10 +3731,9 @@ function renderNetwork() {
     ? String(uplinkIpCfg.dnsServers).split(",").map(function(s) { return s.trim(); }).filter(Boolean).join(", ")
     : "—";
 
-  // Uplink adapter stats (duplex, error counters)
+  // Uplink adapter stats (duplex)
   const uplinkStats = cfg.uplinkStats || {};
   const duplexLabel = uplinkStats.fullDuplex === true ? "Full Duplex" : uplinkStats.fullDuplex === false ? "Half Duplex" : null;
-  const totalErrors = (uplinkStats.rxErrors || 0) + (uplinkStats.txErrors || 0);
 
   // Wired Ports — error/discard counters for EVERY wired NIC, not just the
   // uplink. A multi-NIC VPU has the motherboard port plus the camera card; a
@@ -3524,7 +3861,7 @@ function renderNetwork() {
         ${local && local.error
           ? '<p class="text-sm status-fail">Local network test failed: ' + esc(local.message || 'unknown error') + '</p>'
           : (local.gateway || local.dns)
-            ? _pingCardHtml(local.gateway) + _pingCardHtml(local.dns)
+            ? _pingCardHtml(local.gateway, false) + _pingCardHtml(local.dns, _dnsResolvingFrom(domains, ports))
             : '<p class="text-pulse-muted text-sm mt-2">Select a ping count above to test local network health.</p>'}
       </div>
     </div>
@@ -3609,29 +3946,6 @@ function renderNetwork() {
         </div>
           </div>
         </div>
-        ${totalErrors > 0 || (uplinkStats.rxBytes != null) ? `
-          <div class="net-iface-stats">
-            <div class="net-iface-stats-title" title="Cumulative NIC counters since boot. Zero across the board is healthy; non-zero errors or discards usually mean a bad cable, dirty switch port, or NIC driver issue.">${svgIcon("activity", 12)} Network Errors (this adapter) ${svgIcon("info", 12)}</div>
-            <div class="net-iface-stats-grid">
-              <div class="net-iface-stat">
-                <span class="net-iface-stat-label">RX Errors</span>
-                <span class="net-iface-stat-val ${uplinkStats.rxPacketErrors > 0 ? 'status-warn' : ''}">${uplinkStats.rxPacketErrors || 0}</span>
-              </div>
-              <div class="net-iface-stat">
-                <span class="net-iface-stat-label">RX Discards</span>
-                <span class="net-iface-stat-val ${uplinkStats.rxDiscards > 0 ? 'status-warn' : ''}">${uplinkStats.rxDiscards || 0}</span>
-              </div>
-              <div class="net-iface-stat">
-                <span class="net-iface-stat-label">TX Errors</span>
-                <span class="net-iface-stat-val ${uplinkStats.txPacketErrors > 0 ? 'status-warn' : ''}">${uplinkStats.txPacketErrors || 0}</span>
-              </div>
-              <div class="net-iface-stat">
-                <span class="net-iface-stat-label">TX Discards</span>
-                <span class="net-iface-stat-val ${uplinkStats.txDiscards > 0 ? 'status-warn' : ''}">${uplinkStats.txDiscards || 0}</span>
-              </div>
-            </div>
-            ${totalErrors > 0 ? '<div class="net-iface-stats-warn">' + svgIcon("triangle", 12) + ' Network errors on this connection — check the cable, the switch port, or the network driver.</div>' : ''}
-          </div>` : ""}
       </div>
 
     ${wiredPortsCard}
@@ -3961,9 +4275,9 @@ function _camDownGuidanceHtml(p, ctx) {
     if (allDown) {
       msg = "No signal — and every camera port is down. This points to the network card, its driver, or power to the camera bank — not one cable.";
     } else if (othersUp) {
-      msg = "Check this cable (both ends) and the camera's power, then run Fault Isolator. The other ports are linked, so the problem is likely just this cable, camera, or port — not a card-wide failure.";
+      msg = "Check this cable (both ends) and the camera's power, then run Camera Connection Troubleshooting. The other ports are linked, so the problem is likely just this cable, camera, or port — not a card-wide failure.";
     } else {
-      msg = "No signal detected. Check the cable is seated both ends and the camera has power, then use Fault Isolator.";
+      msg = "No signal detected. Check the cable is seated both ends and the camera has power, then use Camera Connection Troubleshooting.";
     }
   }
   return '<div class="cam-down-guide">' + svgIcon("alert", 12) + ' <span>' + esc(msg) + '</span></div>';
@@ -4306,7 +4620,11 @@ function _camFrameKv(label, value, mono) {
     '<span class="cam-kv-v' + (mono ? " font-mono" : "") + '">' + value + "</span></div>";
 }
 
-function _camVideoResultsHtml(res) {
+function _camVideoResultsHtml(res, opts) {
+  // showControls=false (Inspection Report) drops the per-camera + all-cameras
+  // Refresh buttons — they're wired to the Camera tab's DOM (#cam-video-wrap)
+  // and would be dead on any other page; that tab's own Refresh re-captures.
+  var showControls = !opts || opts.showControls !== false;
   if (!res || res.error) {
     return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
       '<div class="cam-video-err">Error: ' + esc((res && res.message) || "unknown") + '</div></div>';
@@ -4339,9 +4657,19 @@ function _camVideoResultsHtml(res) {
         ' Degraded link — ' + spd + (exp ? ", expected " + exp : "") +
         '. A frame pulled, but the stream won\'t hold until this is fixed.</div>';
     }
-    var cardCls = r.ok ? (degraded ? "cam-frame-degraded" : "") : "cam-frame-fail";
-    var statusTxt = !r.ok ? "No video" : (degraded ? "Active · degraded" : "Active");
-    var statusCls = !r.ok ? "status-fail" : (degraded ? "status-warn" : "status-pass");
+    // Black-picture diagnosis: the frame grabbed (so it reads "Active"), but the
+    // server found the picture is near-black — surface it instead of a false OK.
+    var hasDiag = r.ok && r.diagnosis && r.diagnosis.summary;
+    var diag = "";
+    if (hasDiag) {
+      diag = '<div class="cam-frame-diag">' + svgIcon("alert", 11) +
+        ' <span>' + esc(r.diagnosis.summary) +
+        (r.diagnosis.detail ? ' <span class="cam-frame-diag-detail">' + esc(r.diagnosis.detail) + '</span>' : "") +
+        '</span></div>';
+    }
+    var cardCls = r.ok ? ((degraded || hasDiag) ? "cam-frame-degraded" : "") : "cam-frame-fail";
+    var statusTxt = !r.ok ? "No video" : (hasDiag ? "Black picture" : (degraded ? "Active · degraded" : "Active"));
+    var statusCls = !r.ok ? "status-fail" : ((hasDiag || degraded) ? "status-warn" : "status-pass");
     // Identity block: camera type (S1/S2/S2S — system-wide), IP, model and
     // firmware from the CGI probe, plus the live stream format when one pulled.
     var kv =
@@ -4352,8 +4680,10 @@ function _camVideoResultsHtml(res) {
       (r.ok ? _camFrameKv("Stream", stream) : "");
     var errLine = r.ok ? "" : '<div class="cam-frame-detail cam-frame-novideo">' + esc(r.error || "No video") + "</div>";
     var cap = r._capturedAt ? '<span class="cam-frame-cap">Captured ' + esc(r._capturedAt) + "</span>" : "";
-    var refresh = '<button class="btn-outline btn-ol-blue cam-frame-refresh" onclick="_camRefreshOne(\'' + esc(r.ip) + '\')" ' +
-      'title="Capture a fresh still from this camera">' + svgIcon("refresh", 12) + " Refresh</button>";
+    var refresh = showControls
+      ? '<button class="btn-outline btn-ol-blue cam-frame-refresh" onclick="_camRefreshOne(\'' + esc(r.ip) + '\')" ' +
+        'title="Capture a fresh still from this camera">' + svgIcon("refresh", 12) + " Refresh</button>"
+      : "";
     return '<div class="cam-frame ' + cardCls + '" data-ip="' + esc(r.ip) + '">' +
       thumb +
       '<div class="cam-frame-meta">' +
@@ -4363,18 +4693,24 @@ function _camVideoResultsHtml(res) {
         '</div>' +
         '<div class="cam-frame-kv">' + kv + '</div>' +
         errLine +
+        diag +
         warn +
         '<div class="cam-frame-foot">' + cap + refresh + '</div>' +
       '</div></div>';
   }).join("");
   // Still-image notice + an all-cameras refresh, both inside the results card
   // so the "this isn't live, grab a new one" cue sits right next to the frames.
-  var notice = '<div class="cam-frame-notice">' + svgIcon("info", 12) +
-    ' These are still snapshots, not a live stream. To get a new image, use ' +
-    '<strong>Refresh all cameras</strong> below, or <strong>Refresh</strong> on a single camera.</div>';
-  var toolbar = '<div class="cam-frame-toolbar">' +
-    '<button class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()" ' +
-    'title="Capture a fresh still from every camera">' + svgIcon("refresh", 14) + " Refresh all cameras</button></div>";
+  var notice = showControls
+    ? '<div class="cam-frame-notice">' + svgIcon("info", 12) +
+      ' These are still snapshots, not a live stream. To get a new image, use ' +
+      '<strong>Refresh all cameras</strong> below, or <strong>Refresh</strong> on a single camera.</div>'
+    : '<div class="cam-frame-notice">' + svgIcon("info", 12) +
+      ' These are still snapshots, not a live stream — use <strong>Refresh</strong> above to recapture.</div>';
+  var toolbar = showControls
+    ? '<div class="cam-frame-toolbar">' +
+      '<button class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()" ' +
+      'title="Capture a fresh still from every camera">' + svgIcon("refresh", 14) + " Refresh all cameras</button></div>"
+    : "";
   return '<div class="card">' + sectionTitle("camera", "Camera Frames") +
     notice + toolbar +
     '<div class="cam-frame-grid">' + cards + '</div></div>';
@@ -4428,7 +4764,7 @@ function renderCameras() {
         ${svgIcon("camera", 14)} Get Camera Frames
       </button>
       <button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
-        ${svgIcon("zap", 14)} Fault Isolator
+        ${svgIcon("zap", 14)} Camera Connection Troubleshooting
       </button>`
     )}
 
@@ -4592,6 +4928,36 @@ function renderServices() {
     </div>`;
   }
 
+  // Two separate areas: Pixellot core *processes* (Agent/Coordinator/VPU/
+  // watchdog — executables in C:\Pixellot\Bin, not services) and real Windows
+  // *services* (ScoreConnect, LogMeIn) queried through the SCM. Keeping them
+  // apart stops a "Not Found" service from reading as a stopped process and
+  // vice-versa. Re-used on the post-restart in-place refresh below.
+  function svcSectionsHtml(list) {
+    function section(title, subtitle, items, emptyMsg) {
+      return `<section class="svc-section">
+        <div class="svc-section-head">
+          <h3 class="svc-section-title">${esc(title)}</h3>
+          <p class="svc-section-sub">${esc(subtitle)}</p>
+        </div>
+        <div class="svc-grid">
+          ${items.map(svcTile).join("")}
+          ${!items.length ? `<p class="text-pulse-muted text-sm">${esc(emptyMsg)}</p>` : ""}
+        </div>
+      </section>`;
+    }
+    const procs = list.filter(s => s.kind === "process");
+    const services = list.filter(s => s.kind !== "process");
+    return (
+      section("Pixellot Core Processes",
+        "Launched and supervised by the KeepAgentUp watchdog — these are executables in C:\\Pixellot\\Bin, not Windows services. Restart them with the action above.",
+        procs, "No process data") +
+      section("Windows Services",
+        "Real Windows services queried through the Service Control Manager (SCM). Each can be restarted individually.",
+        services, "No service data")
+    );
+  }
+
   $page().innerHTML = `
     ${pageHeader("Service Status", "Pixellot Agent, VPU encoder, and related Windows services",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache.services=null;renderServices()">
@@ -4619,9 +4985,8 @@ function renderServices() {
       <div id="svc-keepagent-result" class="svc-quick-action-result hidden"></div>
     </div>
 
-    <div class="svc-grid" id="svc-grid">
-      ${svcs.map(svcTile).join("")}
-      ${!svcs.length ? '<p class="text-pulse-muted text-sm">No services data</p>' : ""}
+    <div id="svc-sections">
+      ${svcSectionsHtml(svcs)}
     </div>
   `;
 
@@ -4656,7 +5021,7 @@ function renderServices() {
     `;
   })();
 
-  document.getElementById("svc-grid")?.addEventListener("click", async (e) => {
+  document.getElementById("svc-sections")?.addEventListener("click", async (e) => {
     const btn = e.target.closest(".svc-restart-btn");
     if (!btn) return;
     const name = btn.dataset.name;
@@ -4709,8 +5074,8 @@ function renderServices() {
       api("/api/services").then(fresh => {
         if (!fresh || fresh.error || currentPage !== "services") return;
         dataCache.services = fresh;
-        const grid = document.getElementById("svc-grid");
-        if (grid) grid.innerHTML = (fresh.services || []).map(svcTile).join("");
+        const sections = document.getElementById("svc-sections");
+        if (sections) sections.innerHTML = svcSectionsHtml(fresh.services || []);
       });
     }
   });
@@ -6195,7 +6560,15 @@ function parseRtdScores(rawData, vendor, sport) {
 function renderScoreConnect() {
   const data = cached("scoreconnect");
   if (!data) { $page().innerHTML = sectionLoading("ScoreConnect"); fetchSection("scoreconnect"); return; }
-  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
+  // Only fatal when there's nothing to render. A legacy SC I/II box reports the
+  // SC III endpoint as unreachable but still returns usable `sc2` data — don't
+  // discard it. run_ps transport failures set `message`; the script's own
+  // `error` is a string — surface whichever exists rather than the generic
+  // "Failed to load data" fallback.
+  if (data.error && !data.reachable && !(data.sc2 && data.sc2.reachable)) {
+    $page().innerHTML = errorBox(data.message || (typeof data.error === "string" ? data.error : null));
+    return;
+  }
 
   const sc2 = data.sc2;  // SC II data (from settings.json on disk)
   const config = data.configuration || {};
@@ -6766,7 +7139,7 @@ function _fiReset() {
 function renderFaultIsolator() {
   var cams = cached("cameras");
   if (!cams) {
-    $page().innerHTML = sectionLoading("Camera Fault Isolator");
+    $page().innerHTML = sectionLoading("Camera Connection Troubleshooting");
     api("/api/cameras").then(function(d) { dataCache.cameras = d; renderFaultIsolator(); });
     return;
   }
@@ -6933,7 +7306,7 @@ function renderFaultIsolator() {
     : '';
 
   $page().innerHTML = pageHeader(
-    "Camera Fault Isolator",
+    "Camera Connection Troubleshooting",
     "Swap test that pins a camera fault to the port, the cable, or the camera (CHU).",
     '<button class="btn-outline btn-ol-blue" onclick="navigate(\'cameras\')">' + svgIcon("arrow-left", 14) + " Back to Camera Connectivity</button>"
   ) + diagramCard + '<div class="card">' + stepDots() + inner + historyTable() + "</div>" +
@@ -7664,14 +8037,23 @@ function renderSettings() {
       <div id="set-update-notes" class="update-notes" style="display:none"></div>
     </div>
 
-    <!-- Reboot Pulse -->
+    <!-- Restart Pulse app -->
     <div class="card mt-4">
-      ${sectionTitle("power", "Reboot Pulse")}
-      <p class="text-sm text-pulse-muted mb-3">Restart the Pulse app if the page is stuck or behaving oddly, or reboot the whole VPU. Restarting Pulse keeps the unit running and reloads this page automatically. Rebooting the VPU restarts Windows — it interrupts any active recording and takes a few minutes to come back.</p>
+      ${sectionTitle("refresh", "Restart Pulse App")}
+      <p class="text-sm text-pulse-muted mb-3">Restart the Pulse app if the page is stuck or behaving oddly. The VPU and any active recording keep running, and this page reloads automatically once Pulse is back — usually a few seconds.</p>
       <div class="settings-actions">
         <button class="btn-outline btn-ol-blue" id="set-restart-app">
           ${svgIcon("refresh", 14)} Restart Pulse app
         </button>
+        <span id="set-restart-msg" class="text-sm text-pulse-muted"></span>
+      </div>
+    </div>
+
+    <!-- Reboot VPU -->
+    <div class="card mt-4">
+      ${sectionTitle("power", "Reboot VPU")}
+      <p class="text-sm text-pulse-muted mb-3">Reboot the whole VPU to restart Windows. This interrupts any active recording and the unit is offline for a few minutes. Pulse won't reopen on its own — relaunch it from the desktop shortcut once Windows is back.</p>
+      <div class="settings-actions">
         <button class="btn-outline btn-ol-red" id="set-reboot-vpu">
           ${svgIcon("power", 14)} Reboot VPU
         </button>
@@ -7737,20 +8119,21 @@ function renderSettings() {
     }
   });
 
-  // ── Reboot Pulse / VPU ──
+  // ── Restart Pulse app / Reboot VPU ──
   const restartBtn = document.getElementById("set-restart-app");
   const rebootBtn = document.getElementById("set-reboot-vpu");
+  const restartMsg = document.getElementById("set-restart-msg");
   const rebootMsg = document.getElementById("set-reboot-msg");
 
   restartBtn?.addEventListener("click", async () => {
     if (!confirm("Restart the Pulse app?\n\nPulse closes and relaunches the same build. This page reloads automatically once it's back — usually a few seconds. The VPU and any recording keep running.")) return;
     restartBtn.disabled = true;
     rebootBtn.disabled = true;
-    rebootMsg.textContent = "Restarting…";
+    restartMsg.textContent = "Restarting…";
     try {
       const r = await apiPost("/api/maintenance/restart-app", {});
       if (!r.ok) {
-        rebootMsg.textContent = (typeof r.error === "string" ? r.error : r.message) || "Couldn't restart Pulse.";
+        restartMsg.textContent = (typeof r.error === "string" ? r.error : r.message) || "Couldn't restart Pulse.";
         restartBtn.disabled = false;
         rebootBtn.disabled = false;
         return;
@@ -7758,7 +8141,7 @@ function renderSettings() {
       _showMaintenanceOverlay("Restarting Pulse…", "Pulse is relaunching. This page reloads automatically once it's back — usually a few seconds.");
       _pollForRestart(dataCache._version);
     } catch (e) {
-      rebootMsg.textContent = "Couldn't restart Pulse.";
+      restartMsg.textContent = "Couldn't restart Pulse.";
       restartBtn.disabled = false;
       rebootBtn.disabled = false;
     }

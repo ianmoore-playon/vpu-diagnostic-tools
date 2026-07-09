@@ -218,7 +218,7 @@ class TestComputeFindings(unittest.TestCase):
                       "gpus": [{"vendor": "NVIDIA", "isDedicated": True}]},
             gpu_info=_gpu("Turing"),
         )
-        self.assertIn("Insufficient RAM", titles)
+        self.assertIn("Not enough memory for a VPU", titles)
 
     def test_no_dedicated_gpu_flagged(self):
         titles = self._titles(
@@ -228,7 +228,7 @@ class TestComputeFindings(unittest.TestCase):
                       "gpus": [{"vendor": "Intel", "isDedicated": False}]},
             gpu_info=_gpu("Turing"),
         )
-        self.assertIn("No dedicated GPU detected", titles)
+        self.assertIn("No dedicated graphics card — wrong hardware for a VPU", titles)
 
     def test_findings_have_required_shape(self):
         # Every finding must carry severity + title so the dashboard can render it.
@@ -253,6 +253,54 @@ class TestComputeFindings(unittest.TestCase):
         keys = [(f.get("category", ""), f["title"]) for f in findings]
         self.assertEqual(len(keys), len(set(keys)), "duplicate findings present")
 
+    # ── OCR slow-port flicker (ARP-independent guard) ──
+    # The OCR/scoreboard camera is natively 100 Mbps. Its NIC neighbor entry
+    # ages out when the camera is quiet, so a cold poll showed its port with
+    # an empty ARP list and the dashboard wrongly flagged it "running slow";
+    # the next poll re-warmed ARP and the finding vanished. A CGI probe
+    # confirms the OCR regardless of ARP, so it must suppress the flag.
+    def _ocr_probe(self):
+        return {"00:D0:89:1B:03:01": {
+            "mac": "00:D0:89:1B:03:01", "ip": "169.254.16.52",
+            "is_ocr": True, "modelNumber": "R2SD-G"}}
+
+    def test_ocr_port_not_flagged_when_probe_confirms_despite_cold_arp(self):
+        nics = {"ports": [
+            {"name": "Ethernet 29", "status": "Up", "linkSpeedMbps": 100,
+             "mac": "A4:4C:C8:00:00:03", "arpEntries": []},
+        ]}
+        titles = self._titles(
+            identity=_identity("5.2.0"), performance={}, services={},
+            nics=nics, probe_results=self._ocr_probe(),
+        )
+        self.assertFalse(any("running slow" in t for t in titles), titles)
+
+    def test_slow_port_flagged_without_probe_results(self):
+        # No probe ran (e.g. a caller that doesn't pass probe_results): the
+        # ARP-only path is preserved and a sub-gigabit port is still flagged.
+        nics = {"ports": [
+            {"name": "Ethernet 29", "status": "Up", "linkSpeedMbps": 100,
+             "mac": "A4:4C:C8:00:00:03", "arpEntries": []},
+        ]}
+        titles = self._titles(
+            identity=_identity("5.2.0"), performance={}, services={}, nics=nics,
+        )
+        self.assertTrue(any("running slow" in t for t in titles), titles)
+
+    def test_degraded_main_camera_flagged_even_with_ocr_present(self):
+        # A gigabit main camera negotiated down to 100 Mbps is a real fault and
+        # must still flag, even though the box also has a confirmed OCR.
+        nics = {"ports": [
+            {"name": "Ethernet 28", "status": "Up", "linkSpeedMbps": 100,
+             "mac": "A4:4C:C8:00:00:02",
+             "arpEntries": [{"ip": "169.254.16.50", "mac": "00:D0:89:18:CE:E8"}]},
+        ]}
+        titles = self._titles(
+            identity=_identity("5.2.0"), performance={}, services={},
+            nics=nics, probe_results=self._ocr_probe(),
+        )
+        self.assertTrue(any("running slow" in t for t in titles), titles)
+
 
 # ── run_ps stdout JSON recovery (the resilience fix) ─────────
 class TestExtractJson(unittest.TestCase):
@@ -275,6 +323,18 @@ class TestExtractJson(unittest.TestCase):
 
     def test_array_payload(self):
         self.assertEqual(powershell._extract_json('[1, 2, 3]'), [1, 2, 3])
+
+    def test_literal_control_chars_tolerated(self):
+        # Windows PowerShell 5.1's ConvertTo-Json leaves literal C0 bytes
+        # unescaped inside strings — e.g. STX/ETX in a raw Daktronics RTD
+        # string, or a NUL scraped by findstr from a UTF-16 SC I log. Python's
+        # default strict parse rejects these ("Invalid control character"); the
+        # extractor must still recover the payload.
+        blob = '{"reachable":false,"rawData":"02\x025728\x03","error":null}'
+        self.assertEqual(
+            powershell._extract_json(blob),
+            {"reachable": False, "rawData": "02\x025728\x03", "error": None},
+        )
 
 
 # ── DNS discrepancy classification (PDF #10) ─────────────────
@@ -651,7 +711,6 @@ class TestDemoDataContract(unittest.TestCase):
     # demo data lands (test_exempt_list_has_no_stale_entries enforces that).
     _DEMO_EXEMPT = {
         # Owned by the ScoreConnect session — demo entries pending.
-        "Get-Sc3InstallStatus.ps1",
         "Install-ScoreConnectIII.ps1",
     }
 
@@ -662,6 +721,8 @@ class TestDemoDataContract(unittest.TestCase):
     _ACTION_SCRIPTS = {
         # Opens a Windows firewall port when the user enables report sharing.
         "Set-PulseShareFirewall.ps1",
+        # Reboots the VPU — a side effect, returns no diagnostic data to mock.
+        "Reboot-Vpu.ps1",
     }
 
     def _referenced_scripts(self):

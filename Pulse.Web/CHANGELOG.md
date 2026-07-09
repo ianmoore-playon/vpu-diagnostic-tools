@@ -23,6 +23,71 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [Unreleased]
 
 ### Added
+- **Camera Frames now spots a black picture and tells you why.** When a camera
+  grabs a frame but the picture comes back black (the OCR/scoreboard symptom),
+  Pulse flags it as "Black picture" instead of a green "Active", explains it in
+  plain terms — usually the camera darkening everything to cope with a bright
+  scoreboard, or its picture set too dark — and notes when the other cameras
+  prove the room lights are on, so you know it's a camera setting, not the venue.
+
+### Changed
+- **Service Status now lists Pixellot programs and Windows services in separate
+  areas.** The tab is split into "Pixellot Core Processes" (Agent, Coordinator,
+  VPU, and the KeepAgentUp watchdog) and "Windows Services" (ScoreConnect,
+  LogMeIn), so it's clear at a glance which is a background program and which is
+  a Windows service — and a service that's missing no longer reads like a
+  stopped program.
+- **Removed the duplicate "Restart Agent + Coordinator" button from the Pixellot
+  Software tab.** The same action lives on the Service Status tab; it now appears
+  in just one place.
+- Settings now puts "Restart Pulse App" and "Reboot VPU" in separate panels, so the low-risk app restart isn't visually grouped with the full Windows reboot.
+- **The startup screen now shows what Pulse is checking.** As Pulse loads it
+  lists each diagnostic and ticks it off in a fixed top-to-bottom order, with
+  an "X of 12 systems" counter and a note that the full sweep can take a
+  moment — so a slower first load reads as steady progress, not a hang. If a
+  critical or warning issue is detected it's flagged right on the loading
+  screen, and on a genuinely slow unit the note switches to a "still working"
+  message instead of looking stuck.
+
+### Removed
+- Dropped the redundant "Network Errors (this adapter)" counters from the Internet Adapter card on the Network Test page. The same RX/TX error and discard counts are already shown per port under Wired Ports.
+
+### Fixed
+- **Pulse no longer needs two launches to open on a freshly set-up VPU.** On a
+  new unit the first launch would start the server, say "Pulse is running," and
+  close — but no browser window appeared, so you had to run it again. The cold
+  Chrome profile was eating the first open; Pulse now opens straight to the page
+  on the first try.
+- **ScoreConnect no longer shows "Not Found" on Service Status when it's
+  actually running.** Newer ScoreConnect (III) registers under a different
+  Windows service name; the tab now detects ScoreConnect I, II, or III, shows
+  its real status, and its Restart button works for every version.
+- **ScoreConnect tab no longer shows "Failed to load data" on VPUs running an
+  older ScoreConnect.** On a unit running ScoreConnect I or II (not III) — for
+  example one with several versions installed — the tab failed outright instead
+  of showing the version it found. It now displays the detected ScoreConnect I/II
+  configuration, and a genuine probe failure shows the real reason rather than
+  the generic message.
+- **No more "Missing Shortcut" when opening Pulse from the Start menu.** The
+  launcher now repairs its own Start-menu target on every launch and won't
+  leave a dead shortcut behind if a step fails — search "pulse" and hit Enter
+  and it just opens.
+- **Peripherals panel on the Environment tab no longer hangs on "Loading…".**
+  On a real VPU with a single mouse or keyboard the panel would spin forever; it
+  now shows the connected mouse, keyboard, and monitor (with device names).
+- Dashboard no longer flickers a false "port running slow" warning for the OCR / scoreboard camera. The OCR runs at 100 Mbps by design; the warning now stays away even when the camera is briefly quiet, instead of appearing on launch and vanishing on refresh.
+
+## [0.4.0] - 2026-06-23
+
+### Added
+- **New "Inspection Report" tab (under Triage) — the fleet-audit fields on one screen.**
+  Pools the details you'd otherwise hunt for across the Hardware, Network, Camera and
+  ScoreConnect tabs — LMI name, camera type, OS / VPU type, the uplink's IP, MAC,
+  static-vs-DHCP, subnet mask and gateway, the network port test with an overall
+  Pass/Warning/Fail result, the scoreboard's sport / vendor / ScoreLink status, and a
+  live frame grab from every connected camera. Unlike the Camera tab, it captures
+  frames even while the VPU is recording. Built for working through a large fleet audit
+  one VPU at a time.
 - **New "Power Events" tab — see why a VPU restarted, and whether one is pending.**
   Under System Information, Power Events shows the recent restart/shutdown history
   with the cause of each (planned vs. unexpected, who triggered it, and the
@@ -73,6 +138,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   version still shows on the Service Status tab.
 
 ### Changed
+- **Renamed the "Fault Isolator" tool to "Camera Connection Troubleshooting".**
+  The swap-test tool on the Camera Connectivity tab (and the button that opens it)
+  now uses a plainer name — same step-by-step test, clearer label.
 - **Camera Frames now show the camera type, model, and firmware.** Each
   captured still lists the system type (S1/S2/S2S), IP address, camera model,
   and firmware version, and is clearly marked as a point-in-time snapshot — not
@@ -138,6 +206,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   finished. No loss of function — audio checks were not yet in field use.
 
 ### Fixed
+- **Camera Frames now works with cameras that use a different stream path.**
+  Some cameras serve their video on a different RTSP path than the usual one,
+  so Camera Frames showed "No frame" even though the camera was online and
+  viewable in a browser. Pulse now tries the common stream paths and uses
+  whichever one the camera answers on, and when none work it lists the paths it
+  tried so the camera can be flagged.
+- **ScoreConnect tab no longer shows an "Invalid JSON" error on some VPUs.** The
+  scoreboard's raw data feed — and bot numbers read from older ScoreConnect logs
+  — can carry hidden control characters that broke the data hand-off, so the tab
+  failed with a raw `Invalid JSON from Get-ScoreConnectStatus.ps1` message and no
+  data. Pulse now handles those characters, so the ScoreConnect tab loads
+  normally.
+- **Update no longer fails on some networks with a "certificate check failed"
+  error.** On certain VPUs the download step (curl) would abort with
+  `SEC_E_WRONG_PRINCIPAL` / "SNI or certificate check failed" and report that no
+  build could be downloaded, even though the unit was online. The launcher now
+  automatically retries the download a second way (PowerShell) when that
+  happens, so the update goes through.
 - **Error tabs no longer spin forever.** When a check can't run, Camera
   Connectivity, ScoreConnect, the Camera Fault Isolator, and Windows Events now
   show a clear error message instead of an endless loading spinner.
@@ -163,6 +249,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   and raise a critical while every domain on the same screen was resolving fine.
   Pulse now tests the resolver on the active internet uplink, and never reports
   DNS as blocked when name resolution is demonstrably working.
+- **No more false "DNS server unreachable" warning when the server just ignores
+  ping.** Many venue firewalls block ICMP (ping) to the DNS server while it
+  still answers real lookups. Pulse used to read the dead ping as a warning even
+  though domains were resolving fine. When name resolution is demonstrably
+  working, that 100%-loss ping is now reported as an INFO note ("isn't answering
+  pings, but name resolution is working — no action needed") instead of a
+  warning, and the DNS Server tile in Local Network Health turns blue/INFO with
+  a "ICMP ping blocked by firewall — name resolution is working" note instead of
+  showing red.
 - **Gateway, DNS, and uplink readings now follow the active internet connection.**
   On a VPU with more than one network connection (the camera NIC plus the
   internet uplink, or a VPN), the Network Test could ping the gateway and DNS —
@@ -195,6 +290,70 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   a red "Streaming is blocked — the VPU can't broadcast." The failover/"backup
   connection" wording now applies only to the two port-443 paths (UDP/443 and
   the TCP/443 tunnel), which do back each other up.
+- Fixed an error that could appear on the Audio screen and during full
+  diagnostic collection (the audio device check failed to return results on
+  some VPUs).
+
+## [0.3.5] - 2026-06-23
+
+### Fixed
+- **No more false "DNS server unreachable" warning when the server just ignores
+  ping.** Many venue firewalls block ICMP (ping) to the DNS server while it
+  still answers real lookups. Pulse used to read the dead ping as a warning even
+  though domains were resolving fine. When name resolution is demonstrably
+  working, that 100%-loss ping is now reported as an INFO note ("isn't answering
+  pings, but name resolution is working — no action needed") instead of a
+  warning, and the DNS Server tile in Local Network Health turns blue/INFO with
+  a "ICMP ping blocked by firewall — name resolution is working" note instead of
+  showing red.
+
+## [0.3.4] - 2026-06-18
+
+### Fixed
+- **No more false "DNS blocked — can't resolve any hostname" alarm.** The DNS
+  check was probing whatever resolver it found first across *all* network
+  adapters, so a stale resolver on a disconnected or secondary adapter (e.g. a
+  camera NIC or VPN) could get tested instead of the one the VPU actually uses —
+  it failed, and Pulse raised a critical even though every domain was resolving
+  fine. Pulse now tests the resolver on the active internet uplink.
+
+## [0.3.3] - 2026-06-15
+
+### Fixed
+- **Pulse now opens directly in Chrome on launch.** On VPUs with no default
+  browser set, Windows used to pop a "How do you want to open this?" picker
+  (Internet Explorer first) instead of opening Pulse. The launcher now opens
+  Chrome explicitly — no dialog, no IE.
+- **The launcher no longer looks frozen while starting.** It was running the
+  server in the foreground window, so it sat showing the live log and seemed
+  stuck until you pressed Ctrl+C. It now starts the server in the background,
+  opens the browser, and closes the window. Launch failures still stop and show
+  the error, and everything is logged.
+
+## [0.3.2] - 2026-06-12
+
+### Fixed
+- **Port Connectivity no longer warns that streaming will fail when it won't.**
+  Pixellot can broadcast over any of three paths (UDP/2088, UDP/443, or the
+  TCP/443 tunnel), so one blocked path now shows a yellow "no failover" note
+  instead of a red failure — it only flags a real "stream can't broadcast" when
+  all three are blocked. (The UDP/443 row is also renamed from the misleading
+  "Zixi QUIC" to "Zixi Backup".)
+
+### Changed
+- **Network checks combined into one panel.** Port Connectivity (left) and
+  Domain Reachability (right) now share a single card. Port tiles lead with the
+  port number and protocol — no hostnames; the domain detail is all in the
+  right-hand column. The Internet Adapter card lays its sections side by side so
+  it takes less vertical space.
+
+## [0.3.1] - 2026-06-11
+
+### Changed
+- The Audio tab is temporarily hidden while audio diagnostics are being
+  finished. No loss of function — audio checks were not yet in field use.
+
+### Fixed
 - Fixed an error that could appear on the Audio screen and during full
   diagnostic collection (the audio device check failed to return results on
   some VPUs).

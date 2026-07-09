@@ -11,7 +11,13 @@
     the Pixellot\Bin path to avoid matching look-alikes (e.g. leaf_agent.exe).
 
     Supporting components (ScoreConnect, LogMeIn) ARE real Windows services and
-    are queried with Get-Service as before.
+    are queried with Get-Service. ScoreConnect ships under three versioned
+    service names — 'scoreconnect' (SC I), 'scoreconnectii' (SC II) and
+    'scoreconnectiii' (SC III) — and Get-Service -Name matches exactly, so we
+    probe all three and surface whichever is present (a Running instance wins;
+    otherwise the newest installed). This mirrors Get-ScoreConnectStatus.ps1 and
+    fixes a stale "Not Found" on SC III boxes where only the bare 'scoreconnect'
+    name was queried.
 
     KeepAgentUp is monitored explicitly: it's the watchdog that relaunches
     Agent/Coordinator if they die, so "watchdog down" is itself a finding.
@@ -30,13 +36,14 @@ $ErrorActionPreference = 'Stop'
 $PIX_BIN = 'C:\Pixellot\Bin'
 
 # kind=process  → matched by executable basename, scoped to C:\Pixellot\Bin
-# kind=service  → matched by Get-Service name
+# kind=service  → matched by Get-Service name. Optional 'names' lists candidate
+#                 service names to probe, newest-first; falls back to 'name'.
 $components = @(
     @{ name = 'agent';        display = 'Pixellot Agent';              kind = 'process'; exe = 'Agent.exe' }
     @{ name = 'coordinator';  display = 'Pixellot Coordinator';        kind = 'process'; exe = 'Coordinator.exe' }
     @{ name = 'vpu';          display = 'Pixellot VPU';                kind = 'process'; exe = 'vpu.exe' }
     @{ name = 'keepagentup';  display = 'Pixellot Watchdog (KeepAgentUp)'; kind = 'process'; exe = 'KeepAgentUp.exe'; watchdog = $true }
-    @{ name = 'scoreconnect'; display = 'ScoreConnect';                kind = 'service' }
+    @{ name = 'scoreconnect'; display = 'ScoreConnect';                kind = 'service'; names = @('scoreconnectiii', 'scoreconnectii', 'scoreconnect') }
     @{ name = 'LogMeIn';      display = 'LogMeIn Remote Access';       kind = 'service' }
 )
 
@@ -90,7 +97,13 @@ try {
             }
         }
         else {
-            $svc = Get-Service -Name $c.name -ErrorAction SilentlyContinue
+            # Probe every candidate service name (newest-first). Prefer a
+            # Running instance; otherwise take the first that exists, which —
+            # because 'names' is ordered newest-first — is the newest installed.
+            $names = if ($c.names) { $c.names } else { @($c.name) }
+            $found = @(foreach ($n in $names) { Get-Service -Name $n -ErrorAction SilentlyContinue })
+            $svc = $found | Where-Object { $_.Status -eq 'Running' } | Select-Object -First 1
+            if (-not $svc) { $svc = $found | Select-Object -First 1 }
             if ($svc) {
                 [ordered]@{
                     name        = $svc.Name
