@@ -934,8 +934,6 @@ const pageRenderers = {
   help: renderHelp,
   reports: renderReports,
   share: renderShare,
-  // Audio diagnostics re-enabled for demo. renderAudioComingSoon() is left
-  // intact below as the gate — swap back to it to hide the tab again.
   audio: renderAudio,
   scoreconnect: renderScoreConnect,
   // Pixellot Configuration was split into Pixellot Software / Camera Hardware /
@@ -7746,20 +7744,6 @@ function renderFaultIsolator() {
 }
 
 // ── Audio ────────────────────────────────────────────────────
-
-// Beta placeholder — Audio diagnostics are gated off for this build.
-// renderAudio() below is feature-complete and left intact; the page
-// renderer map points at this until the tab is re-enabled.
-function renderAudioComingSoon() {
-  $page().innerHTML = `
-    ${pageHeader("Audio", "Audio device diagnostics")}
-    <div class="coming-soon">
-      <div class="coming-soon-icon">${svgIcon("mic", 40)}</div>
-      <h3 class="coming-soon-title">Coming Soon</h3>
-      <p class="coming-soon-text">Audio diagnostics are in active development and will be available in an upcoming release.</p>
-    </div>
-  `;
-}
 
 // Thresholds & timing constants
 const AUDIO_SIGNAL_THRESHOLD = 1;
