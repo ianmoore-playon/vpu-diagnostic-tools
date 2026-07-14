@@ -22,6 +22,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Fixed
+- **The Audio tab now reads real device info on VPUs.** It was silently
+  falling back to a limited view (no volume, mute, or signal meters) on
+  every real VPU; devices now show live levels, volume control works, and
+  the Windows default recording/playback device is marked with a "Default"
+  badge.
+
 ### Added
 - **The Audio tab is back.** Audio device diagnostics — inputs, outputs,
   volume, and live signal activity — are available again under
