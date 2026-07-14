@@ -7765,10 +7765,16 @@ function renderAudio() {
   if (data.error) { $page().innerHTML = errorBox(data.message || "Couldn't detect audio devices"); return; }
 
   const devices = data.devices || [];
-  const inputs = devices.filter(d => d.dataFlow === "Input");
-  const outputs = devices.filter(d => d.dataFlow === "Output");
+  // Windows keeps an endpoint entry for every audio device it has EVER seen;
+  // on a long-lived VPU those NotPresent ghosts outnumber real devices ~10:1
+  // (81 of 91 on the bench VPU). Tuck them behind a disclosure so the devices
+  // a tech can actually touch are the whole page.
+  const present = devices.filter(d => d.state !== "NotPresent");
+  const ghosts = devices.filter(d => d.state === "NotPresent");
+  const inputs = present.filter(d => d.dataFlow === "Input");
+  const outputs = present.filter(d => d.dataFlow === "Output");
   // WMI fallback returns dataFlow="Unknown" — surface these so they're not invisible
-  const others = devices.filter(d => d.dataFlow !== "Input" && d.dataFlow !== "Output");
+  const others = present.filter(d => d.dataFlow !== "Input" && d.dataFlow !== "Output");
   const activeInputs = inputs.filter(d => d.state === "Active");
   const activeOutputs = outputs.filter(d => d.state === "Active");
 
@@ -7824,6 +7830,12 @@ function renderAudio() {
       <p class="text-xs text-pulse-muted mb-2">Devices Windows reports without an input or output direction.</p>
       ${others.map(d => _audioDeviceRow(d)).join("")}
     </div>` : ""}
+
+    ${ghosts.length ? `<details class="card mt-4 audio-ghosts">
+      <summary class="audio-ghosts-summary">${ghosts.length} remembered device${ghosts.length === 1 ? "" : "s"} not connected</summary>
+      <p class="text-xs text-pulse-muted mt-2 mb-2">Windows keeps an entry for every audio device it has ever seen. These aren't currently connected — only worth a look if a device you expected isn't listed above.</p>
+      ${ghosts.map(d => _audioDeviceRow(d)).join("")}
+    </details>` : ""}
   `;
 
   // Wire up volume sliders with success/error feedback
@@ -7992,7 +8004,7 @@ function _audioDeviceRow(d) {
       </div>
     ` : (d.formFactor && d.formFactor !== "Unknown" ? `
       <div class="audio-device-controls">
-        <p class="text-xs text-pulse-muted">${esc(_audioFormFactorLabel(d.formFactor))} device — controls unavailable while ${esc(d.state.toLowerCase())}.</p>
+        <p class="text-xs text-pulse-muted">${esc(_audioFormFactorLabel(d.formFactor))} device — controls unavailable while ${d.state === "NotPresent" ? "not connected" : esc(d.state.toLowerCase())}.</p>
       </div>
     ` : "")}
   </div>`;
