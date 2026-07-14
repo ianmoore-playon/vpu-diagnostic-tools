@@ -3633,7 +3633,11 @@ async def api_pixellot_logs(hours: int = Query(default=24)):
 
 @app.get("/api/audio")
 async def api_audio():
-    return await run_ps("Get-AudioDevices.ps1")
+    # The Audio tab polls every 2s to animate live signal meters; the default
+    # 25s result cache would freeze them between refreshes. Demand near-fresh
+    # data (in-flight dedup still coalesces overlapping polls) — the collector
+    # is cheap now that the interop compiles once to a cached DLL.
+    return await run_ps("Get-AudioDevices.ps1", cache_ttl=1.5)
 
 
 @app.post("/api/audio/volume")
@@ -3652,7 +3656,10 @@ async def api_audio_volume(request: Request):
     if volume < 0 or volume > 100:
         return {"error": True, "message": "volume must be 0-100"}
 
-    return await run_ps("Set-AudioVolume.ps1", {"DeviceId": device_id, "Volume": volume})
+    # use_cache=False: an action, not a read — replaying a cached "success"
+    # for a repeated (device, volume) pair would silently skip the actual set
+    # (e.g. 78 -> 50 -> back to 78 within the 25s window).
+    return await run_ps("Set-AudioVolume.ps1", {"DeviceId": device_id, "Volume": volume}, use_cache=False)
 
 
 @app.get("/api/scoreconnect")

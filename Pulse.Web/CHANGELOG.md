@@ -23,6 +23,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [Unreleased]
 
 ### Changed
+- **Audio signal meters now move in near real time.** Meter readings were
+  stuck behind a 25-second cache and a per-poll compile step; levels now
+  refresh about every 2 seconds, and repeated volume changes always take
+  effect instead of being skipped.
 - **The Audio tab no longer buries real devices under Windows' memory.**
   Devices Windows remembers but that aren't connected (often dozens on a
   long-lived VPU) are now tucked into a collapsed "remembered devices" list,
