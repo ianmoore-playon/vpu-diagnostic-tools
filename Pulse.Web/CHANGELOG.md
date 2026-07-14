@@ -45,6 +45,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   plain terms — usually the camera darkening everything to cope with a bright
   scoreboard, or its picture set too dark — and notes when the other cameras
   prove the room lights are on, so you know it's a camera setting, not the venue.
+- **The installer now explains itself when a school firewall breaks the
+  download.** If the first-run Python/pip download fails because the network is
+  intercepting secure connections (SSL inspection substituting certificates),
+  the install window now says exactly that — naming the intercepting device and
+  telling the venue's IT team which domains to exempt from SSL decryption —
+  instead of a cryptic certificate error.
 
 ### Changed
 - **Service Status now lists Pixellot programs and Windows services in separate
