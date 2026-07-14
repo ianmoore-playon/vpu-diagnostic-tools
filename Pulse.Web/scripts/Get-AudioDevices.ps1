@@ -1,32 +1,39 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Enumerates audio devices with volume, mute, peak, and port info.
+    Enumerates audio devices with volume, mute, peak, port, and default info.
 .DESCRIPTION
-    Uses CoreAudio COM interop to list all audio endpoints (input + output),
-    read volume/mute state, sample peak meter, and identify physical port.
-    Falls back to WMI Win32_SoundDevice if CoreAudio fails.
+    Calls the compiled CoreAudio.Api helper (see _AudioInterop.ps1) to list
+    all audio endpoints (input + output), read volume/mute state, sample the
+    peak meter, identify the physical port, and flag the Windows default
+    recording/playback devices. Falls back to WMI Win32_SoundDevice if the
+    CoreAudio path fails.
+
+    All COM work lives in the compiled helper - this script must not touch
+    COM objects directly. PS 5.1 on the VPU image (Win10 LTSC 1809) cannot
+    cast ComImport classes to COM interfaces at script level; doing so here
+    silently forced the WMI fallback on every real VPU.
 
     The script ALWAYS emits JSON to stdout - even on hard failures during
     type loading. Earlier versions could die silently if Add-Type failed
-    inside _AudioInterop.ps1, leaving the frontend in a fetch loop. Now
-    every error path bubbles into a final `$result` variable that gets
-    emitted at the very end.
+    inside _AudioInterop.ps1, leaving the frontend in a fetch loop. Every
+    error path bubbles into a final `$result` variable emitted at the end.
 .NOTES
     Peak sampling uses a single GetPeakValue() call - the CoreAudio meter
     tracks the highest sample since the last query internally, so frequent
     polling from the frontend gives a real-time view without forcing this
     script to block on Start-Sleep.
+
+    Keep this file pure ASCII (see the note in _AudioInterop.ps1).
 #>
 [CmdletBinding()]
 param()
 
 # NOTE: deliberately NOT setting $ErrorActionPreference = 'Stop' at the
 # script level - Add-Type / dot-source failures need to be caught,
-# not terminating. Individual blocks use -ErrorAction Stop where needed.
+# not terminating.
 
 $result = $null
-$comObjects = [System.Collections.ArrayList]::new()
 $diagnostics = [ordered]@{
     interopLoaded   = $false
     coreAudioFailed = $false
@@ -37,25 +44,13 @@ $diagnostics = [ordered]@{
     psVersion       = $PSVersionTable.PSVersion.ToString()
 }
 
-function _Release($obj) {
-    if ($null -ne $obj) {
-        try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($obj) } catch {}
-    }
-}
-
-function _ClearPropVariant([ref]$pv) {
-    try {
-        [CoreAudio.Ole32]::PropVariantClear([ref]$pv.Value) | Out-Null
-    } catch {}
-}
-
 function _EmitJsonAndExit($obj) {
     # Single output point - every code path must funnel through here so
     # the frontend never sees an empty stdout.
     $obj | ConvertTo-Json -Depth 5 -Compress
 }
 
-# -- Phase 1: load interop types -------------------------------
+# -- Phase 1: load + compile the interop helper ----------------
 $interopPath = Join-Path $PSScriptRoot '_AudioInterop.ps1'
 try {
     if (-not (Test-Path -LiteralPath $interopPath)) {
@@ -67,125 +62,30 @@ try {
     $diagnostics.interopError = $_.Exception.Message
 }
 
-# -- Phase 2: try CoreAudio enumeration ------------------------
+# -- Phase 2: CoreAudio enumeration via the compiled helper ----
 if ($diagnostics.interopLoaded) {
     try {
-        $enum = New-Object CoreAudio.MMDeviceEnumerator
-        [void]$comObjects.Add($enum)
-        $iEnum = [CoreAudio.IMMDeviceEnumerator]$enum
-
         $devices = @()
-
-        foreach ($flow in @([CoreAudio.EDataFlow]::eCapture, [CoreAudio.EDataFlow]::eRender)) {
-            $col = $null
-            [void]$iEnum.EnumAudioEndpoints($flow, [uint32]([CoreAudio.EDeviceState]::ALL), [ref]$col)
-            [void]$comObjects.Add($col)
-            $count = [uint32]0
-            [void]$col.GetCount([ref]$count)
-
-            for ($i = 0; $i -lt $count; $i++) {
-                $dev = $null
-                [void]$col.Item($i, [ref]$dev)
-                [void]$comObjects.Add($dev)
-
-                # State
-                $state = [uint32]0
-                [void]$dev.GetState([ref]$state)
-                $stateLabel = switch ($state) {
-                    1 { 'Active' } 2 { 'Disabled' } 4 { 'NotPresent' } 8 { 'Unplugged' }
-                    default { 'Unknown' }
-                }
-
-                # Device ID
-                $devId = ''
-                [void]$dev.GetId([ref]$devId)
-
-                # Property store - friendly name + form factor
-                $store = $null
-                [void]$dev.OpenPropertyStore(0, [ref]$store)
-                [void]$comObjects.Add($store)
-
-                $nameKey = [CoreAudio.Guids]::PKEY_Device_FriendlyName
-                $namePV = New-Object CoreAudio.PROPVARIANT
-                $friendlyName = ''
-                try {
-                    [void]$store.GetValue([ref]$nameKey, [ref]$namePV)
-                    if ($namePV.data1 -ne [IntPtr]::Zero) {
-                        $friendlyName = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($namePV.data1)
-                    }
-                } catch {}
-                finally { _ClearPropVariant ([ref]$namePV) }
-
-                $ffKey = [CoreAudio.Guids]::PKEY_AudioEndpoint_FormFactor
-                $ffPV = New-Object CoreAudio.PROPVARIANT
-                $formFactor = 'Unknown'
-                try {
-                    [void]$store.GetValue([ref]$ffKey, [ref]$ffPV)
-                    $ffVal = [int]$ffPV.data1
-                    $formFactor = switch ($ffVal) {
-                        0 { 'RemoteNetwork' } 1 { 'Speakers' } 2 { 'LineLevel' }
-                        3 { 'Headphones' } 4 { 'Microphone' } 5 { 'Headset' }
-                        6 { 'Handset' } 7 { 'DigitalPassthrough' } 8 { 'SPDIF' }
-                        9 { 'DigitalDisplay' } default { 'Unknown' }
-                    }
-                } catch {}
-                finally { _ClearPropVariant ([ref]$ffPV) }
-
-                $dataFlow = if ($flow -eq [CoreAudio.EDataFlow]::eCapture) { 'Input' } else { 'Output' }
-
-                # Volume + mute + peak (only for active devices)
-                $volume = $null
-                $muted = $null
-                $peakValue = $null
-
-                if ($state -eq 1) {
-                    $volObj = $null
-                    try {
-                        [void]$dev.Activate(
-                            [CoreAudio.Guids]::IID_IAudioEndpointVolume,
-                            1, [IntPtr]::Zero, [ref]$volObj)
-                        $iVol = [CoreAudio.IAudioEndpointVolume]$volObj
-
-                        $scalar = [float]0
-                        [void]$iVol.GetMasterVolumeLevelScalar([ref]$scalar)
-                        $volume = [math]::Round($scalar * 100, 1)
-
-                        $muteState = 0
-                        [void]$iVol.GetMute([ref]$muteState)
-                        $muted = ($muteState -ne 0)
-                    } catch {}
-                    finally { _Release $volObj }
-
-                    $meterObj = $null
-                    try {
-                        [void]$dev.Activate(
-                            [CoreAudio.Guids]::IID_IAudioMeterInformation,
-                            1, [IntPtr]::Zero, [ref]$meterObj)
-                        $iMeter = [CoreAudio.IAudioMeterInformation]$meterObj
-                        $pk = [float]0
-                        [void]$iMeter.GetPeakValue([ref]$pk)
-                        $peakValue = [math]::Round($pk * 100, 1)
-                    } catch {}
-                    finally { _Release $meterObj }
-                }
-
-                $devices += [ordered]@{
-                    id         = $devId
-                    name       = $friendlyName
-                    dataFlow   = $dataFlow
-                    state      = $stateLabel
-                    formFactor = $formFactor
-                    volume     = $volume
-                    muted      = $muted
-                    peak       = $peakValue
-                }
+        foreach ($ep in [CoreAudio.Api]::Enumerate()) {
+            $devices += [ordered]@{
+                id                    = $ep.Id
+                name                  = $ep.Name
+                dataFlow              = $ep.DataFlow
+                state                 = $ep.State
+                formFactor            = $ep.FormFactor
+                volume                = if ($ep.HasVolume) { [math]::Round($ep.Volume, 1) } else { $null }
+                muted                 = if ($ep.HasVolume) { $ep.Muted } else { $null }
+                peak                  = if ($ep.HasPeak) { [math]::Round($ep.Peak, 1) } else { $null }
+                isDefaultCapture      = $ep.IsDefaultCapture
+                isDefaultCaptureComms = $ep.IsDefaultCaptureComms
+                isDefaultRender       = $ep.IsDefaultRender
             }
         }
 
         $result = [ordered]@{
             devices     = @($devices)
-            inputCount  = ($devices | Where-Object { $_.dataFlow -eq 'Input'  -and $_.state -eq 'Active' }).Count
-            outputCount = ($devices | Where-Object { $_.dataFlow -eq 'Output' -and $_.state -eq 'Active' }).Count
+            inputCount  = @($devices | Where-Object { $_.dataFlow -eq 'Input'  -and $_.state -eq 'Active' }).Count
+            outputCount = @($devices | Where-Object { $_.dataFlow -eq 'Output' -and $_.state -eq 'Active' }).Count
         }
     } catch {
         $diagnostics.coreAudioFailed = $true
@@ -227,13 +127,7 @@ if ($null -eq $result) {
     }
 }
 
-# -- Phase 4: COM cleanup (best-effort) ------------------------
-for ($i = $comObjects.Count - 1; $i -ge 0; $i--) {
-    _Release $comObjects[$i]
-}
-try { [System.GC]::Collect(); [System.GC]::WaitForPendingFinalizers() } catch {}
-
-# -- Phase 5: emit (guaranteed to run) -------------------------
+# -- Phase 4: emit (guaranteed to run) -------------------------
 if ($null -eq $result) {
     # Everything failed - emit a structured error payload with diagnostics
     # so the frontend has something actionable to display.

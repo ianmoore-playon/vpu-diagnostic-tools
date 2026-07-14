@@ -941,6 +941,9 @@ DEMO = {
                 # Stays clearly above signal threshold (1%) so the "Signal
                 # Detected" indicator doesn't flicker between frames.
                 "peak": round(random.uniform(12, 32), 1),
+                "isDefaultCapture": True,
+                "isDefaultCaptureComms": True,
+                "isDefaultRender": False,
             },
             {
                 "id": "{0.0.1.00000000}.{a1b2c3d4-1111-2222-3333-444455557777}",
@@ -971,6 +974,9 @@ DEMO = {
                 "volume": 45,
                 "muted": False,
                 "peak": round(random.uniform(2, 8), 1),  # clearly above threshold
+                "isDefaultCapture": False,
+                "isDefaultCaptureComms": False,
+                "isDefaultRender": True,
             },
             {
                 "id": "{0.0.0.00000000}.{b2c3d4e5-2222-3333-4444-555566668888}",

@@ -7960,11 +7960,15 @@ function _audioDeviceRow(d) {
   // status indicator in the app (Services, Disk Health, etc.) instead of
   // appearing as bare colored text.
   const badgeKind = isActive ? "pass" : d.state === "Disabled" ? "warn" : "fail";
+  // Windows default recording/playback device — what most capture software
+  // (including Pixellot's pipeline) records from unless configured otherwise.
+  const isDefault = d.dataFlow === "Input" ? d.isDefaultCapture : d.isDefaultRender;
 
   return `<div class="audio-device${isActive ? "" : " audio-device-inactive"}">
     <div class="audio-device-header">
       <div class="audio-device-name">${esc(d.name || "Unknown Device")}</div>
       <div class="audio-device-badges">
+        ${isDefault ? '<span class="audio-port-badge">Default</span>' : ""}
         ${_audioFormFactorBadge(d.formFactor)}
         ${badge(d.state, badgeKind)}
       </div>
