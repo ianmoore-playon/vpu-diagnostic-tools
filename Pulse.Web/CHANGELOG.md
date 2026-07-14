@@ -22,6 +22,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Changed
+- **The Audio tab no longer buries real devices under Windows' memory.**
+  Devices Windows remembers but that aren't connected (often dozens on a
+  long-lived VPU) are now tucked into a collapsed "remembered devices" list,
+  and the summary counts only reflect devices actually present.
+
 ### Fixed
 - **The Audio tab now reads real device info on VPUs.** It was silently
   falling back to a limited view (no volume, mute, or signal meters) on

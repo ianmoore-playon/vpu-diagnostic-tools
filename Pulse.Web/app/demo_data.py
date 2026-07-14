@@ -988,6 +988,29 @@ DEMO = {
                 "muted": None,
                 "peak": None,
             },
+            # NotPresent ghosts — Windows remembers every endpoint it has ever
+            # seen; real VPUs carry dozens of these. Exercises the collapsed
+            # "remembered devices" disclosure.
+            {
+                "id": "{0.0.1.00000000}.{c3d4e5f6-3333-4444-5555-666677778888}",
+                "name": "Microphone (USB Audio CODEC)",
+                "dataFlow": "Input",
+                "state": "NotPresent",
+                "formFactor": "Microphone",
+                "volume": None,
+                "muted": None,
+                "peak": None,
+            },
+            {
+                "id": "{0.0.0.00000000}.{d4e5f6a7-4444-5555-6666-777788889999}",
+                "name": "",
+                "dataFlow": "Output",
+                "state": "NotPresent",
+                "formFactor": "Unknown",
+                "volume": None,
+                "muted": None,
+                "peak": None,
+            },
         ],
         "inputCount": 2,
         "outputCount": 1,
