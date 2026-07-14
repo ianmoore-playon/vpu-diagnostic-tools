@@ -1184,7 +1184,7 @@ def _wifi_disabled_finding(network_config):
     }
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, probe_results=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, probe_results=None, tls_inspection=None) -> list:
     findings = []
 
     # ── Wi-Fi uplink detection (Canopy adoption) ─────────────
@@ -1858,6 +1858,41 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                         f"{proto} port {port} to {host} is unreachable ({err}). "
                         f"This is a required Pixellot endpoint — ask the venue's "
                         f"IT team to open it in the firewall."
+                    ),
+                }
+            )
+
+    # ── SSL inspection (certificate substitution) ──────────────
+    # Test-TlsInspection completes a real handshake to each Pixellot-critical
+    # HTTPS service and validates the certificate actually presented. An
+    # "intercepted" row means a middlebox (school firewall doing SSL
+    # deep-packet inspection) substituted its own cert — the field signature
+    # is video streaming fine while Singular graphics never load, because the
+    # graphics client rightly rejects the firewall's cert. Port tests can't
+    # see this (TCP/443 connects fine), so this is its own finding. Only the
+    # confirmed substitution goes to the dashboard; softer TLS signals
+    # (handshake failures, clock-related cert errors) stay on the Network tab.
+    if tls_inspection and not tls_inspection.get("error"):
+        tls_rows = tls_inspection.get("results") or []
+        intercepted = [r for r in tls_rows if r.get("status") == "intercepted"]
+        if intercepted:
+            interceptors = ", ".join(tls_inspection.get("interceptorIssuers") or [])
+            hosts = ", ".join(r.get("domain", "?") for r in intercepted)
+            findings.append(
+                {
+                    "code": "ssl-inspection",
+                    "severity": "critical",
+                    "category": "Network",
+                    "title": "The venue firewall is intercepting secure connections (SSL inspection)",
+                    "recommendation": (
+                        f"The network is decrypting the VPU's secure connections to: {hosts}. "
+                        + (f"The intercepting device identifies itself as {interceptors}. " if interceptors else "")
+                        + "The VPU rejects the substituted certificate, so those services can't "
+                        "connect — on-screen graphics typically fail while video keeps streaming. "
+                        "Ask the venue's IT team to add these domains to the firewall's SSL "
+                        "decryption bypass/exemption list (use a wildcard like *.singular.live "
+                        "plus the bare domain) — a URL allowlist alone is not enough. "
+                        "See the Network tab for the full certificate detail."
                     ),
                 }
             )
@@ -2626,7 +2661,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None, probe_results=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None, probe_results=None, tls_inspection=None):
     # Tag adapter roles (motherboard / camera / wifi) so both the findings and
     # the embedded "Network config" the dashboard ships carry them.
     _classify_network_adapters(network_config)
@@ -2688,7 +2723,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         if isinstance(data, dict) and data.get("error")
     ]
 
-    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health, probe_results=probe_results)
+    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health, probe_results=probe_results, tls_inspection=tls_inspection)
 
     return {
         "identity": flat_identity,
@@ -2701,7 +2736,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
     }
 
 
-def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None, wifi=None):
+def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None, wifi=None, tls=None):
     net = {}
     _classify_network_adapters(config)
     if config and not config.get("error"):
@@ -2727,7 +2762,7 @@ def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_
     # the frontend surface whichever subsection failed.
     return {"config": net, "domains": domains, "ports": ports, "ntp": ntp,
             "local": local, "ntpPeers": ntp_peers,
-            "dnsResolution": dns_resolution, "wifi": wifi}
+            "dnsResolution": dns_resolution, "wifi": wifi, "tls": tls}
 
 
 # ─── Routes ───────────────────────────────────────────────────
@@ -2786,6 +2821,7 @@ async def api_preload():
         install_state,
         gpu_info,
         wifi,
+        tls_inspection,
     ) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -2809,6 +2845,10 @@ async def api_preload():
         run_ps("Test-PixellotInstallState.ps1", timeout=15),
         run_ps("Get-GpuInfo.ps1", timeout=15),
         run_ps("Get-WifiAdapters.ps1", timeout=10),
+        # SSL-inspection check rides the preload so the Network tab (and its
+        # interception critical) is complete on first paint. Runs in parallel
+        # with everything else; healthy venues finish in ~5s.
+        run_ps("Test-TlsInspection.ps1", timeout=60),
     )
     # Audio is deferred — lazy-fetched on tab visit to keep preload lean.
 
@@ -2827,7 +2867,7 @@ async def api_preload():
             "hardware": hardware,
             "software": _enrich_software_with_concerns(installed_sw),
         },
-        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi),
+        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls_inspection),
         "cameras": {
             "ports": _enrich_ports(nics, pixellot_config, probe_results_pre),
             "pixellotConfig": pixellot_config,
@@ -2908,7 +2948,7 @@ async def _collect_dashboard() -> dict:
     launch check-in beacon so both score readiness with identical inputs."""
     (identity, performance, services, nics, net_config, hardware, installed_sw,
      install_state, port_tests, gpu_info, wifi, pixellot_config, expectations,
-     disk_health, perf_sample) = await asyncio.gather(
+     disk_health, perf_sample, tls_inspection) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
@@ -2933,6 +2973,10 @@ async def _collect_dashboard() -> dict:
         # a short CPU/mem sample so a one-instant spike can't move the verdict.
         run_ps("Get-DiskHealth.ps1", timeout=15),
         run_ps("Get-PerfSample.ps1", timeout=15),
+        # SSL-inspection check — feeds the "firewall is intercepting secure
+        # connections" critical. Port tests alone can't see this failure mode
+        # (TCP/443 connects fine while the substituted cert kills graphics).
+        run_ps("Test-TlsInspection.ps1", timeout=60),
     )
     # CGI probe (cached 30s; usually already warm from preload) so the
     # slow-port finding identifies the OCR by its actual camera model, not a
@@ -2946,7 +2990,7 @@ async def _collect_dashboard() -> dict:
         installed_sw, install_state, port_tests, gpu_info, wifi,
         pixellot_config=pixellot_config, expectations=expectations,
         disk_health=disk_health, perf_sample=perf_sample,
-        probe_results=probe_results,
+        probe_results=probe_results, tls_inspection=tls_inspection,
     )
 
 
@@ -3062,7 +3106,7 @@ async def api_network():
     """Network tab data: gathers adapter config, domain reachability, port
     checks, NTP drift + peers, the local-network probe, DNS resolution, and
     Wi-Fi adapters in parallel, then assembles them into the network panel."""
-    config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi = await asyncio.gather(
+    config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls = await asyncio.gather(
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Test-NetworkDomains.ps1", timeout=20),
         run_ps("Test-NetworkPorts.ps1", timeout=45),
@@ -3071,8 +3115,11 @@ async def api_network():
         run_ps("Get-NtpPeers.ps1", timeout=15),
         run_ps("Test-DnsResolution.ps1", timeout=30),
         run_ps("Get-WifiAdapters.ps1", timeout=10),
+        # 60s: eleven sequential handshakes; a fully-blackholed network costs
+        # ~4s per host in TCP timeouts alone. Healthy venues finish in ~5s.
+        run_ps("Test-TlsInspection.ps1", timeout=60),
     )
-    return _build_network(config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi)
+    return _build_network(config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls)
 
 
 @app.get("/api/network/local-ping")
@@ -4097,6 +4144,10 @@ async def build_report() -> dict:
         ("ntpDrift",             run_ps("Test-NtpDrift.ps1", timeout=20)),
         ("ntpPeers",             run_ps("Get-NtpPeers.ps1", timeout=15)),
         ("dnsResolution",        run_ps("Test-DnsResolution.ps1", timeout=30)),
+        # SSL-inspection evidence (per-domain certificate issuers) — the report
+        # is what gets sent to a district's IT team, so the raw cert detail
+        # matters here even more than in the UI.
+        ("tlsInspection",        run_ps("Test-TlsInspection.ps1", timeout=60)),
     ]
 
     def _norm(r):
@@ -4132,6 +4183,7 @@ async def build_report() -> dict:
             sections.get("networkPorts"), sections.get("gpuInfo"), sections.get("wifi"),
             pixellot_config=pix_cfg, expectations=sections.get("cameraExpectations"),
             disk_health=sections.get("diskHealth"),
+            tls_inspection=sections.get("tlsInspection"),
         )
     except Exception as e:
         sections["findings"] = {"error": f"findings computation failed: {type(e).__name__}: {e}"}
