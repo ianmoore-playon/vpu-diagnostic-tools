@@ -115,15 +115,20 @@ try {
                     $chainErrors = $statuses -join ', '
                     $x509chain.Reset()
 
-                    # Time-only chain failures are NOT interception: a wrong
-                    # VPU clock (or a genuinely expired cert) fails every date
-                    # check, and calling that "firewall" would send techs at
-                    # the wrong target. Keep it a distinct status.
-                    $timeOnly = ($statuses.Count -gt 0) -and
-                        -not ($statuses | Where-Object { $_ -notin @('NotTimeValid', 'NotTimeNested') })
+                    # ANY time-related chain status is NOT interception: a
+                    # wrong VPU clock (or a genuinely expired cert) fails the
+                    # date check, and an expired cert also drags in
+                    # PartialChain — its expired issuer can't be resolved — so
+                    # requiring time-ONLY would misread it as interception
+                    # (verified against expired.badssl.com). DPI certs are
+                    # minted on the fly with fresh validity, so a genuinely
+                    # intercepted connection never shows NotTimeValid. Keep it
+                    # a distinct status so techs chase the clock, not the
+                    # firewall.
+                    $timeInvolved = [bool]($statuses | Where-Object { $_ -in @('NotTimeValid', 'NotTimeNested') })
 
                     if ($built) { $status = 'pass'; $trusted = $true }
-                    elseif ($timeOnly) { $status = 'cert-time'; $trusted = $false }
+                    elseif ($timeInvolved) { $status = 'cert-time'; $trusted = $false }
                     else {
                         # UntrustedRoot / PartialChain: the presented chain
                         # doesn't reach a trusted root — certificate
