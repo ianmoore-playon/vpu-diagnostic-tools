@@ -18,6 +18,13 @@
     Idempotent - the type-presence check skips Add-Type when the types are
     already loaded in this PowerShell session.
 
+    Compile cache: every /api/audio poll is a FRESH powershell.exe, and
+    Add-Type -TypeDefinition shells out to csc.exe (1-3s per process) -
+    that made the live meters crawl. The C# is compiled once to a DLL in
+    TEMP, keyed by a hash of the source (any edit gets a fresh file name),
+    and later processes just load the DLL. Any failure on the cache path
+    falls back to the slow in-memory compile, so behavior never changes.
+
     IMPORTANT: keep this file pure ASCII (plain '-' dashes, no box-drawing
     or smart punctuation). Windows PowerShell 5.1 reads unsigned .ps1 files
     as ANSI; non-ASCII bytes get misdecoded and can break parsing (a54f85f).
@@ -26,7 +33,7 @@
 #>
 
 if (-not ([System.Management.Automation.PSTypeName]'CoreAudio.Api').Type) {
-    Add-Type -TypeDefinition @'
+    $coreAudioSource = @'
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -325,5 +332,41 @@ namespace CoreAudio {
         }
     }
 }
-'@ -ErrorAction Stop
+'@
+
+    $coreAudioLoaded = $false
+    try {
+        # Key the cached DLL by a hash of the source so any code change
+        # compiles to a new file name instead of loading a stale build.
+        $md5 = [System.Security.Cryptography.MD5]::Create()
+        $hashBytes = $md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($coreAudioSource))
+        $hash = ([System.BitConverter]::ToString($hashBytes) -replace '-', '').Substring(0, 12)
+        $dllPath = Join-Path $env:TEMP ("PulseCoreAudio-" + $hash + ".dll")
+
+        if (-not (Test-Path -LiteralPath $dllPath)) {
+            # Compile to a per-process temp name, then move into place, so two
+            # concurrent polls can't clobber each other's half-written DLL. If
+            # the move loses the race, the winner's identical DLL is loaded.
+            $tmpPath = $dllPath + "." + $PID + ".tmp"
+            Add-Type -TypeDefinition $coreAudioSource -OutputAssembly $tmpPath -ErrorAction Stop
+            try {
+                Move-Item -LiteralPath $tmpPath -Destination $dllPath -Force -ErrorAction Stop
+            } catch {
+                Remove-Item -LiteralPath $tmpPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        if (Test-Path -LiteralPath $dllPath) {
+            Add-Type -Path $dllPath -ErrorAction Stop
+            $coreAudioLoaded = $true
+        }
+    } catch {
+        $coreAudioLoaded = $false
+    }
+
+    if (-not $coreAudioLoaded) {
+        # Cache path failed (locked TEMP, antivirus, corrupt DLL) - fall back
+        # to the slow-but-sure in-memory compile.
+        Add-Type -TypeDefinition $coreAudioSource -ErrorAction Stop
+    }
 }
