@@ -33,6 +33,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   and the summary counts only reflect devices actually present.
 
 ### Fixed
+- **The Secure Connections check no longer reports false failures on VPUs.**
+  The TLS test was offering only an outdated protocol version (TLS 1.0) that
+  most services reject, so 8 of its 11 checks failed on real hardware even on
+  a healthy network; it now negotiates TLS 1.2 and passes cleanly.
 - **The Audio tab now reads real device info on VPUs.** It was silently
   falling back to a limited view (no volume, mute, or signal meters) on
   every real VPU; devices now show live levels, volume control works, and
