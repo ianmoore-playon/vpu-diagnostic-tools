@@ -120,9 +120,20 @@ _RESULT_TTL = 25.0                               # seconds
 
 
 def _cache_key(script_name: str, args: Optional[dict], timeout: int) -> tuple:
-    """Deterministic cache key. Args dicts must be hashable as a frozenset."""
+    """Deterministic cache key. Args dicts must be hashable as a frozenset.
+
+    The timeout is deliberately NOT part of the key: it shapes how long a run
+    may take, not what it returns, and callers pass different budgets for the
+    same script (dashboard 30s / network 45s / preload 40s for the port
+    sweep). Keying on it made those calls miss each other's cache AND
+    in-flight futures, so every cold start ran Test-NetworkPorts twice in
+    parallel — two of the four PowerShell slots pinned for the sweep's whole
+    duration. Whichever caller starts the run first sets its timeout; that is
+    an acceptable wobble for identical-output scripts.
+    """
+    del timeout
     arg_items = tuple(sorted((args or {}).items()))
-    return (script_name, arg_items, timeout)
+    return (script_name, arg_items)
 
 
 def _extract_json(text: str):

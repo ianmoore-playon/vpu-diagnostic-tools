@@ -33,6 +33,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   and the summary counts only reflect devices actually present.
 
 ### Fixed
+- **The loading screen no longer freezes when a partner service is down.**
+  Port checks probed each internet service one at a time, so a few
+  unreachable servers (e.g. a Sportzcast outage) could stall the startup
+  checklist for 20+ seconds; all services are now probed at once, and the
+  port sweep no longer runs twice on every startup.
 - **The Secure Connections check no longer reports false failures on VPUs.**
   The TLS test was offering only an outdated protocol version (TLS 1.0) that
   most services reject, so 8 of its 11 checks failed on real hardware even on
