@@ -27,6 +27,10 @@ param([string]$TargetHosts = 'www.python.org')
 
 $ErrorActionPreference = 'SilentlyContinue'
 $intercepted = @()
+# Breadcrumb log: this diagnostic must stay silent on the console when the
+# network is clean, so when IT fails it fails invisibly — the log is the only
+# way to debug it from the field ("send me %TEMP%\pulse-install-tls.log").
+$diag = @("=== Test-InstallTls $(Get-Date -Format s) targets=$TargetHosts ===")
 
 foreach ($h in ($TargetHosts -split ',')) {
     $h = $h.Trim()
@@ -36,12 +40,19 @@ foreach ($h in ($TargetHosts -split ',')) {
     try {
         $tcp = New-Object System.Net.Sockets.TcpClient
         $iar = $tcp.BeginConnect($h, 443, $null, $null)
-        if (-not ($iar.AsyncWaitHandle.WaitOne(4000, $false) -and $tcp.Connected)) { continue }
+        if (-not ($iar.AsyncWaitHandle.WaitOne(4000, $false) -and $tcp.Connected)) {
+            $diag += "$h : TCP connect failed/timed out"
+            continue
+        }
         $tcp.EndConnect($iar)
 
         # Accept every certificate during the handshake — validation happens
         # explicitly below so a substituted cert is captured, not just refused.
-        $cb = {
+        # The cast to RemoteCertificateValidationCallback is REQUIRED: Windows
+        # PowerShell 5.1 can fail the implicit scriptblock→delegate conversion
+        # inside New-Object (silently, given the error handling here), which is
+        # exactly how this check printed nothing on the first Kent-network run.
+        $cb = [System.Net.Security.RemoteCertificateValidationCallback] {
             param($sender, $cert, $chain, $errors)
             if ($cert) {
                 $script:PresentedCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($cert)
@@ -50,7 +61,13 @@ foreach ($h in ($TargetHosts -split ',')) {
         }
         $ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(), $false, $cb)
         try { $ssl.AuthenticateAsClient($h) } catch { }
-        if (-not $script:PresentedCert) { continue }
+        # Belt-and-suspenders for PS 5.1: if the callback didn't capture (e.g.
+        # its scope didn't stick), the stream itself still holds the cert after
+        # an accepted handshake.
+        if (-not $script:PresentedCert -and $ssl.IsAuthenticated -and $ssl.RemoteCertificate) {
+            $script:PresentedCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($ssl.RemoteCertificate)
+        }
+        if (-not $script:PresentedCert) { $diag += "$h : handshake yielded no certificate"; continue }
 
         $chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
         $chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
@@ -75,13 +92,19 @@ foreach ($h in ($TargetHosts -split ',')) {
             $who = if ($org -and $org -ne $issuerCn) { "$issuerCn ($org)" } else { $issuerCn }
             $intercepted += [pscustomobject]@{ TargetHost = $h; Who = $who }
         }
+        $diag += "$h : built=$built statuses=[$($statuses -join ',')] issuer=$($script:PresentedCert.Issuer)"
     }
-    catch { }
+    catch {
+        $diag += "$h : EXCEPTION $($_.Exception.Message)"
+    }
     finally {
         if ($ssl) { $ssl.Dispose() }
         if ($tcp) { $tcp.Close() }
     }
 }
+
+$diag += "verdict: intercepted=$($intercepted.Count)"
+try { $diag | Out-File -FilePath (Join-Path ([System.IO.Path]::GetTempPath()) 'pulse-install-tls.log') -Append -Encoding utf8 } catch { }
 
 if ($intercepted.Count -gt 0) {
     Write-Output ''
