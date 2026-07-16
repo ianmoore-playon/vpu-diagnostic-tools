@@ -69,6 +69,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   instead of a cryptic certificate error.
 
 ### Changed
+- **Pulse now keeps its installer tooling current.** Each launch quietly
+  updates the bundled Python's package installer (pip) so upstream security
+  fixes arrive on their own — skipped harmlessly when the VPU is offline.
 - **Service Status now lists Pixellot programs and Windows services in separate
   areas.** The tab is split into "Pixellot Core Processes" (Agent, Coordinator,
   VPU, and the KeepAgentUp watchdog) and "Windows Services" (ScoreConnect,
