@@ -81,10 +81,19 @@ try {
                 $ssl.ReadTimeout = 6000
                 $ssl.WriteTimeout = 6000
                 try {
-                    # No explicit SslProtocols: the parameterless overload takes
-                    # the OS schannel defaults, matching what Pixellot's own
-                    # clients negotiate on this box.
-                    $ssl.AuthenticateAsClient($t.domain)
+                    # The explicit protocol list is REQUIRED on Windows
+                    # PowerShell 5.1: its .NET Framework host resolves the
+                    # parameterless overload to the legacy default (SSL3/TLS
+                    # 1.0) — NOT the OS schannel defaults; that's .NET Core
+                    # behavior. Modern endpoints reject a TLS 1.0 hello, so
+                    # 8 of 11 targets false-failed with
+                    # SEC_E_UNSUPPORTED_FUNCTION on a real VPU (2026-07-16).
+                    # Tls13 is deliberately absent: the enum flag needs .NET
+                    # 4.8+ and requesting it on schannel builds without TLS
+                    # 1.3 support can itself fail the handshake; every target
+                    # negotiates 1.2. Keep in sync with Test-InstallTls.ps1.
+                    $protocols = [System.Security.Authentication.SslProtocols]'Tls, Tls11, Tls12'
+                    $ssl.AuthenticateAsClient($t.domain, $null, $protocols, $false)
                 }
                 catch {
                     # Even with an accept-all callback the handshake can die

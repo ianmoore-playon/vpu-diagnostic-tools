@@ -60,7 +60,14 @@ foreach ($h in ($TargetHosts -split ',')) {
             return $true
         }
         $ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(), $false, $cb)
-        try { $ssl.AuthenticateAsClient($h) } catch { }
+        # Explicit protocols are REQUIRED on Windows PowerShell 5.1: its .NET
+        # Framework host defaults the parameterless overload to SSL3/TLS 1.0,
+        # which modern endpoints reject outright (SEC_E_UNSUPPORTED_FUNCTION
+        # on a real VPU), not the OS defaults .NET Core uses. Tls13 is
+        # deliberately absent (enum needs .NET 4.8+; requesting it on schannel
+        # without TLS 1.3 can fail the handshake). Sync: Test-TlsInspection.ps1.
+        $protocols = [System.Security.Authentication.SslProtocols]'Tls, Tls11, Tls12'
+        try { $ssl.AuthenticateAsClient($h, $null, $protocols, $false) } catch { }
         # Belt-and-suspenders for PS 5.1: if the callback didn't capture (e.g.
         # its scope didn't stick), the stream itself still holds the cert after
         # an accepted handshake.
