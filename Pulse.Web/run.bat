@@ -97,6 +97,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$f = Get-ChildItem '%PYD
 
 :: -- Step 2/5  Dependencies -----------------------------------
 echo  [2/5] Dependencies ............. checking
+:: Best-effort pip self-update so installed runtimes pick up pip security
+:: patches after bootstrap. Failures are ignored and the timeout is short --
+:: an offline VPU must still launch on its current pip.
+"%PYEXE%" -m pip install --upgrade pip --quiet --no-warn-script-location --timeout 5 --retries 1 >nul 2>&1
 "%PYEXE%" -m pip install -r app\requirements.txt --quiet --no-warn-script-location
 if errorlevel 1 (
     echo        first attempt failed - retrying with detail...
