@@ -5205,9 +5205,16 @@ function renderServices() {
     btn.innerHTML = `${svgIcon("zap", 14)} Restart Agent + Coordinator`;
 
     const ok2 = r && r.success;
-    resultEl.className = "svc-quick-action-result " + (ok2 ? "svc-result-ok" : "svc-result-err");
+    // keepagentup exits 0 without doing anything when its resident watchdog
+    // instance is already running — that's "nothing happened", not success.
+    const resident = r && r.watchdogResident;
+    resultEl.className = "svc-quick-action-result " +
+      (ok2 ? "svc-result-ok" : resident ? "svc-result-warn" : "svc-result-err");
+    const heading = ok2 ? svgIcon("check", 14) + " Success"
+      : resident ? svgIcon("alert", 14) + " Not restarted — watchdog already running"
+      : svgIcon("alert", 14) + " Failed";
     resultEl.innerHTML = `
-      <div class="font-semibold">${ok2 ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
+      <div class="font-semibold">${heading}</div>
       <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
       ${r?.agentStatus ? `<div class="text-xs mt-2 text-pulse-muted">Agent: <span class="font-mono">${esc(r.agentStatus)}</span> &middot; Coordinator: <span class="font-mono">${esc(r.coordinatorStatus || "?")}</span></div>` : ""}
       ${r?.stdout ? `<pre class="svc-result-output">${esc(r.stdout)}</pre>` : ""}

@@ -944,15 +944,21 @@ DEMO = {
         },
         "message": "Last install completed cleanly. No part files remain.",
     },
+    # Realistic outcome on a healthy VPU: the resident keepagentup watchdog is
+    # already running, so a manual run exits 0 without restarting anything.
+    # ("KeekAgentUp" is Pixellot's typo, verbatim from the real exe.)
     "Restart-PixellotAgent.ps1": lambda **kw: {
-        "success": True,
+        "success": False,
+        "watchdogResident": True,
         "exitCode": 0,
         "path": "C:\\pixellot\\bin\\keepagentup.exe",
-        "stdout": "Agent service started.\nCoordinator service started.\nAll Pixellot services up.",
+        "stdout": 'KeekAgentUp Exit as another "KeekAgentUp" process is running',
         "stderr": "",
-        "agentStatus": "Running",
-        "coordinatorStatus": "Running",
-        "message": "keepagentup.exe completed successfully (demo)",
+        "agentStatus": "Running (process, PID 7772)",
+        "coordinatorStatus": "Running (process, PID 6140)",
+        "agentPidBefore": 7772,
+        "agentPidAfter": 7772,
+        "message": "The keepagentup watchdog is already resident on this VPU, so this run exited without restarting anything. The agent was NOT restarted.",
     },
     "Get-AudioDevices.ps1": lambda **kw: {
         "devices": [
