@@ -3954,6 +3954,10 @@ async def _resolve_latest_release(channel):
         import urllib.request
         import json as _json
         headers = {"Accept": "application/vnd.github+json", "User-Agent": "Pulse-Updater"}
+        # Track reachability separately from match: "the feed answered but has
+        # no release for this channel" is a publishing problem, not a network
+        # problem, and the UI must not tell a tech to go check the internet.
+        reachable = False
         for repo in (_UPDATE_PUBLIC_REPO, _UPDATE_SOURCE_REPO):
             try:
                 req = urllib.request.Request(
@@ -3963,6 +3967,7 @@ async def _resolve_latest_release(channel):
                     releases = _json.loads(resp.read().decode("utf-8"))
             except Exception:
                 continue
+            reachable = True
             for rel in releases:
                 if rel.get("draft"):
                     continue
@@ -3971,8 +3976,8 @@ async def _resolve_latest_release(channel):
                     continue
                 if rel.get("prerelease") and not accept_pre:
                     continue
-                return {"tag": tag, "url": rel.get("html_url"), "notes": rel.get("body") or ""}
-        return None
+                return {"tag": tag, "url": rel.get("html_url"), "notes": rel.get("body") or ""}, True
+        return None, reachable
 
     return await asyncio.to_thread(_fetch)
 
@@ -3990,12 +3995,20 @@ async def api_update_check():
                 "updateAvailable": False,
                 "note": "Pulse is running from source here — updates are managed with git, not this button.",
             }
-        latest = await _resolve_latest_release(channel)
+        latest, reachable = await _resolve_latest_release(channel)
         if not latest:
+            if reachable:
+                error = (f"The update server is reachable, but no {channel} release has "
+                         "been published yet, so there is nothing to compare against. "
+                         "This is a publishing issue on our side — not a problem with "
+                         "this VPU or its network.")
+            else:
+                error = ("Couldn't reach the update server. Check the VPU's internet "
+                         "connection and try again.")
             return {
                 "managed": True, "channel": channel, "current": current,
                 "updateAvailable": False,
-                "error": "Couldn't reach the update server. Check the VPU's internet connection and try again.",
+                "error": error,
             }
         return {
             "managed": True, "channel": channel, "current": current,

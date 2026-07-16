@@ -38,6 +38,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   entirely.
 
 ### Fixed
+- **Check for Update works on dev builds and reports failures honestly.** Dev
+  builds now publish releases for the updater to find, and when no release
+  exists for a channel the message says so instead of blaming the VPU's
+  internet connection.
 - **The startup checklist now ticks through every check steadily.** Quick
   checks appear first and the Dashboard summary last, matching how fast each
   one really finishes; previously the list could sit idle and then flash all

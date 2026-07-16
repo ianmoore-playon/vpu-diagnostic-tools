@@ -4,6 +4,15 @@
 # Tags web-v* create a production release.
 # Tags web-beta-v* create a beta pre-release.
 # Tags web-dev-v* create a dev pre-release.
+#
+# Runs two ways:
+#   - directly, on a manual tag push (beta / production tags), and
+#   - as a reusable workflow called by web-auto-tag.yml with the tag it just
+#     created. Tags pushed with the default GITHUB_TOKEN do NOT fire tag-push
+#     triggers (GitHub's anti-recursion rule), so the auto-tag workflow must
+#     call this one explicitly — dev releases only exist because of that call.
+# The RELEASE_TAG env resolves the tag in both modes; a plain workflow_dispatch
+# from a branch packages a zip artifact but publishes nothing.
 
 name: Build Pulse.Web
 
@@ -11,6 +20,12 @@ on:
   push:
     tags: [ "web-v*", "web-beta-v*", "web-dev-v*" ]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Existing web-* tag to package and publish"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -18,14 +33,21 @@ permissions:
 jobs:
   package:
     runs-on: ubuntu-latest
+    env:
+      # Tag-push runs resolve from the ref; workflow_call runs from the input.
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+        with:
+          # For workflow_call the triggering ref is the caller's branch, so
+          # check out the tag itself; empty input falls back to the event ref.
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Create release zip
         run: |
-          TAG="${GITHUB_REF_NAME:-dev}"
+          TAG="${RELEASE_TAG:-dev}"
           STAMP=$(date +%Y%m%d-%H%M)
           SHA="${GITHUB_SHA:0:7}"
           if echo "$TAG" | grep -q "^web-dev-"; then
@@ -62,11 +84,11 @@ jobs:
 
       # ── Clean up stale releases (keeps only the new tag's release) ──────
       - name: Delete older releases in same channel
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(env.RELEASE_TAG, 'web-')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${RELEASE_TAG}"
           # Determine channel prefix for cleanup
           if echo "$TAG" | grep -q "^web-dev-"; then
             PATTERN="web-dev-v"
@@ -86,7 +108,7 @@ jobs:
 
       # ── Production release (web-v* tags, excluding beta/dev) ───────────
       - name: Publish release (source repo)
-        if: startsWith(github.ref, 'refs/tags/web-v') && !startsWith(github.ref, 'refs/tags/web-beta-') && !startsWith(github.ref, 'refs/tags/web-dev-')
+        if: startsWith(env.RELEASE_TAG, 'web-v') && !startsWith(env.RELEASE_TAG, 'web-beta-') && !startsWith(env.RELEASE_TAG, 'web-dev-')
         uses: softprops/action-gh-release@v2
         with:
           # Ship the channel launcher alongside the app zip — testers/installers
@@ -95,8 +117,8 @@ jobs:
           files: |
             ${{ env.ARTIFACT_ZIP }}
             runners/run_pulse.bat
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
           prerelease: false
           body: |
             Pulse.Web release.
@@ -109,15 +131,15 @@ jobs:
 
       # ── Beta pre-release (beta channel, web-beta-v* tags) ──────────────
       - name: Publish beta pre-release (source repo)
-        if: startsWith(github.ref, 'refs/tags/web-beta-v')
+        if: startsWith(env.RELEASE_TAG, 'web-beta-v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ env.ARTIFACT_ZIP }}
             runners/run_pulse_beta.bat
             runners/Pulse-Beta.bat
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
           prerelease: true
           body: |
             Pulse.Web beta build — not yet promoted to main.
@@ -133,18 +155,19 @@ jobs:
 
       # ── Dev pre-release (dev channel, web-dev-v* tags) ─────────────────
       - name: Publish dev pre-release (source repo)
-        if: startsWith(github.ref, 'refs/tags/web-dev-v')
+        if: startsWith(env.RELEASE_TAG, 'web-dev-v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ env.ARTIFACT_ZIP }}
             runners/run_pulse_dev.bat
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
           prerelease: true
           body: |
             Pulse.Web dev build — internal testing only.
 
             Note: the `run_pulse_dev.bat` launcher tracks the latest `dev`-branch
             commit directly, so dev users normally don't install from this tag.
-
+            This release exists so the in-app "Check for Update" has something
+            to compare against on dev-channel installs.
