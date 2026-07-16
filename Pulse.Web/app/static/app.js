@@ -3937,32 +3937,6 @@ function renderNetwork() {
       </div>
     </div>
 
-    <!-- Secure Connections — SSL-inspection check. A cert issued by anything
-         other than a trusted public CA means the firewall is decrypting the
-         connection (video streams, graphics die — the Kent SD signature). -->
-    <div class="card">
-      ${sectionTitle("shield", "Secure Connections (SSL Inspection Check)")}
-      <p class="text-pulse-muted text-xs mb-3">Who really signed each service's HTTPS certificate. "Intercepted" means the venue firewall is decrypting the connection and substituting its own certificate — those services can't connect even though port tests pass. Fix: the venue IT team must exempt the domain from SSL decryption (bypass list), not just allowlist the URL.</p>
-      ${(tls && tls.results && tls.results.length) ? `
-        <table class="data-table"><thead><tr>
-          <th>Service</th><th>Certificate issued by</th><th>Status</th>
-        </tr></thead><tbody>
-        ${tls.results.map(function(r) {
-          var st = (r.status || "").toLowerCase();
-          var bad = st === "intercepted" || st === "blocked";
-          var issuerLabel = r.issuerCn
-            ? r.issuerCn + (r.issuerOrg && r.issuerOrg !== r.issuerCn ? " — " + r.issuerOrg : "")
-            : (st === "pass" ? "—" : (r.detail || "—"));
-          return `<tr>
-            <td><div class="font-semibold">${esc(r.domain)}</div><div class="text-xs text-pulse-muted">${esc(r.purpose || "")}</div></td>
-            <td class="text-xs${bad ? " status-fail" : ""}" title="${esc(r.issuer || "")}">${esc(issuerLabel)}</td>
-            <td>${_tlsBadge(r.status)}</td>
-          </tr>`;
-        }).join("")}
-        </tbody></table>
-      ` : '<p class="text-pulse-muted text-sm mt-2">No certificate results — run the network test again.</p>'}
-    </div>
-
     <!-- Local Network Health -->
     <div class="card">
       <div class="net-ping-toolbar">
@@ -4100,12 +4074,38 @@ function renderNetwork() {
       <div class="net-adv-toggle-inner">
         <span class="net-adv-toggle-icon" id="net-adv-arrow">${svgIcon("chevron", 14)}</span>
         <span class="net-adv-toggle-label">Advanced Diagnostics</span>
-        <span class="text-xs text-pulse-muted">Time sync, name-lookup checks, traffic capture, route tracing, and live monitoring</span>
+        <span class="text-xs text-pulse-muted">Secure-connection checks, time sync, name-lookup checks, traffic capture, route tracing, and live monitoring</span>
       </div>
     </div>
 
     <!-- Advanced Diagnostics (collapsed by default) -->
     <div id="net-adv-section" class="net-adv-section net-adv-collapsed">
+
+      <!-- Secure Connections — SSL-inspection check. A cert issued by anything
+           other than a trusted public CA means the firewall is decrypting the
+           connection (video streams, graphics die — the Kent SD signature). -->
+      <div class="card">
+        ${sectionTitle("shield", "Secure Connections (SSL Inspection Check)")}
+        <p class="text-pulse-muted text-xs mb-3">Who really signed each service's HTTPS certificate. "Intercepted" means the venue firewall is decrypting the connection and substituting its own certificate — those services can't connect even though port tests pass. Fix: the venue IT team must exempt the domain from SSL decryption (bypass list), not just allowlist the URL.</p>
+        ${(tls && tls.results && tls.results.length) ? `
+          <table class="data-table"><thead><tr>
+            <th>Service</th><th>Certificate issued by</th><th>Status</th>
+          </tr></thead><tbody>
+          ${tls.results.map(function(r) {
+            var st = (r.status || "").toLowerCase();
+            var bad = st === "intercepted" || st === "blocked";
+            var issuerLabel = r.issuerCn
+              ? r.issuerCn + (r.issuerOrg && r.issuerOrg !== r.issuerCn ? " — " + r.issuerOrg : "")
+              : (st === "pass" ? "—" : (r.detail || "—"));
+            return `<tr>
+              <td><div class="font-semibold">${esc(r.domain)}</div><div class="text-xs text-pulse-muted">${esc(r.purpose || "")}</div></td>
+              <td class="text-xs${bad ? " status-fail" : ""}" title="${esc(r.issuer || "")}">${esc(issuerLabel)}</td>
+              <td>${_tlsBadge(r.status)}</td>
+            </tr>`;
+          }).join("")}
+          </tbody></table>
+        ` : '<p class="text-pulse-muted text-sm mt-2">No certificate results — run the network test again.</p>'}
+      </div>
 
       ${_netTimeSyncCard(cfg, ntp, ntpPeers)}
 

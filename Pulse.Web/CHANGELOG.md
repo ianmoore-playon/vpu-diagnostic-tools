@@ -23,6 +23,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [Unreleased]
 
 ### Changed
+- **The Secure Connections check moved under Advanced Diagnostics.** On the
+  Network Test tab it now lives inside the collapsible Advanced Diagnostics
+  section instead of taking a full panel at the top of the page; any
+  intercepted or failing service still surfaces in the findings banner.
 - **Audio signal meters now move in near real time.** Meter readings were
   stuck behind a 25-second cache and a per-poll compile step; levels now
   refresh about every 2 seconds, and repeated volume changes always take
