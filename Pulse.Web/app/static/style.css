@@ -2977,12 +2977,12 @@ html.dark .sc-board { box-shadow: none; border-color: var(--c-board-border-2); }
 .audio-signal-active { background: var(--c-status-ok); box-shadow: 0 0 8px rgba(34,197,94,0.5); }
 .audio-signal-silent { background: var(--c-dim); }
 
-/* Collapsed list of NotPresent endpoints Windows remembers */
-.audio-ghosts-summary {
+/* Collapsed list of unplugged/disabled devices */
+.audio-inactive-summary {
   cursor: pointer; font-size: 0.85rem; font-weight: 600;
   color: var(--c-muted); user-select: none;
 }
-.audio-ghosts-summary:hover { color: var(--c-text); }
+.audio-inactive-summary:hover { color: var(--c-text); }
 
 /* Findings card (active line-in silent, WMI fallback, etc.) */
 .audio-findings { padding: 0.5rem; }

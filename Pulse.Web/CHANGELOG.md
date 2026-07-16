@@ -31,10 +31,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   stuck behind a 25-second cache and a per-poll compile step; levels now
   refresh about every 2 seconds, and repeated volume changes always take
   effect instead of being skipped.
-- **The Audio tab no longer buries real devices under Windows' memory.**
-  Devices Windows remembers but that aren't connected (often dozens on a
-  long-lived VPU) are now tucked into a collapsed "remembered devices" list,
-  and the summary counts only reflect devices actually present.
+- **The Audio tab shows only devices that matter.** The main lists now show
+  just the active input and output devices; unplugged or disabled hardware
+  sits in a collapsed "inactive devices" list, and devices Windows merely
+  remembers from the past (often dozens on a long-lived VPU) are hidden
+  entirely.
 
 ### Fixed
 - **The startup checklist now ticks through every check steadily.** Quick
