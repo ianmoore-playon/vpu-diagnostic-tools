@@ -460,11 +460,27 @@ function _setSplashVerb(text) {
 const SPLASH_NOTE_DEFAULT = "Running a full diagnostic sweep — this can take a moment.";
 const SPLASH_NOTE_SLOW    = "Still working — some checks (camera frames, speed test) take longer on slower units.";
 
-// Ordered preload sections: dashboard first, then everything else fetched
-// during cold start. Single source for both the checklist and the X-of-Y
-// count, so they can't drift from each other or from what's actually fetched.
+// Splash reveal order — cheap local collectors first, network probes and the
+// Dashboard aggregate last. This mirrors how fast sections actually SETTLE:
+// the dashboard gathers every subsystem (it's always the slowest), and the
+// network sweep runs live port probes. With dashboard first, the strict
+// in-order reveal couldn't tick anything until the slowest section landed,
+// then flooded the other eleven checks in one frame. Fetch order is
+// unaffected — the dashboard is still requested first (see
+// preloadProgressive); this only orders the checklist.
+const SPLASH_REVEAL_ORDER = [
+  "settings", "system", "services", "events", "scoreconnect",
+  "pixellot-config", "disk-health", "reboots", "audio", "cameras",
+  "network", "dashboard",
+];
+
+// Preload sections in splash-reveal order. Single source for both the
+// checklist and the X-of-Y count, so they can't drift from each other or
+// from what's actually fetched. A PAGE_API key missing from
+// SPLASH_REVEAL_ORDER (a new lane) still appears — appended at the end.
 function _splashSectionKeys() {
-  return Object.keys(PAGE_API);
+  return SPLASH_REVEAL_ORDER.filter((k) => k in PAGE_API)
+    .concat(Object.keys(PAGE_API).filter((k) => !SPLASH_REVEAL_ORDER.includes(k)));
 }
 function _splashSectionLabel(key) {
   return _sectionLabels()[key] || key.charAt(0).toUpperCase() + key.slice(1);
@@ -595,23 +611,29 @@ function preloadProgressive(opts) {
   const o = opts || {};
   const verb = o.verb || "Loading diagnostics";
   const deferred = Object.keys(PAGE_API).filter((k) => k !== "dashboard");
-  // Demo mode: pace each reveal with a small delay so the splash actually
-  // SHOWS each section being checked instead of flashing past. Real cold
-  // start is naturally ~5-15s, so the demo's ~3s artificial pacing mirrors
-  // the field UX. window.__PULSE_DEMO_MODE is injected into the HTML at
-  // render time so we know synchronously — relying on the /api/version
-  // response races with the first reveal and (in practice) loses.
-  let _demoTickDelayMs = (typeof window !== "undefined" && window.__PULSE_DEMO_MODE) ? 280 : 0;
+  // Pace each reveal with a small delay so the splash actually SHOWS each
+  // section being checked instead of flashing past. Real boxes need this as
+  // much as demo: sections settle in bunches (everything but the slow
+  // aggregates lands within a few seconds), and with no gap the in-order
+  // reveal ticks a bunch in one frame. Demo gets a longer gap (~280ms — its
+  // ~3s total mirrors the field UX); real boxes a short one, since theirs
+  // only spaces out bunched ticks on top of genuine load time.
+  // window.__PULSE_DEMO_MODE is injected into the HTML at render time so we
+  // know synchronously — relying on the /api/version response races with
+  // the first reveal and (in practice) loses.
+  const REAL_TICK_DELAY_MS = 150;
+  let _tickDelayMs = (typeof window !== "undefined" && window.__PULSE_DEMO_MODE) ? 280 : REAL_TICK_DELAY_MS;
 
   // Sections are fetched in parallel below (fast — the server caps the real
   // work with a 4-slot PowerShell semaphore), so they SETTLE in arbitrary
-  // order. The checklist, though, reveals strictly in PAGE_API order so it
-  // reads as steady top-to-bottom progress instead of checks popping in at
-  // random. We decouple "data arrived" (markReady) from "shown checked" (the
-  // reveal loop): each step is ticked off only once it AND every step before
-  // it has landed — a deterministic boot sequence without serializing (and
-  // thus slowing) the actual fetches.
-  const order = _splashSectionKeys();   // dashboard, system, network, … (boot order)
+  // order. The checklist, though, reveals strictly in SPLASH_REVEAL_ORDER
+  // (cheap sections first, network/dashboard last — roughly settle order)
+  // so it reads as steady top-to-bottom progress instead of checks popping
+  // in at random. We decouple "data arrived" (markReady) from "shown
+  // checked" (the reveal loop): each step is ticked off only once it AND
+  // every step before it has landed — a deterministic boot sequence without
+  // serializing (and thus slowing) the actual fetches.
+  const order = _splashSectionKeys();   // settings, system, … network, dashboard
   const total = order.length;
   const _resolveReady = {};
   const _ready = {};
@@ -624,7 +646,7 @@ function preloadProgressive(opts) {
     for (let i = 0; i < order.length; i++) {
       const key = order[i];
       await _ready[key];
-      if (_demoTickDelayMs > 0) await new Promise((r) => setTimeout(r, _demoTickDelayMs));
+      if (_tickDelayMs > 0) await new Promise((r) => setTimeout(r, _tickDelayMs));
       _markSplashSectionDone(key);
       _setSplashCount(i + 1, total);
       _setSplashPct(((i + 1) / total) * 100);
@@ -649,7 +671,7 @@ function preloadProgressive(opts) {
       if (currentPage === "about") renderPage("about");
     }
     // Engage the demo pacing for THIS preload (~2.5s total across 9 ticks).
-    if (data?.demoMode) _demoTickDelayMs = 280;
+    if (data?.demoMode) _tickDelayMs = 280;
   });
   const logsPromise = api("/api/logs").then((logData) => {
     if (logData && !logData.error) {
@@ -680,7 +702,7 @@ function preloadProgressive(opts) {
   );
 
   // allSettled so one failing endpoint can't trap the splash. Also wait on
-  // the reveal so the splash stays up until the (demo-paced) checklist has
+  // the reveal so the splash stays up until the paced checklist has
   // actually FINISHED ticking through — not just when the fetches return.
   return Promise.allSettled([
     dashboardPromise, versionPromise, logsPromise, ...deferredPromises,
