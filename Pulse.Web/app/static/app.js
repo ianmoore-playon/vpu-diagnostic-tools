@@ -7916,16 +7916,17 @@ function renderAudio() {
   const devices = data.devices || [];
   // Windows keeps an endpoint entry for every audio device it has EVER seen;
   // on a long-lived VPU those NotPresent ghosts outnumber real devices ~10:1
-  // (81 of 91 on the bench VPU). Tuck them behind a disclosure so the devices
-  // a tech can actually touch are the whole page.
+  // (81 of 91 on the bench VPU). Drop them entirely — a tech can't touch them.
   const present = devices.filter(d => d.state !== "NotPresent");
-  const ghosts = devices.filter(d => d.state === "NotPresent");
-  const inputs = present.filter(d => d.dataFlow === "Input");
-  const outputs = present.filter(d => d.dataFlow === "Output");
+  const presentInputs = present.filter(d => d.dataFlow === "Input");
+  const presentOutputs = present.filter(d => d.dataFlow === "Output");
+  // Main sections show only Active devices; Unplugged/Disabled ones are real
+  // hardware but not usable right now, so they share one disclosure below.
+  const inputs = presentInputs.filter(d => d.state === "Active");
+  const outputs = presentOutputs.filter(d => d.state === "Active");
+  const inactive = [...presentInputs, ...presentOutputs].filter(d => d.state !== "Active");
   // WMI fallback returns dataFlow="Unknown" — surface these so they're not invisible
   const others = present.filter(d => d.dataFlow !== "Input" && d.dataFlow !== "Output");
-  const activeInputs = inputs.filter(d => d.state === "Active");
-  const activeOutputs = outputs.filter(d => d.state === "Active");
 
   // Page-level indicator: is anything making sound?
   const anySignal = devices.some(d => d.peak != null && d.peak > AUDIO_SIGNAL_THRESHOLD);
@@ -7949,8 +7950,8 @@ function renderAudio() {
     </div>` : ""}
 
     <div class="audio-summary">
-      ${_audioSummaryCard("Input Devices", activeInputs.length, inputs.length, "mic")}
-      ${_audioSummaryCard("Output Devices", activeOutputs.length, outputs.length, "volume")}
+      ${_audioSummaryCard("Input Devices", inputs.length, presentInputs.length, "mic")}
+      ${_audioSummaryCard("Output Devices", outputs.length, presentOutputs.length, "volume")}
       <div class="card audio-signal-card">
         <div class="audio-signal-dot ${anySignal ? "audio-signal-active" : "audio-signal-silent"}"></div>
         <div>
@@ -7964,14 +7965,14 @@ function renderAudio() {
       ${sectionTitle("mic", "Input Devices")}
       ${inputs.length
         ? inputs.map(d => _audioDeviceRow(d)).join("")
-        : '<p class="text-sm text-pulse-muted">No input devices detected</p>'}
+        : '<p class="text-sm text-pulse-muted">No active input devices</p>'}
     </div>
 
     <div class="card mt-4">
       ${sectionTitle("volume", "Output Devices")}
       ${outputs.length
         ? outputs.map(d => _audioDeviceRow(d)).join("")
-        : '<p class="text-sm text-pulse-muted">No output devices detected</p>'}
+        : '<p class="text-sm text-pulse-muted">No active output devices</p>'}
     </div>
 
     ${others.length ? `<div class="card mt-4">
@@ -7980,10 +7981,10 @@ function renderAudio() {
       ${others.map(d => _audioDeviceRow(d)).join("")}
     </div>` : ""}
 
-    ${ghosts.length ? `<details class="card mt-4 audio-ghosts">
-      <summary class="audio-ghosts-summary">${ghosts.length} remembered device${ghosts.length === 1 ? "" : "s"} not connected</summary>
-      <p class="text-xs text-pulse-muted mt-2 mb-2">Windows keeps an entry for every audio device it has ever seen. These aren't currently connected — only worth a look if a device you expected isn't listed above.</p>
-      ${ghosts.map(d => _audioDeviceRow(d)).join("")}
+    ${inactive.length ? `<details class="card mt-4 audio-inactive">
+      <summary class="audio-inactive-summary">${inactive.length} inactive device${inactive.length === 1 ? "" : "s"} (unplugged or disabled)</summary>
+      <p class="text-xs text-pulse-muted mt-2 mb-2">Connected hardware that isn't usable right now — a jack with nothing plugged in, or a device disabled in Windows.</p>
+      ${inactive.map(d => _audioDeviceRow(d)).join("")}
     </details>` : ""}
   `;
 

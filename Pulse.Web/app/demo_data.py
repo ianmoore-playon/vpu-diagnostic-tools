@@ -1015,8 +1015,8 @@ DEMO = {
                 "peak": None,
             },
             # NotPresent ghosts — Windows remembers every endpoint it has ever
-            # seen; real VPUs carry dozens of these. Exercises the collapsed
-            # "remembered devices" disclosure.
+            # seen; real VPUs carry dozens of these. The UI hides them, so
+            # these exercise that they never render anywhere.
             {
                 "id": "{0.0.1.00000000}.{c3d4e5f6-3333-4444-5555-666677778888}",
                 "name": "Microphone (USB Audio CODEC)",
