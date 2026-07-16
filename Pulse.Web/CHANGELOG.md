@@ -40,6 +40,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   badge.
 
 ### Added
+- **The Network tab now catches firewalls that intercept secure traffic (SSL
+  inspection).** When a school firewall decrypts HTTPS and swaps in its own
+  certificate — the "video streams but graphics never load" failure — Pulse
+  now names the intercepting device, lists exactly which domains are affected
+  (including the full singular.live family the graphics run on), and spells
+  out the fix for the district's IT team: exempt the domains from SSL
+  decryption, a URL allowlist is not enough. Shows on the Dashboard, the
+  Network tab, and in exported reports.
 - **The Audio tab is back.** Audio device diagnostics — inputs, outputs,
   volume, and live signal activity — are available again under
   Troubleshooting while we continue building the lane out.

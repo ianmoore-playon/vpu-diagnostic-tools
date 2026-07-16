@@ -2845,6 +2845,33 @@ function _isRedundantStreamBlock(p, health) {
 }
 function _netDomainImpact(d) { return (d && NET_DOMAIN_IMPACT[d.domain]) || ""; }
 
+// Impact per TLS-checked domain — what breaks when a firewall intercepts it.
+// Keep the domains in sync with Test-TlsInspection.ps1.
+const TLS_DOMAIN_IMPACT = {
+  "singular.live": "On-screen graphics and scorebug overlays fail to load.",
+  "app.singular.live": "On-screen graphics and scorebug overlays fail to load.",
+  "api.singular.live": "On-screen graphics and scorebug overlays fail to load.",
+  "datastream.singular.live": "The realtime data feed that drives graphics can't connect — overlays stay blank even though video streams.",
+  "service.singular.live": "On-screen graphics and scorebug overlays fail to load.",
+  "pixellot.tv": "System management and software updates are blocked.",
+  "software.pixellot.tv": "Software and firmware updates are blocked.",
+  "nfhsnetwork.com": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
+  "s3.amazonaws.com": "Recordings can't upload and software/asset downloads fail.",
+  "secure.logmein.com": "The support team can't diagnose the VPU remotely.",
+  "www.python.org": "The Pulse installer can't download Python on this network.",
+};
+
+function _tlsBadge(status) {
+  switch ((status || "").toLowerCase()) {
+    case "pass":           return badge("Pass", "pass");
+    case "intercepted":    return badge("Intercepted", "fail");
+    case "handshake-fail": return badge("Handshake failed", "warn");
+    case "cert-time":      return badge("Cert dates invalid", "warn");
+    case "blocked":        return badge("Unreachable", "fail");
+    default:               return badge(status || "Unknown", "muted");
+  }
+}
+
 // Port Connectivity as a single status list (Required → Optional), one row
 // per service. Replaces the old TCP|UDP card grid: uniform rows, service-led,
 // protocol/port as metadata, a status pill, and a one-glance section summary.
@@ -3001,7 +3028,7 @@ function _netIssueRank(severity) {
   }
 }
 
-function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
+function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
   var issues = [];
   var gw = (local || {}).gateway;
   var dns = (local || {}).dns;
@@ -3153,6 +3180,79 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     // Sort and return early — no point checking ports/domains
     issues.sort(function(a, b) { return _netIssueRank(a.severity) - _netIssueRank(b.severity); });
     return issues;
+  }
+
+  // ── SSL inspection (certificate substitution) ────────────
+  // Test-TlsInspection completes a real TLS handshake to each critical HTTPS
+  // service while accepting ANY certificate, then validates what was actually
+  // presented against the VPU's trust store. "intercepted" = a middlebox
+  // (school firewall doing SSL deep-packet inspection) substituted its own
+  // cert. Field signature (Kent School District, 2026-07): video streams
+  // fine, Singular graphics never load, and every plain port test is green —
+  // which is why this ranks first among the criticals: it explains failures
+  // the other checks can't see.
+  var tlsRows = (tls && !tls.error && tls.results) || [];
+  var tlsIntercepted = tlsRows.filter(function(r) { return r.status === "intercepted"; });
+  var tlsHsFail = tlsRows.filter(function(r) { return r.status === "handshake-fail"; });
+  var tlsCertTime = tlsRows.filter(function(r) { return r.status === "cert-time"; });
+  var tlsBlocked = tlsRows.filter(function(r) { return r.status === "blocked"; });
+  if (tlsIntercepted.length) {
+    var interceptorNames = ((tls && tls.interceptorIssuers) || []).join(", ");
+    issues.push({
+      severity: "critical",
+      title: "The venue firewall is intercepting secure connections (SSL inspection)",
+      body: "The venue's network is decrypting the VPU's secure traffic and substituting its own certificate"
+        + (interceptorNames ? ' — the intercepting device identifies itself as "' + interceptorNames + '"' : "")
+        + ". The VPU rejects the substituted certificate, so the services below can't connect — typically "
+        + "on-screen graphics fail while video keeps streaming. Ask the venue's IT team to add these domains "
+        + "to the firewall's SSL decryption bypass/exemption list, using a wildcard that covers every "
+        + "subdomain plus the bare domain (e.g. *.singular.live AND singular.live). A URL allowlist alone "
+        + "is not enough — the traffic must be exempt from decryption.",
+      details: tlsIntercepted.map(function(r) {
+        var impact = TLS_DOMAIN_IMPACT[r.domain] || "";
+        return r.domain + ' — certificate issued by "' + (r.issuerCn || r.issuer || "an untrusted authority")
+          + '" instead of a public certificate authority' + (impact ? " — " + impact : "");
+      }).concat(tlsHsFail.map(function(r) {
+        return r.domain + " — the secure handshake was refused (consistent with the same inspection)";
+      })),
+    });
+  } else if (tlsHsFail.length) {
+    // Handshake failures with no confirmed substitution — can be inspection
+    // that kills the handshake outright, aggressive filtering, or a protocol
+    // problem. Worth a look, but without a captured cert it isn't proof.
+    issues.push({
+      severity: "warning",
+      title: tlsHsFail.length + " secure service" + (tlsHsFail.length === 1 ? "" : "s") + " failed the TLS handshake — possible SSL inspection",
+      body: "The connection reached the server, but the secure handshake was refused. This often means the venue firewall is inspecting or filtering HTTPS. If graphics or uploads are failing while video works, ask the venue's IT team whether SSL decryption applies to these domains and to exempt them.",
+      details: tlsHsFail.map(function(r) {
+        var impact = TLS_DOMAIN_IMPACT[r.domain] || "";
+        return r.domain + (r.detail ? " — " + r.detail : "") + (impact ? " — " + impact : "");
+      }),
+    });
+  }
+  if (tlsCertTime.length) {
+    // Date-only chain failures are a clock/expiry problem, NOT interception —
+    // a wrong VPU clock fails every certificate's validity window.
+    issues.push({
+      severity: "warning",
+      title: tlsCertTime.length + " secure service" + (tlsCertTime.length === 1 ? "" : "s") + " presented a certificate with invalid dates",
+      body: "Certificate validity dates don't match this VPU's clock. Check the Time Sync section — a wrong system clock makes every secure connection fail. If the clock is right, the service's certificate has expired.",
+      details: tlsCertTime.map(function(r) { return r.domain + " — valid until " + (r.notAfter || "unknown"); }),
+    });
+  }
+  if (tlsBlocked.length) {
+    // Unreachable during the cert check — reachability criticals belong to the
+    // port/domain panels; this warning exists because several of these hosts
+    // (datastream/api/app.singular.live) appear ONLY in this check.
+    issues.push({
+      severity: "warning",
+      title: tlsBlocked.length + " secure service" + (tlsBlocked.length === 1 ? "" : "s") + " couldn't be reached for the certificate check",
+      body: "These services didn't answer on port 443, so their certificates couldn't be verified. If they stay unreachable, ask the venue's IT team to allow them through the firewall.",
+      details: tlsBlocked.map(function(r) {
+        var impact = TLS_DOMAIN_IMPACT[r.domain] || "";
+        return r.domain + (impact ? " — " + impact : "");
+      }),
+    });
   }
 
   // ── Ports: required failures ─────────────────────────────
@@ -3699,9 +3799,10 @@ function renderNetwork() {
   const ntpPeers = (data.ntpPeers && !data.ntpPeers.error) ? data.ntpPeers : null;
   const dnsResolution = (data.dnsResolution && !data.dnsResolution.error) ? data.dnsResolution : null;
   const wifi = (data.wifi && !data.wifi.error) ? data.wifi : null;
+  const tls = (data.tls && !data.tls.error) ? data.tls : null;
   const ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
 
-  const issues = _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi);
+  const issues = _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls);
 
   const hasCrit = issues.some(function(f) { return f.severity === "critical"; });
   const hasWarn = issues.some(function(f) { return f.severity === "warning"; });
@@ -3834,6 +3935,32 @@ function renderNetwork() {
           ` : '<p class="text-pulse-muted text-sm">No DNS data</p>'}
         </div>
       </div>
+    </div>
+
+    <!-- Secure Connections — SSL-inspection check. A cert issued by anything
+         other than a trusted public CA means the firewall is decrypting the
+         connection (video streams, graphics die — the Kent SD signature). -->
+    <div class="card">
+      ${sectionTitle("shield", "Secure Connections (SSL Inspection Check)")}
+      <p class="text-pulse-muted text-xs mb-3">Who really signed each service's HTTPS certificate. "Intercepted" means the venue firewall is decrypting the connection and substituting its own certificate — those services can't connect even though port tests pass. Fix: the venue IT team must exempt the domain from SSL decryption (bypass list), not just allowlist the URL.</p>
+      ${(tls && tls.results && tls.results.length) ? `
+        <table class="data-table"><thead><tr>
+          <th>Service</th><th>Certificate issued by</th><th>Status</th>
+        </tr></thead><tbody>
+        ${tls.results.map(function(r) {
+          var st = (r.status || "").toLowerCase();
+          var bad = st === "intercepted" || st === "blocked";
+          var issuerLabel = r.issuerCn
+            ? r.issuerCn + (r.issuerOrg && r.issuerOrg !== r.issuerCn ? " — " + r.issuerOrg : "")
+            : (st === "pass" ? "—" : (r.detail || "—"));
+          return `<tr>
+            <td><div class="font-semibold">${esc(r.domain)}</div><div class="text-xs text-pulse-muted">${esc(r.purpose || "")}</div></td>
+            <td class="text-xs${bad ? " status-fail" : ""}" title="${esc(r.issuer || "")}">${esc(issuerLabel)}</td>
+            <td>${_tlsBadge(r.status)}</td>
+          </tr>`;
+        }).join("")}
+        </tbody></table>
+      ` : '<p class="text-pulse-muted text-sm mt-2">No certificate results — run the network test again.</p>'}
     </div>
 
     <!-- Local Network Health -->
