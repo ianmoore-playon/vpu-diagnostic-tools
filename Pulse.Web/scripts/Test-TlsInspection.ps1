@@ -65,8 +65,12 @@ try {
                 # done explicitly below, so an intercepted (untrusted) cert is
                 # CAPTURED and reported instead of just aborting the handshake.
                 # Clone in the callback: SslStream may dispose its copy after.
+                # The delegate cast is REQUIRED: Windows PowerShell 5.1 can
+                # fail the implicit scriptblock→delegate conversion inside
+                # New-Object (field-found on the first Kent-network run of the
+                # installer twin, Test-InstallTls.ps1 — keep both in sync).
                 $script:PresentedCert = $null
-                $cb = {
+                $cb = [System.Net.Security.RemoteCertificateValidationCallback] {
                     param($sender, $cert, $chain, $errors)
                     if ($cert) {
                         $script:PresentedCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($cert)
@@ -92,6 +96,13 @@ try {
                     while ($inner.InnerException) { $inner = $inner.InnerException }
                     $detail = $inner.Message
                     $status = 'handshake-fail'
+                }
+
+                # Belt-and-suspenders for PS 5.1: if the callback didn't
+                # capture, the stream itself still holds the cert after an
+                # accepted handshake.
+                if (-not $script:PresentedCert -and $ssl.IsAuthenticated -and $ssl.RemoteCertificate) {
+                    $script:PresentedCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($ssl.RemoteCertificate)
                 }
 
                 if ($script:PresentedCert) {
