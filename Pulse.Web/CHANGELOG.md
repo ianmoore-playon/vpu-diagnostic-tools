@@ -37,6 +37,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   and the summary counts only reflect devices actually present.
 
 ### Fixed
+- **The startup checklist now ticks through every check steadily.** Quick
+  checks appear first and the Dashboard summary last, matching how fast each
+  one really finishes; previously the list could sit idle and then flash all
+  twelve checks in one instant.
 - **The loading screen no longer freezes when a partner service is down.**
   Port checks probed each internet service one at a time, so a few
   unreachable servers (e.g. a Sportzcast outage) could stall the startup
