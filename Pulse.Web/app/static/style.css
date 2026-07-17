@@ -2390,6 +2390,7 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
 .svc-quick-action-result.hidden { display: none; }
 .svc-result-ok  { background: var(--c-tint-green); border-left: 3px solid var(--c-accent-green); color: var(--c-text); }
 .svc-result-err { background: var(--c-tint-red);   border-left: 3px solid var(--c-accent-red);   color: var(--c-text); }
+.svc-result-warn { background: var(--c-tint-amber); border-left: 3px solid var(--c-accent-amber); color: var(--c-text); }
 .svc-result-output {
     margin-top: 6px; padding: 6px 8px; border-radius: 4px;
     background: var(--c-surface-3); color: var(--c-text);
