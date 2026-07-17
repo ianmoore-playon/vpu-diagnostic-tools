@@ -22,6 +22,111 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-17
+
+### Added
+- **The Network tab now catches firewalls that intercept secure traffic (SSL
+  inspection).** When a school firewall decrypts HTTPS and swaps in its own
+  certificate — the "video streams but graphics never load" failure — Pulse
+  now names the intercepting device, lists exactly which domains are affected
+  (including the full singular.live family the graphics run on), and spells
+  out the fix for the district's IT team: exempt the domains from SSL
+  decryption, a URL allowlist is not enough. Shows on the Dashboard, the
+  Network tab, and in exported reports.
+- **The Audio tab is back.** Audio device diagnostics — inputs, outputs,
+  volume, and live signal activity — are available again under
+  Troubleshooting while we continue building the lane out.
+- **Camera Frames now spots a black picture and tells you why.** When a camera
+  grabs a frame but the picture comes back black (the OCR/scoreboard symptom),
+  Pulse flags it as "Black picture" instead of a green "Active", explains it in
+  plain terms — usually the camera darkening everything to cope with a bright
+  scoreboard, or its picture set too dark — and notes when the other cameras
+  prove the room lights are on, so you know it's a camera setting, not the venue.
+- **The installer now explains itself when a school firewall breaks the
+  download.** If the first-run Python/pip download fails because the network is
+  intercepting secure connections (SSL inspection substituting certificates),
+  the install window now says exactly that — naming the intercepting device and
+  telling the venue's IT team which domains to exempt from SSL decryption —
+  instead of a cryptic certificate error.
+
+### Changed
+- **The startup screen now shows what Pulse is checking.** As Pulse loads it
+  lists each diagnostic and ticks it off in a fixed top-to-bottom order, with
+  an "X of 12 systems" counter and a note that the full sweep can take a
+  moment — so a slower first load reads as steady progress, not a hang. If a
+  critical or warning issue is detected it's flagged right on the loading
+  screen, and on a genuinely slow unit the note switches to a "still working"
+  message instead of looking stuck.
+- **Service Status now lists Pixellot programs and Windows services in separate
+  areas.** The tab is split into "Pixellot Core Processes" (Agent, Coordinator,
+  VPU, and the KeepAgentUp watchdog) and "Windows Services" (ScoreConnect,
+  LogMeIn), so it's clear at a glance which is a background program and which is
+  a Windows service — and a service that's missing no longer reads like a
+  stopped program.
+- **The Secure Connections check moved under Advanced Diagnostics.** On the
+  Network Test tab it now lives inside the collapsible Advanced Diagnostics
+  section instead of taking a full panel at the top of the page; any
+  intercepted or failing service still surfaces in the findings banner.
+- **Audio signal meters now move in near real time.** Meter readings were
+  stuck behind a 25-second cache and a per-poll compile step; levels now
+  refresh about every 2 seconds, and repeated volume changes always take
+  effect instead of being skipped.
+- **The Audio tab shows only devices that matter.** The main lists now show
+  just the active input and output devices; unplugged or disabled hardware
+  sits in a collapsed "inactive devices" list, and devices Windows merely
+  remembers from the past (often dozens on a long-lived VPU) are hidden
+  entirely.
+- **Removed the duplicate "Restart Agent + Coordinator" button from the Pixellot
+  Software tab.** The same action lives on the Service Status tab; it now appears
+  in just one place.
+- Settings now puts "Restart Pulse App" and "Reboot VPU" in separate panels, so
+  the low-risk app restart isn't visually grouped with the full Windows reboot.
+- **Pulse now keeps its installer tooling current.** Each launch quietly
+  updates the bundled Python's package installer (pip) so upstream security
+  fixes arrive on their own — skipped harmlessly when the VPU is offline.
+
+### Removed
+- Dropped the redundant "Network Errors (this adapter)" counters from the
+  Internet Adapter card on the Network Test page. The same RX/TX error and
+  discard counts are already shown per port under Wired Ports.
+
+### Fixed
+- **The Secure Connections check no longer reports false failures on VPUs.**
+  The TLS test was offering only an outdated protocol version (TLS 1.0) that
+  most services reject, so 8 of its 11 checks failed on real hardware even on
+  a healthy network; it now negotiates TLS 1.2 and passes cleanly.
+- **The Audio tab now reads real device info on VPUs.** It was silently
+  falling back to a limited view (no volume, mute, or signal meters) on
+  every real VPU; devices now show live levels, volume control works, and
+  the Windows default recording/playback device is marked with a "Default"
+  badge.
+- **"Restart Agent + Coordinator" now says when nothing was restarted.** On
+  most VPUs the keepagentup watchdog is already running, so the restart
+  command exits without doing anything; Pulse now shows an amber "Not
+  restarted — watchdog already running" notice instead of a green Success,
+  and the agent/coordinator status lines recognize them running as bare
+  processes instead of reporting "NotFound".
+- **The loading screen no longer freezes when a partner service is down.**
+  Port checks probed each internet service one at a time, so a few
+  unreachable servers (e.g. a Sportzcast outage) could stall the startup
+  checklist for 20+ seconds; all services are now probed at once, and the
+  port sweep no longer runs twice on every startup.
+- **The startup checklist now ticks through every check steadily.** Quick
+  checks appear first and the Dashboard summary last, matching how fast each
+  one really finishes; previously the list could sit idle and then flash all
+  twelve checks in one instant.
+- **The System tab now lists all installed software.** On real VPUs the list
+  collapsed to a single program; the full inventory (with publisher and
+  install date) now comes through.
+- **Check for Update works on dev builds and reports failures honestly.** Dev
+  builds now publish releases for the updater to find, and when no release
+  exists for a channel the message says so instead of blaming the VPU's
+  internet connection.
+- **ScoreConnect no longer shows "Not Found" on Service Status when it's
+  actually running.** Newer ScoreConnect (III) registers under a different
+  Windows service name; the tab now detects ScoreConnect I, II, or III, shows
+  its real status, and its Restart button works for every version.
+
 ## [0.4.3] - 2026-06-30
 
 ### Fixed

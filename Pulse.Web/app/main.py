@@ -1184,7 +1184,7 @@ def _wifi_disabled_finding(network_config):
     }
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, probe_results=None, tls_inspection=None) -> list:
     findings = []
 
     # ── Wi-Fi uplink detection (Canopy adoption) ─────────────
@@ -1638,6 +1638,14 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         # adapter name ("Ethernet 30") is meaningless to a field tech; the
         # physical port number is what they need to check.
         ordered_ports = _order_ports_physically(nics.get("ports", []))
+        # A CGI probe confirms the OCR/scoreboard camera regardless of the live
+        # ARP cache — the probe always tries the default OCR IPs (.52/.53/.60)
+        # whether or not a neighbor entry exists. We use this below so the OCR's
+        # transient ARP entry can't flip the slow-port finding on and off
+        # between dashboard polls. None/empty (callers that don't probe) →
+        # falls back to the ARP-only behavior.
+        probe_results = probe_results or {}
+        ocr_confirmed = any(r.get("is_ocr") for r in probe_results.values())
         for idx, port in enumerate(ordered_ports):
             label = f"Port {idx + 1}"
             is_up = port.get("status") == "Up"
@@ -1671,6 +1679,33 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     (a.get("ip") or "").strip() in _DEFAULT_OCR_IPS
                     for a in pixellot_arps
                 )
+                # ARP-independent OCR guard. The OCR is natively 100 Mbps, and
+                # its neighbor entry ages out when the camera is quiet — so a
+                # cold poll can show its port at 100 Mbps with an EMPTY ARP
+                # list, and the check above (which needs a default-OCR-IP ARP
+                # entry) would then wrongly flag it as "running slow". The
+                # finding then vanishes on the next poll once a camera probe
+                # re-warms ARP — the flicker field techs reported. When a CGI
+                # probe confirms an OCR is present and this 100 Mbps port
+                # carries no identified MAIN camera, treat the link as the
+                # expected OCR, matching the Camera Connectivity tab (which
+                # uses the same probe and never flags it).
+                if speed == 100 and ocr_confirmed and not port_is_ocr:
+                    port_has_main = False
+                    for a in pixellot_arps:
+                        if (a.get("ip") or "").strip() in _DEFAULT_MAIN_IPS:
+                            port_has_main = True
+                            break
+                        pr = probe_results.get(
+                            (a.get("mac") or "").strip().upper().replace("-", ":")
+                        )
+                        if pr:
+                            role, _ = _lookup_camera_model(pr.get("modelNumber"))
+                            if role and "OCR" not in role:
+                                port_has_main = True
+                                break
+                    if not port_has_main:
+                        port_is_ocr = True
                 only_ocr_at_100 = speed == 100 and port_is_ocr
                 if not only_ocr_at_100:
                     has_cameras = bool(pixellot_arps)
@@ -1823,6 +1858,41 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                         f"{proto} port {port} to {host} is unreachable ({err}). "
                         f"This is a required Pixellot endpoint — ask the venue's "
                         f"IT team to open it in the firewall."
+                    ),
+                }
+            )
+
+    # ── SSL inspection (certificate substitution) ──────────────
+    # Test-TlsInspection completes a real handshake to each Pixellot-critical
+    # HTTPS service and validates the certificate actually presented. An
+    # "intercepted" row means a middlebox (school firewall doing SSL
+    # deep-packet inspection) substituted its own cert — the field signature
+    # is video streaming fine while Singular graphics never load, because the
+    # graphics client rightly rejects the firewall's cert. Port tests can't
+    # see this (TCP/443 connects fine), so this is its own finding. Only the
+    # confirmed substitution goes to the dashboard; softer TLS signals
+    # (handshake failures, clock-related cert errors) stay on the Network tab.
+    if tls_inspection and not tls_inspection.get("error"):
+        tls_rows = tls_inspection.get("results") or []
+        intercepted = [r for r in tls_rows if r.get("status") == "intercepted"]
+        if intercepted:
+            interceptors = ", ".join(tls_inspection.get("interceptorIssuers") or [])
+            hosts = ", ".join(r.get("domain", "?") for r in intercepted)
+            findings.append(
+                {
+                    "code": "ssl-inspection",
+                    "severity": "critical",
+                    "category": "Network",
+                    "title": "The venue firewall is intercepting secure connections (SSL inspection)",
+                    "recommendation": (
+                        f"The network is decrypting the VPU's secure connections to: {hosts}. "
+                        + (f"The intercepting device identifies itself as {interceptors}. " if interceptors else "")
+                        + "The VPU rejects the substituted certificate, so those services can't "
+                        "connect — on-screen graphics typically fail while video keeps streaming. "
+                        "Ask the venue's IT team to add these domains to the firewall's SSL "
+                        "decryption bypass/exemption list (use a wildcard like *.singular.live "
+                        "plus the bare domain) — a URL allowlist alone is not enough. "
+                        "See the Network tab for the full certificate detail."
                     ),
                 }
             )
@@ -2591,7 +2661,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None, probe_results=None, tls_inspection=None):
     # Tag adapter roles (motherboard / camera / wifi) so both the findings and
     # the embedded "Network config" the dashboard ships carry them.
     _classify_network_adapters(network_config)
@@ -2653,7 +2723,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         if isinstance(data, dict) and data.get("error")
     ]
 
-    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health)
+    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health, probe_results=probe_results, tls_inspection=tls_inspection)
 
     return {
         "identity": flat_identity,
@@ -2666,7 +2736,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
     }
 
 
-def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None, wifi=None):
+def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None, wifi=None, tls=None):
     net = {}
     _classify_network_adapters(config)
     if config and not config.get("error"):
@@ -2692,7 +2762,7 @@ def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_
     # the frontend surface whichever subsection failed.
     return {"config": net, "domains": domains, "ports": ports, "ntp": ntp,
             "local": local, "ntpPeers": ntp_peers,
-            "dnsResolution": dns_resolution, "wifi": wifi}
+            "dnsResolution": dns_resolution, "wifi": wifi, "tls": tls}
 
 
 # ─── Routes ───────────────────────────────────────────────────
@@ -2751,6 +2821,7 @@ async def api_preload():
         install_state,
         gpu_info,
         wifi,
+        tls_inspection,
     ) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -2774,6 +2845,10 @@ async def api_preload():
         run_ps("Test-PixellotInstallState.ps1", timeout=15),
         run_ps("Get-GpuInfo.ps1", timeout=15),
         run_ps("Get-WifiAdapters.ps1", timeout=10),
+        # SSL-inspection check rides the preload so the Network tab (and its
+        # interception critical) is complete on first paint. Runs in parallel
+        # with everything else; healthy venues finish in ~5s.
+        run_ps("Test-TlsInspection.ps1", timeout=60),
     )
     # Audio is deferred — lazy-fetched on tab visit to keep preload lean.
 
@@ -2786,13 +2861,13 @@ async def api_preload():
         # Readiness here uses the snapshot CPU/mem (no perf_sample on the
         # preload path) and the disk-health already gathered; the authoritative
         # /api/dashboard fetch refines it with the averaged sample + port tests.
-        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi, disk_health=disk_health),
+        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi, disk_health=disk_health, probe_results=probe_results_pre),
         "system": {
             "identity": _enrich_identity_pixellot_compat(_enrich_identity_lifecycle(identity), gpu_info),
             "hardware": hardware,
             "software": _enrich_software_with_concerns(installed_sw),
         },
-        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi),
+        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls_inspection),
         "cameras": {
             "ports": _enrich_ports(nics, pixellot_config, probe_results_pre),
             "pixellotConfig": pixellot_config,
@@ -2873,7 +2948,7 @@ async def _collect_dashboard() -> dict:
     launch check-in beacon so both score readiness with identical inputs."""
     (identity, performance, services, nics, net_config, hardware, installed_sw,
      install_state, port_tests, gpu_info, wifi, pixellot_config, expectations,
-     disk_health, perf_sample) = await asyncio.gather(
+     disk_health, perf_sample, tls_inspection) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
@@ -2898,12 +2973,24 @@ async def _collect_dashboard() -> dict:
         # a short CPU/mem sample so a one-instant spike can't move the verdict.
         run_ps("Get-DiskHealth.ps1", timeout=15),
         run_ps("Get-PerfSample.ps1", timeout=15),
+        # SSL-inspection check — feeds the "firewall is intercepting secure
+        # connections" critical. Port tests alone can't see this failure mode
+        # (TCP/443 connects fine while the substituted cert kills graphics).
+        run_ps("Test-TlsInspection.ps1", timeout=60),
     )
+    # CGI probe (cached 30s; usually already warm from preload) so the
+    # slow-port finding identifies the OCR by its actual camera model, not a
+    # transient ARP entry — keeping the dashboard consistent with the Camera
+    # Connectivity tab and free of the OCR "running slow" flicker.
+    ocr_ips, _ = _build_ocr_sets(pixellot_config)
+    raw_ports = nics.get("ports", []) if nics and not nics.get("error") else []
+    probe_results = await _probe_all_cameras(raw_ports, ocr_ips)
     return _build_dashboard(
         identity, performance, services, nics, net_config, hardware,
         installed_sw, install_state, port_tests, gpu_info, wifi,
         pixellot_config=pixellot_config, expectations=expectations,
         disk_health=disk_health, perf_sample=perf_sample,
+        probe_results=probe_results, tls_inspection=tls_inspection,
     )
 
 
@@ -3019,7 +3106,7 @@ async def api_network():
     """Network tab data: gathers adapter config, domain reachability, port
     checks, NTP drift + peers, the local-network probe, DNS resolution, and
     Wi-Fi adapters in parallel, then assembles them into the network panel."""
-    config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi = await asyncio.gather(
+    config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls = await asyncio.gather(
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Test-NetworkDomains.ps1", timeout=20),
         run_ps("Test-NetworkPorts.ps1", timeout=45),
@@ -3028,8 +3115,11 @@ async def api_network():
         run_ps("Get-NtpPeers.ps1", timeout=15),
         run_ps("Test-DnsResolution.ps1", timeout=30),
         run_ps("Get-WifiAdapters.ps1", timeout=10),
+        # 60s: eleven sequential handshakes; a fully-blackholed network costs
+        # ~4s per host in TCP timeouts alone. Healthy venues finish in ~5s.
+        run_ps("Test-TlsInspection.ps1", timeout=60),
     )
-    return _build_network(config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi)
+    return _build_network(config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls)
 
 
 @app.get("/api/network/local-ping")
@@ -3207,6 +3297,97 @@ async def api_cameras_s1():
     return await run_ps("Get-S1Cameras.ps1", timeout=15)
 
 
+# ── Black-frame diagnosis ────────────────────────────────────────────
+# A camera can grab a frame fine (ok=true, "Active") yet send a black picture —
+# the exact symptom techs hit on OCR/scoreboard cameras whose picture settings
+# need adjusting. ffmpeg's signalstats (Test-CameraVideo.ps1) gives us the
+# frame's average luminance, so we can call this out instead of letting a black
+# thumbnail pass as healthy. Luma is 0-255; chroma centres on 128.
+_DARK_FRAME_YAVG = 16     # at/below this average brightness the frame reads black
+_LIT_FRAME_YAVG = 50      # at/above this a frame is clearly showing the room
+_BRIGHT_PIXEL_YMAX = 230  # a near-white pixel present → a bright light in view
+
+
+def _to_float(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _frame_yavg(r):
+    """Average luminance of a captured frame, or None if unmeasured."""
+    luma = r.get("luma") if isinstance(r, dict) else None
+    return _to_float(luma.get("yavg")) if isinstance(luma, dict) else None
+
+
+def _frame_settings_hint(target, results):
+    """Plain-English note on how a black camera's picture settings differ from
+    the cameras that returned a normal picture in the same room (the 'B' half:
+    same-room settings comparison). Reads the CGI sensor block already merged
+    onto each result. Returns None when nothing notable stands out."""
+    tsen = target.get("sensor") or {}
+    peers = [r.get("sensor") or {} for r in results
+             if r is not target and r.get("ok")
+             and (_frame_yavg(r) or 0) >= _LIT_FRAME_YAVG]
+    if not peers:
+        return None
+    notes = []
+    # Exposure left on Manual in a venue whose lighting changes is a classic
+    # black-picture cause.
+    texp = str(tsen.get("exposure") or "").strip().lower()
+    peer_auto = any(str(s.get("exposure") or "").strip().lower() == "auto" for s in peers)
+    if texp and texp != "auto" and peer_auto:
+        notes.append(f"Its exposure is {tsen.get('exposure')}, but the cameras "
+                     "that look fine are on Auto.")
+    # Brightness dialled well below the working cameras.
+    tb = _to_float(tsen.get("brightness"))
+    pbs = [v for v in (_to_float(s.get("brightness")) for s in peers) if v is not None]
+    if tb is not None and pbs:
+        pavg = sum(pbs) / len(pbs)
+        if tb <= pavg - 15:
+            notes.append(f"Its brightness ({tsen.get('brightness')}) is lower than "
+                         f"the cameras that look fine (~{round(pavg)}).")
+    return " ".join(notes) or None
+
+
+def _diagnose_camera_frames(results):
+    """Flag cameras that captured a frame but the picture came back black, in
+    words a field tech can act on. Mutates each affected result in place, adding
+    diagnosis = { severity, summary, detail? }. No-op when nothing looks black."""
+    if not isinstance(results, list):
+        return
+    # Any camera clearly showing a lit room is proof the lights are on and the
+    # venue is fine — so a black camera is a camera problem, not the room.
+    lit = None
+    for r in results:
+        if r.get("ok") and (_frame_yavg(r) or 0) >= _LIT_FRAME_YAVG:
+            lit = r.get("label") or "another camera"
+            break
+    for r in results:
+        if not r.get("ok"):
+            continue
+        y = _frame_yavg(r)
+        if y is None or y > _DARK_FRAME_YAVG:
+            continue  # bright enough to read — nothing to flag
+        label = r.get("label") or "This camera"
+        ymax = _to_float((r.get("luma") or {}).get("ymax"))
+        if ymax is not None and ymax >= _BRIGHT_PIXEL_YMAX:
+            summary = (f"{label} is sending an almost black picture. Adjust its "
+                       "exposure/brightness so the rest of the scene shows.")
+        else:
+            summary = (f"{label} is sending an almost black picture — set too dark for "
+                       "this room. Turn up its brightness/exposure.")
+        if lit:
+            summary += (f" {lit} looks normal in the same room, so it's a camera "
+                        "setting, not the venue.")
+        diag = {"severity": "warn", "summary": summary}
+        hint = _frame_settings_hint(r, results)
+        if hint:
+            diag["detail"] = hint
+        r["diagnosis"] = diag
+
+
 @app.post("/api/cameras/video-test")
 async def api_cameras_video_test(request: Request):
     """Grab a single frame from each detected camera to confirm it's
@@ -3302,6 +3483,7 @@ async def api_cameras_video_test(request: Request):
                     "expectedSpeedMbps": p.get("expectedSpeedMbps"),
                     "model": c.get("model"),
                     "firmwareVersion": c.get("firmwareVersion"),
+                    "sensor": c.get("sensor"),
                 }
 
     # Single-camera refresh: keep only the requested IP(s).
@@ -3358,7 +3540,11 @@ async def api_cameras_video_test(request: Request):
                 r["expectedSpeedMbps"] = meta["expectedSpeedMbps"]
                 r["model"] = meta.get("model")
                 r["firmwareVersion"] = meta.get("firmwareVersion")
+                r["sensor"] = meta.get("sensor")
         result["systemType"] = sys_type
+        # Look inside the captured frames: flag any camera that grabbed a frame
+        # but the picture came back black (the OCR/scoreboard symptom).
+        _diagnose_camera_frames(result.get("results"))
     return result
 
 
@@ -3494,7 +3680,11 @@ async def api_pixellot_logs(hours: int = Query(default=24)):
 
 @app.get("/api/audio")
 async def api_audio():
-    return await run_ps("Get-AudioDevices.ps1")
+    # The Audio tab polls every 2s to animate live signal meters; the default
+    # 25s result cache would freeze them between refreshes. Demand near-fresh
+    # data (in-flight dedup still coalesces overlapping polls) — the collector
+    # is cheap now that the interop compiles once to a cached DLL.
+    return await run_ps("Get-AudioDevices.ps1", cache_ttl=1.5)
 
 
 @app.post("/api/audio/volume")
@@ -3513,7 +3703,10 @@ async def api_audio_volume(request: Request):
     if volume < 0 or volume > 100:
         return {"error": True, "message": "volume must be 0-100"}
 
-    return await run_ps("Set-AudioVolume.ps1", {"DeviceId": device_id, "Volume": volume})
+    # use_cache=False: an action, not a read — replaying a cached "success"
+    # for a repeated (device, volume) pair would silently skip the actual set
+    # (e.g. 78 -> 50 -> back to 78 within the 25s window).
+    return await run_ps("Set-AudioVolume.ps1", {"DeviceId": device_id, "Volume": volume}, use_cache=False)
 
 
 @app.get("/api/scoreconnect")
@@ -3761,6 +3954,10 @@ async def _resolve_latest_release(channel):
         import urllib.request
         import json as _json
         headers = {"Accept": "application/vnd.github+json", "User-Agent": "Pulse-Updater"}
+        # Track reachability separately from match: "the feed answered but has
+        # no release for this channel" is a publishing problem, not a network
+        # problem, and the UI must not tell a tech to go check the internet.
+        reachable = False
         for repo in (_UPDATE_PUBLIC_REPO, _UPDATE_SOURCE_REPO):
             try:
                 req = urllib.request.Request(
@@ -3770,6 +3967,7 @@ async def _resolve_latest_release(channel):
                     releases = _json.loads(resp.read().decode("utf-8"))
             except Exception:
                 continue
+            reachable = True
             for rel in releases:
                 if rel.get("draft"):
                     continue
@@ -3778,8 +3976,8 @@ async def _resolve_latest_release(channel):
                     continue
                 if rel.get("prerelease") and not accept_pre:
                     continue
-                return {"tag": tag, "url": rel.get("html_url"), "notes": rel.get("body") or ""}
-        return None
+                return {"tag": tag, "url": rel.get("html_url"), "notes": rel.get("body") or ""}, True
+        return None, reachable
 
     return await asyncio.to_thread(_fetch)
 
@@ -3797,12 +3995,20 @@ async def api_update_check():
                 "updateAvailable": False,
                 "note": "Pulse is running from source here — updates are managed with git, not this button.",
             }
-        latest = await _resolve_latest_release(channel)
+        latest, reachable = await _resolve_latest_release(channel)
         if not latest:
+            if reachable:
+                error = (f"The update server is reachable, but no {channel} release has "
+                         "been published yet, so there is nothing to compare against. "
+                         "This is a publishing issue on our side — not a problem with "
+                         "this VPU or its network.")
+            else:
+                error = ("Couldn't reach the update server. Check the VPU's internet "
+                         "connection and try again.")
             return {
                 "managed": True, "channel": channel, "current": current,
                 "updateAvailable": False,
-                "error": "Couldn't reach the update server. Check the VPU's internet connection and try again.",
+                "error": error,
             }
         return {
             "managed": True, "channel": channel, "current": current,
@@ -3958,6 +4164,10 @@ async def build_report() -> dict:
         ("ntpDrift",             run_ps("Test-NtpDrift.ps1", timeout=20)),
         ("ntpPeers",             run_ps("Get-NtpPeers.ps1", timeout=15)),
         ("dnsResolution",        run_ps("Test-DnsResolution.ps1", timeout=30)),
+        # SSL-inspection evidence (per-domain certificate issuers) — the report
+        # is what gets sent to a district's IT team, so the raw cert detail
+        # matters here even more than in the UI.
+        ("tlsInspection",        run_ps("Test-TlsInspection.ps1", timeout=60)),
     ]
 
     def _norm(r):
@@ -3993,6 +4203,7 @@ async def build_report() -> dict:
             sections.get("networkPorts"), sections.get("gpuInfo"), sections.get("wifi"),
             pixellot_config=pix_cfg, expectations=sections.get("cameraExpectations"),
             disk_health=sections.get("diskHealth"),
+            tls_inspection=sections.get("tlsInspection"),
         )
     except Exception as e:
         sections["findings"] = {"error": f"findings computation failed: {type(e).__name__}: {e}"}

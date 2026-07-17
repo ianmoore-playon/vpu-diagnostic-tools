@@ -17,6 +17,19 @@ def _demo_frame(label, color):
     )
     return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
 
+
+def _demo_black_frame(label):
+    """A near-black frame with one bright spot (a stand-in scoreboard) — the
+    OCR 'black picture' symptom, so the black-frame diagnosis renders in demo."""
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg' width='480' height='270'>"
+        "<rect width='480' height='270' fill='#050608'/>"
+        "<rect x='360' y='24' width='84' height='38' rx='3' fill='#f4d35e'/>"
+        "<text x='240' y='150' font-family='sans-serif' font-size='15' "
+        f"fill='#3a3f47' text-anchor='middle'>{label}</text></svg>"
+    )
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
+
 # ── Demo venue identity ──────────────────────────────────────
 # Picked once at module load so all scripts return consistent data
 # for a single Pulse session. Each session re-imports → fresh pick.
@@ -211,7 +224,9 @@ def _demo_cam(ip, mac, serial, *, ocr=False, gateway=None):
             "network": {"ip": ip, "subnet": "255.255.0.0", "gateway": gateway, "dhcp": "no"},
             "stream0": {"codec": "H264", "resolution": "1920x1080", "framerate": "30"},
             "stream1": {"enabled": "yes", "codec": "MJPEG", "resolution": "640x480", "framerate": "10"},
-            "sensor": {"exposure": "auto", "brightness": "48", "contrast": "52",
+            # Brightness dialled well below the main cameras — drives the
+            # same-room settings comparison in the black-frame diagnosis.
+            "sensor": {"exposure": "auto", "brightness": "20", "contrast": "52",
                        "colorLevel": "50", "maxShutterGain": "30", "minShutterSpeed": "1/60"},
         }
     return {
@@ -306,7 +321,10 @@ DEMO = {
              "kind": "process", "pid": 12044, "path": "C:\\Pixellot\\Bin\\vpu.exe", "memoryMB": 240, "watchdog": False},
             {"name": "keepagentup", "displayName": "Pixellot Watchdog (KeepAgentUp)", "status": "Running", "startType": None,
              "kind": "process", "pid": 9940, "path": "C:\\Pixellot\\Bin\\KeepAgentUp.exe", "memoryMB": 9, "watchdog": True},
-            {"name": "scoreconnect", "displayName": "ScoreConnect", "status": "Running", "startType": "Automatic",
+            # Real SCM identity of an SC III box: service name "ScoreConnectIII",
+            # display "Sportzcast ScoreConnect III". The collector probes the
+            # versioned names (SC I/II/III) and reports whichever is installed.
+            {"name": "ScoreConnectIII", "displayName": "Sportzcast ScoreConnect III", "status": "Running", "startType": "Automatic",
              "kind": "service", "pid": None, "path": None, "memoryMB": None, "watchdog": False},
             {"name": "LogMeIn", "displayName": "LogMeIn Remote Access", "status": "Running", "startType": "Automatic",
              "kind": "service", "pid": None, "path": None, "memoryMB": None, "watchdog": False},
@@ -478,6 +496,32 @@ DEMO = {
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1404, "protocol": "TCP", "status": "pass", "optional": True},
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1405, "protocol": "TCP", "status": "pass", "optional": True},
         ]
+    },
+    # SSL-inspection detector — every service presents a public-CA cert that
+    # chains to a trusted root. To DEMO the "firewall is intercepting secure
+    # connections" critical (the Kent School District signature: video up,
+    # graphics down), flip the singular.live rows: set status "intercepted",
+    # trusted False, chainErrors "UntrustedRoot", and issuer/issuerCn/issuerOrg
+    # to the DPI box (e.g. issuerCn "KSD-FW1-DPI", issuerOrg "Kent School
+    # District"); optionally set one row to "handshake-fail" (schannel refusing
+    # the interception) and add the device to interceptorIssuers, e.g.
+    # ["KSD-FW1-DPI (Kent School District)"]. To DEMO the wrong-clock warning,
+    # set a row's status to "cert-time" with chainErrors "NotTimeValid".
+    "Test-TlsInspection.ps1": lambda **kw: {
+        "results": [
+            {"domain": "singular.live", "purpose": "Singular graphics (apex)", "status": "pass", "trusted": True, "issuer": "CN=WE1, O=Google Trust Services, C=US", "issuerCn": "WE1", "issuerOrg": "Google Trust Services", "subjectCn": "singular.live", "chainErrors": "", "notAfter": "2026-09-28", "latencyMs": round(random.uniform(80, 220), 1), "detail": None},
+            {"domain": "app.singular.live", "purpose": "Singular graphics app", "status": "pass", "trusted": True, "issuer": "CN=WE1, O=Google Trust Services, C=US", "issuerCn": "WE1", "issuerOrg": "Google Trust Services", "subjectCn": "app.singular.live", "chainErrors": "", "notAfter": "2026-09-28", "latencyMs": round(random.uniform(80, 220), 1), "detail": None},
+            {"domain": "api.singular.live", "purpose": "Singular graphics API", "status": "pass", "trusted": True, "issuer": "CN=WE1, O=Google Trust Services, C=US", "issuerCn": "WE1", "issuerOrg": "Google Trust Services", "subjectCn": "api.singular.live", "chainErrors": "", "notAfter": "2026-09-28", "latencyMs": round(random.uniform(80, 220), 1), "detail": None},
+            {"domain": "datastream.singular.live", "purpose": "Singular graphics data feed", "status": "pass", "trusted": True, "issuer": "CN=WE1, O=Google Trust Services, C=US", "issuerCn": "WE1", "issuerOrg": "Google Trust Services", "subjectCn": "datastream.singular.live", "chainErrors": "", "notAfter": "2026-09-28", "latencyMs": round(random.uniform(80, 220), 1), "detail": None},
+            {"domain": "service.singular.live", "purpose": "Singular overlay service", "status": "pass", "trusted": True, "issuer": "CN=R11, O=Let's Encrypt, C=US", "issuerCn": "R11", "issuerOrg": "Let's Encrypt", "subjectCn": "service.singular.live", "chainErrors": "", "notAfter": "2026-08-30", "latencyMs": round(random.uniform(80, 220), 1), "detail": None},
+            {"domain": "pixellot.tv", "purpose": "Pixellot cloud", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M02, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M02", "issuerOrg": "Amazon", "subjectCn": "pixellot.tv", "chainErrors": "", "notAfter": "2027-01-12", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
+            {"domain": "software.pixellot.tv", "purpose": "Pixellot software updates", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M02, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M02", "issuerOrg": "Amazon", "subjectCn": "software.pixellot.tv", "chainErrors": "", "notAfter": "2027-01-12", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
+            {"domain": "nfhsnetwork.com", "purpose": "NFHS Network", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M03, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M03", "issuerOrg": "Amazon", "subjectCn": "nfhsnetwork.com", "chainErrors": "", "notAfter": "2026-11-02", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
+            {"domain": "s3.amazonaws.com", "purpose": "Recording uploads (AWS S3)", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M01, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M01", "issuerOrg": "Amazon", "subjectCn": "s3.amazonaws.com", "chainErrors": "", "notAfter": "2026-12-19", "latencyMs": round(random.uniform(40, 120), 1), "detail": None},
+            {"domain": "secure.logmein.com", "purpose": "Remote support (LogMeIn)", "status": "pass", "trusted": True, "issuer": "CN=DigiCert TLS RSA SHA256 2020 CA1, O=DigiCert Inc, C=US", "issuerCn": "DigiCert TLS RSA SHA256 2020 CA1", "issuerOrg": "DigiCert Inc", "subjectCn": "*.logmein.com", "chainErrors": "", "notAfter": "2026-10-15", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
+            {"domain": "www.python.org", "purpose": "Pulse installer download", "status": "pass", "trusted": True, "issuer": "CN=GlobalSign Atlas R3 DV TLS CA 2025 Q2, O=GlobalSign nv-sa, C=BE", "issuerCn": "GlobalSign Atlas R3 DV TLS CA 2025 Q2", "issuerOrg": "GlobalSign nv-sa", "subjectCn": "www.python.org", "chainErrors": "", "notAfter": "2026-09-07", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
+        ],
+        "interceptorIssuers": [],
     },
     "Test-NtpDrift.ps1": lambda **kw: {"offsetSeconds": round(random.uniform(-0.3, 0.5), 3), "status": "ok", "source": "0.us.pool.ntp.org", "configuredSource": "0.us.pool.ntp.org", "networkSynced": True},
     "Get-NtpPeers.ps1": lambda **kw: {
@@ -717,13 +761,19 @@ DEMO = {
         "results": [
             {"ip": "192.168.10.100", "label": "Main Camera 1", "ok": True,
              "codec": "h264", "frameRate": 30.0, "resolution": "3840x2160",
-             "image": _demo_frame("Main Camera 1", "#1f3a5f"), "error": None},
+             "image": _demo_frame("Main Camera 1", "#1f3a5f"), "error": None,
+             "luma": {"yavg": 112, "ymin": 6, "ymax": 240, "uavg": 124, "vavg": 132}},
             {"ip": "192.168.11.100", "label": "Main Camera 2", "ok": True,
              "codec": "h264", "frameRate": 30.0, "resolution": "3840x2160",
-             "image": _demo_frame("Main Camera 2", "#244a36"), "error": None},
-            {"ip": "169.254.16.52", "label": "OCR", "ok": False,
-             "codec": None, "frameRate": None, "resolution": None, "image": None,
-             "error": "No frame captured (camera not streaming on rtsp://169.254.16.52/stream1)."},
+             "image": _demo_frame("Main Camera 2", "#244a36"), "error": None,
+             "luma": {"yavg": 96, "ymin": 4, "ymax": 232, "uavg": 120, "vavg": 136}},
+            # The OCR grabs a frame (reads "Active") but the picture is black —
+            # the reported symptom. Low yavg + a near-white spot (the scoreboard)
+            # drives the black-frame diagnosis.
+            {"ip": "169.254.16.52", "label": "OCR", "ok": True,
+             "codec": "h264", "frameRate": 10.0, "resolution": "1920x1080",
+             "image": _demo_black_frame("OCR"), "error": None,
+             "luma": {"yavg": 5, "ymin": 0, "ymax": 238, "uavg": 127, "vavg": 129}},
         ],
     },
     "Get-NetworkHealth.ps1": lambda **kw: {
@@ -894,15 +944,21 @@ DEMO = {
         },
         "message": "Last install completed cleanly. No part files remain.",
     },
+    # Realistic outcome on a healthy VPU: the resident keepagentup watchdog is
+    # already running, so a manual run exits 0 without restarting anything.
+    # ("KeekAgentUp" is Pixellot's typo, verbatim from the real exe.)
     "Restart-PixellotAgent.ps1": lambda **kw: {
-        "success": True,
+        "success": False,
+        "watchdogResident": True,
         "exitCode": 0,
         "path": "C:\\pixellot\\bin\\keepagentup.exe",
-        "stdout": "Agent service started.\nCoordinator service started.\nAll Pixellot services up.",
+        "stdout": 'KeekAgentUp Exit as another "KeekAgentUp" process is running',
         "stderr": "",
-        "agentStatus": "Running",
-        "coordinatorStatus": "Running",
-        "message": "keepagentup.exe completed successfully (demo)",
+        "agentStatus": "Running (process, PID 7772)",
+        "coordinatorStatus": "Running (process, PID 6140)",
+        "agentPidBefore": 7772,
+        "agentPidAfter": 7772,
+        "message": "The keepagentup watchdog is already resident on this VPU, so this run exited without restarting anything. The agent was NOT restarted.",
     },
     "Get-AudioDevices.ps1": lambda **kw: {
         "devices": [
@@ -917,6 +973,9 @@ DEMO = {
                 # Stays clearly above signal threshold (1%) so the "Signal
                 # Detected" indicator doesn't flicker between frames.
                 "peak": round(random.uniform(12, 32), 1),
+                "isDefaultCapture": True,
+                "isDefaultCaptureComms": True,
+                "isDefaultRender": False,
             },
             {
                 "id": "{0.0.1.00000000}.{a1b2c3d4-1111-2222-3333-444455557777}",
@@ -947,6 +1006,9 @@ DEMO = {
                 "volume": 45,
                 "muted": False,
                 "peak": round(random.uniform(2, 8), 1),  # clearly above threshold
+                "isDefaultCapture": False,
+                "isDefaultCaptureComms": False,
+                "isDefaultRender": True,
             },
             {
                 "id": "{0.0.0.00000000}.{b2c3d4e5-2222-3333-4444-555566668888}",
@@ -954,6 +1016,29 @@ DEMO = {
                 "dataFlow": "Output",
                 "state": "Unplugged",
                 "formFactor": "DigitalDisplay",
+                "volume": None,
+                "muted": None,
+                "peak": None,
+            },
+            # NotPresent ghosts — Windows remembers every endpoint it has ever
+            # seen; real VPUs carry dozens of these. The UI hides them, so
+            # these exercise that they never render anywhere.
+            {
+                "id": "{0.0.1.00000000}.{c3d4e5f6-3333-4444-5555-666677778888}",
+                "name": "Microphone (USB Audio CODEC)",
+                "dataFlow": "Input",
+                "state": "NotPresent",
+                "formFactor": "Microphone",
+                "volume": None,
+                "muted": None,
+                "peak": None,
+            },
+            {
+                "id": "{0.0.0.00000000}.{d4e5f6a7-4444-5555-6666-777788889999}",
+                "name": "",
+                "dataFlow": "Output",
+                "state": "NotPresent",
+                "formFactor": "Unknown",
                 "volume": None,
                 "muted": None,
                 "peak": None,
