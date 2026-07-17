@@ -42,6 +42,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   builds now publish releases for the updater to find, and when no release
   exists for a channel the message says so instead of blaming the VPU's
   internet connection.
+- **The System tab now lists all installed software.** On real VPUs the list
+  collapsed to a single program; the full inventory (with publisher and
+  install date) now comes through.
 - **The startup checklist now ticks through every check steadily.** Quick
   checks appear first and the Dashboard summary last, matching how fast each
   one really finishes; previously the list could sit idle and then flash all

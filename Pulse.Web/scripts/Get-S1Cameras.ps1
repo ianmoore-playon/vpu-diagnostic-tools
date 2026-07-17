@@ -43,9 +43,12 @@ try {
     Add-Type -Path $dll
 
     $factory = New-Object Jai_FactoryDotNET.CFactory
-    $factory.Open()
+    # Discard the SDK's status returns (Open -> "Success", UpdateCameraList
+    # -> bool, Close -> "Success"): anything left on the pipeline lands on
+    # stdout ahead of our JSON and the app has to salvage it as noisy output.
+    $null = $factory.Open()
     $driverType = [Jai_FactoryDotNET.CFactory+EDriverType]::Undefined
-    $factory.UpdateCameraList($driverType)
+    $null = $factory.UpdateCameraList($driverType)
     Start-Sleep -Seconds 1
 
     # Only count entries with a real serial number; dedupe by serial.
@@ -62,7 +65,7 @@ try {
         }
     })
 
-    $factory.Close()
+    $null = $factory.Close()
     $factory.Dispose()
 
     [ordered]@{
