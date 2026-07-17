@@ -38,6 +38,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
   entirely.
 
 ### Fixed
+- **"Restart Agent + Coordinator" now says when nothing was restarted.** On
+  most VPUs the keepagentup watchdog is already running, so the restart
+  command exits without doing anything; Pulse now shows an amber "Not
+  restarted — watchdog already running" notice instead of a green Success,
+  and the agent/coordinator status lines recognize them running as bare
+  processes instead of reporting "NotFound".
 - **Check for Update works on dev builds and reports failures honestly.** Dev
   builds now publish releases for the updater to find, and when no release
   exists for a channel the message says so instead of blaming the VPU's
