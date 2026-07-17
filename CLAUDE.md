@@ -53,6 +53,34 @@ cd Pulse.Web && run.bat
 # On macOS/Linux it auto-runs in demo mode: python3 app/main.py
 ```
 
+## PowerShell 5.1 Portability (fleet image)
+
+Every script in `Pulse.Web/scripts/` runs under **Windows PowerShell 5.1** on
+the fleet image (Win10 LTSC 1809). Demo mode and pwsh 7 hide 5.1-only
+failures, so a collector can pass every local test and be silently broken on
+every real VPU. Each rule below comes from a real field failure:
+
+1. **Never cast COM objects in PS script code.** Script-level casts to COM
+   interfaces fail on 5.1. Put COM work in the compiled C# Api inside
+   `_AudioInterop.ps1` (keep it C#5/CodeDom-compatible). (PR #112)
+2. **Cast scriptblocks to their delegate type explicitly** (e.g.
+   `[RemoteCertificateValidationCallback]`). Implicit conversion inside
+   `New-Object` fails silently on 5.1. (PR #117)
+3. **Pin `SslProtocols` explicitly** to `Tls, Tls11, Tls12` (never Tls13).
+   .NET Framework's parameterless `AuthenticateAsClient` defaults to
+   SSL3/TLS 1.0 — OS-default negotiation is .NET Core behavior. (PR #118)
+4. **Never `Sort-Object`/`Group-Object` on hashtables.** 5.1 can't resolve
+   hashtable keys as properties (pwsh 7 can), so grouping and dedup silently
+   collapse. Emit `[pscustomobject]` instead. (PR #124)
+5. **Pure ASCII in `.ps1` files.** Em-dashes and smart quotes break parsing
+   and mangle console output under the OEM codepage. (`a54f85f`)
+6. **Assign unwanted method returns to `$null`.** Stray returns land on
+   stdout ahead of the JSON payload and trip the noisy-stdout recovery.
+   (PR #124)
+
+Before merging a collector change, run it on a real VPU under 5.1 (e.g. the
+`tools/vpu-smoke/` sweep over the dev SSH access, where available).
+
 ## Branches & Releases
 
 Code flows `dev` → `beta` → `main`. Each branch has CI builds; tags create releases on `playon/pulse` (the single source + distribution repo).

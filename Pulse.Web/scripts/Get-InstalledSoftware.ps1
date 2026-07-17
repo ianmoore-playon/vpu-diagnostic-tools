@@ -29,8 +29,12 @@ try {
                 }
 
             if ($items) {
+                # PSCustomObject, NOT [ordered] hashtable: Windows PowerShell
+                # 5.1's Sort-Object/Group-Object can't resolve hashtable keys
+                # as properties, so the dedup below collapsed the whole list
+                # to a single entry on real VPUs (worked fine under pwsh 7).
                 $allSoftware += $items | ForEach-Object {
-                    [ordered]@{
+                    [pscustomobject]@{
                         displayName    = $_.DisplayName.Trim()
                         publisher      = if ($_.Publisher) { $_.Publisher.Trim() } else { $null }
                         displayVersion = $_.DisplayVersion
