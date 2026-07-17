@@ -22,7 +22,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-07-17
+## [1.0.0] - 2026-07-17
 
 ### Added
 - **The Network tab now catches firewalls that intercept secure traffic (SSL
