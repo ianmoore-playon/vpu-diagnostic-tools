@@ -22,6 +22,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Fixed
+- **The disk-space alert now checks each drive separately.** A nearly full C:
+  or D: used to hide behind the combined free space of all drives, so the
+  "disk almost full" warning never appeared on VPUs with a large recordings
+  drive. Each drive is now checked on its own, and the alert says which drive
+  is full and what to do — free up the system drive (C:) or clear old
+  recordings (D:).
+
 ## [1.0.0] - 2026-07-17
 
 ### Added

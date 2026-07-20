@@ -1507,28 +1507,6 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 }
             )
 
-        disk = performance.get("disk", {}).get("usedPercent")
-        if disk is not None and disk > 90:
-            findings.append(
-                {
-                    "code": "disk-critical",
-                    "severity": "critical",
-                    "category": "Storage",
-                    "title": "Disk almost full",
-                    "recommendation": f"Free up space now — disk at {disk}%.",
-                }
-            )
-        elif disk is not None and disk > 80:
-            findings.append(
-                {
-                    "code": "disk-low",
-                    "severity": "warning",
-                    "category": "Storage",
-                    "title": "Disk space low",
-                    "recommendation": f"Plan a cleanup soon — disk at {disk}%.",
-                }
-            )
-
         temp = performance.get("temperature", {}).get("celsius")
         if temp is not None and temp > 85:
             findings.append(
@@ -1538,6 +1516,61 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "category": "Hardware",
                     "title": "VPU running hot",
                     "recommendation": f"Check cooling — temperature at {temp}°C.",
+                }
+            )
+
+    # Disk space — one finding per offending VOLUME, from disk-health's
+    # logicalDisks. `performance.disk.usedPercent` sums ALL fixed drives, so on
+    # the typical fleet box (small C: for OS + stream processing, large D: for
+    # VOD storage) a critically full C: averages out against a near-empty D:
+    # and the alert never fired (PULSEDEV-49). The aggregate remains only as a
+    # fallback for when disk-health didn't run.
+    volumes = []
+    if disk_health and not disk_health.get("error"):
+        for d in (disk_health.get("logicalDisks") or []):
+            letter = str(d.get("deviceID") or "").rstrip(":").upper()
+            pct = d.get("usedPercent")
+            if letter and isinstance(pct, (int, float)):
+                volumes.append((letter, pct))
+    if not volumes and performance and not performance.get("error"):
+        agg = (performance.get("disk") or {}).get("usedPercent")
+        if isinstance(agg, (int, float)):
+            volumes = [("all drives combined", agg)]
+    drive_roles = {
+        "C": ("system drive", "The live stream is processed on C:, so a full "
+                              "system drive can stop capture."),
+        "D": ("recordings drive", "New event recordings (VODs) can't be stored "
+                                  "once it fills — clear old VODs."),
+    }
+    for letter, pct in volumes:
+        role, consequence = drive_roles.get(letter, (None, None))
+        label = f"{letter}: ({role})" if role else (
+            letter if len(letter) > 1 else f"{letter}:")
+        name = f"Drive {letter}:" if len(letter) == 1 else "Disk"
+        if pct > 90:
+            findings.append(
+                {
+                    "code": "disk-critical",
+                    "severity": "critical",
+                    "category": "Storage",
+                    "title": f"{name} almost full",
+                    "recommendation": " ".join(filter(None, [
+                        f"Free up space now — {label} is {pct:g}% full.",
+                        consequence,
+                    ])),
+                }
+            )
+        elif pct > 80:
+            findings.append(
+                {
+                    "code": "disk-low",
+                    "severity": "warning",
+                    "category": "Storage",
+                    "title": f"{name} space low",
+                    "recommendation": " ".join(filter(None, [
+                        f"Plan a cleanup soon — {label} is {pct:g}% full.",
+                        consequence,
+                    ])),
                 }
             )
 
@@ -1983,7 +2016,7 @@ _READINESS_POLICY = {
     "gpu-none":              "blocker",  # F5  no NVIDIA GPU — encoder can't run
     "gpu-igpu-only":         "blocker",  # F11 Intel iGPU only — wrong hardware
     "port-dns-blocked":      "blocker",  # F23a DNS down → name resolution fails
-    # F15a C: disk >90% is computed below from disk-health (not the aggregate
+    # F15a C: disk >90% is computed below from disk-health (not the
     # `disk-critical` finding — see _compute_readiness).
 
     # ── RISKS → WARN (will likely stream, but a human should eyeball) ──
@@ -1994,7 +2027,7 @@ _READINESS_POLICY = {
     "pixellot-over-cap":     "risk",     # F10 build newer than GPU/OS supports
     "gpu-anomaly":           "risk",     # F12 Volta / roster anomaly
     "install-incomplete":    "risk",     # F13 interrupted installer, agent up
-    "disk-low":              "risk",     # F16 (aggregate) disk 80–90%
+    "disk-low":              "risk",     # F16 a volume at 80–90%
     "disk-smart-prefail":    "risk",     # F16b drive SMART pre-fail / uncorrectable errors
     "ram-insufficient":      "risk",     # F21 <32 GB host
     "ntp-unapproved":        "risk",     # F22 drift can break signed-URL stream
@@ -2008,7 +2041,7 @@ _READINESS_POLICY = {
     "mem-elevated":          "info",     # F20 80–90% snapshot
     "cpu-critical":          "info",     # snapshot >90% — readiness uses the average (F17)
     "mem-critical":          "info",     # snapshot >90% — readiness uses the average (F19)
-    "disk-critical":         "info",     # all-volumes AGGREGATE >90% — readiness keys on C: (F15a)
+    "disk-critical":         "info",     # a volume >90% — readiness gates via its own F15a/b
     "disk-smart-wear":       "info",     # SSD ≥80% rated life — heads-up, won't stop tonight's game
     "temp-critical":         "info",     # 85°C snapshot — readiness gate is 90°C (F14)
     "tz-non-us":             "info",     # F25
