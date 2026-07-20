@@ -22,6 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-07-20
+
 ### Fixed
 - **The disk-space alert now checks each drive separately.** A nearly full C:
   or D: used to hide behind the combined free space of all drives, so the
