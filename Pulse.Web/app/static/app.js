@@ -2834,8 +2834,6 @@ const NET_DOMAIN_IMPACT = {
   "service.singular.live": "On-screen graphics and scorebug overlays won't load.",
   "logmein.com": "The support team can't diagnose the VPU remotely.",
   "s3.amazonaws.com": "Recordings can't upload and software/asset downloads fail.",
-  "leaf-uploads.s3.amazonaws.com": "Game recordings and clips can't upload to the cloud.",
-  "leaf-downloads.s3.amazonaws.com": "Software, firmware, and config downloads fail.",
 };
 function _netPortImpact(p) { return (p && NET_PORT_IMPACT[p.purpose]) || ""; }
 
@@ -3013,12 +3011,17 @@ function _renderPortConnectivity(ports) {
       : (NET_PORT_IMPACT[p0.purpose] || "");
     var tip = impact ? _impactTipHtml(impact) : "";
     var aria = impact ? ' aria-label="If blocked on the school\'s network: ' + esc(impact) + '"' : "";
+    // Visible ? cue matching the Service Reachability rows — the hover/tap
+    // target stays the whole tile, the icon just signals the tooltip exists.
+    var help = impact ? '<span class="domain-help net-port-help" aria-hidden="true">?</span>' : "";
     return '<div class="net-port-card net-tip' + st.stateCls + '" style="--rowaccent:' + st.accent + '" tabindex="0"' + aria + '>' + tip +
       '<div class="net-port-card-head">' +
         '<span class="net-port-num">' + esc(pp.num) + '</span>' +
         '<span class="net-port-pill net-port-pill-' + st.pillCls + '">' + esc(st.pillTxt) + '</span>' +
       '</div>' +
-      '<span class="net-port-proto-tag">' + esc(pp.proto) + '</span>' +
+      '<div class="net-port-card-foot">' +
+        '<span class="net-port-proto-tag">' + esc(pp.proto) + '</span>' + help +
+      '</div>' +
     '</div>';
   }
 
