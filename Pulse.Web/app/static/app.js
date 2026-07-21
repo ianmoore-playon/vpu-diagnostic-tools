@@ -94,7 +94,6 @@ const NAV_SECTIONS = [
   ]},
   { label: "PULSE", pages: [
     { id: "settings", label: "Settings", icon: "settings" },
-    { id: "share", label: "Share over LAN", icon: "share-2" },
     { id: "reports", label: "Exports", icon: "file-down" },
     { id: "help", label: "Help", icon: "help" },
     { id: "about", label: "About", icon: "info" },
@@ -102,7 +101,12 @@ const NAV_SECTIONS = [
 ];
 const PAGES = NAV_SECTIONS.flatMap((s) => s.pages);
 // Hidden pages (accessible via hash but not in nav)
-const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Camera Connection Troubleshooting" }];
+// "share" is parked here while Share over LAN development is paused — the
+// page and its backend still work via #share; restore the nav entry to resume.
+const HIDDEN_PAGES = [
+  { id: "fault-isolator", label: "Camera Connection Troubleshooting" },
+  { id: "share", label: "Share over LAN" },
+];
 // Tabs retired in the nav restructure redirect to their nearest replacement so
 // old bookmarks / deep-links don't land on an "Unknown page".
 const RETIRED_PAGE_ALIASES = { system: "hardware", "pixellot-config": "pixellot-software" };
@@ -5939,8 +5943,6 @@ function renderHelp() {
       <ul class="help-list">
         <li>Use <strong>Exports</strong> to generate a downloadable report to attach to a ticket — it re-runs
         every check and bundles the results into one file.</li>
-        <li><strong>Share over LAN</strong> sends a report to another Pulse on the same network when you can't get the file off
-        the VPU directly.</li>
         <li><strong>Pulse Logs</strong> shows Pulse's own script and server logs if Pulse itself is misbehaving.</li>
       </ul>
     </div>
@@ -5956,11 +5958,7 @@ function renderReports() {
   // describing it so action sits with its explanation, and drop the
   // redundant Run All Diagnostics button.
   $page().innerHTML = `
-    ${pageHeader("Exports", "Diagnostic-run snapshots — generate and download full system reports",
-      `<button class="btn-outline btn-ol-blue" onclick="navigate('share')" title="Hand off a generated report to another Pulse on the same network">
-        ${svgIcon("send", 14)} Send to another Pulse
-      </button>`
-    )}
+    ${pageHeader("Exports", "Diagnostic-run snapshots — generate and download full system reports")}
 
     <div class="card">
       ${sectionTitle("file", "Full Diagnostic Export")}
