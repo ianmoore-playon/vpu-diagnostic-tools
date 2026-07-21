@@ -22,6 +22,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Added
+- Pulse now cleans up the retired Canopy/Leaf software automatically. The old Banyan Hills agent (no longer used by PlayOn) is uninstalled in the background the first time Pulse runs on a VPU, and the leftover C:\Banyan folder is removed — no action needed from techs.
+
 ### Changed
 - Network Test: the port tiles and service ? icons now show a clear "If blocked on the school's network" pop-up on hover, tap, or keyboard focus (the old tooltips were slow and easy to miss), each column explains what the pop-ups are for, and a failed service now shows what it breaks right on the row — so it's in the screenshot you send to school IT.
 - Network Test: port tiles now carry the same ? icon as the service rows, so it's obvious each tile has an impact pop-up.

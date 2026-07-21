@@ -193,6 +193,14 @@ async def _on_startup():
     except Exception:
         pass
 
+    # Fire-and-forget removal of the retired Canopy Leaf agent (see
+    # _remove_canopy_leaf). Scheduled so it can't delay startup; a cheap
+    # folder pre-check makes it free on any already-clean unit.
+    try:
+        asyncio.create_task(_remove_canopy_leaf())
+    except Exception:
+        pass
+
 
 def load_settings() -> dict:
     try:
@@ -3892,6 +3900,39 @@ def _update_channel():
 
 
 # ── Run-tracking check-in ───────────────────────────────────────────────────
+# ── One-shot Canopy Leaf removal ────────────────────────────────────────────
+# PlayOn retired the Banyan Hills Canopy platform (fully shut down mid-2026),
+# but fleet VPUs still carry the orphaned Leaf agent: four auto-start services,
+# watchdog scheduled tasks, and ~250MB under C:\Banyan. On launch Pulse runs
+# Remove-CanopyLeaf.ps1 in the background: silent NSIS uninstalls, task/service
+# cleanup, then deletes C:\Banyan. The folder's absence is the "already done"
+# marker, and the pre-check below skips even spawning PowerShell on a clean
+# unit, so the fleet steady-state cost is zero. Fail-open in every branch —
+# cleanup must never slow or break Pulse itself.
+
+async def _remove_canopy_leaf() -> None:
+    if DEMO_MODE:
+        return
+    try:
+        if not _os.path.exists("C:\\Banyan"):
+            return  # already clean — the overwhelming steady-state
+        # Let the dashboard preload burst claim the PowerShell slots first;
+        # the cleanup is a background chore with no user waiting on it.
+        await asyncio.sleep(15)
+        result = await run_ps("Remove-CanopyLeaf.ps1", timeout=600, use_cache=False)
+        status = (result or {}).get("status") or "unknown"
+        if status in ("removed", "not-present"):
+            _server_log.info("Canopy Leaf removal: %s", status)
+        else:
+            _server_log.warning("Canopy Leaf removal incomplete: %s", json.dumps(result))
+    except Exception as e:
+        # Fail-open: the cleanup must never affect Pulse.
+        try:
+            _server_log.info("Canopy Leaf removal skipped (%s)", e)
+        except Exception:
+            pass
+
+
 # Fire-and-forget "Pulse ran on this VPU" beacon for fleet tracking. The sink is
 # a Google Apps Script web app that upserts one row per unit (first/last seen,
 # run count). The URL + secret are embedded below by deliberate choice: this is
