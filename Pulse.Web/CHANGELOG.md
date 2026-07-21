@@ -22,6 +22,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Changed
+- **Share over LAN is hidden for now.** The tab is removed from the sidebar while the feature is on hold — use Exports to download reports instead.
+
 ## [1.0.1] - 2026-07-20
 
 ### Fixed
