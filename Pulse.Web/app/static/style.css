@@ -1592,8 +1592,13 @@ html.dark .demo-banner {
 }
 .net-port-card:hover { border-color: var(--rowaccent, var(--c-border)); }
 .net-port-card.is-fail { border-color: rgba(220, 38, 38, 0.4); }
+/* Top row of a port tile: ? tooltip cue + port number on the left, the shared
+   .badge-* status pill (same one Service Reachability rows use) on the right. */
 .net-port-card-head {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.net-port-card-lead {
+    display: inline-flex; align-items: center; gap: 7px; min-width: 0;
 }
 /* Port number leads (priority); protocol sits below it as a small label. */
 .net-port-num {
@@ -1605,26 +1610,15 @@ html.dark .demo-banner {
     font-size: 0.62rem; font-weight: 600; color: var(--c-muted);
     text-transform: uppercase; letter-spacing: 0.08em;
 }
-/* Bottom row of a port tile: protocol tag on the left, the ? tooltip cue on
-   the right. The hover/tap target is the whole tile (.net-tip), so the ?
-   lights up with the rest of the tile via :hover/:focus-within on the card. */
 .net-port-card-foot {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
+/* The hover/tap target is the whole tile (.net-tip), so the ? lights up with
+   the rest of the tile via :hover/:focus-within on the card. */
 .net-port-card.net-tip:hover .net-port-help,
 .net-port-card.net-tip:focus-within .net-port-help {
     color: var(--c-accent-blue); border-color: var(--c-accent-blue);
 }
-.net-port-pill {
-    display: inline-block;
-    font-size: 0.66rem; font-weight: 600;
-    padding: 2px 9px; border-radius: 999px;
-    flex-shrink: 0;
-}
-.net-port-pill-pass  { background: var(--c-tint-green); color: var(--c-accent-green); }
-.net-port-pill-fail  { background: var(--c-tint-red);   color: var(--c-accent-red); }
-.net-port-pill-muted { background: var(--c-surface-3);  color: var(--c-muted); border: 1px solid var(--c-border); }
-.net-port-pill-warn  { background: var(--c-tint-amber); color: var(--c-accent-amber); }
 
 /* "Requires administrator" note on the Packet Capture card. */
 .net-capture-admin-note {

@@ -29,6 +29,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ### Changed
 - Status labels now look the same on every page: rounded pill shape, all-caps text (PASS, WARN, RUNNING), and count bubbles are gray instead of orange so a tally no longer looks like a warning.
 - Status words now match everywhere: "Healthy" and "Attention" chips read OK and WARNING like the rest of the app, and ScoreConnect's cloud link shows CONNECTED / NOT CONNECTED instead of Yes / No.
+- Network Test: port tiles now use the same PASS / FAIL pills as the service list next to them, and the ? icon sits in front of the port number where it's easier to spot.
 
 ### Fixed
 - Camera Connectivity heading no longer reads "1 finding need attention" when there is a single finding.

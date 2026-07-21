@@ -3005,16 +3005,18 @@ function _renderPortConnectivity(ports) {
       : (NET_PORT_IMPACT[p0.purpose] || "");
     var tip = impact ? _impactTipHtml(impact) : "";
     var aria = impact ? ' aria-label="If blocked on the school\'s network: ' + esc(impact) + '"' : "";
-    // Visible ? cue matching the Service Reachability rows — the hover/tap
-    // target stays the whole tile, the icon just signals the tooltip exists.
+    // Visible ? cue matching the Service Reachability rows, leading the port
+    // number — the hover/tap target stays the whole tile, the icon just
+    // signals the tooltip exists. Status uses the shared badge() pill so port
+    // tiles and Service Reachability rows read as one vocabulary.
     var help = impact ? '<span class="domain-help net-port-help" aria-hidden="true">?</span>' : "";
     return '<div class="net-port-card net-tip' + st.stateCls + '" style="--rowaccent:' + st.accent + '" tabindex="0"' + aria + '>' + tip +
       '<div class="net-port-card-head">' +
-        '<span class="net-port-num">' + esc(pp.num) + '</span>' +
-        '<span class="net-port-pill net-port-pill-' + st.pillCls + '">' + esc(st.pillTxt) + '</span>' +
+        '<span class="net-port-card-lead">' + help + '<span class="net-port-num">' + esc(pp.num) + '</span></span>' +
+        badge(st.pillTxt, st.pillCls) +
       '</div>' +
       '<div class="net-port-card-foot">' +
-        '<span class="net-port-proto-tag">' + esc(pp.proto) + '</span>' + help +
+        '<span class="net-port-proto-tag">' + esc(pp.proto) + '</span>' +
       '</div>' +
     '</div>';
   }
