@@ -6952,7 +6952,7 @@ function renderScoreConnect() {
         ${config.eventType ? kvRow("Event Type", config.eventType) : ""}
         ${kvRow("Network", data.networkStatus)}
         ${kvRowHtml("Local Stream", data.hasLocalStream != null
-          ? (data.hasLocalStream ? '<span class="status-pass">Yes</span>' : '<span class="status-fail">No</span>')
+          ? (data.hasLocalStream ? '<span class="status-pass">Detected</span>' : '<span class="status-fail">Not detected</span>')
           : '—')}
       </div>
       ${data.rawData ? `
