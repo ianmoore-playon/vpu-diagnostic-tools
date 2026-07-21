@@ -22,6 +22,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Changed
+- Network Test: the port tiles and service ? icons now show a clear "If blocked on the school's network" pop-up on hover, tap, or keyboard focus (the old tooltips were slow and easy to miss), each column explains what the pop-ups are for, and a failed service now shows what it breaks right on the row — so it's in the screenshot you send to school IT.
+
 ## [1.0.1] - 2026-07-20
 
 ### Fixed

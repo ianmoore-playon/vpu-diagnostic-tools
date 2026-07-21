@@ -2867,6 +2867,18 @@ function _isRedundantStreamBlock(p, health) {
 }
 function _netDomainImpact(d) { return (d && NET_DOMAIN_IMPACT[d.domain]) || ""; }
 
+// Styled "impact if blocked" tooltip bubble (replaces native title= tooltips,
+// which are delayed, unstyled, and never show on keyboard focus or touch).
+// The bubble is a real element inside the trigger; CSS shows it on
+// :hover/:focus-within. The header line frames the impact sentence as a
+// hypothetical — without it, "X is unavailable" on a passing row reads like
+// a live failure.
+function _impactTipHtml(impact) {
+  return `<span class="net-tip-bubble" role="tooltip">` +
+    `<span class="net-tip-title">If blocked on the school's network</span>` +
+    `${esc(impact)}</span>`;
+}
+
 // Impact per TLS-checked domain — what breaks when a firewall intercepts it.
 // Keep the domains in sync with Test-TlsInspection.ps1.
 const TLS_DOMAIN_IMPACT = {
@@ -2988,12 +3000,16 @@ function _renderPortConnectivity(ports) {
   // A port shared by several required services (TCP/443) shows an N/M count.
   function card(group) {
     var items = group.items, p0 = items[0], st = rollup(items), pp = portParts(items);
-    // Hover only (not shown on the tile): single-service ports surface their
-    // impact; a shared port points to the domain column instead of listing hosts.
-    var tip = items.length > 1
-      ? "Required services share this port — see Service Reachability for the hosts."
+    // Impact-if-blocked bubble on hover/focus/tap: single-service ports surface
+    // their impact; a shared port points to the domain column instead of
+    // listing hosts. A blocked required port also gets an always-visible
+    // issues-panel finding with the same impact text, so the tile stays lean.
+    var impact = items.length > 1
+      ? "Several required services share this port — see Service Reachability for what each one does."
       : (NET_PORT_IMPACT[p0.purpose] || "");
-    return '<div class="net-port-card' + st.stateCls + '" style="--rowaccent:' + st.accent + '" title="' + esc(tip) + '">' +
+    var tip = impact ? _impactTipHtml(impact) : "";
+    var aria = impact ? ' aria-label="If blocked on the school\'s network: ' + esc(impact) + '"' : "";
+    return '<div class="net-port-card net-tip' + st.stateCls + '" style="--rowaccent:' + st.accent + '" tabindex="0"' + aria + '>' + tip +
       '<div class="net-port-card-head">' +
         '<span class="net-port-num">' + esc(pp.num) + '</span>' +
         '<span class="net-port-pill net-port-pill-' + st.pillCls + '">' + esc(st.pillTxt) + '</span>' +
@@ -3927,10 +3943,12 @@ function renderNetwork() {
       <div class="net-conn-grid">
         <div class="net-conn-col">
           ${sectionTitle("link", "Port Connectivity")}
+          <p class="net-conn-hint">Hover or tap a tile to see what stops working if the school's network blocks that port.</p>
           ${_renderPortConnectivity(ports)}
         </div>
         <div class="net-conn-col">
           ${sectionTitle("wifi", "Service Reachability")}
+          <p class="net-conn-hint">Hover or tap a <span class="domain-help net-conn-hint-q">?</span> to see what stops working if the school's network blocks that service.</p>
           ${domains.length ? `
             <div class="domain-list">
               ${domains.map(function(d) {
@@ -3938,12 +3956,17 @@ function renderNetwork() {
                 var dnsTime = d.resolutionMs != null ? d.resolutionMs + " ms" : "";
                 var dnsSlow = d.resolutionMs != null && d.resolutionMs > 200;
                 var dotColor = ok ? "var(--c-accent-green)" : "var(--c-accent-red)";
-                // "Impact if blocked" now lives on an explicit ? help icon next
-                // to the domain (focusable, clearly hoverable) instead of a
-                // hidden hover-anywhere title on the whole row.
+                // "Impact if blocked" lives on an explicit ? help icon next to
+                // the domain: a styled bubble on hover/focus/tap while the row
+                // passes. Once the row FAILS, hover is the wrong delivery —
+                // techs screenshot this panel for the school's IT — so the
+                // impact renders inline under the failing row instead.
                 var impact = _netDomainImpact(d);
-                var help = impact
-                  ? `<span class="domain-help" tabindex="0" title="${esc(impact)}" aria-label="Impact if blocked: ${esc(impact)}">?</span>`
+                var help = impact && ok
+                  ? `<span class="domain-help net-tip" tabindex="0" aria-label="If blocked on the school's network: ${esc(impact)}">?${_impactTipHtml(impact)}</span>`
+                  : "";
+                var impactLine = impact && !ok
+                  ? `<div class="domain-impact">${svgIcon("triangle", 11)} While this is blocked: ${esc(impact)}</div>`
                   : "";
                 return `<div class="domain-row">
                   <span class="domain-dot" style="background:${dotColor}"></span>
@@ -3951,6 +3974,7 @@ function renderNetwork() {
                   <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
                   <span class="domain-dns-time font-mono${dnsSlow ? ' status-warn' : ''}">${esc(dnsTime)}</span>
                   ${statusBadge(d.status)}
+                  ${impactLine}
                 </div>`;
               }).join("")}
             </div>
