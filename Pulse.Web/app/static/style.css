@@ -1592,7 +1592,7 @@ html.dark .demo-banner {
 }
 .net-port-card:hover { border-color: var(--rowaccent, var(--c-border)); }
 .net-port-card.is-fail { border-color: rgba(220, 38, 38, 0.4); }
-/* Top row of a port tile: ? tooltip cue + port number on the left, the shared
+/* Top row of a port tile: port number + ? tooltip cue on the left, the shared
    .badge-* status pill (same one Service Reachability rows use) on the right. */
 .net-port-card-head {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -2142,8 +2142,11 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
    slots stay dashed + half-opacity to clearly read as unused. */
 .cam-port-down { border-color: var(--c-dimmer); border-style: dashed; }
 .cam-port-empty { border-style: dashed; opacity: 0.5; }
-.cam-port-header { display: flex; align-items: center; gap: 6px; }
+.cam-port-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cam-port-num { font-size: 0.85rem; font-weight: 700; color: var(--c-text); }
+/* Link-state pill (shared .badge-*) hugs the tile's right edge, mirroring the
+   Network tab's port tiles. */
+.cam-port-state { margin-left: auto; flex-shrink: 0; }
 .cam-port-name { font-size: 0.7rem; color: var(--c-muted); font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cam-port-status { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; }
 .cam-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }

@@ -2868,10 +2868,10 @@ function _netDomainImpact(d) { return (d && NET_DOMAIN_IMPACT[d.domain]) || ""; 
 // The bubble is a real element inside the trigger; CSS shows it on
 // :hover/:focus-within. The header line frames the impact sentence as a
 // hypothetical — without it, "X is unavailable" on a passing row reads like
-// a live failure.
-function _impactTipHtml(impact) {
+// a live failure. Callers outside the Network tab pass their own title.
+function _impactTipHtml(impact, title) {
   return `<span class="net-tip-bubble" role="tooltip">` +
-    `<span class="net-tip-title">If blocked on the school's network</span>` +
+    `<span class="net-tip-title">${esc(title || "If blocked on the school's network")}</span>` +
     `${esc(impact)}</span>`;
 }
 
@@ -3005,14 +3005,14 @@ function _renderPortConnectivity(ports) {
       : (NET_PORT_IMPACT[p0.purpose] || "");
     var tip = impact ? _impactTipHtml(impact) : "";
     var aria = impact ? ' aria-label="If blocked on the school\'s network: ' + esc(impact) + '"' : "";
-    // Visible ? cue matching the Service Reachability rows, leading the port
+    // Visible ? cue matching the Service Reachability rows, right of the port
     // number — the hover/tap target stays the whole tile, the icon just
     // signals the tooltip exists. Status uses the shared badge() pill so port
     // tiles and Service Reachability rows read as one vocabulary.
     var help = impact ? '<span class="domain-help net-port-help" aria-hidden="true">?</span>' : "";
     return '<div class="net-port-card net-tip' + st.stateCls + '" style="--rowaccent:' + st.accent + '" tabindex="0"' + aria + '>' + tip +
       '<div class="net-port-card-head">' +
-        '<span class="net-port-card-lead">' + help + '<span class="net-port-num">' + esc(pp.num) + '</span></span>' +
+        '<span class="net-port-card-lead"><span class="net-port-num">' + esc(pp.num) + '</span>' + help + '</span>' +
         badge(st.pillTxt, st.pillCls) +
       '</div>' +
       '<div class="net-port-card-foot">' +
@@ -4367,10 +4367,9 @@ function _camDetailsPanel(cams, portIdx, portData) {
 function _camPortTile(port, index, ctx) {
   if (!port) {
     return `<div class="cam-port-tile cam-port-empty">
-      <div class="cam-port-num">Port ${index + 1}</div>
-      <div class="cam-port-status">
-        <span class="cam-dot cam-dot-muted"></span>
-        <span class="text-sm text-pulse-muted">Not detected</span>
+      <div class="cam-port-header">
+        <span class="cam-port-num">Port ${index + 1}</span>
+        <span class="cam-port-state">${badge("Not detected", "muted")}</span>
       </div>
     </div>`;
   }
@@ -4378,16 +4377,23 @@ function _camPortTile(port, index, ctx) {
   const speed = p.linkSpeedMbps
     ? p.linkSpeedMbps >= 1000 ? (p.linkSpeedMbps / 1000) + " Gbps" : p.linkSpeedMbps + " Mbps"
     : "No link";
+  // Link state lives in a shared badge() pill (same status vocabulary as the
+  // Network tab's port tiles); the dot row below carries only the speed.
   // Down ports get a *reason*, not just "Down", + triage guidance below.
   var downLabelMap = { disabled: "Disabled", driver: "Driver error", "no-link": "No link" };
-  let statusLabel, dotCls;
-  if (!p.isUp) { statusLabel = downLabelMap[p.downReason] || "Down"; dotCls = "cam-dot-down"; }
-  else if (p.connecting) { statusLabel = p.linkSpeedMbps ? "Connecting · " + speed : "Connecting…"; dotCls = "cam-dot-connecting"; }
-  else if (p.isDegraded) { statusLabel = "Degraded · " + speed; dotCls = "cam-dot-warn"; }
-  // Fully linked → always green. OCR vs Main is shown by the badge, so the
-  // status dot just signals link health (green = established) and never
+  let stateTxt, stateCls, dotCls;
+  if (!p.isUp) { stateTxt = downLabelMap[p.downReason] || "Down"; stateCls = "fail"; dotCls = "cam-dot-down"; }
+  else if (p.connecting) { stateTxt = "Connecting"; stateCls = "info"; dotCls = "cam-dot-connecting"; }
+  else if (p.isDegraded) { stateTxt = "Degraded"; stateCls = "warn"; dotCls = "cam-dot-warn"; }
+  // Fully linked → always green. OCR vs Main is shown by the role badge, so
+  // the status dot just signals link health (green = established) and never
   // lingers blue, which reads as "still connecting".
-  else { statusLabel = "Linked · " + speed; dotCls = "cam-dot-up"; }
+  else { stateTxt = "Linked"; stateCls = "pass"; dotCls = "cam-dot-up"; }
+  // Speed rides the dot row only while the port is up; a down port's state is
+  // fully told by the badge + the triage guidance block.
+  var speedRow = p.isUp && p.linkSpeedMbps
+    ? `<div class="cam-port-status"><span class="cam-dot ${dotCls}"></span><span class="text-sm">${esc(speed)}</span></div>`
+    : "";
 
   const cams = p.camerasDetected || [];
   var camLabel = p.cameraLabel;
@@ -4396,17 +4402,23 @@ function _camPortTile(port, index, ctx) {
   if (p.isOcr) camLabelCls = "badge-ol-info";
   else if (camLabel && camLabel.indexOf("Main") === 0) camLabelCls = "badge-ol-main";
   else camLabelCls = "badge-ol-muted";
+  // ? impact cue right of the port number — same affordance as the Service
+  // Reachability rows: what a tech loses if this port goes down.
+  var impact = p.isOcr
+    ? "The scoreboard (OCR) camera feed is lost, so automatic score capture stops."
+    : (camLabel && camLabel.indexOf("Main") === 0)
+      ? "The " + camLabel + " feed is lost — that angle is missing from the broadcast."
+      : "Whatever camera is connected here can't reach the VPU.";
+  var help = '<span class="domain-help net-tip" tabindex="0" aria-label="If this port is down: ' + esc(impact) + '">?' + _impactTipHtml(impact, "If this port is down") + '</span>';
   return `<div class="cam-port-tile ${!p.isUp ? "cam-port-down" : p.isDegraded ? "cam-port-degraded" : "cam-port-active"}">
     <div class="cam-port-header">
       <span class="cam-port-num">Port ${index + 1}</span>
+      ${help}
       ${camLabel ? '<span class="badge-ol ' + camLabelCls + '">' + esc(camLabel) + '</span>' : ''}
-      ${p.isDegraded ? '<span class="badge-ol badge-ol-warn">Degraded</span>' : ""}
+      <span class="cam-port-state">${badge(stateTxt, stateCls)}</span>
     </div>
     <div class="cam-port-name">${esc(p.name)}</div>
-    <div class="cam-port-status">
-      <span class="cam-dot ${dotCls}"></span>
-      <span class="text-sm">${esc(statusLabel)}</span>
-    </div>
+    ${speedRow}
     <div class="cam-port-detail">
       <div class="kv-mini"><span>RX / TX</span><span id="cam-rxtx-${index}">${formatBytes(p.rxBytes)} / ${formatBytes(p.txBytes)}</span></div>
     </div>
