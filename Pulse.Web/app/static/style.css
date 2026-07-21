@@ -1731,7 +1731,7 @@ html.dark .demo-banner {
 /* One-line explainer under the Port Connectivity / Service Reachability
    titles — says what the hover/tap affordances are for. */
 .net-conn-hint { font-size: 0.7rem; color: var(--c-dim); margin: -2px 0 0.6rem; }
-.net-conn-hint-q { vertical-align: -3px; cursor: default; margin: 0 1px; }
+.net-conn-hint-q { vertical-align: -1px; cursor: default; margin: 0 1px; }
 
 /* Impact line rendered inline under a FAILING domain row — always visible
    (no hover), so it survives the screenshot a tech sends to school IT. */
