@@ -810,19 +810,6 @@ html.dark .demo-banner {
 .cc-sev-ok       { color: var(--c-accent-green); }  /* legacy pill + two-tone all-clear */
 .cc-sev-sep      { color: var(--c-dim); font-weight: 400; }  /* the "·" between counts */
 
-.baseline-bar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    background: var(--c-tint-green-faint);
-    border: 1px solid var(--c-tint-green-border);
-    border-radius: 6px;
-    font-size: 0.7rem;
-    color: var(--c-green-soft);
-    margin-bottom: 0;
-}
-
 /* ── Top findings + Subsystems panels ───────────────────────── */
 /* .findings-panel = legacy class kept for any older renders; current
    layout uses .cc-findings (inside Command Center) for the list and
@@ -908,51 +895,6 @@ html.dark .demo-banner {
     color: var(--c-dim);
     line-height: 1.4;
 }
-
-/* ── Health badges ────────────────────────────────────────── */
-.health-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 2px 9px;
-    border-radius: 999px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    line-height: 1.5;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
-.health-ok   { background: var(--c-tint-green); color: var(--c-accent-green); }
-.health-warn { background: var(--c-tint-amber); color: var(--c-accent-amber); }
-.health-info { background: var(--c-tint-blue); color: var(--c-accent-blue); }
-
-/* ── Baseline banner ──────────────────────────────────────── */
-.baseline-banner {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 1.25rem;
-    padding: 10px 16px;
-    background: var(--c-tint-green-faint);
-    border: 1px solid var(--c-tint-green-border);
-    border-radius: 8px;
-    color: var(--c-green-soft);
-    font-size: 0.8rem;
-}
-.banner-dismiss {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background: none;
-    border: 1px solid var(--c-tint-green-border);
-    border-radius: 4px;
-    color: var(--c-green-soft);
-    padding: 3px 8px;
-    font-size: 0.7rem;
-    cursor: pointer;
-    transition: background 0.15s;
-}
-.banner-dismiss:hover { background: var(--c-tint-green-faint); }
 
 /* ── Active findings ──────────────────────────────────────── */
 .active-findings { margin-top: 1.25rem; }

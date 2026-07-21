@@ -1306,12 +1306,6 @@ function _subsystemHealth(findings) {
   ];
 }
 
-function _healthBadge(h) {
-  if (h === "Warning") return `<span class="health-badge health-warn">Warning</span>`;
-  if (h === "Evidence ready") return `<span class="health-badge health-info">Evidence ready</span>`;
-  return `<span class="health-badge health-ok">OK</span>`;
-}
-
 function _findingPageFor(cat) {
   // Finding category → the tab that owns the fix. Updated for the 6-group IA:
   // System Overview split into hardware / applications / environment, and
