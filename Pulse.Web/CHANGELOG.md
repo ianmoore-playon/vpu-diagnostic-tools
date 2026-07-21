@@ -27,6 +27,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ### Changed
 - Status labels now look the same on every page: rounded pill shape, all-caps text (PASS, WARN, RUNNING), and count bubbles are gray instead of orange so a tally no longer looks like a warning.
+- Status words now match everywhere: "Healthy" and "Attention" chips read OK and WARNING like the rest of the app, and ScoreConnect's cloud link shows CONNECTED / NOT CONNECTED instead of Yes / No.
+
+### Fixed
+- Camera Connectivity heading no longer reads "1 finding need attention" when there is a single finding.
 - Network Test: the port tiles and service ? icons now show a clear "If blocked on the school's network" pop-up on hover, tap, or keyboard focus (the old tooltips were slow and easy to miss), each column explains what the pop-ups are for, and a failed service now shows what it breaks right on the row — so it's in the screenshot you send to school IT.
 - Network Test: port tiles now carry the same ? icon as the service rows, so it's obvious each tile has an impact pop-up.
 

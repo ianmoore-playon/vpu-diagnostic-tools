@@ -1260,7 +1260,7 @@ function _subsystemHealth(findings) {
     sev[k] = Math.max(sev[k] || 0, rank);
   });
   const worst = (...keys) => Math.max(0, ...keys.map((k) => sev[k] || 0));
-  const lvl = (r) => (r === 2 ? "Critical" : r === 1 ? "Warning" : "Healthy");
+  const lvl = (r) => (r === 2 ? "Critical" : r === 1 ? "Warning" : "OK");
 
   // Event Viewer doesn't generate dashboard findings of its own, so derive
   // its health from the cached event log: any recent Error-level entry
@@ -1299,7 +1299,7 @@ function _subsystemHealth(findings) {
       health: lvl(worst("storage")),
       desc: "Free space, drive health (SMART), and disk events." },
     { id: "events", label: "Windows Events", icon: "triangle",
-      health: evErrorCount > 0 ? "Warning" : "Healthy",
+      health: evErrorCount > 0 ? "Warning" : "OK",
       desc: evErrorCount > 0
         ? `${evErrorCount} recent OS error${evErrorCount === 1 ? "" : "s"} logged.`
         : "Recent Windows errors from VPU components." },
@@ -1309,7 +1309,7 @@ function _subsystemHealth(findings) {
 function _healthBadge(h) {
   if (h === "Warning") return `<span class="health-badge health-warn">Warning</span>`;
   if (h === "Evidence ready") return `<span class="health-badge health-info">Evidence ready</span>`;
-  return `<span class="health-badge health-ok">Healthy</span>`;
+  return `<span class="health-badge health-ok">OK</span>`;
 }
 
 function _findingPageFor(cat) {
@@ -4462,7 +4462,7 @@ function _camDownGuidanceHtml(p, ctx) {
 function _camFindingsHtml(findings) {
   if (!findings.length) return "";
   return `<div class="card" id="cam-findings">
-    ${sectionTitle("alert-circle", findings.length + " finding" + (findings.length !== 1 ? "s" : "") + " need attention")}
+    ${sectionTitle("alert-circle", findings.length + " finding" + (findings.length !== 1 ? "s need" : " needs") + " attention")}
     ${findings.map(f => `
       <div class="cam-finding-row cam-finding-row-${esc(f.severity)}">
         <div class="cam-finding-header">
@@ -5296,7 +5296,7 @@ function renderDiskHealth() {
   const smartBad  = predictFail || anyUnhealthy || anyUncorrected;
   const smartWarn = !smartBad && maxWear >= 80;
   const smartSev  = !haveSmart ? "muted" : smartBad ? "critical" : smartWarn ? "warning" : "ok";
-  const smartChip = !haveSmart ? "No data" : smartBad ? "Issue" : smartWarn ? "Wear high" : "Healthy";
+  const smartChip = !haveSmart ? "No data" : smartBad ? "Issue" : smartWarn ? "Wear high" : "OK";
   const smartVal  = !haveSmart ? "SMART not reported"
     : smartBad ? "Drive predicting failure"
     : smartWarn ? `Highest wear ${maxWear}%`
@@ -5304,7 +5304,7 @@ function renderDiskHealth() {
 
   const errorCount = events.length;
   const errorSev  = errorCount > 5 ? "critical" : errorCount > 0 ? "warning" : "ok";
-  const errorChip = errorCount === 0 ? "Clean" : errorCount > 5 ? "High" : "Attention";
+  const errorChip = errorCount === 0 ? "Clean" : errorCount > 5 ? "High" : "Warning";
   const errorVal  = errorCount === 0 ? "None" : `${errorCount} event${errorCount === 1 ? "" : "s"}`;
 
   const osDrive = logical.find(d => d.deviceID === "C:") || logical[0];
@@ -5917,7 +5917,7 @@ function renderHelp() {
         FAIL means don't expect a clean broadcast without pre-game attention.</li>
         <li><strong>Findings</strong> list the specific issues behind the verdict, worst first. Click any finding to jump
         straight to the tab that owns the fix.</li>
-        <li><strong>Sidebar warning triangles</strong> (⚠) mark which areas have an open issue, so you know where to look
+        <li><strong>Sidebar warning triangles</strong> mark which areas have an open issue, so you know where to look
         without opening every tab.</li>
       </ul>
     </div>
@@ -6790,9 +6790,9 @@ function renderScoreConnect() {
     <div class="card">
       ${sectionTitle("globe", "Cloud (Bot) Status")}
       <div class="kv-grid">
-        ${kvRowHtml("Connected", botStatus.isConnected
-          ? badge("Yes", "pass")
-          : badge("No", "fail"))}
+        ${kvRowHtml("Status", botStatus.isConnected
+          ? badge("Connected", "pass")
+          : badge("Not connected", "fail"))}
         ${botStatus.scoreConnectId ? kvRowHtml("ScoreConnect ID",
           `${esc(botStatus.scoreConnectId)} <span class="text-pulse-dim ml-1" style="font-size:0.85em;cursor:help" title="ScoreConnect III reports this ID at startup. If the BOT service has reconfigured since, the displayed value can briefly lag.">${svgIcon("info", 12)}</span>`)
           : ""}
