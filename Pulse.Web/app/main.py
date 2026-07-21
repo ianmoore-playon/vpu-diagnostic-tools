@@ -1121,9 +1121,9 @@ def _camera_nic_uplink_finding(network_config):
     if mobo:
         st = _mobo_state(mobo[0])
         if st == "disabled":
-            mobo_note = " The motherboard network port is currently disabled — enable it in Windows."
+            mobo_note = " The motherboard network port is disabled — enable it in Windows."
         elif st == "unplugged":
-            mobo_note = " The motherboard network port has no cable connected — move the venue/internet cable to it."
+            mobo_note = " The motherboard network port has no cable connected."
     else:
         mobo_note = " No motherboard network port was detected — it may be disabled."
 
@@ -1136,12 +1136,11 @@ def _camera_nic_uplink_finding(network_config):
         "category": "Network",
         "title": "Internet is plugged into a camera port, not the motherboard network port",
         "recommendation": (
-            f"The VPU's internet/venue connection is coming in on a camera-NIC port: {ports_txt}. "
-            f"On a Pixellot VPU the internet must connect to the motherboard network port — the "
-            f"4-port NIC is only for cameras, and a venue uplink there can disrupt camera "
-            f"discovery and streaming.{mobo_note} Move the cable to the motherboard network port "
-            f"and confirm that port is enabled. (The Wi-Fi card is for the Pixellot Connect app and "
-            f"should stay enabled.)"
+            f"The internet/venue connection is on a camera-NIC port ({ports_txt}), which can "
+            f"disrupt camera discovery and streaming. On a Pixellot VPU it must connect to the "
+            f"motherboard network port — the 4-port NIC is for cameras only.{mobo_note} Move the "
+            f"cable there and confirm the port is enabled. (Leave the Wi-Fi card enabled — it's "
+            f"for the Pixellot Connect app.)"
         ),
     }
 

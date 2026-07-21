@@ -3055,15 +3055,15 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
       if (_mobo.length) {
         var _m = _mobo[0];
         var _admin = String(_m.adminStatus || "").toLowerCase(), _st = String(_m.status || "").toLowerCase();
-        if (_admin === "down" || _st === "disabled") _moboNote = " The motherboard network port is currently disabled — enable it in Windows.";
-        else if (_st === "disconnected" || _st === "not present" || _st === "down") _moboNote = " The motherboard network port has no cable connected — move the venue/internet cable to it.";
+        if (_admin === "down" || _st === "disabled") _moboNote = " The motherboard network port is disabled — enable it in Windows.";
+        else if (_st === "disconnected" || _st === "not present" || _st === "down") _moboNote = " The motherboard network port has no cable connected.";
       } else {
         _moboNote = " No motherboard network port was detected — it may be disabled.";
       }
       issues.push({
         severity: "critical",
         title: "Internet is plugged into a camera port, not the motherboard network port",
-        body: "The VPU's internet/venue connection is coming in on a camera-NIC port. On a Pixellot VPU the internet must connect to the motherboard network port — the 4-port NIC is only for cameras, and a venue uplink there can disrupt camera discovery and streaming." + _moboNote + " Move the cable to the motherboard network port and confirm that port is enabled. (The Wi-Fi card is for the Pixellot Connect app and should stay enabled.)",
+        body: "The internet/venue connection is on a camera-NIC port, which can disrupt camera discovery and streaming. On a Pixellot VPU it must connect to the motherboard network port — the 4-port NIC is for cameras only." + _moboNote + " Move the cable there and confirm the port is enabled. (Leave the Wi-Fi card enabled — it's for the Pixellot Connect app.)",
         details: _misplaced.map(function(a) { return (a.name || a.interfaceDescription || "?") + " — gateway " + _camGw(a) + " (a camera port)"; }),
       });
     }
