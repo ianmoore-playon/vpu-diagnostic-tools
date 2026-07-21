@@ -91,22 +91,55 @@ try {
         ) + $portTests
     }
 
+    # Kick off every TCP connect up front, non-blocking, then judge them all
+    # against one shared deadline when the loop reaches each row. Probing
+    # sequentially made the script's runtime scale with the number of DEAD
+    # targets (~3s each): when Sportzcast's six Scorebot/RTMP endpoints went
+    # dark in July 2026, the port sweep ballooned to ~20s and froze the
+    # splash checklist, which gates on the dashboard. Concurrent probes cap
+    # the whole TCP set at the single budget below no matter how many die.
+    $tcpBudgetMs = 4000
+    $tcpProbes = @{}
+    foreach ($test in $portTests) {
+        if ($test.protocol -ne 'TCP') { continue }
+        try {
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            $tcpProbes["$($test.host):$($test.port)"] = @{
+                client = $tcp
+                async  = $tcp.BeginConnect($test.host, $test.port, $null, $null)
+            }
+        }
+        catch {
+            # DNS resolution or socket setup failed synchronously — leave the
+            # probe absent; the row below reports 'fail'.
+        }
+    }
+    $tcpClock = [System.Diagnostics.Stopwatch]::StartNew()
+
     $results = foreach ($test in $portTests) {
         $status = 'fail'
 
         if ($test.protocol -eq 'TCP') {
-            try {
-                $tcp = New-Object System.Net.Sockets.TcpClient
-                $connect = $tcp.BeginConnect($test.host, $test.port, $null, $null)
-                $waited = $connect.AsyncWaitHandle.WaitOne(3000, $false)
-                if ($waited -and $tcp.Connected) {
-                    $tcp.EndConnect($connect)
-                    $status = 'pass'
+            $probe = $tcpProbes["$($test.host):$($test.port)"]
+            if ($probe) {
+                try {
+                    # Remaining slice of the shared budget — all connects have
+                    # been racing since before the loop, so a probe reached
+                    # late waits only for what's left (possibly 0ms).
+                    $remainingMs = $tcpBudgetMs - $tcpClock.ElapsedMilliseconds
+                    if ($remainingMs -lt 0) { $remainingMs = 0 }
+                    $waited = $probe.async.AsyncWaitHandle.WaitOne($remainingMs, $false)
+                    if ($waited -and $probe.client.Connected) {
+                        $probe.client.EndConnect($probe.async)
+                        $status = 'pass'
+                    }
                 }
-                $tcp.Close()
-            }
-            catch {
-                $status = 'fail'
+                catch {
+                    $status = 'fail'
+                }
+                finally {
+                    $probe.client.Close()
+                }
             }
         }
         elseif ($test.protocol -eq 'UDP' -and $test.port -eq 123) {

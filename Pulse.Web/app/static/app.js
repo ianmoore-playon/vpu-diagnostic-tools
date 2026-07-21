@@ -94,7 +94,6 @@ const NAV_SECTIONS = [
   ]},
   { label: "PULSE", pages: [
     { id: "settings", label: "Settings", icon: "settings" },
-    { id: "share", label: "Share over LAN", icon: "share-2" },
     { id: "reports", label: "Exports", icon: "file-down" },
     { id: "help", label: "Help", icon: "help" },
     { id: "about", label: "About", icon: "info" },
@@ -102,7 +101,12 @@ const NAV_SECTIONS = [
 ];
 const PAGES = NAV_SECTIONS.flatMap((s) => s.pages);
 // Hidden pages (accessible via hash but not in nav)
-const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Camera Connection Troubleshooting" }];
+// "share" is parked here while Share over LAN development is paused — the
+// page and its backend still work via #share; restore the nav entry to resume.
+const HIDDEN_PAGES = [
+  { id: "fault-isolator", label: "Camera Connection Troubleshooting" },
+  { id: "share", label: "Share over LAN" },
+];
 // Tabs retired in the nav restructure redirect to their nearest replacement so
 // old bookmarks / deep-links don't land on an "Unknown page".
 const RETIRED_PAGE_ALIASES = { system: "hardware", "pixellot-config": "pixellot-software" };
@@ -460,11 +464,27 @@ function _setSplashVerb(text) {
 const SPLASH_NOTE_DEFAULT = "Running a full diagnostic sweep — this can take a moment.";
 const SPLASH_NOTE_SLOW    = "Still working — some checks (camera frames, speed test) take longer on slower units.";
 
-// Ordered preload sections: dashboard first, then everything else fetched
-// during cold start. Single source for both the checklist and the X-of-Y
-// count, so they can't drift from each other or from what's actually fetched.
+// Splash reveal order — cheap local collectors first, network probes and the
+// Dashboard aggregate last. This mirrors how fast sections actually SETTLE:
+// the dashboard gathers every subsystem (it's always the slowest), and the
+// network sweep runs live port probes. With dashboard first, the strict
+// in-order reveal couldn't tick anything until the slowest section landed,
+// then flooded the other eleven checks in one frame. Fetch order is
+// unaffected — the dashboard is still requested first (see
+// preloadProgressive); this only orders the checklist.
+const SPLASH_REVEAL_ORDER = [
+  "settings", "system", "services", "events", "scoreconnect",
+  "pixellot-config", "disk-health", "reboots", "audio", "cameras",
+  "network", "dashboard",
+];
+
+// Preload sections in splash-reveal order. Single source for both the
+// checklist and the X-of-Y count, so they can't drift from each other or
+// from what's actually fetched. A PAGE_API key missing from
+// SPLASH_REVEAL_ORDER (a new lane) still appears — appended at the end.
 function _splashSectionKeys() {
-  return Object.keys(PAGE_API);
+  return SPLASH_REVEAL_ORDER.filter((k) => k in PAGE_API)
+    .concat(Object.keys(PAGE_API).filter((k) => !SPLASH_REVEAL_ORDER.includes(k)));
 }
 function _splashSectionLabel(key) {
   return _sectionLabels()[key] || key.charAt(0).toUpperCase() + key.slice(1);
@@ -595,23 +615,29 @@ function preloadProgressive(opts) {
   const o = opts || {};
   const verb = o.verb || "Loading diagnostics";
   const deferred = Object.keys(PAGE_API).filter((k) => k !== "dashboard");
-  // Demo mode: pace each reveal with a small delay so the splash actually
-  // SHOWS each section being checked instead of flashing past. Real cold
-  // start is naturally ~5-15s, so the demo's ~3s artificial pacing mirrors
-  // the field UX. window.__PULSE_DEMO_MODE is injected into the HTML at
-  // render time so we know synchronously — relying on the /api/version
-  // response races with the first reveal and (in practice) loses.
-  let _demoTickDelayMs = (typeof window !== "undefined" && window.__PULSE_DEMO_MODE) ? 280 : 0;
+  // Pace each reveal with a small delay so the splash actually SHOWS each
+  // section being checked instead of flashing past. Real boxes need this as
+  // much as demo: sections settle in bunches (everything but the slow
+  // aggregates lands within a few seconds), and with no gap the in-order
+  // reveal ticks a bunch in one frame. Demo gets a longer gap (~280ms — its
+  // ~3s total mirrors the field UX); real boxes a short one, since theirs
+  // only spaces out bunched ticks on top of genuine load time.
+  // window.__PULSE_DEMO_MODE is injected into the HTML at render time so we
+  // know synchronously — relying on the /api/version response races with
+  // the first reveal and (in practice) loses.
+  const REAL_TICK_DELAY_MS = 150;
+  let _tickDelayMs = (typeof window !== "undefined" && window.__PULSE_DEMO_MODE) ? 280 : REAL_TICK_DELAY_MS;
 
   // Sections are fetched in parallel below (fast — the server caps the real
   // work with a 4-slot PowerShell semaphore), so they SETTLE in arbitrary
-  // order. The checklist, though, reveals strictly in PAGE_API order so it
-  // reads as steady top-to-bottom progress instead of checks popping in at
-  // random. We decouple "data arrived" (markReady) from "shown checked" (the
-  // reveal loop): each step is ticked off only once it AND every step before
-  // it has landed — a deterministic boot sequence without serializing (and
-  // thus slowing) the actual fetches.
-  const order = _splashSectionKeys();   // dashboard, system, network, … (boot order)
+  // order. The checklist, though, reveals strictly in SPLASH_REVEAL_ORDER
+  // (cheap sections first, network/dashboard last — roughly settle order)
+  // so it reads as steady top-to-bottom progress instead of checks popping
+  // in at random. We decouple "data arrived" (markReady) from "shown
+  // checked" (the reveal loop): each step is ticked off only once it AND
+  // every step before it has landed — a deterministic boot sequence without
+  // serializing (and thus slowing) the actual fetches.
+  const order = _splashSectionKeys();   // settings, system, … network, dashboard
   const total = order.length;
   const _resolveReady = {};
   const _ready = {};
@@ -624,7 +650,7 @@ function preloadProgressive(opts) {
     for (let i = 0; i < order.length; i++) {
       const key = order[i];
       await _ready[key];
-      if (_demoTickDelayMs > 0) await new Promise((r) => setTimeout(r, _demoTickDelayMs));
+      if (_tickDelayMs > 0) await new Promise((r) => setTimeout(r, _tickDelayMs));
       _markSplashSectionDone(key);
       _setSplashCount(i + 1, total);
       _setSplashPct(((i + 1) / total) * 100);
@@ -649,7 +675,7 @@ function preloadProgressive(opts) {
       if (currentPage === "about") renderPage("about");
     }
     // Engage the demo pacing for THIS preload (~2.5s total across 9 ticks).
-    if (data?.demoMode) _demoTickDelayMs = 280;
+    if (data?.demoMode) _tickDelayMs = 280;
   });
   const logsPromise = api("/api/logs").then((logData) => {
     if (logData && !logData.error) {
@@ -680,7 +706,7 @@ function preloadProgressive(opts) {
   );
 
   // allSettled so one failing endpoint can't trap the splash. Also wait on
-  // the reveal so the splash stays up until the (demo-paced) checklist has
+  // the reveal so the splash stays up until the paced checklist has
   // actually FINISHED ticking through — not just when the fetches return.
   return Promise.allSettled([
     dashboardPromise, versionPromise, logsPromise, ...deferredPromises,
@@ -2845,6 +2871,45 @@ function _isRedundantStreamBlock(p, health) {
 }
 function _netDomainImpact(d) { return (d && NET_DOMAIN_IMPACT[d.domain]) || ""; }
 
+// Styled "impact if blocked" tooltip bubble (replaces native title= tooltips,
+// which are delayed, unstyled, and never show on keyboard focus or touch).
+// The bubble is a real element inside the trigger; CSS shows it on
+// :hover/:focus-within. The header line frames the impact sentence as a
+// hypothetical — without it, "X is unavailable" on a passing row reads like
+// a live failure.
+function _impactTipHtml(impact) {
+  return `<span class="net-tip-bubble" role="tooltip">` +
+    `<span class="net-tip-title">If blocked on the school's network</span>` +
+    `${esc(impact)}</span>`;
+}
+
+// Impact per TLS-checked domain — what breaks when a firewall intercepts it.
+// Keep the domains in sync with Test-TlsInspection.ps1.
+const TLS_DOMAIN_IMPACT = {
+  "singular.live": "On-screen graphics and scorebug overlays fail to load.",
+  "app.singular.live": "On-screen graphics and scorebug overlays fail to load.",
+  "api.singular.live": "On-screen graphics and scorebug overlays fail to load.",
+  "datastream.singular.live": "The realtime data feed that drives graphics can't connect — overlays stay blank even though video streams.",
+  "service.singular.live": "On-screen graphics and scorebug overlays fail to load.",
+  "pixellot.tv": "System management and software updates are blocked.",
+  "software.pixellot.tv": "Software and firmware updates are blocked.",
+  "nfhsnetwork.com": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
+  "s3.amazonaws.com": "Recordings can't upload and software/asset downloads fail.",
+  "secure.logmein.com": "The support team can't diagnose the VPU remotely.",
+  "www.python.org": "The Pulse installer can't download Python on this network.",
+};
+
+function _tlsBadge(status) {
+  switch ((status || "").toLowerCase()) {
+    case "pass":           return badge("Pass", "pass");
+    case "intercepted":    return badge("Intercepted", "fail");
+    case "handshake-fail": return badge("Handshake failed", "warn");
+    case "cert-time":      return badge("Cert dates invalid", "warn");
+    case "blocked":        return badge("Unreachable", "fail");
+    default:               return badge(status || "Unknown", "muted");
+  }
+}
+
 // Port Connectivity as a single status list (Required → Optional), one row
 // per service. Replaces the old TCP|UDP card grid: uniform rows, service-led,
 // protocol/port as metadata, a status pill, and a one-glance section summary.
@@ -2939,12 +3004,16 @@ function _renderPortConnectivity(ports) {
   // A port shared by several required services (TCP/443) shows an N/M count.
   function card(group) {
     var items = group.items, p0 = items[0], st = rollup(items), pp = portParts(items);
-    // Hover only (not shown on the tile): single-service ports surface their
-    // impact; a shared port points to the domain column instead of listing hosts.
-    var tip = items.length > 1
-      ? "Required services share this port — see Service Reachability for the hosts."
+    // Impact-if-blocked bubble on hover/focus/tap: single-service ports surface
+    // their impact; a shared port points to the domain column instead of
+    // listing hosts. A blocked required port also gets an always-visible
+    // issues-panel finding with the same impact text, so the tile stays lean.
+    var impact = items.length > 1
+      ? "Several required services share this port — see Service Reachability for what each one does."
       : (NET_PORT_IMPACT[p0.purpose] || "");
-    return '<div class="net-port-card' + st.stateCls + '" style="--rowaccent:' + st.accent + '" title="' + esc(tip) + '">' +
+    var tip = impact ? _impactTipHtml(impact) : "";
+    var aria = impact ? ' aria-label="If blocked on the school\'s network: ' + esc(impact) + '"' : "";
+    return '<div class="net-port-card net-tip' + st.stateCls + '" style="--rowaccent:' + st.accent + '" tabindex="0"' + aria + '>' + tip +
       '<div class="net-port-card-head">' +
         '<span class="net-port-num">' + esc(pp.num) + '</span>' +
         '<span class="net-port-pill net-port-pill-' + st.pillCls + '">' + esc(st.pillTxt) + '</span>' +
@@ -3001,7 +3070,7 @@ function _netIssueRank(severity) {
   }
 }
 
-function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
+function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
   var issues = [];
   var gw = (local || {}).gateway;
   var dns = (local || {}).dns;
@@ -3153,6 +3222,79 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi) {
     // Sort and return early — no point checking ports/domains
     issues.sort(function(a, b) { return _netIssueRank(a.severity) - _netIssueRank(b.severity); });
     return issues;
+  }
+
+  // ── SSL inspection (certificate substitution) ────────────
+  // Test-TlsInspection completes a real TLS handshake to each critical HTTPS
+  // service while accepting ANY certificate, then validates what was actually
+  // presented against the VPU's trust store. "intercepted" = a middlebox
+  // (school firewall doing SSL deep-packet inspection) substituted its own
+  // cert. Field signature (Kent School District, 2026-07): video streams
+  // fine, Singular graphics never load, and every plain port test is green —
+  // which is why this ranks first among the criticals: it explains failures
+  // the other checks can't see.
+  var tlsRows = (tls && !tls.error && tls.results) || [];
+  var tlsIntercepted = tlsRows.filter(function(r) { return r.status === "intercepted"; });
+  var tlsHsFail = tlsRows.filter(function(r) { return r.status === "handshake-fail"; });
+  var tlsCertTime = tlsRows.filter(function(r) { return r.status === "cert-time"; });
+  var tlsBlocked = tlsRows.filter(function(r) { return r.status === "blocked"; });
+  if (tlsIntercepted.length) {
+    var interceptorNames = ((tls && tls.interceptorIssuers) || []).join(", ");
+    issues.push({
+      severity: "critical",
+      title: "The venue firewall is intercepting secure connections (SSL inspection)",
+      body: "The venue's network is decrypting the VPU's secure traffic and substituting its own certificate"
+        + (interceptorNames ? ' — the intercepting device identifies itself as "' + interceptorNames + '"' : "")
+        + ". The VPU rejects the substituted certificate, so the services below can't connect — typically "
+        + "on-screen graphics fail while video keeps streaming. Ask the venue's IT team to add these domains "
+        + "to the firewall's SSL decryption bypass/exemption list, using a wildcard that covers every "
+        + "subdomain plus the bare domain (e.g. *.singular.live AND singular.live). A URL allowlist alone "
+        + "is not enough — the traffic must be exempt from decryption.",
+      details: tlsIntercepted.map(function(r) {
+        var impact = TLS_DOMAIN_IMPACT[r.domain] || "";
+        return r.domain + ' — certificate issued by "' + (r.issuerCn || r.issuer || "an untrusted authority")
+          + '" instead of a public certificate authority' + (impact ? " — " + impact : "");
+      }).concat(tlsHsFail.map(function(r) {
+        return r.domain + " — the secure handshake was refused (consistent with the same inspection)";
+      })),
+    });
+  } else if (tlsHsFail.length) {
+    // Handshake failures with no confirmed substitution — can be inspection
+    // that kills the handshake outright, aggressive filtering, or a protocol
+    // problem. Worth a look, but without a captured cert it isn't proof.
+    issues.push({
+      severity: "warning",
+      title: tlsHsFail.length + " secure service" + (tlsHsFail.length === 1 ? "" : "s") + " failed the TLS handshake — possible SSL inspection",
+      body: "The connection reached the server, but the secure handshake was refused. This often means the venue firewall is inspecting or filtering HTTPS. If graphics or uploads are failing while video works, ask the venue's IT team whether SSL decryption applies to these domains and to exempt them.",
+      details: tlsHsFail.map(function(r) {
+        var impact = TLS_DOMAIN_IMPACT[r.domain] || "";
+        return r.domain + (r.detail ? " — " + r.detail : "") + (impact ? " — " + impact : "");
+      }),
+    });
+  }
+  if (tlsCertTime.length) {
+    // Date-only chain failures are a clock/expiry problem, NOT interception —
+    // a wrong VPU clock fails every certificate's validity window.
+    issues.push({
+      severity: "warning",
+      title: tlsCertTime.length + " secure service" + (tlsCertTime.length === 1 ? "" : "s") + " presented a certificate with invalid dates",
+      body: "Certificate validity dates don't match this VPU's clock. Check the Time Sync section — a wrong system clock makes every secure connection fail. If the clock is right, the service's certificate has expired.",
+      details: tlsCertTime.map(function(r) { return r.domain + " — valid until " + (r.notAfter || "unknown"); }),
+    });
+  }
+  if (tlsBlocked.length) {
+    // Unreachable during the cert check — reachability criticals belong to the
+    // port/domain panels; this warning exists because several of these hosts
+    // (datastream/api/app.singular.live) appear ONLY in this check.
+    issues.push({
+      severity: "warning",
+      title: tlsBlocked.length + " secure service" + (tlsBlocked.length === 1 ? "" : "s") + " couldn't be reached for the certificate check",
+      body: "These services didn't answer on port 443, so their certificates couldn't be verified. If they stay unreachable, ask the venue's IT team to allow them through the firewall.",
+      details: tlsBlocked.map(function(r) {
+        var impact = TLS_DOMAIN_IMPACT[r.domain] || "";
+        return r.domain + (impact ? " — " + impact : "");
+      }),
+    });
   }
 
   // ── Ports: required failures ─────────────────────────────
@@ -3699,9 +3841,10 @@ function renderNetwork() {
   const ntpPeers = (data.ntpPeers && !data.ntpPeers.error) ? data.ntpPeers : null;
   const dnsResolution = (data.dnsResolution && !data.dnsResolution.error) ? data.dnsResolution : null;
   const wifi = (data.wifi && !data.wifi.error) ? data.wifi : null;
+  const tls = (data.tls && !data.tls.error) ? data.tls : null;
   const ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
 
-  const issues = _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi);
+  const issues = _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls);
 
   const hasCrit = issues.some(function(f) { return f.severity === "critical"; });
   const hasWarn = issues.some(function(f) { return f.severity === "warning"; });
@@ -3804,10 +3947,12 @@ function renderNetwork() {
       <div class="net-conn-grid">
         <div class="net-conn-col">
           ${sectionTitle("link", "Port Connectivity")}
+          <p class="net-conn-hint">Hover or tap a tile to see what stops working if the school's network blocks that port.</p>
           ${_renderPortConnectivity(ports)}
         </div>
         <div class="net-conn-col">
           ${sectionTitle("wifi", "Service Reachability")}
+          <p class="net-conn-hint">Hover or tap a <span class="domain-help net-conn-hint-q">?</span> to see what stops working if the school's network blocks that service.</p>
           ${domains.length ? `
             <div class="domain-list">
               ${domains.map(function(d) {
@@ -3815,12 +3960,17 @@ function renderNetwork() {
                 var dnsTime = d.resolutionMs != null ? d.resolutionMs + " ms" : "";
                 var dnsSlow = d.resolutionMs != null && d.resolutionMs > 200;
                 var dotColor = ok ? "var(--c-accent-green)" : "var(--c-accent-red)";
-                // "Impact if blocked" now lives on an explicit ? help icon next
-                // to the domain (focusable, clearly hoverable) instead of a
-                // hidden hover-anywhere title on the whole row.
+                // "Impact if blocked" lives on an explicit ? help icon next to
+                // the domain: a styled bubble on hover/focus/tap while the row
+                // passes. Once the row FAILS, hover is the wrong delivery —
+                // techs screenshot this panel for the school's IT — so the
+                // impact renders inline under the failing row instead.
                 var impact = _netDomainImpact(d);
-                var help = impact
-                  ? `<span class="domain-help" tabindex="0" title="${esc(impact)}" aria-label="Impact if blocked: ${esc(impact)}">?</span>`
+                var help = impact && ok
+                  ? `<span class="domain-help net-tip" tabindex="0" aria-label="If blocked on the school's network: ${esc(impact)}">?${_impactTipHtml(impact)}</span>`
+                  : "";
+                var impactLine = impact && !ok
+                  ? `<div class="domain-impact">${svgIcon("triangle", 11)} While this is blocked: ${esc(impact)}</div>`
                   : "";
                 return `<div class="domain-row">
                   <span class="domain-dot" style="background:${dotColor}"></span>
@@ -3828,6 +3978,7 @@ function renderNetwork() {
                   <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
                   <span class="domain-dns-time font-mono${dnsSlow ? ' status-warn' : ''}">${esc(dnsTime)}</span>
                   ${statusBadge(d.status)}
+                  ${impactLine}
                 </div>`;
               }).join("")}
             </div>
@@ -3973,12 +4124,38 @@ function renderNetwork() {
       <div class="net-adv-toggle-inner">
         <span class="net-adv-toggle-icon" id="net-adv-arrow">${svgIcon("chevron", 14)}</span>
         <span class="net-adv-toggle-label">Advanced Diagnostics</span>
-        <span class="text-xs text-pulse-muted">Time sync, name-lookup checks, traffic capture, route tracing, and live monitoring</span>
+        <span class="text-xs text-pulse-muted">Secure-connection checks, time sync, name-lookup checks, traffic capture, route tracing, and live monitoring</span>
       </div>
     </div>
 
     <!-- Advanced Diagnostics (collapsed by default) -->
     <div id="net-adv-section" class="net-adv-section net-adv-collapsed">
+
+      <!-- Secure Connections — SSL-inspection check. A cert issued by anything
+           other than a trusted public CA means the firewall is decrypting the
+           connection (video streams, graphics die — the Kent SD signature). -->
+      <div class="card">
+        ${sectionTitle("shield", "Secure Connections (SSL Inspection Check)")}
+        <p class="text-pulse-muted text-xs mb-3">Who really signed each service's HTTPS certificate. "Intercepted" means the venue firewall is decrypting the connection and substituting its own certificate — those services can't connect even though port tests pass. Fix: the venue IT team must exempt the domain from SSL decryption (bypass list), not just allowlist the URL.</p>
+        ${(tls && tls.results && tls.results.length) ? `
+          <table class="data-table"><thead><tr>
+            <th>Service</th><th>Certificate issued by</th><th>Status</th>
+          </tr></thead><tbody>
+          ${tls.results.map(function(r) {
+            var st = (r.status || "").toLowerCase();
+            var bad = st === "intercepted" || st === "blocked";
+            var issuerLabel = r.issuerCn
+              ? r.issuerCn + (r.issuerOrg && r.issuerOrg !== r.issuerCn ? " — " + r.issuerOrg : "")
+              : (st === "pass" ? "—" : (r.detail || "—"));
+            return `<tr>
+              <td><div class="font-semibold">${esc(r.domain)}</div><div class="text-xs text-pulse-muted">${esc(r.purpose || "")}</div></td>
+              <td class="text-xs${bad ? " status-fail" : ""}" title="${esc(r.issuer || "")}">${esc(issuerLabel)}</td>
+              <td>${_tlsBadge(r.status)}</td>
+            </tr>`;
+          }).join("")}
+          </tbody></table>
+        ` : '<p class="text-pulse-muted text-sm mt-2">No certificate results — run the network test again.</p>'}
+      </div>
 
       ${_netTimeSyncCard(cfg, ntp, ntpPeers)}
 
@@ -5056,9 +5233,16 @@ function renderServices() {
     btn.innerHTML = `${svgIcon("zap", 14)} Restart Agent + Coordinator`;
 
     const ok2 = r && r.success;
-    resultEl.className = "svc-quick-action-result " + (ok2 ? "svc-result-ok" : "svc-result-err");
+    // keepagentup exits 0 without doing anything when its resident watchdog
+    // instance is already running — that's "nothing happened", not success.
+    const resident = r && r.watchdogResident;
+    resultEl.className = "svc-quick-action-result " +
+      (ok2 ? "svc-result-ok" : resident ? "svc-result-warn" : "svc-result-err");
+    const heading = ok2 ? svgIcon("check", 14) + " Success"
+      : resident ? svgIcon("alert", 14) + " Not restarted — watchdog already running"
+      : svgIcon("alert", 14) + " Failed";
     resultEl.innerHTML = `
-      <div class="font-semibold">${ok2 ? svgIcon("check", 14) + " Success" : svgIcon("alert", 14) + " Failed"}</div>
+      <div class="font-semibold">${heading}</div>
       <div class="text-sm mt-1">${esc(r?.message || "(no message)")}</div>
       ${r?.agentStatus ? `<div class="text-xs mt-2 text-pulse-muted">Agent: <span class="font-mono">${esc(r.agentStatus)}</span> &middot; Coordinator: <span class="font-mono">${esc(r.coordinatorStatus || "?")}</span></div>` : ""}
       ${r?.stdout ? `<pre class="svc-result-output">${esc(r.stdout)}</pre>` : ""}
@@ -5759,8 +5943,6 @@ function renderHelp() {
       <ul class="help-list">
         <li>Use <strong>Exports</strong> to generate a downloadable report to attach to a ticket — it re-runs
         every check and bundles the results into one file.</li>
-        <li><strong>Share over LAN</strong> sends a report to another Pulse on the same network when you can't get the file off
-        the VPU directly.</li>
         <li><strong>Pulse Logs</strong> shows Pulse's own script and server logs if Pulse itself is misbehaving.</li>
       </ul>
     </div>
@@ -5776,11 +5958,7 @@ function renderReports() {
   // describing it so action sits with its explanation, and drop the
   // redundant Run All Diagnostics button.
   $page().innerHTML = `
-    ${pageHeader("Exports", "Diagnostic-run snapshots — generate and download full system reports",
-      `<button class="btn-outline btn-ol-blue" onclick="navigate('share')" title="Hand off a generated report to another Pulse on the same network">
-        ${svgIcon("send", 14)} Send to another Pulse
-      </button>`
-    )}
+    ${pageHeader("Exports", "Diagnostic-run snapshots — generate and download full system reports")}
 
     <div class="card">
       ${sectionTitle("file", "Full Diagnostic Export")}
@@ -7765,12 +7943,19 @@ function renderAudio() {
   if (data.error) { $page().innerHTML = errorBox(data.message || "Couldn't detect audio devices"); return; }
 
   const devices = data.devices || [];
-  const inputs = devices.filter(d => d.dataFlow === "Input");
-  const outputs = devices.filter(d => d.dataFlow === "Output");
+  // Windows keeps an endpoint entry for every audio device it has EVER seen;
+  // on a long-lived VPU those NotPresent ghosts outnumber real devices ~10:1
+  // (81 of 91 on the bench VPU). Drop them entirely — a tech can't touch them.
+  const present = devices.filter(d => d.state !== "NotPresent");
+  const presentInputs = present.filter(d => d.dataFlow === "Input");
+  const presentOutputs = present.filter(d => d.dataFlow === "Output");
+  // Main sections show only Active devices; Unplugged/Disabled ones are real
+  // hardware but not usable right now, so they share one disclosure below.
+  const inputs = presentInputs.filter(d => d.state === "Active");
+  const outputs = presentOutputs.filter(d => d.state === "Active");
+  const inactive = [...presentInputs, ...presentOutputs].filter(d => d.state !== "Active");
   // WMI fallback returns dataFlow="Unknown" — surface these so they're not invisible
-  const others = devices.filter(d => d.dataFlow !== "Input" && d.dataFlow !== "Output");
-  const activeInputs = inputs.filter(d => d.state === "Active");
-  const activeOutputs = outputs.filter(d => d.state === "Active");
+  const others = present.filter(d => d.dataFlow !== "Input" && d.dataFlow !== "Output");
 
   // Page-level indicator: is anything making sound?
   const anySignal = devices.some(d => d.peak != null && d.peak > AUDIO_SIGNAL_THRESHOLD);
@@ -7794,8 +7979,8 @@ function renderAudio() {
     </div>` : ""}
 
     <div class="audio-summary">
-      ${_audioSummaryCard("Input Devices", activeInputs.length, inputs.length, "mic")}
-      ${_audioSummaryCard("Output Devices", activeOutputs.length, outputs.length, "volume")}
+      ${_audioSummaryCard("Input Devices", inputs.length, presentInputs.length, "mic")}
+      ${_audioSummaryCard("Output Devices", outputs.length, presentOutputs.length, "volume")}
       <div class="card audio-signal-card">
         <div class="audio-signal-dot ${anySignal ? "audio-signal-active" : "audio-signal-silent"}"></div>
         <div>
@@ -7809,14 +7994,14 @@ function renderAudio() {
       ${sectionTitle("mic", "Input Devices")}
       ${inputs.length
         ? inputs.map(d => _audioDeviceRow(d)).join("")
-        : '<p class="text-sm text-pulse-muted">No input devices detected</p>'}
+        : '<p class="text-sm text-pulse-muted">No active input devices</p>'}
     </div>
 
     <div class="card mt-4">
       ${sectionTitle("volume", "Output Devices")}
       ${outputs.length
         ? outputs.map(d => _audioDeviceRow(d)).join("")
-        : '<p class="text-sm text-pulse-muted">No output devices detected</p>'}
+        : '<p class="text-sm text-pulse-muted">No active output devices</p>'}
     </div>
 
     ${others.length ? `<div class="card mt-4">
@@ -7824,6 +8009,12 @@ function renderAudio() {
       <p class="text-xs text-pulse-muted mb-2">Devices Windows reports without an input or output direction.</p>
       ${others.map(d => _audioDeviceRow(d)).join("")}
     </div>` : ""}
+
+    ${inactive.length ? `<details class="card mt-4 audio-inactive">
+      <summary class="audio-inactive-summary">${inactive.length} inactive device${inactive.length === 1 ? "" : "s"} (unplugged or disabled)</summary>
+      <p class="text-xs text-pulse-muted mt-2 mb-2">Connected hardware that isn't usable right now — a jack with nothing plugged in, or a device disabled in Windows.</p>
+      ${inactive.map(d => _audioDeviceRow(d)).join("")}
+    </details>` : ""}
   `;
 
   // Wire up volume sliders with success/error feedback
@@ -7960,11 +8151,15 @@ function _audioDeviceRow(d) {
   // status indicator in the app (Services, Disk Health, etc.) instead of
   // appearing as bare colored text.
   const badgeKind = isActive ? "pass" : d.state === "Disabled" ? "warn" : "fail";
+  // Windows default recording/playback device — what most capture software
+  // (including Pixellot's pipeline) records from unless configured otherwise.
+  const isDefault = d.dataFlow === "Input" ? d.isDefaultCapture : d.isDefaultRender;
 
   return `<div class="audio-device${isActive ? "" : " audio-device-inactive"}">
     <div class="audio-device-header">
       <div class="audio-device-name">${esc(d.name || "Unknown Device")}</div>
       <div class="audio-device-badges">
+        ${isDefault ? '<span class="audio-port-badge">Default</span>' : ""}
         ${_audioFormFactorBadge(d.formFactor)}
         ${badge(d.state, badgeKind)}
       </div>
@@ -7988,7 +8183,7 @@ function _audioDeviceRow(d) {
       </div>
     ` : (d.formFactor && d.formFactor !== "Unknown" ? `
       <div class="audio-device-controls">
-        <p class="text-xs text-pulse-muted">${esc(_audioFormFactorLabel(d.formFactor))} device — controls unavailable while ${esc(d.state.toLowerCase())}.</p>
+        <p class="text-xs text-pulse-muted">${esc(_audioFormFactorLabel(d.formFactor))} device — controls unavailable while ${d.state === "NotPresent" ? "not connected" : esc(d.state.toLowerCase())}.</p>
       </div>
     ` : "")}
   </div>`;

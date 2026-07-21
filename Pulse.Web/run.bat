@@ -39,11 +39,13 @@ if defined HAS_CURL (
 )
 if not exist "%PYDIR%\%PYZIP%" (
     echo  [ERROR] Python download failed - check the internet connection.
+    call :tlscheck "www.python.org"
     goto :fatal
 )
 for %%A in ("%PYDIR%\%PYZIP%") do if %%~zA LSS 5000 (
     echo  [ERROR] Python download was incomplete ^(%%~zA bytes^).
     del "%PYDIR%\%PYZIP%"
+    call :tlscheck "www.python.org"
     goto :fatal
 )
 
@@ -78,6 +80,7 @@ if defined HAS_CURL (
 )
 if not exist "%PYDIR%\get-pip.py" (
     echo  [ERROR] Failed to download get-pip.py
+    call :tlscheck "bootstrap.pypa.io"
     goto :fatal
 )
 "%PYEXE%" "%PYDIR%\get-pip.py" --no-warn-script-location --quiet
@@ -94,12 +97,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$f = Get-ChildItem '%PYD
 
 :: -- Step 2/5  Dependencies -----------------------------------
 echo  [2/5] Dependencies ............. checking
+:: Best-effort pip self-update so installed runtimes pick up pip security
+:: patches after bootstrap. Failures are ignored and the timeout is short --
+:: an offline VPU must still launch on its current pip.
+"%PYEXE%" -m pip install --upgrade pip --quiet --no-warn-script-location --timeout 5 --retries 1 >nul 2>&1
 "%PYEXE%" -m pip install -r app\requirements.txt --quiet --no-warn-script-location
 if errorlevel 1 (
     echo        first attempt failed - retrying with detail...
     "%PYEXE%" -m pip install -r app\requirements.txt --no-warn-script-location
     if errorlevel 1 (
         echo  [ERROR] Dependencies could not be installed.
+        call :tlscheck "pypi.org,files.pythonhosted.org"
         goto :fatal
     )
 )
@@ -151,6 +159,17 @@ echo  ========================================================
 :: The server keeps running hidden; the caller closes this window.
 ping -n 3 127.0.0.1 >nul
 endlocal
+exit /b 0
+
+:: -- SSL-interception diagnosis on download failure -----------
+:: A failed bootstrap download on a school network is often not connectivity
+:: but a firewall doing SSL inspection substituting certificates (the
+:: SEC_E_UNTRUSTED_ROOT the Kent School District install died on). Probe the
+:: host that just failed; if its cert doesn't chain to a trusted root, the
+:: helper prints a plain-English explanation + fix for the venue's IT team.
+:: Silent no-op when the network is fine or the helper is missing.
+:tlscheck
+if exist "%~dp0scripts\Test-InstallTls.ps1" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Test-InstallTls.ps1" -TargetHosts "%~1"
 exit /b 0
 
 :: -- Error handler --------------------------------------------

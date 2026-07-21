@@ -1183,7 +1183,7 @@ def _wifi_disabled_finding(network_config):
     }
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, probe_results=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, probe_results=None, tls_inspection=None) -> list:
     findings = []
 
     # ── Wi-Fi uplink detection (Canopy adoption) ─────────────
@@ -1506,28 +1506,6 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 }
             )
 
-        disk = performance.get("disk", {}).get("usedPercent")
-        if disk is not None and disk > 90:
-            findings.append(
-                {
-                    "code": "disk-critical",
-                    "severity": "critical",
-                    "category": "Storage",
-                    "title": "Disk almost full",
-                    "recommendation": f"Free up space now — disk at {disk}%.",
-                }
-            )
-        elif disk is not None and disk > 80:
-            findings.append(
-                {
-                    "code": "disk-low",
-                    "severity": "warning",
-                    "category": "Storage",
-                    "title": "Disk space low",
-                    "recommendation": f"Plan a cleanup soon — disk at {disk}%.",
-                }
-            )
-
         temp = performance.get("temperature", {}).get("celsius")
         if temp is not None and temp > 85:
             findings.append(
@@ -1537,6 +1515,61 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "category": "Hardware",
                     "title": "VPU running hot",
                     "recommendation": f"Check cooling — temperature at {temp}°C.",
+                }
+            )
+
+    # Disk space — one finding per offending VOLUME, from disk-health's
+    # logicalDisks. `performance.disk.usedPercent` sums ALL fixed drives, so on
+    # the typical fleet box (small C: for OS + stream processing, large D: for
+    # VOD storage) a critically full C: averages out against a near-empty D:
+    # and the alert never fired (PULSEDEV-49). The aggregate remains only as a
+    # fallback for when disk-health didn't run.
+    volumes = []
+    if disk_health and not disk_health.get("error"):
+        for d in (disk_health.get("logicalDisks") or []):
+            letter = str(d.get("deviceID") or "").rstrip(":").upper()
+            pct = d.get("usedPercent")
+            if letter and isinstance(pct, (int, float)):
+                volumes.append((letter, pct))
+    if not volumes and performance and not performance.get("error"):
+        agg = (performance.get("disk") or {}).get("usedPercent")
+        if isinstance(agg, (int, float)):
+            volumes = [("all drives combined", agg)]
+    drive_roles = {
+        "C": ("system drive", "The live stream is processed on C:, so a full "
+                              "system drive can stop capture."),
+        "D": ("recordings drive", "New event recordings (VODs) can't be stored "
+                                  "once it fills — clear old VODs."),
+    }
+    for letter, pct in volumes:
+        role, consequence = drive_roles.get(letter, (None, None))
+        label = f"{letter}: ({role})" if role else (
+            letter if len(letter) > 1 else f"{letter}:")
+        name = f"Drive {letter}:" if len(letter) == 1 else "Disk"
+        if pct > 90:
+            findings.append(
+                {
+                    "code": "disk-critical",
+                    "severity": "critical",
+                    "category": "Storage",
+                    "title": f"{name} almost full",
+                    "recommendation": " ".join(filter(None, [
+                        f"Free up space now — {label} is {pct:g}% full.",
+                        consequence,
+                    ])),
+                }
+            )
+        elif pct > 80:
+            findings.append(
+                {
+                    "code": "disk-low",
+                    "severity": "warning",
+                    "category": "Storage",
+                    "title": f"{name} space low",
+                    "recommendation": " ".join(filter(None, [
+                        f"Plan a cleanup soon — {label} is {pct:g}% full.",
+                        consequence,
+                    ])),
                 }
             )
 
@@ -1861,6 +1894,41 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 }
             )
 
+    # ── SSL inspection (certificate substitution) ──────────────
+    # Test-TlsInspection completes a real handshake to each Pixellot-critical
+    # HTTPS service and validates the certificate actually presented. An
+    # "intercepted" row means a middlebox (school firewall doing SSL
+    # deep-packet inspection) substituted its own cert — the field signature
+    # is video streaming fine while Singular graphics never load, because the
+    # graphics client rightly rejects the firewall's cert. Port tests can't
+    # see this (TCP/443 connects fine), so this is its own finding. Only the
+    # confirmed substitution goes to the dashboard; softer TLS signals
+    # (handshake failures, clock-related cert errors) stay on the Network tab.
+    if tls_inspection and not tls_inspection.get("error"):
+        tls_rows = tls_inspection.get("results") or []
+        intercepted = [r for r in tls_rows if r.get("status") == "intercepted"]
+        if intercepted:
+            interceptors = ", ".join(tls_inspection.get("interceptorIssuers") or [])
+            hosts = ", ".join(r.get("domain", "?") for r in intercepted)
+            findings.append(
+                {
+                    "code": "ssl-inspection",
+                    "severity": "critical",
+                    "category": "Network",
+                    "title": "The venue firewall is intercepting secure connections (SSL inspection)",
+                    "recommendation": (
+                        f"The network is decrypting the VPU's secure connections to: {hosts}. "
+                        + (f"The intercepting device identifies itself as {interceptors}. " if interceptors else "")
+                        + "The VPU rejects the substituted certificate, so those services can't "
+                        "connect — on-screen graphics typically fail while video keeps streaming. "
+                        "Ask the venue's IT team to add these domains to the firewall's SSL "
+                        "decryption bypass/exemption list (use a wildcard like *.singular.live "
+                        "plus the bare domain) — a URL allowlist alone is not enough. "
+                        "See the Network tab for the full certificate detail."
+                    ),
+                }
+            )
+
     # ── Missing / under-count main cameras ─────────────────────
     # Compare what the Coordinator says the VPU is configured for
     # (`expectedMainCameras`, from Get-CameraExpectations) against what's
@@ -1947,7 +2015,7 @@ _READINESS_POLICY = {
     "gpu-none":              "blocker",  # F5  no NVIDIA GPU — encoder can't run
     "gpu-igpu-only":         "blocker",  # F11 Intel iGPU only — wrong hardware
     "port-dns-blocked":      "blocker",  # F23a DNS down → name resolution fails
-    # F15a C: disk >90% is computed below from disk-health (not the aggregate
+    # F15a C: disk >90% is computed below from disk-health (not the
     # `disk-critical` finding — see _compute_readiness).
 
     # ── RISKS → WARN (will likely stream, but a human should eyeball) ──
@@ -1958,7 +2026,7 @@ _READINESS_POLICY = {
     "pixellot-over-cap":     "risk",     # F10 build newer than GPU/OS supports
     "gpu-anomaly":           "risk",     # F12 Volta / roster anomaly
     "install-incomplete":    "risk",     # F13 interrupted installer, agent up
-    "disk-low":              "risk",     # F16 (aggregate) disk 80–90%
+    "disk-low":              "risk",     # F16 a volume at 80–90%
     "disk-smart-prefail":    "risk",     # F16b drive SMART pre-fail / uncorrectable errors
     "ram-insufficient":      "risk",     # F21 <32 GB host
     "ntp-unapproved":        "risk",     # F22 drift can break signed-URL stream
@@ -1972,7 +2040,7 @@ _READINESS_POLICY = {
     "mem-elevated":          "info",     # F20 80–90% snapshot
     "cpu-critical":          "info",     # snapshot >90% — readiness uses the average (F17)
     "mem-critical":          "info",     # snapshot >90% — readiness uses the average (F19)
-    "disk-critical":         "info",     # all-volumes AGGREGATE >90% — readiness keys on C: (F15a)
+    "disk-critical":         "info",     # a volume >90% — readiness gates via its own F15a/b
     "disk-smart-wear":       "info",     # SSD ≥80% rated life — heads-up, won't stop tonight's game
     "temp-critical":         "info",     # 85°C snapshot — readiness gate is 90°C (F14)
     "tz-non-us":             "info",     # F25
@@ -2625,7 +2693,7 @@ def _compute_camera_findings(ports: list) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None, probe_results=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None, probe_results=None, tls_inspection=None):
     # Tag adapter roles (motherboard / camera / wifi) so both the findings and
     # the embedded "Network config" the dashboard ships carry them.
     _classify_network_adapters(network_config)
@@ -2687,7 +2755,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         if isinstance(data, dict) and data.get("error")
     ]
 
-    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health, probe_results=probe_results)
+    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health, probe_results=probe_results, tls_inspection=tls_inspection)
 
     return {
         "identity": flat_identity,
@@ -2700,7 +2768,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
     }
 
 
-def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None, wifi=None):
+def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None, wifi=None, tls=None):
     net = {}
     _classify_network_adapters(config)
     if config and not config.get("error"):
@@ -2726,7 +2794,7 @@ def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_
     # the frontend surface whichever subsection failed.
     return {"config": net, "domains": domains, "ports": ports, "ntp": ntp,
             "local": local, "ntpPeers": ntp_peers,
-            "dnsResolution": dns_resolution, "wifi": wifi}
+            "dnsResolution": dns_resolution, "wifi": wifi, "tls": tls}
 
 
 # ─── Routes ───────────────────────────────────────────────────
@@ -2785,6 +2853,7 @@ async def api_preload():
         install_state,
         gpu_info,
         wifi,
+        tls_inspection,
     ) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Hardware.ps1"),
@@ -2808,6 +2877,10 @@ async def api_preload():
         run_ps("Test-PixellotInstallState.ps1", timeout=15),
         run_ps("Get-GpuInfo.ps1", timeout=15),
         run_ps("Get-WifiAdapters.ps1", timeout=10),
+        # SSL-inspection check rides the preload so the Network tab (and its
+        # interception critical) is complete on first paint. Runs in parallel
+        # with everything else; healthy venues finish in ~5s.
+        run_ps("Test-TlsInspection.ps1", timeout=60),
     )
     # Audio is deferred — lazy-fetched on tab visit to keep preload lean.
 
@@ -2826,7 +2899,7 @@ async def api_preload():
             "hardware": hardware,
             "software": _enrich_software_with_concerns(installed_sw),
         },
-        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi),
+        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls_inspection),
         "cameras": {
             "ports": _enrich_ports(nics, pixellot_config, probe_results_pre),
             "pixellotConfig": pixellot_config,
@@ -2907,7 +2980,7 @@ async def _collect_dashboard() -> dict:
     launch check-in beacon so both score readiness with identical inputs."""
     (identity, performance, services, nics, net_config, hardware, installed_sw,
      install_state, port_tests, gpu_info, wifi, pixellot_config, expectations,
-     disk_health, perf_sample) = await asyncio.gather(
+     disk_health, perf_sample, tls_inspection) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
@@ -2932,6 +3005,10 @@ async def _collect_dashboard() -> dict:
         # a short CPU/mem sample so a one-instant spike can't move the verdict.
         run_ps("Get-DiskHealth.ps1", timeout=15),
         run_ps("Get-PerfSample.ps1", timeout=15),
+        # SSL-inspection check — feeds the "firewall is intercepting secure
+        # connections" critical. Port tests alone can't see this failure mode
+        # (TCP/443 connects fine while the substituted cert kills graphics).
+        run_ps("Test-TlsInspection.ps1", timeout=60),
     )
     # CGI probe (cached 30s; usually already warm from preload) so the
     # slow-port finding identifies the OCR by its actual camera model, not a
@@ -2945,7 +3022,7 @@ async def _collect_dashboard() -> dict:
         installed_sw, install_state, port_tests, gpu_info, wifi,
         pixellot_config=pixellot_config, expectations=expectations,
         disk_health=disk_health, perf_sample=perf_sample,
-        probe_results=probe_results,
+        probe_results=probe_results, tls_inspection=tls_inspection,
     )
 
 
@@ -3061,7 +3138,7 @@ async def api_network():
     """Network tab data: gathers adapter config, domain reachability, port
     checks, NTP drift + peers, the local-network probe, DNS resolution, and
     Wi-Fi adapters in parallel, then assembles them into the network panel."""
-    config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi = await asyncio.gather(
+    config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls = await asyncio.gather(
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Test-NetworkDomains.ps1", timeout=20),
         run_ps("Test-NetworkPorts.ps1", timeout=45),
@@ -3070,8 +3147,11 @@ async def api_network():
         run_ps("Get-NtpPeers.ps1", timeout=15),
         run_ps("Test-DnsResolution.ps1", timeout=30),
         run_ps("Get-WifiAdapters.ps1", timeout=10),
+        # 60s: eleven sequential handshakes; a fully-blackholed network costs
+        # ~4s per host in TCP timeouts alone. Healthy venues finish in ~5s.
+        run_ps("Test-TlsInspection.ps1", timeout=60),
     )
-    return _build_network(config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi)
+    return _build_network(config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls)
 
 
 @app.get("/api/network/local-ping")
@@ -3632,7 +3712,11 @@ async def api_pixellot_logs(hours: int = Query(default=24)):
 
 @app.get("/api/audio")
 async def api_audio():
-    return await run_ps("Get-AudioDevices.ps1")
+    # The Audio tab polls every 2s to animate live signal meters; the default
+    # 25s result cache would freeze them between refreshes. Demand near-fresh
+    # data (in-flight dedup still coalesces overlapping polls) — the collector
+    # is cheap now that the interop compiles once to a cached DLL.
+    return await run_ps("Get-AudioDevices.ps1", cache_ttl=1.5)
 
 
 @app.post("/api/audio/volume")
@@ -3651,7 +3735,10 @@ async def api_audio_volume(request: Request):
     if volume < 0 or volume > 100:
         return {"error": True, "message": "volume must be 0-100"}
 
-    return await run_ps("Set-AudioVolume.ps1", {"DeviceId": device_id, "Volume": volume})
+    # use_cache=False: an action, not a read — replaying a cached "success"
+    # for a repeated (device, volume) pair would silently skip the actual set
+    # (e.g. 78 -> 50 -> back to 78 within the 25s window).
+    return await run_ps("Set-AudioVolume.ps1", {"DeviceId": device_id, "Volume": volume}, use_cache=False)
 
 
 @app.get("/api/scoreconnect")
@@ -3899,6 +3986,10 @@ async def _resolve_latest_release(channel):
         import urllib.request
         import json as _json
         headers = {"Accept": "application/vnd.github+json", "User-Agent": "Pulse-Updater"}
+        # Track reachability separately from match: "the feed answered but has
+        # no release for this channel" is a publishing problem, not a network
+        # problem, and the UI must not tell a tech to go check the internet.
+        reachable = False
         for repo in (_UPDATE_PUBLIC_REPO, _UPDATE_SOURCE_REPO):
             try:
                 req = urllib.request.Request(
@@ -3908,6 +3999,7 @@ async def _resolve_latest_release(channel):
                     releases = _json.loads(resp.read().decode("utf-8"))
             except Exception:
                 continue
+            reachable = True
             for rel in releases:
                 if rel.get("draft"):
                     continue
@@ -3916,8 +4008,8 @@ async def _resolve_latest_release(channel):
                     continue
                 if rel.get("prerelease") and not accept_pre:
                     continue
-                return {"tag": tag, "url": rel.get("html_url"), "notes": rel.get("body") or ""}
-        return None
+                return {"tag": tag, "url": rel.get("html_url"), "notes": rel.get("body") or ""}, True
+        return None, reachable
 
     return await asyncio.to_thread(_fetch)
 
@@ -3935,12 +4027,20 @@ async def api_update_check():
                 "updateAvailable": False,
                 "note": "Pulse is running from source here — updates are managed with git, not this button.",
             }
-        latest = await _resolve_latest_release(channel)
+        latest, reachable = await _resolve_latest_release(channel)
         if not latest:
+            if reachable:
+                error = (f"The update server is reachable, but no {channel} release has "
+                         "been published yet, so there is nothing to compare against. "
+                         "This is a publishing issue on our side — not a problem with "
+                         "this VPU or its network.")
+            else:
+                error = ("Couldn't reach the update server. Check the VPU's internet "
+                         "connection and try again.")
             return {
                 "managed": True, "channel": channel, "current": current,
                 "updateAvailable": False,
-                "error": "Couldn't reach the update server. Check the VPU's internet connection and try again.",
+                "error": error,
             }
         return {
             "managed": True, "channel": channel, "current": current,
@@ -4096,6 +4196,10 @@ async def build_report() -> dict:
         ("ntpDrift",             run_ps("Test-NtpDrift.ps1", timeout=20)),
         ("ntpPeers",             run_ps("Get-NtpPeers.ps1", timeout=15)),
         ("dnsResolution",        run_ps("Test-DnsResolution.ps1", timeout=30)),
+        # SSL-inspection evidence (per-domain certificate issuers) — the report
+        # is what gets sent to a district's IT team, so the raw cert detail
+        # matters here even more than in the UI.
+        ("tlsInspection",        run_ps("Test-TlsInspection.ps1", timeout=60)),
     ]
 
     def _norm(r):
@@ -4131,6 +4235,7 @@ async def build_report() -> dict:
             sections.get("networkPorts"), sections.get("gpuInfo"), sections.get("wifi"),
             pixellot_config=pix_cfg, expectations=sections.get("cameraExpectations"),
             disk_health=sections.get("diskHealth"),
+            tls_inspection=sections.get("tlsInspection"),
         )
     except Exception as e:
         sections["findings"] = {"error": f"findings computation failed: {type(e).__name__}: {e}"}

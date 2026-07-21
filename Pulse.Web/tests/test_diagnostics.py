@@ -302,6 +302,81 @@ class TestComputeFindings(unittest.TestCase):
         self.assertTrue(any("running slow" in t for t in titles), titles)
 
 
+# ── Storage finding: per-volume, not the all-drives aggregate (PULSEDEV-49) ──
+class TestStorageFinding(unittest.TestCase):
+    """The disk-space alert must evaluate each volume separately. The perf
+    aggregate sums all fixed drives, so on the typical fleet box (small C: +
+    large D:) a critically full C: averaged out and the alert never fired."""
+
+    def _storage(self, disk_health=None, performance=None):
+        findings = main._compute_findings(
+            identity=_identity("5.2.0"), performance=performance or {},
+            services={}, nics={},
+            hardware={"gpus": [{"vendor": "NVIDIA", "isDedicated": True}]},
+            gpu_info=_gpu("Turing"), disk_health=disk_health,
+        )
+        return [f for f in findings if f.get("category") == "Storage"]
+
+    @staticmethod
+    def _dh(**vols):
+        return {"logicalDisks": [
+            {"deviceID": f"{letter}:", "usedPercent": pct}
+            for letter, pct in vols.items()
+        ]}
+
+    def test_full_c_not_masked_by_empty_d(self):
+        # The PULSEDEV-49 regression: C: 92% + near-empty D: gave an aggregate
+        # of ~24%, so the old aggregate check stayed silent.
+        found = self._storage(
+            disk_health=self._dh(C=92, D=24),
+            performance={"disk": {"usedPercent": 24}},
+        )
+        self.assertEqual(len(found), 1, found)
+        self.assertEqual(found[0]["severity"], "critical")
+        self.assertIn("C:", found[0]["title"])
+
+    def test_full_d_fires_with_vod_advice(self):
+        found = self._storage(disk_health=self._dh(C=40, D=91))
+        self.assertEqual(len(found), 1, found)
+        self.assertEqual(found[0]["severity"], "critical")
+        self.assertIn("D:", found[0]["title"])
+        self.assertIn("VOD", found[0]["recommendation"])
+
+    def test_warning_tier_between_80_and_90(self):
+        found = self._storage(disk_health=self._dh(C=84, D=20))
+        self.assertEqual(len(found), 1, found)
+        self.assertEqual(found[0]["severity"], "warning")
+
+    def test_both_volumes_flagged_independently(self):
+        found = self._storage(disk_health=self._dh(C=92, D=85))
+        self.assertEqual({f["severity"] for f in found}, {"critical", "warning"})
+        self.assertEqual(len(found), 2, found)
+
+    def test_healthy_volumes_stay_quiet(self):
+        self.assertEqual(self._storage(disk_health=self._dh(C=62, D=25)), [])
+
+    def test_aggregate_fallback_when_disk_health_missing(self):
+        found = self._storage(performance={"disk": {"usedPercent": 93}})
+        self.assertEqual(len(found), 1, found)
+        self.assertEqual(found[0]["severity"], "critical")
+
+    def test_aggregate_ignored_when_per_volume_data_exists(self):
+        # A bogus-high aggregate must not fire once real per-volume data is in.
+        found = self._storage(
+            disk_health=self._dh(C=50, D=30),
+            performance={"disk": {"usedPercent": 95}},
+        )
+        self.assertEqual(found, [])
+
+    def test_disk_health_error_falls_back_to_aggregate(self):
+        found = self._storage(
+            disk_health={"error": "collector failed"},
+            performance={"disk": {"usedPercent": 85}},
+        )
+        self.assertEqual(len(found), 1, found)
+        self.assertEqual(found[0]["severity"], "warning")
+
+
 # ── run_ps stdout JSON recovery (the resilience fix) ─────────
 class TestExtractJson(unittest.TestCase):
     def test_clean_json(self):
