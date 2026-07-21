@@ -1634,6 +1634,16 @@ html.dark .demo-banner {
     font-size: 0.62rem; font-weight: 600; color: var(--c-muted);
     text-transform: uppercase; letter-spacing: 0.08em;
 }
+/* Bottom row of a port tile: protocol tag on the left, the ? tooltip cue on
+   the right. The hover/tap target is the whole tile (.net-tip), so the ?
+   lights up with the rest of the tile via :hover/:focus-within on the card. */
+.net-port-card-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.net-port-card.net-tip:hover .net-port-help,
+.net-port-card.net-tip:focus-within .net-port-help {
+    color: var(--c-accent-blue); border-color: var(--c-accent-blue);
+}
 .net-port-pill {
     display: inline-block;
     font-size: 0.66rem; font-weight: 600;

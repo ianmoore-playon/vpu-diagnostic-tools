@@ -24,6 +24,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ### Changed
 - Network Test: the port tiles and service ? icons now show a clear "If blocked on the school's network" pop-up on hover, tap, or keyboard focus (the old tooltips were slow and easy to miss), each column explains what the pop-ups are for, and a failed service now shows what it breaks right on the row — so it's in the screenshot you send to school IT.
+- Network Test: port tiles now carry the same ? icon as the service rows, so it's obvious each tile has an impact pop-up.
+
+### Removed
+- Network Test no longer checks the retired leaf-uploads/leaf-downloads addresses (old Canopy buckets) — schools don't need to allow them anymore.
 - **Share over LAN is hidden for now.** The tab is removed from the sidebar while the feature is on hold — use Exports to download reports instead.
 
 ## [1.0.1] - 2026-07-20
