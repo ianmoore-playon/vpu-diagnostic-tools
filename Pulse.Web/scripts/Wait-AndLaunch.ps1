@@ -47,6 +47,19 @@ function Get-ChromePath {
     return $null
 }
 
+# True once any chrome.exe owns a visible top-level window. Running processes
+# alone are NOT proof a window appeared: Chrome's first launch after an update
+# or reboot can start its process tree, exit cleanly moments later, and never
+# surface a window (observed on VPU2 2026-07-23 - no crash dump, no event-log
+# trace). Only the browser process has a MainWindowHandle; child processes
+# (GPU, renderers) report 0.
+function Test-ChromeWindow {
+    foreach ($p in @(Get-Process -Name chrome -ErrorAction SilentlyContinue)) {
+        if ($p.MainWindowHandle -ne 0) { return $true }
+    }
+    return $false
+}
+
 # Open Pulse in Chrome. The first launch on a freshly transferred VPU hits a
 # COLD Chrome profile: Chrome's first-run path (profile creation + the
 # "welcome / set as default" interstitial) swallows the URL and never surfaces
@@ -55,6 +68,11 @@ function Get-ChromePath {
 # flags below skip that first-run friction and force the URL into a new window;
 # --no-first-run + --no-default-browser-check are exactly what a cold profile
 # needs to open straight to the page.
+#
+# Even with those flags, Chrome can still start and silently exit windowless
+# (first launch after a background Chrome update). A second launch reliably
+# works, so instead of making the tester do it, poll for a VISIBLE window and
+# relaunch ourselves until one appears (up to 3 attempts).
 function Open-Browser {
     if ($env:PULSE_NO_BROWSER) {
         # A self-update restart sets this: the page that triggered the update is
@@ -74,21 +92,24 @@ function Open-Browser {
     }
 
     $chromeArgs = @('--no-first-run', '--no-default-browser-check', '--new-window', $Url)
-    Write-LaunchLog "Launching Chrome: $chrome $($chromeArgs -join ' ')"
-    try { Start-Process -FilePath $chrome -ArgumentList $chromeArgs } catch { Write-LaunchLog "Chrome launch threw: $_" }
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        Write-LaunchLog "Launching Chrome (attempt $attempt): $chrome $($chromeArgs -join ' ')"
+        try { Start-Process -FilePath $chrome -ArgumentList $chromeArgs } catch { Write-LaunchLog "Chrome launch threw: $_" }
 
-    # Start-Process can't confirm a window actually appeared, and the cold
-    # first-run can drop the launch entirely. Give Chrome a moment, then if no
-    # chrome.exe is running at all, our launch produced nothing — retry once.
-    # (If Chrome was already open this check sees those processes and skips the
-    # retry, which is correct: --new-window into a warm instance is reliable.)
-    Start-Sleep -Seconds 3
-    if (-not (Get-Process -Name chrome -ErrorAction SilentlyContinue)) {
-        Write-LaunchLog "No chrome.exe after launch - retrying once"
-        try { Start-Process -FilePath $chrome -ArgumentList $chromeArgs } catch { Write-LaunchLog "Chrome retry threw: $_" }
-    } else {
-        Write-LaunchLog "Chrome is running"
+        # If Chrome was already open, Test-ChromeWindow passes on the first
+        # poll and we're done: --new-window into a warm instance is reliable.
+        $waited = 0
+        while ($waited -lt 12) {
+            Start-Sleep -Seconds 1
+            $waited += 1
+            if (Test-ChromeWindow) {
+                Write-LaunchLog "Chrome window visible after ~${waited}s (attempt $attempt)"
+                return
+            }
+        }
+        Write-LaunchLog "No visible Chrome window after ${waited}s (attempt $attempt)"
     }
+    Write-LaunchLog "Giving up: no Chrome window after 3 attempts - open $Url manually"
 }
 
 $elapsed = 0

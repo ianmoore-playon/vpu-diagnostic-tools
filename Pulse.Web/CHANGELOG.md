@@ -33,6 +33,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - Camera Connectivity: port cards now show link state as the same style of pill (LINKED / DEGRADED / NO LINK) used across the app, always in the top-right corner of the card; the camera role label (OCR / MAIN CAMERA) sits on its own line below the port number.
 
 ### Fixed
+- Launcher no longer needs a second run when Chrome starts but no window appears (typically the first Chrome start after it self-updated): Pulse now waits until a Chrome window is actually visible and relaunches Chrome itself if one doesn't show up.
 - Camera Connectivity heading no longer reads "1 finding need attention" when there is a single finding.
 - Network Test: the port tiles and service ? icons now show a clear "If blocked on the school's network" pop-up on hover, tap, or keyboard focus (the old tooltips were slow and easy to miss), each column explains what the pop-ups are for, and a failed service now shows what it breaks right on the row — so it's in the screenshot you send to school IT.
 - Network Test: port tiles now carry the same ? icon as the service rows, so it's obvious each tile has an impact pop-up.
