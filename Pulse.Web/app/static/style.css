@@ -2142,11 +2142,14 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
    slots stay dashed + half-opacity to clearly read as unused. */
 .cam-port-down { border-color: var(--c-dimmer); border-style: dashed; }
 .cam-port-empty { border-style: dashed; opacity: 0.5; }
-.cam-port-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cam-port-header { display: flex; align-items: center; gap: 6px; }
 .cam-port-num { font-size: 0.85rem; font-weight: 700; color: var(--c-text); }
 /* Link-state pill (shared .badge-*) hugs the tile's right edge, mirroring the
    Network tab's port tiles. */
 .cam-port-state { margin-left: auto; flex-shrink: 0; }
+/* Camera role badge (OCR / Main Camera N) — its own row under the header so a
+   long label can't wrap the state pill out of position. */
+.cam-port-role { display: flex; }
 .cam-port-name { font-size: 0.7rem; color: var(--c-muted); font-family: "SF Mono","Cascadia Mono","Fira Code",monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cam-port-status { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; }
 .cam-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }

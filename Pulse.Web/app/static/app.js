@@ -4402,21 +4402,15 @@ function _camPortTile(port, index, ctx) {
   if (p.isOcr) camLabelCls = "badge-ol-info";
   else if (camLabel && camLabel.indexOf("Main") === 0) camLabelCls = "badge-ol-main";
   else camLabelCls = "badge-ol-muted";
-  // ? impact cue right of the port number — same affordance as the Service
-  // Reachability rows: what a tech loses if this port goes down.
-  var impact = p.isOcr
-    ? "The scoreboard (OCR) camera feed is lost, so automatic score capture stops."
-    : (camLabel && camLabel.indexOf("Main") === 0)
-      ? "The " + camLabel + " feed is lost — that angle is missing from the broadcast."
-      : "Whatever camera is connected here can't reach the VPU.";
-  var help = '<span class="domain-help net-tip" tabindex="0" aria-label="If this port is down: ' + esc(impact) + '">?' + _impactTipHtml(impact, "If this port is down") + '</span>';
+  // Header carries only the port number + state pill, so the pill sits at the
+  // same top-right spot on every tile; the (variable-width) role badge gets
+  // its own row below and can never push the status onto a second line.
   return `<div class="cam-port-tile ${!p.isUp ? "cam-port-down" : p.isDegraded ? "cam-port-degraded" : "cam-port-active"}">
     <div class="cam-port-header">
       <span class="cam-port-num">Port ${index + 1}</span>
-      ${help}
-      ${camLabel ? '<span class="badge-ol ' + camLabelCls + '">' + esc(camLabel) + '</span>' : ''}
       <span class="cam-port-state">${badge(stateTxt, stateCls)}</span>
     </div>
+    ${camLabel ? '<div class="cam-port-role"><span class="badge-ol ' + camLabelCls + '">' + esc(camLabel) + '</span></div>' : ''}
     <div class="cam-port-name">${esc(p.name)}</div>
     ${speedRow}
     <div class="cam-port-detail">
