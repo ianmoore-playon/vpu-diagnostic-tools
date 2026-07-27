@@ -275,6 +275,7 @@ _DEFAULT_MAIN_IPS = {"169.254.16.50", "169.254.16.51"}
 # Prefix-matched, so e.g. "T2SF-B_PX00" matches the "T2SF-B" key.
 _CAMERA_MODELS = {
     "Z4SF-F": ("Main Camera", 1000),       # 4K main camera head
+    "Z4SF-5": ("Main Camera", 1000),       # 4K main head variant (VPU2 bench unit reports this)
     "T2SF-B": ("Main Camera", 1000),       # 4K Bullet Outdoor main head
     "R2SD-G": ("OCR / Scoreboard", 100),
     "S5SD-G": ("OCR / Scoreboard", 100),
@@ -3025,6 +3026,30 @@ async def _collect_dashboard() -> dict:
     ocr_ips, _ = _build_ocr_sets(pixellot_config)
     raw_ports = nics.get("ports", []) if nics and not nics.get("error") else []
     probe_results = await _probe_all_cameras(raw_ports, ocr_ips)
+
+    # CPU observer-effect guard. The snapshot and the 3s sample above both run
+    # INSIDE the collector fan-out — several concurrent powershell.exe startups
+    # push an otherwise-idle VPU to 85-93% (measured on VPU2, 2026-07-23), so a
+    # healthy box shows a phantom "CPU elevated" warning on every dashboard
+    # load. If either reading is in finding territory, take a fresh sustained
+    # sample now that the burst is over and let it replace both inputs: the
+    # findings/display CPU (performance.cpu.usagePercent) and the readiness
+    # sample. A genuinely hot box (e.g. vpu.exe encoding a live event) confirms
+    # high and still alerts; the only cost is ~4s extra when the first reading
+    # looked elevated.
+    cpu_snapshot = ((performance or {}).get("cpu") or {}).get("usagePercent")
+    cpu_sampled = (perf_sample or {}).get("cpuAvgPercent")
+    readings = [c for c in (cpu_snapshot, cpu_sampled) if isinstance(c, (int, float))]
+    if readings and max(readings) > 75:
+        confirm = await run_ps("Get-PerfSample.ps1", timeout=15, use_cache=False)
+        confirmed_cpu = (confirm or {}).get("cpuAvgPercent")
+        if isinstance(confirmed_cpu, (int, float)):
+            perf_sample = confirm
+            if performance and not performance.get("error"):
+                cpu_block = performance.get("cpu") or {}
+                cpu_block["usagePercent"] = confirmed_cpu
+                performance["cpu"] = cpu_block
+
     return _build_dashboard(
         identity, performance, services, nics, net_config, hardware,
         installed_sw, install_state, port_tests, gpu_info, wifi,

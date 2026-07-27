@@ -99,21 +99,43 @@ try {
     # splash checklist, which gates on the dashboard. Concurrent probes cap
     # the whole TCP set at the single budget below no matter how many die.
     $tcpBudgetMs = 4000
-    $tcpProbes = @{}
-    foreach ($test in $portTests) {
-        if ($test.protocol -ne 'TCP') { continue }
-        try {
-            $tcp = New-Object System.Net.Sockets.TcpClient
-            $tcpProbes["$($test.host):$($test.port)"] = @{
-                client = $tcp
-                async  = $tcp.BeginConnect($test.host, $test.port, $null, $null)
+
+    # Pre-warm the .NET thread pool before racing the connects. Each
+    # BeginConnect(hostname, ...) needs a pool thread for its DNS leg, and
+    # .NET Framework grows the pool at ~1 thread per 500ms past the default
+    # minimum (= CPU count). During Pulse's launch burst several PowerShell
+    # collectors saturate the box at once, so on a starved 6-core VPU ~13
+    # concurrent probes could spend the entire shared budget just waiting
+    # for threads — every healthy TCP row then reported "blocked" while the
+    # network was fine (reproduced on VPU2, 2026-07-23). Raising the minimum
+    # makes threads available immediately; it costs nothing when idle.
+    $minWorker = 0; $minIo = 0
+    $null = [System.Threading.ThreadPool]::GetMinThreads([ref]$minWorker, [ref]$minIo)
+    if ($minWorker -lt 16 -or $minIo -lt 16) {
+        $null = [System.Threading.ThreadPool]::SetMinThreads(
+            [Math]::Max($minWorker, 16), [Math]::Max($minIo, 16))
+    }
+
+    function Start-TcpRace([array]$targets) {
+        # Kick off a non-blocking connect for every target, keyed host:port.
+        $probes = @{}
+        foreach ($t in $targets) {
+            try {
+                $tcp = New-Object System.Net.Sockets.TcpClient
+                $probes["$($t.host):$($t.port)"] = @{
+                    client = $tcp
+                    async  = $tcp.BeginConnect($t.host, $t.port, $null, $null)
+                }
+            }
+            catch {
+                # DNS resolution or socket setup failed synchronously — leave
+                # the probe absent; the row is judged 'fail'.
             }
         }
-        catch {
-            # DNS resolution or socket setup failed synchronously — leave the
-            # probe absent; the row below reports 'fail'.
-        }
+        return $probes
     }
+
+    $tcpProbes = Start-TcpRace ($portTests | Where-Object { $_.protocol -eq 'TCP' })
     $tcpClock = [System.Diagnostics.Stopwatch]::StartNew()
 
     $results = foreach ($test in $portTests) {
@@ -278,6 +300,39 @@ try {
             purpose  = $test.purpose
             optional = $test.optional
             status   = $status
+        }
+    }
+
+    # Second-chance pass for TCP rows that failed the shared-budget race.
+    # The first race can run inside Pulse's own collector burst (launch
+    # preload fires many PowerShell processes at once); a starved process
+    # can burn the budget without the connects ever being serviced, failing
+    # every row at once — a pattern no real firewall produces. A genuinely
+    # blocked port fails this pass too, so it costs one extra budget only
+    # when something failed, and truly-dead rows (e.g. the July 2026
+    # Sportzcast outage) still can't stall the sweep beyond it.
+    $retryRows = @($results | Where-Object { $_.protocol -eq 'TCP' -and $_.status -eq 'fail' })
+    if ($retryRows.Count -gt 0) {
+        # Brief settle so the retry lands after the worst of the burst.
+        Start-Sleep -Milliseconds 1500
+        $retryProbes = Start-TcpRace $retryRows
+        $retryClock = [System.Diagnostics.Stopwatch]::StartNew()
+        foreach ($row in $retryRows) {
+            $probe = $retryProbes["$($row.host):$($row.port)"]
+            if (-not $probe) { continue }
+            try {
+                $remainingMs = $tcpBudgetMs - $retryClock.ElapsedMilliseconds
+                if ($remainingMs -lt 0) { $remainingMs = 0 }
+                $waited = $probe.async.AsyncWaitHandle.WaitOne($remainingMs, $false)
+                if ($waited -and $probe.client.Connected) {
+                    $probe.client.EndConnect($probe.async)
+                    $row.status = 'pass'
+                }
+            }
+            catch { }
+            finally {
+                $probe.client.Close()
+            }
         }
     }
 
