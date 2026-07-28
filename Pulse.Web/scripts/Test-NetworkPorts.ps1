@@ -1,0 +1,294 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Tests network port connectivity for VPU diagnostics.
+.DESCRIPTION
+    Tests TCP and UDP connectivity to required service endpoints.
+    Outputs a JSON array of test results to stdout.
+#>
+[CmdletBinding()]
+param()
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    # Port list audited against Canopy connections.csv (the canonical Pixellot
+    # port reference). Notes:
+    #  - prod-echo.pixellot.tv covers TCP 443 + UDP 123/443/2088 per the CSV;
+    #    we hit those specific subdomain entries in addition to the wider
+    #    pixellot.tv apex test (some venues filter on FQDN, not IP).
+    #  - scorebot.sportzcast.net binds to TCP 1400–1405 for ScoreConnect; the
+    #    range is venue-dependent so every port is marked optional. Not all
+    #    schools have ScoreConnect.
+    # Discover the VPU's configured DNS server so the DNS check tests the
+    # resolver the box actually uses — not a hardcoded public IP like 8.8.8.8,
+    # which locked-down venue networks block by design (the VPU resolves names
+    # through the venue's internal DNS instead).
+    # Test the resolver the ACTIVE UPLINK actually uses — scope to the interface
+    # that holds the default route. Querying every interface and taking the first
+    # DNS can grab a stale resolver off a disconnected or secondary adapter (a
+    # camera NIC, VPN, etc.); that dead IP then fails the UDP/53 probe and looks
+    # like "DNS blocked" while the real resolver is working fine.
+    $primaryDns = $null
+    try {
+        $dnsRows = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction Stop
+        $uplinkIdx = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+            Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' } |
+            Sort-Object RouteMetric | Select-Object -First 1).InterfaceIndex
+        $scoped = if ($uplinkIdx) { $dnsRows | Where-Object { $_.InterfaceIndex -eq $uplinkIdx } } else { $dnsRows }
+        $primaryDns = $scoped |
+            ForEach-Object { $_.ServerAddresses } |
+            Where-Object { $_ -and -not $_.StartsWith('127.') -and -not $_.StartsWith('169.254.') } |
+            Select-Object -First 1
+        # If the uplink interface carried no usable resolver, fall back to any
+        # interface's — keeps the check working on unusual routing setups.
+        if (-not $primaryDns -and $uplinkIdx) {
+            $primaryDns = $dnsRows |
+                ForEach-Object { $_.ServerAddresses } |
+                Where-Object { $_ -and -not $_.StartsWith('127.') -and -not $_.StartsWith('169.254.') } |
+                Select-Object -First 1
+        }
+    }
+    catch { }
+
+    $portTests = @(
+        # Required — core Pixellot streaming + cloud services
+        @{ protocol = 'TCP'; port = 443;  host = 'pixellot.tv';            purpose = 'Pixellot';          optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 'prod-echo.pixellot.tv';  purpose = 'Pixellot Echo';     optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 'nfhsnetwork.com';        purpose = 'NFHS Network';      optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 's3.amazonaws.com';       purpose = 'AWS S3';            optional = $false }
+        @{ protocol = 'TCP'; port = 443;  host = 'service.singular.live';  purpose = 'Singular Overlay';  optional = $false }
+        # secure.logmein.com, not the logmein.com apex: the apex now points at
+        # GoTo's marketing site (Vercel, 76.76.21.21), so reaching it proves
+        # nothing about remote access. secure.logmein.com rides GoTo's real
+        # service block (158.120.16.0/20 — same netblock live VPU LMI sessions
+        # use, PTR lmi-www25-10.logmein.com), so this tests what techs depend on.
+        @{ protocol = 'TCP'; port = 443;  host = 'secure.logmein.com';     purpose = 'LogMeIn';           optional = $false }
+        @{ protocol = 'UDP'; port = 123;  host = 'prod-echo.pixellot.tv';  purpose = 'NTP';               optional = $false }
+        # Zixi ingest caveat: live events stream to a broadcaster assigned
+        # per-event from AWS pools (observed us-east-2), not to prod-echo
+        # (us-east-1). These rows prove the venue firewall allows the PORTS;
+        # rules must therefore allow UDP 443/2088 by port, not by destination IP.
+        @{ protocol = 'UDP'; port = 443;  host = 'prod-echo.pixellot.tv';  purpose = 'Zixi Backup';       optional = $false }
+        @{ protocol = 'UDP'; port = 2088; host = 'prod-echo.pixellot.tv';  purpose = 'Zixi Streaming';    optional = $false }
+        # Optional — RTMP fallback (legacy ingest)
+        @{ protocol = 'TCP'; port = 1935; host = 'sportzcast.net';         purpose = 'RTMP Ingest';       optional = $true }
+        # Optional — Sportzcast Scorebot range (ScoreConnect deployments only)
+        @{ protocol = 'TCP'; port = 1400; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
+        @{ protocol = 'TCP'; port = 1401; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
+        @{ protocol = 'TCP'; port = 1402; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
+        @{ protocol = 'TCP'; port = 1403; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
+        @{ protocol = 'TCP'; port = 1404; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
+        @{ protocol = 'TCP'; port = 1405; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
+    )
+
+    # DNS reachability against the *configured* resolver (prepended so it
+    # leads the list). Skipped — not failed — when no resolver is configured;
+    # a missing/broken resolver still surfaces via the domain-resolution tests.
+    if ($primaryDns) {
+        $portTests = @(
+            @{ protocol = 'UDP'; port = 53; host = $primaryDns; purpose = 'DNS'; optional = $false }
+        ) + $portTests
+    }
+
+    # Kick off every TCP connect up front, non-blocking, then judge them all
+    # against one shared deadline when the loop reaches each row. Probing
+    # sequentially made the script's runtime scale with the number of DEAD
+    # targets (~3s each): when Sportzcast's six Scorebot/RTMP endpoints went
+    # dark in July 2026, the port sweep ballooned to ~20s and froze the
+    # splash checklist, which gates on the dashboard. Concurrent probes cap
+    # the whole TCP set at the single budget below no matter how many die.
+    $tcpBudgetMs = 4000
+    $tcpProbes = @{}
+    foreach ($test in $portTests) {
+        if ($test.protocol -ne 'TCP') { continue }
+        try {
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            $tcpProbes["$($test.host):$($test.port)"] = @{
+                client = $tcp
+                async  = $tcp.BeginConnect($test.host, $test.port, $null, $null)
+            }
+        }
+        catch {
+            # DNS resolution or socket setup failed synchronously — leave the
+            # probe absent; the row below reports 'fail'.
+        }
+    }
+    $tcpClock = [System.Diagnostics.Stopwatch]::StartNew()
+
+    $results = foreach ($test in $portTests) {
+        $status = 'fail'
+
+        if ($test.protocol -eq 'TCP') {
+            $probe = $tcpProbes["$($test.host):$($test.port)"]
+            if ($probe) {
+                try {
+                    # Remaining slice of the shared budget — all connects have
+                    # been racing since before the loop, so a probe reached
+                    # late waits only for what's left (possibly 0ms).
+                    $remainingMs = $tcpBudgetMs - $tcpClock.ElapsedMilliseconds
+                    if ($remainingMs -lt 0) { $remainingMs = 0 }
+                    $waited = $probe.async.AsyncWaitHandle.WaitOne($remainingMs, $false)
+                    if ($waited -and $probe.client.Connected) {
+                        $probe.client.EndConnect($probe.async)
+                        $status = 'pass'
+                    }
+                }
+                catch {
+                    $status = 'fail'
+                }
+                finally {
+                    $probe.client.Close()
+                }
+            }
+        }
+        elseif ($test.protocol -eq 'UDP' -and $test.port -eq 123) {
+            # NTP/123 egress test — send a real NTP v3 client request, require a
+            # reply. Any reply passes: this row answers "is UDP/123 egress open",
+            # and prod-echo answers as an echo service (it returns our own mode-3
+            # packet verbatim, wire-verified) — so requiring a genuine mode-4
+            # server reply would false-fail an open port. We still send a real
+            # 48-byte NTP request (not arbitrary bytes) so NTP-aware middleboxes
+            # treat the probe as NTP. Whether time sync actually WORKS is judged
+            # separately by the w32tm status check (Time Sync on the adapter
+            # card). A retry defeats transient single-packet loss; capped at
+            # two attempts so a blocked port costs ~6s, not ~9s (the script's
+            # callers budget 30-45s for the whole port list).
+            try {
+                $addr = [System.Net.Dns]::GetHostAddresses($test.host) |
+                    Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } |
+                    Select-Object -First 1
+                if ($addr) {
+                    $ep = New-Object System.Net.IPEndPoint($addr, 123)
+                    # 48-byte NTP packet: byte 0 = 0x1B (LI=0, Version=3, Mode=3 client)
+                    $ntpReq = New-Object byte[] 48
+                    $ntpReq[0] = 0x1B
+                    for ($attempt = 1; ($attempt -le 2) -and ($status -ne 'pass'); $attempt++) {
+                        $udp = New-Object System.Net.Sockets.UdpClient
+                        $udp.Client.ReceiveTimeout = 3000
+                        $udp.Client.SendTimeout = 3000
+                        try {
+                            $udp.Send($ntpReq, $ntpReq.Length, $ep) | Out-Null
+                            $remoteEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+                            $resp = $udp.Receive([ref]$remoteEP)
+                            if ($resp.Length -gt 0) { $status = 'pass' }
+                        }
+                        catch [System.Net.Sockets.SocketException] {
+                            # 10054 = ICMP port unreachable — definitive reject; stop retrying.
+                            $sockErr = $_.Exception.ErrorCode
+                            if (-not $sockErr -and $_.Exception.InnerException) { $sockErr = $_.Exception.InnerException.ErrorCode }
+                            if ($sockErr -eq 10054) { break }
+                            # Otherwise a receive timeout — stay 'fail' and retry.
+                        }
+                        finally {
+                            $udp.Close()
+                        }
+                    }
+                }
+            }
+            catch {
+                $status = 'fail'
+            }
+        }
+        elseif ($test.protocol -eq 'UDP' -and $test.port -eq 53) {
+            # Real DNS UDP test — send a minimal NS-root query and check for response
+            try {
+                $udp = New-Object System.Net.Sockets.UdpClient
+                $udp.Client.ReceiveTimeout = 3000
+                $udp.Client.SendTimeout = 3000
+                $addr = [System.Net.Dns]::GetHostAddresses($test.host) |
+                    Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } |
+                    Select-Object -First 1
+                if ($addr) {
+                    $ep = New-Object System.Net.IPEndPoint($addr, 53)
+                    # 17-byte DNS query: ID=0x1234, flags=0x0100 (std query, RD), 1 question
+                    # Name: root (.), QTYPE=NS (0x0002), QCLASS=IN (0x0001)
+                    $dnsReq = [byte[]](
+                        0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01
+                    )
+                    $udp.Send($dnsReq, $dnsReq.Length, $ep) | Out-Null
+                    $remoteEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+                    $resp = $udp.Receive([ref]$remoteEP)
+                    # Reply needs to be at least 12 bytes (header) and echo our ID
+                    if ($resp.Length -ge 12 -and $resp[0] -eq 0x12 -and $resp[1] -eq 0x34) {
+                        $status = 'pass'
+                    }
+                }
+                $udp.Close()
+            }
+            catch {
+                $status = 'fail'
+            }
+        }
+        elseif ($test.protocol -eq 'UDP') {
+            # Echo-contract UDP test. The generic UDP targets (prod-echo.pixellot.tv
+            # 443/2088) run an echo service — anything sent comes back verbatim
+            # (wire-verified: a 24-byte probe to :2088 echoed back in ~20 ms). So a
+            # reply is REQUIRED to pass. The old rule treated a silent timeout as
+            # pass ("open|filtered"), which false-passed every silently-dropped
+            # port — the most common school-firewall block mode — and let a VPU
+            # show UDP/2088 green while streaming was actually blocked. Three
+            # second attempt defeats transient single-packet loss; capped at two
+            # so a silently-blocked port costs ~4s, keeping the whole list inside
+            # its callers' 30-45s budgets.
+            # NOTE: this branch assumes echo-capable endpoints; a future non-echo
+            # UDP target needs its own protocol-aware branch (like 123/53 above).
+            try {
+                $addr = [System.Net.Dns]::GetHostAddresses($test.host) |
+                    Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } |
+                    Select-Object -First 1
+                if ($addr) {
+                    $ep = New-Object System.Net.IPEndPoint($addr, $test.port)
+                    $payload = [System.Text.Encoding]::ASCII.GetBytes("testing UDP on port $($test.port)")
+                    for ($attempt = 1; ($attempt -le 2) -and ($status -ne 'pass'); $attempt++) {
+                        $udp = New-Object System.Net.Sockets.UdpClient
+                        $udp.Client.ReceiveTimeout = 2000
+                        $udp.Client.SendTimeout = 2000
+                        try {
+                            $udp.Send($payload, $payload.Length, $ep) | Out-Null
+                            $remoteEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+                            $resp = $udp.Receive([ref]$remoteEP)
+                            # Any datagram back proves the port is open end-to-end
+                            # (the echo service returns our payload verbatim).
+                            if ($resp.Length -gt 0) { $status = 'pass' }
+                        }
+                        catch [System.Net.Sockets.SocketException] {
+                            # 10054 = ICMP port unreachable — definitive reject; stop retrying.
+                            $sockErr = $_.Exception.ErrorCode
+                            if (-not $sockErr -and $_.Exception.InnerException) { $sockErr = $_.Exception.InnerException.ErrorCode }
+                            if ($sockErr -eq 10054) { break }
+                            # Otherwise a receive timeout — stay 'fail' and retry.
+                        }
+                        finally {
+                            $udp.Close()
+                        }
+                    }
+                }
+            }
+            catch {
+                $status = 'fail'
+            }
+        }
+
+        [ordered]@{
+            protocol = $test.protocol
+            port     = $test.port
+            host     = $test.host
+            purpose  = $test.purpose
+            optional = $test.optional
+            status   = $status
+        }
+    }
+
+    [ordered]@{
+        results = @($results)
+    } | ConvertTo-Json -Depth 5 -Compress
+}
+catch {
+    [ordered]@{
+        error   = $true
+        message = $_.Exception.Message
+        script  = 'Test-NetworkPorts.ps1'
+    } | ConvertTo-Json -Compress
+}

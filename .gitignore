@@ -13,3 +13,20 @@ settings.json
 **/bin/
 **/obj/
 *.user
+
+# Python virtualenvs (local dev only)
+**/.venv/
+**/__pycache__/
+*.pyc
+
+# Pulse.Web bootstrap state (embedded Python is downloaded at first run)
+Pulse.Web/app/python/
+
+# Server log written at runtime
+Pulse.Web/pulse-server.log
+
+# Stray local artifacts that must never be committed:
+#  - runners/app/ : an embedded-Python tree a launcher drops when run from the repo
+#  - .claude/worktrees/ : per-session git worktree metadata
+runners/app/
+.claude/worktrees/

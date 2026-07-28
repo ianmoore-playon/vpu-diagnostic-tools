@@ -1,0 +1,79 @@
+# Auto-tag Pulse.Web dev releases when changes land on the dev branch.
+#
+# Creates a web-dev-v* tag, then CALLS web-build.yml to package and publish
+# the dev pre-release. The explicit call matters: tags pushed with the default
+# GITHUB_TOKEN never fire other workflows' tag-push triggers (GitHub's
+# anti-recursion rule), so without it dev tags exist but no dev release is
+# ever published — and the in-app "Check for Update" on dev installs has
+# nothing to find.
+
+name: Auto-tag Pulse.Web (dev)
+
+on:
+  push:
+    branches: [dev]
+    paths: ["Pulse.Web/**"]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      created: ${{ steps.tag.outputs.created }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Create dev tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          VERSION=$(cat Pulse.Web/VERSION | tr -d '[:space:]')
+          SHA="${COMMIT_SHA:0:7}"
+          TAG="web-dev-v${VERSION}-${SHA}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG already exists, skipping"
+            exit 0
+          fi
+
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "Created tag: $TAG"
+
+      - name: Prune old dev tags + releases (keep 15 newest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Keep the 15 newest web-dev-v* tags; delete older ones AND any
+          # release attached to them (gh --cleanup-tag drops the tag too).
+          # Scoped to web-dev-v* ONLY — never beta, prod, wpf, or provenance
+          # tags. A failed delete never fails the job.
+          git fetch --tags --quiet || true
+          git tag -l 'web-dev-v*' --sort=-creatordate | tail -n +16 | while read -r t; do
+            [ -z "$t" ] && continue
+            gh release delete "$t" --yes --cleanup-tag 2>/dev/null \
+              || git push origin --delete "$t" 2>/dev/null \
+              || true
+            echo "pruned $t"
+          done
+
+  # Package + publish the dev pre-release for the tag we just pushed.
+  # (web-build.yml's own tag-push trigger can't see GITHUB_TOKEN-pushed tags.)
+  release:
+    needs: tag
+    if: needs.tag.outputs.created == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/web-build.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
