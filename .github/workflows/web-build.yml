@@ -117,6 +117,7 @@ jobs:
           files: |
             ${{ env.ARTIFACT_ZIP }}
             runners/run_pulse.bat
+            runners/Pulse.bat
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           prerelease: false
@@ -124,10 +125,15 @@ jobs:
             Pulse.Web release.
 
             Public release published on this repo. Field VPUs install via
-            `run_pulse.bat`, which auto-updates from here every launch.
+            a launcher below, which auto-updates Pulse from here every launch.
 
-            Install on a VPU:
-            - Drop `run_pulse.bat` on the desktop and double-click — auto-updates every launch.
+            Install on a VPU: drop a launcher on the desktop and double-click.
+
+            - **`Pulse.bat`** — recommended. Download once; it always pulls the
+              current launcher, so launcher fixes land automatically (no
+              re-downloading anything, ever).
+            - `run_pulse.bat` — the underlying launcher (pinned to this build's
+              launcher logic; the app itself still auto-updates).
 
       # ── Beta pre-release (beta channel, web-beta-v* tags) ──────────────
       - name: Publish beta pre-release (source repo)
