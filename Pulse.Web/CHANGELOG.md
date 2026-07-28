@@ -22,6 +22,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Added
+- Pulse now cleans up the retired Canopy/Leaf software automatically. The old Banyan Hills agent (no longer used by PlayOn) is uninstalled in the background the first time Pulse runs on a VPU, and the leftover C:\Banyan folder is removed — no action needed from techs.
+- New standalone script `scripts/Get-WindowsPatchStatus.ps1`: run it on a VPU to see the real Windows patch level (build number, hotfixes, servicing history, pending reboot) even though Windows Update is disabled on the fleet image.
+
+### Changed
+- Status labels now look the same on every page: rounded pill shape, all-caps text (PASS, WARN, RUNNING), and count bubbles are gray instead of orange so a tally no longer looks like a warning.
+- Status words now match everywhere: "Healthy" and "Attention" chips read OK and WARNING like the rest of the app, and ScoreConnect's cloud link shows CONNECTED / NOT CONNECTED instead of Yes / No.
+- Network Test: port tiles now use the same PASS / FAIL pills as the service list next to them, and the ? icon sits right after the port number where it's easier to spot.
+- Camera Connectivity: port cards now show link state as the same style of pill (LINKED / DEGRADED / NO LINK) used across the app, always in the top-right corner of the card; the camera role label (OCR / MAIN CAMERA) sits on its own line below the port number.
+
+### Fixed
+- The dashboard no longer shows a false "No main cameras detected" alarm (or a false "port running slow" warning on the scoreboard camera port) in the first minute after Pulse starts. Camera detection now asks the cameras directly instead of trusting a network cache that can be empty right after launch — cameras that are genuinely unplugged still alarm immediately.
+- Network Test no longer shows a wall of false "blocked (TCP/443)" warnings right after Pulse opens. On slower VPUs the checks could time out while Pulse was still busy collecting data, making a healthy network look blocked; any check that fails now gets an automatic second attempt once the rush is over.
+- The dashboard no longer warns "CPU usage elevated" just because Pulse itself was busy collecting data at that moment. An elevated reading is now double-checked with a follow-up sample before the warning shows.
+- Uptime no longer shows an extra day (a VPU up 16 hours used to read "1d 16h").
+- The Z4SF-5 main camera head is now recognized by name on Camera Connectivity instead of showing as a generic "IP Camera".
+- Launcher no longer needs a second run when Chrome starts but no window appears (typically the first Chrome start after it self-updated): Pulse now waits until a Chrome window is actually visible and relaunches Chrome itself if one doesn't show up.
+- Camera Connectivity heading no longer reads "1 finding need attention" when there is a single finding.
+- Network Test: the port tiles and service ? icons now show a clear "If blocked on the school's network" pop-up on hover, tap, or keyboard focus (the old tooltips were slow and easy to miss), each column explains what the pop-ups are for, and a failed service now shows what it breaks right on the row — so it's in the screenshot you send to school IT.
+- Network Test: port tiles now carry the same ? icon as the service rows, so it's obvious each tile has an impact pop-up.
+
+### Removed
+- Network Test no longer checks the retired leaf-uploads/leaf-downloads addresses (old Canopy buckets) — schools don't need to allow them anymore.
+- **Share over LAN is hidden for now.** The tab is removed from the sidebar while the feature is on hold — use Exports to download reports instead.
+
 ## [1.0.1] - 2026-07-20
 
 ### Fixed

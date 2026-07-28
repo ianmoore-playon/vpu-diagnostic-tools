@@ -238,6 +238,20 @@ _CGI_PROBE_TTL = 10  # seconds
 #      stabilizes, and alarming on that during a cable swap is noise.
 _PORT_STATE_TRACKER = {}  # adapter_mac -> {"key", "since", "isUp", "upSince", ...}
 _PORT_SETTLE_SECONDS = 8
+# Startup grace for camera findings that depend on the ARP cache + CGI probe
+# cache both being warm. Right after Pulse launches, the collection burst can
+# starve both (neighbor entries aged out while the cameras sat quiet, probes
+# timing out under the powershell fan-out), making a healthy rig look
+# camera-less for exactly one collection — which fired a false CRITICAL
+# "No main cameras detected" on VPU2 (2026-07-28). Within this window, a
+# zero-camera reading that is contradicted by live link state is treated as
+# not-yet-settled instead of alarmed on; the next collection decides.
+_STARTUP_GRACE_SECONDS = 90
+_PROCESS_START_MONO = time.monotonic()
+
+
+def _in_startup_grace() -> bool:
+    return (time.monotonic() - _PROCESS_START_MONO) < _STARTUP_GRACE_SECONDS
 # How long a port shows the blue "connecting" cue after a down→up transition,
 # even if its camera resolves instantly from cache. Without this, a quick
 # cable reseat jumps straight gray→green and the tech never sees the
@@ -1187,6 +1201,13 @@ def _wifi_disabled_finding(network_config):
 def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, probe_results=None, tls_inspection=None) -> list:
     findings = []
 
+    # None vs {} matters for probe_results: None means the caller never
+    # probed (legacy ARP-only behavior applies); {} means probes ran and
+    # every camera failed to answer — which right after launch is the
+    # collection burst starving the probes, not an empty rig, and gates the
+    # startup-grace suppressions below. Capture before any rebinding.
+    probes_attempted = probe_results is not None
+
     # ── Wi-Fi uplink detection (Canopy adoption) ─────────────
     # Pixellot VPUs are wired-only by design. We only warn when Wi-Fi is the
     # VPU's actual internet uplink (a real Wi-Fi NIC holds the default route
@@ -1740,7 +1761,22 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     if not port_has_main:
                         port_is_ocr = True
                 only_ocr_at_100 = speed == 100 and port_is_ocr
-                if not only_ocr_at_100:
+                # Cold-start ambiguity: a 100 Mbps port with an empty ARP
+                # list, where probes RAN but none answered (both caches
+                # cold, right after launch), is indistinguishable from the
+                # expected OCR — the ocr_confirmed guard above needs at
+                # least one probe to have landed. Don't alarm on it during
+                # the startup grace; the next collection has warm probes
+                # and decides for real. Callers that never probe
+                # (probe_results=None) keep the ARP-only behavior.
+                cold_start_ambiguous = (
+                    speed == 100
+                    and not pixellot_arps
+                    and probes_attempted
+                    and not probe_results
+                    and _in_startup_grace()
+                )
+                if not only_ocr_at_100 and not cold_start_ambiguous:
                     has_cameras = bool(pixellot_arps)
                     # A degraded link on a camera port is a Camera problem
                     # (frames drop); a bare NIC at low speed is Network.
@@ -1949,7 +1985,50 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 for c in (p.get("camerasDetected") or []):
                     if "OCR" not in (c.get("role") or ""):
                         detected_main += 1
-            if detected_main < expected_main:
+
+            # ── ARP-independent count from CGI probes ──
+            # The ARP snapshot alone can read zero on a cold start: cameras
+            # that sat quiet age out of the Windows neighbor cache, so the
+            # count above sees nothing even though both mains are alive.
+            # The CGI probe always tries the default camera IPs regardless
+            # of ARP (same philosophy as the ARP-independent OCR guard on
+            # the slow-port finding), so a probe answer is positive proof a
+            # camera is present. probe_results is keyed by MAC — each
+            # camera counts once. Take the better of the two counts.
+            probe_main = 0
+            for r in (probe_results or {}).values():
+                role, _speed = _lookup_camera_model(r.get("modelNumber"))
+                if role is not None:
+                    probe_is_ocr = "OCR" in role
+                else:
+                    probe_is_ocr = (
+                        bool(r.get("is_ocr"))
+                        or (r.get("ip") or "").strip() in _DEFAULT_OCR_IPS
+                    )
+                if not probe_is_ocr:
+                    probe_main += 1
+            detected_main = max(detected_main, probe_main)
+
+            # Cold-start guard for the zero-count CRITICAL. If probes ran
+            # but nothing was seen by ARP *or* probe while a non-OCR port
+            # has live link, the link layer contradicts "no cameras" — a
+            # link doesn't come up without a powered device on the other
+            # end. During the startup grace that reading means the
+            # collection burst starved both caches, not that the rig is
+            # dark; skip once and let the next collection (warm caches)
+            # decide. Ports genuinely down still alarm immediately, even
+            # at startup.
+            suppress_cold_zero = (
+                detected_main == 0
+                and probes_attempted
+                and not (probe_results or {})
+                and _in_startup_grace()
+                and any(
+                    p.get("isUp") and not p.get("isOcr")
+                    for p in enriched_ports
+                )
+            )
+            if detected_main < expected_main and not suppress_cold_zero:
                 missing = expected_main - detected_main
                 if detected_main == 0:
                     sev = "critical"
@@ -4218,6 +4297,7 @@ async def build_report() -> dict:
     # Enriched camera connectivity: physical ports + detected cameras/OCR +
     # live CGI probe (firmware, model) — the Camera Connectivity lane's output,
     # which the raw nicAdapters dump alone doesn't capture.
+    cam_probes = None  # None = probes never ran (findings keep ARP-only behavior)
     try:
         ocr_ips, _ = _build_ocr_sets(pix_cfg)
         raw_ports = nics.get("ports", []) if isinstance(nics, dict) and not nics.get("error") else []
@@ -4236,6 +4316,7 @@ async def build_report() -> dict:
             sections.get("networkPorts"), sections.get("gpuInfo"), sections.get("wifi"),
             pixellot_config=pix_cfg, expectations=sections.get("cameraExpectations"),
             disk_health=sections.get("diskHealth"),
+            probe_results=cam_probes,
             tls_inspection=sections.get("tlsInspection"),
         )
     except Exception as e:
