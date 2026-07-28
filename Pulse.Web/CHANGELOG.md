@@ -33,6 +33,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - Camera Connectivity: port cards now show link state as the same style of pill (LINKED / DEGRADED / NO LINK) used across the app, always in the top-right corner of the card; the camera role label (OCR / MAIN CAMERA) sits on its own line below the port number.
 
 ### Fixed
+- The dashboard no longer shows a false "No main cameras detected" alarm (or a false "port running slow" warning on the scoreboard camera port) in the first minute after Pulse starts. Camera detection now asks the cameras directly instead of trusting a network cache that can be empty right after launch — cameras that are genuinely unplugged still alarm immediately.
 - Network Test no longer shows a wall of false "blocked (TCP/443)" warnings right after Pulse opens. On slower VPUs the checks could time out while Pulse was still busy collecting data, making a healthy network look blocked; any check that fails now gets an automatic second attempt once the rush is over.
 - The dashboard no longer warns "CPU usage elevated" just because Pulse itself was busy collecting data at that moment. An elevated reading is now double-checked with a follow-up sample before the warning shows.
 - Uptime no longer shows an extra day (a VPU up 16 hours used to read "1d 16h").
