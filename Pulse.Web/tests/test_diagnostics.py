@@ -302,6 +302,159 @@ class TestComputeFindings(unittest.TestCase):
         self.assertTrue(any("running slow" in t for t in titles), titles)
 
 
+# ── Missing-main-cameras finding: probe-aware + cold-start grace ──
+class TestCamCountFinding(unittest.TestCase):
+    """The cam-none/cam-partial finding must not trust the ARP snapshot
+    alone. On a cold start (Pulse just launched, cameras quiet), neighbor
+    entries have aged out AND the CGI probes can starve under the collection
+    burst — the ARP-only count read zero and fired a false CRITICAL
+    "No main cameras detected" on VPU2 (2026-07-28) minutes before a demo."""
+
+    def setUp(self):
+        self._saved_start = main._PROCESS_START_MONO
+        self._saved_tracker = main._PORT_STATE_TRACKER
+        main._PORT_STATE_TRACKER = {}
+
+    def tearDown(self):
+        main._PROCESS_START_MONO = self._saved_start
+        main._PORT_STATE_TRACKER = self._saved_tracker
+
+    def _expire_grace(self):
+        main._PROCESS_START_MONO = (
+            main.time.monotonic() - main._STARTUP_GRACE_SECONDS - 1
+        )
+
+    def _enter_grace(self):
+        main._PROCESS_START_MONO = main.time.monotonic()
+
+    @staticmethod
+    def _cam_findings(nics, probe_results=None, expected=2):
+        findings = main._compute_findings(
+            identity=_identity("5.2.0"), performance={}, services={},
+            nics=nics,
+            expectations={"expectedMainCameras": expected},
+            probe_results=probe_results,
+        )
+        return [f for f in findings if f.get("code") in ("cam-none", "cam-partial")]
+
+    @staticmethod
+    def _up_port(name="Ethernet 28", mac="A4:4C:C8:00:00:02", arp=None):
+        return {"name": name, "status": "Up", "linkSpeedMbps": 1000,
+                "mac": mac, "arpEntries": arp or []}
+
+    @staticmethod
+    def _main_probes():
+        # Two Z4SF-5 mains answering CGI on the default main IPs.
+        return {
+            "00:D0:89:18:CE:E8": {"mac": "00:D0:89:18:CE:E8",
+                                  "ip": "169.254.16.50", "is_ocr": False,
+                                  "modelNumber": "Z4SF-5"},
+            "00:D0:89:18:CE:F4": {"mac": "00:D0:89:18:CE:F4",
+                                  "ip": "169.254.16.51", "is_ocr": False,
+                                  "modelNumber": "Z4SF-5"},
+        }
+
+    def test_probe_confirmed_mains_suppress_cam_none_despite_cold_arp(self):
+        # ARP aged out on every port, but both mains answered the CGI probe:
+        # no camera finding, even long after startup.
+        self._expire_grace()
+        nics = {"ports": [self._up_port(), self._up_port("Ethernet 31", "A4:4C:C8:00:00:04")]}
+        self.assertEqual(self._cam_findings(nics, self._main_probes()), [])
+
+    def test_ocr_probe_does_not_count_toward_main_total(self):
+        self._expire_grace()
+        nics = {"ports": [self._up_port()]}
+        ocr_only = {"00:D0:89:1B:03:01": {
+            "mac": "00:D0:89:1B:03:01", "ip": "169.254.16.52",
+            "is_ocr": True, "modelNumber": "R2SD-G"}}
+        found = self._cam_findings(nics, ocr_only)
+        self.assertEqual(len(found), 1, found)
+        self.assertEqual(found[0]["code"], "cam-none")
+
+    def test_cold_start_zero_with_live_link_suppressed_in_grace(self):
+        # The VPU2 incident: empty ARP, probes ran but none answered, ports
+        # linked, seconds after launch — must NOT fire the critical.
+        self._enter_grace()
+        nics = {"ports": [self._up_port()]}
+        self.assertEqual(self._cam_findings(nics, probe_results={}), [])
+
+    def test_zero_with_live_link_fires_after_grace(self):
+        # Same reading out of the grace window is a real alarm.
+        self._expire_grace()
+        nics = {"ports": [self._up_port()]}
+        found = self._cam_findings(nics, probe_results={})
+        self.assertEqual(len(found), 1, found)
+        self.assertEqual(found[0]["code"], "cam-none")
+        self.assertEqual(found[0]["severity"], "critical")
+
+    def test_zero_with_all_ports_down_fires_even_in_grace(self):
+        # Down links are trustworthy — nothing is connected. Alarm at once.
+        self._enter_grace()
+        nics = {"ports": [{"name": "Ethernet 28", "status": "Disconnected",
+                           "linkSpeedMbps": None, "mac": "A4:4C:C8:00:00:02",
+                           "arpEntries": []}]}
+        found = self._cam_findings(nics, probe_results={})
+        self.assertEqual(len(found), 1, found)
+        self.assertEqual(found[0]["code"], "cam-none")
+
+    def test_no_probe_context_keeps_legacy_arp_behavior_in_grace(self):
+        # Callers that never probe (probe_results=None) are not subject to
+        # the grace suppression — ARP-only counting stands.
+        self._enter_grace()
+        nics = {"ports": [self._up_port()]}
+        found = self._cam_findings(nics, probe_results=None)
+        self.assertEqual(len(found), 1, found)
+        self.assertEqual(found[0]["code"], "cam-none")
+
+    def test_partial_count_still_warns_in_grace(self):
+        # One of two mains confirmed by probe: cam-partial fires (warning)
+        # even inside the grace window — suppression is only for the
+        # nothing-anywhere cold-start signature.
+        self._enter_grace()
+        nics = {"ports": [self._up_port()]}
+        one_main = {"00:D0:89:18:CE:E8": {
+            "mac": "00:D0:89:18:CE:E8", "ip": "169.254.16.50",
+            "is_ocr": False, "modelNumber": "Z4SF-5"}}
+        found = self._cam_findings(nics, one_main)
+        self.assertEqual(len(found), 1, found)
+        self.assertEqual(found[0]["code"], "cam-partial")
+        self.assertEqual(found[0]["severity"], "warning")
+
+    def test_arp_count_still_works_without_probes(self):
+        # Two mains present in ARP on default IPs, no probes: no finding.
+        self._expire_grace()
+        nics = {"ports": [
+            self._up_port(arp=[{"ip": "169.254.16.50", "mac": "00:D0:89:18:CE:E8"}]),
+            self._up_port("Ethernet 31", "A4:4C:C8:00:00:04",
+                          arp=[{"ip": "169.254.16.51", "mac": "00:D0:89:18:CE:F4"}]),
+        ]}
+        self.assertEqual(self._cam_findings(nics, probe_results=None), [])
+
+    def test_slow_port_cold_start_ambiguity_suppressed_in_grace(self):
+        # Companion false finding from the same incident: the OCR port at
+        # 100 Mbps with empty ARP and probes-ran-but-empty must not flag
+        # "running slow" during the grace window.
+        self._enter_grace()
+        nics = {"ports": [
+            {"name": "Ethernet 29", "status": "Up", "linkSpeedMbps": 100,
+             "mac": "A4:4C:C8:00:00:03", "arpEntries": []},
+        ]}
+        findings = main._compute_findings(
+            identity=_identity("5.2.0"), performance={}, services={},
+            nics=nics, probe_results={},
+        )
+        self.assertFalse(
+            any("running slow" in f["title"] for f in findings), findings)
+        # …but out of grace the same reading is a real degraded-link alarm.
+        self._expire_grace()
+        findings = main._compute_findings(
+            identity=_identity("5.2.0"), performance={}, services={},
+            nics=nics, probe_results={},
+        )
+        self.assertTrue(
+            any("running slow" in f["title"] for f in findings), findings)
+
+
 # ── Storage finding: per-volume, not the all-drives aggregate (PULSEDEV-49) ──
 class TestStorageFinding(unittest.TestCase):
     """The disk-space alert must evaluate each volume separately. The perf
