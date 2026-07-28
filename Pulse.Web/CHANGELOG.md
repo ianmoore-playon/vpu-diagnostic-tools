@@ -23,6 +23,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [Unreleased]
 
 ### Added
+- New share-once `Pulse.bat` launcher for production installs. Download it once and keep it on the desktop — every launch it fetches the current launcher automatically, so launcher fixes reach you without re-downloading anything.
 - Pulse now cleans up the retired Canopy/Leaf software automatically. The old Banyan Hills agent (no longer used by PlayOn) is uninstalled in the background the first time Pulse runs on a VPU, and the leftover C:\Banyan folder is removed — no action needed from techs.
 - New standalone script `scripts/Get-WindowsPatchStatus.ps1`: run it on a VPU to see the real Windows patch level (build number, hotfixes, servicing history, pending reboot) even though Windows Update is disabled on the fleet image.
 
