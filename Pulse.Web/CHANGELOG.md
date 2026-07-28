@@ -20,6 +20,11 @@ flow shows testers when a new build is available.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 `Pulse.Web/VERSION`.
 
+## [1.0.2] - 2026-07-28
+
+### Fixed
+- The dashboard no longer shows a false "No main cameras detected" alarm (or a false "port running slow" warning on the scoreboard camera port) in the first minute after Pulse starts. Camera detection now asks the cameras directly instead of trusting a network cache that can be empty right after launch — cameras that are genuinely unplugged still alarm immediately.
+
 ## [1.0.1] - 2026-07-20
 
 ### Fixed
