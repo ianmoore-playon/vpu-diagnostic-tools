@@ -27,7 +27,7 @@ if not errorlevel 1 (
     curl.exe -fsSL --connect-timeout 10 -o "%LAUNCHER%.new" "%LAUNCHER_URL%" && set "OK=1"
 )
 if not defined OK (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "try{[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -TimeoutSec 15 -Uri '%LAUNCHER_URL%' -OutFile '%LAUNCHER%.new'; exit 0}catch{exit 1}" && set "OK=1"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try{[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -TimeoutSec 15 -Uri '%LAUNCHER_URL%' -OutFile '%LAUNCHER%.new'; exit 0}catch{Write-Host ('   Download failed: '+$_.Exception.Message); exit 1}" && set "OK=1"
 )
 
 REM Only accept the download if it looks like a real launcher (>200 bytes),
@@ -40,7 +40,14 @@ if exist "%LAUNCHER%.new" del "%LAUNCHER%.new" >nul 2>&1
 if not exist "%LAUNCHER%" (
     echo.
     echo   [ERROR] Couldn't download the Pulse launcher and there's no cached
-    echo           copy yet. Check this VPU's internet connection and try again.
+    echo           copy yet. The messages above show the exact error.
+    echo.
+    echo   This download comes from raw.githubusercontent.com - school and
+    echo   venue web filters often block that host even when github.com
+    echo   itself opens fine in a browser. If this VPU is otherwise online,
+    echo   ask the site's network admin to allow HTTPS ^(TCP 443^) to:
+    echo     raw.githubusercontent.com   github.com   api.github.com
+    echo     codeload.github.com         *.githubusercontent.com
     echo.
     pause
     exit /b 1
