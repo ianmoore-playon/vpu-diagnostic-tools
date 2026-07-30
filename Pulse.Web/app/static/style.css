@@ -19,10 +19,17 @@
   --c-tint-red:      rgba(220,38,38,0.12);
   --c-tint-amber:    rgba(217,119,6,0.12);
   --c-tint-blue:     rgba(37,99,235,0.12);
-  --c-accent-green:  #15803d;  /* darkened from #16a34a for WCAG AA on light tints (5.0:1) */
-  --c-accent-red:    #dc2626;
-  --c-accent-amber:  #b45309;  /* darkened from #d97706 for WCAG AA on light tints (5.0:1) */
-  --c-accent-blue:   #2563eb;
+  /* Semantic accents — TEXT/glyph colours only. Never use one as a solid fill
+     behind white text: that pulls the value the opposite way (a red light
+     enough to read on a card is too light to carry white). --c-pill-* below
+     are the fill tokens.
+     The light tints are translucent, so a tinted chip inside an already-tinted
+     row composites to a backdrop darker than tint-over-white — these clear
+     4.5:1 against the DOUBLE-tinted worst case, not just the single. */
+  --c-accent-green:  #137638;  /* 4.6:1 on double-tinted green, 5.7:1 on a card */
+  --c-accent-red:    #bf2121;  /* 4.6:1 on double-tinted red,   6.1:1 on a card */
+  --c-accent-amber:  #9b4708;  /* 4.6:1 on double-tinted amber, 6.4:1 on a card */
+  --c-accent-blue:   #2460e3;  /* 4.6:1 on tinted blue,         5.5:1 on a card */
   --c-accent-teal:   #0f766e;  /* darkened from #2dd4bf for WCAG AA on light surfaces (was #0d9488 at 3.7:1, now 5.5:1) */
   --c-accent-purple: #7c3aed;  /* darkened from #a78bfa for WCAG AA on light surfaces */
   /* Camera status tokens — one source of truth for the port LEDs, the tile
@@ -66,11 +73,19 @@
   --c-board-line:     #1e2a38;
   --c-board-text:     #e8ecf1;
   --c-board-text-2:   #cdd6e0;
-  /* --c-board-muted is the dimmest legible tier on the board (4.4:1 on
-     --c-board-bg-deep). The old --c-board-dim / --c-board-dimmer sat below it
-     at 2.6:1 and 2.0:1 — unreadable, so every label uses muted instead. */
-  --c-board-muted:    #6b7a8d;
+  /* --c-board-muted is the dimmest legible tier on the board (4.7:1 on
+     --c-board-bg, 4.9:1 on --c-board-bg-deep). The old --c-board-dim /
+     --c-board-dimmer sat below it at 2.6:1 and 2.0:1 — unreadable, so every
+     label uses muted instead. */
+  --c-board-muted:    #728193;
+  /* Board status colours. The board is fixed-dark in BOTH themes, so anything
+     drawn on it must use these and never --c-accent-* — a light-theme accent on
+     a near-black board is the failure these exist to prevent (the live badge
+     was doing exactly that: dark green on #0f1419 = 3.7:1).
+     On --c-board-bg: ok 8.1:1 · bad 4.9:1 · accent 6.6:1 */
   --c-board-ok:       #22c55e;
+  --c-board-bad:      #ef4444;
+  --c-board-accent:   #f97316;
 }
 
 html.dark {
@@ -82,17 +97,24 @@ html.dark {
   --c-text:      #e2e8f0;
   /* Text ramp — mirror of the light ramp, measured against the LIGHTEST dark
      surface (--c-surface #1c1f2e), which is the worst case for pale text.
-     Ratios on #1c1f2e / #0f1117:  muted 6.4/7.4 · dim 5.2/6.0 · dimmer 4.5/5.2 */
+     Ratios on #1c1f2e / #0f1117:  muted 6.4/7.4 · dim 5.2/6.0 · dimmer 4.6/5.3 */
   --c-muted:     #94a3b8;
   --c-dim:       #8593a6;
-  --c-dimmer:    #78879c;
+  --c-dimmer:    #7b899e;
   --c-deep-bg:   #0d0f16;
-  --c-tint-green:    #14532d;
+  /* tint-green was #14532d, which left --c-accent-green at only 4.0:1 on the
+     PASS chips. Deepening the chip backdrop fixes it without touching the
+     green itself, so the status colour keeps its full vividness (5.2:1 now).
+     The red/amber/blue tints are already dark enough for their accents. */
+  --c-tint-green:    #0f4023;
   --c-tint-red:      #450a0a;
   --c-tint-amber:    #422006;
   --c-tint-blue:     #172554;
   --c-accent-green:  #22c55e;
-  --c-accent-red:    #ef4444;
+  /* Red had to move: unlike green it failed on the plain card surface too
+     (4.3:1), which no tint change can fix. 5.2:1 on a card, 4.6:1 on the
+     faint-tinted log rows — the lightest backdrop it ever lands on. */
+  --c-accent-red:    #f16161;
   --c-accent-amber:  #eab308;
   --c-accent-blue:   #60a5fa;
   --c-accent-teal:   #2dd4bf;
@@ -1342,8 +1364,8 @@ html.dark .demo-banner {
     letter-spacing: 0.03em;
     margin-left: 4px;
 }
-.sw-flag-critical { background: var(--c-accent-red);   color: var(--c-on-accent); }
-.sw-flag-warning  { background: var(--c-accent-amber); color: var(--c-on-accent); }
+.sw-flag-critical { background: var(--c-pill-critical); color: var(--c-on-accent); }
+.sw-flag-warning  { background: var(--c-pill-warning);  color: var(--c-on-accent); }
 
 .sw-concern-badge {
     display: inline-block;
@@ -1356,8 +1378,8 @@ html.dark .demo-banner {
     cursor: help;
     white-space: nowrap;
 }
-.sw-concern-critical { background: var(--c-accent-red);   color: var(--c-on-accent); }
-.sw-concern-warning  { background: var(--c-accent-amber); color: var(--c-on-accent); }
+.sw-concern-critical { background: var(--c-pill-critical); color: var(--c-on-accent); }
+.sw-concern-warning  { background: var(--c-pill-warning);  color: var(--c-on-accent); }
 
 /* Subtle row tinting for flagged entries */
 .sw-row-critical td { background: var(--c-tint-red-faint); }
@@ -2417,7 +2439,7 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
    Restart both amber outline. Now: Fatal is solid red (showstopper),
    Error is red outline (single failure), Warning is amber outline,
    Restart is blue outline (lifecycle event, not a problem). */
-.ev-level-fatal { background: var(--c-accent-red); color: var(--c-on-accent); border-color: var(--c-accent-red); }
+.ev-level-fatal { background: var(--c-pill-critical); color: var(--c-on-accent); border-color: var(--c-pill-critical); }
 .ev-level-error { border-color: var(--c-accent-red); color: var(--c-accent-red); background: var(--c-tint-red-faint); }
 .ev-level-warn  { border-color: var(--c-accent-amber); color: var(--c-accent-amber); background: var(--c-tint-amber-faint); }
 .ev-level-restart { border-color: var(--c-accent-blue); color: var(--c-accent-blue); background: var(--c-tint-blue-faint); }
@@ -2452,7 +2474,7 @@ details[open] > .fi-hist-summary::before { transform: rotate(90deg); }
     display: inline-block;
     padding: 1px 6px;
     border-radius: 3px;
-    background: var(--c-accent-red);
+    background: var(--c-pill-critical);
     color: var(--c-on-accent);
     font-size: 0.6rem;
     font-weight: 700;

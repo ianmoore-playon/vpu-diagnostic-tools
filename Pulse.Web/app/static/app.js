@@ -6730,7 +6730,7 @@ function renderScoreConnect() {
           <div class="sc-period-label" id="sc3-period">${rtdShown && rtdShown.period ? "Q" + rtdShown.period : "GAME CLOCK"}</div>
           <div class="sc-clock" id="sc3-clock">${rtdShown && rtdShown.clock ? esc(rtdShown.clock) : "--:--"}</div>
           <div class="sc-data-desc" id="sc3-down">${rtdShown ? _sc3DownText(rtdShown) : ""}</div>
-          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-accent-green)" : "var(--c-accent-red)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
+          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-board-ok)" : "var(--c-board-bad)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
             ${_sc3StageBadge(dataReceiving ? "live" : "disconnected", 0)}
           </div>
         </div>
@@ -6750,7 +6750,7 @@ function renderScoreConnect() {
         </div>
         <div class="sc-center">
           <div class="sc-data-status"><span class="sc-data-label">${dataReceiving ? "Receiving Data" : "No Data"}</span></div>
-          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-accent-green)" : "var(--c-accent-red)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
+          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-board-ok)" : "var(--c-board-bad)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
             ${_sc3StageBadge(dataReceiving ? "live" : "disconnected", 0)}
           </div>
           ${dataReceiving
@@ -6816,8 +6816,8 @@ function renderScoreConnect() {
         ${sc2Teams.home ? kvRow("Home Name", sc2Teams.home) : ""}
       </div>
       ${sc2.networkIfaces && sc2.networkIfaces.length ? `
-      <div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
-        <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.5rem">Network Interfaces</div>
+      <div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--c-border)">
+        <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--c-muted);margin-bottom:0.5rem">Network Interfaces</div>
         <div class="kv-grid">
           ${sc2.networkIfaces.map(n => kvRow(n.name, n.address)).join("")}
         </div>
@@ -6910,20 +6910,25 @@ function _sc3SvcStatusHtml(stage) {
 //   disconnected — frozen past the window / SC III reports no data
 //   offline      — SC III service itself not responding
 function _sc3StageBadge(stage, secs) {
+  // Board tokens, not --c-accent-*: this badge sits on the fixed-dark stadium
+  // board in BOTH themes, so a light-theme accent here renders dark-on-black
+  // (the old --c-accent-green was 3.7:1 in light mode).
   var map = {
-    live:         { c: "var(--c-accent-green)", flash: true,  txt: "LIVE" },
-    stale:        { c: "var(--c-accent-amber)", flash: true,  txt: "STALE · " + secs + "s" },
-    disconnected: { c: "var(--c-accent-red)",   flash: false, txt: "NO SIGNAL" },
-    offline:      { c: "var(--c-dim)",          flash: false, txt: "ScoreConnect III Offline" }
+    live:         { c: "var(--c-board-ok)",     flash: true,  txt: "LIVE" },
+    stale:        { c: "var(--c-board-accent)", flash: true,  txt: "STALE · " + secs + "s" },
+    disconnected: { c: "var(--c-board-bad)",    flash: false, txt: "NO SIGNAL" },
+    offline:      { c: "var(--c-board-muted)",  flash: false, txt: "ScoreConnect III Offline" }
   };
   var s = map[stage] || map.offline;
   var anim = s.flash ? "animation:pulse-live 1.4s ease-in-out infinite;" : "";
   return '<span style="width:6px;height:6px;border-radius:50%;background:' + s.c + ';'
     + 'display:inline-block;' + anim + '"></span>' + s.txt;
 }
+// Colour for #sc3-live-badge, which lives on the dark board — board tokens for
+// the same reason as _sc3StageBadge above.
 var _SC3_STAGE_COLOR = {
-  live: "var(--c-accent-green)", stale: "var(--c-accent-amber)",
-  disconnected: "var(--c-accent-red)", offline: "var(--c-dim)"
+  live: "var(--c-board-ok)", stale: "var(--c-board-accent)",
+  disconnected: "var(--c-board-bad)", offline: "var(--c-board-muted)"
 };
 
 // Status-card "Scoreboard Data" cell markup per stage.
@@ -7078,7 +7083,7 @@ function _sc3StartLivePoll(vendor, sport, showScoreboard) {
     // Hero badge.
     var badge = document.getElementById("sc3-live-badge");
     if (badge) {
-      badge.style.color = _SC3_STAGE_COLOR[st.stage] || "var(--c-dim)";
+      badge.style.color = _SC3_STAGE_COLOR[st.stage] || "var(--c-board-muted)";
       badge.innerHTML = _sc3StageBadge(st.stage, st.secs);
     }
 
