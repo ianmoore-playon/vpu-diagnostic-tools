@@ -90,6 +90,10 @@ for /f "usebackq delims=" %%S in (`
         "try { [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; (Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/commits/%BRANCH%' -TimeoutSec 10).sha } catch { '' }"
 `) do set "COMMIT_SHA=%%S"
 
+:: Lookup failure isn't fatal (the branch-zip URL below still works without a
+:: SHA) but say so -- api.github.com being blocked is a real field failure.
+if not defined COMMIT_SHA echo   Update ......................... commit lookup failed ^(api.github.com unreachable?^) - trying branch zip
+
 :: Already up to date? Skip the download entirely. Don't re-stream a build
 :: that's already installed — just go straight to launch.
 if defined COMMIT_SHA if exist "%INSTALL_DIR%\VERSION" (
@@ -122,7 +126,7 @@ if exist "%ZIPFILE%" for %%A in ("%ZIPFILE%") do if %%~zA GEQ 1000 set "DL_OK=1"
 if not defined DL_OK (
     echo   Update ......................... retrying via PowerShell
     if exist "%ZIPFILE%" del "%ZIPFILE%" 2>nul
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue';[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try{ Invoke-WebRequest -UseBasicParsing -Uri '!ASSET_URL!' -OutFile '%ZIPFILE%' }catch{ exit 1 }"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue';[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try{ Invoke-WebRequest -UseBasicParsing -Uri '!ASSET_URL!' -OutFile '%ZIPFILE%' }catch{ Write-Host ('   Download failed: '+$_.Exception.Message); exit 1 }"
 )
 
 if not exist "%ZIPFILE%" goto :dl_failed
@@ -135,8 +139,9 @@ if exist "%INSTALL_DIR%\run.bat" (
     echo   Update ......................... failed - using installed build
     goto :shortcut
 )
+echo.
 echo   [ERROR] Download failed and no installed build to fall back on.
-echo           Check the internet connection and try again.
+call :netdiag
 goto :fatal
 
 :dl_ok
@@ -234,3 +239,64 @@ echo  ============================================
 pause >nul
 endlocal
 exit /b 1
+
+:: -- Network diagnostics ---------------------------------------------------
+:: Runs when no build could be downloaded AND none is installed, so the tech
+:: (or the venue's IT) can see exactly which GitHub hostname this network
+:: blocks. School/venue web filters commonly allow github.com but block
+:: *.githubusercontent.com -- that shows up here as an OK first line with
+:: FAIL lines underneath. Results also land in %TEMP%\pulse-launcher-diag.txt
+:: so support can ask for the file.
+:netdiag
+set "DIAG_LOG=%TEMP%\pulse-launcher-diag.txt"
+> "%DIAG_LOG%" echo Pulse launcher network diagnostics - %DATE% %TIME% - channel dev - branch %BRANCH%
+echo.
+echo   -- Network check: every host Pulse downloads from ----------------
+call :probe github.com
+call :probe api.github.com
+call :probe codeload.github.com
+call :probe objects.githubusercontent.com
+call :probe release-assets.githubusercontent.com
+call :probe raw.githubusercontent.com
+echo   -------------------------------------------------------------------
+findstr /l /c:"[FAIL]" "%DIAG_LOG%" >nul 2>&1
+if errorlevel 1 goto :diag_allok
+findstr /l /c:"[ OK ] github.com " "%DIAG_LOG%" >nul 2>&1
+if errorlevel 1 goto :diag_list
+echo   github.com works but other GitHub hosts are blocked. This is
+echo   typical of a school/venue web filter, and it is why the download
+echo   fails even though github.com opens fine in a browser.
+:diag_list
+echo   Ask the site's network admin to allow HTTPS - TCP 443 - to:
+echo     api.github.com                        - finds the latest release
+echo     github.com                            - starts the download
+echo     objects.githubusercontent.com         - release file storage
+echo     release-assets.githubusercontent.com  - release file storage
+echo     codeload.github.com                   - source zip fallback
+echo     raw.githubusercontent.com             - launcher updates
+goto :diag_certs
+:diag_allok
+echo   All GitHub hosts are reachable from this machine, so the failure
+echo   above may be transient - run this launcher again. If it keeps
+echo   failing, send the report file below to the Pulse team.
+:diag_certs
+findstr /l /c:"CERT WARNING" "%DIAG_LOG%" >nul 2>&1
+if not errorlevel 1 (
+    echo.
+    echo   A CERT WARNING above means this network intercepts HTTPS
+    echo   ^(SSL inspection^). Downloads will keep failing until IT exempts
+    echo   the hosts listed above from inspection.
+)
+echo.
+echo   Report saved to: %DIAG_LOG%
+goto :eof
+
+:: One host: DNS, then TCP 443, then a real TLS handshake with the protocol
+:: list pinned to Tls/Tls11/Tls12 (the .NET Framework default on this image
+:: negotiates SSL3/TLS1.0 and false-fails modern hosts). Reports the
+:: certificate issuer so an SSL-inspection appliance is visible at a glance.
+:: PS 5.1: the validation callback MUST be cast to its delegate type
+:: explicitly -- implicit conversion inside New-Object fails silently.
+:probe
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$h='%~1';$line='';try{$null=[Net.Dns]::GetHostAddresses($h)}catch{$line=('  [FAIL] {0,-38} DNS lookup failed - {1}' -f $h,$_.Exception.Message.Trim())};if(-not $line){$c=New-Object Net.Sockets.TcpClient;$iar=$c.BeginConnect($h,443,$null,$null);if(-not ($iar.AsyncWaitHandle.WaitOne(5000) -and $c.Connected)){$line=('  [FAIL] {0,-38} DNS ok but no connection on port 443' -f $h)}else{try{$script:pe='None';$cb=[Net.Security.RemoteCertificateValidationCallback]{param($s,$cert,$chain,$e) $script:pe=$e; $true};$ss=New-Object Net.Security.SslStream($c.GetStream(),$false,$cb);$ss.AuthenticateAsClient($h,$null,[Security.Authentication.SslProtocols]'Tls,Tls11,Tls12',$false);$cert2=New-Object Security.Cryptography.X509Certificates.X509Certificate2 $ss.RemoteCertificate;$iss=(($cert2.Issuer -split ',')[0]) -replace 'CN=','';$warn='';if($script:pe.ToString() -ne 'None'){$warn=' ** CERT WARNING: '+$script:pe};$line=('  [ OK ] {0,-38} cert issuer: {1}{2}' -f $h,$iss,$warn)}catch{$line=('  [FAIL] {0,-38} TLS handshake failed - {1}' -f $h,$_.Exception.Message.Trim())};$c.Close()}};Write-Output $line;Add-Content -LiteralPath '%DIAG_LOG%' -Value $line"
+goto :eof

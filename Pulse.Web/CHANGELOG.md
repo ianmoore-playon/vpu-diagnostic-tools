@@ -23,6 +23,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [Unreleased]
 
 ### Added
+- When the launcher can't download Pulse, it now explains why instead of just saying "check the internet connection": it shows the actual download error, tests each GitHub server Pulse needs one by one, and prints exactly which ones the venue's network is blocking (with the allow-list to hand to the school's IT). Catches the common case where github.com opens fine in a browser but the download servers are filtered, and flags networks that intercept HTTPS. The report is also saved to a file support can ask for.
 - Pulse now cleans up the retired Canopy/Leaf software automatically. The old Banyan Hills agent (no longer used by PlayOn) is uninstalled in the background the first time Pulse runs on a VPU, and the leftover C:\Banyan folder is removed — no action needed from techs.
 - New standalone script `scripts/Get-WindowsPatchStatus.ps1`: run it on a VPU to see the real Windows patch level (build number, hotfixes, servicing history, pending reboot) even though Windows Update is disabled on the fleet image.
 
