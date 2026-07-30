@@ -64,33 +64,39 @@ def _save_fault_history(runs: list) -> None:
         json.dump(runs[-_FAULT_HISTORY_MAX:], f, indent=2)
 
 def _read_version() -> str:
-    import subprocess
-    repo_root = _os.path.dirname(_web_root)
-    try:
-        result = subprocess.run(
-            ["git", "for-each-ref", "--sort=-creatordate", "--count=1",
-             "--format=%(refname:short)",
-             "refs/tags/web-v*", "refs/tags/web-beta-v*", "refs/tags/web-dev-v*"],
-            capture_output=True, text=True, cwd=repo_root, timeout=5,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    except Exception:
-        pass
-    try:
-        result = subprocess.run(
-            ["git", "describe", "--tags", "--always"],
-            capture_output=True, text=True, cwd=repo_root, timeout=5,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    except Exception:
-        pass
+    """Resolve the version string shown in the sidebar, splash and About tab.
+
+    VERSION is the source of truth (per CLAUDE.md). Shipped builds always have
+    it: web-build.yml overwrites the file with the release tag (e.g.
+    "web-v1.0.2") before zipping, and the dev launcher's branch archive carries
+    the branch's own value (e.g. "1.1.0-dev"). Neither ships a .git, so no git
+    lookup happens in the field at all.
+
+    git describe is only a fallback for a bare repo checkout with no VERSION.
+    It describes HEAD, so it can't misreport what's actually running — the
+    previous implementation asked for the newest `web-*` tag by creatordate
+    repo-wide, which is unrelated to the checked-out commit and made a dev
+    working tree announce itself as the latest production release.
+    """
     try:
         with open(_os.path.join(_web_root, "VERSION")) as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return "unknown"
+            version = f.read().strip()
+        if version:
+            return version
+    except OSError:
+        pass
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--always", "--dirty"],
+            capture_output=True, text=True,
+            cwd=_os.path.dirname(_web_root), timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return "unknown"
 
 APP_VERSION = _read_version()
 _static_dir = _os.path.join(_app_dir, "static")
@@ -2916,98 +2922,6 @@ async def serve_index():
     return HTMLResponse(html)
 
 
-@app.get("/api/preload")
-async def api_preload():
-    """Run ALL diagnostic scripts once in parallel and return per-page data."""
-    sc_url = load_settings().get("scoreConnectUrl", "http://localhost:5000")
-    (
-        identity,
-        hardware,
-        performance,
-        network_config,
-        nics,
-        services,
-        disk_health,
-        event_logs,
-        scoreconnect,
-        pixellot_config,
-        installed_sw,
-        domains,
-        ports,
-        ntp,
-        local,
-        ntp_peers,
-        dns_resolution,
-        install_state,
-        gpu_info,
-        wifi,
-        tls_inspection,
-    ) = await asyncio.gather(
-        run_ps("Get-SystemIdentity.ps1"),
-        run_ps("Get-Hardware.ps1"),
-        run_ps("Get-Performance.ps1"),
-        run_ps("Get-NetworkConfig.ps1"),
-        run_ps("Get-NicAdapters.ps1"),
-        run_ps("Get-Services.ps1"),
-        run_ps("Get-DiskHealth.ps1"),
-        run_ps("Get-EventLogs.ps1"),
-        run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": sc_url}, timeout=20),
-        run_ps("Get-PixellotConfig.ps1"),
-        run_ps("Get-InstalledSoftware.ps1"),
-        run_ps("Test-NetworkDomains.ps1"),
-        # 40s: UDP rows retry once and require an echoed reply — a blocked-UDP
-        # venue adds ~14s over the default 30s budget.
-        run_ps("Test-NetworkPorts.ps1", timeout=40),
-        run_ps("Test-NtpDrift.ps1"),
-        run_ps("Test-LocalNetwork.ps1"),
-        run_ps("Get-NtpPeers.ps1"),
-        run_ps("Test-DnsResolution.ps1"),
-        run_ps("Test-PixellotInstallState.ps1", timeout=15),
-        run_ps("Get-GpuInfo.ps1", timeout=15),
-        run_ps("Get-WifiAdapters.ps1", timeout=10),
-        # SSL-inspection check rides the preload so the Network tab (and its
-        # interception critical) is complete on first paint. Runs in parallel
-        # with everything else; healthy venues finish in ~5s.
-        run_ps("Test-TlsInspection.ps1", timeout=60),
-    )
-    # Audio is deferred — lazy-fetched on tab visit to keep preload lean.
-
-    # Run CGI probes for camera identification (cached 30s)
-    ocr_ips_pre, _ = _build_ocr_sets(pixellot_config)
-    raw_ports_pre = nics.get("ports", []) if nics and not nics.get("error") else []
-    probe_results_pre = await _probe_all_cameras(raw_ports_pre, ocr_ips_pre)
-
-    return {
-        # Readiness here uses the snapshot CPU/mem (no perf_sample on the
-        # preload path) and the disk-health already gathered; the authoritative
-        # /api/dashboard fetch refines it with the averaged sample + port tests.
-        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi, disk_health=disk_health, probe_results=probe_results_pre),
-        "system": {
-            "identity": _enrich_identity_pixellot_compat(_enrich_identity_lifecycle(identity), gpu_info),
-            "hardware": hardware,
-            "software": _enrich_software_with_concerns(installed_sw),
-        },
-        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls_inspection),
-        "cameras": {
-            "ports": _enrich_ports(nics, pixellot_config, probe_results_pre),
-            "pixellotConfig": pixellot_config,
-        },
-        "services": services,
-        "disk-health": disk_health,
-        "events": event_logs,
-        "scoreconnect": scoreconnect,
-        "settings": {
-            **load_settings(),
-            "_paths": {
-                "settingsFile": SETTINGS_PATH,
-                "serverLog": SERVER_LOG_PATH,
-            },
-        },
-        "_version": APP_VERSION,
-        "_logs": list(LOG_BUFFER),
-    }
-
-
 @app.get("/api/version")
 async def api_version():
     # demoMode is exposed here (and not only on /api/logs) so the splash
@@ -3932,13 +3846,7 @@ async def api_install_sc3_status():
 
 @app.get("/api/settings")
 async def api_get_settings():
-    return {
-        **load_settings(),
-        "_paths": {
-            "settingsFile": SETTINGS_PATH,
-            "serverLog": SERVER_LOG_PATH,
-        },
-    }
+    return load_settings()
 
 
 @app.post("/api/settings")

@@ -345,16 +345,6 @@ function errorBox(msg) {
   );
 }
 
-function usageBar(pct, color) {
-  const c =
-    pct > 90
-      ? "var(--c-accent-red)"
-      : pct > 75
-        ? "var(--c-accent-amber)"
-        : color || "var(--c-accent-blue)";
-  return `<div class="usage-bar-bg"><div class="usage-bar-fill" style="width:${Math.min(pct, 100)}%;background:${c}"></div></div>`;
-}
-
 // ── Circular Gauge ───────────────────────────────────────────
 
 function gauge(label, value, unit, color, opts) {
@@ -463,6 +453,9 @@ function _setSplashVerb(text) {
 // SPLASH_NOTE_DEFAULT must match the static text in index.html.
 const SPLASH_NOTE_DEFAULT = "Running a full diagnostic sweep — this can take a moment.";
 const SPLASH_NOTE_SLOW    = "Still working — some checks (camera frames, speed test) take longer on slower units.";
+// Shown on the last frame before the splash fades. Without it the note still
+// reads "this can take a moment" while the verb already says "Ready".
+const SPLASH_NOTE_DONE    = "All checks complete.";
 
 // Splash reveal order — cheap local collectors first, network probes and the
 // Dashboard aggregate last. This mirrors how fast sections actually SETTLE:
@@ -600,6 +593,7 @@ function hideSplash() {
   _completeSplashChecklist();   // last visible frame: everything checked
   _setSplashPct(100);
   _setSplashVerb("Ready");
+  _setSplashNote(SPLASH_NOTE_DONE);
   splash.classList.add("splash-hidden");
 }
 
@@ -1324,13 +1318,6 @@ function _findingPageFor(cat) {
   return map[(cat || "").toLowerCase()] || "dashboard";
 }
 
-function _metricColor(val) {
-  if (val == null) return "var(--c-muted)";
-  if (val > 90) return "var(--c-accent-red)";
-  if (val > 75) return "var(--c-accent-amber)";
-  return "var(--c-accent-green)";
-}
-
 var _dashNicRefreshTimer = null;
 
 function _renderNicRows(ports) {
@@ -1814,10 +1801,6 @@ function renderDashboard() {
     }).catch(function() { /* network blip — skip this tick */ })
       .then(function() { _nicPollBusy = false; });
   }, 3000);
-}
-
-function idRow(label, val) {
-  return `<div class="flex justify-between"><span class="text-pulse-muted">${esc(label)}</span><span class="font-medium">${val != null ? esc(String(val)) : "--"}</span></div>`;
 }
 
 // ── Shared Page Helpers ─────────────────────────────────────
@@ -4269,101 +4252,6 @@ function _camStreamBlock(label, s) {
   '</div>';
 }
 
-function _camDetailsPanel(cams, portIdx, portData) {
-  if (!cams.length) return '';
-
-  // NIC / adapter section
-  var nicGroup = '';
-  if (portData) {
-    var duplexVal = portData.fullDuplex === true ? "Full" : portData.fullDuplex === false ? "Half" : "—";
-    // Sum every error/discard counter for the "has errors" check so we
-    // don't miss problems that only register on packet-error or discard
-    // counters (driver-dependent which fields populate).
-    var rxPktErr = portData.rxPacketErrors || 0;
-    var txPktErr = portData.txPacketErrors || 0;
-    var rxDisc   = portData.rxDiscards || 0;
-    var txDisc   = portData.txDiscards || 0;
-    var errTotal = (portData.rxErrors || 0) + (portData.txErrors || 0) +
-                   rxPktErr + txPktErr + rxDisc + txDisc;
-    var errVal = errTotal > 0
-      ? 'RX ' + rxPktErr + ' / TX ' + txPktErr + ' / Discards ' + (rxDisc + txDisc)
-      : 'None';
-    nicGroup = '<div class="cam-detail-group">' +
-      '<div class="cam-detail-group-title">Network Interface Card (NIC)</div>' +
-      _camDetailKv("Adapter", portData.name) +
-      _camDetailKv("MAC", portData.mac) +
-      _camDetailKv("Duplex", duplexVal) +
-      _camDetailKv("Errors", errVal) +
-    '</div>';
-  }
-
-  var inner = nicGroup + cams.map(function(c) {
-    var hasCgi = !!c.cgiConfirmed;
-    var net = c.network || {};
-    var sensor = c.sensor || {};
-
-    // Device section — always show MAC/IP; CGI adds model, serial, firmware
-    var deviceRows =
-      _camDetailKv("IP", c.ip) +
-      _camDetailKv("MAC", c.cgiMac || c.mac) +
-      _camDetailKv("Role", c.role) +
-      _camDetailKv("Identity", c.identitySource);
-    if (hasCgi) {
-      deviceRows +=
-        _camDetailKv("Model", c.model) +
-        _camDetailKv("Model No.", c.modelNumber) +
-        _camDetailKv("Serial", c.serialNumber) +
-        _camDetailKv("Firmware", c.firmwareVersion) +
-        _camDetailKv("TV Mode", _fmtTvMode(c.tvMode)) +
-        _camDetailKv("Brand", c.brand) +
-        _camDetailKv("Type", c.productType);
-    }
-
-    return '<div class="cam-detail-camera">' +
-      '<div class="cam-detail-camera-header">' +
-        svgIcon("camera", 14) + ' ' + esc(c.ip) +
-        (c.modelNumber ? ' <span class="cam-model-label">' + esc(c.modelNumber) + '</span>' : '') +
-        (hasCgi ? ' <span class="cam-cgi-badge" title="Camera answered Pulse&#39;s admin probe (CGI)">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none" title="Camera did not answer Pulse&#39;s admin probe (CGI) — it may be offline or unreachable">No CGI</span>') +
-      '</div>' +
-
-      // Device info
-      '<div class="cam-detail-group">' +
-        '<div class="cam-detail-group-title">Device</div>' +
-        deviceRows +
-      '</div>' +
-
-      // Network (CGI only)
-      (net.ip || net.subnet || net.gateway ? '<div class="cam-detail-group">' +
-        '<div class="cam-detail-group-title">Network Config</div>' +
-        _camDetailKv("IP Address", net.ip) +
-        _camDetailKv("Subnet", net.subnet) +
-        _camDetailKv("Gateway", net.gateway) +
-        _camDetailKv("DHCP", net.dhcp) +
-      '</div>' : '') +
-
-      // Streams (CGI only)
-      _camStreamBlock("Stream 0 — Primary", c.stream0) +
-      _camStreamBlock("Stream 1 — Secondary", c.stream1) +
-
-      // Sensor (CGI only)
-      (sensor.exposure || sensor.brightness ? '<div class="cam-detail-group">' +
-        '<div class="cam-detail-group-title">Image Sensor</div>' +
-        _camDetailKv("Exposure", sensor.exposure) +
-        _camDetailKv("Brightness", sensor.brightness) +
-        _camDetailKv("Contrast", sensor.contrast) +
-        _camDetailKv("Saturation", sensor.colorLevel) +
-        _camDetailKv("Max Gain", sensor.maxShutterGain) +
-        _camDetailKv("Min Shutter", sensor.minShutterSpeed) +
-      '</div>' : '') +
-    '</div>';
-  }).join('');
-
-  return '<details class="cam-details-toggle" data-port-idx="' + portIdx + '">' +
-    '<summary class="cam-details-btn">' + svgIcon("info", 14) + ' Details</summary>' +
-    '<div class="cam-details-body">' + inner + '</div>' +
-  '</details>';
-}
-
 function _camPortTile(port, index, ctx) {
   if (!port) {
     return `<div class="cam-port-tile cam-port-empty">
@@ -5648,7 +5536,7 @@ function renderEvents() {
     <div class="card ev-filter-card">
       <div class="ev-filter-row">
         <div class="ev-filter-group">
-          <label class="ev-filter-label">TIME WINDOW</label>
+          <label class="ev-filter-label" for="ev-hours">TIME WINDOW</label>
           <select id="ev-hours" class="ev-select">
             <option value="12">Last 12 hours</option>
             <option value="24">Last 24 hours</option>
@@ -5749,7 +5637,7 @@ function renderPixellotLogs() {
     <div class="card ev-filter-card">
       <div class="ev-filter-row">
         <div class="ev-filter-group">
-          <label class="ev-filter-label">TIME WINDOW</label>
+          <label class="ev-filter-label" for="pxl-hours">TIME WINDOW</label>
           <select id="pxl-hours" class="ev-select">
             <option value="12">Last 12 hours</option>
             <option value="24" selected>Last 24 hours</option>
@@ -7426,7 +7314,7 @@ function renderFaultIsolator() {
       resultRow() +
       '<div style="margin:16px 0;max-width:480px">' +
         '<div class="text-xs text-pulse-muted mb-1">Suspect port (has the fault)</div>' +
-        '<select id="fi-suspect" class="ev-select" style="width:100%">' + def + allOpts + "</select>" +
+        '<select id="fi-suspect" class="ev-select" style="width:100%" aria-label="Suspect port (has the fault)">' + def + allOpts + "</select>" +
       "</div>" +
       '<div style="display:flex;gap:10px;justify-content:flex-end">' +
         '<button id="fi-action" class="btn-outline btn-ol-blue" disabled>' + esc(_fi.actionLabel) + " →</button>" +
@@ -8181,7 +8069,7 @@ function _audioDeviceRow(d) {
         ${d.volume != null ? `
           <div class="audio-meter-row">
             <span class="audio-meter-label">${d.muted ? svgIcon("volume-x", 14) : svgIcon("volume", 14)}</span>
-            <input type="range" id="vol-${slug}" class="audio-slider${d.muted ? " audio-slider-muted" : ""}" min="0" max="100" value="${Math.round(d.volume)}"/>
+            <input type="range" id="vol-${slug}" class="audio-slider${d.muted ? " audio-slider-muted" : ""}" min="0" max="100" value="${Math.round(d.volume)}" aria-label="Volume — ${esc(d.name || "audio device")}"/>
             <span id="vol-lbl-${slug}" class="audio-meter-val">${Math.round(d.volume)}%</span>
             <span id="vol-msg-${slug}" class="audio-vol-msg"></span>
           </div>` : ""}
