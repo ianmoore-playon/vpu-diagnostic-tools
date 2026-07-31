@@ -72,8 +72,8 @@ const NAV_SECTIONS = [
     { id: "network", label: "Network Test", icon: "wifi" },
     { id: "cameras", label: "Camera Connectivity", icon: "camera" },
     { id: "scoreconnect", label: "ScoreConnect", icon: "monitor" },
-    { id: "services", label: "Service Status", icon: "server" },
     { id: "audio", label: "Audio", icon: "mic" },
+    { id: "services", label: "Service Status", icon: "server" },
   ]},
   { label: "PIXELLOT CONFIGURATION", pages: [
     { id: "pixellot-software", label: "Pixellot Software", icon: "folder-code" },
