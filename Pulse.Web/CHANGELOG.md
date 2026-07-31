@@ -22,6 +22,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-07-31
+
+### Added
+- ScoreConnect: new "Previous Configurations" panel. Pulse now remembers each scoreboard setup this VPU has run (vendor, sport, connection type, bot number, ScoreLink) — recorded only while scoreboard data is confirmed flowing — so after a reconfigure or bot reassignment you can see exactly what it was set to before, and when it changed.
+
 ## [1.0.3] - 2026-07-31
 
 ### Changed
