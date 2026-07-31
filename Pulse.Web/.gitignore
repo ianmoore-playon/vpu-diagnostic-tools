@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 pulse-settings.json
 pulse-fault-history.json
+pulse-scoreconnect-history.json
 received_reports/
