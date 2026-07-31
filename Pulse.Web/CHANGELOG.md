@@ -22,6 +22,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-07-31
+
+### Changed
+- Sidebar: Audio now sits above Service Status under Troubleshooting.
+
 ## [1.0.2] - 2026-07-28
 
 ### Fixed
