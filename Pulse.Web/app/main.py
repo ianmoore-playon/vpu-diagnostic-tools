@@ -66,11 +66,15 @@ def _save_fault_history(runs: list) -> None:
 def _read_version() -> str:
     """Resolve the version string shown in the sidebar, splash and About tab.
 
-    VERSION is the source of truth (per CLAUDE.md). Shipped builds always have
-    it: web-build.yml overwrites the file with the release tag (e.g.
-    "web-v1.0.2") before zipping, and the dev launcher's branch archive carries
-    the branch's own value (e.g. "1.1.0-dev"). Neither ships a .git, so no git
-    lookup happens in the field at all.
+    VERSION is the source of truth (per CLAUDE.md), and in the field it is
+    always written by whichever launcher installed the box — run_pulse.bat and
+    run_pulse_beta.bat write the release tag ("web-v1.0.2"), run_pulse_dev.bat
+    writes "<branch>-<short-sha>" ("dev-73390dd"). All three then READ it back
+    to decide whether an update is due, so it is load-bearing beyond display.
+    web-build.yml also stamps it into the release zip.
+
+    No shipped build carries a .git — verified on VPU2, which has no git binary
+    installed at all — so the git branch below never runs in the field.
 
     git describe is only a fallback for a bare repo checkout with no VERSION.
     It describes HEAD, so it can't misreport what's actually running — the
