@@ -22,6 +22,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-08-03
+
+### Fixed
+- Network Test: the Wired Ports table now lists the motherboard uplink first, then the camera ports in order — the uplink no longer appears in the middle of the camera NIC's four ports.
+
 ## [1.0.4] - 2026-07-31
 
 ### Added
