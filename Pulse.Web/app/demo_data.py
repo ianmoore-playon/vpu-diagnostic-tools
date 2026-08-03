@@ -1073,6 +1073,18 @@ DEMO = {
         "outputCount": 1,
     },
     "Set-AudioVolume.ps1": lambda **kw: {"success": True, "deviceId": (kw or {}).get("DeviceId", ""), "volume": int((kw or {}).get("Volume", 50))},
+    # A demo box has no Canopy Leaf install — the script's own C:\Banyan
+    # short-circuit payload ("not-present", nothing touched).
+    "Remove-CanopyLeaf.ps1": lambda **kw: {
+        "status": "not-present",
+        "uninstallers": [],
+        "tasksRemoved": [],
+        "servicesDeleted": [],
+        "processesKilled": [],
+        "folderDeleted": False,
+        "leftovers": [],
+        "error": None,
+    },
 }
 
 
