@@ -3860,8 +3860,18 @@ function renderNetwork() {
   // uplink. A multi-NIC VPU has the motherboard port plus the camera card; a
   // bad cable or dirty switch port on a non-uplink port used to be invisible.
   // Role is tagged by the backend (PCI bus: motherboard = onboard LOM bus 0).
+  // Sorted so the table reads top-down: uplink first, then the camera card's
+  // ports in numeric order (#13, #14, …) instead of WMI enumeration order.
   const wiredPorts = (cfg.adapters || []).filter(function(a) {
     return String(a.physicalMediaType || "").toLowerCase().indexOf("802.3") !== -1;
+  }).sort(function(a, b) {
+    var rank = { motherboard: 0, camera: 1 };
+    var ra = rank[a.role] != null ? rank[a.role] : 2;
+    var rb = rank[b.role] != null ? rank[b.role] : 2;
+    if (ra !== rb) return ra - rb;
+    var da = a.interfaceDescription || a.name || "";
+    var db = b.interfaceDescription || b.name || "";
+    return da.localeCompare(db, undefined, { numeric: true });
   });
   const wiredPortsCard = wiredPorts.length ? `
     <div class="card">

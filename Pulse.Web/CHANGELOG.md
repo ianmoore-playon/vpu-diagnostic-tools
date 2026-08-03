@@ -34,6 +34,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - Network Test: port tiles now use the same PASS / FAIL pills as the service list next to them, and the ? icon sits right after the port number where it's easier to spot.
 - Camera Connectivity: port cards now show link state as the same style of pill (LINKED / DEGRADED / NO LINK) used across the app, always in the top-right corner of the card; the camera role label (OCR / MAIN CAMERA) sits on its own line below the port number.
 - Sidebar: Audio now sits above Service Status under Troubleshooting.
+- Network Test: the Wired Ports table now lists the motherboard uplink first, then the camera ports in order — the uplink no longer appears in the middle of the camera NIC's four ports.
 
 ### Fixed
 - Every bit of text in Pulse is now readable in both light and dark mode, checked page by page. Faint grey text (log timestamps, the small print under the dashboard gauges, card headings like FINDINGS and VPU IDENTITY) was washed out against the background — worst on a laptop screen in daylight. The coloured status words were the other half of it: PASS / FAIL / WARNING chips, the red [CRITICAL] tags, the amber WARNING pills, and the teal MAIN CAMERA badge were all too pale against their backgrounds, especially where a chip sat inside an already-tinted row.
