@@ -1054,7 +1054,7 @@ function renderCloudEvents() {
 
   const metricsCard = `
     <div class="card mt-4">
-      <div class="text-xs font-medium text-pulse-muted mb-2">LIVE HEALTH — what Pixellot Cloud sees right now</div>
+      <div class="text-xs font-medium text-pulse-muted mb-2">LIVE HEALTH — what Pixellot Cloud sees right now (via NFHS)</div>
       <div class="flex flex-wrap gap-2">
         ${_ceMetricChip("Connection", met.connection)}
         ${_ceMetricChip("HD bandwidth", met.hdBandwidth)}
