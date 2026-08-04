@@ -147,6 +147,9 @@ def _fetch_broadcast_by_event_id(pixellot_event_id):
         "gameKey": data.get("game_key"),
         "vodKey": data.get("vod_key"),
         "unlisted": data.get("unlisted"),
+        # scheduled length in HOURS (Unity's `duration` is the scheduled
+        # window, not actual air time) — bounds the "unable to stream" phase
+        "durationHours": data.get("duration"),
         "pixellotEventId": data.get("pixellot_event_id"),
         # broadcast can be registered to a different venue than the box that
         # ran it (seen with ops test fixtures) — surface so the UI can flag it
@@ -157,13 +160,13 @@ def _fetch_broadcast_by_event_id(pixellot_event_id):
 
 # ── verdict engine ───────────────────────────────────────────────
 
-# How long past the scheduled start a broadcast may sit in `scheduled`
-# before "never went on air" is the verdict rather than "starting late".
-# 30 min: long enough for a genuinely late start, short enough that a tech
-# standing at the box during a failed go-live gets a verdict, not "unknown".
-# Inside the window the verdict is "late" (started, not on air yet) so the
-# in-progress case is visible too.
-_STUCK_GRACE = timedelta(minutes=30)
+# A broadcast that hasn't gone on air is judged against its scheduled WINDOW
+# (start .. start + duration): inside the window it's an active incident
+# ("unable to stream" — the tech may be standing at the box right now);
+# once the window has fully passed it's history ("did not stream"). Unity's
+# broadcast `duration` is the scheduled length in hours; when we don't have
+# it (listed events from the search index), assume a typical game window.
+_DEFAULT_WINDOW_HOURS = 3.0
 
 
 def _verdict_from_eqs(eqs_entry):
@@ -220,18 +223,25 @@ def _verdict_for(entry, eqs, now):
         return _verdict_from_eqs(scored)
 
     if status == "scheduled" and start and start <= now:
-        if now - start > _STUCK_GRACE:
-            reasons = [
-                "Broadcast never left 'scheduled' — it did not go on air",
+        try:
+            hours = float(entry.get("durationHours") or _DEFAULT_WINDOW_HOURS)
+        except (TypeError, ValueError):
+            hours = _DEFAULT_WINDOW_HOURS
+        window_end = start + timedelta(hours=hours)
+        if now <= window_end:
+            mins = int((now - start).total_seconds() // 60)
+            return "unable", [
+                f"Event window is active (started {mins} min ago) but the "
+                "broadcast has not gone on air — the box is unable to "
+                "stream right now",
             ]
-            if game_key and game_key in eqs["excluded"]:
-                reasons.append("Cloud quality system never scored it (nothing aired)")
-            return "failed", reasons
-        return "late", [
-            "Scheduled start has passed and the broadcast has not gone on "
-            "air yet — if you are at the box now, this is the failure in "
-            "progress",
+        reasons = [
+            "Event window ended without the broadcast going on air — it "
+            "did not stream",
         ]
+        if game_key and game_key in eqs["excluded"]:
+            reasons.append("Cloud quality system never scored it (nothing aired)")
+        return "failed", reasons
     if status == "complete":
         return "streamed", ["Marked complete in the cloud (not quality-scored)"]
     return "unknown", []
@@ -260,6 +270,7 @@ def _merge_timeline(listed_items, box_broadcasts, local_events, eqs, now):
             "hasVod": item.get("has_vod"),
             "source": "listed",
             "unlisted": False,
+            "durationHours": None,
             "pixellotEventId": None,
             "local": None,
             "eqs": None,
@@ -289,6 +300,7 @@ def _merge_timeline(listed_items, box_broadcasts, local_events, eqs, now):
             }
         else:
             entry["source"] = "listed+box"
+        entry["durationHours"] = bdc.get("durationHours")
         entry["pixellotEventId"] = bdc.get("pixellotEventId")
         entry["broadcastKey"] = bdc.get("broadcastKey")
         entry["registeredVenueId"] = bdc.get("pixellotVenueId")

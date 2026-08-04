@@ -1217,9 +1217,10 @@ def demo_cloud_events(venue_id, local_events):
         "verdict": "upcoming",
         "verdictReasons": [],
     })
-    # A go-live in trouble right now: started 15 minutes ago, broadcast still
-    # 'scheduled' — exercises the "Not on air yet" verdict a tech would see
-    # standing at the box during a failed start.
+    # A go-live in trouble right now: started 15 minutes ago, event window
+    # still active, broadcast still 'scheduled' — exercises the "Unable to
+    # stream" verdict a tech would see standing at the box during a failed
+    # start.
     late_start = now - timedelta(minutes=15)
     events.insert(1, {
         "gameKey": "gamdemo8888888",
@@ -1231,14 +1232,14 @@ def demo_cloud_events(venue_id, local_events):
         "hasVod": False,
         "source": "listed",
         "unlisted": False,
+        "durationHours": 2.0,
         "pixellotEventId": None,
         "local": None,
         "eqs": None,
-        "verdict": "late",
+        "verdict": "unable",
         "verdictReasons": [
-            "Scheduled start has passed and the broadcast has not gone on "
-            "air yet — if you are at the box now, this is the failure in "
-            "progress",
+            "Event window is active (started 15 min ago) but the broadcast "
+            "has not gone on air — the box is unable to stream right now",
         ],
     })
 
