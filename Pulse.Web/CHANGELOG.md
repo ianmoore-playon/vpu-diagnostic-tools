@@ -20,6 +20,11 @@ flow shows testers when a new build is available.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 `Pulse.Web/VERSION`.
 
+## [1.0.5] - 2026-08-04
+
+### Added
+- ScoreConnect: new "Previous Configurations" panel. Pulse now remembers each scoreboard setup this VPU has run (vendor, sport, connection type, bot number, ScoreLink) — recorded only while scoreboard data is confirmed flowing — so after a reconfigure or bot reassignment you can see exactly what it was set to before, and when it changed.
+
 ## [1.0.4] - 2026-08-03
 
 ### Fixed

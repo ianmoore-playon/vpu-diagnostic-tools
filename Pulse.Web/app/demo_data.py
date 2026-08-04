@@ -128,6 +128,33 @@ def _demo_scoreconnect_live():
     }
 
 
+def _demo_scoreconnect_history():
+    """Seeded 'previous configurations' entries (newest first) so the history
+    panel demonstrates the change timeline in demo mode. Mirrors the entry
+    shape _record_sc_config_history writes: a bot reassignment on the same
+    scoreboard, then an older different-sport setup from last season."""
+    return [
+        {"source": "ScoreConnect III", "version": "1.4.0.10",
+         "vendor": "Daktronics", "sport": "Daktronics Football",
+         "configName": "Wireless", "device": None, "serialPort": None,
+         "firmware": None, "eventType": None, "botNumber": "54025",
+         "scoreLinkModel": "ScoreLink", "scoreLinkPort": "COM7",
+         "firstSeen": "2026-05-26T15:36:00", "lastSeen": "2026-06-12T19:02:00"},
+        {"source": "ScoreConnect III", "version": "1.4.0.10",
+         "vendor": "Daktronics", "sport": "Daktronics Football",
+         "configName": "Wireless", "device": None, "serialPort": None,
+         "firmware": None, "eventType": None, "botNumber": "31882",
+         "scoreLinkModel": "ScoreLink", "scoreLinkPort": "COM7",
+         "firstSeen": "2026-04-02T10:14:00", "lastSeen": "2026-05-26T15:31:00"},
+        {"source": "ScoreConnect III", "version": "1.3.2.4",
+         "vendor": "All Sport 5000", "sport": "Basketball",
+         "configName": "Serial", "device": None, "serialPort": "COM3",
+         "firmware": None, "eventType": None, "botNumber": "31882",
+         "scoreLinkModel": "ScoreLink", "scoreLinkPort": "COM3",
+         "firstSeen": "2026-01-09T18:40:00", "lastSeen": "2026-03-14T21:22:00"},
+    ]
+
+
 def _demo_scoreconnect():
     """Generate consistent ScoreConnect demo data.
 

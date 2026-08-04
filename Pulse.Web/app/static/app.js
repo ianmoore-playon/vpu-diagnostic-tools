@@ -6728,7 +6728,11 @@ function renderScoreConnect() {
   // `error` is a string — surface whichever exists rather than the generic
   // "Failed to load data" fallback.
   if (data.error && !data.reachable && !(data.sc2 && data.sc2.reachable)) {
-    $page().innerHTML = errorBox(data.message || (typeof data.error === "string" ? data.error : null));
+    // Still surface the recorded configuration history — "what was this box
+    // configured as before it went down" is exactly when it's most useful.
+    $page().innerHTML = errorBox(data.message || (typeof data.error === "string" ? data.error : null))
+      + '<div id="sc-config-history-wrap">' + (_scHistCache ? _scConfigHistoryHtml(_scHistCache, null) : "") + "</div>";
+    _scLoadConfigHistory(null);
     return;
   }
 
@@ -6949,7 +6953,11 @@ function renderScoreConnect() {
 
     <!-- Cloud BOT (ScoreLink panel moved up under the hero) -->
     ${botCard ? `<div class="mt-4">${botCard}</div>` : ""}
+
+    <!-- Previous scoreboard configurations recorded on this VPU -->
+    <div id="sc-config-history-wrap">${_scHistCache ? _scConfigHistoryHtml(_scHistCache, data) : ""}</div>
   `;
+  _scLoadConfigHistory(data);
 
   // Start live polling whenever SC III is detected — even if not currently
   // receiving data, so the hero updates the moment the feed starts. Safe:
@@ -7201,6 +7209,85 @@ function _sc3StartLivePoll(vendor, sport, showScoreboard) {
 function _sc3SetText(id, text) {
   var el = document.getElementById(id);
   if (el && el.textContent !== text) el.textContent = text;
+}
+
+// ── ScoreConnect configuration history ───────────────────────
+// Read-only log of previous scoreboard configurations recorded on this VPU.
+// The server appends an entry whenever the config fingerprint changes while
+// scoreboard data is confirmed flowing ("Data is present…"), so entries are
+// known-working states — not mid-reconfigure noise. Reuses the fault-isolator
+// history styles (fi-hist-*), which are generic collapsible history rows.
+
+var _scHistCache = null;  // persisted entries (null = not yet fetched)
+
+// Display label per snapshot field, in the SAME order as the server's
+// fingerprint (_SC_CONFIG_FP_FIELDS in main.py) so change detection and the
+// "Current" match track exactly what opens a new entry server-side.
+var _SC_HIST_FIELDS = [
+  ["vendor", "Vendor"], ["sport", "Sport"], ["configName", "Connection Type"],
+  ["device", "Device"], ["serialPort", "Serial Port"], ["eventType", "Event Type"],
+  ["botNumber", "Bot #"], ["scoreLinkModel", "ScoreLink"],
+];
+
+function _scLoadConfigHistory(current) {
+  api("/api/scoreconnect/history").then(function(d) {
+    _scHistCache = (d && d.entries) || [];
+    var w = document.getElementById("sc-config-history-wrap");
+    if (w && currentPage === "scoreconnect") w.innerHTML = _scConfigHistoryHtml(_scHistCache, current);
+  }).catch(function() {});
+}
+
+function _scConfigHistoryHtml(entries, current) {
+  if (!entries || !entries.length) return "";
+  function fv(v) { return v == null ? "" : String(v); }
+  var cfg = current && current.configuration || {};
+  var bot = current && current.botStatus || {};
+  var liveFp = [cfg.vendor, cfg.sport, cfg.vendorConfigurationName, cfg.device,
+    cfg.serialPort, cfg.eventType, bot.scoreConnectId,
+    current && current.scoreLinkModel].map(fv).join("|");
+
+  var items = entries.slice(0, 15).map(function(e, i) {
+    var prev = entries[i + 1];  // next-older entry
+    var changed = prev ? _SC_HIST_FIELDS.filter(function(f) { return fv(e[f[0]]) !== fv(prev[f[0]]); })
+      .map(function(f) { return f[1]; }) : [];
+    var fp = _SC_HIST_FIELDS.map(function(f) { return fv(e[f[0]]); }).join("|");
+    var isCurrent = i === 0 && !!current && fp === liveFp;
+
+    var first = e.firstSeen ? new Date(e.firstSeen) : null;
+    var last = e.lastSeen ? new Date(e.lastSeen) : null;
+    var when = first ? first.toLocaleDateString() : "";
+    if (first && last && last.toLocaleDateString() !== first.toLocaleDateString()) {
+      when += " – " + last.toLocaleDateString();
+    }
+    var title = [e.vendor, e.sport].filter(Boolean).join(" · ") || "Configuration";
+
+    return '<details class="fi-hist-run">' +
+      '<summary class="fi-hist-summary">' +
+        '<span class="fi-hist-when">' + esc(when) + "</span>" +
+        '<span class="fi-hist-where">' + esc(title) +
+          (e.botNumber ? ' <span class="font-mono text-pulse-muted">BOT ' + esc(fv(e.botNumber)) + "</span>" : "") +
+        "</span>" +
+        (isCurrent ? badge("Current", "pass")
+          : changed.length ? '<span class="fi-hist-chip fi-hist-chip-amber">Changed: ' + esc(changed.join(", ")) + "</span>"
+          : '<span class="fi-hist-chip fi-hist-chip-muted">Earliest recorded</span>') +
+      "</summary>" +
+      '<div class="fi-hist-body"><div class="kv-grid">' +
+        (first ? kvRow("First seen", first.toLocaleString()) : "") +
+        (last ? kvRow("Last seen", last.toLocaleString()) : "") +
+        _SC_HIST_FIELDS.map(function(f) { return e[f[0]] != null && e[f[0]] !== "" ? kvRow(f[1], e[f[0]]) : ""; }).join("") +
+        (e.scoreLinkPort ? kvRow("ScoreLink Port", e.scoreLinkPort) : "") +
+        (e.version ? kvRow("Version", e.version) : "") +
+        (e.firmware ? kvRow("Firmware", e.firmware) : "") +
+      "</div></div>" +
+    "</details>";
+  }).join("");
+
+  return '<div class="card mt-4">' +
+    sectionTitle("clock", "Previous Configurations") +
+    '<div class="text-pulse-muted" style="font-size:0.75rem;margin:-0.25rem 0 0.6rem;line-height:1.5">' +
+      "Recorded automatically each time the scoreboard configuration changes while data is confirmed flowing. " +
+      "Bot numbers are best-effort — ScoreConnect III can report a stale number until its service restarts." +
+    "</div>" + items + "</div>";
 }
 
 // ── Camera Fault Isolator ────────────────────────────────────

@@ -63,6 +63,116 @@ def _save_fault_history(runs: list) -> None:
     with open(FAULT_HISTORY_PATH, "w") as f:
         json.dump(runs[-_FAULT_HISTORY_MAX:], f, indent=2)
 
+
+# Persisted ScoreConnect configuration history. ScoreConnect itself is
+# stateless — a reconfigure (bot reassignment, vendor/sport change, reinstall)
+# silently discards the previous setup. Pulse keeps an append-on-change log so
+# a tech can see what this VPU was configured as before it changed.
+# Snapshots are recorded passively off status collections Pulse already runs,
+# and ONLY while ScoreConnect confirms scoreboard data is flowing ("Data is
+# present…") — a probe of a down/idle/mid-reconfigure service records nothing.
+SC_CONFIG_HISTORY_PATH = _os.path.join(_web_root, "pulse-scoreconnect-history.json")
+_SC_CONFIG_HISTORY_MAX = 100
+
+# Fields that define a distinct configuration. A change in ANY of these opens
+# a new dated entry — bot reassignment included. version/firmware/scoreLinkPort
+# are carried along but don't open entries: a software update isn't a
+# scoreboard reconfiguration.
+_SC_CONFIG_FP_FIELDS = ("vendor", "sport", "configName", "device",
+                       "serialPort", "eventType", "botNumber", "scoreLinkModel")
+
+
+def _load_sc_config_history() -> list:
+    try:
+        with open(SC_CONFIG_HISTORY_PATH, "r") as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _save_sc_config_history(entries: list) -> None:
+    with open(SC_CONFIG_HISTORY_PATH, "w") as f:
+        json.dump(entries[-_SC_CONFIG_HISTORY_MAX:], f, indent=2)
+
+
+def _sc_config_snapshot(result):
+    """Distill a Get-ScoreConnectStatus result into a config snapshot, or None
+    when it shouldn't be recorded. Gate: SC III reachable AND reporting
+    scoreboard data present — a configuration is only trusted as "the working
+    setup" while data is confirmed flowing. (The zero-impact SC I/II probes
+    have no data-present signal, so history records SC III only.)"""
+    if not isinstance(result, dict) or not result.get("reachable"):
+        return None
+    if "data is present" not in str(result.get("dataStatus") or "").lower():
+        return None
+    cfg = result.get("configuration") or {}
+    bot = result.get("botStatus") or {}
+    snap = {
+        "source": "ScoreConnect III",
+        "version": result.get("version"),
+        "vendor": cfg.get("vendor"),
+        "sport": cfg.get("sport"),
+        "configName": cfg.get("vendorConfigurationName"),
+        "device": cfg.get("device"),
+        "serialPort": cfg.get("serialPort"),
+        "firmware": cfg.get("firmware"),
+        "eventType": cfg.get("eventType"),
+        "botNumber": bot.get("scoreConnectId"),
+        "scoreLinkModel": result.get("scoreLinkModel") or None,
+        "scoreLinkPort": result.get("scoreLinkPort") or None,
+    }
+    # Must identify a configuration — data flowing with every identifying
+    # field empty (extended-config endpoint down) records nothing.
+    if not any(snap[k] for k in ("vendor", "sport", "configName", "device",
+                                 "serialPort", "botNumber")):
+        return None
+    return snap
+
+
+def _record_sc_config_history(result) -> None:
+    """Append-on-change: a new entry when the config fingerprint differs from
+    the latest one; otherwise extend the latest entry's lastSeen, so each
+    entry records the span it was the active configuration."""
+    snap = _sc_config_snapshot(result)
+    if snap is None:
+        return
+    from datetime import datetime as _dt
+    now = _dt.now().isoformat(timespec="seconds")
+    entries = _load_sc_config_history()
+
+    def _fp(e):
+        return tuple(str(e.get(k) or "") for k in _SC_CONFIG_FP_FIELDS)
+
+    if entries and _fp(entries[-1]) == _fp(snap):
+        latest = entries[-1]
+        latest["lastSeen"] = now
+        # Non-fingerprint fields track the most recent observation.
+        for k in ("version", "firmware", "scoreLinkPort"):
+            if snap.get(k):
+                latest[k] = snap[k]
+    else:
+        snap["firstSeen"] = now
+        snap["lastSeen"] = now
+        entries.append(snap)
+    _save_sc_config_history(entries)
+
+
+async def _run_sc_status(sc_url: str, timeout: int = 15) -> dict:
+    """Run the full ScoreConnect status collection and opportunistically
+    record the configuration into the history log. Recording is best-effort —
+    it must never break the status fetch itself."""
+    result = await run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": sc_url},
+                          timeout=timeout)
+    # Demo payloads randomise the bot number per call — logging them would
+    # fabricate a config change on every fetch.
+    if not DEMO_MODE:
+        try:
+            _record_sc_config_history(result)
+        except Exception as e:
+            _server_log.warning("ScoreConnect config history record failed: %s", e)
+    return result
+
 def _read_version() -> str:
     import subprocess
     repo_root = _os.path.dirname(_web_root)
@@ -3826,7 +3936,19 @@ async def api_scoreconnect():
     settings = load_settings()
     url = settings.get("scoreConnectUrl", "http://localhost:5000")
     # 15s timeout — SC III REST probes ~2-4s, SC II file-based probe < 2s.
-    return await run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": url}, timeout=15)
+    return await _run_sc_status(url, timeout=15)
+
+
+@app.get("/api/scoreconnect/history")
+async def api_scoreconnect_history():
+    """Previous scoreboard configurations recorded on this VPU, newest first.
+    Read-only reference history — see _record_sc_config_history for how and
+    when entries are captured."""
+    entries = list(reversed(_load_sc_config_history()))
+    if DEMO_MODE:
+        from demo_data import _demo_scoreconnect_history
+        entries = entries + _demo_scoreconnect_history()
+    return {"entries": entries}
 
 
 def _fetch_sc3_status(url: str) -> dict:
@@ -4256,7 +4378,7 @@ async def build_report() -> dict:
         ("services",             run_ps("Get-Services.ps1")),
         ("diskHealth",           run_ps("Get-DiskHealth.ps1")),
         ("eventLogs",            run_ps("Get-EventLogs.ps1")),
-        ("scoreConnect",         run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": sc_url}, timeout=20)),
+        ("scoreConnect",         _run_sc_status(sc_url, timeout=20)),
         ("scoreLink",            run_ps("Get-ScoreLinkStatus.ps1", timeout=15)),
         ("pixellotConfig",       run_ps("Get-PixellotConfig.ps1", timeout=15)),
         ("pixellotInstallState", run_ps("Test-PixellotInstallState.ps1", timeout=15)),
