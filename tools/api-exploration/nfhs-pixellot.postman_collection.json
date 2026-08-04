@@ -1,0 +1,178 @@
+{
+  "info": {
+    "name": "NFHS Unity + Pixellot Club — Pulse API exploration",
+    "description": "Exploration collection for the planned Pulse cloud lookup feature:\n\n  \"I am this VPU > I have this event > I was not able to stream because of X issue\"\n\nRun order for the scenario chain:\n  1. Unity: Game/Event lookup  — seeds broadcast_key, game_key, pixellot_id\n  2. Unity: Broadcast detail   — seeds vod_key; shows status (on_air/complete/scheduled)\n  3. Unity: Live stream URL    (only if status = on_air)\n  4. Unity: VOD stream URL     (only if status = complete)\n  5. Club:  Venue profile      — hardware + metrics.values health indicators for the pixellot_id\n\nEach request's test script auto-captures the IDs the next request needs into the active environment, so after step 1 the rest just run.\n\nAuth: every request sends `Authorization: {{nfhs_auth}}` or `{{club_auth}}`. Set those env vars to the full header value (e.g. `Bearer eyJ...`). If either API actually wants a different header (e.g. `x-api-key`), edit the header on the request — the variable plumbing stays the same.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "NFHS Unity",
+      "item": [
+        {
+          "name": "1. Game/Event lookup",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "let j; try { j = pm.response.json(); } catch (e) { return; }",
+                  "const d = j.data || j;",
+                  "const grab = (obj, names) => names.map(n => obj[n]).find(v => v !== undefined && v !== null);",
+                  "const set = (envKey, val) => { if (val) { pm.environment.set(envKey, String(val)); console.log(envKey + ' = ' + val); } };",
+                  "set('broadcast_key', grab(d, ['broadcast_key', 'broadcastKey', 'key']));",
+                  "set('game_key', grab(d, ['game_key', 'gameKey']));",
+                  "set('pixellot_id', grab(d, ['pixellot_id', 'pixellotId']));",
+                  "set('pixellot_key', grab(d, ['pixellot_key', 'pixellotKey']));",
+                  "console.log('publisher/school/state/sport/start:', grab(d, ['publisher_name','publisherName']), grab(d, ['school_name','schoolName']), grab(d, ['state_code','stateCode']), d.sport, grab(d, ['start_time','startTime','start']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "{{nfhs_auth}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{unity_base}}/v2/game_or_event/{{event_id}}",
+              "host": ["{{unity_base}}"],
+              "path": ["v2", "game_or_event", "{{event_id}}"]
+            },
+            "description": "Core event lookup. Set `event_id` in the environment first. Test script captures broadcast_key, game_key, pixellot_id, pixellot_key for the rest of the chain."
+          }
+        },
+        {
+          "name": "2. Broadcast detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "let j; try { j = pm.response.json(); } catch (e) { return; }",
+                  "const d = j.data || j;",
+                  "const grab = (obj, names) => names.map(n => obj[n]).find(v => v !== undefined && v !== null);",
+                  "const set = (envKey, val) => { if (val) { pm.environment.set(envKey, String(val)); console.log(envKey + ' = ' + val); } };",
+                  "set('vod_key', grab(d, ['vod_key', 'vodKey']));",
+                  "set('game_key', grab(d, ['game_key', 'gameKey']));",
+                  "console.log('status:', d.status, '| headline:', d.headline, '| hd:', grab(d, ['hd_enabled','hdEnabled','hd']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "{{nfhs_auth}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{unity_base}}/v2/broadcasts/{{broadcast_key}}",
+              "host": ["{{unity_base}}"],
+              "path": ["v2", "broadcasts", "{{broadcast_key}}"]
+            },
+            "description": "Broadcast detail — headline, status (on_air/complete/scheduled), vod_key, publisher + association, HD flag. Captures vod_key for the VOD URL request."
+          }
+        },
+        {
+          "name": "3. Live stream URL (on_air only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "try { console.log('live m3u8:', JSON.stringify(pm.response.json())); } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "{{nfhs_auth}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{unity_base}}/v2/broadcasts/{{broadcast_key}}/url",
+              "host": ["{{unity_base}}"],
+              "path": ["v2", "broadcasts", "{{broadcast_key}}", "url"]
+            },
+            "description": "Signed CloudFront .m3u8 HLS URL for a live event. Expect an error/empty result when the broadcast is not on_air."
+          }
+        },
+        {
+          "name": "4. VOD stream URL (complete only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "try { console.log('vod m3u8:', JSON.stringify(pm.response.json())); } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "{{nfhs_auth}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{unity_base}}/v2/vods/{{vod_key}}/url",
+              "host": ["{{unity_base}}"],
+              "path": ["v2", "vods", "{{vod_key}}", "url"]
+            },
+            "description": "Signed CloudFront .m3u8 HLS URL for a completed event's VOD. Requires vod_key (captured by request 2)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pixellot Club",
+      "item": [
+        {
+          "name": "5. Venue hardware profile + live health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "let j; try { j = pm.response.json(); } catch (e) { return; }",
+                  "const d = j.data || j;",
+                  "const m = (d.metrics && d.metrics.values) || {};",
+                  "const bad = Object.entries(m).filter(([k, v]) => v && v.severity && v.severity !== 'Ok');",
+                  "console.log('venue:', d.name || d.venueName, '| non-Ok metrics:', bad.length);",
+                  "bad.forEach(([k, v]) => console.log('  ' + k + ':', JSON.stringify(v)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "{{club_auth}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{club_base}}/api/v3/venues/{{pixellot_id}}",
+              "host": ["{{club_base}}"],
+              "path": ["api", "v3", "venues", "{{pixellot_id}}"]
+            },
+            "description": "Full venue hardware profile + metrics.values live health indicators (each with value + Ok/Warning/Error severity). pixellot_id is captured by request 1, or set it manually. Test script logs every non-Ok metric to the Postman console — that list is the raw material for the \"because of X issue\" verdict."
+          }
+        }
+      ]
+    }
+  ]
+}
