@@ -441,6 +441,40 @@ html.dark .demo-banner {
     color: #fbbf24;
 }
 
+/* One-time "moved to the production channel" notice (see
+   _showChannelMovedBanner in app.js). First child of #content (p-6 =
+   1.5rem), so negative margins stretch it into a full-width top strip. */
+.channel-moved-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: -1.5rem -1.5rem 1.5rem;
+    padding: 10px 16px;
+    background: #dbeafe;
+    border-bottom: 1px solid #93c5fd;
+    color: #1e40af;
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+.channel-moved-banner svg { margin-top: 2px; flex-shrink: 0; }
+.channel-moved-text { flex: 1; }
+.channel-moved-dismiss {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0 2px;
+    cursor: pointer;
+    opacity: 0.7;
+}
+.channel-moved-dismiss:hover { opacity: 1; }
+html.dark .channel-moved-banner {
+    background: #172554;
+    border-color: #1e40af;
+    color: #93c5fd;
+}
+
 /* ── Nav ───────────────────────────────────────────────────── */
 .nav-section { margin-bottom: 2px; }
 .nav-section-header {

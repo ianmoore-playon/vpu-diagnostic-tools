@@ -20,7 +20,10 @@ flow shows testers when a new build is available.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 `Pulse.Web/VERSION`.
 
-## [Unreleased]
+## [1.0.6] - 2026-08-04
+
+### Changed
+- The Pulse beta program has wrapped up — thanks for testing! This update moves the VPU to the production version of Pulse. Everything keeps working exactly the same; from your next launch Pulse opens the production build automatically.
 
 ## [1.0.5] - 2026-08-03
 
