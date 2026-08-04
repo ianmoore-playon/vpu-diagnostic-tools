@@ -1217,6 +1217,30 @@ def demo_cloud_events(venue_id, local_events):
         "verdict": "upcoming",
         "verdictReasons": [],
     })
+    # A go-live in trouble right now: started 15 minutes ago, broadcast still
+    # 'scheduled' — exercises the "Not on air yet" verdict a tech would see
+    # standing at the box during a failed start.
+    late_start = now - timedelta(minutes=15)
+    events.insert(1, {
+        "gameKey": "gamdemo8888888",
+        "headline": "JV Boys Basketball",
+        "sport": "Basketball",
+        "startTime": iso(late_start),
+        "localStartTime": late_start.isoformat(),
+        "status": "scheduled",
+        "hasVod": False,
+        "source": "listed",
+        "unlisted": False,
+        "pixellotEventId": None,
+        "local": None,
+        "eqs": None,
+        "verdict": "late",
+        "verdictReasons": [
+            "Scheduled start has passed and the broadcast has not gone on "
+            "air yet — if you are at the box now, this is the failure in "
+            "progress",
+        ],
+    })
 
     return {
         "available": True,

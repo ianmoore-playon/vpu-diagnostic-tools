@@ -986,6 +986,7 @@ const _CE_VERDICTS = {
   partial:  ["critical", "Ended early"],
   failed:   ["critical", "Did not stream"],
   live:     ["ok", "Live now"],
+  late:     ["warning", "Not on air yet"],
   upcoming: ["muted", "Upcoming"],
   unknown:  ["muted", "Unknown"],
 };

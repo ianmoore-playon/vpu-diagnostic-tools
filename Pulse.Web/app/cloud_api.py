@@ -159,7 +159,11 @@ def _fetch_broadcast_by_event_id(pixellot_event_id):
 
 # How long past the scheduled start a broadcast may sit in `scheduled`
 # before "never went on air" is the verdict rather than "starting late".
-_STUCK_GRACE = timedelta(hours=2)
+# 30 min: long enough for a genuinely late start, short enough that a tech
+# standing at the box during a failed go-live gets a verdict, not "unknown".
+# Inside the window the verdict is "late" (started, not on air yet) so the
+# in-progress case is visible too.
+_STUCK_GRACE = timedelta(minutes=30)
 
 
 def _verdict_from_eqs(eqs_entry):
@@ -215,13 +219,19 @@ def _verdict_for(entry, eqs, now):
         }
         return _verdict_from_eqs(scored)
 
-    if status == "scheduled" and start and now - start > _STUCK_GRACE:
-        reasons = [
-            "Broadcast never left 'scheduled' — it did not go on air",
+    if status == "scheduled" and start and start <= now:
+        if now - start > _STUCK_GRACE:
+            reasons = [
+                "Broadcast never left 'scheduled' — it did not go on air",
+            ]
+            if game_key and game_key in eqs["excluded"]:
+                reasons.append("Cloud quality system never scored it (nothing aired)")
+            return "failed", reasons
+        return "late", [
+            "Scheduled start has passed and the broadcast has not gone on "
+            "air yet — if you are at the box now, this is the failure in "
+            "progress",
         ]
-        if game_key and game_key in eqs["excluded"]:
-            reasons.append("Cloud quality system never scored it (nothing aired)")
-        return "failed", reasons
     if status == "complete":
         return "streamed", ["Marked complete in the cloud (not quality-scored)"]
     return "unknown", []
