@@ -40,6 +40,7 @@ from powershell import (
     clear_ps_cache,
 )
 import peer
+import cloud_api
 
 _web_root = _os.path.dirname(_app_dir)
 SETTINGS_PATH = _os.path.join(_web_root, "pulse-settings.json")
@@ -3848,6 +3849,38 @@ async def api_pixellot_logs(hours: int = Query(default=24)):
     a `depsErrorDetected` flag that the UI surfaces as a prompt to escalate
     to Pixellot support."""
     return await run_ps("Search-PixellotLogs.ps1", {"HoursBack": hours}, timeout=30)
+
+
+@app.get("/api/cloud-events")
+async def api_cloud_events():
+    """Event Streaming lane: chain the box's own identifiers (venueId +
+    recorded pixellot event ids) through the public NFHS cloud APIs to show
+    recent events, a streamed/failed verdict per event, and cloud-side
+    evidence for failure causes. All cloud calls are server-side, timeout
+    bounded, and fail-soft — an unreachable cloud is reported as such, never
+    as a device finding."""
+    identity, local = await asyncio.gather(
+        run_ps("Get-SystemIdentity.ps1"),
+        run_ps("Get-PixellotEvents.ps1"),
+    )
+    identity = identity if isinstance(identity, dict) else {}
+    local = local if isinstance(local, dict) else {}
+    venue_id = (identity.get("pixellot") or {}).get("venueId")
+    local_events = local.get("events") or []
+    loop = asyncio.get_event_loop()
+    cloud = await loop.run_in_executor(
+        None, cloud_api.fetch_cloud, venue_id, local_events
+    )
+    return {
+        "identity": {
+            "venueId": venue_id,
+            "vpuName": (identity.get("pixellot") or {}).get("vpuName"),
+            "hostname": (identity.get("computerSystem") or {}).get("name"),
+            "isNonVpuHost": identity.get("isNonVpuHost"),
+        },
+        "localEvents": local,
+        "cloud": cloud,
+    }
 
 
 @app.get("/api/audio")
