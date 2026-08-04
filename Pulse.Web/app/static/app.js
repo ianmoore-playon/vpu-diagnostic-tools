@@ -1057,10 +1057,8 @@ function renderCloudEvents() {
       <div class="text-xs font-medium text-pulse-muted mb-2">LIVE HEALTH — what Pixellot Cloud sees right now</div>
       <div class="flex flex-wrap gap-2">
         ${_ceMetricChip("Connection", met.connection)}
-        ${_ceMetricChip("Dark court", met.darkCourt)}
         ${_ceMetricChip("HD bandwidth", met.hdBandwidth)}
         ${_ceMetricChip("Pano bandwidth", met.panoBandwidth)}
-        ${_ceMetricChip("CPU temp", met.cpuTemperature)}
         ${_ceMetricChip("Audio", met.audioIndication)}
         ${_ceMetricChip("Scoreboard", met.scoreboardConnection)}
         ${_ceMetricChip("Health", met.health)}

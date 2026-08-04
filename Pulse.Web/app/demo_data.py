@@ -1281,8 +1281,8 @@ def demo_cloud_events(venue_id, local_events):
         "events": events,
         "causeHints": [
             {"severity": "warning",
-             "text": "Cloud reports a dark court — camera may be obstructed, "
-                     "powered off, or the room is dark",
+             "text": "Cloud reports the camera picture is dark — camera "
+                     "may be obstructed, powered off, or the room is dark",
              "page": "cameras"},
             {"severity": "info",
              "text": f"Pixellot software is behind its target "

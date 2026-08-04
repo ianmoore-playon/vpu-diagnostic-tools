@@ -358,16 +358,15 @@ def _cause_hints(metrics, producer):
         if dark and no_bw:
             hints.append({
                 "severity": "critical",
-                "text": "Box is online but the cloud sees no camera video "
-                        "(dark court, no HD/pano bandwidth) — check camera "
-                        "connections",
+                "text": "Box is online but no camera video is reaching the "
+                        "cloud — check camera connections",
                 "page": "cameras",
             })
         elif dark:
             hints.append({
                 "severity": "warning",
-                "text": "Cloud reports a dark court — camera may be obstructed, "
-                        "powered off, or the room is dark",
+                "text": "Cloud reports the camera picture is dark — camera "
+                        "may be obstructed, powered off, or the room is dark",
                 "page": "cameras",
             })
     if metrics.get("scoreboardConnection") == "Error" or metrics.get("scoreboardData") == "Error":
