@@ -67,6 +67,7 @@ const NAV_SECTIONS = [
   { label: "TRIAGE", pages: [
     { id: "dashboard", label: "Dashboard", icon: "grid" },
     { id: "inspection-report", label: "Inspection Report", icon: "file" },
+    { id: "cloud-events", label: "Event Streaming", icon: "play" },
   ]},
   { label: "TROUBLESHOOTING", pages: [
     { id: "network", label: "Network Test", icon: "wifi" },
@@ -129,6 +130,7 @@ let fetchPromises = {};
 // here; RETIRED_PAGE_ALIASES only redirects the old nav ids at the router.
 const PAGE_API = {
   dashboard: "/api/dashboard",
+  "cloud-events": "/api/cloud-events",
   system: "/api/system",
   network: "/api/network",
   cameras: "/api/cameras",
@@ -937,6 +939,10 @@ const pageRenderers = {
   // Read-only fleet-audit roll-up under TRIAGE. Reuses the cached /api/system,
   // /api/network and /api/cameras payloads — no own endpoint (skips PAGE_API).
   "inspection-report": renderInspectionReport,
+  // Cloud-side view of this VPU's recent events and whether each streamed —
+  // NFHS search/Unity/EQS lookups keyed off the box's own venueId + recorded
+  // event ids. All calls server-side via /api/cloud-events.
+  "cloud-events": renderCloudEvents,
   // System Overview was split into Hardware / Applications / Environment
   // (nav restructure v3); the `system` id is retired but its /api/system
   // payload still feeds all three (and Pixellot Software, below).
@@ -966,6 +972,162 @@ const pageRenderers = {
   settings: renderSettings,
   about: renderAbout,
 };
+
+// ── Event Streaming (cloud-events) ───────────────────────────
+// "I am this VPU → I had this event → I did/didn't stream → because of X."
+// Data: /api/cloud-events — the box's venueId + recorded event ids chained
+// through the public NFHS cloud APIs (search, Unity, EQS) server-side, merged
+// with local recording evidence from D:\recordedEvents. Cloud metrics are
+// CURRENT state; only local recording facts are anchored to the event itself.
+
+const _CE_VERDICTS = {
+  streamed: ["ok", "Streamed"],
+  quality:  ["warning", "Streamed, quality issues"],
+  partial:  ["critical", "Ended early"],
+  failed:   ["critical", "Did not stream"],
+  live:     ["ok", "Live now"],
+  upcoming: ["muted", "Upcoming"],
+  unknown:  ["muted", "Unknown"],
+};
+
+function _ceMetricChip(label, val) {
+  if (val === null || val === undefined) return "";
+  const sev = val === "Ok" ? "ok" : val === "Warning" ? "warning" : "critical";
+  return `<div class="ce-metric">${severityChip(sev, `${label}: ${val}`)}</div>`;
+}
+
+function renderCloudEvents() {
+  const data = cached("cloud-events");
+  if (!data) { $page().innerHTML = sectionLoading("Event Streaming"); fetchSection("cloud-events"); return; }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
+
+  const ident = data.identity || {};
+  const cloud = data.cloud || {};
+  const localEv = (data.localEvents || {}).events || [];
+  const header = pageHeader(
+    "Event Streaming",
+    "This VPU's recent events as the NFHS cloud sees them — did each one stream, and if not, why. Cloud health values are what the cloud sees right now; local recording facts are from the event itself.",
+    `<button class="btn-outline btn-ol-blue" onclick="dataCache['cloud-events']=null;renderCloudEvents()">${svgIcon("refresh", 14)} Refresh</button>`
+  );
+
+  // No venue id on the box → we can't self-identify to the cloud.
+  if (!ident.venueId) {
+    $page().innerHTML = `${header}
+      <div class="card">
+        <div class="text-sm font-medium mb-1">No venue ID found on this box</div>
+        <div class="text-xs text-pulse-muted">Pulse reads the Pixellot venue ID from the Coordinator log (C:\\Pixellot\\Data\\Log). A fresh image, rotated logs, or a non-VPU host can leave it empty — without it the cloud lookup can't identify this unit.</div>
+      </div>`;
+    return;
+  }
+
+  // Cloud unreachable → say so once, plainly; never a device finding.
+  if (!cloud.available) {
+    $page().innerHTML = `${header}
+      <div class="card">
+        <div class="flex items-center gap-2 mb-1">${svgIcon("alert", 16)}<span class="text-sm font-medium">Cloud lookup unavailable</span></div>
+        <div class="text-xs text-pulse-muted">${esc(cloud.error || "The NFHS cloud APIs could not be reached from this network.")} This is a connectivity statement, not a device fault — school networks often block or intercept outbound HTTPS. See <a class="cam-hw-pointer" href="#network" onclick="navigate('network');return false;">Network Test</a>.</div>
+      </div>
+      ${_ceLocalOnlyTable(localEv)}`;
+    return;
+  }
+
+  const prod = cloud.producer || {};
+  const met = cloud.metrics || {};
+
+  const drift = prod.currentSwVersion && prod.targetSwVersion && prod.currentSwVersion !== prod.targetSwVersion;
+  const identCard = `
+    <div class="card">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <div class="text-sm font-medium">${esc(prod.name || ident.vpuName || "Unknown unit")}</div>
+          <div class="text-xs text-pulse-muted font-mono mt-1">venue ${esc(ident.venueId)}${prod.pixellotKey ? ` · ${esc(prod.pixellotKey)}` : ""}${prod.producerKey ? ` · ${esc(prod.producerKey)}` : ""}</div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          ${prod.internalStatus ? severityChip(prod.internalStatus === "broadcasting" ? "ok" : "warning", `Cloud status: ${prod.internalStatus}`) : ""}
+          ${drift ? severityChip("warning", `SW ${prod.currentSwVersion} → target ${prod.targetSwVersion}`)
+                  : prod.currentSwVersion ? severityChip("ok", `SW ${prod.currentSwVersion}`) : ""}
+          ${cloud.eqsAvgScore !== null && cloud.eqsAvgScore !== undefined ? severityChip(cloud.eqsAvgScore >= 0.85 ? "ok" : "warning", `Quality avg ${(cloud.eqsAvgScore * 100).toFixed(0)}%`) : ""}
+        </div>
+      </div>
+    </div>`;
+
+  const metricsCard = `
+    <div class="card mt-4">
+      <div class="text-xs font-medium text-pulse-muted mb-2">LIVE HEALTH — what Pixellot Cloud sees right now</div>
+      <div class="flex flex-wrap gap-2">
+        ${_ceMetricChip("Connection", met.connection)}
+        ${_ceMetricChip("Dark court", met.darkCourt)}
+        ${_ceMetricChip("HD bandwidth", met.hdBandwidth)}
+        ${_ceMetricChip("Pano bandwidth", met.panoBandwidth)}
+        ${_ceMetricChip("CPU temp", met.cpuTemperature)}
+        ${_ceMetricChip("Audio", met.audioIndication)}
+        ${_ceMetricChip("Scoreboard", met.scoreboardConnection)}
+        ${_ceMetricChip("Health", met.health)}
+      </div>
+    </div>`;
+
+  const hints = (cloud.causeHints || []).map((h) => `
+    <div class="flex items-start gap-2 py-1">
+      ${severityChip(h.severity, (h.severity || "info").toUpperCase())}
+      <div class="text-xs">${esc(h.text)}${h.page ? ` — <a class="cam-hw-pointer" href="#${esc(h.page)}" onclick="navigate('${esc(h.page)}');return false;">open ${esc(h.page === "cameras" ? "Camera Connectivity" : h.page === "scoreconnect" ? "ScoreConnect" : h.page === "audio" ? "Audio" : "Network Test")}</a>` : ""}</div>
+    </div>`).join("");
+  const hintsCard = hints ? `<div class="card mt-4"><div class="text-xs font-medium text-pulse-muted mb-1">WHAT THE CLOUD EVIDENCE POINTS AT</div>${hints}</div>` : "";
+
+  const events = cloud.events || [];
+  const rows = events.map((ev) => {
+    const [sev, label] = _CE_VERDICTS[ev.verdict] || _CE_VERDICTS.unknown;
+    const src = ev.source === "listed" ? severityChip("muted", "Listed")
+      : ev.source === "box" ? severityChip("muted", "Box only")
+      : severityChip("muted", "Listed + box");
+    const rec = ev.local
+      ? (ev.local.recorded ? `${formatBytes(ev.local.videoBytes)}${ev.local.uploadedCount ? ` · ${ev.local.uploadedCount} uploaded` : ""}` : '<span class="sev-chip sev-chip-crit">no recording</span>')
+      : '<span class="text-pulse-muted">—</span>';
+    const reasons = (ev.verdictReasons || []).map((r) => `<div>• ${esc(r)}</div>`).join("");
+    const score = ev.eqs && ev.eqs.eventScore !== null && ev.eqs.eventScore !== undefined
+      ? `<div class="text-pulse-muted">Quality score ${(ev.eqs.eventScore * 100).toFixed(0)}%</div>` : "";
+    return `<tr>
+      <td class="text-xs whitespace-nowrap font-mono">${formatTime(ev.startTime)}</td>
+      <td class="text-xs">${esc(ev.headline || "—")}${ev.sport ? `<br><span class="text-pulse-muted">${esc(ev.sport)}</span>` : ""}</td>
+      <td>${src}${ev.unlisted ? ` ${severityChip("muted", "Unlisted")}` : ""}</td>
+      <td>${severityChip(sev, label)}</td>
+      <td class="text-xs">${rec}</td>
+      <td class="text-xs">${reasons || '<span class="text-pulse-muted">—</span>'}${score}</td>
+    </tr>`;
+  }).join("");
+
+  const table = events.length ? `
+    <div class="card mt-4">
+      <div class="ev-count">${events.length} event${events.length === 1 ? "" : "s"} (last 14 days + upcoming week, plus anything the box recorded)</div>
+      <div class="ev-table-wrap">
+        <table class="data-table ev-table"><thead><tr>
+          <th>When</th><th>Event</th><th>Source</th><th>Verdict</th><th>Recorded locally</th><th>Evidence</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+      </div>
+    </div>`
+    : '<div class="card mt-4"><div class="text-center py-8 text-pulse-muted">No events found for this venue in the lookback window.</div></div>';
+
+  $page().innerHTML = `${header}${identCard}${metricsCard}${hintsCard}${table}`;
+}
+
+// Local-only fallback table when the cloud is unreachable: the box's own
+// recording folders still tell a story (did it record? did it upload?).
+function _ceLocalOnlyTable(localEv) {
+  if (!localEv.length) return '<div class="card mt-4"><div class="text-center py-8 text-pulse-muted">No local recordings found under D:\\recordedEvents either.</div></div>';
+  const rows = localEv.map((e) => `<tr>
+    <td class="text-xs font-mono whitespace-nowrap">${esc(e.date)}</td>
+    <td class="text-xs">${esc(e.name || e.eventId)}</td>
+    <td class="text-xs">${e.videoBytes > 0 ? formatBytes(e.videoBytes) : '<span class="sev-chip sev-chip-crit">no recording</span>'}</td>
+    <td class="text-xs">${e.uploadedCount || 0}</td>
+  </tr>`).join("");
+  return `<div class="card mt-4">
+    <div class="ev-count">Local recordings (cloud unreachable — box-side evidence only)</div>
+    <div class="ev-table-wrap">
+      <table class="data-table ev-table"><thead><tr>
+        <th>Date</th><th>Event</th><th>Recorded</th><th>Artifacts uploaded</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+    </div>
+  </div>`;
+}
 
 // ── Pixellot Configuration ───────────────────────────────────
 // Local, on-host view of how the Pixellot software has this VPU + cameras
