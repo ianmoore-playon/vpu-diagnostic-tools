@@ -307,6 +307,12 @@ async def _on_startup():
         ps_log("server", 0, "ok", msg)
         _server_log.info(msg)
 
+    # One-shot beta retirement (see _migrate_retired_beta). Runs before the
+    # check-in so even this session's beacon reports the new channel. Cheap
+    # file checks; inert everywhere but a managed beta install of a retired
+    # release tag.
+    _migrate_retired_beta()
+
     # Fire-and-forget run-tracking check-in (no-op until the check-in secret is
     # filled in, and never in demo/dev). Scheduled so it can't delay startup.
     try:
@@ -3043,7 +3049,10 @@ async def api_version():
     # screen can decide synchronously whether to slow the per-section
     # progress bar — the loading visual is the user's first impression
     # and instant-fast in demo mode flashes past in milliseconds.
-    return {"version": APP_VERSION, "demoMode": DEMO_MODE}
+    # channelMoved is non-null only in the session that just migrated this
+    # install off the retired beta channel (see _migrate_retired_beta) — the
+    # UI shows its one-time "moved to production" notice from it.
+    return {"version": APP_VERSION, "demoMode": DEMO_MODE, "channelMoved": _channel_migration}
 
 
 @app.get("/api/logs")
@@ -4068,6 +4077,57 @@ def _update_channel():
     if tag.startswith("web-v"):
         return "production"
     return "dev"
+
+
+# ── One-shot beta-channel retirement ─────────────────────────────────────────
+# The beta program is closed (2026-08). This build ships as the FINAL beta
+# release: any install still on the beta channel is moved to production at
+# startup — Pulse.bat (the frozen self-copy of the beta launcher that the
+# Start Menu shortcut targets) is replaced with the bundled production
+# launcher and CHANNEL is set to production, so the next launch installs the
+# latest web-v* release. Gated on the EXACT installed release tag: a future
+# beta cycle ships under a tag that isn't in this set, so it can never
+# self-retire by accident. Closing that future cycle = add its final tag
+# here and tag one last beta release (see docs/BETA_CHANNEL_PLAYBOOK.md).
+_RETIRED_BETA_TAGS = {"web-beta-v1.0.6"}
+_BUNDLED_PROD_LAUNCHER = _os.path.join(_web_root, "launcher", "run_pulse.bat")
+# Set when THIS session performed the move — /api/version surfaces it so the
+# UI can show the "you've been moved to production" notice exactly once.
+_channel_migration = None
+
+
+def _migrate_retired_beta():
+    """Move a retired-beta install to the production channel. Fail-open in
+    every branch: a failed migration logs and simply retries next launch
+    (e.g. UAC was declined and C:\\Pulse wasn't writable this run)."""
+    global _channel_migration
+    try:
+        if not _is_managed_install() or _update_channel() != "beta":
+            return
+        if (_installed_tag() or "") not in _RETIRED_BETA_TAGS:
+            return
+        if not _os.path.exists(_BUNDLED_PROD_LAUNCHER):
+            _server_log.warning(
+                "Beta retirement: bundled production launcher missing (%s)",
+                _BUNDLED_PROD_LAUNCHER,
+            )
+            return
+        with open(_BUNDLED_PROD_LAUNCHER, "rb") as src:
+            launcher = src.read()
+        with open(_pulse_bat_path(), "wb") as dst:
+            dst.write(launcher)
+        with open(_os.path.join(_web_root, "CHANNEL"), "w") as f:
+            f.write("production\n")
+        _channel_migration = {"from": "beta", "to": "production"}
+        msg = ("Beta program closed — this install now tracks the production "
+               "channel. The next launch installs the latest production release.")
+        ps_log("server", 0, "ok", msg)
+        _server_log.info(msg)
+    except Exception as e:
+        try:
+            _server_log.warning("Beta retirement failed (will retry next launch): %s", e)
+        except Exception:
+            pass
 
 
 # ── Run-tracking check-in ───────────────────────────────────────────────────
