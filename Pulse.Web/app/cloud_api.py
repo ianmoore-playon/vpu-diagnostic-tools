@@ -232,7 +232,7 @@ def _verdict_for(entry, eqs, now):
         if now <= window_end:
             mins = int((now - start).total_seconds() // 60)
             return "unable", [
-                f"Window active — started {mins} min ago, not on air",
+                f"Event started {mins} min ago, not on air yet.",
             ]
         return "failed", ["Never went on air"]
     if status == "complete":

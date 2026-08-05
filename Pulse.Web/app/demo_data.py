@@ -1237,7 +1237,7 @@ def demo_cloud_events(venue_id, local_events):
         "eqs": None,
         "verdict": "unable",
         "verdictReasons": [
-            "Window active — started 15 min ago, not on air",
+            "Event started 15 min ago, not on air yet.",
         ],
     })
 
