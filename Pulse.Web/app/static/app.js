@@ -1039,7 +1039,7 @@ function renderCloudEvents() {
     ${_cePanelTitle("PIXELLOT CLOUD IDENTITY", "globe")}
     <div class="card">
       <div class="text-sm font-medium">${esc(prod.name || school.name || ident.vpuName || "Unknown unit")}</div>
-      <div class="text-xs text-pulse-muted font-mono mt-1">${school.key ? `school ${esc(school.key)} · ` : ""}${prod.pixellotName ? `venue ${esc(prod.pixellotName)} · ` : ""}${esc(prod.pixellotKey || "no pixellot key")}</div>
+      <div class="text-xs text-pulse-muted font-mono mt-1">${school.key ? `school ${esc(school.key)} · ` : ""}${esc(prod.pixellotKey || "no pixellot key")}</div>
       <div class="flex items-center gap-2 flex-wrap mt-3">
         ${met.connection ? (prod.internalStatus === "broadcasting"
           // On a dormant (not-broadcasting) unit "connection Ok" just means
