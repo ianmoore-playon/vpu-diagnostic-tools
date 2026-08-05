@@ -489,8 +489,6 @@ DEMO = {
             {"domain": "service.singular.live", "resolvedTo": "76.76.21.21", "status": "pass", "resolutionMs": round(random.uniform(12, 40), 1)},
             {"domain": "logmein.com", "resolvedTo": "216.52.233.2", "status": "pass", "resolutionMs": round(random.uniform(5, 15), 1)},
             {"domain": "s3.amazonaws.com", "resolvedTo": "52.217.44.54", "status": "pass", "resolutionMs": round(random.uniform(4, 12), 1)},
-            {"domain": "leaf-uploads.s3.amazonaws.com", "resolvedTo": "52.217.44.55", "status": "pass", "resolutionMs": round(random.uniform(6, 18), 1)},
-            {"domain": "leaf-downloads.s3.amazonaws.com", "resolvedTo": "52.217.44.55", "status": "pass", "resolutionMs": round(random.uniform(6, 18), 1)},
         ]
     },
     "Test-NetworkPorts.ps1": lambda **kw: {
@@ -1075,7 +1073,223 @@ DEMO = {
         "outputCount": 1,
     },
     "Set-AudioVolume.ps1": lambda **kw: {"success": True, "deviceId": (kw or {}).get("DeviceId", ""), "volume": int((kw or {}).get("Volume", 50))},
+    "Get-PixellotEvents.ps1": lambda **kw: _demo_pixellot_events(),
 }
+
+
+# ── Event Streaming lane (cloud-events) demo fabric ─────────────
+# One coherent scenario shared by the local collector payload and the cloud
+# payload (demo_cloud_events) so the merge in cloud_api produces a realistic
+# timeline: three normal events, one quality blip, one partial, one failed
+# test stream (never recorded locally, broadcast stuck in `scheduled`).
+
+def _cloud_ev_id(n):
+    return f"6a70c0ffeedeadbeef{n:06d}"
+
+
+def _cloud_day(days_ago, hour=19):
+    dt = datetime.now() - timedelta(days=days_ago)
+    return dt.replace(hour=hour, minute=0, second=0, microsecond=0)
+
+
+# (idx, days_ago, sport/headline, verdict-scenario)
+_CLOUD_SCENARIO = [
+    {"n": 1, "days": 1, "headline": "Test Stream", "sport": None,
+     "kind": "failed_test", "videoBytes": 0, "uploads": 0},
+    {"n": 2, "days": 2, "headline": "Varsity Boys Basketball", "sport": "Basketball",
+     "kind": "streamed", "videoBytes": 8_412_990_211, "uploads": 3},
+    {"n": 3, "days": 5, "headline": "JV Girls Volleyball", "sport": "Volleyball",
+     "kind": "quality", "videoBytes": 6_204_112_484, "uploads": 3},
+    {"n": 4, "days": 9, "headline": "Varsity Boys Soccer", "sport": "Soccer",
+     "kind": "partial", "videoBytes": 2_101_733_902, "uploads": 2},
+]
+
+
+def _demo_pixellot_events():
+    events = [
+        {
+            "eventId": _cloud_ev_id(s["n"]),
+            "date": _cloud_day(s["days"]).strftime("%Y-%m-%d"),
+            "name": s["headline"],
+            "videoBytes": s["videoBytes"],
+            "uploadedCount": s["uploads"],
+            "folder": f"{_cloud_day(s['days']).strftime('%Y-%m-%d')}_p_{_cloud_ev_id(s['n'])}",
+            "lastWriteTime": _cloud_day(s["days"]).isoformat(),
+        }
+        for s in _CLOUD_SCENARIO
+        # the failed test never recorded, but its folder still exists (0 bytes)
+    ]
+    daily = [
+        {
+            "date": (datetime.now() - timedelta(days=d)).strftime("%Y-%m-%d"),
+            "folder": (datetime.now() - timedelta(days=d)).strftime("%Y-%m-%d")
+            + "_p_DAILYTEST"
+            + (datetime.now() - timedelta(days=d)).strftime("%Y%m%d"),
+        }
+        for d in range(1, 8)
+    ]
+    return {
+        "available": True,
+        "recordedEventsPath": "D:\\recordedEvents",
+        "daysBack": 21,
+        "events": events,
+        "dailyTests": daily,
+    }
+
+
+def demo_cloud_events(venue_id, local_events):
+    """Demo counterpart of cloud_api.fetch_cloud — same payload shape."""
+    now = datetime.now()
+
+    def iso(dt):
+        return dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    eqs_by_kind = {
+        "streamed": {"onAir": True, "eventDuration": True, "exposure": True,
+                     "calibration": True, "focus": True, "calibrationZoomSet": True,
+                     "audio": 1, "scoreboard": True, "wasManuallyEnded": False,
+                     "eventScore": 1},
+        "quality": {"onAir": True, "eventDuration": True, "exposure": True,
+                    "calibration": True, "focus": True, "calibrationZoomSet": True,
+                    "audio": 0, "scoreboard": True, "wasManuallyEnded": False,
+                    "eventScore": 0.775},
+        "partial": {"onAir": True, "eventDuration": False, "exposure": False,
+                    "calibration": True, "focus": True, "calibrationZoomSet": True,
+                    "audio": 1, "scoreboard": True, "wasManuallyEnded": False,
+                    "eventScore": 0.475},
+    }
+    verdict_map = {
+        "streamed": ("streamed", []),
+        "quality": ("quality", ["Failed: audio"]),
+        "partial": ("partial", [
+            "Ended early",
+            "Failed: exposure",
+            "Box recorded video — issue in the streaming path",
+        ]),
+        "failed_test": ("failed", [
+            "Never went on air",
+            "Box never recorded — camera/capture side",
+        ]),
+    }
+
+    events = []
+    for s in _CLOUD_SCENARIO:
+        start = _cloud_day(s["days"])
+        verdict, reasons = verdict_map[s["kind"]]
+        events.append({
+            "gameKey": f"gamdemo{s['n']:07d}",
+            "headline": s["headline"] if s["kind"] != "failed_test"
+            else "Test Stream — unlisted",
+            "sport": s["sport"],
+            "startTime": iso(start),
+            "localStartTime": start.isoformat(),
+            "status": "scheduled" if s["kind"] == "failed_test" else "complete",
+            "hasVod": s["kind"] != "failed_test",
+            "source": "box" if s["kind"] == "failed_test" else "listed+box",
+            "unlisted": s["kind"] == "failed_test",
+            "pixellotEventId": _cloud_ev_id(s["n"]),
+            "broadcastKey": f"bdcdemo{s['n']:06d}",
+            "local": {
+                "recorded": s["videoBytes"] > 0,
+                "videoBytes": s["videoBytes"],
+                "uploadedCount": s["uploads"],
+                "name": s["headline"],
+            },
+            "eqs": eqs_by_kind.get(s["kind"]),
+            "verdict": verdict,
+            "verdictReasons": reasons,
+        })
+    upcoming = _cloud_day(-3, hour=18)
+    events.insert(0, {
+        "gameKey": "gamdemo9999999",
+        "headline": "Varsity Football",
+        "sport": "Football",
+        "startTime": iso(upcoming),
+        "localStartTime": upcoming.isoformat(),
+        "status": "scheduled",
+        "hasVod": False,
+        "source": "listed",
+        "unlisted": False,
+        "pixellotEventId": None,
+        "local": None,
+        "eqs": None,
+        "verdict": "upcoming",
+        "verdictReasons": [],
+    })
+    # A go-live in trouble right now: started 15 minutes ago, event window
+    # still active, broadcast still 'scheduled' — exercises the "Unable to
+    # stream" verdict a tech would see standing at the box during a failed
+    # start.
+    late_start = now - timedelta(minutes=15)
+    events.insert(1, {
+        "gameKey": "gamdemo8888888",
+        "headline": "JV Boys Basketball",
+        "sport": "Basketball",
+        "startTime": iso(late_start),
+        "localStartTime": late_start.isoformat(),
+        "status": "scheduled",
+        "hasVod": False,
+        "source": "listed",
+        "unlisted": False,
+        "durationHours": 2.0,
+        "pixellotEventId": None,
+        "local": None,
+        "eqs": None,
+        "verdict": "unable",
+        "verdictReasons": [
+            "Event started 15 min ago, not on air yet.",
+        ],
+    })
+
+    return {
+        "available": True,
+        "error": None,
+        "errors": None,
+        "producer": {
+            # mirrors search-api's producer formatted_name shape:
+            # "AIA: Mesquite High School, Gilbert, AZ - Field"
+            "name": f"GHSA: {_VENUE['vpuName'].split(' ', 1)[1].rsplit(' (', 1)[0]}, "
+                    f"{_VENUE['city']}, {_VENUE['state']} - "
+                    f"{_VENUE['vpuName'].rsplit(' - ', 1)[-1]}",
+            "producerKey": "pdcdemo1234567",
+            "pixellotKey": "pxldemo9876543",
+            "pixellotName": _VENUE["vpuName"].rsplit(" - ", 1)[-1],
+            "internalStatus": "broadcasting",
+            "lastStatus": "Sleep",
+            "statusChangedAt": iso(now - timedelta(days=40)),
+            "broadcastStatusReason": None,
+            "currentSwVersion": _VENUE["swVersion"],
+            "targetSwVersion": "5.14.2",
+            "targetSwVersionSetDate": iso(now - timedelta(days=12)),
+            "state": _VENUE["state"],
+            "activationDate": "2023-08-14T16:20:00.000Z",
+            "publishers": [{
+                "key": "0demo77ccba",
+                "name": _VENUE["vpuName"].split(" ", 1)[1].rsplit(" (", 1)[0]
+                if "(" in _VENUE["vpuName"] else _VENUE["city"],
+                "type": "school",
+                "city": _VENUE["city"],
+                "state": _VENUE["state"],
+            }],
+        },
+        "metrics": {
+            "connection": "Ok", "status": "Ok", "status_severity": "Ok",
+            "darkCourt": "Error", "hdBandwidth": "Ok", "panoBandwidth": "Ok",
+        },
+        "eqsAvgScore": 0.8125,
+        "events": events,
+        "causeHints": [
+            {"severity": "warning",
+             "text": "Cloud reports the camera picture is dark — camera "
+                     "may be obstructed, powered off, or the room is dark",
+             "page": "cameras"},
+            {"severity": "info",
+             "text": f"Pixellot software is behind its target "
+                     f"({_VENUE['swVersion']} installed, 5.14.2 assigned)",
+             "page": None},
+        ],
+        "generatedAt": now.isoformat(),
+    }
 
 
 def get_demo(script_name, args=None):

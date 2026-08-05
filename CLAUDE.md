@@ -93,6 +93,8 @@ Dev and beta tags create pre-releases. Production tags create full releases.
 
 Launchers in `runners/` are per-channel: `run_pulse.bat` (production → latest `web-v*` release), `run_pulse_beta.bat` (beta → latest `web-beta-v*` pre-release), `run_pulse_dev.bat` (dev → latest commit on the `dev` branch; pass a branch name to test another). All install to `C:\Pulse` (one channel at a time) and auto-update every launch. (The old Pulse.WPF launchers + `install*.ps1` were removed when WPF was deprecated.)
 
+**The beta channel is closed by default** (since 2026-08-04): `runners/run_pulse_beta.bat` on the `beta` branch is a production redirect, and installs on a retired beta tag self-migrate to production. To run an as-needed beta test cycle — and to close it again — follow `docs/BETA_CHANNEL_PLAYBOOK.md`.
+
 ### Versioning
 
 Pulse.Web uses semver (`MAJOR.MINOR.PATCH`) with a three-channel pipeline. Dev stays roughly two versions ahead of main, and beta stays one version ahead.

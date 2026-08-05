@@ -40,6 +40,7 @@ from powershell import (
     clear_ps_cache,
 )
 import peer
+import cloud_api
 
 _web_root = _os.path.dirname(_app_dir)
 SETTINGS_PATH = _os.path.join(_web_root, "pulse-settings.json")
@@ -174,33 +175,43 @@ async def _run_sc_status(sc_url: str, timeout: int = 15) -> dict:
     return result
 
 def _read_version() -> str:
-    import subprocess
-    repo_root = _os.path.dirname(_web_root)
-    try:
-        result = subprocess.run(
-            ["git", "for-each-ref", "--sort=-creatordate", "--count=1",
-             "--format=%(refname:short)",
-             "refs/tags/web-v*", "refs/tags/web-beta-v*", "refs/tags/web-dev-v*"],
-            capture_output=True, text=True, cwd=repo_root, timeout=5,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    except Exception:
-        pass
-    try:
-        result = subprocess.run(
-            ["git", "describe", "--tags", "--always"],
-            capture_output=True, text=True, cwd=repo_root, timeout=5,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    except Exception:
-        pass
+    """Resolve the version string shown in the sidebar, splash and About tab.
+
+    VERSION is the source of truth (per CLAUDE.md), and in the field it is
+    always written by whichever launcher installed the box — run_pulse.bat and
+    run_pulse_beta.bat write the release tag ("web-v1.0.2"), run_pulse_dev.bat
+    writes "<branch>-<short-sha>" ("dev-73390dd"). All three then READ it back
+    to decide whether an update is due, so it is load-bearing beyond display.
+    web-build.yml also stamps it into the release zip.
+
+    No shipped build carries a .git — verified on VPU2, which has no git binary
+    installed at all — so the git branch below never runs in the field.
+
+    git describe is only a fallback for a bare repo checkout with no VERSION.
+    It describes HEAD, so it can't misreport what's actually running — the
+    previous implementation asked for the newest `web-*` tag by creatordate
+    repo-wide, which is unrelated to the checked-out commit and made a dev
+    working tree announce itself as the latest production release.
+    """
     try:
         with open(_os.path.join(_web_root, "VERSION")) as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return "unknown"
+            version = f.read().strip()
+        if version:
+            return version
+    except OSError:
+        pass
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--always", "--dirty"],
+            capture_output=True, text=True,
+            cwd=_os.path.dirname(_web_root), timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return "unknown"
 
 APP_VERSION = _read_version()
 _static_dir = _os.path.join(_app_dir, "static")
@@ -296,10 +307,24 @@ async def _on_startup():
         ps_log("server", 0, "ok", msg)
         _server_log.info(msg)
 
+    # One-shot beta retirement (see _migrate_retired_beta). Runs before the
+    # check-in so even this session's beacon reports the new channel. Cheap
+    # file checks; inert everywhere but a managed beta install of a retired
+    # release tag.
+    _migrate_retired_beta()
+
     # Fire-and-forget run-tracking check-in (no-op until the check-in secret is
     # filled in, and never in demo/dev). Scheduled so it can't delay startup.
     try:
         asyncio.create_task(_send_checkin())
+    except Exception:
+        pass
+
+    # Fire-and-forget removal of the retired Canopy Leaf agent (see
+    # _remove_canopy_leaf). Scheduled so it can't delay startup; a cheap
+    # folder pre-check makes it free on any already-clean unit.
+    try:
+        asyncio.create_task(_remove_canopy_leaf())
     except Exception:
         pass
 
@@ -391,6 +416,7 @@ _DEFAULT_MAIN_IPS = {"169.254.16.50", "169.254.16.51"}
 # Prefix-matched, so e.g. "T2SF-B_PX00" matches the "T2SF-B" key.
 _CAMERA_MODELS = {
     "Z4SF-F": ("Main Camera", 1000),       # 4K main camera head
+    "Z4SF-5": ("Main Camera", 1000),       # 4K main head variant (VPU2 bench unit reports this)
     "T2SF-B": ("Main Camera", 1000),       # 4K Bullet Outdoor main head
     "R2SD-G": ("OCR / Scoreboard", 100),
     "S5SD-G": ("OCR / Scoreboard", 100),
@@ -1245,9 +1271,9 @@ def _camera_nic_uplink_finding(network_config):
     if mobo:
         st = _mobo_state(mobo[0])
         if st == "disabled":
-            mobo_note = " The motherboard network port is currently disabled — enable it in Windows."
+            mobo_note = " The motherboard network port is disabled — enable it in Windows."
         elif st == "unplugged":
-            mobo_note = " The motherboard network port has no cable connected — move the venue/internet cable to it."
+            mobo_note = " The motherboard network port has no cable connected."
     else:
         mobo_note = " No motherboard network port was detected — it may be disabled."
 
@@ -1260,12 +1286,11 @@ def _camera_nic_uplink_finding(network_config):
         "category": "Network",
         "title": "Internet is plugged into a camera port, not the motherboard network port",
         "recommendation": (
-            f"The VPU's internet/venue connection is coming in on a camera-NIC port: {ports_txt}. "
-            f"On a Pixellot VPU the internet must connect to the motherboard network port — the "
-            f"4-port NIC is only for cameras, and a venue uplink there can disrupt camera "
-            f"discovery and streaming.{mobo_note} Move the cable to the motherboard network port "
-            f"and confirm that port is enabled. (The Wi-Fi card is for the Pixellot Connect app and "
-            f"should stay enabled.)"
+            f"The internet/venue connection is on a camera-NIC port ({ports_txt}), which can "
+            f"disrupt camera discovery and streaming. On a Pixellot VPU it must connect to the "
+            f"motherboard network port — the 4-port NIC is for cameras only.{mobo_note} Move the "
+            f"cable there and confirm the port is enabled. (Leave the Wi-Fi card enabled — it's "
+            f"for the Pixellot Connect app.)"
         ),
     }
 
@@ -3018,105 +3043,16 @@ async def serve_index():
     return HTMLResponse(html)
 
 
-@app.get("/api/preload")
-async def api_preload():
-    """Run ALL diagnostic scripts once in parallel and return per-page data."""
-    sc_url = load_settings().get("scoreConnectUrl", "http://localhost:5000")
-    (
-        identity,
-        hardware,
-        performance,
-        network_config,
-        nics,
-        services,
-        disk_health,
-        event_logs,
-        scoreconnect,
-        pixellot_config,
-        installed_sw,
-        domains,
-        ports,
-        ntp,
-        local,
-        ntp_peers,
-        dns_resolution,
-        install_state,
-        gpu_info,
-        wifi,
-        tls_inspection,
-    ) = await asyncio.gather(
-        run_ps("Get-SystemIdentity.ps1"),
-        run_ps("Get-Hardware.ps1"),
-        run_ps("Get-Performance.ps1"),
-        run_ps("Get-NetworkConfig.ps1"),
-        run_ps("Get-NicAdapters.ps1"),
-        run_ps("Get-Services.ps1"),
-        run_ps("Get-DiskHealth.ps1"),
-        run_ps("Get-EventLogs.ps1"),
-        run_ps("Get-ScoreConnectStatus.ps1", {"BaseUrl": sc_url}, timeout=20),
-        run_ps("Get-PixellotConfig.ps1"),
-        run_ps("Get-InstalledSoftware.ps1"),
-        run_ps("Test-NetworkDomains.ps1"),
-        # 40s: UDP rows retry once and require an echoed reply — a blocked-UDP
-        # venue adds ~14s over the default 30s budget.
-        run_ps("Test-NetworkPorts.ps1", timeout=40),
-        run_ps("Test-NtpDrift.ps1"),
-        run_ps("Test-LocalNetwork.ps1"),
-        run_ps("Get-NtpPeers.ps1"),
-        run_ps("Test-DnsResolution.ps1"),
-        run_ps("Test-PixellotInstallState.ps1", timeout=15),
-        run_ps("Get-GpuInfo.ps1", timeout=15),
-        run_ps("Get-WifiAdapters.ps1", timeout=10),
-        # SSL-inspection check rides the preload so the Network tab (and its
-        # interception critical) is complete on first paint. Runs in parallel
-        # with everything else; healthy venues finish in ~5s.
-        run_ps("Test-TlsInspection.ps1", timeout=60),
-    )
-    # Audio is deferred — lazy-fetched on tab visit to keep preload lean.
-
-    # Run CGI probes for camera identification (cached 30s)
-    ocr_ips_pre, _ = _build_ocr_sets(pixellot_config)
-    raw_ports_pre = nics.get("ports", []) if nics and not nics.get("error") else []
-    probe_results_pre = await _probe_all_cameras(raw_ports_pre, ocr_ips_pre)
-
-    return {
-        # Readiness here uses the snapshot CPU/mem (no perf_sample on the
-        # preload path) and the disk-health already gathered; the authoritative
-        # /api/dashboard fetch refines it with the averaged sample + port tests.
-        "dashboard": _build_dashboard(identity, performance, services, nics, network_config, hardware, installed_sw, install_state, None, gpu_info, wifi, disk_health=disk_health, probe_results=probe_results_pre),
-        "system": {
-            "identity": _enrich_identity_pixellot_compat(_enrich_identity_lifecycle(identity), gpu_info),
-            "hardware": hardware,
-            "software": _enrich_software_with_concerns(installed_sw),
-        },
-        "network": _build_network(network_config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls_inspection),
-        "cameras": {
-            "ports": _enrich_ports(nics, pixellot_config, probe_results_pre),
-            "pixellotConfig": pixellot_config,
-        },
-        "services": services,
-        "disk-health": disk_health,
-        "events": event_logs,
-        "scoreconnect": scoreconnect,
-        "settings": {
-            **load_settings(),
-            "_paths": {
-                "settingsFile": SETTINGS_PATH,
-                "serverLog": SERVER_LOG_PATH,
-            },
-        },
-        "_version": APP_VERSION,
-        "_logs": list(LOG_BUFFER),
-    }
-
-
 @app.get("/api/version")
 async def api_version():
     # demoMode is exposed here (and not only on /api/logs) so the splash
     # screen can decide synchronously whether to slow the per-section
     # progress bar — the loading visual is the user's first impression
     # and instant-fast in demo mode flashes past in milliseconds.
-    return {"version": APP_VERSION, "demoMode": DEMO_MODE}
+    # channelMoved is non-null only in the session that just migrated this
+    # install off the retired beta channel (see _migrate_retired_beta) — the
+    # UI shows its one-time "moved to production" notice from it.
+    return {"version": APP_VERSION, "demoMode": DEMO_MODE, "channelMoved": _channel_migration}
 
 
 @app.get("/api/logs")
@@ -3207,6 +3143,30 @@ async def _collect_dashboard() -> dict:
     ocr_ips, _ = _build_ocr_sets(pixellot_config)
     raw_ports = nics.get("ports", []) if nics and not nics.get("error") else []
     probe_results = await _probe_all_cameras(raw_ports, ocr_ips)
+
+    # CPU observer-effect guard. The snapshot and the 3s sample above both run
+    # INSIDE the collector fan-out — several concurrent powershell.exe startups
+    # push an otherwise-idle VPU to 85-93% (measured on VPU2, 2026-07-23), so a
+    # healthy box shows a phantom "CPU elevated" warning on every dashboard
+    # load. If either reading is in finding territory, take a fresh sustained
+    # sample now that the burst is over and let it replace both inputs: the
+    # findings/display CPU (performance.cpu.usagePercent) and the readiness
+    # sample. A genuinely hot box (e.g. vpu.exe encoding a live event) confirms
+    # high and still alerts; the only cost is ~4s extra when the first reading
+    # looked elevated.
+    cpu_snapshot = ((performance or {}).get("cpu") or {}).get("usagePercent")
+    cpu_sampled = (perf_sample or {}).get("cpuAvgPercent")
+    readings = [c for c in (cpu_snapshot, cpu_sampled) if isinstance(c, (int, float))]
+    if readings and max(readings) > 75:
+        confirm = await run_ps("Get-PerfSample.ps1", timeout=15, use_cache=False)
+        confirmed_cpu = (confirm or {}).get("cpuAvgPercent")
+        if isinstance(confirmed_cpu, (int, float)):
+            perf_sample = confirm
+            if performance and not performance.get("error"):
+                cpu_block = performance.get("cpu") or {}
+                cpu_block["usagePercent"] = confirmed_cpu
+                performance["cpu"] = cpu_block
+
     return _build_dashboard(
         identity, performance, services, nics, net_config, hardware,
         installed_sw, install_state, port_tests, gpu_info, wifi,
@@ -3900,6 +3860,38 @@ async def api_pixellot_logs(hours: int = Query(default=24)):
     return await run_ps("Search-PixellotLogs.ps1", {"HoursBack": hours}, timeout=30)
 
 
+@app.get("/api/cloud-events")
+async def api_cloud_events():
+    """Event Streaming lane: chain the box's own identifiers (venueId +
+    recorded pixellot event ids) through the public NFHS cloud APIs to show
+    recent events, a streamed/failed verdict per event, and cloud-side
+    evidence for failure causes. All cloud calls are server-side, timeout
+    bounded, and fail-soft — an unreachable cloud is reported as such, never
+    as a device finding."""
+    identity, local = await asyncio.gather(
+        run_ps("Get-SystemIdentity.ps1"),
+        run_ps("Get-PixellotEvents.ps1"),
+    )
+    identity = identity if isinstance(identity, dict) else {}
+    local = local if isinstance(local, dict) else {}
+    venue_id = (identity.get("pixellot") or {}).get("venueId")
+    local_events = local.get("events") or []
+    loop = asyncio.get_event_loop()
+    cloud = await loop.run_in_executor(
+        None, cloud_api.fetch_cloud, venue_id, local_events
+    )
+    return {
+        "identity": {
+            "venueId": venue_id,
+            "vpuName": (identity.get("pixellot") or {}).get("vpuName"),
+            "hostname": (identity.get("computerSystem") or {}).get("name"),
+            "isNonVpuHost": identity.get("isNonVpuHost"),
+        },
+        "localEvents": local,
+        "cloud": cloud,
+    }
+
+
 @app.get("/api/audio")
 async def api_audio():
     # The Audio tab polls every 2s to animate live signal meters; the default
@@ -4022,13 +4014,7 @@ async def api_install_sc3_status():
 
 @app.get("/api/settings")
 async def api_get_settings():
-    return {
-        **load_settings(),
-        "_paths": {
-            "settingsFile": SETTINGS_PATH,
-            "serverLog": SERVER_LOG_PATH,
-        },
-    }
+    return load_settings()
 
 
 @app.post("/api/settings")
@@ -4093,7 +4079,91 @@ def _update_channel():
     return "dev"
 
 
+# ── One-shot beta-channel retirement ─────────────────────────────────────────
+# The beta program is closed (2026-08). This build ships as the FINAL beta
+# release: any install still on the beta channel is moved to production at
+# startup — Pulse.bat (the frozen self-copy of the beta launcher that the
+# Start Menu shortcut targets) is replaced with the bundled production
+# launcher and CHANNEL is set to production, so the next launch installs the
+# latest web-v* release. Gated on the EXACT installed release tag: a future
+# beta cycle ships under a tag that isn't in this set, so it can never
+# self-retire by accident. Closing that future cycle = add its final tag
+# here and tag one last beta release (see docs/BETA_CHANNEL_PLAYBOOK.md).
+_RETIRED_BETA_TAGS = {"web-beta-v1.0.6"}
+_BUNDLED_PROD_LAUNCHER = _os.path.join(_web_root, "launcher", "run_pulse.bat")
+# Set when THIS session performed the move — /api/version surfaces it so the
+# UI can show the "you've been moved to production" notice exactly once.
+_channel_migration = None
+
+
+def _migrate_retired_beta():
+    """Move a retired-beta install to the production channel. Fail-open in
+    every branch: a failed migration logs and simply retries next launch
+    (e.g. UAC was declined and C:\\Pulse wasn't writable this run)."""
+    global _channel_migration
+    try:
+        if not _is_managed_install() or _update_channel() != "beta":
+            return
+        if (_installed_tag() or "") not in _RETIRED_BETA_TAGS:
+            return
+        if not _os.path.exists(_BUNDLED_PROD_LAUNCHER):
+            _server_log.warning(
+                "Beta retirement: bundled production launcher missing (%s)",
+                _BUNDLED_PROD_LAUNCHER,
+            )
+            return
+        with open(_BUNDLED_PROD_LAUNCHER, "rb") as src:
+            launcher = src.read()
+        with open(_pulse_bat_path(), "wb") as dst:
+            dst.write(launcher)
+        with open(_os.path.join(_web_root, "CHANNEL"), "w") as f:
+            f.write("production\n")
+        _channel_migration = {"from": "beta", "to": "production"}
+        msg = ("Beta program closed — this install now tracks the production "
+               "channel. The next launch installs the latest production release.")
+        ps_log("server", 0, "ok", msg)
+        _server_log.info(msg)
+    except Exception as e:
+        try:
+            _server_log.warning("Beta retirement failed (will retry next launch): %s", e)
+        except Exception:
+            pass
+
+
 # ── Run-tracking check-in ───────────────────────────────────────────────────
+# ── One-shot Canopy Leaf removal ────────────────────────────────────────────
+# PlayOn retired the Banyan Hills Canopy platform (fully shut down mid-2026),
+# but fleet VPUs still carry the orphaned Leaf agent: four auto-start services,
+# watchdog scheduled tasks, and ~250MB under C:\Banyan. On launch Pulse runs
+# Remove-CanopyLeaf.ps1 in the background: silent NSIS uninstalls, task/service
+# cleanup, then deletes C:\Banyan. The folder's absence is the "already done"
+# marker, and the pre-check below skips even spawning PowerShell on a clean
+# unit, so the fleet steady-state cost is zero. Fail-open in every branch —
+# cleanup must never slow or break Pulse itself.
+
+async def _remove_canopy_leaf() -> None:
+    if DEMO_MODE:
+        return
+    try:
+        if not _os.path.exists("C:\\Banyan"):
+            return  # already clean — the overwhelming steady-state
+        # Let the dashboard preload burst claim the PowerShell slots first;
+        # the cleanup is a background chore with no user waiting on it.
+        await asyncio.sleep(15)
+        result = await run_ps("Remove-CanopyLeaf.ps1", timeout=600, use_cache=False)
+        status = (result or {}).get("status") or "unknown"
+        if status in ("removed", "not-present"):
+            _server_log.info("Canopy Leaf removal: %s", status)
+        else:
+            _server_log.warning("Canopy Leaf removal incomplete: %s", json.dumps(result))
+    except Exception as e:
+        # Fail-open: the cleanup must never affect Pulse.
+        try:
+            _server_log.info("Canopy Leaf removal skipped (%s)", e)
+        except Exception:
+            pass
+
+
 # Fire-and-forget "Pulse ran on this VPU" beacon for fleet tracking. The sink is
 # a Google Apps Script web app that upserts one row per unit (first/last seen,
 # run count). The URL + secret are embedded below by deliberate choice: this is

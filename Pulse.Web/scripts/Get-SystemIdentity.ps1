@@ -19,10 +19,11 @@ try {
     $os   = Get-CimInstance Win32_OperatingSystem
     $tz   = Get-CimInstance Win32_TimeZone
 
-    # Calculate uptime
+    # Calculate uptime. TimeSpan.Days, not [int]TotalDays — the [int] cast
+    # ROUNDS (0.66 days -> 1), so a VPU up 16 hours displayed "1d 16h".
     $lastBoot = $os.LastBootUpTime
     $uptime   = (Get-Date) - $lastBoot
-    $uptimeStr = '{0}d {1}h {2}m' -f [int]$uptime.TotalDays, $uptime.Hours, $uptime.Minutes
+    $uptimeStr = '{0}d {1}h {2}m' -f $uptime.Days, $uptime.Hours, $uptime.Minutes
 
     # Pixellot registry
     $pixReg = $null

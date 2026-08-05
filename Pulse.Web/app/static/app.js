@@ -67,6 +67,7 @@ const NAV_SECTIONS = [
   { label: "TRIAGE", pages: [
     { id: "dashboard", label: "Dashboard", icon: "grid" },
     { id: "inspection-report", label: "Inspection Report", icon: "file" },
+    { id: "cloud-events", label: "Event Streaming", icon: "play" },
   ]},
   { label: "TROUBLESHOOTING", pages: [
     { id: "network", label: "Network Test", icon: "wifi" },
@@ -94,7 +95,6 @@ const NAV_SECTIONS = [
   ]},
   { label: "PULSE", pages: [
     { id: "settings", label: "Settings", icon: "settings" },
-    { id: "share", label: "Share over LAN", icon: "share-2" },
     { id: "reports", label: "Exports", icon: "file-down" },
     { id: "help", label: "Help", icon: "help" },
     { id: "about", label: "About", icon: "info" },
@@ -102,7 +102,12 @@ const NAV_SECTIONS = [
 ];
 const PAGES = NAV_SECTIONS.flatMap((s) => s.pages);
 // Hidden pages (accessible via hash but not in nav)
-const HIDDEN_PAGES = [{ id: "fault-isolator", label: "Camera Connection Troubleshooting" }];
+// "share" is parked here while Share over LAN development is paused — the
+// page and its backend still work via #share; restore the nav entry to resume.
+const HIDDEN_PAGES = [
+  { id: "fault-isolator", label: "Camera Connection Troubleshooting" },
+  { id: "share", label: "Share over LAN" },
+];
 // Tabs retired in the nav restructure redirect to their nearest replacement so
 // old bookmarks / deep-links don't land on an "Unknown page".
 const RETIRED_PAGE_ALIASES = { system: "hardware", "pixellot-config": "pixellot-software" };
@@ -125,6 +130,7 @@ let fetchPromises = {};
 // here; RETIRED_PAGE_ALIASES only redirects the old nav ids at the router.
 const PAGE_API = {
   dashboard: "/api/dashboard",
+  "cloud-events": "/api/cloud-events",
   system: "/api/system",
   network: "/api/network",
   cameras: "/api/cameras",
@@ -341,16 +347,6 @@ function errorBox(msg) {
   );
 }
 
-function usageBar(pct, color) {
-  const c =
-    pct > 90
-      ? "var(--c-accent-red)"
-      : pct > 75
-        ? "var(--c-accent-amber)"
-        : color || "var(--c-accent-blue)";
-  return `<div class="usage-bar-bg"><div class="usage-bar-fill" style="width:${Math.min(pct, 100)}%;background:${c}"></div></div>`;
-}
-
 // ── Circular Gauge ───────────────────────────────────────────
 
 function gauge(label, value, unit, color, opts) {
@@ -459,6 +455,9 @@ function _setSplashVerb(text) {
 // SPLASH_NOTE_DEFAULT must match the static text in index.html.
 const SPLASH_NOTE_DEFAULT = "Running a full diagnostic sweep — this can take a moment.";
 const SPLASH_NOTE_SLOW    = "Still working — some checks (camera frames, speed test) take longer on slower units.";
+// Shown on the last frame before the splash fades. Without it the note still
+// reads "this can take a moment" while the verb already says "Ready".
+const SPLASH_NOTE_DONE    = "All checks complete.";
 
 // Splash reveal order — cheap local collectors first, network probes and the
 // Dashboard aggregate last. This mirrors how fast sections actually SETTLE:
@@ -596,6 +595,7 @@ function hideSplash() {
   _completeSplashChecklist();   // last visible frame: everything checked
   _setSplashPct(100);
   _setSplashVerb("Ready");
+  _setSplashNote(SPLASH_NOTE_DONE);
   splash.classList.add("splash-hidden");
 }
 
@@ -672,6 +672,10 @@ function preloadProgressive(opts) {
     }
     // Engage the demo pacing for THIS preload (~2.5s total across 9 ticks).
     if (data?.demoMode) _tickDelayMs = 280;
+    // One-shot notice: the server just moved this install off the retired
+    // beta channel (see _migrate_retired_beta in main.py). Next launch is a
+    // plain production install and the flag is gone, so this shows once.
+    if (data?.channelMoved) _showChannelMovedBanner();
   });
   const logsPromise = api("/api/logs").then((logData) => {
     if (logData && !logData.error) {
@@ -939,6 +943,10 @@ const pageRenderers = {
   // Read-only fleet-audit roll-up under TRIAGE. Reuses the cached /api/system,
   // /api/network and /api/cameras payloads — no own endpoint (skips PAGE_API).
   "inspection-report": renderInspectionReport,
+  // Cloud-side view of this VPU's recent events and whether each streamed —
+  // NFHS search/Unity/EQS lookups keyed off the box's own venueId + recorded
+  // event ids. All calls server-side via /api/cloud-events.
+  "cloud-events": renderCloudEvents,
   // System Overview was split into Hardware / Applications / Environment
   // (nav restructure v3); the `system` id is retired but its /api/system
   // payload still feeds all three (and Pixellot Software, below).
@@ -968,6 +976,154 @@ const pageRenderers = {
   settings: renderSettings,
   about: renderAbout,
 };
+
+// ── Event Streaming (cloud-events) ───────────────────────────
+// "I am this VPU → I had this event → I did/didn't stream → because of X."
+// Data: /api/cloud-events — the box's venueId + recorded event ids chained
+// through the public NFHS cloud APIs (search, Unity, EQS) server-side, merged
+// with local recording evidence from D:\recordedEvents. Cloud metrics are
+// CURRENT state; only local recording facts are anchored to the event itself.
+
+const _CE_VERDICTS = {
+  streamed: ["ok", "Streamed"],
+  quality:  ["warning", "Quality issues"],
+  partial:  ["critical", "Ended early"],
+  failed:   ["critical", "Did not stream"],
+  live:     ["ok", "Live now"],
+  unable:   ["critical", "Unable to stream"],
+  upcoming: ["muted", "Upcoming"],
+  unknown:  ["muted", "Unknown"],
+};
+
+function renderCloudEvents() {
+  const data = cached("cloud-events");
+  if (!data) { $page().innerHTML = sectionLoading("Event Streaming"); fetchSection("cloud-events"); return; }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
+
+  const ident = data.identity || {};
+  const cloud = data.cloud || {};
+  const localEv = (data.localEvents || {}).events || [];
+  const header = pageHeader(
+    "Event Streaming",
+    "This VPU's recent events as the NFHS cloud sees them — did each one stream, and if not, why. Cloud evidence reflects right now; local recording facts are from the event itself.",
+    `<button class="btn-outline btn-ol-blue" onclick="dataCache['cloud-events']=null;renderCloudEvents()">${svgIcon("refresh", 14)} Refresh</button>`
+  );
+
+  // No venue id on the box → we can't self-identify to the cloud.
+  if (!ident.venueId) {
+    $page().innerHTML = `${header}
+      <div class="card">
+        <div class="text-sm font-medium mb-1">No venue ID found on this box</div>
+        <div class="text-xs text-pulse-muted">Pulse reads the Pixellot venue ID from the Coordinator log (C:\\Pixellot\\Data\\Log). A fresh image, rotated logs, or a non-VPU host can leave it empty — without it the cloud lookup can't identify this unit.</div>
+      </div>`;
+    return;
+  }
+
+  // Cloud unreachable → say so once, plainly; never a device finding.
+  if (!cloud.available) {
+    $page().innerHTML = `${header}
+      <div class="card">
+        <div class="flex items-center gap-2 mb-1">${svgIcon("alert", 16)}<span class="text-sm font-medium">Cloud lookup unavailable</span></div>
+        <div class="text-xs text-pulse-muted">${esc(cloud.error || "The NFHS cloud APIs could not be reached from this network.")} This is a connectivity statement, not a device fault — school networks often block or intercept outbound HTTPS. See <a class="cam-hw-pointer" href="#network" onclick="navigate('network');return false;">Network Test</a>.</div>
+      </div>
+      ${_ceLocalOnlyTable(localEv)}`;
+    return;
+  }
+
+  const prod = cloud.producer || {};
+  const met = cloud.metrics || {};
+  const school = (prod.publishers || [])[0] || {};
+
+  const drift = prod.currentSwVersion && prod.targetSwVersion && prod.currentSwVersion !== prod.targetSwVersion;
+  const identCard = `
+    ${_cePanelTitle("PIXELLOT CLOUD IDENTITY", "globe")}
+    <div class="card">
+      <div class="text-sm font-medium">${esc(prod.name || school.name || ident.vpuName || "Unknown unit")}</div>
+      <div class="text-xs text-pulse-muted font-mono mt-1">${school.key ? `school ${esc(school.key)} · ` : ""}${prod.pixellotName ? `venue ${esc(prod.pixellotName)} · ` : ""}${esc(prod.pixellotKey || "no pixellot key")}</div>
+      <div class="flex items-center gap-2 flex-wrap mt-3">
+        ${met.connection ? (prod.internalStatus === "broadcasting"
+          // On a dormant (not-broadcasting) unit "connection Ok" just means
+          // "checks in with Pixellot", not "ready to stream" — render it
+          // neutral grey so a parked box doesn't lead with a green light.
+          ? severityChip(met.connection === "Ok" ? "ok" : "critical", `Cloud connection: ${met.connection}`)
+          : severityChip("muted", `Cloud connection: ${met.connection}`)) : ""}
+        ${prod.internalStatus ? severityChip(prod.internalStatus === "broadcasting" ? "ok" : "warning", prod.internalStatus === "broadcasting" ? "NFHS: Broadcasting" : "NFHS: Not broadcasting") : ""}
+        ${drift ? severityChip("warning", `SW ${prod.currentSwVersion} → target ${prod.targetSwVersion}`)
+                : prod.currentSwVersion ? severityChip("ok", `SW ${prod.currentSwVersion}`) : ""}
+        ${cloud.eqsAvgScore !== null && cloud.eqsAvgScore !== undefined ? severityChip(cloud.eqsAvgScore >= 0.85 ? "ok" : "warning", `EQS ${(cloud.eqsAvgScore * 100).toFixed(0)}%`) : ""}
+      </div>
+    </div>`;
+
+  const hints = (cloud.causeHints || []).map((h) => `
+    <div class="flex items-start gap-2 py-1">
+      ${severityChip(h.severity, (h.severity || "info").toUpperCase())}
+      <div class="text-xs">${esc(h.text)}${h.page ? ` — <a class="cam-hw-pointer" href="#${esc(h.page)}" onclick="navigate('${esc(h.page)}');return false;">open ${esc(h.page === "cameras" ? "Camera Connectivity" : h.page === "scoreconnect" ? "ScoreConnect" : h.page === "audio" ? "Audio" : "Network Test")}</a>` : ""}</div>
+    </div>`).join("");
+  const hintsCard = `
+    ${_cePanelTitle("CLOUD FINDINGS", "alert")}
+    <div class="card">${hints || '<div class="text-xs text-pulse-muted">No active cloud findings.</div>'}</div>`;
+
+  const events = cloud.events || [];
+  const rows = events.map((ev) => {
+    const [sev, label] = _CE_VERDICTS[ev.verdict] || _CE_VERDICTS.unknown;
+    const vod = ev.local
+      ? (ev.local.recorded ? `${formatBytes(ev.local.videoBytes)} recorded` : '<span class="sev-chip sev-chip-crit whitespace-nowrap">no recording</span>')
+      : '<span class="text-pulse-muted">—</span>';
+    const reasons = (ev.verdictReasons || []).map((r) => `<div>${esc(r)}</div>`).join("");
+    const score = ev.eqs && ev.eqs.eventScore !== null && ev.eqs.eventScore !== undefined
+      ? `${(ev.eqs.eventScore * 100).toFixed(0)}%` : '<span class="text-pulse-muted">—</span>';
+    return `<tr>
+      <td class="text-xs font-mono">${esc(ev.gameKey || ev.pixellotEventId || "—")}</td>
+      <td class="text-xs">${esc(ev.headline || "—")}${ev.sport ? `<br><span class="text-pulse-muted">${esc(ev.sport)}</span>` : ""}</td>
+      <td class="text-xs whitespace-nowrap font-mono">${formatTime(ev.startTime)}</td>
+      <td class="whitespace-nowrap">${severityChip("muted", ev.unlisted ? "Unlisted" : "Listed")}</td>
+      <td class="whitespace-nowrap">${severityChip(sev, label)}</td>
+      <td class="text-xs">${vod}</td>
+      <td class="text-xs">${score}</td>
+      <td class="text-xs">${reasons || '<span class="text-pulse-muted">—</span>'}</td>
+    </tr>`;
+  }).join("");
+
+  const table = `
+    ${_cePanelTitle("RECENT &amp; UPCOMING EVENTS", "clock")}
+    ${events.length ? `
+    <div class="card">
+      <div class="ev-count">${events.length} event${events.length === 1 ? "" : "s"} (last 14 days + upcoming week, plus anything the box recorded)</div>
+      <div class="ev-table-wrap">
+        <table class="data-table ev-table"><thead><tr>
+          <th>Event ID</th><th>Event Name</th><th>Date/Time</th><th>Visibility</th><th>Verdict</th><th>Local VOD Status</th><th>EQS Score</th><th>Evidence</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+      </div>
+    </div>`
+    : '<div class="card"><div class="text-center py-8 text-pulse-muted">No events found for this venue in the lookback window.</div></div>'}`;
+
+  $page().innerHTML = `${header}${identCard}${hintsCard}${table}`;
+}
+
+// Small uppercase heading (icon + label) above each panel card.
+function _cePanelTitle(t, icon) {
+  return `<div class="flex items-center gap-2 text-xs font-medium text-pulse-muted mt-4 mb-1">${icon ? svgIcon(icon, 14) : ""}<span>${t}</span></div>`;
+}
+
+// Local-only fallback table when the cloud is unreachable: the box's own
+// recording folders still tell a story (did it record? did it upload?).
+function _ceLocalOnlyTable(localEv) {
+  if (!localEv.length) return '<div class="card mt-4"><div class="text-center py-8 text-pulse-muted">No local recordings found under D:\\recordedEvents either.</div></div>';
+  const rows = localEv.map((e) => `<tr>
+    <td class="text-xs font-mono whitespace-nowrap">${esc(e.date)}</td>
+    <td class="text-xs">${esc(e.name || e.eventId)}</td>
+    <td class="text-xs">${e.videoBytes > 0 ? formatBytes(e.videoBytes) : '<span class="sev-chip sev-chip-crit">no recording</span>'}</td>
+    <td class="text-xs">${e.uploadedCount || 0}</td>
+  </tr>`).join("");
+  return `<div class="card mt-4">
+    <div class="ev-count">Local recordings (cloud unreachable — box-side evidence only)</div>
+    <div class="ev-table-wrap">
+      <table class="data-table ev-table"><thead><tr>
+        <th>Date</th><th>Event</th><th>Recorded</th><th>Artifacts uploaded</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+    </div>
+  </div>`;
+}
 
 // ── Pixellot Configuration ───────────────────────────────────
 // Local, on-host view of how the Pixellot software has this VPU + cameras
@@ -1256,7 +1412,7 @@ function _subsystemHealth(findings) {
     sev[k] = Math.max(sev[k] || 0, rank);
   });
   const worst = (...keys) => Math.max(0, ...keys.map((k) => sev[k] || 0));
-  const lvl = (r) => (r === 2 ? "Critical" : r === 1 ? "Warning" : "Healthy");
+  const lvl = (r) => (r === 2 ? "Critical" : r === 1 ? "Warning" : "OK");
 
   // Event Viewer doesn't generate dashboard findings of its own, so derive
   // its health from the cached event log: any recent Error-level entry
@@ -1295,17 +1451,11 @@ function _subsystemHealth(findings) {
       health: lvl(worst("storage")),
       desc: "Free space, drive health (SMART), and disk events." },
     { id: "events", label: "Windows Events", icon: "triangle",
-      health: evErrorCount > 0 ? "Warning" : "Healthy",
+      health: evErrorCount > 0 ? "Warning" : "OK",
       desc: evErrorCount > 0
         ? `${evErrorCount} recent OS error${evErrorCount === 1 ? "" : "s"} logged.`
         : "Recent Windows errors from VPU components." },
   ];
-}
-
-function _healthBadge(h) {
-  if (h === "Warning") return `<span class="health-badge health-warn">Warning</span>`;
-  if (h === "Evidence ready") return `<span class="health-badge health-info">Evidence ready</span>`;
-  return `<span class="health-badge health-ok">Healthy</span>`;
 }
 
 function _findingPageFor(cat) {
@@ -1324,13 +1474,6 @@ function _findingPageFor(cat) {
     software: "applications",     // banned / concerning installed apps
   };
   return map[(cat || "").toLowerCase()] || "dashboard";
-}
-
-function _metricColor(val) {
-  if (val == null) return "var(--c-muted)";
-  if (val > 90) return "var(--c-accent-red)";
-  if (val > 75) return "var(--c-accent-amber)";
-  return "var(--c-accent-green)";
 }
 
 var _dashNicRefreshTimer = null;
@@ -1816,10 +1959,6 @@ function renderDashboard() {
     }).catch(function() { /* network blip — skip this tick */ })
       .then(function() { _nicPollBusy = false; });
   }, 3000);
-}
-
-function idRow(label, val) {
-  return `<div class="flex justify-between"><span class="text-pulse-muted">${esc(label)}</span><span class="font-medium">${val != null ? esc(String(val)) : "--"}</span></div>`;
 }
 
 // ── Shared Page Helpers ─────────────────────────────────────
@@ -2830,8 +2969,6 @@ const NET_DOMAIN_IMPACT = {
   "service.singular.live": "On-screen graphics and scorebug overlays won't load.",
   "logmein.com": "The support team can't diagnose the VPU remotely.",
   "s3.amazonaws.com": "Recordings can't upload and software/asset downloads fail.",
-  "leaf-uploads.s3.amazonaws.com": "Game recordings and clips can't upload to the cloud.",
-  "leaf-downloads.s3.amazonaws.com": "Software, firmware, and config downloads fail.",
 };
 function _netPortImpact(p) { return (p && NET_PORT_IMPACT[p.purpose]) || ""; }
 
@@ -2866,6 +3003,18 @@ function _isRedundantStreamBlock(p, health) {
     && (p.status || "").toLowerCase() !== "pass";
 }
 function _netDomainImpact(d) { return (d && NET_DOMAIN_IMPACT[d.domain]) || ""; }
+
+// Styled "impact if blocked" tooltip bubble (replaces native title= tooltips,
+// which are delayed, unstyled, and never show on keyboard focus or touch).
+// The bubble is a real element inside the trigger; CSS shows it on
+// :hover/:focus-within. The header line frames the impact sentence as a
+// hypothetical — without it, "X is unavailable" on a passing row reads like
+// a live failure. Callers outside the Network tab pass their own title.
+function _impactTipHtml(impact, title) {
+  return `<span class="net-tip-bubble" role="tooltip">` +
+    `<span class="net-tip-title">${esc(title || "If blocked on the school's network")}</span>` +
+    `${esc(impact)}</span>`;
+}
 
 // Impact per TLS-checked domain — what breaks when a firewall intercepts it.
 // Keep the domains in sync with Test-TlsInspection.ps1.
@@ -2988,17 +3137,28 @@ function _renderPortConnectivity(ports) {
   // A port shared by several required services (TCP/443) shows an N/M count.
   function card(group) {
     var items = group.items, p0 = items[0], st = rollup(items), pp = portParts(items);
-    // Hover only (not shown on the tile): single-service ports surface their
-    // impact; a shared port points to the domain column instead of listing hosts.
-    var tip = items.length > 1
-      ? "Required services share this port — see Service Reachability for the hosts."
+    // Impact-if-blocked bubble on hover/focus/tap: single-service ports surface
+    // their impact; a shared port points to the domain column instead of
+    // listing hosts. A blocked required port also gets an always-visible
+    // issues-panel finding with the same impact text, so the tile stays lean.
+    var impact = items.length > 1
+      ? "Several required services share this port — see Service Reachability for what each one does."
       : (NET_PORT_IMPACT[p0.purpose] || "");
-    return '<div class="net-port-card' + st.stateCls + '" style="--rowaccent:' + st.accent + '" title="' + esc(tip) + '">' +
+    var tip = impact ? _impactTipHtml(impact) : "";
+    var aria = impact ? ' aria-label="If blocked on the school\'s network: ' + esc(impact) + '"' : "";
+    // Visible ? cue matching the Service Reachability rows, right of the port
+    // number — the hover/tap target stays the whole tile, the icon just
+    // signals the tooltip exists. Status uses the shared badge() pill so port
+    // tiles and Service Reachability rows read as one vocabulary.
+    var help = impact ? '<span class="domain-help net-port-help" aria-hidden="true">?</span>' : "";
+    return '<div class="net-port-card net-tip' + st.stateCls + '" style="--rowaccent:' + st.accent + '" tabindex="0"' + aria + '>' + tip +
       '<div class="net-port-card-head">' +
-        '<span class="net-port-num">' + esc(pp.num) + '</span>' +
-        '<span class="net-port-pill net-port-pill-' + st.pillCls + '">' + esc(st.pillTxt) + '</span>' +
+        '<span class="net-port-card-lead"><span class="net-port-num">' + esc(pp.num) + '</span>' + help + '</span>' +
+        badge(st.pillTxt, st.pillCls) +
       '</div>' +
-      '<span class="net-port-proto-tag">' + esc(pp.proto) + '</span>' +
+      '<div class="net-port-card-foot">' +
+        '<span class="net-port-proto-tag">' + esc(pp.proto) + '</span>' +
+      '</div>' +
     '</div>';
   }
 
@@ -3104,15 +3264,15 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       if (_mobo.length) {
         var _m = _mobo[0];
         var _admin = String(_m.adminStatus || "").toLowerCase(), _st = String(_m.status || "").toLowerCase();
-        if (_admin === "down" || _st === "disabled") _moboNote = " The motherboard network port is currently disabled — enable it in Windows.";
-        else if (_st === "disconnected" || _st === "not present" || _st === "down") _moboNote = " The motherboard network port has no cable connected — move the venue/internet cable to it.";
+        if (_admin === "down" || _st === "disabled") _moboNote = " The motherboard network port is disabled — enable it in Windows.";
+        else if (_st === "disconnected" || _st === "not present" || _st === "down") _moboNote = " The motherboard network port has no cable connected.";
       } else {
         _moboNote = " No motherboard network port was detected — it may be disabled.";
       }
       issues.push({
         severity: "critical",
         title: "Internet is plugged into a camera port, not the motherboard network port",
-        body: "The VPU's internet/venue connection is coming in on a camera-NIC port. On a Pixellot VPU the internet must connect to the motherboard network port — the 4-port NIC is only for cameras, and a venue uplink there can disrupt camera discovery and streaming." + _moboNote + " Move the cable to the motherboard network port and confirm that port is enabled. (The Wi-Fi card is for the Pixellot Connect app and should stay enabled.)",
+        body: "The internet/venue connection is on a camera-NIC port, which can disrupt camera discovery and streaming. On a Pixellot VPU it must connect to the motherboard network port — the 4-port NIC is for cameras only." + _moboNote + " Move the cable there and confirm the port is enabled. (Leave the Wi-Fi card enabled — it's for the Pixellot Connect app.)",
         details: _misplaced.map(function(a) { return (a.name || a.interfaceDescription || "?") + " — gateway " + _camGw(a) + " (a camera port)"; }),
       });
     }
@@ -3937,10 +4097,12 @@ function renderNetwork() {
       <div class="net-conn-grid">
         <div class="net-conn-col">
           ${sectionTitle("link", "Port Connectivity")}
+          <p class="net-conn-hint">Hover or tap a tile to see what stops working if the school's network blocks that port.</p>
           ${_renderPortConnectivity(ports)}
         </div>
         <div class="net-conn-col">
           ${sectionTitle("wifi", "Service Reachability")}
+          <p class="net-conn-hint">Hover or tap a <span class="domain-help net-conn-hint-q">?</span> to see what stops working if the school's network blocks that service.</p>
           ${domains.length ? `
             <div class="domain-list">
               ${domains.map(function(d) {
@@ -3948,12 +4110,17 @@ function renderNetwork() {
                 var dnsTime = d.resolutionMs != null ? d.resolutionMs + " ms" : "";
                 var dnsSlow = d.resolutionMs != null && d.resolutionMs > 200;
                 var dotColor = ok ? "var(--c-accent-green)" : "var(--c-accent-red)";
-                // "Impact if blocked" now lives on an explicit ? help icon next
-                // to the domain (focusable, clearly hoverable) instead of a
-                // hidden hover-anywhere title on the whole row.
+                // "Impact if blocked" lives on an explicit ? help icon next to
+                // the domain: a styled bubble on hover/focus/tap while the row
+                // passes. Once the row FAILS, hover is the wrong delivery —
+                // techs screenshot this panel for the school's IT — so the
+                // impact renders inline under the failing row instead.
                 var impact = _netDomainImpact(d);
-                var help = impact
-                  ? `<span class="domain-help" tabindex="0" title="${esc(impact)}" aria-label="Impact if blocked: ${esc(impact)}">?</span>`
+                var help = impact && ok
+                  ? `<span class="domain-help net-tip" tabindex="0" aria-label="If blocked on the school's network: ${esc(impact)}">?${_impactTipHtml(impact)}</span>`
+                  : "";
+                var impactLine = impact && !ok
+                  ? `<div class="domain-impact">${svgIcon("triangle", 11)} While this is blocked: ${esc(impact)}</div>`
                   : "";
                 return `<div class="domain-row">
                   <span class="domain-dot" style="background:${dotColor}"></span>
@@ -3961,6 +4128,7 @@ function renderNetwork() {
                   <span class="domain-ip">${esc(d.resolvedTo) || "—"}</span>
                   <span class="domain-dns-time font-mono${dnsSlow ? ' status-warn' : ''}">${esc(dnsTime)}</span>
                   ${statusBadge(d.status)}
+                  ${impactLine}
                 </div>`;
               }).join("")}
             </div>
@@ -4252,108 +4420,12 @@ function _camStreamBlock(label, s) {
   '</div>';
 }
 
-function _camDetailsPanel(cams, portIdx, portData) {
-  if (!cams.length) return '';
-
-  // NIC / adapter section
-  var nicGroup = '';
-  if (portData) {
-    var duplexVal = portData.fullDuplex === true ? "Full" : portData.fullDuplex === false ? "Half" : "—";
-    // Sum every error/discard counter for the "has errors" check so we
-    // don't miss problems that only register on packet-error or discard
-    // counters (driver-dependent which fields populate).
-    var rxPktErr = portData.rxPacketErrors || 0;
-    var txPktErr = portData.txPacketErrors || 0;
-    var rxDisc   = portData.rxDiscards || 0;
-    var txDisc   = portData.txDiscards || 0;
-    var errTotal = (portData.rxErrors || 0) + (portData.txErrors || 0) +
-                   rxPktErr + txPktErr + rxDisc + txDisc;
-    var errVal = errTotal > 0
-      ? 'RX ' + rxPktErr + ' / TX ' + txPktErr + ' / Discards ' + (rxDisc + txDisc)
-      : 'None';
-    nicGroup = '<div class="cam-detail-group">' +
-      '<div class="cam-detail-group-title">Network Interface Card (NIC)</div>' +
-      _camDetailKv("Adapter", portData.name) +
-      _camDetailKv("MAC", portData.mac) +
-      _camDetailKv("Duplex", duplexVal) +
-      _camDetailKv("Errors", errVal) +
-    '</div>';
-  }
-
-  var inner = nicGroup + cams.map(function(c) {
-    var hasCgi = !!c.cgiConfirmed;
-    var net = c.network || {};
-    var sensor = c.sensor || {};
-
-    // Device section — always show MAC/IP; CGI adds model, serial, firmware
-    var deviceRows =
-      _camDetailKv("IP", c.ip) +
-      _camDetailKv("MAC", c.cgiMac || c.mac) +
-      _camDetailKv("Role", c.role) +
-      _camDetailKv("Identity", c.identitySource);
-    if (hasCgi) {
-      deviceRows +=
-        _camDetailKv("Model", c.model) +
-        _camDetailKv("Model No.", c.modelNumber) +
-        _camDetailKv("Serial", c.serialNumber) +
-        _camDetailKv("Firmware", c.firmwareVersion) +
-        _camDetailKv("TV Mode", _fmtTvMode(c.tvMode)) +
-        _camDetailKv("Brand", c.brand) +
-        _camDetailKv("Type", c.productType);
-    }
-
-    return '<div class="cam-detail-camera">' +
-      '<div class="cam-detail-camera-header">' +
-        svgIcon("camera", 14) + ' ' + esc(c.ip) +
-        (c.modelNumber ? ' <span class="cam-model-label">' + esc(c.modelNumber) + '</span>' : '') +
-        (hasCgi ? ' <span class="cam-cgi-badge" title="Camera answered Pulse&#39;s admin probe (CGI)">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none" title="Camera did not answer Pulse&#39;s admin probe (CGI) — it may be offline or unreachable">No CGI</span>') +
-      '</div>' +
-
-      // Device info
-      '<div class="cam-detail-group">' +
-        '<div class="cam-detail-group-title">Device</div>' +
-        deviceRows +
-      '</div>' +
-
-      // Network (CGI only)
-      (net.ip || net.subnet || net.gateway ? '<div class="cam-detail-group">' +
-        '<div class="cam-detail-group-title">Network Config</div>' +
-        _camDetailKv("IP Address", net.ip) +
-        _camDetailKv("Subnet", net.subnet) +
-        _camDetailKv("Gateway", net.gateway) +
-        _camDetailKv("DHCP", net.dhcp) +
-      '</div>' : '') +
-
-      // Streams (CGI only)
-      _camStreamBlock("Stream 0 — Primary", c.stream0) +
-      _camStreamBlock("Stream 1 — Secondary", c.stream1) +
-
-      // Sensor (CGI only)
-      (sensor.exposure || sensor.brightness ? '<div class="cam-detail-group">' +
-        '<div class="cam-detail-group-title">Image Sensor</div>' +
-        _camDetailKv("Exposure", sensor.exposure) +
-        _camDetailKv("Brightness", sensor.brightness) +
-        _camDetailKv("Contrast", sensor.contrast) +
-        _camDetailKv("Saturation", sensor.colorLevel) +
-        _camDetailKv("Max Gain", sensor.maxShutterGain) +
-        _camDetailKv("Min Shutter", sensor.minShutterSpeed) +
-      '</div>' : '') +
-    '</div>';
-  }).join('');
-
-  return '<details class="cam-details-toggle" data-port-idx="' + portIdx + '">' +
-    '<summary class="cam-details-btn">' + svgIcon("info", 14) + ' Details</summary>' +
-    '<div class="cam-details-body">' + inner + '</div>' +
-  '</details>';
-}
-
 function _camPortTile(port, index, ctx) {
   if (!port) {
     return `<div class="cam-port-tile cam-port-empty">
-      <div class="cam-port-num">Port ${index + 1}</div>
-      <div class="cam-port-status">
-        <span class="cam-dot cam-dot-muted"></span>
-        <span class="text-sm text-pulse-muted">Not detected</span>
+      <div class="cam-port-header">
+        <span class="cam-port-num">Port ${index + 1}</span>
+        <span class="cam-port-state">${badge("Not detected", "muted")}</span>
       </div>
     </div>`;
   }
@@ -4361,16 +4433,23 @@ function _camPortTile(port, index, ctx) {
   const speed = p.linkSpeedMbps
     ? p.linkSpeedMbps >= 1000 ? (p.linkSpeedMbps / 1000) + " Gbps" : p.linkSpeedMbps + " Mbps"
     : "No link";
+  // Link state lives in a shared badge() pill (same status vocabulary as the
+  // Network tab's port tiles); the dot row below carries only the speed.
   // Down ports get a *reason*, not just "Down", + triage guidance below.
   var downLabelMap = { disabled: "Disabled", driver: "Driver error", "no-link": "No link" };
-  let statusLabel, dotCls;
-  if (!p.isUp) { statusLabel = downLabelMap[p.downReason] || "Down"; dotCls = "cam-dot-down"; }
-  else if (p.connecting) { statusLabel = p.linkSpeedMbps ? "Connecting · " + speed : "Connecting…"; dotCls = "cam-dot-connecting"; }
-  else if (p.isDegraded) { statusLabel = "Degraded · " + speed; dotCls = "cam-dot-warn"; }
-  // Fully linked → always green. OCR vs Main is shown by the badge, so the
-  // status dot just signals link health (green = established) and never
+  let stateTxt, stateCls, dotCls;
+  if (!p.isUp) { stateTxt = downLabelMap[p.downReason] || "Down"; stateCls = "fail"; dotCls = "cam-dot-down"; }
+  else if (p.connecting) { stateTxt = "Connecting"; stateCls = "info"; dotCls = "cam-dot-connecting"; }
+  else if (p.isDegraded) { stateTxt = "Degraded"; stateCls = "warn"; dotCls = "cam-dot-warn"; }
+  // Fully linked → always green. OCR vs Main is shown by the role badge, so
+  // the status dot just signals link health (green = established) and never
   // lingers blue, which reads as "still connecting".
-  else { statusLabel = "Linked · " + speed; dotCls = "cam-dot-up"; }
+  else { stateTxt = "Linked"; stateCls = "pass"; dotCls = "cam-dot-up"; }
+  // Speed rides the dot row only while the port is up; a down port's state is
+  // fully told by the badge + the triage guidance block.
+  var speedRow = p.isUp && p.linkSpeedMbps
+    ? `<div class="cam-port-status"><span class="cam-dot ${dotCls}"></span><span class="text-sm">${esc(speed)}</span></div>`
+    : "";
 
   const cams = p.camerasDetected || [];
   var camLabel = p.cameraLabel;
@@ -4379,17 +4458,17 @@ function _camPortTile(port, index, ctx) {
   if (p.isOcr) camLabelCls = "badge-ol-info";
   else if (camLabel && camLabel.indexOf("Main") === 0) camLabelCls = "badge-ol-main";
   else camLabelCls = "badge-ol-muted";
+  // Header carries only the port number + state pill, so the pill sits at the
+  // same top-right spot on every tile; the (variable-width) role badge gets
+  // its own row below and can never push the status onto a second line.
   return `<div class="cam-port-tile ${!p.isUp ? "cam-port-down" : p.isDegraded ? "cam-port-degraded" : "cam-port-active"}">
     <div class="cam-port-header">
       <span class="cam-port-num">Port ${index + 1}</span>
-      ${camLabel ? '<span class="badge-ol ' + camLabelCls + '">' + esc(camLabel) + '</span>' : ''}
-      ${p.isDegraded ? '<span class="badge-ol badge-ol-warn">Degraded</span>' : ""}
+      <span class="cam-port-state">${badge(stateTxt, stateCls)}</span>
     </div>
+    ${camLabel ? '<div class="cam-port-role"><span class="badge-ol ' + camLabelCls + '">' + esc(camLabel) + '</span></div>' : ''}
     <div class="cam-port-name">${esc(p.name)}</div>
-    <div class="cam-port-status">
-      <span class="cam-dot ${dotCls}"></span>
-      <span class="text-sm">${esc(statusLabel)}</span>
-    </div>
+    ${speedRow}
     <div class="cam-port-detail">
       <div class="kv-mini"><span>RX / TX</span><span id="cam-rxtx-${index}">${formatBytes(p.rxBytes)} / ${formatBytes(p.txBytes)}</span></div>
     </div>
@@ -4441,7 +4520,7 @@ function _camDownGuidanceHtml(p, ctx) {
 function _camFindingsHtml(findings) {
   if (!findings.length) return "";
   return `<div class="card" id="cam-findings">
-    ${sectionTitle("alert-circle", findings.length + " finding" + (findings.length !== 1 ? "s" : "") + " need attention")}
+    ${sectionTitle("alert-circle", findings.length + " finding" + (findings.length !== 1 ? "s need" : " needs") + " attention")}
     ${findings.map(f => `
       <div class="cam-finding-row cam-finding-row-${esc(f.severity)}">
         <div class="cam-finding-header">
@@ -5275,7 +5354,7 @@ function renderDiskHealth() {
   const smartBad  = predictFail || anyUnhealthy || anyUncorrected;
   const smartWarn = !smartBad && maxWear >= 80;
   const smartSev  = !haveSmart ? "muted" : smartBad ? "critical" : smartWarn ? "warning" : "ok";
-  const smartChip = !haveSmart ? "No data" : smartBad ? "Issue" : smartWarn ? "Wear high" : "Healthy";
+  const smartChip = !haveSmart ? "No data" : smartBad ? "Issue" : smartWarn ? "Wear high" : "OK";
   const smartVal  = !haveSmart ? "SMART not reported"
     : smartBad ? "Drive predicting failure"
     : smartWarn ? `Highest wear ${maxWear}%`
@@ -5283,7 +5362,7 @@ function renderDiskHealth() {
 
   const errorCount = events.length;
   const errorSev  = errorCount > 5 ? "critical" : errorCount > 0 ? "warning" : "ok";
-  const errorChip = errorCount === 0 ? "Clean" : errorCount > 5 ? "High" : "Attention";
+  const errorChip = errorCount === 0 ? "Clean" : errorCount > 5 ? "High" : "Warning";
   const errorVal  = errorCount === 0 ? "None" : `${errorCount} event${errorCount === 1 ? "" : "s"}`;
 
   const osDrive = logical.find(d => d.deviceID === "C:") || logical[0];
@@ -5625,7 +5704,7 @@ function renderEvents() {
     <div class="card ev-filter-card">
       <div class="ev-filter-row">
         <div class="ev-filter-group">
-          <label class="ev-filter-label">TIME WINDOW</label>
+          <label class="ev-filter-label" for="ev-hours">TIME WINDOW</label>
           <select id="ev-hours" class="ev-select">
             <option value="12">Last 12 hours</option>
             <option value="24">Last 24 hours</option>
@@ -5726,7 +5805,7 @@ function renderPixellotLogs() {
     <div class="card ev-filter-card">
       <div class="ev-filter-row">
         <div class="ev-filter-group">
-          <label class="ev-filter-label">TIME WINDOW</label>
+          <label class="ev-filter-label" for="pxl-hours">TIME WINDOW</label>
           <select id="pxl-hours" class="ev-select">
             <option value="12">Last 12 hours</option>
             <option value="24" selected>Last 24 hours</option>
@@ -5896,7 +5975,7 @@ function renderHelp() {
         FAIL means don't expect a clean broadcast without pre-game attention.</li>
         <li><strong>Findings</strong> list the specific issues behind the verdict, worst first. Click any finding to jump
         straight to the tab that owns the fix.</li>
-        <li><strong>Sidebar warning triangles</strong> (⚠) mark which areas have an open issue, so you know where to look
+        <li><strong>Sidebar warning triangles</strong> mark which areas have an open issue, so you know where to look
         without opening every tab.</li>
       </ul>
     </div>
@@ -5925,8 +6004,6 @@ function renderHelp() {
       <ul class="help-list">
         <li>Use <strong>Exports</strong> to generate a downloadable report to attach to a ticket — it re-runs
         every check and bundles the results into one file.</li>
-        <li><strong>Share over LAN</strong> sends a report to another Pulse on the same network when you can't get the file off
-        the VPU directly.</li>
         <li><strong>Pulse Logs</strong> shows Pulse's own script and server logs if Pulse itself is misbehaving.</li>
       </ul>
     </div>
@@ -5942,11 +6019,7 @@ function renderReports() {
   // describing it so action sits with its explanation, and drop the
   // redundant Run All Diagnostics button.
   $page().innerHTML = `
-    ${pageHeader("Exports", "Diagnostic-run snapshots — generate and download full system reports",
-      `<button class="btn-outline btn-ol-blue" onclick="navigate('share')" title="Hand off a generated report to another Pulse on the same network">
-        ${svgIcon("send", 14)} Send to another Pulse
-      </button>`
-    )}
+    ${pageHeader("Exports", "Diagnostic-run snapshots — generate and download full system reports")}
 
     <div class="card">
       ${sectionTitle("file", "Full Diagnostic Export")}
@@ -6779,9 +6852,9 @@ function renderScoreConnect() {
     <div class="card">
       ${sectionTitle("globe", "Cloud (Bot) Status")}
       <div class="kv-grid">
-        ${kvRowHtml("Connected", botStatus.isConnected
-          ? badge("Yes", "pass")
-          : badge("No", "fail"))}
+        ${kvRowHtml("Status", botStatus.isConnected
+          ? badge("Connected", "pass")
+          : badge("Not connected", "fail"))}
         ${botStatus.scoreConnectId ? kvRowHtml("ScoreConnect ID",
           `${esc(botStatus.scoreConnectId)} <span class="text-pulse-dim ml-1" style="font-size:0.85em;cursor:help" title="ScoreConnect III reports this ID at startup. If the BOT service has reconfigured since, the displayed value can briefly lag.">${svgIcon("info", 12)}</span>`)
           : ""}
@@ -6829,7 +6902,7 @@ function renderScoreConnect() {
           <div class="sc-period-label" id="sc3-period">${rtdShown && rtdShown.period ? "Q" + rtdShown.period : "GAME CLOCK"}</div>
           <div class="sc-clock" id="sc3-clock">${rtdShown && rtdShown.clock ? esc(rtdShown.clock) : "--:--"}</div>
           <div class="sc-data-desc" id="sc3-down">${rtdShown ? _sc3DownText(rtdShown) : ""}</div>
-          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-accent-green)" : "var(--c-accent-red)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
+          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-board-ok)" : "var(--c-board-bad)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
             ${_sc3StageBadge(dataReceiving ? "live" : "disconnected", 0)}
           </div>
         </div>
@@ -6849,7 +6922,7 @@ function renderScoreConnect() {
         </div>
         <div class="sc-center">
           <div class="sc-data-status"><span class="sc-data-label">${dataReceiving ? "Receiving Data" : "No Data"}</span></div>
-          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-accent-green)" : "var(--c-accent-red)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
+          <div id="sc3-live-badge" style="margin-top:0.4rem;font-size:0.62rem;letter-spacing:0.1em;color:${dataReceiving ? "var(--c-board-ok)" : "var(--c-board-bad)"};display:flex;align-items:center;justify-content:center;gap:0.3rem">
             ${_sc3StageBadge(dataReceiving ? "live" : "disconnected", 0)}
           </div>
           ${dataReceiving
@@ -6915,8 +6988,8 @@ function renderScoreConnect() {
         ${sc2Teams.home ? kvRow("Home Name", sc2Teams.home) : ""}
       </div>
       ${sc2.networkIfaces && sc2.networkIfaces.length ? `
-      <div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
-        <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.5rem">Network Interfaces</div>
+      <div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--c-border)">
+        <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--c-muted);margin-bottom:0.5rem">Network Interfaces</div>
         <div class="kv-grid">
           ${sc2.networkIfaces.map(n => kvRow(n.name, n.address)).join("")}
         </div>
@@ -6941,7 +7014,7 @@ function renderScoreConnect() {
         ${config.eventType ? kvRow("Event Type", config.eventType) : ""}
         ${kvRow("Network", data.networkStatus)}
         ${kvRowHtml("Local Stream", data.hasLocalStream != null
-          ? (data.hasLocalStream ? '<span class="status-pass">Yes</span>' : '<span class="status-fail">No</span>')
+          ? (data.hasLocalStream ? '<span class="status-pass">Detected</span>' : '<span class="status-fail">Not detected</span>')
           : '—')}
       </div>
       ${data.rawData ? `
@@ -7013,20 +7086,25 @@ function _sc3SvcStatusHtml(stage) {
 //   disconnected — frozen past the window / SC III reports no data
 //   offline      — SC III service itself not responding
 function _sc3StageBadge(stage, secs) {
+  // Board tokens, not --c-accent-*: this badge sits on the fixed-dark stadium
+  // board in BOTH themes, so a light-theme accent here renders dark-on-black
+  // (the old --c-accent-green was 3.7:1 in light mode).
   var map = {
-    live:         { c: "var(--c-accent-green)", flash: true,  txt: "LIVE" },
-    stale:        { c: "var(--c-accent-amber)", flash: true,  txt: "STALE · " + secs + "s" },
-    disconnected: { c: "var(--c-accent-red)",   flash: false, txt: "NO SIGNAL" },
-    offline:      { c: "var(--c-dim)",          flash: false, txt: "ScoreConnect III Offline" }
+    live:         { c: "var(--c-board-ok)",     flash: true,  txt: "LIVE" },
+    stale:        { c: "var(--c-board-accent)", flash: true,  txt: "STALE · " + secs + "s" },
+    disconnected: { c: "var(--c-board-bad)",    flash: false, txt: "NO SIGNAL" },
+    offline:      { c: "var(--c-board-muted)",  flash: false, txt: "ScoreConnect III Offline" }
   };
   var s = map[stage] || map.offline;
   var anim = s.flash ? "animation:pulse-live 1.4s ease-in-out infinite;" : "";
   return '<span style="width:6px;height:6px;border-radius:50%;background:' + s.c + ';'
     + 'display:inline-block;' + anim + '"></span>' + s.txt;
 }
+// Colour for #sc3-live-badge, which lives on the dark board — board tokens for
+// the same reason as _sc3StageBadge above.
 var _SC3_STAGE_COLOR = {
-  live: "var(--c-accent-green)", stale: "var(--c-accent-amber)",
-  disconnected: "var(--c-accent-red)", offline: "var(--c-dim)"
+  live: "var(--c-board-ok)", stale: "var(--c-board-accent)",
+  disconnected: "var(--c-board-bad)", offline: "var(--c-board-muted)"
 };
 
 // Status-card "Scoreboard Data" cell markup per stage.
@@ -7181,7 +7259,7 @@ function _sc3StartLivePoll(vendor, sport, showScoreboard) {
     // Hero badge.
     var badge = document.getElementById("sc3-live-badge");
     if (badge) {
-      badge.style.color = _SC3_STAGE_COLOR[st.stage] || "var(--c-dim)";
+      badge.style.color = _SC3_STAGE_COLOR[st.stage] || "var(--c-board-muted)";
       badge.innerHTML = _sc3StageBadge(st.stage, st.secs);
     }
 
@@ -7496,7 +7574,7 @@ function renderFaultIsolator() {
       resultRow() +
       '<div style="margin:16px 0;max-width:480px">' +
         '<div class="text-xs text-pulse-muted mb-1">Suspect port (has the fault)</div>' +
-        '<select id="fi-suspect" class="ev-select" style="width:100%">' + def + allOpts + "</select>" +
+        '<select id="fi-suspect" class="ev-select" style="width:100%" aria-label="Suspect port (has the fault)">' + def + allOpts + "</select>" +
       "</div>" +
       '<div style="display:flex;gap:10px;justify-content:flex-end">' +
         '<button id="fi-action" class="btn-outline btn-ol-blue" disabled>' + esc(_fi.actionLabel) + " →</button>" +
@@ -8251,7 +8329,7 @@ function _audioDeviceRow(d) {
         ${d.volume != null ? `
           <div class="audio-meter-row">
             <span class="audio-meter-label">${d.muted ? svgIcon("volume-x", 14) : svgIcon("volume", 14)}</span>
-            <input type="range" id="vol-${slug}" class="audio-slider${d.muted ? " audio-slider-muted" : ""}" min="0" max="100" value="${Math.round(d.volume)}"/>
+            <input type="range" id="vol-${slug}" class="audio-slider${d.muted ? " audio-slider-muted" : ""}" min="0" max="100" value="${Math.round(d.volume)}" aria-label="Volume — ${esc(d.name || "audio device")}"/>
             <span id="vol-lbl-${slug}" class="audio-meter-val">${Math.round(d.volume)}%</span>
             <span id="vol-msg-${slug}" class="audio-vol-msg"></span>
           </div>` : ""}
@@ -8423,6 +8501,27 @@ function renderSettings() {
       rebootBtn.disabled = false;
     }
   });
+}
+
+// Dismissible strip at the top of the content pane, shown the one time the
+// server migrates this install off the retired beta channel (boot-time
+// /api/version -> channelMoved). Deliberately calm: the move is done and
+// needs nothing from the tech — this is a courtesy heads-up, not an alert.
+function _showChannelMovedBanner() {
+  if (document.getElementById("channel-moved-banner")) return;
+  const el = document.createElement("div");
+  el.id = "channel-moved-banner";
+  el.className = "channel-moved-banner";
+  el.setAttribute("role", "status");
+  el.innerHTML = `
+    <span>${svgIcon("info", 16)}</span>
+    <span class="channel-moved-text">The Pulse beta program has wrapped up — thanks for testing!
+      This VPU has been moved to the <strong>production</strong> version of Pulse, which opens
+      automatically from your next launch. Nothing to do on your end.</span>
+    <button class="channel-moved-dismiss" title="Dismiss" aria-label="Dismiss">&times;</button>`;
+  el.querySelector(".channel-moved-dismiss").addEventListener("click", () => el.remove());
+  const content = document.getElementById("content");
+  content?.insertBefore(el, content.firstChild);
 }
 
 // ── Software Update helpers (module scope so they survive a re-render) ──
