@@ -1036,20 +1036,16 @@ function renderCloudEvents() {
 
   const drift = prod.currentSwVersion && prod.targetSwVersion && prod.currentSwVersion !== prod.targetSwVersion;
   const identCard = `
-    ${_cePanelTitle("PIXELLOT CLOUD IDENTITY")}
+    ${_cePanelTitle("PIXELLOT CLOUD IDENTITY", "globe")}
     <div class="card">
-      <div class="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <div class="text-sm font-medium">${esc(school.name || prod.name || ident.vpuName || "Unknown unit")}</div>
-          <div class="text-xs text-pulse-muted font-mono mt-1">${school.key ? `school ${esc(school.key)} · ` : ""}${prod.pixellotName ? `venue ${esc(prod.pixellotName)} · ` : ""}${esc(prod.pixellotKey || "no pixellot key")}</div>
-        </div>
-        <div class="flex items-center gap-2 flex-wrap">
-          ${met.connection ? severityChip(met.connection === "Ok" ? "ok" : "critical", `Cloud connection: ${met.connection}`) : ""}
-          ${prod.internalStatus ? severityChip(prod.internalStatus === "broadcasting" ? "ok" : "warning", prod.internalStatus === "broadcasting" ? "NFHS: Broadcasting" : "NFHS: Not broadcasting") : ""}
-          ${drift ? severityChip("warning", `SW ${prod.currentSwVersion} → target ${prod.targetSwVersion}`)
-                  : prod.currentSwVersion ? severityChip("ok", `SW ${prod.currentSwVersion}`) : ""}
-          ${cloud.eqsAvgScore !== null && cloud.eqsAvgScore !== undefined ? severityChip(cloud.eqsAvgScore >= 0.85 ? "ok" : "warning", `EQS ${(cloud.eqsAvgScore * 100).toFixed(0)}%`) : ""}
-        </div>
+      <div class="text-sm font-medium">${esc(school.name || prod.name || ident.vpuName || "Unknown unit")}</div>
+      <div class="text-xs text-pulse-muted font-mono mt-1">${school.key ? `school ${esc(school.key)} · ` : ""}${prod.pixellotName ? `venue ${esc(prod.pixellotName)} · ` : ""}${esc(prod.pixellotKey || "no pixellot key")}</div>
+      <div class="flex items-center gap-2 flex-wrap mt-3">
+        ${met.connection ? severityChip(met.connection === "Ok" ? "ok" : "critical", `Cloud connection: ${met.connection}`) : ""}
+        ${prod.internalStatus ? severityChip(prod.internalStatus === "broadcasting" ? "ok" : "warning", prod.internalStatus === "broadcasting" ? "NFHS: Broadcasting" : "NFHS: Not broadcasting") : ""}
+        ${drift ? severityChip("warning", `SW ${prod.currentSwVersion} → target ${prod.targetSwVersion}`)
+                : prod.currentSwVersion ? severityChip("ok", `SW ${prod.currentSwVersion}`) : ""}
+        ${cloud.eqsAvgScore !== null && cloud.eqsAvgScore !== undefined ? severityChip(cloud.eqsAvgScore >= 0.85 ? "ok" : "warning", `EQS ${(cloud.eqsAvgScore * 100).toFixed(0)}%`) : ""}
       </div>
     </div>`;
 
@@ -1059,7 +1055,7 @@ function renderCloudEvents() {
       <div class="text-xs">${esc(h.text)}${h.page ? ` — <a class="cam-hw-pointer" href="#${esc(h.page)}" onclick="navigate('${esc(h.page)}');return false;">open ${esc(h.page === "cameras" ? "Camera Connectivity" : h.page === "scoreconnect" ? "ScoreConnect" : h.page === "audio" ? "Audio" : "Network Test")}</a>` : ""}</div>
     </div>`).join("");
   const hintsCard = `
-    ${_cePanelTitle("CLOUD FINDINGS")}
+    ${_cePanelTitle("CLOUD FINDINGS", "alert")}
     <div class="card">${hints || '<div class="text-xs text-pulse-muted">No active cloud findings.</div>'}</div>`;
 
   const events = cloud.events || [];
@@ -1084,7 +1080,7 @@ function renderCloudEvents() {
   }).join("");
 
   const table = `
-    ${_cePanelTitle("RECENT &amp; UPCOMING EVENTS")}
+    ${_cePanelTitle("RECENT &amp; UPCOMING EVENTS", "clock")}
     ${events.length ? `
     <div class="card">
       <div class="ev-count">${events.length} event${events.length === 1 ? "" : "s"} (last 14 days + upcoming week, plus anything the box recorded)</div>
@@ -1099,9 +1095,9 @@ function renderCloudEvents() {
   $page().innerHTML = `${header}${identCard}${hintsCard}${table}`;
 }
 
-// Small uppercase heading above each panel card.
-function _cePanelTitle(t) {
-  return `<div class="text-xs font-medium text-pulse-muted mt-4 mb-1">${t}</div>`;
+// Small uppercase heading (icon + label) above each panel card.
+function _cePanelTitle(t, icon) {
+  return `<div class="flex items-center gap-2 text-xs font-medium text-pulse-muted mt-4 mb-1">${icon ? svgIcon(icon, 14) : ""}<span>${t}</span></div>`;
 }
 
 // Local-only fallback table when the cloud is unreachable: the box's own
