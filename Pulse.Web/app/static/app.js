@@ -1041,7 +1041,12 @@ function renderCloudEvents() {
       <div class="text-sm font-medium">${esc(school.name || prod.name || ident.vpuName || "Unknown unit")}</div>
       <div class="text-xs text-pulse-muted font-mono mt-1">${school.key ? `school ${esc(school.key)} · ` : ""}${prod.pixellotName ? `venue ${esc(prod.pixellotName)} · ` : ""}${esc(prod.pixellotKey || "no pixellot key")}</div>
       <div class="flex items-center gap-2 flex-wrap mt-3">
-        ${met.connection ? severityChip(met.connection === "Ok" ? "ok" : "critical", `Cloud connection: ${met.connection}`) : ""}
+        ${met.connection ? (prod.internalStatus === "broadcasting"
+          // On a dormant (not-broadcasting) unit "connection Ok" just means
+          // "checks in with Pixellot", not "ready to stream" — render it
+          // neutral grey so a parked box doesn't lead with a green light.
+          ? severityChip(met.connection === "Ok" ? "ok" : "critical", `Cloud connection: ${met.connection}`)
+          : severityChip("muted", `Cloud connection: ${met.connection}`)) : ""}
         ${prod.internalStatus ? severityChip(prod.internalStatus === "broadcasting" ? "ok" : "warning", prod.internalStatus === "broadcasting" ? "NFHS: Broadcasting" : "NFHS: Not broadcasting") : ""}
         ${drift ? severityChip("warning", `SW ${prod.currentSwVersion} → target ${prod.targetSwVersion}`)
                 : prod.currentSwVersion ? severityChip("ok", `SW ${prod.currentSwVersion}`) : ""}
