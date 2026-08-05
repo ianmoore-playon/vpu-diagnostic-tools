@@ -1246,7 +1246,11 @@ def demo_cloud_events(venue_id, local_events):
         "error": None,
         "errors": None,
         "producer": {
-            "name": f"GHSA: {_VENUE['vpuName'].split(' ', 1)[1]}",
+            # mirrors search-api's producer formatted_name shape:
+            # "AIA: Mesquite High School, Gilbert, AZ - Field"
+            "name": f"GHSA: {_VENUE['vpuName'].split(' ', 1)[1].rsplit(' (', 1)[0]}, "
+                    f"{_VENUE['city']}, {_VENUE['state']} - "
+                    f"{_VENUE['vpuName'].rsplit(' - ', 1)[-1]}",
             "producerKey": "pdcdemo1234567",
             "pixellotKey": "pxldemo9876543",
             "pixellotName": _VENUE["vpuName"].rsplit(" - ", 1)[-1],
