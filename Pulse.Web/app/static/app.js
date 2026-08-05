@@ -672,6 +672,10 @@ function preloadProgressive(opts) {
     }
     // Engage the demo pacing for THIS preload (~2.5s total across 9 ticks).
     if (data?.demoMode) _tickDelayMs = 280;
+    // One-shot notice: the server just moved this install off the retired
+    // beta channel (see _migrate_retired_beta in main.py). Next launch is a
+    // plain production install and the flag is gone, so this shows once.
+    if (data?.channelMoved) _showChannelMovedBanner();
   });
   const logsPromise = api("/api/logs").then((logData) => {
     if (logData && !logData.error) {
@@ -8423,6 +8427,27 @@ function renderSettings() {
       rebootBtn.disabled = false;
     }
   });
+}
+
+// Dismissible strip at the top of the content pane, shown the one time the
+// server migrates this install off the retired beta channel (boot-time
+// /api/version -> channelMoved). Deliberately calm: the move is done and
+// needs nothing from the tech — this is a courtesy heads-up, not an alert.
+function _showChannelMovedBanner() {
+  if (document.getElementById("channel-moved-banner")) return;
+  const el = document.createElement("div");
+  el.id = "channel-moved-banner";
+  el.className = "channel-moved-banner";
+  el.setAttribute("role", "status");
+  el.innerHTML = `
+    <span>${svgIcon("info", 16)}</span>
+    <span class="channel-moved-text">The Pulse beta program has wrapped up — thanks for testing!
+      This VPU has been moved to the <strong>production</strong> version of Pulse, which opens
+      automatically from your next launch. Nothing to do on your end.</span>
+    <button class="channel-moved-dismiss" title="Dismiss" aria-label="Dismiss">&times;</button>`;
+  el.querySelector(".channel-moved-dismiss").addEventListener("click", () => el.remove());
+  const content = document.getElementById("content");
+  content?.insertBefore(el, content.firstChild);
 }
 
 // ── Software Update helpers (module scope so they survive a re-render) ──
