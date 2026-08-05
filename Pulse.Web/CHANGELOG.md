@@ -22,9 +22,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-05
+
 ### Added
 - New "Event Streaming" page under Triage: shows this VPU's recent events as the NFHS cloud sees them — which ones streamed, which didn't, and the evidence for why (cloud camera/health indicators, whether the box recorded video locally, quality scores). Works with no login; if the school network blocks the cloud, the page says so and still shows the box's local recording history.
-- ScoreConnect: new "Previous Configurations" panel. Pulse now remembers each scoreboard setup this VPU has run (vendor, sport, connection type, bot number, ScoreLink) — recorded only while scoreboard data is confirmed flowing — so after a reconfigure or bot reassignment you can see exactly what it was set to before, and when it changed.
 - When the launcher can't download Pulse, it now explains why instead of just saying "check the internet connection": it shows the actual download error, tests each GitHub server Pulse needs one by one, and prints exactly which ones the venue's network is blocking (with the allow-list to hand to the school's IT). Catches the common case where github.com opens fine in a browser but the download servers are filtered, and flags networks that intercept HTTPS. The report is also saved to a file support can ask for.
 - Pulse now cleans up the retired Canopy/Leaf software automatically. The old Banyan Hills agent (no longer used by PlayOn) is uninstalled in the background the first time Pulse runs on a VPU, and the leftover C:\Banyan folder is removed — no action needed from techs.
 - New standalone script `scripts/Get-WindowsPatchStatus.ps1`: run it on a VPU to see the real Windows patch level (build number, hotfixes, servicing history, pending reboot) even though Windows Update is disabled on the fleet image.
@@ -34,15 +35,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - Status words now match everywhere: "Healthy" and "Attention" chips read OK and WARNING like the rest of the app, and ScoreConnect's cloud link shows CONNECTED / NOT CONNECTED instead of Yes / No.
 - Network Test: port tiles now use the same PASS / FAIL pills as the service list next to them, and the ? icon sits right after the port number where it's easier to spot.
 - Camera Connectivity: port cards now show link state as the same style of pill (LINKED / DEGRADED / NO LINK) used across the app, always in the top-right corner of the card; the camera role label (OCR / MAIN CAMERA) sits on its own line below the port number.
-- Sidebar: Audio now sits above Service Status under Troubleshooting.
-- Network Test: the Wired Ports table now lists the motherboard uplink first, then the camera ports in order — the uplink no longer appears in the middle of the camera NIC's four ports.
-
 ### Fixed
 - Every bit of text in Pulse is now readable in both light and dark mode, checked page by page. Faint grey text (log timestamps, the small print under the dashboard gauges, card headings like FINDINGS and VPU IDENTITY) was washed out against the background — worst on a laptop screen in daylight. The coloured status words were the other half of it: PASS / FAIL / WARNING chips, the red [CRITICAL] tags, the amber WARNING pills, and the teal MAIN CAMERA badge were all too pale against their backgrounds, especially where a chip sat inside an already-tinted row.
 - The scoreboard's LIVE / STALE / NO SIGNAL indicator was nearly invisible in light mode — it was using the light theme's dark green on the near-black scoreboard. The scoreboard now keeps its own colours in both modes, so it reads the same whichever mode you're in. Team names and the raw-data label on the scoreboard are clearer too.
 - The loading screen no longer says "this can take a moment" after it has already finished; it now reads "All checks complete." on the last frame.
 - A Pulse run from a source checkout no longer reports itself as the latest production release — it now shows the version it actually is.
-- The dashboard no longer shows a false "No main cameras detected" alarm (or a false "port running slow" warning on the scoreboard camera port) in the first minute after Pulse starts. Camera detection now asks the cameras directly instead of trusting a network cache that can be empty right after launch — cameras that are genuinely unplugged still alarm immediately.
 - Network Test no longer shows a wall of false "blocked (TCP/443)" warnings right after Pulse opens. On slower VPUs the checks could time out while Pulse was still busy collecting data, making a healthy network look blocked; any check that fails now gets an automatic second attempt once the rush is over.
 - The dashboard no longer warns "CPU usage elevated" just because Pulse itself was busy collecting data at that moment. An elevated reading is now double-checked with a follow-up sample before the warning shows.
 - Uptime no longer shows an extra day (a VPU up 16 hours used to read "1d 16h").
@@ -55,6 +52,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ### Removed
 - Network Test no longer checks the retired leaf-uploads/leaf-downloads addresses (old Canopy buckets) — schools don't need to allow them anymore.
 - **Share over LAN is hidden for now.** The tab is removed from the sidebar while the feature is on hold — use Exports to download reports instead.
+
+## [1.0.5] - 2026-08-04
+
+### Added
+- ScoreConnect: new "Previous Configurations" panel. Pulse now remembers each scoreboard setup this VPU has run (vendor, sport, connection type, bot number, ScoreLink) — recorded only while scoreboard data is confirmed flowing — so after a reconfigure or bot reassignment you can see exactly what it was set to before, and when it changed.
+
+## [1.0.4] - 2026-08-03
+
+### Fixed
+- Network Test: the Wired Ports table now lists the motherboard uplink first, then the camera ports in order — the uplink no longer appears in the middle of the camera NIC's four ports.
+
+## [1.0.3] - 2026-07-31
+
+### Changed
+- Sidebar: Audio now sits above Service Status under Troubleshooting.
+
+## [1.0.2] - 2026-07-28
+
+### Fixed
+- The dashboard no longer shows a false "No main cameras detected" alarm (or a false "port running slow" warning on the scoreboard camera port) in the first minute after Pulse starts. Camera detection now asks the cameras directly instead of trusting a network cache that can be empty right after launch — cameras that are genuinely unplugged still alarm immediately.
 
 ## [1.0.1] - 2026-07-20
 
