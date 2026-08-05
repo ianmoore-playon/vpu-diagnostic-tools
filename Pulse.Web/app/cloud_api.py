@@ -75,6 +75,7 @@ def _fetch_producer(venue_id):
     px = item.get("pixellot") or {}
     pubs = [
         {
+            "key": p.get("publisher_key"),
             "name": p.get("publisher_name"),
             "type": p.get("publisher_type"),
             "city": p.get("city"),
@@ -176,7 +177,7 @@ def _verdict_from_eqs(eqs_entry):
     score = eqs_entry.get("eventScore")
     reasons = []
     if on_air is False:
-        return "failed", ["Cloud quality system: stream never went on air"]
+        return "failed", ["Never went on air"]
     comp_fails = [
         name
         for name in ("exposure", "calibration", "focus", "scoreboard")
@@ -188,13 +189,13 @@ def _verdict_from_eqs(eqs_entry):
         # Short streams are common fleet-wide — only call it "died mid-event"
         # when the quality score corroborates something actually went wrong.
         if score is not None and score < 0.6:
-            reasons.append("Stream ended well short of the scheduled window")
+            reasons.append("Ended early")
             if comp_fails:
-                reasons.append("Failed checks: " + ", ".join(comp_fails))
+                reasons.append("Failed: " + ", ".join(comp_fails))
             return "partial", reasons
-        reasons.append("Ran shorter than scheduled (often benign)")
+        reasons.append("Ran short of schedule (often benign)")
     if comp_fails:
-        reasons.append("Failed quality checks: " + ", ".join(comp_fails))
+        reasons.append("Failed: " + ", ".join(comp_fails))
         return "quality", reasons
     return "streamed", reasons
 
@@ -206,7 +207,7 @@ def _verdict_for(entry, eqs, now):
     game_key = entry.get("gameKey")
 
     if status == "on_air":
-        return "live", ["Broadcast is on air now"]
+        return "live", ["On air now"]
     if start and start > now:
         return "upcoming", []
 
@@ -231,19 +232,11 @@ def _verdict_for(entry, eqs, now):
         if now <= window_end:
             mins = int((now - start).total_seconds() // 60)
             return "unable", [
-                f"Event window is active (started {mins} min ago) but the "
-                "broadcast has not gone on air — the box is unable to "
-                "stream right now",
+                f"Window active — started {mins} min ago, not on air",
             ]
-        reasons = [
-            "Event window ended without the broadcast going on air — it "
-            "did not stream",
-        ]
-        if game_key and game_key in eqs["excluded"]:
-            reasons.append("Cloud quality system never scored it (nothing aired)")
-        return "failed", reasons
+        return "failed", ["Never went on air"]
     if status == "complete":
-        return "streamed", ["Marked complete in the cloud (not quality-scored)"]
+        return "streamed", ["Complete (not scored)"]
     return "unknown", []
 
 
@@ -319,15 +312,9 @@ def _merge_timeline(listed_items, box_broadcasts, local_events, eqs, now):
         loc = entry.get("local")
         if loc and verdict in ("failed", "partial"):
             if loc["recorded"]:
-                reasons.append(
-                    "Box DID record video locally — capture worked; look at "
-                    "upload/streaming path"
-                )
+                reasons.append("Box recorded video — issue in the streaming path")
             else:
-                reasons.append(
-                    "Box never recorded video for this event — capture-side "
-                    "failure (cameras / scheduling)"
-                )
+                reasons.append("Box never recorded — camera/capture side")
         entry["verdict"] = verdict
         entry["verdictReasons"] = reasons
 

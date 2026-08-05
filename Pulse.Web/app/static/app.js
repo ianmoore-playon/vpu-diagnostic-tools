@@ -1032,21 +1032,23 @@ function renderCloudEvents() {
 
   const prod = cloud.producer || {};
   const met = cloud.metrics || {};
+  const school = (prod.publishers || [])[0] || {};
 
   const drift = prod.currentSwVersion && prod.targetSwVersion && prod.currentSwVersion !== prod.targetSwVersion;
   const identCard = `
+    ${_cePanelTitle("PIXELLOT CLOUD IDENTITY")}
     <div class="card">
       <div class="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <div class="text-sm font-medium">${esc(prod.name || ident.vpuName || "Unknown unit")}</div>
-          <div class="text-xs text-pulse-muted font-mono mt-1">venue ${esc(ident.venueId)}${prod.pixellotKey ? ` · ${esc(prod.pixellotKey)}` : ""}${prod.producerKey ? ` · ${esc(prod.producerKey)}` : ""}</div>
+          <div class="text-sm font-medium">${esc(school.name || prod.name || ident.vpuName || "Unknown unit")}</div>
+          <div class="text-xs text-pulse-muted font-mono mt-1">${school.key ? `school ${esc(school.key)} · ` : ""}${prod.pixellotName ? `venue ${esc(prod.pixellotName)} · ` : ""}${esc(prod.pixellotKey || "no pixellot key")}</div>
         </div>
         <div class="flex items-center gap-2 flex-wrap">
-          ${met.connection ? severityChip(met.connection === "Ok" ? "ok" : "critical", `Pixellot link: ${met.connection}`) : ""}
-          ${prod.internalStatus ? severityChip(prod.internalStatus === "broadcasting" ? "ok" : "warning", `Cloud status: ${prod.internalStatus}`) : ""}
+          ${met.connection ? severityChip(met.connection === "Ok" ? "ok" : "critical", `Cloud connection: ${met.connection}`) : ""}
+          ${prod.internalStatus ? severityChip(prod.internalStatus === "broadcasting" ? "ok" : "warning", prod.internalStatus === "broadcasting" ? "NFHS: Broadcasting" : "NFHS: Not broadcasting") : ""}
           ${drift ? severityChip("warning", `SW ${prod.currentSwVersion} → target ${prod.targetSwVersion}`)
                   : prod.currentSwVersion ? severityChip("ok", `SW ${prod.currentSwVersion}`) : ""}
-          ${cloud.eqsAvgScore !== null && cloud.eqsAvgScore !== undefined ? severityChip(cloud.eqsAvgScore >= 0.85 ? "ok" : "warning", `Quality avg ${(cloud.eqsAvgScore * 100).toFixed(0)}%`) : ""}
+          ${cloud.eqsAvgScore !== null && cloud.eqsAvgScore !== undefined ? severityChip(cloud.eqsAvgScore >= 0.85 ? "ok" : "warning", `EQS ${(cloud.eqsAvgScore * 100).toFixed(0)}%`) : ""}
         </div>
       </div>
     </div>`;
@@ -1056,42 +1058,50 @@ function renderCloudEvents() {
       ${severityChip(h.severity, (h.severity || "info").toUpperCase())}
       <div class="text-xs">${esc(h.text)}${h.page ? ` — <a class="cam-hw-pointer" href="#${esc(h.page)}" onclick="navigate('${esc(h.page)}');return false;">open ${esc(h.page === "cameras" ? "Camera Connectivity" : h.page === "scoreconnect" ? "ScoreConnect" : h.page === "audio" ? "Audio" : "Network Test")}</a>` : ""}</div>
     </div>`).join("");
-  const hintsCard = hints ? `<div class="card mt-4"><div class="text-xs font-medium text-pulse-muted mb-1">WHAT THE CLOUD EVIDENCE POINTS AT</div>${hints}</div>` : "";
+  const hintsCard = `
+    ${_cePanelTitle("CLOUD FINDINGS")}
+    <div class="card">${hints || '<div class="text-xs text-pulse-muted">No active cloud findings.</div>'}</div>`;
 
   const events = cloud.events || [];
   const rows = events.map((ev) => {
     const [sev, label] = _CE_VERDICTS[ev.verdict] || _CE_VERDICTS.unknown;
-    const src = ev.source === "listed" ? severityChip("muted", "Listed")
-      : ev.source === "box" ? severityChip("muted", "Box only")
-      : severityChip("muted", "Listed + box");
-    const rec = ev.local
-      ? (ev.local.recorded ? `${formatBytes(ev.local.videoBytes)}${ev.local.uploadedCount ? ` · ${ev.local.uploadedCount} uploaded` : ""}` : '<span class="sev-chip sev-chip-crit">no recording</span>')
+    const vod = ev.local
+      ? (ev.local.recorded ? `${formatBytes(ev.local.videoBytes)} recorded` : '<span class="sev-chip sev-chip-crit">no recording</span>')
       : '<span class="text-pulse-muted">—</span>';
-    const reasons = (ev.verdictReasons || []).map((r) => `<div>• ${esc(r)}</div>`).join("");
+    const reasons = (ev.verdictReasons || []).map((r) => `<div>${esc(r)}</div>`).join("");
     const score = ev.eqs && ev.eqs.eventScore !== null && ev.eqs.eventScore !== undefined
-      ? `<div class="text-pulse-muted">Quality score ${(ev.eqs.eventScore * 100).toFixed(0)}%</div>` : "";
+      ? `${(ev.eqs.eventScore * 100).toFixed(0)}%` : '<span class="text-pulse-muted">—</span>';
     return `<tr>
-      <td class="text-xs whitespace-nowrap font-mono">${formatTime(ev.startTime)}</td>
+      <td class="text-xs font-mono">${esc(ev.gameKey || ev.pixellotEventId || "—")}</td>
       <td class="text-xs">${esc(ev.headline || "—")}${ev.sport ? `<br><span class="text-pulse-muted">${esc(ev.sport)}</span>` : ""}</td>
-      <td>${src}${ev.unlisted ? ` ${severityChip("muted", "Unlisted")}` : ""}</td>
+      <td class="text-xs whitespace-nowrap font-mono">${formatTime(ev.startTime)}</td>
+      <td>${severityChip("muted", ev.unlisted ? "Unlisted" : "Listed")}</td>
       <td>${severityChip(sev, label)}</td>
-      <td class="text-xs">${rec}</td>
-      <td class="text-xs">${reasons || '<span class="text-pulse-muted">—</span>'}${score}</td>
+      <td class="text-xs">${vod}</td>
+      <td class="text-xs">${score}</td>
+      <td class="text-xs">${reasons || '<span class="text-pulse-muted">—</span>'}</td>
     </tr>`;
   }).join("");
 
-  const table = events.length ? `
-    <div class="card mt-4">
+  const table = `
+    ${_cePanelTitle("RECENT &amp; UPCOMING EVENTS")}
+    ${events.length ? `
+    <div class="card">
       <div class="ev-count">${events.length} event${events.length === 1 ? "" : "s"} (last 14 days + upcoming week, plus anything the box recorded)</div>
       <div class="ev-table-wrap">
         <table class="data-table ev-table"><thead><tr>
-          <th>When</th><th>Event</th><th>Source</th><th>Verdict</th><th>Recorded locally</th><th>Evidence</th>
+          <th>Event ID</th><th>Event Name</th><th>Date/Time</th><th>Visibility</th><th>Verdict</th><th>Local VOD Status</th><th>EQS Score</th><th>Evidence</th>
         </tr></thead><tbody>${rows}</tbody></table>
       </div>
     </div>`
-    : '<div class="card mt-4"><div class="text-center py-8 text-pulse-muted">No events found for this venue in the lookback window.</div></div>';
+    : '<div class="card"><div class="text-center py-8 text-pulse-muted">No events found for this venue in the lookback window.</div></div>'}`;
 
   $page().innerHTML = `${header}${identCard}${hintsCard}${table}`;
+}
+
+// Small uppercase heading above each panel card.
+function _cePanelTitle(t) {
+  return `<div class="text-xs font-medium text-pulse-muted mt-4 mb-1">${t}</div>`;
 }
 
 // Local-only fallback table when the cloud is unreachable: the box's own

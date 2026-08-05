@@ -1160,16 +1160,15 @@ def demo_cloud_events(venue_id, local_events):
     }
     verdict_map = {
         "streamed": ("streamed", []),
-        "quality": ("quality", ["Failed quality checks: audio"]),
+        "quality": ("quality", ["Failed: audio"]),
         "partial": ("partial", [
-            "Stream ended well short of the scheduled window",
-            "Failed checks: exposure",
-            "Box DID record video locally — capture worked; look at upload/streaming path",
+            "Ended early",
+            "Failed: exposure",
+            "Box recorded video — issue in the streaming path",
         ]),
         "failed_test": ("failed", [
-            "Broadcast never left 'scheduled' — it did not go on air",
-            "Cloud quality system never scored it (nothing aired)",
-            "Box never recorded video for this event — capture-side failure (cameras / scheduling)",
+            "Never went on air",
+            "Box never recorded — camera/capture side",
         ]),
     }
 
@@ -1238,8 +1237,7 @@ def demo_cloud_events(venue_id, local_events):
         "eqs": None,
         "verdict": "unable",
         "verdictReasons": [
-            "Event window is active (started 15 min ago) but the broadcast "
-            "has not gone on air — the box is unable to stream right now",
+            "Window active — started 15 min ago, not on air",
         ],
     })
 
@@ -1262,6 +1260,7 @@ def demo_cloud_events(venue_id, local_events):
             "state": _VENUE["state"],
             "activationDate": "2023-08-14T16:20:00.000Z",
             "publishers": [{
+                "key": "0demo77ccba",
                 "name": _VENUE["vpuName"].split(" ", 1)[1].rsplit(" (", 1)[0]
                 if "(" in _VENUE["vpuName"] else _VENUE["city"],
                 "type": "school",
