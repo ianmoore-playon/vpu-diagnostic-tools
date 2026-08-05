@@ -986,7 +986,7 @@ const pageRenderers = {
 
 const _CE_VERDICTS = {
   streamed: ["ok", "Streamed"],
-  quality:  ["warning", "Streamed, quality issues"],
+  quality:  ["warning", "Quality issues"],
   partial:  ["critical", "Ended early"],
   failed:   ["critical", "Did not stream"],
   live:     ["ok", "Live now"],
@@ -1062,7 +1062,7 @@ function renderCloudEvents() {
   const rows = events.map((ev) => {
     const [sev, label] = _CE_VERDICTS[ev.verdict] || _CE_VERDICTS.unknown;
     const vod = ev.local
-      ? (ev.local.recorded ? `${formatBytes(ev.local.videoBytes)} recorded` : '<span class="sev-chip sev-chip-crit">no recording</span>')
+      ? (ev.local.recorded ? `${formatBytes(ev.local.videoBytes)} recorded` : '<span class="sev-chip sev-chip-crit whitespace-nowrap">no recording</span>')
       : '<span class="text-pulse-muted">—</span>';
     const reasons = (ev.verdictReasons || []).map((r) => `<div>${esc(r)}</div>`).join("");
     const score = ev.eqs && ev.eqs.eventScore !== null && ev.eqs.eventScore !== undefined
@@ -1071,8 +1071,8 @@ function renderCloudEvents() {
       <td class="text-xs font-mono">${esc(ev.gameKey || ev.pixellotEventId || "—")}</td>
       <td class="text-xs">${esc(ev.headline || "—")}${ev.sport ? `<br><span class="text-pulse-muted">${esc(ev.sport)}</span>` : ""}</td>
       <td class="text-xs whitespace-nowrap font-mono">${formatTime(ev.startTime)}</td>
-      <td>${severityChip("muted", ev.unlisted ? "Unlisted" : "Listed")}</td>
-      <td>${severityChip(sev, label)}</td>
+      <td class="whitespace-nowrap">${severityChip("muted", ev.unlisted ? "Unlisted" : "Listed")}</td>
+      <td class="whitespace-nowrap">${severityChip(sev, label)}</td>
       <td class="text-xs">${vod}</td>
       <td class="text-xs">${score}</td>
       <td class="text-xs">${reasons || '<span class="text-pulse-muted">—</span>'}</td>
