@@ -337,7 +337,29 @@ def _merge_timeline(listed_items, box_broadcasts, local_events, eqs, now):
     return ordered
 
 
-def _cause_hints(metrics, producer):
+# The camera/bandwidth metrics are only trustworthy while the VPU is
+# streaming (or was, very recently) — on a long-idle box they can be stale.
+# The hints derived from them are gated on an event window that is active
+# or ended within this tail.
+_METRICS_FRESH_TAIL = timedelta(hours=2)
+
+
+def _metrics_fresh(timeline, now):
+    """True if any event window is active or ended within the fresh tail."""
+    for entry in timeline:
+        start = _parse_iso(entry.get("startTime"))
+        if not start or start > now:
+            continue
+        try:
+            hours = float(entry.get("durationHours") or _DEFAULT_WINDOW_HOURS)
+        except (TypeError, ValueError):
+            hours = _DEFAULT_WINDOW_HOURS
+        if start + timedelta(hours=hours) >= now - _METRICS_FRESH_TAIL:
+            return True
+    return False
+
+
+def _cause_hints(metrics, producer, metrics_fresh):
     """Unit-level hints from live metrics — current state, labeled as such."""
     hints = []
     if not metrics:
@@ -349,7 +371,7 @@ def _cause_hints(metrics, producer):
                     f"{metrics.get('connection')}) — box offline or network blocked",
             "page": "network",
         })
-    else:
+    elif metrics_fresh:
         dark = metrics.get("darkCourt") == "Error"
         no_bw = (
             metrics.get("hdBandwidth") == "Error"
@@ -368,6 +390,14 @@ def _cause_hints(metrics, producer):
                 "text": "Cloud reports the camera picture is dark — camera "
                         "may be obstructed, powered off, or the room is dark",
                 "page": "cameras",
+            })
+        elif no_bw:
+            hints.append({
+                "severity": "critical",
+                "text": "Box is online and the camera picture looks OK, but "
+                        "no video is reaching the cloud — the venue network "
+                        "may be blocking the streaming ports",
+                "page": "network",
             })
     if producer:
         cur, tgt = producer.get("currentSwVersion"), producer.get("targetSwVersion")
@@ -459,6 +489,6 @@ def fetch_cloud(venue_id, local_events):
         "metrics": metrics,
         "eqsAvgScore": eqs.get("avgScore"),
         "events": timeline,
-        "causeHints": _cause_hints(metrics, producer),
+        "causeHints": _cause_hints(metrics, producer, _metrics_fresh(timeline, now)),
         "generatedAt": now.isoformat(),
     }
