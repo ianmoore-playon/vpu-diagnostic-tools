@@ -345,18 +345,24 @@ _METRICS_FRESH_TAIL = timedelta(hours=2)
 
 
 def _metrics_fresh(timeline, now):
-    """True if any event window is active or ended within the fresh tail."""
-    for entry in timeline:
+    """True if any event window is active or ended within the fresh tail —
+    OR the most recent past event failed. A failed last event means the
+    metrics' story is still the current story: the hint lingers until
+    something streams successfully."""
+    last_past_verdict = None
+    for entry in timeline:  # timeline is sorted newest-first
         start = _parse_iso(entry.get("startTime"))
         if not start or start > now:
             continue
+        if last_past_verdict is None:
+            last_past_verdict = entry.get("verdict")
         try:
             hours = float(entry.get("durationHours") or _DEFAULT_WINDOW_HOURS)
         except (TypeError, ValueError):
             hours = _DEFAULT_WINDOW_HOURS
         if start + timedelta(hours=hours) >= now - _METRICS_FRESH_TAIL:
             return True
-    return False
+    return last_past_verdict in ("failed", "unable")
 
 
 def _cause_hints(metrics, producer, metrics_fresh):
