@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableDelayedExpansion
-title Pulse  -  updating (beta)
+title Pulse  -  updating
 
 :: -- Run as Administrator -------------------------------------------------
 ::   Pulse's checks read HKLM, query WMI/CIM, and inspect Windows services
@@ -19,18 +19,28 @@ echo   Administrator access declined - continuing with limited diagnostics.
 :gotadmin
 
 :: ================================================================
-::  Pulse updater / launcher  (BETA channel)
+::  Pulse updater / launcher  -- BETA PROGRAM CLOSED (2026-08-04)
+::
+::  This file is runners/run_pulse_beta.bat on the BETA branch, and every
+::  shared Pulse-Beta.bat shim re-downloads it on every run. The beta
+::  program has ended, so this is now a copy of the PRODUCTION launcher:
+::  it installs the latest web-v* release and self-copies itself over
+::  C:\Pulse\Pulse.bat, permanently moving the install (and its Start
+::  Menu shortcut) to the production channel.
+::
+::  To reopen beta for a future test cycle, restore the real beta
+::  launcher from the dev branch -- see docs/BETA_CHANNEL_PLAYBOOK.md.
 ::
 ::  - Installs to C:\Pulse
-::  - Pulls the latest web-beta-v* pre-release from playon/pulse
-::    (falls back to the source repo, then a beta-branch commit zip)
+::  - Pulls the latest web-v* release from playon/pulse
+::    (falls back to the source repo, then a main-branch commit zip)
 ::  - If offline or the download fails, launches the installed copy
-::  - Creates a desktop shortcut; hands off to run.bat, which starts
+::  - Creates a Start Menu shortcut; hands off to run.bat, which starts
 ::    the server hidden and closes this window
 :: ================================================================
 
 :: -- Config ---------------------------------------------------------------
-set "CHANNEL=beta"
+set "CHANNEL=production"
 set "INSTALL_DIR=C:\Pulse"
 set "REPO=playon/pulse"
 set "PUBLIC_REPO=playon/pulse"
@@ -39,18 +49,7 @@ set "EXTRACT=%TEMP%\pulse-extract"
 set "RESOLVE_OUT=%TEMP%\pulse-resolve.txt"
 :: Repo copy of THIS launcher -- used to repair %INSTALL_DIR%\Pulse.bat if the
 :: runtime self-copy below ever fails (see :shortcut).
-set "LAUNCHER_URL=https://raw.githubusercontent.com/playon/pulse/beta/runners/run_pulse_beta.bat"
-
-:: -- Debug mode -----------------------------------------------------------
-::   Empty ("") = the quiet tester experience: the server starts hidden, the
-::   browser opens on its own, and this window closes. Launch failures still
-::   surface — run.bat pauses on a fatal error and everything is logged to
-::   %INSTALL_DIR%\pulse-server.log.
-::   Set to 1 ONLY to chase a specific launch failure: the server then runs in
-::   THIS window so the traceback is visible and the window won't close on its
-::   own. (Foreground mode looks "frozen" to a tester — it's just the running
-::   server — so keep it off for the beta rollout.)
-set "PULSE_DEBUG="
+set "LAUNCHER_URL=https://raw.githubusercontent.com/playon/pulse/main/runners/run_pulse.bat"
 
 echo.
 echo  .-----------------------------------------------------.
@@ -60,11 +59,13 @@ echo  ^| \______   \    ^|   \    ^|     /   _____/\_   _____/ ^|
 echo  ^|  ^|     ___/    ^|   /    ^|     \_____  \  ^|    __)_  ^|
 echo  ^|  ^|    ^|   ^|    ^|  /^|    ^|___  /        \ ^|        \ ^|
 echo  ^|  ^|____^|   ^|______/ ^|_______ \/_______  //_______  / ^|
-echo  ^|                       [ BETA ]                      ^|
+echo  ^|                                                     ^|
 echo  '-----------------------------------------------------'
 echo                    VPU Diagnostics
 echo.
-echo   Channel : beta
+echo   NOTE: The Pulse beta program has wrapped up. Thanks for testing!
+echo         This VPU now runs the production version of Pulse.
+echo.
 echo   Install : %INSTALL_DIR%
 echo.
 
@@ -81,8 +82,6 @@ if %errorlevel% NEQ 0 (
 )
 
 :: -- Offline fast-path ----------------------------------------------------
-:: Already installed and GitHub is unreachable? Launch the installed copy
-:: immediately rather than waiting on a download timeout.
 if exist "%INSTALL_DIR%\run.bat" (
     powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $c = New-Object Net.Sockets.TcpClient; $iar = $c.BeginConnect('github.com',443,$null,$null); if ($iar.AsyncWaitHandle.WaitOne(3000) -and $c.Connected) { $c.Close(); exit 0 } else { exit 1 } } catch { exit 1 }"
     if errorlevel 1 (
@@ -92,13 +91,11 @@ if exist "%INSTALL_DIR%\run.bat" (
 )
 echo   Network ........................ online
 
-:: -- Resolve the latest beta release (tag^|url) ---------------------------
-:: Pipes live inside the quoted -Command, so cmd won't mis-parse them; the
-:: result is written to a temp file and parsed below. Output form: tag|url
-::   1) newest web-beta-v* pre-release on playon/pulse
+:: -- Resolve the latest production release (tag^|url) ---------------------
+::   1) newest web-v* (non-prerelease) on playon/pulse
 ::   2) same on the source repo
-::   3) fallback: beta-branch commit zip, tagged beta-<sha7>
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$pat='web-beta-v*';$out='';foreach($repo in @('%PUBLIC_REPO%','%REPO%')){try{$r=Invoke-RestMethod -Uri ('https://api.github.com/repos/'+$repo+'/releases') -TimeoutSec 10}catch{continue};$rel=$r|Where-Object{$_.tag_name -like $pat -and $_.prerelease}|Select-Object -First 1;if($rel){$asset=$rel.assets|Where-Object{$_.name -like '*.zip'}|Select-Object -First 1;if($asset){$out=$rel.tag_name+'|'+$asset.browser_download_url;break}}};if(-not $out){try{$sha=(Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/commits/beta' -TimeoutSec 10).sha;if($sha){$out='beta-'+$sha.Substring(0,7)+'|https://github.com/%REPO%/archive/'+$sha+'.zip'}}catch{}};Write-Output $out" > "%RESOLVE_OUT%" 2>nul
+::   3) fallback: main-branch commit zip, tagged main-<sha7>
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$pat='web-v*';$out='';foreach($repo in @('%PUBLIC_REPO%','%REPO%')){try{$r=Invoke-RestMethod -Uri ('https://api.github.com/repos/'+$repo+'/releases') -TimeoutSec 10}catch{continue};$rel=$r|Where-Object{$_.tag_name -like $pat -and -not $_.prerelease}|Select-Object -First 1;if($rel){$asset=$rel.assets|Where-Object{$_.name -like '*.zip'}|Select-Object -First 1;if($asset){$out=$rel.tag_name+'|'+$asset.browser_download_url;break}}};if(-not $out){try{$sha=(Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/commits/main' -TimeoutSec 10).sha;if($sha){$out='main-'+$sha.Substring(0,7)+'|https://github.com/%REPO%/archive/'+$sha+'.zip'}}catch{}};Write-Output $out" > "%RESOLVE_OUT%" 2>nul
 
 set "RESOLVED="
 if exist "%RESOLVE_OUT%" set /p RESOLVED=<"%RESOLVE_OUT%"
@@ -112,7 +109,7 @@ for /f "tokens=1,* delims=|" %%A in ("!RESOLVED!") do (
 )
 
 if not defined ASSET_URL (
-    echo   Update ......................... no beta build found
+    echo   Update ......................... no release found
     goto :dl_failed
 )
 
@@ -153,7 +150,7 @@ if exist "%INSTALL_DIR%\run.bat" (
     echo   Update ......................... unavailable - using installed build
     goto :shortcut
 )
-echo   [ERROR] No beta build could be downloaded and none is installed.
+echo   [ERROR] No release could be downloaded and none is installed.
 echo           Check the internet connection and try again.
 goto :fatal
 
@@ -163,7 +160,6 @@ if exist "%EXTRACT%" rd /s /q "%EXTRACT%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -Path '%ZIPFILE%' -DestinationPath '%EXTRACT%' -Force"
 del "%ZIPFILE%"
 
-:: Find the Pulse.Web folder inside the extracted archive.
 set "SRC="
 if exist "%EXTRACT%\run.bat" set "SRC=%EXTRACT%"
 if not defined SRC for /d %%d in ("%EXTRACT%\*") do if exist "%%d\run.bat" set "SRC=%%d"
@@ -225,61 +221,11 @@ echo   Start Menu shortcut ............ SKIPPED - launcher copy unavailable
 :: -- Hand off to the runtime launcher -------------------------------------
 echo.
 if not exist "%INSTALL_DIR%\run.bat" (
-    echo   [ERROR] %INSTALL_DIR%\run.bat not found - install incomplete.
+    echo   [ERROR] %INSTALL_DIR%\run.bat not found — install incomplete.
     goto :fatal
 )
 cd /d "%INSTALL_DIR%"
-
-if not defined PULSE_DEBUG (
-    call run.bat
-    endlocal
-    exit /b 0
-)
-
-:: -- DEBUG MODE -----------------------------------------------------------
-:: Run the server in THIS window so any Python/uvicorn startup error is
-:: visible, instead of starting it hidden and closing the window.
-set "PYEXE=%INSTALL_DIR%\app\python\python.exe"
-if not exist "%PYEXE%" (
-    echo   First run - bootstrapping the runtime via run.bat ...
-    set "PULSE_NO_BROWSER=1"
-    call run.bat
-    :: Clear the flag — the foreground server run below SHOULD open Chrome.
-    set "PULSE_NO_BROWSER="
-    :: run.bat starts the server hidden on success; stop it so we can run it
-    :: here in the foreground, where errors are visible.
-    for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8765 " ^| findstr "LISTENING"') do taskkill /PID %%a /F >nul 2>&1
-)
-if not exist "%PYEXE%" (
-    echo   [ERROR] Python runtime still missing at "%PYEXE%" - bootstrap failed.
-    echo           See the messages above and %INSTALL_DIR%\pulse-server.log
-    goto :fatal
-)
-:: Free the port in case a hidden instance is already holding it.
-for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8765 " ^| findstr "LISTENING"') do taskkill /PID %%a /F >nul 2>&1
-
-:: Background waiter that opens Chrome the moment the server binds the port.
-:: Same script normal-mode uses; the START makes it asynchronous so it polls
-:: while the foreground server boots in this window.
-set "WAITER=%INSTALL_DIR%\scripts\Wait-AndLaunch.ps1"
-if exist "%WAITER%" (
-    start "" /b powershell -NoProfile -ExecutionPolicy Bypass -File "%WAITER%" -Port 8765 -Url "http://localhost:8765" -TimeoutSec 60
-)
-
-echo.
-echo  ================================================================
-echo    PULSE DEBUG MODE - the server runs HERE so you can see any error.
-echo    Chrome will open automatically once the server is up.
-echo    Press Ctrl+C to stop.  This window will NOT close on its own.
-echo  ================================================================
-echo.
-"%PYEXE%" "%INSTALL_DIR%\app\main.py"
-echo.
-echo  ================================================================
-echo    [DEBUG] The server process exited. Any error/traceback is above.
-echo    Also check %INSTALL_DIR%\pulse-server.log
-echo  ================================================================
-pause
+call run.bat
 endlocal
 exit /b 0
 
@@ -287,7 +233,7 @@ exit /b 0
 :fatal
 echo.
 echo  ============================================
-echo    PULSE FAILED - see the messages above.
+echo    PULSE UPDATE FAILED — see messages above.
 echo    Press any key to close.
 echo  ============================================
 pause >nul
