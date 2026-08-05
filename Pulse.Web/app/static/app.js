@@ -995,12 +995,6 @@ const _CE_VERDICTS = {
   unknown:  ["muted", "Unknown"],
 };
 
-function _ceMetricChip(label, val) {
-  if (val === null || val === undefined) return "";
-  const sev = val === "Ok" ? "ok" : val === "Warning" ? "warning" : "critical";
-  return `<div class="ce-metric">${severityChip(sev, `${label}: ${val}`)}</div>`;
-}
-
 function renderCloudEvents() {
   const data = cached("cloud-events");
   if (!data) { $page().innerHTML = sectionLoading("Event Streaming"); fetchSection("cloud-events"); return; }
@@ -1011,7 +1005,7 @@ function renderCloudEvents() {
   const localEv = (data.localEvents || {}).events || [];
   const header = pageHeader(
     "Event Streaming",
-    "This VPU's recent events as the NFHS cloud sees them — did each one stream, and if not, why. Cloud health values are what the cloud sees right now; local recording facts are from the event itself.",
+    "This VPU's recent events as the NFHS cloud sees them — did each one stream, and if not, why. Cloud evidence reflects right now; local recording facts are from the event itself.",
     `<button class="btn-outline btn-ol-blue" onclick="dataCache['cloud-events']=null;renderCloudEvents()">${svgIcon("refresh", 14)} Refresh</button>`
   );
 
@@ -1048,24 +1042,12 @@ function renderCloudEvents() {
           <div class="text-xs text-pulse-muted font-mono mt-1">venue ${esc(ident.venueId)}${prod.pixellotKey ? ` · ${esc(prod.pixellotKey)}` : ""}${prod.producerKey ? ` · ${esc(prod.producerKey)}` : ""}</div>
         </div>
         <div class="flex items-center gap-2 flex-wrap">
+          ${met.connection ? severityChip(met.connection === "Ok" ? "ok" : "critical", `Pixellot link: ${met.connection}`) : ""}
           ${prod.internalStatus ? severityChip(prod.internalStatus === "broadcasting" ? "ok" : "warning", `Cloud status: ${prod.internalStatus}`) : ""}
           ${drift ? severityChip("warning", `SW ${prod.currentSwVersion} → target ${prod.targetSwVersion}`)
                   : prod.currentSwVersion ? severityChip("ok", `SW ${prod.currentSwVersion}`) : ""}
           ${cloud.eqsAvgScore !== null && cloud.eqsAvgScore !== undefined ? severityChip(cloud.eqsAvgScore >= 0.85 ? "ok" : "warning", `Quality avg ${(cloud.eqsAvgScore * 100).toFixed(0)}%`) : ""}
         </div>
-      </div>
-    </div>`;
-
-  const metricsCard = `
-    <div class="card mt-4">
-      <div class="text-xs font-medium text-pulse-muted mb-2">LIVE HEALTH — what Pixellot Cloud sees right now (via NFHS)</div>
-      <div class="flex flex-wrap gap-2">
-        ${_ceMetricChip("Connection", met.connection)}
-        ${_ceMetricChip("HD bandwidth", met.hdBandwidth)}
-        ${_ceMetricChip("Pano bandwidth", met.panoBandwidth)}
-        ${_ceMetricChip("Audio", met.audioIndication)}
-        ${_ceMetricChip("Scoreboard", met.scoreboardConnection)}
-        ${_ceMetricChip("Health", met.health)}
       </div>
     </div>`;
 
@@ -1109,7 +1091,7 @@ function renderCloudEvents() {
     </div>`
     : '<div class="card mt-4"><div class="text-center py-8 text-pulse-muted">No events found for this venue in the lookback window.</div></div>';
 
-  $page().innerHTML = `${header}${identCard}${metricsCard}${hintsCard}${table}`;
+  $page().innerHTML = `${header}${identCard}${hintsCard}${table}`;
 }
 
 // Local-only fallback table when the cloud is unreachable: the box's own

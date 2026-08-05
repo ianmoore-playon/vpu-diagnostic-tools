@@ -1271,11 +1271,7 @@ def demo_cloud_events(venue_id, local_events):
         },
         "metrics": {
             "connection": "Ok", "status": "Ok", "status_severity": "Ok",
-            "health": "Ok", "cpu": "Ok", "gpu": "Ok", "cpuTemperature": "Ok",
             "darkCourt": "Error", "hdBandwidth": "Ok", "panoBandwidth": "Ok",
-            "hdAudioVolume": "Ok", "panoAudioVolume": "Ok",
-            "audioIndication": "Ok", "scoreboardConnection": "Ok",
-            "scoreboardData": "Ok", "hardDriveAvailableMB": 512_000,
         },
         "eqsAvgScore": 0.8125,
         "events": events,

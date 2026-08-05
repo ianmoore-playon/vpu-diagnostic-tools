@@ -120,14 +120,14 @@ def _fetch_eqs(venue_id):
 
 
 # The Unity pixellot record proxies Pixellot Club's live health indicators.
+# Most of them are only meaningful while the VPU is actively streaming, so we
+# keep just the cause-hint inputs and don't display raw values in the UI.
 # Field truth (Loma Linda, 2026-08-04): with every camera down, `camera` still
 # read Ok — the reliable camera signal is darkCourt + both bandwidths at Error,
 # while `connection` distinguishes box-offline from box-online-but-dark.
 _METRIC_KEYS = (
-    "connection", "status", "status_severity", "health", "cpu", "gpu",
-    "cpuTemperature", "darkCourt", "hdBandwidth", "panoBandwidth",
-    "hdAudioVolume", "panoAudioVolume", "audioIndication",
-    "scoreboardConnection", "scoreboardData", "hardDriveAvailableMB",
+    "connection", "status", "status_severity",
+    "darkCourt", "hdBandwidth", "panoBandwidth",
 )
 
 
@@ -369,18 +369,6 @@ def _cause_hints(metrics, producer):
                         "may be obstructed, powered off, or the room is dark",
                 "page": "cameras",
             })
-    if metrics.get("scoreboardConnection") == "Error" or metrics.get("scoreboardData") == "Error":
-        hints.append({
-            "severity": "warning",
-            "text": "Cloud reports scoreboard connection/data problems",
-            "page": "scoreconnect",
-        })
-    if metrics.get("audioIndication") == "Error":
-        hints.append({
-            "severity": "warning",
-            "text": "Cloud reports no audio indication",
-            "page": "audio",
-        })
     if producer:
         cur, tgt = producer.get("currentSwVersion"), producer.get("targetSwVersion")
         if cur and tgt and cur != tgt:
