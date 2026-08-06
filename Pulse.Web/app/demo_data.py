@@ -1078,8 +1078,13 @@ DEMO = {
         "available": True,
         "daysBack": 21,
         "collectedAt": datetime.now().isoformat(),
-        "boots": [],
-        "shutdowns": [],
+        # Off-period spanning the demo "offline" event (3 days ago, 7 PM):
+        # box shut down 18:40, back 22:35.
+        "boots": [(_cloud_day(3) + timedelta(hours=3, minutes=35)).isoformat()],
+        "shutdowns": [{
+            "time": (_cloud_day(3) - timedelta(minutes=20)).isoformat(),
+            "unexpected": True,
+        }],
         "gpuErrors": [],
         # One mid-event service death, timed inside the demo "partial" event's
         # window, so the agent-failure marker is demoable.
@@ -1109,13 +1114,20 @@ def _cloud_day(days_ago, hour=19):
 
 
 # (idx, days_ago, sport/headline, verdict-scenario)
+# One event per failure class: camera/capture (failed_test), unit offline
+# (offline — no recording folder is ever created), network block (netblock —
+# recorded fine, nothing uploaded), plus healthy/quality/partial rows.
 _CLOUD_SCENARIO = [
     {"n": 1, "days": 1, "headline": "Test Stream", "sport": None,
      "kind": "failed_test", "videoBytes": 0, "uploads": 0},
     {"n": 2, "days": 2, "headline": "Varsity Boys Basketball", "sport": "Basketball",
      "kind": "streamed", "videoBytes": 8_412_990_211, "uploads": 3},
+    {"n": 5, "days": 3, "headline": "Varsity Girls Flag Football", "sport": "Flag Football",
+     "kind": "offline", "videoBytes": 0, "uploads": 0},
     {"n": 3, "days": 5, "headline": "JV Girls Volleyball", "sport": "Volleyball",
      "kind": "quality", "videoBytes": 6_204_112_484, "uploads": 3},
+    {"n": 6, "days": 6, "headline": "Varsity Boys Water Polo", "sport": "Water Polo",
+     "kind": "netblock", "videoBytes": 5_733_881_204, "uploads": 0},
     {"n": 4, "days": 9, "headline": "Varsity Boys Soccer", "sport": "Soccer",
      "kind": "partial", "videoBytes": 2_101_733_902, "uploads": 2},
 ]
@@ -1133,7 +1145,9 @@ def _demo_pixellot_events():
             "lastWriteTime": _cloud_day(s["days"]).isoformat(),
         }
         for s in _CLOUD_SCENARIO
-        # the failed test never recorded, but its folder still exists (0 bytes)
+        # the failed test never recorded, but its folder still exists (0
+        # bytes); an offline box never creates a folder at all
+        if s["kind"] != "offline"
     ]
     daily = [
         {
@@ -1187,9 +1201,18 @@ def demo_cloud_events(venue_id, local_events):
             "Never went on air",
             "Box never recorded — camera/capture side",
         ]),
+        "offline": ("failed", [
+            "Never went on air",
+            "Unit was off during the event",
+        ]),
+        "netblock": ("failed", [
+            "Never went on air",
+            "Box recorded, nothing uploaded — likely network block",
+        ]),
     }
 
     events = []
+    failed_kinds = ("failed_test", "offline", "netblock")
     for s in _CLOUD_SCENARIO:
         start = _cloud_day(s["days"])
         verdict, reasons = verdict_map[s["kind"]]
@@ -1200,13 +1223,16 @@ def demo_cloud_events(venue_id, local_events):
             "sport": s["sport"],
             "startTime": iso(start),
             "localStartTime": start.isoformat(),
-            "status": "scheduled" if s["kind"] == "failed_test" else "complete",
-            "hasVod": s["kind"] != "failed_test",
-            "source": "box" if s["kind"] == "failed_test" else "listed+box",
+            "status": "scheduled" if s["kind"] in failed_kinds else "complete",
+            "hasVod": s["kind"] not in failed_kinds,
+            # offline: box never even created a folder -> listed-only, no
+            # local evidence. failed_test: unlisted, box-only.
+            "source": "box" if s["kind"] == "failed_test"
+            else "listed" if s["kind"] == "offline" else "listed+box",
             "unlisted": s["kind"] == "failed_test",
-            "pixellotEventId": _cloud_ev_id(s["n"]),
+            "pixellotEventId": None if s["kind"] == "offline" else _cloud_ev_id(s["n"]),
             "broadcastKey": f"bdcdemo{s['n']:06d}",
-            "local": {
+            "local": None if s["kind"] == "offline" else {
                 "recorded": s["videoBytes"] > 0,
                 "videoBytes": s["videoBytes"],
                 "uploadedCount": s["uploads"],
