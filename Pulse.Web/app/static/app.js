@@ -1047,7 +1047,7 @@ function renderCloudEvents() {
           // neutral grey so a parked box doesn't lead with a green light.
           ? severityChip(met.connection === "Ok" ? "ok" : "critical", `Cloud connection: ${met.connection}`)
           : severityChip("muted", `Cloud connection: ${met.connection}`)) : ""}
-        ${prod.internalStatus ? severityChip(prod.internalStatus === "broadcasting" ? "ok" : "warning", prod.internalStatus === "broadcasting" ? "NFHS: Broadcasting" : "NFHS: Not broadcasting") : ""}
+        ${prod.internalStatus ? severityChip(prod.internalStatus === "broadcasting" ? "ok" : "warning", prod.internalStatus === "broadcasting" ? "NFHS Broadcasting Status: Broadcasting" : "NFHS Broadcasting Status: Not Broadcasting") : ""}
         ${drift ? severityChip("warning", `SW ${prod.currentSwVersion} → target ${prod.targetSwVersion}`)
                 : prod.currentSwVersion ? severityChip("ok", `SW ${prod.currentSwVersion}`) : ""}
         ${cloud.eqsAvgScore !== null && cloud.eqsAvgScore !== undefined ? severityChip(cloud.eqsAvgScore >= 0.85 ? "ok" : "warning", `EQS ${(cloud.eqsAvgScore * 100).toFixed(0)}%`) : ""}
