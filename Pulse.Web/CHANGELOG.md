@@ -20,6 +20,11 @@ flow shows testers when a new build is available.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 `Pulse.Web/VERSION`.
 
+## [Unreleased]
+
+### Added
+- Event Streaming: failed events now show what was wrong on the box while the event was running — unit off or rebooted mid-event, graphics driver faults, Pixellot service (Agent/Coordinator/KeepAgentUp) failures, or software crashes — pulled from the Windows event logs and matched to each event's time window. Also calls out "recorded but nothing uploaded" as a likely network block.
+
 ## [1.1.0] - 2026-08-05
 
 ### Added

@@ -1074,6 +1074,22 @@ DEMO = {
     },
     "Set-AudioVolume.ps1": lambda **kw: {"success": True, "deviceId": (kw or {}).get("DeviceId", ""), "volume": int((kw or {}).get("Volume", 50))},
     "Get-PixellotEvents.ps1": lambda **kw: _demo_pixellot_events(),
+    "Get-EventWindowSignals.ps1": lambda **kw: {
+        "available": True,
+        "daysBack": 21,
+        "collectedAt": datetime.now().isoformat(),
+        "boots": [],
+        "shutdowns": [],
+        "gpuErrors": [],
+        # One mid-event service death, timed inside the demo "partial" event's
+        # window, so the agent-failure marker is demoable.
+        "serviceEvents": [{
+            "time": (_cloud_day(9) + timedelta(minutes=55)).isoformat(),
+            "id": 7034,
+            "detail": "The PixellotAgent service terminated unexpectedly. It has done this 1 time(s).",
+        }],
+        "appCrashes": [],
+    },
 }
 
 
@@ -1164,6 +1180,7 @@ def demo_cloud_events(venue_id, local_events):
         "partial": ("partial", [
             "Ended early",
             "Failed: exposure",
+            "PixellotAgent service failed during the event",
             "Box recorded video — issue in the streaming path",
         ]),
         "failed_test": ("failed", [

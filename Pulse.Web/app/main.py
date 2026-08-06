@@ -3868,9 +3868,10 @@ async def api_cloud_events():
     evidence for failure causes. All cloud calls are server-side, timeout
     bounded, and fail-soft — an unreachable cloud is reported as such, never
     as a device finding."""
-    identity, local = await asyncio.gather(
+    identity, local, signals = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-PixellotEvents.ps1"),
+        run_ps("Get-EventWindowSignals.ps1", timeout=45),
     )
     identity = identity if isinstance(identity, dict) else {}
     local = local if isinstance(local, dict) else {}
@@ -3878,7 +3879,7 @@ async def api_cloud_events():
     local_events = local.get("events") or []
     loop = asyncio.get_event_loop()
     cloud = await loop.run_in_executor(
-        None, cloud_api.fetch_cloud, venue_id, local_events
+        None, cloud_api.fetch_cloud, venue_id, local_events, signals
     )
     return {
         "identity": {

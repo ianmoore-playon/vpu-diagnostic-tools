@@ -161,6 +161,69 @@ def _fetch_broadcast_by_event_id(pixellot_event_id):
 
 # ── verdict engine ───────────────────────────────────────────────
 
+# ── time-anchored local signals (Get-EventWindowSignals.ps1) ────
+# Boots/shutdowns, GPU faults, Pixellot service failures, and app crashes
+# from the Windows event logs, intersected with each event's scheduled
+# window — evidence anchored to the event itself.
+
+import re as _re
+
+
+def _off_periods(signals, now):
+    """(start, end) spans where the box was off, from shutdown->boot pairs."""
+    boots = sorted(b for b in (signals.get("boots") or []) if _parse_iso(b))
+    boot_times = [_parse_iso(b) for b in boots]
+    periods = []
+    for sd in signals.get("shutdowns") or []:
+        t = _parse_iso(sd.get("time"))
+        if not t:
+            continue
+        nxt = next((b for b in boot_times if b > t), now)
+        periods.append((t, nxt))
+    return periods
+
+
+def _service_name(detail):
+    m = _re.search(r"The (.{1,60}?) service", detail or "")
+    return m.group(1) if m else "Pixellot"
+
+
+def _window_signal_markers(start, end, signals, now):
+    """Markers for box-side trouble that overlapped [start, end]."""
+    if not signals or not start:
+        return []
+    end = end or start
+    markers = []
+
+    boots = [_parse_iso(b) for b in (signals.get("boots") or [])]
+    if any(b and start <= b <= end for b in boots):
+        markers.append("Unit rebooted mid-event")
+    elif any(s < end and e > start for s, e in _off_periods(signals, now)):
+        markers.append("Unit was off during the event")
+
+    def _in_window(items):
+        hits = []
+        for i in items or []:
+            t = _parse_iso(i.get("time"))
+            if t and start <= t <= end:
+                hits.append(i)
+        return hits
+
+    gpu = _in_window(signals.get("gpuErrors"))
+    if gpu:
+        markers.append(f"GPU driver faults during the event ({len(gpu)})")
+
+    svc = _in_window(signals.get("serviceEvents"))
+    if svc:
+        names = sorted({_service_name(s.get("detail")) for s in svc})
+        markers.append(", ".join(names) + " service failed during the event")
+
+    if _in_window(signals.get("appCrashes")):
+        markers.append("Pixellot software crashed during the event")
+
+    return markers
+
+
 # A broadcast that hasn't gone on air is judged against its scheduled WINDOW
 # (start .. start + duration): inside the window it's an active incident
 # ("unable to stream" — the tech may be standing at the box right now);
@@ -240,7 +303,7 @@ def _verdict_for(entry, eqs, now):
     return "unknown", []
 
 
-def _merge_timeline(listed_items, box_broadcasts, local_events, eqs, now):
+def _merge_timeline(listed_items, box_broadcasts, local_events, eqs, now, signals=None):
     """Combine listed schedule + box-driven broadcasts into one timeline."""
     local_by_id = {e.get("eventId"): e for e in local_events if e.get("eventId")}
     past_cut = now - timedelta(days=LISTED_PAST_DAYS)
@@ -308,12 +371,30 @@ def _merge_timeline(listed_items, box_broadcasts, local_events, eqs, now):
 
     for entry in timeline.values():
         verdict, reasons = _verdict_for(entry, eqs, now)
-        # Local recording evidence sharpens a failed/partial verdict.
+        # Time-anchored box signals (reboots, GPU faults, service failures,
+        # crashes) that overlapped this event's window.
+        sig_markers = []
+        if verdict in ("failed", "partial", "unable", "quality"):
+            start = _parse_iso(entry.get("startTime"))
+            if start:
+                try:
+                    hours = float(entry.get("durationHours") or _DEFAULT_WINDOW_HOURS)
+                except (TypeError, ValueError):
+                    hours = _DEFAULT_WINDOW_HOURS
+                sig_markers = _window_signal_markers(
+                    start, start + timedelta(hours=hours), signals, now
+                )
+        reasons.extend(sig_markers)
+        # Local recording evidence sharpens a failed/partial verdict — unless
+        # an off-period already explains why nothing was recorded.
         loc = entry.get("local")
         if loc and verdict in ("failed", "partial"):
             if loc["recorded"]:
-                reasons.append("Box recorded video — issue in the streaming path")
-            else:
+                if not loc.get("uploadedCount"):
+                    reasons.append("Box recorded, nothing uploaded — likely network block")
+                else:
+                    reasons.append("Box recorded video — issue in the streaming path")
+            elif not any("off during" in m or "rebooted" in m for m in sig_markers):
                 reasons.append("Box never recorded — camera/capture side")
         entry["verdict"] = verdict
         entry["verdictReasons"] = reasons
@@ -414,14 +495,17 @@ def _cause_hints(metrics, producer, metrics_fresh):
 # ── entry point ──────────────────────────────────────────────────
 
 
-def fetch_cloud(venue_id, local_events):
+def fetch_cloud(venue_id, local_events, signals=None):
     """Blocking; call via run_in_executor. Returns the `cloud` payload dict.
 
     local_events: the `events` list from Get-PixellotEvents.ps1 (may be []).
+    signals: payload from Get-EventWindowSignals.ps1 (may be None).
     """
     if DEMO_MODE:
         import demo_data
         return demo_data.demo_cloud_events(venue_id, local_events)
+    if not isinstance(signals, dict) or signals.get("error"):
+        signals = None
 
     now = datetime.now(timezone.utc)
     if not venue_id:
@@ -472,7 +556,9 @@ def fetch_cloud(venue_id, local_events):
         }
 
     eqs = eqs or {"avgScore": None, "byEvent": {}, "excluded": set()}
-    timeline = _merge_timeline(listed or [], box_broadcasts, local_events, eqs, now)
+    timeline = _merge_timeline(
+        listed or [], box_broadcasts, local_events, eqs, now, signals
+    )
 
     return {
         "available": True,
