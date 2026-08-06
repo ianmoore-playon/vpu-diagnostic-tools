@@ -1086,14 +1086,14 @@ DEMO = {
             "unexpected": True,
         }],
         "gpuErrors": [],
-        # One mid-event service death, timed inside the demo "partial" event's
-        # window, so the agent-failure marker is demoable.
-        "serviceEvents": [{
-            "time": (_cloud_day(9) + timedelta(minutes=55)).isoformat(),
-            "id": 7034,
-            "detail": "The PixellotAgent service terminated unexpectedly. It has done this 1 time(s).",
-        }],
+        "serviceEvents": [],
         "appCrashes": [],
+        # One mid-event Agent death (KeepAgentUp recovery restart), timed
+        # inside the demo "partial" event's window.
+        "processRestarts": [{
+            "time": (_cloud_day(9) + timedelta(minutes=55)).isoformat(),
+            "process": "Agent",
+        }],
     },
 }
 
@@ -1194,7 +1194,7 @@ def demo_cloud_events(venue_id, local_events):
         "partial": ("partial", [
             "Ended early",
             "Failed: exposure",
-            "PixellotAgent service failed during the event",
+            "Agent restarted mid-event",
             "Box recorded video — issue in the streaming path",
         ]),
         "failed_test": ("failed", [

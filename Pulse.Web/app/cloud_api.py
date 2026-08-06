@@ -221,6 +221,23 @@ def _window_signal_markers(start, end, signals, now):
     if _in_window(signals.get("appCrashes")):
         markers.append("Pixellot software crashed during the event")
 
+    # Agent/Coordinator/KeepAgentUp are plain processes (not services) — a
+    # "start new log" restart inside the window means one died and was
+    # recovered. A restart within 5 min of a boot is just normal startup.
+    names = set()
+    for r in _in_window(signals.get("processRestarts")):
+        t = _parse_iso(r.get("time"))
+        if not t:
+            continue
+        # midnight "start new log" lines are daily log rotation, not crashes
+        # (field truth: all three processes emit one at 00:00 local)
+        if t.hour == 0 and t.minute <= 1:
+            continue
+        if not any(b and 0 <= (t - b).total_seconds() <= 300 for b in boots):
+            names.add(r.get("process") or "Pixellot process")
+    if names:
+        markers.append(", ".join(sorted(names)) + " restarted mid-event")
+
     return markers
 
 
