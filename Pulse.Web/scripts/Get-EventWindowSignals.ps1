@@ -134,7 +134,44 @@ try {
         }
     } catch { }
 
+    # -- Pixellot process restarts: Agent / Coordinator / KeepAgentUp run as
+    #    plain processes (NOT services — verified on a real VPU), so SCM never
+    #    sees them die. Each process start writes a "start new log" line to
+    #    its log (same marker Search-PixellotLogs.ps1 keys on); a restart
+    #    inside an event window with no reboot nearby means the process died
+    #    and KeepAgentUp brought it back.
+    $processRestarts = @()
+    try {
+        $logDir = 'C:\Pixellot\Data\Log'
+        if (Test-Path $logDir) {
+            $logs = Get-ChildItem -Path $logDir -Filter '*.log' -ErrorAction SilentlyContinue |
+                Where-Object { $_.LastWriteTime -ge $since -and $_.Name -match '(?i)agent|coordinator|keepagentup' }
+            foreach ($f in @($logs)) {
+                $found = & findstr.exe /I /C:"start new log" $f.FullName 2>$null
+                if (-not $found) { continue }
+                if ($found -isnot [array]) { $found = @($found) }
+                $proc = 'Pixellot process'
+                if ($f.Name -match '(?i)coordinator') { $proc = 'Coordinator' }
+                elseif ($f.Name -match '(?i)keepagentup') { $proc = 'KeepAgentUp' }
+                elseif ($f.Name -match '(?i)agent') { $proc = 'Agent' }
+                foreach ($line in @($found)) {
+                    if ($line -match '(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})') {
+                        $ts = $null
+                        try { $ts = [datetime]::Parse($Matches[1]) } catch { }
+                        if ($ts -and $ts -ge $since) {
+                            $processRestarts += [pscustomobject]@{
+                                time    = $ts.ToString('o')
+                                process = $proc
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } catch { }
+
     # Bound the payload; newest first where it matters.
+    $processRestarts = @($processRestarts | Sort-Object -Property time -Descending | Select-Object -First 100)
     $gpuErrors     = @($gpuErrors     | Sort-Object -Property time -Descending | Select-Object -First 50)
     $serviceEvents = @($serviceEvents | Sort-Object -Property time -Descending | Select-Object -First 50)
     $appCrashes    = @($appCrashes    | Sort-Object -Property time -Descending | Select-Object -First 50)
@@ -145,9 +182,10 @@ try {
         collectedAt   = (Get-Date).ToString('o')
         boots         = @($boots | Sort-Object)
         shutdowns     = @($shutdowns | Sort-Object -Property time)
-        gpuErrors     = $gpuErrors
-        serviceEvents = $serviceEvents
-        appCrashes    = $appCrashes
+        gpuErrors       = $gpuErrors
+        serviceEvents   = $serviceEvents
+        appCrashes      = $appCrashes
+        processRestarts = $processRestarts
     }
 
     $result | ConvertTo-Json -Depth 4 -Compress
