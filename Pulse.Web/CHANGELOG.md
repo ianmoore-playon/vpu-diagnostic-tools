@@ -22,6 +22,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-07
+
+### Fixed
+- Event Streaming: the page could fail to load on real VPUs when the box had recent shutdown or Pixellot process-restart history (a time-zone comparison error found during release verification).
+
 ## [1.1.1] - 2026-08-07
 
 ### Added
