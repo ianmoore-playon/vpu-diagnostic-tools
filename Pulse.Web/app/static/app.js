@@ -5470,6 +5470,30 @@ function renderDiskHealth() {
     </div>`;
   }
 
+  // Storage Cleanup — offered only once D: hits 90% full (the same moment
+  // the red "almost full" finding fires). The card stays visible after a
+  // run so the tech keeps the receipt even though D: drops back under 90%.
+  const dDrive = logical.find(d => d.deviceID === "D:");
+  const dPct = dDrive?.usedPercent;
+  const showCleanup = (dPct != null && dPct >= 90) || _cleanupReceipt != null;
+  const cleanupCard = !showCleanup ? "" : `
+    <div class="card mt-4" id="dh-cleanup-card">
+      ${sectionTitle("database", "Storage Cleanup")}
+      ${_cleanupReceipt ? _cleanupReceiptHtml() : `
+        <p class="text-sm">
+          The recordings drive D: is <b>${esc(String(dPct))}% full</b>
+          (${dDrive?.freeSpaceGB != null ? esc(String(dDrive.freeSpaceGB)) : "—"} GB free).
+          Pulse can permanently delete <b>daily test clips older than 90 days</b> and
+          <b>game recordings older than 1 year</b> from D:\\recordedevents.
+          Nothing from the last 90 days is ever touched.
+        </p>
+        <button class="btn-outline btn-ol-blue mt-2" id="dh-cleanup-review">
+          ${svgIcon("database", 14)} Review what can be deleted
+        </button>
+        <div id="dh-cleanup-body" class="mt-3"></div>
+      `}
+    </div>`;
+
   $page().innerHTML = `
     ${pageHeader("Disks", "Drive health, free space, and the Pixellot folders that fill up first",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache['disk-health']=null;renderDiskHealth()">
@@ -5483,6 +5507,8 @@ function renderDiskHealth() {
       ${summaryCard("alert", "Disk & Driver Errors", errorSev, errorChip, errorVal, "Disk, NVMe, NTFS & volume events from the Windows Event Log (last 24 h)")}
       ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Critical when over 90% full or under 50 GB free")}
     </div>
+
+    ${cleanupCard}
 
     <!-- Volumes -->
     <div class="card">
@@ -5600,6 +5626,11 @@ function renderDiskHealth() {
   document.querySelectorAll(".dh-repair-btn").forEach(btn => {
     btn.addEventListener("click", () => _runRepairTool(btn.dataset.action));
   });
+
+  document.getElementById("dh-cleanup-review")
+    ?.addEventListener("click", _loadCleanupPreview);
+  document.getElementById("dh-cleanup-dismiss")
+    ?.addEventListener("click", () => { _cleanupReceipt = null; renderDiskHealth(); });
 }
 
 function _repairCard(action, title, body, command, amber) {
@@ -5673,6 +5704,158 @@ async function _runRepairTool(action) {
       </details>
     ` : ""}
   `;
+}
+
+// ── Storage Cleanup (D: recordings) ──────────────────────────
+// Pulse's first destructive action. The preview endpoint enumerates what
+// the rules would delete; the tech reviews counts/sizes/names and confirms;
+// the cleanup endpoint re-enumerates server-side with the same rules and
+// deletes. The receipt survives re-renders (module var) so the card can
+// keep showing what happened after D: drops back under the 90% gate.
+let _cleanupReceipt = null;
+
+async function _loadCleanupPreview() {
+  const btn = document.getElementById("dh-cleanup-review");
+  const body = document.getElementById("dh-cleanup-body");
+  if (!btn || !body) return;
+  btn.disabled = true;
+  body.innerHTML = `<div class="text-xs text-pulse-muted">
+    Measuring what can be deleted — on a full drive this can take a minute or two…
+  </div>`;
+
+  const p = await api("/api/disk-health/cleanup-preview");
+  btn.disabled = false;
+
+  if (!p || p.error) {
+    body.innerHTML = `<div class="dh-repair-result-err">
+      ${svgIcon("alert", 14)} <span class="font-semibold">Preview failed</span>
+      <div class="text-xs mt-1">${esc(p?.message || "(no message)")}</div>
+    </div>`;
+    return;
+  }
+  if (p.rootExists === false) {
+    body.innerHTML = `<p class="text-sm text-pulse-muted">
+      No ${esc(p.root || "D:\\recordedevents")} folder found — nothing to clean up.
+    </p>`;
+    return;
+  }
+
+  const daily = p.dailyTest || {};
+  const recs = p.recordings || {};
+  const totalCount = (daily.count || 0) + (recs.count || 0);
+  if (totalCount === 0) {
+    body.innerHTML = `<p class="text-sm text-pulse-muted">
+      Nothing is old enough to delete: ${esc(String(p.totalFolders ?? 0))} folders checked,
+      ${esc(String(p.skippedRecent ?? 0))} kept because they're newer than the limits.
+      Space on D: is being used by recent recordings — escalate rather than deleting them.
+    </p>`;
+    return;
+  }
+
+  const bucketRow = (label, b) => (b.count || 0) === 0 ? "" : `<tr>
+    <td>${esc(label)}</td>
+    <td class="font-semibold">${esc(String(b.count))}</td>
+    <td class="font-semibold">${b.sizeGB != null ? esc(String(b.sizeGB)) + " GB" : "—"}</td>
+    <td class="text-pulse-muted text-xs">${esc(b.oldest || "—")} → ${esc(b.newest || "—")}</td>
+  </tr>`;
+  const candidates = p.candidates || [];
+
+  body.innerHTML = `
+    <table class="data-table"><thead><tr>
+      <th>What</th><th>Folders</th><th>Size</th><th>Date range</th>
+    </tr></thead><tbody>
+      ${bucketRow("Daily test clips older than 90 days", daily)}
+      ${bucketRow("Game recordings older than 1 year", recs)}
+    </tbody></table>
+    <p class="text-sm mt-2">
+      Deleting all ${esc(String(totalCount))} folders frees
+      <b>${p.totalSizeGB != null ? esc(String(p.totalSizeGB)) : "—"} GB</b>
+      ${p.projectedUsedPercent != null
+        ? `— D: would drop to <b>${esc(String(p.projectedUsedPercent))}% full</b>
+           (${esc(String(p.projectedFreeGB))} GB free)` : ""}.
+      ${p.skippedRecent ? `${esc(String(p.skippedRecent))} newer folders are protected and won't be touched.` : ""}
+    </p>
+    ${candidates.length ? `
+    <details class="dh-repair-details">
+      <summary class="text-xs text-pulse-muted">Every folder that will be deleted (${candidates.length})</summary>
+      <pre class="dh-repair-output">${esc(candidates.map(c =>
+        `${c.date}  ${c.category === "dailytest" ? "test clip" : "recording"}  ${c.sizeMB != null ? c.sizeMB + " MB" : ""}  ${c.name}`
+      ).join("\n"))}</pre>
+    </details>` : ""}
+    <button class="btn-outline btn-ol-red mt-2" id="dh-cleanup-run">
+      ${svgIcon("alert", 14)} Permanently delete ${esc(String(totalCount))} folders…
+    </button>
+  `;
+  document.getElementById("dh-cleanup-run")
+    ?.addEventListener("click", () => _runStorageCleanup(p));
+}
+
+async function _runStorageCleanup(preview) {
+  const daily = preview.dailyTest || {};
+  const recs = preview.recordings || {};
+  const totalCount = (daily.count || 0) + (recs.count || 0);
+  const lines = [];
+  if (daily.count) lines.push(`• ${daily.count} daily test clips older than 90 days (${daily.sizeGB} GB)`);
+  if (recs.count) lines.push(`• ${recs.count} game recordings older than 1 year (${recs.sizeGB} GB)`);
+  const ok = confirm(
+    `Permanently delete ${totalCount} folders from D:\\recordedevents?\n\n` +
+    lines.join("\n") + "\n\n" +
+    "This cannot be undone — the folders do not go to the Recycle Bin.\n" +
+    "Nothing from the last 90 days will be touched.\n\nProceed?"
+  );
+  if (!ok) return;
+
+  const btn = document.getElementById("dh-cleanup-run");
+  const body = document.getElementById("dh-cleanup-body");
+  if (btn) { btn.disabled = true; btn.innerHTML = `${svgIcon("refresh", 14)} Deleting…`; }
+  if (body) body.insertAdjacentHTML("beforeend",
+    `<div class="text-xs text-pulse-muted mt-2" id="dh-cleanup-progress">
+      Deleting ${esc(String(totalCount))} folders — this can take several minutes…
+    </div>`);
+
+  const r = await apiPost("/api/disk-health/cleanup", { confirm: true });
+  _cleanupReceipt = r || { error: true, message: "(no response)" };
+  dataCache["disk-health"] = null;
+  renderDiskHealth();
+}
+
+function _cleanupReceiptHtml() {
+  const r = _cleanupReceipt;
+  if (!r) return "";
+  const dismiss = `<button class="btn-outline btn-ol-blue mt-2" id="dh-cleanup-dismiss">Dismiss</button>`;
+  if (r.error) {
+    return `<div class="dh-repair-result-err">
+      ${svgIcon("alert", 14)} <span class="font-semibold">Cleanup failed</span>
+      <div class="text-xs mt-1">${esc(r.message || "(no message)")}</div>
+    </div>${dismiss}`;
+  }
+  const after = r.after || {};
+  const parts = [];
+  if (r.deletedDailyTest) parts.push(`${r.deletedDailyTest} daily test clips`);
+  if (r.deletedRecordings) parts.push(`${r.deletedRecordings} game recordings`);
+  return `
+    <div class="${r.failedCount ? "dh-repair-result-err" : "dh-repair-result-ok"}">
+      ${svgIcon(r.failedCount ? "alert" : "check", 14)}
+      <span class="font-semibold">Cleanup ${r.failedCount ? "finished with errors" : "complete"}</span>
+      <div class="text-xs mt-1">
+        Deleted ${esc(String(r.deletedCount ?? 0))} folders${parts.length ? ` (${esc(parts.join(", "))})` : ""},
+        freeing ${esc(String(r.freedGB ?? "—"))} GB.
+        ${after.usedPercent != null ? `D: is now ${esc(String(after.usedPercent))}% full (${esc(String(after.freeGB))} GB free).` : ""}
+      </div>
+    </div>
+    ${(r.failed || []).length ? `
+    <details class="dh-repair-details mt-2" open>
+      <summary class="text-xs status-warn">${r.failed.length} folders could not be deleted</summary>
+      <pre class="dh-repair-output">${esc(r.failed.map(f => `${f.name}: ${f.error}`).join("\n"))}</pre>
+    </details>` : ""}
+    ${(r.deleted || []).length ? `
+    <details class="dh-repair-details mt-2">
+      <summary class="text-xs text-pulse-muted">Deleted folders (${r.deleted.length})</summary>
+      <pre class="dh-repair-output">${esc(r.deleted.map(d =>
+        `${d.date}  ${d.category === "dailytest" ? "test clip" : "recording"}  ${d.sizeMB != null ? d.sizeMB + " MB" : ""}  ${d.name}`
+      ).join("\n"))}</pre>
+    </details>` : ""}
+    ${dismiss}`;
 }
 
 function formatTime(iso) {
