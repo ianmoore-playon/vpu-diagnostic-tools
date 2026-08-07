@@ -60,7 +60,9 @@ try {
                 try {
                     $timeStr = [string]$e.Properties[0].Value
                     $dateStr = [string]$e.Properties[1].Value
-                    $actual = [datetime]::Parse("$dateStr $timeStr")
+                    # SpecifyKind Local so ToString('o') carries the UTC
+                    # offset — Unspecified-kind datetimes serialize naive.
+                    $actual = [datetime]::SpecifyKind([datetime]::Parse("$dateStr $timeStr"), 'Local')
                 } catch { }
                 $shutdowns += [pscustomobject]@{
                     time       = $(if ($actual) { $actual.ToString('o') } else { $t })
@@ -157,7 +159,7 @@ try {
                 foreach ($line in @($found)) {
                     if ($line -match '(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})') {
                         $ts = $null
-                        try { $ts = [datetime]::Parse($Matches[1]) } catch { }
+                        try { $ts = [datetime]::SpecifyKind([datetime]::Parse($Matches[1]), 'Local') } catch { }
                         if ($ts -and $ts -ge $since) {
                             $processRestarts += [pscustomobject]@{
                                 time    = $ts.ToString('o')
