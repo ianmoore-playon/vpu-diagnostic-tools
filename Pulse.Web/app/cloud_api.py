@@ -117,7 +117,24 @@ def _fetch_eqs(venue_id):
     excluded = {
         e.get("eventKey") for e in (data.get("excluded") or []) if e.get("eventKey")
     }
-    return {"avgScore": data.get("avgScore"), "byEvent": by_event, "excluded": excluded}
+    # EQS reports avgScore 0 for venues with no scored events — that's "no
+    # data", not "0% quality"; don't let the UI render an orange zero.
+    avg = data.get("avgScore") if by_event else None
+    return {"avgScore": avg, "byEvent": by_event, "excluded": excluded}
+
+
+def _fetch_venue_record(venue_id):
+    """Unity's registry of Pixellot venues — knows units that were never
+    onboarded as NFHS producers (name present, pixellot/producer keys null)."""
+    data = _get_json(f"{UNITY_BASE}/v2/pixellot_venues/{venue_id}")
+    if isinstance(data, list) and data:
+        rec = data[0]
+        return {
+            "name": rec.get("name"),
+            "pixellotKey": rec.get("pixellot_key"),
+            "producerKey": rec.get("producer_key"),
+        }
+    return None
 
 
 # The Unity pixellot record proxies Pixellot Club's live health indicators.
@@ -577,6 +594,23 @@ def fetch_cloud(venue_id, local_events, signals=None):
         listed or [], box_broadcasts, local_events, eqs, now, signals
     )
 
+    hints = _cause_hints(metrics, producer, _metrics_fresh(timeline, now))
+    # No producer record: if Unity's venue registry still knows the unit, it
+    # was installed on Pixellot's side but never onboarded into NFHS — a
+    # cloud-side provisioning gap, not a box fault.
+    venue_record = None
+    if producer is None:
+        venue_record, _e = _try(_fetch_venue_record, venue_id)
+        if venue_record:
+            hints.insert(0, {
+                "severity": "warning",
+                "text": "This unit is registered in Pixellot Cloud (as "
+                        f"'{venue_record.get('name')}') but has no NFHS "
+                        "producer mapping — events cannot be scheduled to it. "
+                        "Cloud-side onboarding is required (Connect team).",
+                "page": None,
+            })
+
     return {
         "available": True,
         "error": None,
@@ -585,6 +619,7 @@ def fetch_cloud(venue_id, local_events, signals=None):
         "metrics": metrics,
         "eqsAvgScore": eqs.get("avgScore"),
         "events": timeline,
-        "causeHints": _cause_hints(metrics, producer, _metrics_fresh(timeline, now)),
+        "venueRecord": venue_record,
+        "causeHints": hints,
         "generatedAt": now.isoformat(),
     }
