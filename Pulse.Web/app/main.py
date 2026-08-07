@@ -2060,11 +2060,10 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "category": "Network",
                 "title": "A backup streaming connection is blocked",
                 "recommendation": (
-                    "The game can still broadcast right now over its main connection. "
-                    "Pixellot also keeps a spare backup connection to its streaming service, "
-                    "and the venue's network is blocking that backup — so if the main "
-                    "connection has trouble during a game there's less to fall back on. Ask "
-                    f"the venue's IT team to unblock {_lbl(backup_blocked)} to prod-echo.pixellot.tv."
+                    "Pixellot keeps a backup connection to its streaming service, and the "
+                    "venue's network is blocking it — if the main connection has trouble "
+                    "during a game, there's less to fall back on. Ask the venue's IT team "
+                    f"to unblock {_lbl(backup_blocked)} to prod-echo.pixellot.tv."
                 ),
             })
 

@@ -3504,10 +3504,9 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
     issues.push({
       severity: "warning",
       title: (n === 1 ? "A backup streaming connection is blocked" : n + " backup streaming connections are blocked"),
-      body: "The game can still broadcast right now over its main connection. Pixellot also keeps a spare "
-        + "backup connection to its streaming service, and the venue's network is blocking that backup. Streaming "
-        + "will still work — but if the main connection runs into trouble during a game, there's less to fall back "
-        + "on. Ask the venue's IT or network team to unblock the connection" + (n === 1 ? "" : "s") + " below.",
+      body: "Pixellot keeps a backup connection to its streaming service, and the venue's network is blocking "
+        + "it — if the main connection runs into trouble during a game, there's less to fall back on. Ask the "
+        + "venue's IT or network team to unblock the connection" + (n === 1 ? "" : "s") + " below.",
       details: streamDetails,
     });
   }
