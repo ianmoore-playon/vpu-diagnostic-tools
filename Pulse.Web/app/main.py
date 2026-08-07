@@ -328,6 +328,14 @@ async def _on_startup():
     except Exception:
         pass
 
+    # Close Pulse alongside the LogMeIn session that launched it (see
+    # _lmi_session_watch). No-op in demo mode, off Windows, or when Pulse
+    # wasn't opened from inside an LMI session.
+    try:
+        asyncio.create_task(_lmi_session_watch())
+    except Exception:
+        pass
+
 
 def load_settings() -> dict:
     try:
@@ -4788,20 +4796,24 @@ _ever_had_client: bool = False
 IDLE_SHUTDOWN_SECS = 60  # shut down 60s after last client disconnects
 
 
+def _self_sigint():
+    """Send SIGINT to ourselves so uvicorn's lifespan handlers run cleanly.
+    _os._exit would bypass cleanup and abruptly tear down the process."""
+    import signal
+    try:
+        _os.kill(_os.getpid(), signal.SIGINT)
+    except Exception:
+        _os._exit(0)  # fall back to hard exit if signal raise fails
+
+
 async def _idle_shutdown():
     """Shut down the server after all WebSocket clients disconnect."""
     await asyncio.sleep(IDLE_SHUTDOWN_SECS)
     # Stay alive while a LAN receive listener is enabled — a peer may push a
     # report even with no browser tab open. Receiver turns it off to release us.
     if not _ws_clients and _ever_had_client and not peer.is_receiving():
-        _log("auto-shutdown", 0, "ok", f"no clients for {IDLE_SHUTDOWN_SECS}s")
-        # Send SIGINT to ourselves so uvicorn's lifespan handlers run cleanly.
-        # _os._exit would bypass cleanup and abruptly tear down the process.
-        import signal
-        try:
-            _os.kill(_os.getpid(), signal.SIGINT)
-        except Exception:
-            _os._exit(0)  # fall back to hard exit if signal raise fails
+        ps_log("auto-shutdown", 0, "ok", f"no clients for {IDLE_SHUTDOWN_SECS}s")
+        _self_sigint()
 
 
 def _on_ws_connect(ws: WebSocket):
@@ -4883,6 +4895,107 @@ async def ws_endpoint(ws: WebSocket):
         _server_log.exception(msg)
     finally:
         _on_ws_disconnect(ws)
+
+
+# ─── LogMeIn session watcher — close Pulse with the LMI session ───
+#
+# Support techs reach Pulse through a LogMeIn Remote Control session. When
+# the tech closes LMI, the Chrome window stays open on the VPU console, its
+# WebSocket stays connected, and the idle auto-shutdown above never fires —
+# Pulse runs until the next reboot. LogMeIn spawns LogMeInRC.exe for the
+# lifetime of a Remote Control session (verified on VPU2 2026-08-07: the
+# process appears at Application-event 202 "session started" and exits
+# within a second of 205 "session ended"), so its absence means nobody is
+# remoting in via LMI.
+#
+# Armed only when Pulse starts DURING an LMI session. A console, Splashtop,
+# or RDP user never had LogMeInRC.exe running at launch, so for them the
+# watcher stands down and Pulse is never touched.
+
+LMI_POLL_SECS = 5
+LMI_GRACE_SECS = 300  # survive a network blip + LMI reconnect
+
+
+def _lmi_rc_present() -> bool:
+    """True while LogMeInRC.exe (LMI's per-session Remote Control process)
+    is running. Fails safe: a probe error reports the session as present so
+    a broken tasklist can never shut Pulse down."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq LogMeInRC.exe", "/NH"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW
+        )
+        return "logmeinrc.exe" in (out.stdout or "").lower()
+    except Exception:
+        return True
+
+
+def _close_pulse_browser():
+    """Best-effort graceful Chrome close (no /F — WM_CLOSE, not a kill).
+    Without this, the dead Pulse tab greets the next tech with a Chrome
+    error page. Only ever called after LMI_GRACE_SECS with no remote
+    session, so nobody is looking at that console."""
+    import subprocess
+    try:
+        subprocess.run(
+            ["taskkill", "/IM", "chrome.exe"],
+            capture_output=True, timeout=10,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW
+        )
+    except Exception:
+        pass
+
+
+async def _lmi_session_watch():
+    """Close Pulse LMI_GRACE_SECS after the LogMeIn session that launched
+    it ends (see section comment above)."""
+    if DEMO_MODE or _sys.platform != "win32":
+        return
+    if not await asyncio.to_thread(_lmi_rc_present):
+        msg = "no LogMeIn session at launch - LMI auto-close not armed"
+        ps_log("lmi-watch", 0, "ok", msg)
+        _server_log.info(msg)
+        return
+    msg = (f"LogMeIn session detected - Pulse will close "
+           f"{LMI_GRACE_SECS // 60} min after it ends")
+    ps_log("lmi-watch", 0, "ok", msg)
+    _server_log.info(msg)
+    while True:
+        await asyncio.sleep(LMI_POLL_SECS)
+        if await asyncio.to_thread(_lmi_rc_present):
+            continue
+        msg = (f"LogMeIn session ended - closing Pulse in "
+               f"{LMI_GRACE_SECS // 60} min unless it reconnects")
+        ps_log("lmi-watch", 0, "warn", msg)
+        _server_log.warning(msg)
+        deadline = time.time() + LMI_GRACE_SECS
+        reconnected = False
+        while time.time() < deadline:
+            await asyncio.sleep(LMI_POLL_SECS)
+            if await asyncio.to_thread(_lmi_rc_present):
+                reconnected = True
+                break
+        if reconnected:
+            msg = "LogMeIn session reconnected - auto-close cancelled"
+            ps_log("lmi-watch", 0, "ok", msg)
+            _server_log.info(msg)
+            continue
+        if peer.is_receiving():
+            # A LAN receive listener may be waiting on a peer's report push —
+            # stay up. The outer loop re-enters the grace cycle, so Pulse
+            # still closes once the listener is released.
+            msg = "grace expired but LAN receive listener is on - staying up"
+            ps_log("lmi-watch", 0, "warn", msg)
+            _server_log.warning(msg)
+            continue
+        msg = f"no LogMeIn session for {LMI_GRACE_SECS // 60} min - closing Pulse"
+        ps_log("lmi-watch", 0, "ok", msg)
+        _server_log.info(msg)
+        _close_pulse_browser()
+        _self_sigint()
+        return
 
 
 # ─── Entry point ──────────────────────────────────────────────
