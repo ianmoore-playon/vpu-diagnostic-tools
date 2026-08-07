@@ -328,6 +328,14 @@ async def _on_startup():
     except Exception:
         pass
 
+    # Same treatment for Splashtop Streamer, deployed alongside Canopy (see
+    # _remove_splashtop). Separate task because Leaf-clean units still carry
+    # Splashtop.
+    try:
+        asyncio.create_task(_remove_splashtop())
+    except Exception:
+        pass
+
     # Close Pulse alongside the LogMeIn session that launched it (see
     # _lmi_session_watch). No-op in demo mode, off Windows, or when Pulse
     # wasn't opened from inside an LMI session.
@@ -4308,6 +4316,46 @@ async def _remove_canopy_leaf() -> None:
         # Fail-open: the cleanup must never affect Pulse.
         try:
             _server_log.info("Canopy Leaf removal skipped (%s)", e)
+        except Exception:
+            pass
+
+
+# ── One-shot Splashtop Streamer removal ─────────────────────────────────────
+# Splashtop Streamer shipped to the fleet as part of the same Banyan Hills
+# Canopy deployment the Leaf remover retires, but it is a separate MSI with
+# its own footprint, so it gets its own sweep: a unit already clean of
+# C:\Banyan can still be running Splashtop. Remove-Splashtop.ps1 does the MSI
+# uninstall (/qn /norestart) plus a service/process/folder leftover sweep;
+# validated end-to-end on VPU2 under PS 5.1 (2026-08-07). Same contract as
+# the Leaf remover: dir pre-check keeps the fleet steady-state cost at zero,
+# and every branch fails open.
+
+_SPLASHTOP_DIRS = (
+    "C:\\Program Files (x86)\\Splashtop",
+    "C:\\Program Files\\Splashtop",
+    "C:\\ProgramData\\Splashtop",
+)
+
+
+async def _remove_splashtop() -> None:
+    if DEMO_MODE:
+        return
+    try:
+        if not any(_os.path.exists(d) for d in _SPLASHTOP_DIRS):
+            return  # already clean — the overwhelming steady-state
+        # Stagger behind the dashboard preload burst (and the Leaf sweep's
+        # own slot) — background chore, nobody is waiting on it.
+        await asyncio.sleep(25)
+        result = await run_ps("Remove-Splashtop.ps1", timeout=600, use_cache=False)
+        status = (result or {}).get("status") or "unknown"
+        if status in ("removed", "not-present"):
+            _server_log.info("Splashtop removal: %s", status)
+        else:
+            _server_log.warning("Splashtop removal incomplete: %s", json.dumps(result))
+    except Exception as e:
+        # Fail-open: the cleanup must never affect Pulse.
+        try:
+            _server_log.info("Splashtop removal skipped (%s)", e)
         except Exception:
             pass
 
