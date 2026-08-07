@@ -30,10 +30,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ### Added
 - New "Event Streaming" page under Triage: shows this VPU's recent events as the NFHS cloud sees them — which ones streamed, which didn't, and the evidence for why (cloud camera/health indicators, whether the box recorded video locally, quality scores). Works with no login; if the school network blocks the cloud, the page says so and still shows the box's local recording history.
 - When the launcher can't download Pulse, it now explains why instead of just saying "check the internet connection": it shows the actual download error, tests each GitHub server Pulse needs one by one, and prints exactly which ones the venue's network is blocking (with the allow-list to hand to the school's IT). Catches the common case where github.com opens fine in a browser but the download servers are filtered, and flags networks that intercept HTTPS. The report is also saved to a file support can ask for.
+- Camera Connectivity now marks the exact port when the venue's internet cable is plugged into the camera card — a red "Internet Uplink — wrong port" tile tells you which cable to move to the motherboard network port.
 - Pulse now cleans up the retired Canopy/Leaf software automatically. The old Banyan Hills agent (no longer used by PlayOn) is uninstalled in the background the first time Pulse runs on a VPU, and the leftover C:\Banyan folder is removed — no action needed from techs.
 - New standalone script `scripts/Get-WindowsPatchStatus.ps1`: run it on a VPU to see the real Windows patch level (build number, hotfixes, servicing history, pending reboot) even though Windows Update is disabled on the fleet image.
 
 ### Changed
+- The "Windows support ends within a year" warning now reassures instead of alarming when the VPU still has years of security updates left: it explains the unit is covered until the true end-of-servicing date (e.g. 2032 for LTSC 2021) and that no action is needed.
+- The blocked-backup-streaming warning title no longer tacks on "the broadcast still works" — that reassurance stays in the description.
 - Status labels now look the same on every page: rounded pill shape, all-caps text (PASS, WARN, RUNNING), and count bubbles are gray instead of orange so a tally no longer looks like a warning.
 - Status words now match everywhere: "Healthy" and "Attention" chips read OK and WARNING like the rest of the app, and ScoreConnect's cloud link shows CONNECTED / NOT CONNECTED instead of Yes / No.
 - Network Test: port tiles now use the same PASS / FAIL pills as the service list next to them, and the ? icon sits right after the port number where it's easier to spot.

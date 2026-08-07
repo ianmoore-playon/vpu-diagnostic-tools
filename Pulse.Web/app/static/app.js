@@ -1404,11 +1404,15 @@ function renderCalibrations() {
 function _subsystemHealth(findings) {
   // Worst finding severity per category (2 = critical, 1 = warning), so a
   // subsystem with a critical lights red and one with only warnings lights
-  // amber. Each finding maps to exactly ONE subsystem — no double-flagging.
+  // amber. Info findings are context, not faults — they never change a
+  // subsystem's light. Each finding maps to exactly ONE subsystem — no
+  // double-flagging.
   const sev = {};
   (findings || []).forEach((f) => {
+    const s = (f.severity || "").toLowerCase();
+    if (s === "info") return;
     const k = (f.category || "").toLowerCase();
-    const rank = /^(critical|error)$/.test((f.severity || "").toLowerCase()) ? 2 : 1;
+    const rank = /^(critical|error)$/.test(s) ? 2 : 1;
     sev[k] = Math.max(sev[k] || 0, rank);
   });
   const worst = (...keys) => Math.max(0, ...keys.map((k) => sev[k] || 0));
@@ -2052,30 +2056,45 @@ function _pixCompatBannerHtml(c) {
 // tab; pulled from /api/system identity.operatingSystem.lifecycle.
 function _osLifecycleBannerHtml(lc) {
   if (!lc) return "";
-  const days = lc.daysToEos;
+  // Urgency keys on the date security updates actually STOP: the IoT
+  // end-of-servicing date when the build has one (LTSC 2021), else the
+  // headline end-of-support date. The headline date passing with servicing
+  // still running is expected — the banner stays calm and says so.
+  const hasServicing = !!lc.endOfServicingDate;
+  const days = hasServicing && lc.daysToServicingEnd != null ? lc.daysToServicingEnd : lc.daysToEos;
+  const eolDate = hasServicing ? lc.endOfServicingDate : lc.eosDate;
+  const word = hasServicing ? "End-of-servicing" : "End-of-support";
   let cls = "sys-lifecycle-ok";
   let label = "";
   if (days == null) {
-    label = `End-of-support: ${lc.eosDate}`;
+    label = `${word}: ${eolDate}`;
   } else if (days < 0) {
     cls = "sys-lifecycle-crit";
-    label = `End-of-support reached on ${lc.eosDate} (${Math.abs(days)} days ago)`;
+    label = `${word} reached on ${eolDate} (${Math.abs(days)} days ago)`;
   } else if (days < 90) {
     cls = "sys-lifecycle-crit";
-    label = `End-of-support in ${days} days (${lc.eosDate})`;
+    label = `${word} in ${days} days (${eolDate})`;
   } else if (days < 365) {
     cls = "sys-lifecycle-warn";
     const months = Math.floor(days / 30);
-    label = `End-of-support in ~${months} months (${lc.eosDate})`;
+    label = `${word} in ~${months} months (${eolDate})`;
   } else {
     const years = Math.floor(days / 365);
-    label = `End-of-support: ${lc.eosDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
+    label = `${word}: ${eolDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
+  }
+  // Note the (earlier) mainstream date alongside — with reassurance once
+  // it's inside a year, so nobody mistakes it for the update cutoff.
+  let mainstream = "";
+  if (hasServicing) {
+    const mDays = lc.daysToEos;
+    mainstream = ` &middot; Mainstream support ${mDays != null && mDays < 0 ? "ended" : "ends"} ${esc(lc.eosDate)}`;
+    if (mDays != null && mDays < 365) mainstream += " — OK, security updates continue";
   }
   return `<div class="sys-lifecycle ${cls} mt-3">
     ${svgIcon(cls === "sys-lifecycle-ok" ? "info" : "alert", 14)}
     <div>
       <div class="font-semibold">${esc(lc.ltscRelease)}</div>
-      <div class="text-xs mt-1">${esc(label)}${lc.endOfServicingDate ? ` &middot; End-of-servicing: ${esc(lc.endOfServicingDate)}` : ""}</div>
+      <div class="text-xs mt-1">${esc(label)}${mainstream}</div>
     </div>
   </div>`;
 }
@@ -3484,8 +3503,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
     var n = stream.blocked.length;
     issues.push({
       severity: "warning",
-      title: (n === 1 ? "A backup streaming connection is blocked" : n + " backup streaming connections are blocked")
-        + " — the broadcast still works",
+      title: (n === 1 ? "A backup streaming connection is blocked" : n + " backup streaming connections are blocked"),
       body: "The game can still broadcast right now over its main connection. Pixellot also keeps a spare "
         + "backup connection to its streaming service, and the venue's network is blocking that backup. Streaming "
         + "will still work — but if the main connection runs into trouble during a game, there's less to fall back "
@@ -4384,7 +4402,7 @@ function _camSignature(data) {
     }).join(",");
     var errs = (p.rxPacketErrors || 0) + (p.txPacketErrors || 0) + (p.rxDiscards || 0) + (p.txDiscards || 0);
     return [p.portLabel, p.name, p.isUp, p.isOcr, p.isDegraded, p.connecting, p.cameraLabel,
-            p.linkSpeedMbps, p.expectedSpeedMbps, p.fullDuplex,
+            p.linkSpeedMbps, p.expectedSpeedMbps, p.fullDuplex, p.hasInternetUplink,
             errs, cams].join("~");
   }).join("||");
   var findSig = ((data && data.findings) || []).map(function(f) {
@@ -4458,15 +4476,25 @@ function _camPortTile(port, index, ctx) {
   if (p.isOcr) camLabelCls = "badge-ol-info";
   else if (camLabel && camLabel.indexOf("Main") === 0) camLabelCls = "badge-ol-main";
   else camLabelCls = "badge-ol-muted";
+  // The venue/internet cable in a camera port: the tile itself calls out the
+  // mis-wired port (red border + INTERNET UPLINK badge + move-the-cable note)
+  // so the tech can spot which physical port to fix without reading findings.
+  var hasUplink = !!p.hasInternetUplink;
+  var uplinkNote = hasUplink
+    ? '<div class="cam-uplink-callout">' + svgIcon("alert", 12) + ' <span>Wrong port — this one is carrying the venue’s internet connection'
+      + (p.uplinkGateway ? ' (gateway ' + esc(p.uplinkGateway) + ')' : '')
+      + '. Move this cable to the motherboard network port; the 4-port camera card is for cameras only.</span></div>'
+    : '';
   // Header carries only the port number + state pill, so the pill sits at the
   // same top-right spot on every tile; the (variable-width) role badge gets
   // its own row below and can never push the status onto a second line.
-  return `<div class="cam-port-tile ${!p.isUp ? "cam-port-down" : p.isDegraded ? "cam-port-degraded" : "cam-port-active"}">
+  return `<div class="cam-port-tile ${!p.isUp ? "cam-port-down" : hasUplink ? "cam-port-uplink" : p.isDegraded ? "cam-port-degraded" : "cam-port-active"}">
     <div class="cam-port-header">
       <span class="cam-port-num">Port ${index + 1}</span>
       <span class="cam-port-state">${badge(stateTxt, stateCls)}</span>
     </div>
-    ${camLabel ? '<div class="cam-port-role"><span class="badge-ol ' + camLabelCls + '">' + esc(camLabel) + '</span></div>' : ''}
+    ${hasUplink ? '<div class="cam-port-role"><span class="badge-ol badge-ol-uplink">Internet Uplink</span></div>'
+      : camLabel ? '<div class="cam-port-role"><span class="badge-ol ' + camLabelCls + '">' + esc(camLabel) + '</span></div>' : ''}
     <div class="cam-port-name">${esc(p.name)}</div>
     ${speedRow}
     <div class="cam-port-detail">
@@ -4489,7 +4517,9 @@ function _camPortTile(port, index, ctx) {
     })()
     : p.connecting ? '<div class="cam-connecting-note">' + svgIcon("refresh", 12) + ' Establishing link — waiting for camera…</div>'
     : !p.isUp ? _camDownGuidanceHtml(p, ctx)
+    : hasUplink ? ''
     : '<div class="cam-no-detect">No Pixellot cameras on this port</div>'}
+    ${uplinkNote}
   </div>`;
 }
 

@@ -1124,6 +1124,7 @@ html.dark .channel-moved-banner {
 .badge-ol-info  { border-color: var(--c-accent-blue); color: var(--c-accent-blue); }
 .badge-ol-main  { border-color: var(--c-accent-teal); color: var(--c-accent-teal); }
 .badge-ol-muted { border-color: var(--c-dimmer); color: var(--c-dimmer); }
+.badge-ol-uplink { border-color: var(--c-accent-red); color: var(--c-accent-red); }
 
 /* Network config with dots */
 .dash-net-kv { display: flex; flex-direction: column; gap: 2px; }
@@ -2008,6 +2009,9 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
    0.75 opacity that previously washed out the labels. Empty (no-NIC)
    slots stay dashed + half-opacity to clearly read as unused. */
 .cam-port-down { border-color: var(--c-dimmer); border-style: dashed; }
+/* Venue/internet cable plugged into this camera port — a wiring fault the
+   tech must fix, so the tile reads as an error, not just "no camera". */
+.cam-port-uplink { border-color: var(--c-accent-red); }
 .cam-port-empty { border-style: dashed; opacity: 0.5; }
 .cam-port-header { display: flex; align-items: center; gap: 6px; }
 .cam-port-num { font-size: 0.85rem; font-weight: 700; color: var(--c-text); }
@@ -2047,6 +2051,21 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .cam-entry-mac { white-space: nowrap; }
 .cam-entry-source { font-size: 0.6rem; flex-basis: 100%; }
 .cam-no-detect { font-size: 0.7rem; color: var(--c-dim); }
+/* Move-the-cable guidance on a mis-wired (uplink-in-camera-port) tile. */
+.cam-uplink-callout {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--c-tint-red-faint);
+    border: 1px solid var(--c-tint-red-border);
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: var(--c-text);
+}
+.cam-uplink-callout svg { flex-shrink: 0; margin-top: 1px; color: var(--c-accent-red); }
 .cam-down-guide {
     display: flex;
     align-items: flex-start;

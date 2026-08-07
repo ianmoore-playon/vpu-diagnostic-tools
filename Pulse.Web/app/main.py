@@ -793,8 +793,9 @@ _LTSC_LIFECYCLE = {
 
 
 def _os_lifecycle(build_number) -> Optional[dict]:
-    """Return {ltscRelease, eosDate, daysToEos[, endOfServicingDate]} for
-    a known Pixellot OS build, or None if build is unknown."""
+    """Return {ltscRelease, eosDate, daysToEos[, endOfServicingDate,
+    daysToServicingEnd]} for a known Pixellot OS build, or None if build is
+    unknown."""
     if not build_number:
         return None
     key = str(build_number).strip()
@@ -802,15 +803,21 @@ def _os_lifecycle(build_number) -> Optional[dict]:
     if not info:
         return None
     from datetime import date as _date
-    try:
-        y, m, d = [int(x) for x in info["eosDate"].split("-")]
-        days = (_date(y, m, d) - _date.today()).days
-    except (ValueError, KeyError):
-        days = None
-    return {
+
+    def _days_until(iso):
+        try:
+            y, m, d = [int(x) for x in str(iso).split("-")]
+            return (_date(y, m, d) - _date.today()).days
+        except (ValueError, AttributeError):
+            return None
+
+    out = {
         **info,
-        "daysToEos": days,
+        "daysToEos": _days_until(info.get("eosDate")),
     }
+    if info.get("endOfServicingDate"):
+        out["daysToServicingEnd"] = _days_until(info["endOfServicingDate"])
+    return out
 
 
 # ── Unsupported security software ────────────────────────────
@@ -1217,14 +1224,14 @@ def _classify_network_adapters(network_config):
     return network_config
 
 
-def _camera_nic_uplink_finding(network_config):
-    """Detect the wiring fault: the internet uplink is plugged into a camera-NIC
-    port instead of the motherboard network port. A camera port flags only when
-    it is link-UP and carrying a real (non-APIPA) default gateway — a disconnected
-    port can hold a stale gateway in the route table, so link state is the gate.
-    Returns a critical finding dict, or None."""
+def _misplaced_camera_uplinks(network_config):
+    """Camera-NIC adapters carrying the internet uplink — the wiring fault
+    where the venue cable is in a camera port. An adapter flags only when it
+    is link-UP and carrying a real (non-APIPA) default gateway — a disconnected
+    port can hold a stale gateway in the route table, so link state is the
+    gate. Returns [(adapter, gateway), ...] (empty when wired correctly)."""
     if not network_config or network_config.get("error"):
-        return None
+        return []
     _classify_network_adapters(network_config)
     adapters = network_config.get("adapters") or []
     ip_by_idx = {}
@@ -1253,8 +1260,16 @@ def _camera_nic_uplink_finding(network_config):
         gw = _real_gateway(a)
         if gw and _link_up(a):
             misplaced.append((a, gw))
+    return misplaced
+
+
+def _camera_nic_uplink_finding(network_config):
+    """Dashboard finding for the misplaced-uplink wiring fault (see
+    _misplaced_camera_uplinks). Returns a critical finding dict, or None."""
+    misplaced = _misplaced_camera_uplinks(network_config)
     if not misplaced:
         return None
+    adapters = network_config.get("adapters") or []
 
     # Motherboard port state, for the remediation message.
     def _mobo_state(a):
@@ -1508,39 +1523,70 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             )
 
         # ── OS lifecycle (PDF #4) ───────────────────────────────
-        # Warn 12 months before LTSC EOS, critical at 3 months. Skip
-        # silently if the build isn't in our LTSC map (covers non-VPU dev
-        # boxes running 22H2 / Server / etc).
+        # Warn 12 months before the date security updates actually STOP,
+        # critical at 3 months. For builds with IoT extended servicing
+        # beyond the headline end-of-support date (LTSC 2021), that's
+        # endOfServicingDate — the headline date passing is expected and
+        # gets a reassuring info note, not an alarm. For LTSC 2019 the
+        # eosDate IS the end of servicing. Skip silently if the build
+        # isn't in our LTSC map (covers non-VPU dev boxes).
         build = identity.get("operatingSystem", {}).get("buildNumber")
         lifecycle = _os_lifecycle(build)
         if lifecycle and lifecycle.get("daysToEos") is not None:
             days = lifecycle["daysToEos"]
             release = lifecycle["ltscRelease"]
             eos = lifecycle["eosDate"]
-            if days < 0:
+            servicing_date = lifecycle.get("endOfServicingDate")
+            days_servicing = lifecycle.get("daysToServicingEnd")
+            if servicing_date and days_servicing is not None:
+                eol_date, eol_days = servicing_date, days_servicing
+            else:
+                eol_date, eol_days = eos, days
+            if eol_days < 0:
                 findings.append({
                     "code": "os-eos-reached",
                     "severity": "critical",
                     "category": "System",
                     "title": "Windows version is past its support date",
-                    "recommendation": f"{release} reached end-of-support on {eos} ({abs(days)} days ago). This host no longer receives security updates and should be re-imaged to a supported Windows version.",
+                    "recommendation": f"{release} reached its end of servicing on {eol_date} ({abs(eol_days)} days ago). This host no longer receives security updates and should be re-imaged to a supported Windows version.",
                 })
-            elif days < 90:
+            elif eol_days < 90:
                 findings.append({
                     "code": "os-eos-imminent",
                     "severity": "critical",
                     "category": "System",
                     "title": "Windows version loses support soon",
-                    "recommendation": f"{release} end-of-support is {eos} — {days} days away. Plan re-imaging to a supported Windows version before that date.",
+                    "recommendation": f"{release} end of servicing is {eol_date} — {eol_days} days away. Plan re-imaging to a supported Windows version before that date.",
                 })
-            elif days < 365:
-                months = days // 30
+            elif eol_days < 365:
+                months = eol_days // 30
                 findings.append({
                     "code": "os-eos-approaching",
                     "severity": "warning",
                     "category": "System",
                     "title": "Windows support ends within a year",
-                    "recommendation": f"{release} end-of-support is {eos} (~{months} months away). Begin planning a re-image to a supported Windows version.",
+                    "recommendation": f"{release} end of servicing is {eol_date} (~{months} months away). Begin planning a re-image to a supported Windows version.",
+                })
+            elif servicing_date and days < 365:
+                # Headline (mainstream) end-of-support is near or passed, but
+                # IoT extended servicing has years left — reassure, don't alarm.
+                if eol_days >= 730:
+                    left = f"about {eol_days // 365} more years"
+                else:
+                    left = f"about {eol_days // 30} more months"
+                findings.append({
+                    "code": "os-mainstream-eos",
+                    "severity": "info",
+                    "category": "System",
+                    "title": ("Windows mainstream support ends within a year — this VPU stays covered"
+                              if days >= 0 else
+                              "Windows mainstream support has ended — this VPU is still covered"),
+                    "recommendation": (
+                        f"{release} mainstream support {'ends' if days >= 0 else 'ended'} on {eos}. "
+                        f"This is expected and OK: VPUs run the IoT Enterprise release of Windows, "
+                        f"which keeps receiving security updates until {eol_date} (end of servicing) — "
+                        f"{left} of coverage. No action is needed on this unit."
+                    ),
                 })
 
         # ── Pixellot version × hardware compatibility ───────────
@@ -2012,7 +2058,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "code": "stream-443-blocked",
                 "severity": "warning",
                 "category": "Network",
-                "title": "A backup streaming connection is blocked — the broadcast still works",
+                "title": "A backup streaming connection is blocked",
                 "recommendation": (
                     "The game can still broadcast right now over its main connection. "
                     "Pixellot also keeps a spare backup connection to its streaming service, "
@@ -2262,6 +2308,7 @@ _READINESS_POLICY = {
     "os-eos-reached":        "info",     # F26
     "os-eos-imminent":       "info",     # F27
     "os-eos-approaching":    "info",     # F28
+    "os-mainstream-eos":     "info",     # headline EOS passed, IoT servicing continues
     "sw-security":           "info",     # F29 (if it's blocking agent.exe, that surfaces as F2)
     "sw-crypto-miner":       "info",     # F30
     "sw-torrent":            "info",     # F31
@@ -2826,8 +2873,59 @@ def _enrich_ports(
     return ports
 
 
+def _flag_uplink_ports(ports: list, network_config) -> None:
+    """Mark camera-tab ports that carry the venue/internet uplink (the cable
+    that belongs in the motherboard network port). Matches the misplaced
+    camera-NIC adapters from network config to the NIC-collector ports by MAC
+    (formats differ: 'AA-BB' vs 'aa:bb'), falling back to adapter name.
+    Re-gated on the port's live link state so the callout clears within a
+    poll or two of the cable being moved, even while the (25s-cached)
+    network-config copy still shows the old gateway. Mutates in place."""
+    misplaced = _misplaced_camera_uplinks(network_config)
+    if not misplaced:
+        return
+
+    def _norm_mac(m):
+        return str(m or "").upper().replace("-", "").replace(":", "")
+
+    by_mac = {}
+    by_name = {}
+    for a, gw in misplaced:
+        mac = _norm_mac(a.get("macAddress") or a.get("mac"))
+        if mac:
+            by_mac[mac] = gw
+        for n in (a.get("name"), a.get("interfaceAlias")):
+            if n:
+                by_name[str(n).strip().lower()] = gw
+
+    for p in ports:
+        if not p.get("isUp"):
+            continue
+        gw = by_mac.get(_norm_mac(p.get("mac")))
+        if gw is None:
+            gw = by_name.get(str(p.get("name") or "").strip().lower())
+        if gw is not None:
+            p["hasInternetUplink"] = True
+            p["uplinkGateway"] = gw
+
+
 def _compute_camera_findings(ports: list) -> list:
     findings = []
+
+    # The venue/internet cable in a camera port disrupts camera discovery and
+    # streaming — name the exact port so the tech knows which cable to move.
+    for port in ports:
+        if port.get("hasInternetUplink"):
+            label = port.get("portLabel", port.get("name", "Port"))
+            gw = port.get("uplinkGateway")
+            findings.append({
+                "severity": "critical",
+                "title": f"{label} — internet cable plugged into a camera port",
+                "body": f"This port is carrying the venue's internet connection"
+                        + (f" (gateway {gw})" if gw else "") +
+                        ". Move that cable to the motherboard network port — the "
+                        "4-port camera card is for cameras only.",
+            })
 
     # Every camera MAC currently present on any port — used to tell a true
     # drop from a move (a camera that reappears elsewhere didn't drop).
@@ -3434,10 +3532,16 @@ async def api_cameras(refresh: bool = False):
     # expire. cache_ttl=1.5 forces a fresh adapter read on each ~2s live poll
     # (the in-flight dedup still prevents overlapping runs if one is slow).
     # PixellotConfig / Expectations change rarely, so they keep the long cache.
-    nics, pix_config, expectations = await asyncio.gather(
+    # networkConfig rides along (long default cache — it's the same result the
+    # dashboard uses) so the port tiles can flag the venue/internet cable when
+    # it's plugged into a camera port. The per-port flag below re-gates on the
+    # port's live link state, so a fixed cable clears within a poll or two even
+    # while this cached copy is stale.
+    nics, pix_config, expectations, net_config = await asyncio.gather(
         run_ps("Get-NicAdapters.ps1", cache_ttl=1.5),
         run_ps("Get-PixellotConfig.ps1"),
         run_ps("Get-CameraExpectations.ps1", timeout=10),
+        run_ps("Get-NetworkConfig.ps1", timeout=15),
     )
     ocr_ips, _ = _build_ocr_sets(pix_config)
     # Expected main-camera count from the Coordinator log (S1=4/S2=2/S2S=1).
@@ -3456,6 +3560,7 @@ async def api_cameras(refresh: bool = False):
     raw_ports = nics.get("ports", []) if nics and not nics.get("error") else []
     probe_results = await _probe_all_cameras(raw_ports, ocr_ips, block=refresh)
     ports = _enrich_ports(nics, pix_config, probe_results, expected_main_cameras=expected_main)
+    _flag_uplink_ports(ports, net_config)
     return {
         "ports": ports,
         "pixellotConfig": pix_config,
