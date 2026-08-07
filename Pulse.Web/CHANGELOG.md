@@ -22,8 +22,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-07
+
 ### Added
 - Event Streaming: failed events now show what was wrong on the box while the event was running — unit off or rebooted mid-event, graphics driver faults, Pixellot service (Agent/Coordinator/KeepAgentUp) failures, or software crashes — pulled from the Windows event logs and matched to each event's time window. Also calls out "recorded but nothing uploaded" as a likely network block.
+- Event Streaming: cleaner layout (named panels with icons, single-line status pills, compact evidence wording) and a clearer identity card showing the unit's full cloud name, school and pixellot keys, NFHS broadcasting status, and quality average.
+- Event Streaming: units that were installed but never activated for NFHS now get a clear finding ("confirm this unit is activated in the NFHS Console") instead of an empty page, and the quality chip no longer shows a misleading 0% when no events were ever scored.
 
 ## [1.1.0] - 2026-08-05
 
