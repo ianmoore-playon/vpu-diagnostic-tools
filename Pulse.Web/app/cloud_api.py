@@ -58,9 +58,17 @@ def _parse_iso(ts):
     if not ts:
         return None
     try:
-        return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
     except ValueError:
         return None
+    if dt.tzinfo is None:
+        # Naive timestamps come from box-local collectors (event-log parses,
+        # Pixellot log lines). This server runs ON the box, so system-local
+        # is the right zone — coerce so they compare against UTC-aware cloud
+        # times instead of raising. (Field bug: web-v1.1.1 500'd on any box
+        # with a parsed shutdown or process restart.)
+        dt = dt.astimezone()
+    return dt
 
 
 # ── individual fetches ───────────────────────────────────────────
