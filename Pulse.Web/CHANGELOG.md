@@ -24,6 +24,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ### Added
 - Disks: when the recordings drive (D:) reaches 90% full, a Storage Cleanup card can free space — it deletes daily test clips older than 90 days and game recordings older than 1 year, after showing exactly which folders (with counts and sizes) will be removed. Nothing from the last 90 days is ever touched.
+- Pulse now closes itself (server and browser window) 5 minutes after the LogMeIn session that opened it ends — no more Pulse left running on the VPU after you disconnect. A banner at the top of the page shows the live countdown, and reconnecting within those 5 minutes cancels it automatically; opening Pulse at the console or over another remote tool is unaffected.
+- Camera Connectivity now marks the exact port when the venue's internet cable is plugged into the camera card — a red "Internet Uplink — wrong port" tile tells you which cable to move to the motherboard network port.
+- Splashtop Streamer is now removed automatically in the background — it was installed on VPUs as part of the retired Canopy deployment, alongside the Leaf agent Pulse already cleans up. Heads up: if you are connected to a VPU over Splashtop, the first Pulse launch will end that session; use LogMeIn, the supported remote tool.
 
 ## [1.1.2] - 2026-08-07
 
@@ -42,12 +45,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ### Added
 - New "Event Streaming" page under Triage: shows this VPU's recent events as the NFHS cloud sees them — which ones streamed, which didn't, and the evidence for why (cloud camera/health indicators, whether the box recorded video locally, quality scores). Works with no login; if the school network blocks the cloud, the page says so and still shows the box's local recording history.
 - When the launcher can't download Pulse, it now explains why instead of just saying "check the internet connection": it shows the actual download error, tests each GitHub server Pulse needs one by one, and prints exactly which ones the venue's network is blocking (with the allow-list to hand to the school's IT). Catches the common case where github.com opens fine in a browser but the download servers are filtered, and flags networks that intercept HTTPS. The report is also saved to a file support can ask for.
-- Pulse now closes itself (server and browser window) 5 minutes after the LogMeIn session that opened it ends — no more Pulse left running on the VPU after you disconnect. Reconnecting within those 5 minutes cancels the countdown; opening Pulse at the console or over Splashtop is unaffected.
-- Pulse now closes itself (server and browser window) 5 minutes after the LogMeIn session that opened it ends — no more Pulse left running on the VPU after you disconnect. A banner at the top of the page shows the live countdown, and reconnecting within those 5 minutes cancels it automatically; opening Pulse at the console or over Splashtop is unaffected.
-- Pulse now closes itself (server and browser window) 5 minutes after the LogMeIn session that opened it ends — no more Pulse left running on the VPU after you disconnect. A banner at the top of the page shows the live countdown, and reconnecting within those 5 minutes cancels it automatically; opening Pulse at the console or over another remote tool is unaffected.
-- Camera Connectivity now marks the exact port when the venue's internet cable is plugged into the camera card — a red "Internet Uplink — wrong port" tile tells you which cable to move to the motherboard network port.
 - Pulse now cleans up the retired Canopy/Leaf software automatically. The old Banyan Hills agent (no longer used by PlayOn) is uninstalled in the background the first time Pulse runs on a VPU, and the leftover C:\Banyan folder is removed — no action needed from techs.
-- Splashtop Streamer is now removed automatically too — it was installed as part of the same retired Canopy deployment. Heads up: if you are connected to a VPU over Splashtop, the first Pulse launch will end that session; use LogMeIn, the supported remote tool.
 - New standalone script `scripts/Get-WindowsPatchStatus.ps1`: run it on a VPU to see the real Windows patch level (build number, hotfixes, servicing history, pending reboot) even though Windows Update is disabled on the fleet image.
 
 ### Changed
