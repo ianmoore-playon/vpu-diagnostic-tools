@@ -604,10 +604,11 @@ def fetch_cloud(venue_id, local_events, signals=None):
         if venue_record:
             hints.insert(0, {
                 "severity": "warning",
-                "text": "This unit is registered in Pixellot Cloud (as "
+                "text": "This unit is registered in Pixellot Club (as "
                         f"'{venue_record.get('name')}') but has no NFHS "
                         "producer mapping — events cannot be scheduled to it. "
-                        "Cloud-side onboarding is required (Connect team).",
+                        "Confirm that this unit is properly activated in the "
+                        "NFHS Console.",
                 "page": None,
             })
 
