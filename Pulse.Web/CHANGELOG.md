@@ -22,7 +22,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
-## [1.2.0] - 2026-08-07
+## [1.1.1] - 2026-08-07
 
 ### Added
 - Event Streaming: failed events now show what was wrong on the box while the event was running — unit off or rebooted mid-event, graphics driver faults, Pixellot service (Agent/Coordinator/KeepAgentUp) failures, or software crashes — pulled from the Windows event logs and matched to each event's time window. Also calls out "recorded but nothing uploaded" as a likely network block.
