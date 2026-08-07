@@ -291,6 +291,90 @@ def cgi_probe(ip):
     return dict(probe) if probe else None
 
 
+# ── Storage cleanup demo (D: recordings) ─────────────────────
+# Candidate list is computed once at module load so the preview and the
+# post-delete receipt tell one consistent story within a session. Numbers
+# mirror the real bench VPU: hundreds of ~10 MB daily test clips (small)
+# and dozens of multi-GB game recordings (where the space actually is).
+def _demo_cleanup_candidates():
+    cands = []
+    for i in range(208):
+        d = datetime.now() - timedelta(days=91 + i * 2)
+        cands.append({
+            "name": f"{d:%Y-%m-%d}_p_DAILYTEST{d:%Y%m%d}",
+            "category": "dailytest",
+            "date": f"{d:%Y-%m-%d}",
+            "sizeMB": round(random.uniform(7.5, 13.5), 1),
+        })
+    for i in range(47):
+        d = datetime.now() - timedelta(days=366 + i * 4)
+        hexid = "".join(random.choice("0123456789abcdef") for _ in range(24))
+        cands.append({
+            "name": f"{d:%Y-%m-%d}_p_{hexid}",
+            "category": "recording",
+            "date": f"{d:%Y-%m-%d}",
+            "sizeMB": round(random.uniform(2400.0, 4300.0), 1),
+        })
+    cands.sort(key=lambda c: c["date"])
+    return cands
+
+
+_DEMO_CLEANUP_CANDIDATES = _demo_cleanup_candidates()
+# Matches the Get-DiskHealth demo payload: D: is 953 GB with 86 GB free (91%).
+_DEMO_D_SIZE_GB, _DEMO_D_FREE_GB = 953, 86
+
+
+def _demo_cleanup_bucket(category):
+    items = [c for c in _DEMO_CLEANUP_CANDIDATES if c["category"] == category]
+    return {
+        "count": len(items),
+        "sizeGB": round(sum(c["sizeMB"] for c in items) / 1024, 1),
+        "oldest": items[0]["date"] if items else None,
+        "newest": items[-1]["date"] if items else None,
+    }
+
+
+def _demo_cleanup_preview(**kw):
+    daily = _demo_cleanup_bucket("dailytest")
+    recs = _demo_cleanup_bucket("recording")
+    total_gb = round(daily["sizeGB"] + recs["sizeGB"], 1)
+    projected_free = round(_DEMO_D_FREE_GB + total_gb, 1)
+    return {
+        "rootExists": True,
+        "root": "D:\\recordedevents",
+        "params": {"recentGuardDays": 90, "recordingMaxAgeDays": 365},
+        "drive": {"letter": "D", "sizeGB": _DEMO_D_SIZE_GB, "freeGB": _DEMO_D_FREE_GB, "usedPercent": 91},
+        "dailyTest": daily,
+        "recordings": recs,
+        "totalSizeGB": total_gb,
+        "totalFolders": len(_DEMO_CLEANUP_CANDIDATES) + 132,
+        "skippedRecent": 131,
+        "skippedUnrecognized": ["0001-01-01_p_"],
+        "projectedFreeGB": projected_free,
+        "projectedUsedPercent": round((_DEMO_D_SIZE_GB - projected_free) / _DEMO_D_SIZE_GB * 100, 1),
+        "candidates": _DEMO_CLEANUP_CANDIDATES,
+    }
+
+
+def _demo_cleanup_result(**kw):
+    p = _demo_cleanup_preview()
+    freed = p["totalSizeGB"]
+    return {
+        "success": True,
+        "deletedCount": len(_DEMO_CLEANUP_CANDIDATES),
+        "deletedDailyTest": p["dailyTest"]["count"],
+        "deletedRecordings": p["recordings"]["count"],
+        "failedCount": 0,
+        "freedGB": freed,
+        "before": {"letter": "D", "sizeGB": _DEMO_D_SIZE_GB, "freeGB": _DEMO_D_FREE_GB, "usedPercent": 91},
+        "after": {"letter": "D", "sizeGB": _DEMO_D_SIZE_GB, "freeGB": p["projectedFreeGB"],
+                  "usedPercent": p["projectedUsedPercent"]},
+        "durationMs": 84250,
+        "deleted": _DEMO_CLEANUP_CANDIDATES,
+        "failed": [],
+    }
+
+
 DEMO = {
     "Get-SystemIdentity.ps1": lambda **kw: {
         "computerSystem": {"name": _VENUE["hostname"], "manufacturer": "HP", "model": "HP Z2 Tower G9 Workstation Desktop PC"},
@@ -634,7 +718,8 @@ DEMO = {
     "Get-DiskHealth.ps1": lambda **kw: {
         "logicalDisks": [
             {"deviceID": "C:", "freeSpaceGB": 176, "sizeGB": 465, "usedPercent": 62, "fileSystem": "NTFS"},
-            {"deviceID": "D:", "freeSpaceGB": 712, "sizeGB": 953, "usedPercent": 25, "fileSystem": "NTFS"},
+            # D: over the 90% gate so demo mode exercises the Storage Cleanup card.
+            {"deviceID": "D:", "freeSpaceGB": 86, "sizeGB": 953, "usedPercent": 91, "fileSystem": "NTFS"},
         ],
         "physicalDisks": [
             {"friendlyName": "Samsung SSD 870 EVO 500GB", "sizeGB": 465, "mediaType": "SSD", "busType": "SATA", "serialNumber": "S3Z8NB0K901234A", "healthStatus": "Healthy", "operationalStatus": "OK",
@@ -650,6 +735,8 @@ DEMO = {
         ],
         "diskEvents": [{"timeCreated": (datetime.now() - timedelta(hours=6)).isoformat(), "level": "Warning", "source": "Ntfs", "eventId": 55, "message": "The file system structure on the disk is corrupt. Run chkdsk on volume D:"}],
     },
+    "Get-RecordingsCleanupPreview.ps1": lambda **kw: _demo_cleanup_preview(**kw),
+    "Invoke-RecordingsCleanup.ps1": lambda **kw: _demo_cleanup_result(**kw),
     "Get-EventLogs.ps1": lambda **kw: {
         "entries": [
             {"timeCreated": (datetime.now() - timedelta(hours=2)).isoformat(), "level": "Error", "source": "PixellotAgent", "eventId": 1001, "message": "Connection timeout to cloud service api.pixellot.tv — retrying in 30s"},

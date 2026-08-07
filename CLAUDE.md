@@ -77,6 +77,11 @@ every real VPU. Each rule below comes from a real field failure:
 6. **Assign unwanted method returns to `$null`.** Stray returns land on
    stdout ahead of the JSON payload and trip the noisy-stdout recovery.
    (PR #124)
+7. **Never put an `@(...)`-wrapped Generic List in a `[pscustomobject]`
+   literal.** On 5.1 `[pscustomobject]@{ x = @($someList) }` dies with
+   "Argument types do not match" (pwsh 7 is fine). Call `.ToArray()` on the
+   list instead — safe for empty and populated lists. (disk-cleanup bench
+   test)
 
 Before merging a collector change, run it on a real VPU under 5.1 (e.g. the
 `tools/vpu-smoke/` sweep over the dev SSH access, where available).

@@ -22,6 +22,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Added
+- Disks: when the recordings drive (D:) reaches 90% full, a Storage Cleanup card can free space — it deletes daily test clips older than 90 days and game recordings older than 1 year, after showing exactly which folders (with counts and sizes) will be removed. Nothing from the last 90 days is ever touched.
+
 ## [1.1.2] - 2026-08-07
 
 ### Fixed

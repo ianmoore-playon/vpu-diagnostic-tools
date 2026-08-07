@@ -1758,6 +1758,11 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             letter if len(letter) > 1 else f"{letter}:")
         name = f"Drive {letter}:" if len(letter) == 1 else "Disk"
         if pct > 90:
+            # At >90% on D: the Disks page shows the Storage Cleanup card —
+            # point the tech straight at it instead of a vague "clear VODs".
+            cleanup_hint = (
+                "The Disks page can clear space for you: open Disks and use "
+                "Storage Cleanup." if letter == "D" else None)
             findings.append(
                 {
                     "code": "disk-critical",
@@ -1767,6 +1772,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "recommendation": " ".join(filter(None, [
                         f"Free up space now — {label} is {pct:g}% full.",
                         consequence,
+                        cleanup_hint,
                     ])),
                 }
             )
@@ -3941,6 +3947,35 @@ async def api_disk_repair(request: Request):
         "Invoke-RepairTool.ps1",
         {"Action": action},
         timeout=_REPAIR_TIMEOUTS[action],
+    )
+
+
+@app.get("/api/disk-health/cleanup-preview")
+async def api_disk_cleanup_preview():
+    """Read-only enumeration of what the D: storage cleanup would delete:
+    daily test clips older than 90 days and game recordings older than a
+    year, under D:\\recordedevents only. Sizing a few hundred candidate
+    folders means walking their file trees, hence the generous timeout.
+    Never cached — the preview is the tech's evidence for a destructive
+    confirmation, so it must reflect the disk right now."""
+    return await run_ps(
+        "Get-RecordingsCleanupPreview.ps1", timeout=300, use_cache=False,
+    )
+
+
+@app.post("/api/disk-health/cleanup")
+async def api_disk_cleanup(request: Request):
+    """Pulse's first destructive action: permanently delete old event
+    folders from D:\\recordedevents. The script re-enumerates candidates
+    with the same rules as the preview — the client never sends a folder
+    list, only its confirmation."""
+    body = await request.json()
+    if body.get("confirm") is not True:
+        return {"error": True,
+                "message": "Cleanup requires explicit confirmation."}
+    return await run_ps(
+        "Invoke-RecordingsCleanup.ps1", {"Acknowledge": "DELETE"},
+        timeout=900, use_cache=False,
     )
 
 
