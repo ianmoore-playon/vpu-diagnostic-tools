@@ -832,6 +832,7 @@ function connectWS() {
       if (msg.type === "metrics") {
         updateLiveMetrics(msg);
         appendLogs(msg.logs);
+        _updateLmiCountdown(msg.lmiShutdownSecs);
       }
     } catch { /* ignore parse errors */ }
   };
@@ -872,6 +873,55 @@ function _liveIndicatorHtml() {
 function _refreshLiveIndicator() {
   const el = document.getElementById("live-indicator");
   if (el) el.innerHTML = _liveIndicatorHtml();
+}
+
+// ── LMI auto-close countdown banner ──────────────────────────
+// The server counts down to auto-close after the LogMeIn session that
+// launched Pulse ends (main.py _lmi_session_watch). Every metrics frame
+// carries lmiShutdownSecs — a number while that countdown runs, null
+// otherwise. The banner ticks locally every second between frames so the
+// time reads smoothly; a null frame after a countdown means the session
+// reconnected, so flash the cancel confirmation and hide.
+var _lmiDeadline = null;     // ms epoch of the pending close, or null
+var _lmiTicker = null;
+var _lmiCancelTimer = null;
+
+function _lmiFmtLeft(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function _lmiRenderCountdown() {
+  const el = document.getElementById("lmi-countdown");
+  if (!el || _lmiDeadline == null) return;
+  const left = _lmiDeadline - Date.now();
+  el.textContent = left <= 0
+    ? "Pulse is closing…"
+    : `LogMeIn session ended — Pulse will close in ${_lmiFmtLeft(left)}. Reconnecting cancels this.`;
+}
+
+function _updateLmiCountdown(secs) {
+  const el = document.getElementById("lmi-countdown");
+  if (!el) return;
+  if (typeof secs === "number") {
+    clearTimeout(_lmiCancelTimer);
+    _lmiCancelTimer = null;
+    _lmiDeadline = Date.now() + secs * 1000;
+    el.classList.remove("hidden", "ok");
+    _lmiRenderCountdown();
+    if (!_lmiTicker) _lmiTicker = setInterval(_lmiRenderCountdown, 1000);
+    return;
+  }
+  // No countdown in this frame. If one was on screen, the session
+  // reconnected and the server cancelled the close — confirm, then hide.
+  if (_lmiDeadline != null) {
+    _lmiDeadline = null;
+    clearInterval(_lmiTicker);
+    _lmiTicker = null;
+    el.classList.add("ok");
+    el.textContent = "LogMeIn session reconnected — auto-close cancelled.";
+    _lmiCancelTimer = setTimeout(() => el.classList.add("hidden"), 6000);
+  }
 }
 
 function updateLiveMetrics(msg) {

@@ -3698,3 +3698,37 @@ html.dark .sc-board { box-shadow: none; border-color: var(--c-board-border-2); }
     }
     .sidebar-footer { display: none; }
 }
+
+/* ── LMI auto-close countdown banner ─────────────────────────── */
+/* Fixed top-center pill shown while the server counts down to closing
+   Pulse after the LogMeIn session ended (main.py _lmi_session_watch).
+   Amber while counting; .ok (green) flashes briefly when a reconnect
+   cancels the countdown. Sits above content but below the splash (9999). */
+.lmi-countdown {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9000;
+    max-width: min(92vw, 560px);
+    padding: 10px 20px;
+    border-radius: 9999px;
+    background: var(--c-surface);
+    border: 1px solid var(--c-status-warn);
+    box-shadow: 0 6px 24px rgba(8, 10, 16, 0.22);
+    color: var(--c-accent-amber);
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+.lmi-countdown.ok {
+    color: var(--c-accent-green);
+    border-color: var(--c-tint-green-border);
+}
+html.dark .lmi-countdown {
+    color: var(--c-status-warn);
+}
+html.dark .lmi-countdown.ok {
+    color: var(--c-status-ok);
+}

@@ -4881,6 +4881,12 @@ async def ws_endpoint(ws: WebSocket):
                     "ports": _enrich_ports(nics, pix_cfg, ws_probes),
                     "networkHealth": net_health,
                     "logs": new_logs,
+                    # Seconds until the LMI auto-close fires, or None when no
+                    # countdown is running (see _lmi_session_watch below).
+                    "lmiShutdownSecs": (
+                        max(0, int(_lmi_shutdown_deadline - time.time()))
+                        if _lmi_shutdown_deadline else None
+                    ),
                 }
             )
             await asyncio.sleep(interval)
@@ -4914,6 +4920,11 @@ async def ws_endpoint(ws: WebSocket):
 
 LMI_POLL_SECS = 5
 LMI_GRACE_SECS = 300  # survive a network blip + LMI reconnect
+
+# Epoch of the pending auto-close while the grace countdown runs, else None.
+# The WebSocket metrics frame derives lmiShutdownSecs from this so the UI
+# can show a live countdown banner (and clear it when a reconnect cancels).
+_lmi_shutdown_deadline = None  # Optional[float]
 
 
 def _lmi_rc_present() -> bool:
@@ -4951,6 +4962,7 @@ def _close_pulse_browser():
 async def _lmi_session_watch():
     """Close Pulse LMI_GRACE_SECS after the LogMeIn session that launched
     it ends (see section comment above)."""
+    global _lmi_shutdown_deadline
     if DEMO_MODE or _sys.platform != "win32":
         return
     if not await asyncio.to_thread(_lmi_rc_present):
@@ -4971,6 +4983,7 @@ async def _lmi_session_watch():
         ps_log("lmi-watch", 0, "warn", msg)
         _server_log.warning(msg)
         deadline = time.time() + LMI_GRACE_SECS
+        _lmi_shutdown_deadline = deadline
         reconnected = False
         while time.time() < deadline:
             await asyncio.sleep(LMI_POLL_SECS)
@@ -4978,11 +4991,13 @@ async def _lmi_session_watch():
                 reconnected = True
                 break
         if reconnected:
+            _lmi_shutdown_deadline = None
             msg = "LogMeIn session reconnected - auto-close cancelled"
             ps_log("lmi-watch", 0, "ok", msg)
             _server_log.info(msg)
             continue
         if peer.is_receiving():
+            _lmi_shutdown_deadline = None
             # A LAN receive listener may be waiting on a peer's report push —
             # stay up. The outer loop re-enters the grace cycle, so Pulse
             # still closes once the listener is released.
