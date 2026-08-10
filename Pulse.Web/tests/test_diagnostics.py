@@ -991,5 +991,65 @@ class TestDemoDataContract(unittest.TestCase):
                 json.dumps(result, default=str)
 
 
+# ── Stream readiness policy ──────────────────────────────────
+class TestReadinessPolicy(unittest.TestCase):
+    """Guards against the class of bug that shipped to East Henderson (NC) on
+    2026-08-10: a `critical` dashboard finding with no entry in the policy
+    table silently falls through to `info`, so readiness reported WARN ("will
+    likely stream") on a VPU whose graphics, uploads and updates were all
+    severed by venue SSL inspection."""
+
+    def test_ssl_inspection_is_a_blocker(self):
+        verdict = main._compute_readiness(
+            [{"code": "ssl-inspection", "severity": "critical",
+              "category": "Network", "title": "t", "recommendation": "r"}]
+        )
+        self.assertEqual(verdict["status"], "FAIL")
+        self.assertEqual([b["code"] for b in verdict["blockers"]], ["ssl-inspection"])
+
+    def test_every_critical_finding_code_is_classified(self):
+        # `info` is the default for UNKNOWN codes, which is right for new or
+        # unverifiable checks — but a code we ship as `critical` reaching that
+        # default means we forgot to classify it. Every critical must be an
+        # explicit table entry (blocker, or info/risk with a reason in-line).
+        unclassified = sorted(
+            code for code in _CRITICAL_FINDING_CODES
+            if code not in main._READINESS_POLICY
+        )
+        self.assertEqual(
+            unclassified, [],
+            "critical findings missing from _READINESS_POLICY (they silently "
+            f"default to `info` and never gate readiness): {unclassified}",
+        )
+
+
+# Finding codes emitted with severity "critical" by _compute_findings. Kept
+# explicit rather than scraped so adding a critical is a deliberate two-line
+# change: emit it, then classify it.
+_CRITICAL_FINDING_CODES = {
+    # Emitted with a literal "severity": "critical".
+    "cpu-critical",
+    "disk-critical",
+    "disk-smart-prefail",
+    "gpu-anomaly",
+    "gpu-none",
+    "mem-critical",
+    "os-eos-imminent",
+    "os-eos-reached",
+    "pixellot-over-cap",
+    "ssl-inspection",
+    "stream-2088-blocked",
+    "sw-security",
+    "temp-critical",
+    "tz-non-us",
+    # Built from a variable at emit time: the `{name}-down` service findings
+    # and cam-none (critical when zero main cameras are present).
+    "agent-down",
+    "coordinator-down",
+    "watchdog-down",
+    "cam-none",
+}
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

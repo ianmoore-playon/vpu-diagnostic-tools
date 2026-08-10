@@ -3454,8 +3454,9 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       title: "The venue firewall is intercepting secure connections (SSL inspection)",
       body: "The venue's network is decrypting the VPU's secure traffic and substituting its own certificate"
         + (interceptorNames ? ' — the intercepting device identifies itself as "' + interceptorNames + '"' : "")
-        + ". The VPU rejects the substituted certificate, so the services below can't connect — typically "
-        + "on-screen graphics fail while video keeps streaming. Ask the venue's IT team to add these domains "
+        + ". The VPU rejects the substituted certificate, so every service listed below is cut off — each "
+        + "line shows what that breaks. Don't expect a clean broadcast until this is fixed, and it can only "
+        + "be fixed on the venue's network. Ask the venue's IT team to add these domains "
         + "to the firewall's SSL decryption bypass/exemption list, using a wildcard that covers every "
         + "subdomain plus the bare domain (e.g. *.singular.live AND singular.live). A URL allowlist alone "
         + "is not enough — the traffic must be exempt from decryption.",

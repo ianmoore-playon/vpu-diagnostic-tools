@@ -117,8 +117,12 @@ try {
                 if ($script:PresentedCert) {
                     $cert2 = $script:PresentedCert
                     $issuer = $cert2.Issuer
-                    $issuerCn = $cert2.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $true)
-                    $subjectCn = $cert2.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+                    # Trim: real interceptor CNs carry trailing whitespace
+                    # (Zscaler ships "Zscaler Intermediate Root CA (zscalerone.net) (t) ")
+                    # which doubles up spaces when we interpolate the org after it.
+                    # Cast first so a null CN doesn't blow up the method call on 5.1.
+                    $issuerCn = ([string]$cert2.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $true)).Trim()
+                    $subjectCn = ([string]$cert2.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)).Trim()
                     if ($cert2.Issuer -match '(?:^|,\s*)O=("[^"]*"|[^,]+)') {
                         $issuerOrg = $Matches[1].Trim('"')
                     }

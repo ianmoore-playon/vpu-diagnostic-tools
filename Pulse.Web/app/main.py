@@ -2158,8 +2158,9 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "recommendation": (
                         f"The network is decrypting the VPU's secure connections to: {hosts}. "
                         + (f"The intercepting device identifies itself as {interceptors}. " if interceptors else "")
-                        + "The VPU rejects the substituted certificate, so those services can't "
-                        "connect — on-screen graphics typically fail while video keeps streaming. "
+                        + "The VPU rejects the substituted certificate, so those services are cut "
+                        "off outright. Don't expect a clean broadcast until this is fixed, and it "
+                        "can only be fixed on the venue's network. "
                         "Ask the venue's IT team to add these domains to the firewall's SSL "
                         "decryption bypass/exemption list (use a wildcard like *.singular.live "
                         "plus the bare domain) — a URL allowlist alone is not enough. "
@@ -2297,6 +2298,14 @@ _READINESS_POLICY = {
     "gpu-none":              "blocker",  # F5  no NVIDIA GPU — encoder can't run
     "gpu-igpu-only":         "blocker",  # F11 Intel iGPU only — wrong hardware
     "port-dns-blocked":      "blocker",  # F23a DNS down → name resolution fails
+    "ssl-inspection":        "blocker",  # F37 venue DPI substituting certs on
+                                         #     Pixellot-critical HTTPS. Every port
+                                         #     test stays green, so nothing else
+                                         #     gates on it — but the affected
+                                         #     services are cut off outright and
+                                         #     only the venue's firewall can fix
+                                         #     it. Field: East Henderson (NC),
+                                         #     2026-08-10 (Zscaler).
     # F15a C: disk >90% is computed below from disk-health (not the
     # `disk-critical` finding — see _compute_readiness).
 
