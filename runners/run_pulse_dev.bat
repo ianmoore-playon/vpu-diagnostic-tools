@@ -70,18 +70,43 @@ if %errorlevel% NEQ 0 (
     echo   Chrome ......................... ok
 )
 
-:: -- Offline fast-path ----------------------------------------------------
+:: -- Network check + offline fast-path -----------------------------------
 :: If Pulse is already installed and we can't reach GitHub, skip the update
 :: entirely and launch the installed copy. A tech on a downed venue network
 :: should get Pulse immediately, not after a download timeout.
-if exist "%INSTALL_DIR%\run.bat" (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $c = New-Object Net.Sockets.TcpClient; $iar = $c.BeginConnect('github.com',443,$null,$null); if ($iar.AsyncWaitHandle.WaitOne(3000) -and $c.Connected) { $c.Close(); exit 0 } else { exit 1 } } catch { exit 1 }"
-    if errorlevel 1 (
-        echo   Network ........................ offline - using installed build
+::   A bare TCP connect says "online" on a network that intercepts HTTPS --
+::   the socket opens, then every download fails anyway. Worse, the old check
+::   only ran when a build was already installed, so a fresh VPU printed
+::   "online" having tested nothing at all (Harrisonburg VA, 2026-08-11: the
+::   tech saw "Network online" then "check the internet connection"). Do a
+::   real handshake and look at who signed the cert. Intercepted networks
+::   cannot download either, so they take the same fast path as offline.
+call :netcheck
+if "!NET_STATE!"=="INTERCEPTED" (
+    echo   Network ........................ online, but HTTPS is intercepted
+    echo     Certificates are being signed by: !NET_ISSUER!
+    echo     Pulse cannot download until IT exempts GitHub from SSL inspection.
+    if exist "%INSTALL_DIR%\run.bat" (
+        echo     Starting the installed build instead.
         goto :shortcut
     )
 )
-echo   Network ........................ online
+if "!NET_STATE!"=="CLOCK" (
+    echo   Network ........................ online, but certificate dates are invalid
+    echo     This is usually the VPU clock, not the network - check date/time.
+    if exist "%INSTALL_DIR%\run.bat" (
+        echo     Starting the installed build instead.
+        goto :shortcut
+    )
+)
+if "!NET_STATE!"=="OFFLINE" (
+    if exist "%INSTALL_DIR%\run.bat" (
+        echo   Network ........................ offline - using installed build
+        goto :shortcut
+    )
+    echo   Network ........................ offline
+)
+if "!NET_STATE!"=="OK" echo   Network ........................ online
 
 :: -- Resolve latest commit SHA (cache-bust download) ----------------------
 set "COMMIT_SHA="
@@ -289,6 +314,35 @@ if not errorlevel 1 (
 )
 echo.
 echo   Report saved to: %DIAG_LOG%
+goto :eof
+
+:: -- HTTPS integrity check ------------------------------------------------
+:: Sets NET_STATE to OK / INTERCEPTED / CLOCK / OFFLINE and NET_ISSUER to the
+:: presented certificate's issuer CN. Same TLS technique as :probe below --
+:: protocols pinned to Tls/Tls11/Tls12 (the .NET Framework default on this
+:: image negotiates SSL3/TLS1.0 and false-fails modern hosts) and the
+:: validation callback cast to its delegate type explicitly (PS 5.1 fails the
+:: implicit conversion inside New-Object silently).
+::
+:: A date-only chain failure is the VPU's clock, NOT interception: an expired
+:: certificate also drags in PartialChain, so classifying on "untrusted" alone
+:: reports a wrong clock as SSL inspection. Verified against badssl.com --
+:: untrusted-root and self-signed report INTERCEPTED, expired reports CLOCK.
+::
+:: The issuer is filtered to letters, digits and " ._()-" before it reaches
+:: batch, so a CN containing & or a redirection character cannot break the echo.
+:netcheck
+set "NET_STATE=OFFLINE"
+set "NET_ISSUER="
+set "NETCHK_OUT=%TEMP%\pulse-netcheck.txt"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$h='github.com';$r='';try{$null=[Net.Dns]::GetHostAddresses($h)}catch{$r='OFFLINE|dns'};if(-not $r){$c=New-Object Net.Sockets.TcpClient;$c.ReceiveTimeout=8000;$c.SendTimeout=8000;$iar=$c.BeginConnect($h,443,$null,$null);if(-not ($iar.AsyncWaitHandle.WaitOne(4000) -and $c.Connected)){$r='OFFLINE|tcp'}else{try{$script:pe='None';$script:cs='';$cb=[Net.Security.RemoteCertificateValidationCallback]{param($s,$cert,$chain,$e) $script:pe=$e; if($chain -and $chain.ChainStatus){$script:cs=($chain.ChainStatus|ForEach-Object{$_.Status}) -join ','}; $true};$ss=New-Object Net.Security.SslStream($c.GetStream(),$false,$cb);$ss.AuthenticateAsClient($h,$null,[Security.Authentication.SslProtocols]'Tls,Tls11,Tls12',$false);$cert2=New-Object Security.Cryptography.X509Certificates.X509Certificate2 $ss.RemoteCertificate;$raw=(($cert2.Issuer -split ',')[0]) -replace 'CN=','';$iss=(-join ($raw.ToCharArray()|Where-Object{[char]::IsLetterOrDigit($_) -or ' ._()-'.Contains($_)})).Trim();if(-not $iss){$iss='unknown'};if($script:pe.ToString() -eq 'None'){$r='OK|'+$iss}elseif($script:cs -match 'NotTimeValid|NotTimeNested'){$r='CLOCK|'+$iss}else{$r='INTERCEPTED|'+$iss}}catch{$r='OFFLINE|tls'};$c.Close()}};Write-Output $r" > "%NETCHK_OUT%" 2>nul
+set "NETCHK="
+if exist "%NETCHK_OUT%" set /p NETCHK=<"%NETCHK_OUT%"
+del "%NETCHK_OUT%" 2>nul
+for /f "tokens=1,* delims=|" %%A in ("!NETCHK!") do (
+    set "NET_STATE=%%A"
+    set "NET_ISSUER=%%B"
+)
 goto :eof
 
 :: One host: DNS, then TCP 443, then a real TLS handshake with the protocol

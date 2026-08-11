@@ -31,6 +31,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [1.1.2] - 2026-08-07
 
 ### Fixed
+- The launcher no longer reports "Network online" on a venue network that is intercepting HTTPS. It now completes a real secure handshake to GitHub and names the device signing the certificates, so SSL inspection is called out in the first few lines instead of ending as a generic "check the internet connection" after the download fails. If Pulse is already installed it starts the installed build straight away rather than retrying downloads that cannot succeed, and a certificate-date failure is reported as a VPU clock problem instead of being blamed on the network.
 - Event Streaming: the page could fail to load on real VPUs when the box had recent shutdown or Pixellot process-restart history (a time-zone comparison error found during release verification).
 
 ## [1.1.1] - 2026-08-07
