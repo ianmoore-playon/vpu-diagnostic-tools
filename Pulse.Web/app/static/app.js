@@ -5063,9 +5063,13 @@ function _camS1Html(res) {
 // place (_camPoeUpdate) rather than rebuilding — a 2s innerHTML swap would
 // flicker and fight the transition on the bars.
 
-// Per-port PoE+ ceiling (IEEE 802.3at). Bars are drawn as a fraction of this,
-// so a port's fill reads as "how close to the per-port limit", not "share of
-// the card" — that's the number that tells a tech a camera is over-drawing.
+// Per-port PoE+ ceiling (IEEE 802.3at) — bars are a fraction of this, so fill
+// reads as "how close to the per-port limit".
+//
+// Real Pixellot CHUs draw only 4-7 W (measured on a production GIE74P,
+// 2026-08-12), so a healthy camera fills roughly a fifth of its bar. That's
+// intentional: the bar answers "how much headroom does this port have", and
+// showing a camera near the top of its scale would misrepresent a normal load.
 var CAM_POE_PORT_MAX_W = 25.5;
 
 // Structural signature: everything that changes the card's SHAPE rather than
@@ -5073,11 +5077,11 @@ var CAM_POE_PORT_MAX_W = 25.5;
 function _camPoeSignature(poe) {
   if (!poe) return "none";
   var portSig = (poe.ports || []).map(function(p) {
-    return p.port + ":" + (p.poeOn ? "1" : "0");
+    return p.port + ":" + (p.poeOn ? "1" : "0") + (p.readOk === false ? "x" : "");
   }).join(",");
-  var low = poe.budget ? (poe.budget.low ? "1" : "0") : "-";
+  var tight = poe.budget ? (poe.budget.tight ? "1" : "0") : "-";
   return [poe.supported ? "1" : "0", poe.available ? "1" : "0",
-          poe.reason || "", low, portSig].join("~");
+          poe.reason || "", tight, portSig].join("~");
 }
 
 function _camPoeCardHtml(poe, ports) {
@@ -5111,13 +5115,16 @@ function _camPoeCardHtml(poe, ports) {
   }
 
   var b = poe.budget || {};
-  var lowBanner = b.low
+  // Headroom, not "below spec". Deliberately factual: it reports what the card
+  // says rather than diagnosing a cause, because the Molex-disconnected
+  // signature this used to claim has no validated baseline yet.
+  var lowBanner = b.tight
     ? '<div class="cam-poe-note cam-poe-note-warn cam-poe-low">' +
-        '<div class="cam-poe-note-title">Power budget below spec for ' + (b.poeOnCount || 0) + ' active ports</div>' +
-        '<div class="cam-poe-note-body">The card reports ' + _camPoeW(b.totalW) +
-          ' total but ' + (b.poeOnCount || 0) + ' ports are drawing power, which needs ' +
-          _camPoeW(b.expectedW) + ' at the PoE+ rate of 25.5 W per port. ' +
-          'Check that the Molex power connector on the PoE card is seated.</div>' +
+        '<div class="cam-poe-note-title">Little power headroom left on the card</div>' +
+        '<div class="cam-poe-note-body">The card reports only ' + _camPoeW(b.remainingW) +
+          ' free with ' + (b.poeOnCount || 0) + ' port' + ((b.poeOnCount === 1) ? "" : "s") +
+          ' drawing ' + _camPoeW(b.consumedW) + '. Adding another camera may not power up. ' +
+          'If a port that should be live is dark, check that the Molex power connector on the PoE card is seated.</div>' +
       "</div>"
     : "";
 
@@ -5133,7 +5140,10 @@ function _camPoeCardHtml(poe, ports) {
     // Name the camera on the port so a watts row is actionable — the tech
     // sees "Port 3 · OCR camera", not just a number.
     var match = (ports || [])[p.port - 1] || null;
-    var sub = match && match.cameraLabel ? match.cameraLabel : (p.poeOn ? "Powered device" : "No device powered");
+    var sub;
+    if (match && match.cameraLabel) sub = match.cameraLabel;
+    else if (p.readOk === false)    sub = "Read rejected by driver";
+    else                            sub = p.poeOn ? "Powered device" : "No device powered";
     return '<div class="cam-poe-row" id="cam-poe-row-' + p.port + '">' +
       '<div class="cam-poe-row-label">' +
         '<span class="cam-poe-port">Port ' + p.port + "</span>" +
@@ -5173,7 +5183,8 @@ function _camPoePct(p) {
 }
 
 function _camPoeFillClass(p) {
-  if (!p || !p.poeOn) return " cam-poe-fill-off";
+  if (!p || p.readOk === false) return " cam-poe-fill-off";
+  if (!p.poeOn) return " cam-poe-fill-off";
   // Over the PoE+ per-port ceiling is a real fault; 80% is the heads-up.
   if (p.watts > CAM_POE_PORT_MAX_W) return " cam-poe-fill-hot";
   if (p.watts > CAM_POE_PORT_MAX_W * 0.8) return " cam-poe-fill-warn";
@@ -5182,6 +5193,9 @@ function _camPoeFillClass(p) {
 
 function _camPoeReadout(p) {
   if (!p) return "--";
+  // A rejected read must not look like a confident "off" — same reason the
+  // collector sends readOk instead of zeroing the values.
+  if (p.readOk === false) return "not readable";
   if (!p.poeOn) return "off";
   return Number(p.watts).toFixed(1) + " W  ·  " +
          Number(p.voltage).toFixed(1) + " V  ·  " +

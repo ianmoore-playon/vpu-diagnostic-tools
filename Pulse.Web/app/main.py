@@ -3568,17 +3568,25 @@ async def api_cameras(refresh: bool = False):
     # port's live link state, so a fixed cable clears within a poll or two even
     # while this cached copy is stale.
     # PoE power rides this payload rather than getting its own endpoint: the
-    # card belongs next to the port tiles, the lane already live-polls this
-    # route every ~2s, and gathering it here keeps watts and link state from
-    # the same instant instead of two independently-cached snapshots.
-    # cache_ttl=1.5 for the same reason as the NIC read — a camera drawing
-    # power should show within a poll or two, not on the 25s cache boundary.
+    # card belongs next to the port tiles, and gathering it here keeps watts and
+    # link state from the same instant instead of two independently-cached
+    # snapshots.
+    #
+    # cache_ttl=6 deliberately refreshes PoE SLOWER than the 2s page poll and
+    # slower than the NIC read's 1.5s. Measured on a production GIE74P
+    # (2026-08-12): the SmartPoE getters cost ~90ms each, so one read pass is
+    # ~1.0s, and with powershell.exe startup a full collector run is ~1.8s.
+    # Refreshing that every 2s would mean near-continuous PowerShell on a box
+    # whose actual job is encoding video, for a signal that barely moves —
+    # a camera's draw is not a fast-changing value the way link state is.
+    # In-flight dedup means the intervening page polls just reuse the cached
+    # payload.
     nics, pix_config, expectations, net_config, poe = await asyncio.gather(
         run_ps("Get-NicAdapters.ps1", cache_ttl=1.5),
         run_ps("Get-PixellotConfig.ps1"),
         run_ps("Get-CameraExpectations.ps1", timeout=10),
         run_ps("Get-NetworkConfig.ps1", timeout=15),
-        run_ps("Get-PoePower.ps1", timeout=20, cache_ttl=1.5),
+        run_ps("Get-PoePower.ps1", timeout=20, cache_ttl=6),
     )
     ocr_ips, _ = _build_ocr_sets(pix_config)
     # Expected main-camera count from the Coordinator log (S1=4/S2=2/S2S=1).

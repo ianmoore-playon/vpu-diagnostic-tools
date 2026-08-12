@@ -382,20 +382,28 @@ def _demo_poe_power():
     reports I210/I211 ports (so PoE telemetry is supported), with Ethernet 4
     unplugged -- so port 4 reads unpowered here and poeOnCount lands at 3.
 
-    Watts jitter per call because the Camera Connectivity card polls every ~2s
-    for live values; without it the meters look frozen in demo. Ranges are
-    per-port-typical for a Pixellot CHU (main cameras ~9-11 W, the OCR camera
-    lighter at ~5 W) and stay well inside PoE+ so no port reads as over-draw.
+    Watts jitter per call so the meters aren't frozen in demo.
 
-    Total budget is deliberately healthy (120 W vs the 76.5 W expected for 3
-    active ports) -- demo must not fire a low-budget finding that no real VPU
-    is reporting. Drop totalW under expectedW to exercise the low path.
+    All figures below are calibrated to a real production GIE74P read on
+    2026-08-12 rather than guessed:
+      - Per-port draw 4-7 W, NOT the ~10 W first assumed. Pixellot CHUs sit far
+        under the 25.5 W PoE+ ceiling, which is why demo bars look ~20% full.
+      - Port voltage is a stable per-port constant (that card read 54.709 and
+        54.149 V unchanged across samples); only current moves.
+      - An empty port floats slightly rather than reading exactly 0 V -- the
+        real card showed 0.187 V on its unpopulated port. Port 4 reproduces
+        that so the >1.0 V powered-test stays exercised in demo.
+      - Total is ~60 W and NOT fixed: on real hardware consumed and remaining
+        both drifted down together, so total is a noisy derived figure. Both
+        jitter independently here to keep that honest.
+
+    Headroom stays healthy so demo never fires the tight-headroom warning.
     """
     port_specs = [
-        (1, 53.8, (0.170, 0.205)),   # Main camera 1
-        (2, 53.7, (0.165, 0.200)),   # Main camera 2
-        (3, 53.9, (0.088, 0.104)),   # OCR / scoreboard camera - lighter draw
-        (4, 0.0,  (0.0, 0.0)),       # Unplugged, matches Ethernet 4 above
+        (1, 54.709, (0.084, 0.127)),  # Main camera 1 - real measured range
+        (2, 54.149, (0.078, 0.102)),  # Main camera 2
+        (3, 54.402, (0.088, 0.104)),  # OCR / scoreboard camera
+        (4, 0.187,  (0.0, 0.0)),      # Unplugged, matches Ethernet 4 above
     ]
     ports = []
     consumed = 0.0
@@ -409,16 +417,20 @@ def _demo_poe_power():
             consumed += watts
         ports.append({
             "port": num,
-            "voltage": voltage,
+            "voltage": round(voltage, 2),
             "current": current,
             "watts": watts,
             "poeOn": on,
             "state": "Powered" if on else "Off",
+            "readOk": True,
         })
 
-    total = 120.0
     consumed = round(consumed, 1)
-    expected = round(poe_on * 25.5, 1)
+    # Jittered independently of consumed, because on real hardware the two are
+    # not complementary — both drifted downward together across samples, so
+    # total is a noisy derived number rather than the card's rating.
+    remaining = round(random.uniform(46.0, 52.0), 1)
+    total = round(consumed + remaining, 1)
     return {
         "supported": True,
         "available": True,
@@ -429,11 +441,12 @@ def _demo_poe_power():
         "budget": {
             "totalW": total,
             "consumedW": consumed,
-            "remainingW": round(total - consumed, 1),
-            "tempC": round(random.uniform(44.0, 49.5), 1),
+            "remainingW": remaining,
+            "tempC": round(random.uniform(45.0, 47.0), 1),
             "poeOnCount": poe_on,
-            "expectedW": expected,
-            "low": total > 0 and poe_on >= 3 and total < expected,
+            "headroomW": 10.0,
+            "tight": total > 0 and remaining < 10.0,
+            "portMaxW": 25.5,
         },
         "ports": ports,
     }
