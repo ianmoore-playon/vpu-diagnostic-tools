@@ -28,6 +28,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - Camera Connectivity now marks the exact port when the venue's internet cable is plugged into the camera card — a red "Internet Uplink — wrong port" tile tells you which cable to move to the motherboard network port.
 - Splashtop Streamer is now removed automatically in the background — it was installed on VPUs as part of the retired Canopy deployment, alongside the Leaf agent Pulse already cleans up. Heads up: if you are connected to a VPU over Splashtop, the first Pulse launch will end that session; use LogMeIn, the supported remote tool.
 
+### Fixed
+- ScoreConnect: the scoreboard could show the wrong quarter on non-Daktronics boards — an Electro-Mech football board sitting on Q2 read as "Q7" even though the score, clock and down & distance on the same screen were all correct. Pulse now reads the quarter from its own fixed spot in the scoreboard data instead of taking the last digit it finds. It also won't show a quarter that can't be real for the sport any more: a football board reporting Q7 leaves the quarter blank rather than showing a wrong one you might pass on to a school.
+
 ## [1.1.2] - 2026-08-07
 
 ### Fixed

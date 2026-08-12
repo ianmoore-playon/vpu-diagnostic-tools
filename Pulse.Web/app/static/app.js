@@ -6777,6 +6777,18 @@ function _fmtClock(d) {
   return d.length ? d : null;
 }
 
+// Highest period number that is plausible for a sport, used to reject a
+// mis-read quarter instead of displaying it. 4-period sports allow 5 so a
+// single overtime still shows; a second OT (6+) suppresses rather than risk
+// passing garbage through. Innings-based and unknown sports get the full
+// single-digit range, i.e. effectively no clamp.
+function _maxPeriodForSport(sport) {
+  var s = (sport || "").toLowerCase();
+  if (s.indexOf("football") >= 0 || s.indexOf("basketball") >= 0) return 5;
+  if (s.indexOf("hockey") >= 0 || s.indexOf("soccer") >= 0) return 4;
+  return 9;
+}
+
 // ScoreConnect CG parser. SC III decodes scoreboard controllers into a
 // FIXED-WIDTH ASCII layout. Confirmed byte-for-byte against live VPU captures
 // (Daktronics Football, SC III 1.3.0.19) with field meanings verified by a
@@ -6790,13 +6802,27 @@ function _fmtClock(d) {
 //             └┘                        HOME    (pos 11-12)
 //                └┘                     VISITOR (pos 14-15)
 //                   └┘                  field B (pos 18-19) — not surfaced
-//                        │              quarter (last digit before labels)
+//                        │              quarter (pos 25)
 //                         Home Visitor  team labels (alphabetic anchor)
 //
 // Scores are read from FIXED positions (a token split fails because field A
 // sits before HOME and the clock gains a leading space under 10:00). Each
 // score field is read with a 3-char window so 1-3 digit scores all parse.
-function _parseCG(raw) {
+//
+// The quarter is read from pos 25 for the same reason. It used to be found by
+// heuristic — "the last digit of the leading numeric run" — which is correct
+// only when the numeric block ENDS at the quarter, as it does on Daktronics.
+// Electro-Mech appends at least one more digit after it (PXLS2_21655 Bradwell
+// GA, 2026-08-12: reported Q7 while the board was on Q2 and every
+// fixed-position field on the same string was correct), so the heuristic
+// reached past the quarter into a trailing field.
+//
+// pos 25 is CONFIRMED for Daktronics and INFERRED for every other vendor —
+// which is why an implausible value is suppressed rather than displayed. The
+// authoritative per-vendor layout is defined inside the SC III assemblies
+// (its CG formatter + ElectromechModel enum); recovering it from there is the
+// real fix and is tracked as a separate investigation.
+function _parseCG(raw, sport) {
   if (raw.length < 16) return null;
 
   var header = raw.substring(0, 2);
@@ -6811,13 +6837,17 @@ function _parseCG(raw) {
   if (isNaN(home) || isNaN(visitor)) return null;
   if (home > 199 || visitor > 199) return null;  // sanity — not a score line
 
-  // Quarter = the last digit of the numeric block, right before the labels.
+  // Quarter at FIXED pos 25, immediately after the down/to-go/ball-on block.
+  // A value that can't be a real period for the sport is dropped: on a support
+  // tool a blank quarter is safe, but a confidently wrong one gets relayed to a
+  // school. See _maxPeriodForSport for the per-sport ceiling.
   var qtr = null;
-  var prefix = raw.match(/^[\d.\s]+/);
-  if (prefix) {
-    var pd = prefix[0].replace(/\s+$/, "");
-    var q = parseInt(pd.charAt(pd.length - 1), 10);
-    if (q >= 1 && q <= 9) qtr = q;
+  if (raw.length > 25) {
+    var qc = raw.charAt(25);
+    if (qc >= "0" && qc <= "9") {
+      var q = parseInt(qc, 10);
+      if (q >= 1 && q <= 9 && q <= _maxPeriodForSport(sport)) qtr = q;
+    }
   }
 
   // Down / to-go / ball-on: a 5-char packed field at pos 20-24, right before
@@ -6904,7 +6934,7 @@ function parseRtdScores(rawData, vendor, sport) {
   // ── Strategy 2: ScoreConnect CG token format (all vendors) ──────────
   // The common decoded layout ScoreConnect produces. Try this first — it's
   // the format confirmed against real hardware + Daktronics support docs.
-  var cg = _parseCG(rawData);
+  var cg = _parseCG(rawData, sport);
   if (cg && (cg.clock || cg.homeScore != null || cg.guestScore != null)) {
     cg.clockRunning = clockRunning;
     return cg;
