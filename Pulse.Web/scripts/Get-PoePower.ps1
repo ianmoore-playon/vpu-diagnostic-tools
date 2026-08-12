@@ -48,32 +48,34 @@ $ErrorActionPreference = "Stop"
 $PortCount = 4
 $CardNum   = 0
 
-# IEEE 802.3at PoE+ per-port ceiling. Reported so the UI can draw a port's draw
-# as a fraction of its headroom. NOT used as a budget threshold any more -- see
-# the headroom note below.
+# IEEE 802.3at PoE+ per-port ceiling. Reported only so the UI can draw a port's
+# draw as a fraction of its headroom -- NOT a budget threshold. Real Pixellot
+# CHUs draw 4-7 W, so anything that scales an expectation off this ceiling
+# overestimates demand roughly fourfold.
 $PoePlusWattsPerPort = 25.5
 
-# Minimum free watts before we call the card tight on power.
+# Total-budget floor for a healthy card, in watts. Below this the PoE card's
+# supplementary Molex power lead is disconnected (or otherwise not delivering),
+# so the card falls back to slot power alone and cannot run a full camera set.
 #
-# This replaces gen-1's "expect poeOnCount * 25.5 W of total budget" check,
-# which real hardware showed would false-positive fleet-wide (production GIE74P,
-# 2026-08-12):
-#   - Pixellot CHUs actually draw 4-7 W each, not the 25.5 W PoE+ ceiling, so
-#     scaling an expectation off that ceiling overestimates demand ~4x.
-#   - The card reported total (consumed + remaining) around 61-63 W with two
-#     cameras up, i.e. BELOW the 76.5 W that check would demand at three active
-#     ports -- so every healthy 3- and 4-camera VPU would have been flagged.
-#   - consumed and remaining are not complementary: across two samples 3s apart
-#     consumed fell 12.0 -> 11.3 W while remaining ALSO fell 51.4 -> 49.6 W. If
-#     total were fixed capacity, remaining would have risen. So total is a noisy
-#     derived figure, not the card's rating, and no threshold should hang off it.
+# 55 W is not a guess -- it's bracketed by two real measurements, and it is the
+# same figure Pixellot's own VPU Manager uses, so Pulse and VPU Manager agree
+# instead of contradicting each other in front of a tech:
+#   - Molex disconnected: VPU Manager reports "20.0 W detected (expected >=55W)".
+#   - Molex connected: a production GIE74P read 61-63 W total with two cameras
+#     up (2026-08-12).
+# A ~40 W gap with the threshold in the middle, so this is robust to the drift
+# noted below.
 #
-# Free headroom is the honest signal available: it needs no assumption about
-# what the card is rated for. 10 W is provisional -- it is roughly two more
-# cameras' worth of draw, and wants a healthy-vs-Molex-unplugged baseline across
-# card revisions before it can be trusted as a fault (see the deferred
-# Molex-detection note in the lane's PR).
-$HeadroomFloorWatts = 10.0
+# Note on the number this is compared against: total is derived as
+# consumed + remaining, and those two are NOT complementary -- across samples 3s
+# apart consumed fell 12.0 -> 11.3 W while remaining ALSO fell 51.4 -> 49.6 W.
+# So total wobbles by a couple of watts and is not a precise card rating. That
+# rules out hanging a TIGHT per-port expectation on it (which is exactly how
+# gen-1's D8 change went wrong: it demanded poeOnCount * 25.5 W, i.e. 76.5 W at
+# three active ports, which a healthy 63 W card fails). A coarse 55 W floor is
+# unaffected by a couple of watts of drift.
+$HealthyTotalFloorWatts = 55.0
 
 $SentinelPath  = Join-Path $env:TEMP "PulsePoE-probe.sentinel"
 $SentinelLimit = 3
@@ -397,22 +399,25 @@ try {
         }
     }
 
-    # Headroom verdict -- see $HeadroomFloorWatts for why this is NOT gen-1's
-    # "total vs poeOnCount * 25.5 W" comparison. This asks only "is there room
-    # for another camera", which needs no assumption about the card's rating.
-    $tight = ($total -gt 0) -and ($remaining -lt $HeadroomFloorWatts)
+    # Molex / insufficient-power verdict. See $HealthyTotalFloorWatts -- this is
+    # the coarse floor VPU Manager uses, bracketed by real measurements at both
+    # ends, NOT gen-1's per-port-scaled expectation.
+    #
+    # Guarded on $total -gt 0 so a card that reports nothing at all falls through
+    # to the ordinary "no reading" path rather than being called Molex-out.
+    $underPowered = ($total -gt 0) -and ($total -lt $HealthyTotalFloorWatts)
 
     $result = New-PoeResult -Supported $true -Available $true `
         -NicModel $card.Model -CardLabel $card.Label -DllPath $dllPath
     $result.budget = [ordered]@{
-        totalW      = [math]::Round($total, 1)
-        consumedW   = [math]::Round($consumed, 1)
-        remainingW  = [math]::Round($remaining, 1)
-        tempC       = [math]::Round($tempC, 1)
-        poeOnCount  = $poeOnCount
-        headroomW   = $HeadroomFloorWatts
-        tight       = $tight
-        portMaxW    = $PoePlusWattsPerPort
+        totalW        = [math]::Round($total, 1)
+        consumedW     = [math]::Round($consumed, 1)
+        remainingW    = [math]::Round($remaining, 1)
+        tempC         = [math]::Round($tempC, 1)
+        poeOnCount    = $poeOnCount
+        healthyFloorW = $HealthyTotalFloorWatts
+        underPowered  = $underPowered
+        portMaxW      = $PoePlusWattsPerPort
     }
     $result.ports = $ports
 

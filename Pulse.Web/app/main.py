@@ -3008,8 +3008,25 @@ def _resolve_poe_port_mapping(poe, ports: list):
         }
 
 
-def _compute_camera_findings(ports: list) -> list:
+def _compute_camera_findings(ports: list, poe=None) -> list:
     findings = []
+
+    # PoE card running on slot power alone — the supplementary Molex lead is
+    # unplugged, so it cannot power a full camera set. Warning, not critical:
+    # a 1-2 camera venue can look entirely healthy on slot power, and a critical
+    # here would contradict the passing per-port checks beside it. The card
+    # still needs fixing before another camera is added or one browns out.
+    if isinstance(poe, dict) and (poe.get("budget") or {}).get("underPowered"):
+        b = poe["budget"]
+        findings.append({
+            "severity": "warning",
+            "title": "PoE card power budget too low — Molex lead likely unplugged",
+            "body": f"The camera card reports a total PoE budget of {b.get('totalW')} W, "
+                    f"below the {b.get('healthyFloorW')} W a healthy card provides. Its "
+                    "supplementary Molex power lead is most likely disconnected, leaving it on "
+                    "slot power only. Power the VPU down and reseat the Molex lead on the camera "
+                    "card. VPU Manager reports this same fault as a failed POE Power Test.",
+        })
 
     # The venue/internet cable in a camera port disrupts camera discovery and
     # streaming — name the exact port so the tech knows which cable to move.
@@ -3681,7 +3698,7 @@ async def api_cameras(refresh: bool = False):
     return {
         "ports": ports,
         "pixellotConfig": pix_config,
-        "findings": _compute_camera_findings(ports),
+        "findings": _compute_camera_findings(ports, poe),
         "systemType": system_type,
         "expectedMainCameras": expected_main,
         # Whole collector payload, not just the readings — the frontend needs

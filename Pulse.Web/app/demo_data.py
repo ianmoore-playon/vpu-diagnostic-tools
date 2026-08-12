@@ -397,7 +397,9 @@ def _demo_poe_power():
         both drifted down together, so total is a noisy derived figure. Both
         jitter independently here to keep that honest.
 
-    Headroom stays healthy so demo never fires the tight-headroom warning.
+    Total stays above the 55 W healthy floor so demo never fires the Molex
+    warning. Drop `remaining` to ~8 W (total ~25 W) to exercise it -- that
+    reproduces the 20 W VPU Manager reports on a Molex-disconnected card.
     """
     port_specs = [
         (1, 54.709, (0.084, 0.127)),  # Main camera 1 - real measured range
@@ -444,8 +446,8 @@ def _demo_poe_power():
             "remainingW": remaining,
             "tempC": round(random.uniform(45.0, 47.0), 1),
             "poeOnCount": poe_on,
-            "headroomW": 10.0,
-            "tight": total > 0 and remaining < 10.0,
+            "healthyFloorW": 55.0,
+            "underPowered": total > 0 and total < 55.0,
             "portMaxW": 25.5,
         },
         "ports": ports,

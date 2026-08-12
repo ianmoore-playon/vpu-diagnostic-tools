@@ -5079,7 +5079,7 @@ function _camPoeSignature(poe) {
   var portSig = (poe.ports || []).map(function(p) {
     return p.port + ":" + (p.poeOn ? "1" : "0") + (p.readOk === false ? "x" : "");
   }).join(",");
-  var tight = poe.budget ? (poe.budget.tight ? "1" : "0") : "-";
+  var tight = poe.budget ? (poe.budget.underPowered ? "1" : "0") : "-";
   // Mapping is in the signature: it changes row labels, so resolving it (or
   // losing resolution when a camera drops) must trigger a rebuild, not a patch.
   var map = poe.portMapping ? (poe.portMapping.mapping + ":" + (poe.portMapping.confirmed ? "1" : "0")) : "-";
@@ -5118,16 +5118,19 @@ function _camPoeCardHtml(poe, ports) {
   }
 
   var b = poe.budget || {};
-  // Headroom, not "below spec". Deliberately factual: it reports what the card
-  // says rather than diagnosing a cause, because the Molex-disconnected
-  // signature this used to claim has no validated baseline yet.
-  var lowBanner = b.tight
+  // Deliberately worded close to Pixellot's VPU Manager ("POE Molex disconnected
+  // or insufficient power. 20.0 W detected (expected >=55W)") so a tech reading
+  // both tools sees one story, not two. Pulse adds the fix rather than just the
+  // verdict.
+  var lowBanner = b.underPowered
     ? '<div class="cam-poe-note cam-poe-note-warn cam-poe-low">' +
-        '<div class="cam-poe-note-title">Little power headroom left on the card</div>' +
-        '<div class="cam-poe-note-body">The card reports only ' + _camPoeW(b.remainingW) +
-          ' free with ' + (b.poeOnCount || 0) + ' port' + ((b.poeOnCount === 1) ? "" : "s") +
-          ' drawing ' + _camPoeW(b.consumedW) + '. Adding another camera may not power up. ' +
-          'If a port that should be live is dark, check that the Molex power connector on the PoE card is seated.</div>' +
+        '<div class="cam-poe-note-title">PoE Molex disconnected or insufficient power</div>' +
+        '<div class="cam-poe-note-body">The card reports a total budget of ' + _camPoeW(b.totalW) +
+          ', below the ' + _camPoeW(b.healthyFloorW) + ' a healthy card provides. The supplementary ' +
+          'Molex power lead on the PoE card is most likely unplugged, so the card is running on slot ' +
+          'power alone and cannot power a full set of cameras. Power the VPU down, reseat the Molex ' +
+          'lead on the camera card, and re-check. VPU Manager reports this same fault as a failed ' +
+          'POE Power Test.</div>' +
       "</div>"
     : "";
 
