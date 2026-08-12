@@ -5080,8 +5080,11 @@ function _camPoeSignature(poe) {
     return p.port + ":" + (p.poeOn ? "1" : "0") + (p.readOk === false ? "x" : "");
   }).join(",");
   var tight = poe.budget ? (poe.budget.tight ? "1" : "0") : "-";
+  // Mapping is in the signature: it changes row labels, so resolving it (or
+  // losing resolution when a camera drops) must trigger a rebuild, not a patch.
+  var map = poe.portMapping ? (poe.portMapping.mapping + ":" + (poe.portMapping.confirmed ? "1" : "0")) : "-";
   return [poe.supported ? "1" : "0", poe.available ? "1" : "0",
-          poe.reason || "", tight, portSig].join("~");
+          poe.reason || "", tight, map, portSig].join("~");
 }
 
 function _camPoeCardHtml(poe, ports) {
@@ -5136,17 +5139,22 @@ function _camPoeCardHtml(poe, ports) {
       _camPoeStat("Card temp", "cam-poe-temp", _camPoeC(b.tempC)) +
     "</div>";
 
+  // Only attribute a reading to a named camera when the backend could actually
+  // prove which PSE channel is which port (see _resolve_poe_port_mapping).
+  // Otherwise the row is labelled by channel and stays honest about it — a
+  // wattage pinned to the wrong camera would send a tech to the wrong cable.
+  var mapping = poe.portMapping || {};
+  var mapped = mapping.confirmed === true;
   var rows = (poe.ports || []).map(function(p) {
-    // Name the camera on the port so a watts row is actionable — the tech
-    // sees "Port 3 · OCR camera", not just a number.
-    var match = (ports || [])[p.port - 1] || null;
+    var match = mapped ? ((ports || [])[p.port - 1] || null) : null;
     var sub;
     if (match && match.cameraLabel) sub = match.cameraLabel;
     else if (p.readOk === false)    sub = "Read rejected by driver";
+    else if (!mapped)               sub = p.poeOn ? "Drawing power" : "No device powered";
     else                            sub = p.poeOn ? "Powered device" : "No device powered";
     return '<div class="cam-poe-row" id="cam-poe-row-' + p.port + '">' +
       '<div class="cam-poe-row-label">' +
-        '<span class="cam-poe-port">Port ' + p.port + "</span>" +
+        '<span class="cam-poe-port">' + (mapped ? "Port " : "Channel ") + p.port + "</span>" +
         '<span class="cam-poe-sub">' + esc(sub) + "</span>" +
       "</div>" +
       '<div class="cam-poe-track">' +
@@ -5159,7 +5167,13 @@ function _camPoeCardHtml(poe, ports) {
     "</div>";
   }).join("");
 
-  return hdr + lowBanner + stats + '<div class="cam-poe-ports">' + rows + "</div>";
+  // Footnote rather than a warning: an unresolved mapping is a limit on what we
+  // can claim, not a fault on the VPU.
+  var mapNote = (!mapped && mapping.detail)
+    ? '<div class="cam-poe-note-meta">' + esc(mapping.detail) + "</div>"
+    : "";
+
+  return hdr + lowBanner + stats + '<div class="cam-poe-ports">' + rows + "</div>" + mapNote;
 }
 
 function _camPoeStat(label, id, value) {

@@ -468,5 +468,104 @@ class TestBlackFrameDiagnosis(unittest.TestCase):
         self.assertNotIn("diagnosis", results[0])
 
 
+def _poe(powered_idx, n=4, read_ok=True):
+    """SmartPoE-shaped readings with `powered_idx` (0-based channels) drawing."""
+    return {"available": True, "ports": [
+        {"port": i + 1,
+         "poeOn": i in powered_idx,
+         "voltage": 54.4 if i in powered_idx else 0.19,
+         "current": 0.09 if i in powered_idx else 0.0,
+         "watts": 4.9 if i in powered_idx else 0.0,
+         "readOk": read_ok}
+        for i in range(n)]}
+
+
+def _poe_ports(linked, n=4, uplink=()):
+    return [{"portLabel": "Port %d" % (i + 1), "isUp": (i + 1) in linked,
+             "hasInternetUplink": (i + 1) in uplink,
+             "cameraLabel": "Cam %d" % (i + 1)} for i in range(n)]
+
+
+class TestPoePortMapping(unittest.TestCase):
+    """The SmartPoE API indexes PoE channels 0-3 with no documented relationship
+    to chassis port numbering, so _resolve_poe_port_mapping derives it per-VPU by
+    cross-checking powered channels against ports with link. The contract that
+    matters: it must NEVER confirm the wrong mapping, because a wattage pinned to
+    the wrong camera sends a tech to the wrong cable.
+    """
+
+    def test_never_misidentifies_across_every_pattern(self):
+        import itertools
+        resolved = ambiguous = 0
+        for r in range(5):
+            for powered in itertools.combinations(range(4), r):
+                powered = set(powered)
+                for truth in ("identity", "mirror"):
+                    # If the card is really `truth`, these channels imply these ports
+                    linked = ({i + 1 for i in powered} if truth == "identity"
+                              else {4 - i for i in powered})
+                    poe = _poe(powered)
+                    main._resolve_poe_port_mapping(poe, _poe_ports(linked))
+                    m = poe.get("portMapping")
+                    if not m:
+                        continue
+                    if m["confirmed"]:
+                        resolved += 1
+                        self.assertEqual(
+                            m["mapping"], truth,
+                            "confirmed the wrong mapping for channels %s on a %s card"
+                            % (sorted(powered), truth))
+                    else:
+                        ambiguous += 1
+        # Only 4 of 16 channel patterns are symmetric under reversal (none, all
+        # four, {1,4}, {2,3}) — so 8 of the 32 cases must stay unconfirmed.
+        self.assertEqual(ambiguous, 8)
+        self.assertEqual(resolved, 24)
+
+    def test_reversed_card_readings_are_remapped_to_port_numbers(self):
+        # Channels 0,1,2 powered but link on ports 2,3,4 → reversed layout.
+        poe = _poe({0, 1, 2})
+        main._resolve_poe_port_mapping(poe, _poe_ports({2, 3, 4}))
+        self.assertEqual(poe["portMapping"]["mapping"], "mirror")
+        self.assertTrue(poe["portMapping"]["confirmed"])
+        # Readings must come back out as chassis port numbers, in order.
+        self.assertEqual([p["port"] for p in poe["ports"]], [1, 2, 3, 4])
+        self.assertEqual({p["port"] for p in poe["ports"] if p["poeOn"]}, {2, 3, 4})
+
+    def test_symmetric_pair_stays_unconfirmed(self):
+        # The real production GIE74P case (2026-08-12): cameras on ports 2 and 3.
+        poe = _poe({1, 2})
+        main._resolve_poe_port_mapping(poe, _poe_ports({2, 3}))
+        self.assertFalse(poe["portMapping"]["confirmed"])
+
+    def test_two_mains_plus_ocr_resolves(self):
+        # The common 3-camera venue always breaks the tie.
+        poe = _poe({0, 1, 2})
+        main._resolve_poe_port_mapping(poe, _poe_ports({1, 2, 3}))
+        self.assertTrue(poe["portMapping"]["confirmed"])
+        self.assertEqual(poe["portMapping"]["mapping"], "identity")
+
+    def test_internet_uplink_port_does_not_block_resolution(self):
+        # A switch uplink has link but draws no PoE; counting it would look like
+        # a contradiction and stop the mapping ever resolving.
+        poe = _poe({0, 1})
+        main._resolve_poe_port_mapping(poe, _poe_ports({1, 2, 4}, uplink={4}))
+        self.assertTrue(poe["portMapping"]["confirmed"])
+
+    def test_contradiction_is_not_confirmed(self):
+        poe = _poe({0, 1})
+        main._resolve_poe_port_mapping(poe, _poe_ports({3}))
+        self.assertFalse(poe["portMapping"]["confirmed"])
+
+    def test_unavailable_and_malformed_payloads_are_left_alone(self):
+        for payload in ({"available": False, "ports": []}, {"supported": False},
+                        {}, None, "junk", []):
+            main._resolve_poe_port_mapping(payload, _poe_ports({1}))
+        # Unreadable channels can't vote on the mapping.
+        poe = _poe({0, 1}, read_ok=False)
+        main._resolve_poe_port_mapping(poe, _poe_ports({1, 2}))
+        self.assertIsNone(poe.get("portMapping"))
+
+
 if __name__ == "__main__":
     unittest.main()

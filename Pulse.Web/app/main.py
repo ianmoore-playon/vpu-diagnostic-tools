@@ -2939,6 +2939,75 @@ def _flag_uplink_ports(ports: list, network_config) -> None:
             p["uplinkGateway"] = gw
 
 
+def _resolve_poe_port_mapping(poe, ports: list):
+    """Work out whether PSE channel index 0-3 maps to chassis Port 1-4 in order
+    or reversed, by cross-checking which channels are powered against which
+    ports have link. Mutates `poe` in place.
+
+    Why this exists: the SmartPoE API indexes channels 0-3 with no documented
+    relationship to the chassis port numbering Pulse uses everywhere else, and
+    gen-1 simply assumed index+1. A production GIE74P (2026-08-12) was
+    consistent with that assumption but could not prove it — its cameras sat on
+    ports 2 and 3, and the reversed mapping (4 - index) predicts the same
+    powered pair. Note the NIC diagram already tells techs "Port 4 is leftmost
+    on the card", so a reversed board layout is entirely plausible; this is not
+    a hypothetical.
+
+    Rather than ship a guess, derive it per-VPU. Powered channels and linked
+    ports are two independent observations of the same physical fact, so
+    whenever the pattern is asymmetric under reversal they pin the mapping
+    exactly. Only 4 of the 16 possible patterns are ambiguous (none, all four,
+    and the two symmetric pairs {1,4} and {2,3}); a 3-camera venue — two mains
+    plus an OCR, the common case — always resolves. On the ambiguous ones we
+    say so instead of attributing watts to a camera we cannot identify.
+
+    Sets `poe["portMapping"] = {"mapping", "confirmed", "detail"}` and, when a
+    reversed layout is confirmed, rewrites each reading's `port` so the rest of
+    the app can keep treating it as a chassis port number.
+    """
+    if not isinstance(poe, dict) or not poe.get("available"):
+        return
+    readings = [p for p in (poe.get("ports") or []) if p.get("readOk") is not False]
+    if not readings:
+        return
+
+    powered_idx = {int(p["port"]) - 1 for p in readings if p.get("poeOn")}
+
+    # Linked chassis ports, 1-based. Exclude a port carrying the venue's
+    # internet cable: a switch or router uplink shows link while drawing no PoE,
+    # which would otherwise look like a contradiction and block resolution.
+    linked = {
+        i + 1 for i, p in enumerate(ports or [])
+        if p and p.get("isUp") and not p.get("hasInternetUplink")
+    }
+
+    identity = {i + 1 for i in powered_idx}
+    mirror = {len(readings) - i for i in powered_idx}
+
+    if identity == linked and mirror != linked:
+        poe["portMapping"] = {"mapping": "identity", "confirmed": True,
+                              "detail": "PSE channels line up with port numbers on this VPU."}
+    elif mirror == linked and identity != linked:
+        # Reversed board layout — remap so every consumer downstream sees a
+        # chassis port number, not a raw channel index.
+        for p in poe["ports"]:
+            if p.get("port") is not None:
+                p["port"] = len(readings) - (int(p["port"]) - 1)
+        poe["ports"] = sorted(poe["ports"], key=lambda p: p.get("port") or 0)
+        poe["portMapping"] = {"mapping": "mirror", "confirmed": True,
+                              "detail": "This card numbers its PoE channels in reverse; readings have been re-ordered to match the port numbers."}
+    elif identity == linked and mirror == linked:
+        poe["portMapping"] = {
+            "mapping": "identity", "confirmed": False,
+            "detail": "Which camera is on which PoE channel can't be confirmed on this VPU — the powered ports happen to be symmetric, so card totals are exact but per-port figures may be in reverse order.",
+        }
+    else:
+        poe["portMapping"] = {
+            "mapping": "identity", "confirmed": False,
+            "detail": "Powered PoE channels don't match the ports showing link, so per-port figures can't be tied to a specific camera. Card totals are unaffected.",
+        }
+
+
 def _compute_camera_findings(ports: list) -> list:
     findings = []
 
@@ -3606,6 +3675,9 @@ async def api_cameras(refresh: bool = False):
     probe_results = await _probe_all_cameras(raw_ports, ocr_ips, block=refresh)
     ports = _enrich_ports(nics, pix_config, probe_results, expected_main_cameras=expected_main)
     _flag_uplink_ports(ports, net_config)
+    # Must run after _flag_uplink_ports — it uses hasInternetUplink to ignore a
+    # switch uplink that has link but draws no PoE.
+    _resolve_poe_port_mapping(poe, ports)
     return {
         "ports": ports,
         "pixellotConfig": pix_config,
