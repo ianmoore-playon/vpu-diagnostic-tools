@@ -4436,6 +4436,7 @@ function renderNetwork() {
 var _camerasRefreshTimer = null;
 var _camerasFailCount = 0;  // consecutive /api/cameras failures during live refresh
 var _camLastSignature = null;  // structural fingerprint of last rendered cameras
+var _camPoeLastSignature = null;  // separate PoE fingerprint — watts change every tick, so PoE is patched in place and must not ride _camLastSignature
 var _camNicLayout = "h";       // 4-port LED diagram orientation: 'h' upright (ports L→R) / 'v' on-side (ports top→bottom)
 var _camLastVideo = null;      // last captured frame set, restored across re-renders (with a capture time so it's never mistaken for live)
 
@@ -5055,6 +5056,174 @@ function _camS1Html(res) {
     "<tbody>" + rows + "</tbody></table></div>";
 }
 
+// ── PoE power draw (ADLINK SmartPoE) ─────────────────────────────
+// Ported from the gen-1 PowerShell tool's "PoE Status" section. Only the
+// I210/I211 (GIE74P) camera NIC can measure this; see Get-PoePower.ps1 for the
+// full gate. Watts change every poll, so the live tick patches the numbers in
+// place (_camPoeUpdate) rather than rebuilding — a 2s innerHTML swap would
+// flicker and fight the transition on the bars.
+
+// Per-port PoE+ ceiling (IEEE 802.3at). Bars are drawn as a fraction of this,
+// so a port's fill reads as "how close to the per-port limit", not "share of
+// the card" — that's the number that tells a tech a camera is over-drawing.
+var CAM_POE_PORT_MAX_W = 25.5;
+
+// Structural signature: everything that changes the card's SHAPE rather than
+// its numbers. Watts/voltage/current/temp are deliberately excluded.
+function _camPoeSignature(poe) {
+  if (!poe) return "none";
+  var portSig = (poe.ports || []).map(function(p) {
+    return p.port + ":" + (p.poeOn ? "1" : "0");
+  }).join(",");
+  var low = poe.budget ? (poe.budget.low ? "1" : "0") : "-";
+  return [poe.supported ? "1" : "0", poe.available ? "1" : "0",
+          poe.reason || "", low, portSig].join("~");
+}
+
+function _camPoeCardHtml(poe, ports) {
+  // No payload at all (backend predates this field) — render nothing rather
+  // than an empty box.
+  if (!poe) return "";
+
+  var hdr = sectionTitle("power", "PoE Power Draw");
+
+  // Unsupported NIC family is a by-design N/A, NOT a fault. Render it neutral
+  // and muted: gen-1 explicitly scored this step "pass" so techs don't chase
+  // a measurement the hardware cannot take.
+  if (!poe.supported) {
+    return hdr +
+      '<div class="cam-poe-note cam-poe-note-info">' +
+        '<div class="cam-poe-note-title">Not measurable on this camera NIC</div>' +
+        '<div class="cam-poe-note-body">' + esc(poe.reason || "") + "</div>" +
+        (poe.cardLabel ? '<div class="cam-poe-note-meta font-mono">' + esc(poe.cardLabel) + "</div>" : "") +
+      "</div>";
+  }
+
+  // Supported hardware but no reading — driver bundle missing, card not
+  // detected, or the probe latched off after crashing. Actionable, so amber.
+  if (!poe.available) {
+    return hdr +
+      '<div class="cam-poe-note cam-poe-note-warn">' +
+        '<div class="cam-poe-note-title">Power readings unavailable</div>' +
+        '<div class="cam-poe-note-body">' + esc(poe.reason || "") + "</div>" +
+        (poe.cardLabel ? '<div class="cam-poe-note-meta font-mono">' + esc(poe.cardLabel) + "</div>" : "") +
+      "</div>";
+  }
+
+  var b = poe.budget || {};
+  var lowBanner = b.low
+    ? '<div class="cam-poe-note cam-poe-note-warn cam-poe-low">' +
+        '<div class="cam-poe-note-title">Power budget below spec for ' + (b.poeOnCount || 0) + ' active ports</div>' +
+        '<div class="cam-poe-note-body">The card reports ' + _camPoeW(b.totalW) +
+          ' total but ' + (b.poeOnCount || 0) + ' ports are drawing power, which needs ' +
+          _camPoeW(b.expectedW) + ' at the PoE+ rate of 25.5 W per port. ' +
+          'Check that the Molex power connector on the PoE card is seated.</div>' +
+      "</div>"
+    : "";
+
+  var stats =
+    '<div class="cam-poe-stats">' +
+      _camPoeStat("Total budget", "cam-poe-total", _camPoeW(b.totalW)) +
+      _camPoeStat("Drawing now", "cam-poe-consumed", _camPoeW(b.consumedW)) +
+      _camPoeStat("Available", "cam-poe-remaining", _camPoeW(b.remainingW)) +
+      _camPoeStat("Card temp", "cam-poe-temp", _camPoeC(b.tempC)) +
+    "</div>";
+
+  var rows = (poe.ports || []).map(function(p) {
+    // Name the camera on the port so a watts row is actionable — the tech
+    // sees "Port 3 · OCR camera", not just a number.
+    var match = (ports || [])[p.port - 1] || null;
+    var sub = match && match.cameraLabel ? match.cameraLabel : (p.poeOn ? "Powered device" : "No device powered");
+    return '<div class="cam-poe-row" id="cam-poe-row-' + p.port + '">' +
+      '<div class="cam-poe-row-label">' +
+        '<span class="cam-poe-port">Port ' + p.port + "</span>" +
+        '<span class="cam-poe-sub">' + esc(sub) + "</span>" +
+      "</div>" +
+      '<div class="cam-poe-track">' +
+        '<div class="cam-poe-fill' + _camPoeFillClass(p) + '" id="cam-poe-fill-' + p.port + '"' +
+             ' style="width:' + _camPoePct(p) + '%"></div>' +
+      "</div>" +
+      '<div class="cam-poe-readout font-mono" id="cam-poe-readout-' + p.port + '">' +
+        _camPoeReadout(p) +
+      "</div>" +
+    "</div>";
+  }).join("");
+
+  return hdr + lowBanner + stats + '<div class="cam-poe-ports">' + rows + "</div>";
+}
+
+function _camPoeStat(label, id, value) {
+  return '<div class="cam-poe-stat">' +
+    '<div class="cam-poe-stat-label">' + esc(label) + "</div>" +
+    '<div class="cam-poe-stat-value font-mono" id="' + id + '">' + esc(value) + "</div>" +
+  "</div>";
+}
+
+function _camPoeW(w) {
+  return (w == null) ? "--" : (Number(w).toFixed(1) + " W");
+}
+
+function _camPoeC(c) {
+  return (c == null || c === 0) ? "--" : (Number(c).toFixed(1) + " °C");
+}
+
+function _camPoePct(p) {
+  if (!p || !p.poeOn || p.watts == null) return 0;
+  return Math.max(2, Math.min(100, (p.watts / CAM_POE_PORT_MAX_W) * 100));
+}
+
+function _camPoeFillClass(p) {
+  if (!p || !p.poeOn) return " cam-poe-fill-off";
+  // Over the PoE+ per-port ceiling is a real fault; 80% is the heads-up.
+  if (p.watts > CAM_POE_PORT_MAX_W) return " cam-poe-fill-hot";
+  if (p.watts > CAM_POE_PORT_MAX_W * 0.8) return " cam-poe-fill-warn";
+  return " cam-poe-fill-ok";
+}
+
+function _camPoeReadout(p) {
+  if (!p) return "--";
+  if (!p.poeOn) return "off";
+  return Number(p.watts).toFixed(1) + " W  ·  " +
+         Number(p.voltage).toFixed(1) + " V  ·  " +
+         Number(p.current).toFixed(3) + " A";
+}
+
+// Live tick. Patches only the volatile numbers unless the card's shape changed
+// (a port powering up, the budget verdict flipping, the driver dropping out),
+// in which case rebuild the whole card once.
+function _camPoeUpdate(poe, ports) {
+  var wrap = document.getElementById("cam-poe-card");
+  if (!wrap) return;
+
+  var sig = _camPoeSignature(poe);
+  if (sig !== _camPoeLastSignature) {
+    _camPoeLastSignature = sig;
+    wrap.innerHTML = _camPoeCardHtml(poe, ports);
+    wrap.style.display = poe ? "" : "none";
+    return;
+  }
+  if (!poe || !poe.available) return;
+
+  var b = poe.budget || {};
+  var setText = function(id, text) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  setText("cam-poe-total", _camPoeW(b.totalW));
+  setText("cam-poe-consumed", _camPoeW(b.consumedW));
+  setText("cam-poe-remaining", _camPoeW(b.remainingW));
+  setText("cam-poe-temp", _camPoeC(b.tempC));
+
+  (poe.ports || []).forEach(function(p) {
+    setText("cam-poe-readout-" + p.port, _camPoeReadout(p));
+    var fill = document.getElementById("cam-poe-fill-" + p.port);
+    if (fill) {
+      fill.style.width = _camPoePct(p) + "%";
+      fill.className = "cam-poe-fill" + _camPoeFillClass(p);
+    }
+  });
+}
+
 function renderCameras() {
   const data = cached("cameras");
   if (!data) { $page().innerHTML = sectionLoading("Camera Connectivity"); fetchSection("cameras"); return; }
@@ -5091,6 +5260,8 @@ function renderCameras() {
 
       <div class="card" id="cam-nic-diagram">${_camNicDiagramHtml(ports, true, {systemType: data.systemType, expectedMainCameras: data.expectedMainCameras})}</div>
 
+      <div class="card" id="cam-poe-card"${data.poe ? "" : ' style="display:none"'}>${_camPoeCardHtml(data.poe, ports)}</div>
+
       <div class="cam-port-grid" id="cam-port-grid">
         ${_camPortGridHtml(ports)}
       </div>
@@ -5113,6 +5284,7 @@ function renderCameras() {
   // Seed the signature from what we just rendered so the first tick can
   // tell whether anything structural actually changed.
   _camLastSignature = _camSignature(data);
+  _camPoeLastSignature = _camPoeSignature(data.poe);
   if (_camerasRefreshTimer) clearInterval(_camerasRefreshTimer);
   _camerasFailCount = 0;
   _camerasRefreshTimer = setInterval(function() {
@@ -5162,6 +5334,12 @@ function renderCameras() {
         var fw = document.getElementById("cam-findings-wrap");
         if (fw) fw.innerHTML = _camFindingsHtml(fresh.findings || []);
       }
+
+      // PoE runs on its own signature, outside the branch above: watts move
+      // every tick (so they must update even in "steady state"), and a port
+      // powering up is a PoE structural change that need not be a port-grid
+      // one. _camPoeUpdate decides patch-vs-rebuild for itself.
+      _camPoeUpdate(fresh.poe, freshPorts);
 
       // Pulse the live badge to show the tick happened and clear any stale state
       var badge = document.getElementById("cam-live-badge");

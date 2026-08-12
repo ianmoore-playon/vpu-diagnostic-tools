@@ -3567,11 +3567,18 @@ async def api_cameras(refresh: bool = False):
     # it's plugged into a camera port. The per-port flag below re-gates on the
     # port's live link state, so a fixed cable clears within a poll or two even
     # while this cached copy is stale.
-    nics, pix_config, expectations, net_config = await asyncio.gather(
+    # PoE power rides this payload rather than getting its own endpoint: the
+    # card belongs next to the port tiles, the lane already live-polls this
+    # route every ~2s, and gathering it here keeps watts and link state from
+    # the same instant instead of two independently-cached snapshots.
+    # cache_ttl=1.5 for the same reason as the NIC read — a camera drawing
+    # power should show within a poll or two, not on the 25s cache boundary.
+    nics, pix_config, expectations, net_config, poe = await asyncio.gather(
         run_ps("Get-NicAdapters.ps1", cache_ttl=1.5),
         run_ps("Get-PixellotConfig.ps1"),
         run_ps("Get-CameraExpectations.ps1", timeout=10),
         run_ps("Get-NetworkConfig.ps1", timeout=15),
+        run_ps("Get-PoePower.ps1", timeout=20, cache_ttl=1.5),
     )
     ocr_ips, _ = _build_ocr_sets(pix_config)
     # Expected main-camera count from the Coordinator log (S1=4/S2=2/S2S=1).
@@ -3597,6 +3604,11 @@ async def api_cameras(refresh: bool = False):
         "findings": _compute_camera_findings(ports),
         "systemType": system_type,
         "expectedMainCameras": expected_main,
+        # Whole collector payload, not just the readings — the frontend needs
+        # supported/available/reason to tell "this NIC family can't measure
+        # power" apart from "the driver isn't installed" apart from "measured,
+        # and here it is".
+        "poe": poe if isinstance(poe, dict) else None,
         # vpuRunning gates the "Get Camera Frames" button — frame capture is
         # disabled while the capture engine owns the RTSP streams.
         "vpuRunning": vpu_running,

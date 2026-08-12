@@ -375,6 +375,70 @@ def _demo_cleanup_result(**kw):
     }
 
 
+def _demo_poe_power():
+    """ADLINK SmartPoE card telemetry, matching Get-PoePower.ps1's shape.
+
+    Keyed to the Get-NicAdapters.ps1 demo above so the two agree: that payload
+    reports I210/I211 ports (so PoE telemetry is supported), with Ethernet 4
+    unplugged -- so port 4 reads unpowered here and poeOnCount lands at 3.
+
+    Watts jitter per call because the Camera Connectivity card polls every ~2s
+    for live values; without it the meters look frozen in demo. Ranges are
+    per-port-typical for a Pixellot CHU (main cameras ~9-11 W, the OCR camera
+    lighter at ~5 W) and stay well inside PoE+ so no port reads as over-draw.
+
+    Total budget is deliberately healthy (120 W vs the 76.5 W expected for 3
+    active ports) -- demo must not fire a low-budget finding that no real VPU
+    is reporting. Drop totalW under expectedW to exercise the low path.
+    """
+    port_specs = [
+        (1, 53.8, (0.170, 0.205)),   # Main camera 1
+        (2, 53.7, (0.165, 0.200)),   # Main camera 2
+        (3, 53.9, (0.088, 0.104)),   # OCR / scoreboard camera - lighter draw
+        (4, 0.0,  (0.0, 0.0)),       # Unplugged, matches Ethernet 4 above
+    ]
+    ports = []
+    consumed = 0.0
+    poe_on = 0
+    for num, voltage, (lo, hi) in port_specs:
+        current = round(random.uniform(lo, hi), 3) if hi > 0 else 0.0
+        watts = round(voltage * current, 1)
+        on = voltage > 1.0
+        if on:
+            poe_on += 1
+            consumed += watts
+        ports.append({
+            "port": num,
+            "voltage": voltage,
+            "current": current,
+            "watts": watts,
+            "poeOn": on,
+            "state": "Powered" if on else "Off",
+        })
+
+    total = 120.0
+    consumed = round(consumed, 1)
+    expected = round(poe_on * 25.5, 1)
+    return {
+        "supported": True,
+        "available": True,
+        "nicModel": "I210",
+        "cardLabel": "ADLINK GIE74P (Intel I210 x4)",
+        "reason": "",
+        "dllPath": r"C:\Program Files\ADLINK\GIE Series\Library\Dll\x64\SmartPoE.dll",
+        "budget": {
+            "totalW": total,
+            "consumedW": consumed,
+            "remainingW": round(total - consumed, 1),
+            "tempC": round(random.uniform(44.0, 49.5), 1),
+            "poeOnCount": poe_on,
+            "expectedW": expected,
+            "low": total > 0 and poe_on >= 3 and total < expected,
+        },
+        "ports": ports,
+    }
+
+
 DEMO = {
     "Get-SystemIdentity.ps1": lambda **kw: {
         "computerSystem": {"name": _VENUE["hostname"], "manufacturer": "HP", "model": "HP Z2 Tower G9 Workstation Desktop PC"},
@@ -470,6 +534,7 @@ DEMO = {
              "arpEntries": []},
         ]
     },
+    "Get-PoePower.ps1": lambda **kw: _demo_poe_power(),
     "Get-Hardware.ps1": lambda **kw: {
         "processors": [{"name": "Intel(R) Core(TM) i5-10500 CPU @ 3.10GHz", "numberOfCores": 6, "numberOfLogicalProcessors": 12, "maxClockSpeedMHz": 3100}],
         "memory": [
