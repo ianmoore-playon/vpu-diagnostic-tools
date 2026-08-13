@@ -480,9 +480,13 @@ def _poe(powered_idx, n=4, read_ok=True):
         for i in range(n)]}
 
 
-def _poe_ports(linked, n=4, uplink=()):
+def _poe_ports(linked, n=4, uplink=(), cameras=None):
+    # cameras defaults to "every linked port has a camera" — the ordinary case.
+    cams = linked if cameras is None else cameras
     return [{"portLabel": "Port %d" % (i + 1), "isUp": (i + 1) in linked,
              "hasInternetUplink": (i + 1) in uplink,
+             "camerasDetected": ([{"ip": "169.254.16.%d" % (49 + i)}]
+                                 if (i + 1) in cams else []),
              "cameraLabel": "Cam %d" % (i + 1)} for i in range(n)]
 
 
@@ -547,14 +551,43 @@ class TestPoePortMapping(unittest.TestCase):
 
     def test_internet_uplink_port_does_not_block_resolution(self):
         # A switch uplink has link but draws no PoE; counting it would look like
-        # a contradiction and stop the mapping ever resolving.
+        # a contradiction and stop the mapping ever resolving. (Cameras are on
+        # 1 and 2 — an uplink port by definition has no camera on it.)
         poe = _poe({0, 1})
-        main._resolve_poe_port_mapping(poe, _poe_ports({1, 2, 4}, uplink={4}))
+        main._resolve_poe_port_mapping(
+            poe, _poe_ports({1, 2, 4}, uplink={4}, cameras={1, 2}))
         self.assertTrue(poe["portMapping"]["confirmed"])
 
     def test_contradiction_is_not_confirmed(self):
         poe = _poe({0, 1})
         main._resolve_poe_port_mapping(poe, _poe_ports({3}))
+        self.assertFalse(poe["portMapping"]["confirmed"])
+
+    def test_linked_port_drawing_no_poe_does_not_block_resolution(self):
+        # VPU2 (2026-08-12) had a port linked at 100 Mbps drawing no PoE at all.
+        # Strict set-equality called that a contradiction; the powered set only
+        # has to cover the cameras and stay within the linked ports.
+        poe = _poe({0, 1})
+        main._resolve_poe_port_mapping(
+            poe, _poe_ports({1, 2, 3}, cameras={1, 2}))
+        self.assertTrue(poe["portMapping"]["confirmed"])
+        self.assertEqual(poe["portMapping"]["mapping"], "identity")
+
+    def test_neither_straight_nor_reversed_is_refused(self):
+        # The real VPU2 shape: cameras on ports 1 and 2, but channels 1 and 2
+        # drawing — which is ports {2,3} under BOTH hypotheses. Must refuse
+        # rather than pick one.
+        poe = _poe({1, 2})
+        main._resolve_poe_port_mapping(
+            poe, _poe_ports({1, 2, 4}, cameras={1, 2}))
+        self.assertFalse(poe["portMapping"]["confirmed"])
+        self.assertIn("can't be tied", poe["portMapping"]["detail"])
+
+    def test_a_camera_must_be_powered_for_a_mapping_to_fit(self):
+        # A hypothesis that leaves a detected camera unpowered is impossible.
+        poe = _poe({0})
+        main._resolve_poe_port_mapping(
+            poe, _poe_ports({1, 2}, cameras={1, 2}))
         self.assertFalse(poe["portMapping"]["confirmed"])
 
     def test_unavailable_and_malformed_payloads_are_left_alone(self):

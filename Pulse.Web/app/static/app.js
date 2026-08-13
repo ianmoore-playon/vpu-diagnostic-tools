@@ -5140,22 +5140,26 @@ function _camPoeCardHtml(poe, ports) {
       _camPoeStat("Card temp", "cam-poe-temp", _camPoeC(b.tempC)) +
     "</div>";
 
-  // Only attribute a reading to a named camera when the backend could actually
-  // prove which PSE channel is which port (see _resolve_poe_port_mapping).
-  // Otherwise the row is labelled by channel and stays honest about it — a
-  // wattage pinned to the wrong camera would send a tech to the wrong cable.
+  // Every row names the port it relates to, whether or not the mapping is
+  // proven — a bare "Channel 2" tells a tech nothing they can act on. What
+  // changes with confidence is how the claim is qualified: a confirmed mapping
+  // names the camera, an unconfirmed one shows the channel and the port it is
+  // assumed to correspond to, marked unverified so nobody chases the wrong
+  // cable on the strength of it.
   var mapping = poe.portMapping || {};
   var mapped = mapping.confirmed === true;
   var rows = (poe.ports || []).map(function(p) {
     var match = mapped ? ((ports || [])[p.port - 1] || null) : null;
+    var label = mapped ? ("Port " + p.port)
+                       : ("Channel " + p.port + " → Port " + p.port);
     var sub;
-    if (match && match.cameraLabel) sub = match.cameraLabel;
-    else if (p.readOk === false)    sub = "Read rejected by driver";
-    else if (!mapped)               sub = p.poeOn ? "Drawing power" : "No device powered";
+    if (p.readOk === false)         sub = "Read rejected by driver";
+    else if (!mapped)               sub = (p.poeOn ? "Drawing power" : "No device powered") + " · port unverified";
+    else if (match && match.cameraLabel) sub = match.cameraLabel;
     else                            sub = p.poeOn ? "Powered device" : "No device powered";
     return '<div class="cam-poe-row" id="cam-poe-row-' + p.port + '">' +
       '<div class="cam-poe-row-label">' +
-        '<span class="cam-poe-port">' + (mapped ? "Port " : "Channel ") + p.port + "</span>" +
+        '<span class="cam-poe-port">' + esc(label) + "</span>" +
         '<span class="cam-poe-sub">' + esc(sub) + "</span>" +
       "</div>" +
       '<div class="cam-poe-track">' +
@@ -5289,11 +5293,11 @@ function renderCameras() {
 
       <div class="card" id="cam-nic-diagram">${_camNicDiagramHtml(ports, true, {systemType: data.systemType, expectedMainCameras: data.expectedMainCameras})}</div>
 
-      <div class="card" id="cam-poe-card"${data.poe ? "" : ' style="display:none"'}>${_camPoeCardHtml(data.poe, ports)}</div>
-
       <div class="cam-port-grid" id="cam-port-grid">
         ${_camPortGridHtml(ports)}
       </div>
+
+      <div class="card" id="cam-poe-card"${data.poe ? "" : ' style="display:none"'}>${_camPoeCardHtml(data.poe, ports)}</div>
     </div>
 
   `;

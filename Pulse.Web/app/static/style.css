@@ -2240,7 +2240,9 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 
 .cam-poe-ports { display: flex; flex-direction: column; gap: 10px; }
 .cam-poe-row { display: flex; align-items: center; gap: 12px; }
-.cam-poe-row-label { display: flex; flex-direction: column; min-width: 140px; flex-shrink: 0; }
+/* 190px fits the unconfirmed label ("Channel 4 -> Port 4") and its
+   "port unverified" sub-line without wrapping. */
+.cam-poe-row-label { display: flex; flex-direction: column; min-width: 190px; flex-shrink: 0; }
 .cam-poe-port { font-size: 0.8rem; font-weight: 600; }
 .cam-poe-sub { font-size: 0.7rem; color: var(--c-muted); }
 .cam-poe-track {

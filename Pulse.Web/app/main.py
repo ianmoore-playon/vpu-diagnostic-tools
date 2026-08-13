@@ -2960,21 +2960,37 @@ def _resolve_poe_port_mapping(poe, ports: list):
 
     powered_idx = {int(p["port"]) - 1 for p in readings if p.get("poeOn")}
 
-    # Linked chassis ports, 1-based. Exclude a port carrying the venue's
-    # internet cable: a switch or router uplink shows link while drawing no PoE,
-    # which would otherwise look like a contradiction and block resolution.
+    # Two bounds rather than one equality, because link state alone is a noisy
+    # proxy for "a PoE device is attached here". VPU2 (2026-08-12) had a port
+    # linked at 100 Mbps drawing no PoE at all, which strict equality read as a
+    # contradiction and refused to resolve on.
+    #
+    #   lower bound — every detected Pixellot camera MUST be drawing power
+    #   upper bound — a powered channel should have link
+    #
+    # A hypothesis has to satisfy both. Internet-uplink ports are excluded from
+    # the upper bound: a switch uplink has link but never draws PoE.
     linked = {
         i + 1 for i, p in enumerate(ports or [])
         if p and p.get("isUp") and not p.get("hasInternetUplink")
+    }
+    camera_ports = {
+        i + 1 for i, p in enumerate(ports or [])
+        if p and p.get("camerasDetected") and not p.get("hasInternetUplink")
     }
 
     identity = {i + 1 for i in powered_idx}
     mirror = {len(readings) - i for i in powered_idx}
 
-    if identity == linked and mirror != linked:
+    def fits(predicted):
+        return predicted >= camera_ports and predicted <= linked
+
+    identity_fits, mirror_fits = fits(identity), fits(mirror)
+
+    if identity_fits and not mirror_fits:
         poe["portMapping"] = {"mapping": "identity", "confirmed": True,
                               "detail": "PSE channels line up with port numbers on this VPU."}
-    elif mirror == linked and identity != linked:
+    elif mirror_fits and not identity_fits:
         # Reversed board layout — remap so every consumer downstream sees a
         # chassis port number, not a raw channel index.
         for p in poe["ports"]:
@@ -2983,15 +2999,20 @@ def _resolve_poe_port_mapping(poe, ports: list):
         poe["ports"] = sorted(poe["ports"], key=lambda p: p.get("port") or 0)
         poe["portMapping"] = {"mapping": "mirror", "confirmed": True,
                               "detail": "This card numbers its PoE channels in reverse; readings have been re-ordered to match the port numbers."}
-    elif identity == linked and mirror == linked:
+    elif identity_fits and mirror_fits:
         poe["portMapping"] = {
             "mapping": "identity", "confirmed": False,
-            "detail": "Which camera is on which PoE channel can't be confirmed on this VPU — the powered ports happen to be symmetric, so card totals are exact but per-port figures may be in reverse order.",
+            "detail": "Which camera is on which PoE channel can't be confirmed on this VPU — the powered ports are symmetric, so card totals are exact but per-port figures may be in reverse order.",
         }
     else:
+        # Neither a straight nor a reversed run explains what's powered. Seen for
+        # real on VPU2 (2026-08-12): cameras on ports 1 and 2, but channels 1 and
+        # 2 drawing — which is ports 2 and 3 under BOTH hypotheses. So the channel
+        # order on at least some cards is neither straight nor reversed, and
+        # per-port attribution must not be guessed at here.
         poe["portMapping"] = {
             "mapping": "identity", "confirmed": False,
-            "detail": "Powered PoE channels don't match the ports showing link, so per-port figures can't be tied to a specific camera. Card totals are unaffected.",
+            "detail": "The PoE channels drawing power don't line up with where the cameras are, so per-port figures can't be tied to a specific camera on this VPU. Card totals, budget and temperature are unaffected.",
         }
 
 
