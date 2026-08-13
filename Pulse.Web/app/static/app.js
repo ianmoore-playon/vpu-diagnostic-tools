@@ -1608,7 +1608,8 @@ function _renderVolumes(volumes) {
   if (!volumes.length) return '<div class="text-xs text-pulse-muted py-2">No storage data</div>';
   return volumes.map((d) => {
     const pct = d.usedPercent || 0;
-    const color = pct > 90 ? "var(--c-accent-red)" : pct > 80 ? "var(--c-accent-amber)" : "var(--c-accent-blue)";
+    // Critical-only (matches the findings engine): red above 90%, no amber tier.
+    const color = pct > 90 ? "var(--c-accent-red)" : "var(--c-accent-blue)";
     const role = d.deviceID === "C:" ? "System — OS & Pixellot"
                : d.deviceID === "D:" ? "Recordings — local game-video storage"
                : "Storage";
@@ -5661,12 +5662,11 @@ function renderDiskHealth() {
   const osLabel = osDrive
     ? `${osFreeGB != null ? osFreeGB : "—"} GB free of ${osDrive.sizeGB != null ? osDrive.sizeGB : "—"} GB`
     : "No data";
-  // Critical at >90% used (matches the volume bars, the [Storage] finding, and
-  // the dashboard gauge), OR if absolute headroom drops below 50 GB (catches a
-  // nearly-full large disk that's still under 90%). Warning at >80% / <100 GB.
+  // Critical at >90% used (matches the volume bars and the [Storage] finding),
+  // OR if absolute headroom drops below 50 GB (catches a nearly-full large
+  // disk that's still under 90%). No warning tier — disk fill is critical-only.
   const osSev =
-    (osPct != null && osPct > 90) || (osFreeGB != null && osFreeGB < 50) ? "critical" :
-    (osPct != null && osPct > 80) || (osFreeGB != null && osFreeGB < 100) ? "warning" : "ok";
+    (osPct != null && osPct > 90) || (osFreeGB != null && osFreeGB < 50) ? "critical" : "ok";
 
   function summaryCard(icon, title, chipSev, chipText, value, desc) {
     return `<div class="card dh-summary-card">
@@ -5715,7 +5715,7 @@ function renderDiskHealth() {
     <div class="dh-summary-row">
       ${summaryCard("heartbeat", "Drive Self-Check (SMART)", smartSev, smartChip, smartVal, "Built-in health status reported by each drive")}
       ${summaryCard("alert", "Disk & Driver Errors", errorSev, errorChip, errorVal, "Disk, NVMe, NTFS & volume events from the Windows Event Log (last 24 h)")}
-      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Critical when over 90% full or under 50 GB free")}
+      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : "Critical", osLabel, "Critical when over 90% full or under 50 GB free")}
     </div>
 
     ${cleanupCard}
@@ -5736,7 +5736,6 @@ function renderDiskHealth() {
         let sevColor = "var(--c-accent-green)", status = "OK";
         if (!hasPct) { sevColor = "var(--c-dim)"; status = "Unknown"; }
         else if (pct > 90) { sevColor = "var(--c-accent-red)"; status = "Critical"; }
-        else if (pct > 80) { sevColor = "var(--c-accent-amber)"; status = "Low"; }
         const freeStr = d.freeSpaceGB != null ? `${d.freeSpaceGB} GB` : "—";
         const sizeStr = d.sizeGB != null ? `${d.sizeGB} GB` : "—";
         return `<div class="dh-vol-row">
