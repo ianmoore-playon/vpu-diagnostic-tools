@@ -22,9 +22,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
-### Changed
-- Storage alerts are now critical-only: the amber "space low" warning at 80% full is gone everywhere (findings, readiness, Disks page, dashboard bars). Drives alert only when they actually matter — over 90% full — which is also the moment the Storage Cleanup card appears with the fix.
-
 ### Added
 - Disks: when the recordings drive (D:) reaches 90% full, a Storage Cleanup card can free space — it deletes daily test clips older than 90 days and game recordings older than 1 year, after showing exactly which folders (with counts and sizes) will be removed. Nothing from the last 90 days is ever touched.
 - Pulse now closes itself (server and browser window) 5 minutes after the LogMeIn session that opened it ends — no more Pulse left running on the VPU after you disconnect. A banner at the top of the page shows the live countdown, and reconnecting within those 5 minutes cancels it automatically; opening Pulse at the console or over another remote tool is unaffected.
@@ -33,6 +30,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - Camera Connectivity now shows live PoE power draw for each camera port — watts, volts and amps per port plus the card's total budget, free power and temperature, refreshing every few seconds. It flags a disconnected Molex power lead on the camera card (the same fault VPU Manager reports as a failed POE Power Test) and tells you to reseat it. Only the newer camera cards (Intel I210/I211) can report power; on an older 82574L card the section says so plainly instead of sitting empty.
 
 ### Changed
+- Storage alerts are now critical-only: the amber "space low" warning at 80% full is gone everywhere (findings, readiness, Disks page, dashboard bars). Drives alert only when they actually matter — over 90% full — which is also the moment the Storage Cleanup card appears with the fix.
 - Network Test: AWS S3 (s3.amazonaws.com) is no longer tested anywhere — removed from the port, service reachability, name lookup, and secure-connection checks. It is no longer required for streaming, so a venue firewall blocking it won't show a failure anymore.
 - The "Windows support ends within a year" warning now reassures instead of alarming when the VPU still has years of security updates left: it explains the unit is covered until the true end-of-servicing date (e.g. 2032 for LTSC 2021) and that no action is needed.
 - The blocked-backup-streaming warning no longer says "the broadcast still works" — the title and description now just state what's blocked and what to ask venue IT to open.
