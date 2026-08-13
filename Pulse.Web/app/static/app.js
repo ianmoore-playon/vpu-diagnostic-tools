@@ -3008,8 +3008,8 @@ function _prefixToMask(prefix) {
 
 // "Impact if blocked" copy, sourced from the NFHS Network Firewall Setup doc
 // where the endpoint appears there, and authored from Pixellot service
-// knowledge for the few Pulse-only endpoints the doc doesn't list (AWS S3,
-// Singular, leaf-* buckets). Single editable home — revisit/expand later.
+// knowledge for the few Pulse-only endpoints the doc doesn't list (Singular,
+// leaf-* buckets). Single editable home — revisit/expand later.
 // Ports are keyed by purpose; domains by hostname.
 const NET_PORT_IMPACT = {
   "DNS": "The VPU can't resolve any hostname, so it can't reach any service.",
@@ -3021,7 +3021,6 @@ const NET_PORT_IMPACT = {
   // verdict is in the Port Connectivity finding.
   "Pixellot Echo": "Backup streaming connection (TCP/443 tunnel) plus the remote-support channel. It fails over with the UDP/443 backup — the live broadcast itself rides UDP/2088, so blocking this only reduces backup redundancy and remote support.",
   "NFHS Network": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
-  "AWS S3": "Recordings and clips can't upload, and software/asset downloads fail.",
   "Singular Overlay": "On-screen graphics and scorebug overlays won't load.",
   "LogMeIn": "The support team can't diagnose the VPU remotely.",
   "NTP": "The clock can drift — the VPU may miss scheduled events if no valid time server is set.",
@@ -3037,7 +3036,6 @@ const NET_DOMAIN_IMPACT = {
   "sportzcast.net": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
   "service.singular.live": "On-screen graphics and scorebug overlays won't load.",
   "logmein.com": "The support team can't diagnose the VPU remotely.",
-  "s3.amazonaws.com": "Recordings can't upload and software/asset downloads fail.",
 };
 function _netPortImpact(p) { return (p && NET_PORT_IMPACT[p.purpose]) || ""; }
 
@@ -3096,7 +3094,6 @@ const TLS_DOMAIN_IMPACT = {
   "pixellot.tv": "System management and software updates are blocked.",
   "software.pixellot.tv": "Software and firmware updates are blocked.",
   "nfhsnetwork.com": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
-  "s3.amazonaws.com": "Recordings can't upload and software/asset downloads fail.",
   "secure.logmein.com": "The support team can't diagnose the VPU remotely.",
   "www.python.org": "The Pulse installer can't download Python on this network.",
 };

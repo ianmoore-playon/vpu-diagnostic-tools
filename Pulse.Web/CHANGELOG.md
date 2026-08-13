@@ -50,6 +50,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - New standalone script `scripts/Get-WindowsPatchStatus.ps1`: run it on a VPU to see the real Windows patch level (build number, hotfixes, servicing history, pending reboot) even though Windows Update is disabled on the fleet image.
 
 ### Changed
+- Network Test: AWS S3 (s3.amazonaws.com) is no longer tested anywhere — removed from the port, service reachability, name lookup, and secure-connection checks. It is no longer required for streaming, so a venue firewall blocking it won't show a failure anymore.
+- The "Windows support ends within a year" warning now reassures instead of alarming when the VPU still has years of security updates left: it explains the unit is covered until the true end-of-servicing date (e.g. 2032 for LTSC 2021) and that no action is needed.
+- The blocked-backup-streaming warning no longer says "the broadcast still works" — the title and description now just state what's blocked and what to ask venue IT to open.
 - Status labels now look the same on every page: rounded pill shape, all-caps text (PASS, WARN, RUNNING), and count bubbles are gray instead of orange so a tally no longer looks like a warning.
 - Status words now match everywhere: "Healthy" and "Attention" chips read OK and WARNING like the rest of the app, and ScoreConnect's cloud link shows CONNECTED / NOT CONNECTED instead of Yes / No.
 - Network Test: port tiles now use the same PASS / FAIL pills as the service list next to them, and the ? icon sits right after the port number where it's easier to spot.

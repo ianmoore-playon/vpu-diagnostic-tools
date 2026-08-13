@@ -35,7 +35,6 @@ firewall-allowlist entries and shouldn't be added to `connections.csv`.
 | `pixellot.tv` | TCP/443 | Pixellot apex (FQDN-filter coverage) | current | `Test-NetworkPorts.ps1` |
 | `nfhsnetwork.com` | TCP/443 | NFHS Network | current | `Test-NetworkPorts.ps1` |
 | `secure.logmein.com` | TCP/443 | Remote access (the apex points at GoTo marketing; `secure.` rides the real service block) | current | `Test-NetworkPorts.ps1` |
-| `s3.amazonaws.com` | TCP/443 | AWS S3 reachability | **review** — generic S3, not in CSV; confirm still required | `Test-NetworkPorts.ps1`, `Test-DnsResolution.ps1` |
 | `service.singular.live` | TCP/443 | Singular overlay graphics | **review** — not in CSV; confirm still required | `Test-NetworkPorts.ps1` |
 | `sportzcast.net` | TCP/1935 | RTMP fallback (legacy ingest) | **review** — optional/legacy, not in CSV | `Test-NetworkPorts.ps1` |
 | configured resolver | UDP/53 | DNS reachability (scoped to the active-uplink resolver) | current | `Test-NetworkPorts.ps1` |

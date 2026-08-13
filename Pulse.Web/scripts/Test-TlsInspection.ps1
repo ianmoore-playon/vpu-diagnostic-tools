@@ -39,7 +39,6 @@ try {
         @{ domain = 'pixellot.tv';              purpose = 'Pixellot cloud' }
         @{ domain = 'software.pixellot.tv';     purpose = 'Pixellot software updates' }
         @{ domain = 'nfhsnetwork.com';          purpose = 'NFHS Network' }
-        @{ domain = 's3.amazonaws.com';         purpose = 'Recording uploads (AWS S3)' }
         @{ domain = 'secure.logmein.com';       purpose = 'Remote support (LogMeIn)' }
         @{ domain = 'www.python.org';           purpose = 'Pulse installer download' }
     )

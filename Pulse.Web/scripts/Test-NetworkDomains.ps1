@@ -19,7 +19,6 @@ try {
         'sportzcast.net'
         'service.singular.live'
         'logmein.com'
-        's3.amazonaws.com'
     )
 
     $results = foreach ($domain in $domains) {

@@ -652,7 +652,6 @@ DEMO = {
             {"domain": "sportzcast.net", "resolvedTo": "104.26.11.87", "status": "pass", "resolutionMs": round(random.uniform(10, 35), 1)},
             {"domain": "service.singular.live", "resolvedTo": "76.76.21.21", "status": "pass", "resolutionMs": round(random.uniform(12, 40), 1)},
             {"domain": "logmein.com", "resolvedTo": "216.52.233.2", "status": "pass", "resolutionMs": round(random.uniform(5, 15), 1)},
-            {"domain": "s3.amazonaws.com", "resolvedTo": "52.217.44.54", "status": "pass", "resolutionMs": round(random.uniform(4, 12), 1)},
         ]
     },
     "Test-NetworkPorts.ps1": lambda **kw: {
@@ -662,7 +661,6 @@ DEMO = {
             {"purpose": "Pixellot", "host": "pixellot.tv", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "Pixellot Echo", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NFHS Network", "host": "nfhsnetwork.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
-            {"purpose": "AWS S3", "host": "s3.amazonaws.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "Singular Overlay", "host": "service.singular.live", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "LogMeIn", "host": "secure.logmein.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
@@ -706,7 +704,6 @@ DEMO = {
             {"domain": "pixellot.tv", "purpose": "Pixellot cloud", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M02, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M02", "issuerOrg": "Amazon", "subjectCn": "pixellot.tv", "chainErrors": "", "notAfter": "2027-01-12", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
             {"domain": "software.pixellot.tv", "purpose": "Pixellot software updates", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M02, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M02", "issuerOrg": "Amazon", "subjectCn": "software.pixellot.tv", "chainErrors": "", "notAfter": "2027-01-12", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
             {"domain": "nfhsnetwork.com", "purpose": "NFHS Network", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M03, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M03", "issuerOrg": "Amazon", "subjectCn": "nfhsnetwork.com", "chainErrors": "", "notAfter": "2026-11-02", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
-            {"domain": "s3.amazonaws.com", "purpose": "Recording uploads (AWS S3)", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M01, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M01", "issuerOrg": "Amazon", "subjectCn": "s3.amazonaws.com", "chainErrors": "", "notAfter": "2026-12-19", "latencyMs": round(random.uniform(40, 120), 1), "detail": None},
             {"domain": "secure.logmein.com", "purpose": "Remote support (LogMeIn)", "status": "pass", "trusted": True, "issuer": "CN=DigiCert TLS RSA SHA256 2020 CA1, O=DigiCert Inc, C=US", "issuerCn": "DigiCert TLS RSA SHA256 2020 CA1", "issuerOrg": "DigiCert Inc", "subjectCn": "*.logmein.com", "chainErrors": "", "notAfter": "2026-10-15", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
             {"domain": "www.python.org", "purpose": "Pulse installer download", "status": "pass", "trusted": True, "issuer": "CN=GlobalSign Atlas R3 DV TLS CA 2025 Q2, O=GlobalSign nv-sa, C=BE", "issuerCn": "GlobalSign Atlas R3 DV TLS CA 2025 Q2", "issuerOrg": "GlobalSign nv-sa", "subjectCn": "www.python.org", "chainErrors": "", "notAfter": "2026-09-07", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
         ],
@@ -786,9 +783,6 @@ DEMO = {
             {"host": "nfhsnetwork.com",
              "system": {"resolvedTo": "143.204.160.62",  "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
              "google": {"resolvedTo": "143.204.160.113", "status": "pass", "resolutionMs": round(random.uniform(8, 16), 1),  "error": None}},
-            {"host": "s3.amazonaws.com",
-             "system": {"resolvedTo": "16.15.254.35",   "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
-             "google": {"resolvedTo": "52.216.26.198",  "status": "pass", "resolutionMs": round(random.uniform(8, 16), 1),  "error": None}},
         ],
     },
     "Test-LocalNetwork.ps1": lambda **kw: {

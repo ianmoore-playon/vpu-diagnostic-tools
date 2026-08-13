@@ -29,8 +29,7 @@ $testHosts = @(
     'www.pixellot.tv',
     'pixellot.tv',
     'software.pixellot.tv',
-    'nfhsnetwork.com',
-    's3.amazonaws.com'
+    'nfhsnetwork.com'
 )
 
 function Resolve-Once {
