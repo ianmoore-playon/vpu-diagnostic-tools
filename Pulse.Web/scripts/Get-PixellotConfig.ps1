@@ -86,12 +86,12 @@ try {
         catch { }
     }
 
-    # Calibration status — recorded by FILE/FOLDER PRESENCE, not a registry
+    # Calibration status -- recorded by FILE/FOLDER PRESENCE, not a registry
     # flag (confirmed on a VPU 2026-06-15):
     #   * Main camera multisport view:
     #       C:\Pixellot\Data\Configuration\multisportcalibration\<sport>\
     #       one subfolder per sport == calibrated for that sport; folder
-    #       mtime ≈ when. primary.txt names the default sport.
+    #       mtime ~= when. primary.txt names the default sport.
     #   * OCR / scoreboard:
     #       C:\Pixellot\Data\Configuration\Graphics\pipdesign\
     #       calibrated when enhanced_pip.txt AND innerobjects.txt both exist.

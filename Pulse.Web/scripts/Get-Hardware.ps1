@@ -46,9 +46,9 @@ try {
         }
     }
 
-    # GPU — adapted from Canopy/Leaf/checkDedicatedGpu.ps1.
+    # GPU -- adapted from Canopy/Leaf/checkDedicatedGpu.ps1.
     # Pixellot VPUs require a dedicated NVIDIA or AMD GPU for encoding.
-    # Intel iGPUs alone won't run the encoder — surface vendor + an
+    # Intel iGPUs alone won't run the encoder -- surface vendor + an
     # isDedicated flag so _compute_findings can flag wrong-hardware hosts.
     $gpus = Get-CimInstance Win32_VideoController | ForEach-Object {
         $compat = $_.AdapterCompatibility
@@ -75,7 +75,7 @@ try {
 
     # Disk drives (WMI). Physical-disk health/SMART lives in Get-DiskHealth.ps1
     # (Get-PhysicalDisk + Get-StorageReliabilityCounter); monitor count comes from
-    # Get-Peripherals.ps1. Both were collected here but never consumed — dropped.
+    # Get-Peripherals.ps1. Both were collected here but never consumed -- dropped.
     $disks = Get-CimInstance Win32_DiskDrive | ForEach-Object {
         [ordered]@{
             index            = $_.Index

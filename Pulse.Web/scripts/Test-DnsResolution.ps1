@@ -80,10 +80,10 @@ function Resolve-Once {
 try {
     # Collect raw resolution results only. The discrepancy classification
     # (system-blocked / redirect / benign) lives in the Python backend
-    # (_classify_dns_row) so the rule is in one tested place — telling a real
+    # (_classify_dns_row) so the rule is in one tested place -- telling a real
     # DNS redirect from benign CDN/GeoDNS load balancing needs public-vs-
     # private IP reasoning that doesn't belong in the collector.
-    # $host is a PowerShell automatic variable — use a different name.
+    # $host is a PowerShell automatic variable -- use a different name.
     $results = foreach ($testHost in $testHosts) {
         [ordered]@{
             host   = $testHost

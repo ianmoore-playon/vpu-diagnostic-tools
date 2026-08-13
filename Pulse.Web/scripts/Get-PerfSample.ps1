@@ -4,7 +4,7 @@
     Samples CPU and memory over a few seconds and returns the averages.
 .DESCRIPTION
     The Stream Readiness Engine needs SUSTAINED CPU/memory, not a one-instant
-    snapshot — a momentary spike at the moment of a dashboard fetch must not
+    snapshot -- a momentary spike at the moment of a dashboard fetch must not
     move the PASS/WARN/FAIL verdict. Get-Counter samples the processor and
     available-memory counters once per second for a short window and we average
     the cooked values.
@@ -15,7 +15,7 @@
             not commit charge).
 
     Outputs JSON to stdout: { cpuAvgPercent, memAvgPercent, sampleCount,
-    windowSeconds }. Errors fail soft with an {error:true} envelope — the
+    windowSeconds }. Errors fail soft with an {error:true} envelope -- the
     readiness engine then falls back to the single Get-Performance snapshot.
 #>
 [CmdletBinding()]

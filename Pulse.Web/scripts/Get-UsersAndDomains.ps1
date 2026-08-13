@@ -17,7 +17,7 @@
 
     Local-account enumeration uses WMI (Win32_UserAccount LocalAccount=true)
     rather than Get-LocalUser for max compatibility across VPU images.
-    Admin membership uses `net localgroup Administrators` — reliable and
+    Admin membership uses `net localgroup Administrators` -- reliable and
     fast on the US-English VPU images Pulse targets.
 .OUTPUTS
     JSON to stdout.
@@ -28,7 +28,7 @@ param()
 $result = $null
 $diagnostics = [ordered]@{ usersError = $null; domainError = $null }
 
-# ── Domain / workgroup ────────────────────────────────────────
+# -- Domain / workgroup ----------------------------------------
 $domainBlock = [ordered]@{
     computerName = $env:COMPUTERNAME
     partOfDomain = $null
@@ -62,7 +62,7 @@ try {
     $diagnostics.domainError = $_.Exception.Message
 }
 
-# ── Local Administrators membership (name set for the isAdmin flag) ──
+# -- Local Administrators membership (name set for the isAdmin flag) --
 $adminNames = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
 try {
     # net localgroup output: header lines, a row of dashes, member names one
@@ -76,14 +76,14 @@ try {
             if (-not $started) { continue }
             $t = $line.Trim()
             if ($t -eq '' -or $t -match 'command completed') { continue }
-            # Members may be "DOMAIN\user" or "user" — store the leaf name too.
+            # Members may be "DOMAIN\user" or "user" -- store the leaf name too.
             [void]$adminNames.Add($t)
             if ($t -match '\\([^\\]+)$') { [void]$adminNames.Add($Matches[1]) }
         }
     }
 } catch {}
 
-# ── Local user accounts ───────────────────────────────────────
+# -- Local user accounts ---------------------------------------
 $users = @()
 try {
     $accts = Get-CimInstance Win32_UserAccount -Filter "LocalAccount=true" -ErrorAction Stop
@@ -100,7 +100,7 @@ try {
             rid      = if ($u.SID -match '-(\d+)$') { [int]$Matches[1] } else { $null }
         }
     }
-    # Sort: admins first, then enabled, then name — most-relevant on top.
+    # Sort: admins first, then enabled, then name -- most-relevant on top.
     $users = $users | Sort-Object @{e={-[int]$_.isAdmin}}, @{e={-[int]$_.enabled}}, name
 } catch {
     $diagnostics.usersError = $_.Exception.Message

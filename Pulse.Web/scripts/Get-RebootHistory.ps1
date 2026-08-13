@@ -3,15 +3,15 @@
 .SYNOPSIS
     Reboot/shutdown history with cause + a pending-reboot indicator.
 .DESCRIPTION
-    Answers "why did this VPU reboot, and is one pending?" — the question
+    Answers "why did this VPU reboot, and is one pending?" -- the question
     every "the box restarted on its own" support ticket starts with.
 
     Two halves, both LOCAL (event log + registry, no network):
 
-    1. history — recent restarts/shutdowns built from the System log:
+    1. history -- recent restarts/shutdowns built from the System log:
          * 1074 (User32)        clean, software-initiated restart/shutdown.
                                 Carries process, user, reason code, and the
-                                COMMENT — Pulse's own Reboot-Vpu.ps1 stamps
+                                COMMENT -- Pulse's own Reboot-Vpu.ps1 stamps
                                 "Reboot requested from Pulse diagnostics", so a
                                 Pulse-initiated reboot is positively identified
                                 (byPulse) and an empty/other comment is not us.
@@ -23,10 +23,10 @@
        Planned-external / Unexpected) and keeps the raw fields so a tech can
        judge for themselves.
 
-    2. pending — is a reboot already queued? The flags Windows sets:
+    2. pending -- is a reboot already queued? The flags Windows sets:
          CBS RebootPending, WindowsUpdate RebootRequired,
          PendingFileRenameOperations, and a pending computer rename. Plus the
-         built-in "Device Install Reboot Required" scheduled task's last run —
+         built-in "Device Install Reboot Required" scheduled task's last run --
          a driver install flagging reboot-required is the usual culprit behind
          an "unprovoked" restart shortly after logon.
 
@@ -34,7 +34,7 @@
 #>
 [CmdletBinding()]
 param(
-    [int]$HoursBack = 168  # 7 days — reboots are rarer than ordinary events
+    [int]$HoursBack = 168  # 7 days -- reboots are rarer than ordinary events
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,7 +53,7 @@ try {
     $startTime = (Get-Date).AddHours(-$HoursBack)
     $history = @()
 
-    # ── Recent restart/shutdown events ───────────────────────────
+    # -- Recent restart/shutdown events ---------------------------
     $events = Get-WinEvent -FilterHashtable @{
         LogName = 'System'; Id = 1074, 1076, 6008, 41; StartTime = $startTime
     } -MaxEvents 60 -ErrorAction SilentlyContinue
@@ -77,7 +77,7 @@ try {
 
         switch ($e.Id) {
             1074 {
-                # English System log format — the same text Event Viewer shows.
+                # English System log format -- the same text Event Viewer shows.
                 $entry.process    = Get-1074Field $msg 'The process (.+?) has initiated the'
                 $entry.user       = Get-1074Field $msg 'on behalf of user (\S+)'
                 $entry.reasonText = Get-1074Field $msg 'for the following reason: (.+)'
@@ -125,7 +125,7 @@ try {
 
     $history = @($history | Sort-Object { $_.time } -Descending)
 
-    # ── Pending-reboot flags ─────────────────────────────────────
+    # -- Pending-reboot flags -------------------------------------
     $reasons = @()
     try {
         if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') {
@@ -149,7 +149,7 @@ try {
     } catch { }
 
     # The built-in PnP task that reboots after a driver/device install flags
-    # reboot-required — the usual cause of an "unprovoked" restart at logon.
+    # reboot-required -- the usual cause of an "unprovoked" restart at logon.
     $deviceInstallLastRun = $null
     try {
         $task = Get-ScheduledTask -TaskName 'Device Install Reboot Required' -ErrorAction SilentlyContinue
@@ -159,7 +159,7 @@ try {
         }
     } catch { }
 
-    # ── Uptime / last boot ───────────────────────────────────────
+    # -- Uptime / last boot ---------------------------------------
     $lastBoot = $null; $uptime = $null
     try {
         $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue

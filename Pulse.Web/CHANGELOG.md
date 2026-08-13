@@ -35,6 +35,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - The "Windows support ends within a year" warning now reassures instead of alarming when the VPU still has years of security updates left: it explains the unit is covered until the true end-of-servicing date (e.g. 2032 for LTSC 2021) and that no action is needed.
 - The blocked-backup-streaming warning no longer says "the broadcast still works" — the title and description now just state what's blocked and what to ask venue IT to open.
 
+### Fixed
+- Network: the packet capture never ran on a real VPU — it failed instantly with no result. It now runs and reports normally. (A stray dash character in the script stopped Windows from reading the file at all; it worked in testing and failed on every actual unit.)
+- Cleaned up garbled punctuation in diagnostic messages on real VPUs — the ScoreConnect "software is out of date" notice and truncated camera error text were showing stray characters where a dash or "..." belonged.
+
 ## [1.1.2] - 2026-08-07
 
 ### Fixed

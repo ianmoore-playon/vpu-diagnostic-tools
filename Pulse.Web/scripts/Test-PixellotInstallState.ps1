@@ -33,7 +33,7 @@ try {
         return
     }
 
-    # Collect part files — matches .part_1, .part_2, .part_3, and the
+    # Collect part files -- matches .part_1, .part_2, .part_3, and the
     # common .part1/.part2 variants some Pixellot versions emit.
     $partFiles = @(Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match '\.part_?\d+($|\.)' } |

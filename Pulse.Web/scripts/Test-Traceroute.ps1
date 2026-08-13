@@ -60,7 +60,7 @@ try {
                 $rttMs  = $reply.RoundtripTime
                 $hopStatus = if ($reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) { 'reached' } else { 'transit' }
 
-                # Quick reverse DNS — 500ms async timeout so it doesn't stall
+                # Quick reverse DNS -- 500ms async timeout so it doesn't stall
                 try {
                     $ar = [System.Net.Dns]::BeginGetHostEntry($ip, $null, $null)
                     if ($ar.AsyncWaitHandle.WaitOne(500)) {

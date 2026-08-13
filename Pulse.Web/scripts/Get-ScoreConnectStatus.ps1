@@ -11,10 +11,10 @@
     using the same alias tables as the WPF ScoreConnectService.
 
     ScoreConnect product versions:
-      SC III  — web-based (localhost:5000), raw RTD data only, no parsed scores.
+      SC III  -- web-based (localhost:5000), raw RTD data only, no parsed scores.
                 This script targets SC III.
-      SC II   — web-based, has parsed scoreboard data (team names, scores, clock).
-      SC I    — standalone .exe, has parsed data but no HTTP API.
+      SC II   -- web-based, has parsed scoreboard data (team names, scores, clock).
+      SC I    -- standalone .exe, has parsed data but no HTTP API.
 
     Real SC III get-status shape (v1.4.x):
       { botNumber, scoreBoardData: {id, messageType, description},
@@ -23,7 +23,7 @@
 
     Known issues:
       - botNumber from get-status and get-bot-number is notoriously stale on
-        SC III — often shows a previous unit's number until a service reset.
+        SC III -- often shows a previous unit's number until a service reset.
         Surfaced as best-effort, not authoritative.
       - Bus-reported device description (DEVPKEY) requires admin access on some
         VPU builds. VID/PID fallback (04D8/00DD) covers ScoreLink detection.
@@ -35,11 +35,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
 
 # Emit an object as compressed JSON with any literal C0 control bytes escaped.
 # Windows PowerShell 5.1's ConvertTo-Json (unlike PS 7's) leaves control bytes
-# unescaped inside strings — the raw Daktronics RTD scoreboard string uses
+# unescaped inside strings -- the raw Daktronics RTD scoreboard string uses
 # STX/ETX framing, and findstr scraping a UTF-16 SC I log can yield embedded
 # NULs. The server parses our stdout with a strict JSON reader that rejects
 # literal control characters, so a single stray byte voids the whole payload
@@ -78,8 +78,8 @@ function Invoke-SafeGet {
 
 # Pick the first non-empty string value from a hashtable by an ordered list of
 # candidate keys.  Uses PowerShell's -eq operator which is case-insensitive by
-# default (e.g. 'VendorName' -eq 'vendorName' → True).  Do NOT replace with a
-# direct hashtable index ($Map[$k]) — that would break the case-insensitive
+# default (e.g. 'VendorName' -eq 'vendorName' -> True).  Do NOT replace with a
+# direct hashtable index ($Map[$k]) -- that would break the case-insensitive
 # matching that SC III's inconsistent casing requires.
 function Pick-First {
     param([hashtable]$Map, [string[]]$Keys)
@@ -128,7 +128,7 @@ function Get-BusReportedDesc {
 }
 
 # Read FileVersion from the ScoreConnect III executable on disk.
-# get-status has no version field — this is the only reliable source.
+# get-status has no version field -- this is the only reliable source.
 function Get-ScoreConnectExeVersion {
     $candidates = @(
         'C:\Program Files (x86)\Sportzcast LLC\ScoreConnectIII\ScoreConnectIII.exe',
@@ -141,7 +141,7 @@ function Get-ScoreConnectExeVersion {
             $v = $info.ProductVersion
             if (-not $v) { $v = $info.FileVersion }
             if ($v) {
-                # Trim git commit hash suffix: "1.4.0.10+bf99cfe..." → "1.4.0.10"
+                # Trim git commit hash suffix: "1.4.0.10+bf99cfe..." -> "1.4.0.10"
                 $v = $v.Trim()
                 $plusIdx = $v.IndexOf('+')
                 if ($plusIdx -gt 0) { $v = $v.Substring(0, $plusIdx) }
@@ -167,7 +167,7 @@ function Get-ExeVersionAt {
     return $null
 }
 
-# ── ScoreConnect service detection ────────────────────────────────────────────
+# -- ScoreConnect service detection --------------------------------------------
 # Adapted from Canopy's scoreboardModeSet.ps1. The Windows service names are
 # 'scoreconnect' (SC I), 'scoreconnectii' (SC II), 'scoreconnectiii' (SC III).
 # Get-Service -Name matches exactly, so 'scoreconnect' won't match the others.
@@ -196,7 +196,7 @@ function Get-ScoreConnectServices {
 
 # Best-effort BOT number from SC I logs. The bot id is written as "BOT=<id>".
 # Logs may be UTF-16, so use findstr (encoding-safe) per the VPU log-parsing
-# guidance rather than Select-String. The bot id is notoriously stale anyway —
+# guidance rather than Select-String. The bot id is notoriously stale anyway --
 # surfaced best-effort.
 function Get-ScoreConnectILogBot {
     $logDir = 'C:\Program Files (x86)\Sportzcast LLC\ScoreConnect\Logs'
@@ -211,14 +211,14 @@ function Get-ScoreConnectILogBot {
     return $null
 }
 
-# ── SC I probe (file-based) ───────────────────────────────────────────────────
+# -- SC I probe (file-based) ---------------------------------------------------
 # Adapted from Canopy's scoreboardModeSet.ps1. SC I is a legacy standalone
 # install with no HTTP API. Configuration lives in:
 #   C:\Program Files (x86)\Sportzcast LLC\ScoreConnect\Files\Parms.json
 # Schema: parms[0].sbvendor / .sbcode (no sbvendorname like SC II has).
 #
 # "Out of date" detection: very old SC I builds leave stray .txt files in the
-# Files folder instead of a Parms.json — Canopy treats their presence as an
+# Files folder instead of a Parms.json -- Canopy treats their presence as an
 # out-of-date install that should be upgraded.
 #
 # Returns an object shaped like the SC II probe (hardware = 'ScoreConnect') so
@@ -254,7 +254,7 @@ function Probe-ScoreConnectI {
         $result.reachable = $true
         $result.outOfDate = $true
         $result.version   = 'Out of date'
-        $result.error     = 'ScoreConnect (SC I) software is out of date — upgrade to SC III'
+        $result.error     = 'ScoreConnect (SC I) software is out of date -- upgrade to SC III'
         return $result
     }
 
@@ -293,13 +293,13 @@ function Probe-ScoreConnectI {
     return $result
 }
 
-# ── SC II probe (SignalR long-polling) ───────────────────────────────────────
-# SC II uses SignalR 2.x on localhost:1400.  No REST API — all data flows
+# -- SC II probe (SignalR long-polling) ---------------------------------------
+# SC II uses SignalR 2.x on localhost:1400.  No REST API -- all data flows
 # through the ScoreConnectHub hub.  We use the long-polling transport so we
 # don't need a WebSocket library.
 #
-# Flow: negotiate → connect → start → send getsettings → send uidlogin →
-#       send getparms → poll for broadcasts → parse and return.
+# Flow: negotiate -> connect -> start -> send getsettings -> send uidlogin ->
+#       send getparms -> poll for broadcasts -> parse and return.
 #
 # Parsed score data is broadcast as individual topics:
 #   status_vscore, status_hscore, status_clock, status_text1/2/3
@@ -308,12 +308,12 @@ function Probe-ScoreConnectI {
 function Probe-ScoreConnectII {
     param([string]$Sc2Base = 'http://localhost:1400')
 
-    # ── ZERO-IMPACT PROBE ──────────────────────────────────────────────
+    # -- ZERO-IMPACT PROBE ----------------------------------------------
     # SC II is single-threaded.  ANY SignalR connection (even short-lived)
     # blocks the server from servicing the real client, freezing live data.
     #
     # Strategy: TCP check (is it running?) + read settings.json from disk.
-    # No HTTP requests to SC II at all — zero impact on the data stream.
+    # No HTTP requests to SC II at all -- zero impact on the data stream.
     #
     # settings.json contains: version, hardware, UID, team names, vendor,
     # sport, bot#, license, scorelink device, network interfaces.
@@ -341,7 +341,7 @@ function Probe-ScoreConnectII {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
     try {
-        # ── 1. TCP check on port 1400 — is SC II running? ──────────────────
+        # -- 1. TCP check on port 1400 -- is SC II running? ------------------
         $sc2Uri = [System.Uri]$Sc2Base
         $tcp = New-Object System.Net.Sockets.TcpClient
         try {
@@ -352,7 +352,7 @@ function Probe-ScoreConnectII {
 
         $result.reachable = $true
 
-        # ── 2. Read settings.json from disk ─────────────────────────────────
+        # -- 2. Read settings.json from disk ---------------------------------
         $settingsPath = $null
         $searchPaths = @(
             'C:\Program Files (x86)\Sportzcast\ScoreConnectII\Files\settings.json',
@@ -375,7 +375,7 @@ function Probe-ScoreConnectII {
             $result.hardware = $json.hardware
             $result.uid      = $json.instance_uid
 
-            # parms array — first slot has the active config
+            # parms array -- first slot has the active config
             $parms = $null
             if ($json.parms -and $json.parms.Count -gt 0) {
                 $parms = $json.parms[0]
@@ -432,13 +432,13 @@ function Probe-ScoreConnectII {
 try {
     $BaseUrl = $BaseUrl.TrimEnd('/')
 
-    # ── 1. Status probe ─────────────────────────────────────────────────────
+    # -- 1. Status probe -----------------------------------------------------
     $reachable  = $false
     $statusData = $null
     $errorMsg   = $null
     $version    = $null
 
-    # get-status is the primary endpoint — it carries BOT status, score data
+    # get-status is the primary endpoint -- it carries BOT status, score data
     # status, network state, and the raw scoreboard data string.
     $sr = Invoke-SafeGet "$BaseUrl/api/configuration/get-status"
     if ($sr.ok) {
@@ -447,14 +447,14 @@ try {
     }
 
     # Fallback: if get-status fails, try get-current-configuration to confirm
-    # reachability (root is too broad — matches any HTTP server).
+    # reachability (root is too broad -- matches any HTTP server).
     if (-not $reachable) {
         $sr2 = Invoke-SafeGet "$BaseUrl/api/configuration/get-current-configuration"
         if ($sr2.ok) { $reachable = $true }
     }
 
     # NOTE: do NOT set $errorMsg here just because SC III isn't answering on
-    # :5000. SC III being absent is an expected state on a legacy box — this
+    # :5000. SC III being absent is an expected state on a legacy box -- this
     # VPU may be running SC I or SC II, which we still detect and report below
     # in the `sc2`/legacy slot. The `reachable` flag already conveys SC III's
     # status; the top-level `error` field is reserved for a genuine probe
@@ -462,10 +462,10 @@ try {
     # legacy-only VPU as a fatal "Failed to load data" and discard the SC I/II
     # data we collected.
 
-    # Version: get-status has no version field — always use exe on disk.
+    # Version: get-status has no version field -- always use exe on disk.
     $version = Get-ScoreConnectExeVersion
 
-    # ── 2. Extract status fields ────────────────────────────────────────────
+    # -- 2. Extract status fields --------------------------------------------
     # Real get-status shape (v1.4.x):
     #   { botNumber: 0,
     #     scoreBoardData: { id, messageType, description },
@@ -483,12 +483,12 @@ try {
     $isConnectedToBotServer = $null
 
     if ($statusData) {
-        # scoreBoardData.description — tells us if data is flowing
+        # scoreBoardData.description -- tells us if data is flowing
         if ($statusData.PSObject.Properties['scoreBoardData'] -and $statusData.scoreBoardData) {
             $dataStatus = $statusData.scoreBoardData.description
         }
 
-        # Raw data string (Daktronics RTD etc.) — trim whitespace padding
+        # Raw data string (Daktronics RTD etc.) -- trim whitespace padding
         if ($statusData.PSObject.Properties['data']) {
             $rawStr = "$($statusData.data)".Trim()
             if ($rawStr -ne '') { $rawData = $rawStr }
@@ -508,9 +508,9 @@ try {
         }
     }
 
-    # ── 3. Extended configuration ────────────────────────────────────────────
+    # -- 3. Extended configuration --------------------------------------------
     # Try extended first (carries vendor/sport names), fall back to plain
-    # (only numeric IDs — less useful but confirms the config endpoint works).
+    # (only numeric IDs -- less useful but confirms the config endpoint works).
     $configuration = $null
     if ($reachable) {
         foreach ($cfgPath in @(
@@ -543,8 +543,8 @@ try {
         }
     }
 
-    # ── 4. BOT status ────────────────────────────────────────────────────────
-    # NOTE: The bot number reported by SC III is notoriously stale — it often
+    # -- 4. BOT status --------------------------------------------------------
+    # NOTE: The bot number reported by SC III is notoriously stale -- it often
     # shows a previous unit's number and only corrects after a service reset.
     # Do NOT treat it as authoritative.  We still surface it ("best-effort")
     # because _some_ value is better than none for field triage, but the UI
@@ -612,17 +612,17 @@ try {
         }
     }
 
-    # ── 5. ScoreLink USB detection ───────────────────────────────────────────
+    # -- 5. ScoreLink USB detection -------------------------------------------
     # Detection priority:
-    #   1. Bus-reported description (DEVPKEY_Device_BusReportedDeviceDesc) —
+    #   1. Bus-reported description (DEVPKEY_Device_BusReportedDeviceDesc) --
     #      requires admin access, may fail with SecurityException.
-    #   2. Caption / Description / Name string matching — secondary.
-    #   3. VID/PID matching — tertiary fallback when bus-reported is access-
+    #   2. Caption / Description / Name string matching -- secondary.
+    #   3. VID/PID matching -- tertiary fallback when bus-reported is access-
     #      denied and generic driver names ("USB Serial Device") don't match.
     #      Known VID/PID pairs for Sportzcast hardware:
     #        VID_04D8 & PID_00DD = Microchip MCP2221 (ScoreLink / ScoreLinkII)
     #
-    # Not cached — runs every poll cycle (~30s).  The WMI USB enumeration is
+    # Not cached -- runs every poll cycle (~30s).  The WMI USB enumeration is
     # sub-100ms and ScoreLink hardware can be plugged/unplugged between polls.
     $scoreLinkConnected = $false
     $scoreLinkPort      = ''
@@ -636,7 +636,7 @@ try {
         @{ needle = 'mcp2221';                    model = 'ScoreLink'   }
     )
 
-    # VID/PID pairs for Sportzcast hardware — fallback when bus-reported
+    # VID/PID pairs for Sportzcast hardware -- fallback when bus-reported
     # description is access-denied and Caption is generic ("USB Serial Device").
     $vidPidMap = @{
         'VID_04D8&PID_00DD' = 'ScoreLink'
@@ -645,7 +645,7 @@ try {
     $comRx = [regex]'\bCOM(\d+)\b'
 
     # OS-version-aware generic serial-driver description (from Canopy's
-    # usbConnectionCheck.ps1). Windows 8 / 8.1 (6.2–6.3) name the inbox
+    # usbConnectionCheck.ps1). Windows 8 / 8.1 (6.2-6.3) name the inbox
     # USB-serial driver "USB Serial Port"; every other build uses "USB Serial
     # Device". Used as a LAST-RESORT needle (after the specific name + VID/PID
     # strategies) so a ScoreLink whose bus-reported description is access-
@@ -660,7 +660,7 @@ try {
     } catch {}
 
     try {
-        # USB\ filter — WPF checks pnpId.StartsWith("USB\\").
+        # USB\ filter -- WPF checks pnpId.StartsWith("USB\\").
         # WQL escaping: 'USB\\%' is a literal backslash + wildcard.
         # Some WMI provider builds reject the escaped backslash, so fall back
         # to a broader query with client-side filtering if the first fails.
@@ -700,7 +700,7 @@ try {
                 }
             }
 
-            # Strategy 2: VID/PID fallback — needed when bus-reported description
+            # Strategy 2: VID/PID fallback -- needed when bus-reported description
             # is access-denied and Caption is generic ("USB Serial Device").
             if ($null -eq $matched) {
                 $pnpUpper = $pnpId.ToUpper()
@@ -715,7 +715,7 @@ try {
             # Strategy 3 (last resort): OS-aware generic serial-driver name.
             # On a VPU the ScoreLink is the USB-serial adapter, so a COM-port
             # device whose driver description is the OS's generic serial name
-            # is treated as a ScoreLink. Heuristic — could in theory match an
+            # is treated as a ScoreLink. Heuristic -- could in theory match an
             # unrelated USB-serial adapter, hence it runs only after the
             # specific name and VID/PID strategies fail.
             if ($null -eq $matched -and $drvLow.Contains($osSerialDesc)) {
@@ -742,7 +742,7 @@ try {
         "$scoreLinkModel device connected ($scoreLinkPort)"
     }
 
-    # ── 6. Legacy ScoreConnect probe (SC II, else SC I) ──────────────────────
+    # -- 6. Legacy ScoreConnect probe (SC II, else SC I) ----------------------
     # Per Canopy's scoreboardModeSet.ps1, determine which versions are running
     # via Get-Service, then read the appropriate config source. SC III is
     # handled above (HTTP); here we cover the legacy installs that previously
@@ -753,12 +753,12 @@ try {
     # it in the legacy ScoreConnect panel without any frontend changes.
     $svc = Get-ScoreConnectServices
 
-    # SC II — rich file-based probe on port 1400 (settings.json).
+    # SC II -- rich file-based probe on port 1400 (settings.json).
     $sc2BaseUri = [System.Uri]$BaseUrl
     $sc2Url     = "http://$($sc2BaseUri.Host):1400"
     $sc2Data    = Probe-ScoreConnectII -Sc2Base $sc2Url
 
-    # SC I — only when SC II isn't present. Probe if the SC I service is
+    # SC I -- only when SC II isn't present. Probe if the SC I service is
     # running/installed, or its config exists on disk (covers a stopped
     # service that's still configured).
     $legacyData = $null
@@ -770,7 +770,7 @@ try {
         if ($sc1Data.reachable) { $legacyData = $sc1Data }
     }
 
-    # ── 7. Output ────────────────────────────────────────────────────────────
+    # -- 7. Output ------------------------------------------------------------
     $result = [ordered]@{
         reachable            = $reachable
         baseUrl              = $BaseUrl
