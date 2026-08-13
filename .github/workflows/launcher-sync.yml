@@ -1,0 +1,64 @@
+# Guard: runners/run_pulse.bat and Pulse.Web/launcher/run_pulse.bat must stay
+# BYTE-identical.
+#
+# Pulse.Web/launcher/run_pulse.bat is the copy that ships inside the release
+# zip, and it is what the beta-retirement migration installs as
+# C:\Pulse\Pulse.bat. Fixing one copy and not the other therefore ships a
+# stale launcher to the field — silently, since nothing compares them. Until
+# now the two were kept in sync purely by hand.
+#
+# Why its own workflow: web-build.yml only runs on web-* TAG pushes (plus
+# workflow_call / workflow_dispatch), and web-auto-tag.yml only on pushes to
+# dev under Pulse.Web/** — which would not even see a change to
+# runners/run_pulse.bat. Neither fires on a pull request, which is exactly
+# when drift needs to be caught, so the check lives here instead.
+
+name: Launcher sync check
+
+on:
+  pull_request:
+    paths:
+      - "runners/run_pulse.bat"
+      - "Pulse.Web/launcher/run_pulse.bat"
+      - ".github/workflows/launcher-sync.yml"
+  push:
+    branches: [dev, beta, main]
+    paths:
+      - "runners/run_pulse.bat"
+      - "Pulse.Web/launcher/run_pulse.bat"
+      - ".github/workflows/launcher-sync.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  identical:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: runners/run_pulse.bat == Pulse.Web/launcher/run_pulse.bat
+        run: |
+          A=runners/run_pulse.bat
+          B=Pulse.Web/launcher/run_pulse.bat
+
+          for f in "$A" "$B"; do
+            if [ ! -f "$f" ]; then
+              echo "::error file=${f}::Missing — both copies of the production launcher must exist."
+              exit 1
+            fi
+          done
+
+          # cmp, not diff: these must match byte for byte (line endings and
+          # encoding included), not merely line for line.
+          if cmp -s "$A" "$B"; then
+            echo "Launcher copies are byte-identical."
+            exit 0
+          fi
+
+          echo "Difference (< $A, > $B):"
+          diff "$A" "$B" || true
+          echo "::error file=${B}::The bundled launcher has drifted from ${A}. These two files must be byte-identical — run 'cp ${A} ${B}' and commit the result."
+          exit 1

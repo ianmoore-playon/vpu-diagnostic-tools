@@ -1,0 +1,139 @@
+# Enforce CLAUDE.md "PowerShell 5.1 Portability" rule 5: pure ASCII in .ps1 files.
+#
+# Every collector in Pulse.Web/scripts/ runs under Windows PowerShell 5.1 on the
+# fleet image (Win10 LTSC 1809). None of these files carry a UTF-8 BOM, so 5.1
+# decodes them as ANSI: any non-ASCII byte becomes mojibake, which breaks parsing
+# and mangles console output on every real VPU. Demo mode and pwsh 7 both hide it
+# (commit a54f85f is the field failure the rule was written from).
+#
+# The rule was documented but unenforced, and 35 of 55 scripts drifted back to
+# ~1,900 non-ASCII characters. This is the enforcement.
+#
+# Deliberately a standalone workflow rather than a step bolted onto web-build.yml
+# or web-auto-tag.yml: both of those are tag/release driven (web-build.yml fires
+# only on web-* tags, web-auto-tag.yml only on a dev push, and it publishes). A
+# guard has to fail on the pull request, before the bad character is merged and
+# packaged into a release.
+#
+# The check script below is itself written in pure ASCII (offending characters
+# are referenced by \u escape) so it cannot depend on the runner's locale.
+
+name: PowerShell ASCII check
+
+on:
+  push:
+    branches: [dev, beta, main]
+    paths:
+      - "Pulse.Web/scripts/**.ps1"
+      - ".github/workflows/ps-ascii-check.yml"
+  pull_request:
+    paths:
+      - "Pulse.Web/scripts/**.ps1"
+      - ".github/workflows/ps-ascii-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ascii:
+    name: Pulse.Web/scripts must be pure ASCII
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan .ps1 files for non-ASCII characters
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys, unicodedata
+
+          # Never fail on the runner's stdout encoding while reporting a bad byte.
+          try:
+              sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+          except Exception:
+              pass
+
+          # Characters that have drifted in before, and their house-style ASCII form.
+          SUGGEST = {
+              '\u2014': '--',   # em dash
+              '\u2013': '-',    # en dash
+              '\u2500': '-',    # box drawing horizontal (comment separator bars)
+              '\u2192': '->',   # rightwards arrow
+              '\u2026': '...',  # horizontal ellipsis
+              '\u2248': '~=',   # almost equal to
+              '\u2018': "'",    # left single quotation mark
+              '\u2019': "'",    # right single quotation mark
+              '\u201c': '"',    # left double quotation mark
+              '\u201d': '"',    # right double quotation mark
+              '\u00a0': ' ',    # non-breaking space
+              '\u2022': '*',    # bullet
+              '\ufeff': '',     # BOM / zero-width no-break space
+          }
+          MAX_DETAIL = 50
+
+          root = pathlib.Path('Pulse.Web/scripts')
+          if not root.is_dir():
+              print('FAIL: %s not found -- has the layout moved?' % root)
+              sys.exit(1)
+
+          scanned = 0
+          violations = 0
+          shown = 0
+          bad_files = set()
+
+          for path in sorted(root.rglob('*.ps1')):
+              scanned += 1
+              raw = path.read_bytes()
+              try:
+                  text = raw.decode('utf-8')
+              except UnicodeDecodeError as exc:
+                  violations += 1
+                  bad_files.add(path)
+                  print('%s: not valid UTF-8 at byte %d -- must be pure ASCII' % (path, exc.start))
+                  print('::error file=%s::Not valid UTF-8 at byte %d; .ps1 files must be pure ASCII (CLAUDE.md PS 5.1 rule 5)' % (path, exc.start))
+                  continue
+
+              for lineno, line in enumerate(text.splitlines(), 1):
+                  for col, ch in enumerate(line, 1):
+                      if ord(ch) < 128:
+                          continue
+                      violations += 1
+                      bad_files.add(path)
+                      if shown >= MAX_DETAIL:
+                          continue
+                      shown += 1
+                      name = unicodedata.name(ch, 'unnamed character')
+                      fix = SUGGEST.get(ch)
+                      if fix:
+                          hint = 'use "%s" instead' % fix
+                      elif ch == '\ufeff':
+                          hint = 'remove it'
+                      else:
+                          hint = 'use an ASCII equivalent'
+                      # ascii(ch) renders as \uXXXX, so this line is safe to print anywhere.
+                      print('%s:%d:%d: non-ASCII %s (U+%04X %s) -- %s'
+                                % (path, lineno, col, ascii(ch), ord(ch), name, hint))
+                      print('    %s' % line)
+                      print('    %s^' % (' ' * (col - 1)))
+                      print('::error file=%s,line=%d,col=%d::Non-ASCII %s (U+%04X %s) -- %s. CLAUDE.md PS 5.1 rule 5: pure ASCII in .ps1 files.'
+                                % (path, lineno, col, ascii(ch), ord(ch), name, hint))
+
+          print('')
+          if violations:
+              if violations > shown:
+                  print('... and %d more (detailed output capped at %d).' % (violations - shown, MAX_DETAIL))
+                  print('')
+              print('FAIL: %d non-ASCII character(s) in %d of %d .ps1 file(s).'
+                        % (violations, len(bad_files), scanned))
+              print('')
+              print('Windows PowerShell 5.1 on the fleet image reads these BOM-less .ps1')
+              print('files as ANSI, so every character above becomes mojibake on a real')
+              print('VPU -- breaking parsing and mangling the output techs read.')
+              print('See CLAUDE.md, "PowerShell 5.1 Portability (fleet image)", rule 5.')
+              print('')
+              print('Find them locally with:')
+              print("  perl -CSD -ne 'print \"$ARGV:$.: $_\" if /[^\\x00-\\x7F]/; close ARGV if eof' Pulse.Web/scripts/*.ps1")
+              sys.exit(1)
+
+          print('OK: all %d .ps1 file(s) under %s are pure ASCII.' % (scanned, root))
+          PY

@@ -1,0 +1,51 @@
+# Run the Pulse.Web Python test suite.
+#
+# The suite (Pulse.Web/tests/) encodes real invariants -- the demo-data
+# contract that catches demo-vs-real drift, the findings shape the dashboard
+# renders, and the Event Streaming cloud parsing that caused the v1.1.2
+# production hotfix. Nothing ran it. `test_every_referenced_script_has_demo`
+# was red from 2026-07-21 (PR #131 added Remove-CanopyLeaf.ps1 without an
+# exemption) until 2026-08-07 -- seventeen days, through two releases, because
+# a failing assertion nobody executes is just a comment.
+#
+# Pinned to 3.12 to match the runtime the fleet actually ships: Pulse.Web/run.bat
+# bootstraps embedded CPython 3.12.8. Version matters here -- fromisoformat's
+# handling of the 7-digit fractional seconds PowerShell's 'o' format emits
+# differs between 3.9 and 3.12, so testing on the wrong minor hides or invents
+# failures.
+#
+# Stdlib unittest only, no dependencies to install.
+
+name: Python tests
+
+on:
+  push:
+    branches: [dev, beta, main]
+    paths:
+      - "Pulse.Web/app/**.py"
+      - "Pulse.Web/tests/**.py"
+      - ".github/workflows/python-tests.yml"
+  pull_request:
+    paths:
+      - "Pulse.Web/app/**.py"
+      - "Pulse.Web/tests/**.py"
+      - ".github/workflows/python-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unittest:
+    name: Pulse.Web unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run unittest suite
+        working-directory: Pulse.Web
+        run: python -m unittest discover -s tests -v
