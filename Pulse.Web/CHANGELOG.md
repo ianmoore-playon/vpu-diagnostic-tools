@@ -22,6 +22,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Changed
+- Storage alerts are now critical-only: the amber "space low" warning at 80% full is gone everywhere (findings, readiness, Disks page, dashboard bars). Drives alert only when they actually matter — over 90% full — which is also the moment the Storage Cleanup card appears with the fix.
+
 ### Added
 - Disks: when the recordings drive (D:) reaches 90% full, a Storage Cleanup card can free space — it deletes daily test clips older than 90 days and game recordings older than 1 year, after showing exactly which folders (with counts and sizes) will be removed. Nothing from the last 90 days is ever touched.
 - Pulse now closes itself (server and browser window) 5 minutes after the LogMeIn session that opened it ends — no more Pulse left running on the VPU after you disconnect. A banner at the top of the page shows the live countdown, and reconnecting within those 5 minutes cancels it automatically; opening Pulse at the console or over another remote tool is unaffected.

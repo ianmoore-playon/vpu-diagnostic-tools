@@ -1784,19 +1784,10 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     ])),
                 }
             )
-        elif pct > 80:
-            findings.append(
-                {
-                    "code": "disk-low",
-                    "severity": "warning",
-                    "category": "Storage",
-                    "title": f"{name} space low",
-                    "recommendation": " ".join(filter(None, [
-                        f"Plan a cleanup soon — {label} is {pct:g}% full.",
-                        consequence,
-                    ])),
-                }
-            )
+        # No warning tier below 90% — disk fill alerts are critical-only.
+        # The old `disk-low` finding at 80–90% ("plan a cleanup soon") was
+        # noise a tech could do nothing about; Storage Cleanup only offers
+        # itself at 90%, so the alert and the remedy now arrive together.
 
     # Drive SMART / reliability — the coarse Healthy/Unhealthy rollup plus the
     # SSD-fleet early-warning signals (wear %, uncorrectable errors, OS pre-fail
@@ -2317,7 +2308,7 @@ _READINESS_POLICY = {
     "pixellot-over-cap":     "risk",     # F10 build newer than GPU/OS supports
     "gpu-anomaly":           "risk",     # F12 Volta / roster anomaly
     "install-incomplete":    "risk",     # F13 interrupted installer, agent up
-    "disk-low":              "risk",     # F16 a volume at 80–90%
+    # F16 (`disk-low`, a volume at 80–90%) removed — disk fill is critical-only now.
     "disk-smart-prefail":    "risk",     # F16b drive SMART pre-fail / uncorrectable errors
     "ram-insufficient":      "risk",     # F21 <32 GB host
     "ntp-unapproved":        "risk",     # F22 drift can break signed-URL stream
@@ -2439,18 +2430,14 @@ def _compute_readiness(findings, performance=None, disk_health=None,
                 f"and risks frame drops — check airflow and fans.", "Hardware")
 
     # F15a/b — C:/D: by drive letter (C: is stream-processing → blocker;
-    # D: is post-event VOD storage → risk).
+    # D: is post-event VOD storage → risk). Critical-only: the old 80–90%
+    # `disk-c-low` risk band was removed along with the disk-low finding.
     c_pct, d_pct = _disk_used_by_letter(disk_health, performance)
-    if isinstance(c_pct, (int, float)):
-        if c_pct > 90:
-            add("blocker", "disk-c-critical", "System drive (C:) almost full",
-                f"C: is {c_pct:g}% full. The live stream is processed on C: — if it "
-                f"fills, the VPU can't process the broadcast. Free space on C: now.",
-                "Storage")
-        elif c_pct > 80:
-            add("risk", "disk-c-low", "System drive (C:) running low",
-                f"C: is {c_pct:g}% full and approaching the critical threshold. "
-                f"Clear space on C: before game time.", "Storage")
+    if isinstance(c_pct, (int, float)) and c_pct > 90:
+        add("blocker", "disk-c-critical", "System drive (C:) almost full",
+            f"C: is {c_pct:g}% full. The live stream is processed on C: — if it "
+            f"fills, the VPU can't process the broadcast. Free space on C: now.",
+            "Storage")
     if isinstance(d_pct, (int, float)) and d_pct > 90:
         add("risk", "disk-d-critical", "Recording drive (D:) almost full",
             f"D: is {d_pct:g}% full. The post-event recording (VOD) is written to "
