@@ -350,18 +350,32 @@ try {
 
     $total = $consumed + $remaining
 
-    # Port index 0..3 on the PSE controller maps to chassis Port 1..4, matching
-    # gen-1's "P{index+1}" labelling.
+    # PSE channels are 1-BASED: channel N is chassis Port N, and valid channels
+    # are 1..4. Gen-1 read 0..3 and labelled them "P{index+1}"; that is wrong in
+    # two ways at once and this collector inherited it until it was measured.
     #
-    # Checked against a live production GIE74P (2026-08-12): cameras were on
-    # chassis ports 2 and 3 (NIC IPs 169.254.16.101/.102) and PSE indices 1 and 2
-    # were the powered pair, which this mapping gets right. NOT yet conclusive --
-    # that venue's populated ports were symmetric, so the mirror mapping
-    # (port = 4 - index) fits the same data. Needs one asymmetric reading (1 or 3
-    # cameras, or a single cable pulled) to rule the mirror out.
+    # Proven by controlled experiment on a GIE74P (VPU2, 2026-08-12): unplugging
+    # the camera on chassis Port 1 took channel 1 from 54 V to its 0.187 V float,
+    # binding channel N to Port N directly. A sweep of indices 0..5 then showed
+    # the real range:
+    #     ch0  0.000 V  0.0002 A  <- phantom, out of range
+    #     ch1  0.187 V            <- Port 1 (camera just unplugged)
+    #     ch2 54.336 V  5.52 W    <- Port 2
+    #     ch3  0.187 V            <- Port 3 (empty)
+    #     ch4 54.336 V  3.82 W    <- Port 4 (OCR camera)
+    #     ch5  0.000 V            <- phantom, out of range
+    #
+    # Reading 0..3 therefore invented a dead Port 1, shifted every other reading
+    # one place, and never read Port 4 at all -- a powered camera there showed as
+    # "off". The same 1-based mapping also fits the production card read earlier.
+    #
+    # WATCH OUT: out-of-range channels return rc=0 with zeroed out-params, so a
+    # bad index looks exactly like an unpowered port. There is no error to catch;
+    # the only defence is the consumed-vs-sum cross-check below.
     $ports     = @()
     $poeOnCount = 0
-    for ($i = 0; $i -lt $PortCount; $i++) {
+    $portSum    = 0.0
+    for ($i = 1; $i -le $PortCount; $i++) {
         $voltage = 0.0
         $current = 0.0
         $rcV = [Pulse.AdlinkPoE]::SmartPoE_Get_PSEPortVoltage([uint16]$CardNum, [uint16]$i, [ref]$voltage)
@@ -371,7 +385,7 @@ try {
             # Do not render a failed read as a confident "0 W / off" -- that
             # looks identical to a genuinely unpowered port.
             $ports += [ordered]@{
-                port = $i + 1; voltage = $null; current = $null; watts = $null
+                port = $i; voltage = $null; current = $null; watts = $null
                 poeOn = $false; state = "Unreadable"; readOk = $false
             }
             continue
@@ -383,13 +397,14 @@ try {
         # powered.
         $isOn = ($voltage -gt 1.0)
         if ($isOn) { $poeOnCount++ }
+        $portSum += $watts
         # Hoisted out of the hashtable literal on purpose: an inline if-else as
         # a hashtable value is a 5.1 parsing hazard even though pwsh 7 accepts
         # it. Same reason the rest of this file keeps values simple.
         $stateStr = "Off"
         if ($isOn) { $stateStr = "Powered" }
         $ports += [ordered]@{
-            port    = $i + 1
+            port    = $i
             voltage = [math]::Round($voltage, 2)
             current = [math]::Round($current, 3)
             watts   = [math]::Round($watts, 1)
@@ -407,6 +422,18 @@ try {
     # to the ordinary "no reading" path rather than being called Molex-out.
     $underPowered = ($total -gt 0) -and ($total -lt $HealthyTotalFloorWatts)
 
+    # Self-check: the per-port readings should account for what the card says it
+    # is delivering. This is the guard that would have caught the 0-based channel
+    # bug immediately -- with Port 4 unread, the card reported 9.9 W consumed
+    # while the ports summed to 5.5 W, and nothing complained.
+    #
+    # Out-of-range channels return rc=0 with zeroed values, so a wrong index is
+    # indistinguishable from an unpowered port at the API level; this arithmetic
+    # is the only place it shows up. 3 W of slack covers the card's own rounding
+    # and the drift between separately-sampled figures.
+    $portSumDelta = [math]::Abs($consumed - $portSum)
+    $portSumOk    = ($consumed -le 0) -or ($portSumDelta -le 3.0)
+
     $result = New-PoeResult -Supported $true -Available $true `
         -NicModel $card.Model -CardLabel $card.Label -DllPath $dllPath
     $result.budget = [ordered]@{
@@ -418,6 +445,8 @@ try {
         healthyFloorW = $HealthyTotalFloorWatts
         underPowered  = $underPowered
         portMaxW      = $PoePlusWattsPerPort
+        portSumW      = [math]::Round($portSum, 1)
+        portSumOk     = $portSumOk
     }
     $result.ports = $ports
 

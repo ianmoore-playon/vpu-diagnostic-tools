@@ -449,6 +449,11 @@ def _demo_poe_power():
             "healthyFloorW": 55.0,
             "underPowered": total > 0 and total < 55.0,
             "portMaxW": 25.5,
+            # Per-port readings must account for what the card says it draws.
+            # Demo is self-consistent by construction, so this always passes;
+            # it exists so the integrity-footnote path has a field to read.
+            "portSumW": consumed,
+            "portSumOk": True,
         },
         "ports": ports,
     }

@@ -5078,11 +5078,11 @@ function _camPoeSignature(poe) {
     return p.port + ":" + (p.poeOn ? "1" : "0") + (p.readOk === false ? "x" : "");
   }).join(",");
   var tight = poe.budget ? (poe.budget.underPowered ? "1" : "0") : "-";
-  // Mapping is in the signature: it changes row labels, so resolving it (or
-  // losing resolution when a camera drops) must trigger a rebuild, not a patch.
-  var map = poe.portMapping ? (poe.portMapping.mapping + ":" + (poe.portMapping.confirmed ? "1" : "0")) : "-";
+  // portSumOk gates the integrity footnote, so a change in it must rebuild the
+  // card rather than be patched over.
+  var sumOk = poe.budget ? (poe.budget.portSumOk === false ? "0" : "1") : "-";
   return [poe.supported ? "1" : "0", poe.available ? "1" : "0",
-          poe.reason || "", tight, map, portSig].join("~");
+          poe.reason || "", tight, sumOk, portSig].join("~");
 }
 
 function _camPoeCardHtml(poe, ports) {
@@ -5140,26 +5140,19 @@ function _camPoeCardHtml(poe, ports) {
       _camPoeStat("Card temp", "cam-poe-temp", _camPoeC(b.tempC)) +
     "</div>";
 
-  // Every row names the port it relates to, whether or not the mapping is
-  // proven — a bare "Channel 2" tells a tech nothing they can act on. What
-  // changes with confidence is how the claim is qualified: a confirmed mapping
-  // names the camera, an unconfirmed one shows the channel and the port it is
-  // assumed to correspond to, marked unverified so nobody chases the wrong
-  // cable on the strength of it.
-  var mapping = poe.portMapping || {};
-  var mapped = mapping.confirmed === true;
+  // PSE channel N is chassis Port N — proven by controlled experiment on a
+  // GIE74P (VPU2, 2026-08-12) and consistent with a second production card, so
+  // rows name the port outright. The collector guarantees the numbering; see
+  // its 1-based channel note.
   var rows = (poe.ports || []).map(function(p) {
-    var match = mapped ? ((ports || [])[p.port - 1] || null) : null;
-    var label = mapped ? ("Port " + p.port)
-                       : ("Channel " + p.port + " → Port " + p.port);
+    var match = (ports || [])[p.port - 1] || null;
     var sub;
-    if (p.readOk === false)         sub = "Read rejected by driver";
-    else if (!mapped)               sub = (p.poeOn ? "Drawing power" : "No device powered") + " · port unverified";
+    if (p.readOk === false)              sub = "Read rejected by driver";
     else if (match && match.cameraLabel) sub = match.cameraLabel;
-    else                            sub = p.poeOn ? "Powered device" : "No device powered";
+    else                                 sub = p.poeOn ? "Powered device" : "No device powered";
     return '<div class="cam-poe-row" id="cam-poe-row-' + p.port + '">' +
       '<div class="cam-poe-row-label">' +
-        '<span class="cam-poe-port">' + esc(label) + "</span>" +
+        '<span class="cam-poe-port">Port ' + p.port + "</span>" +
         '<span class="cam-poe-sub">' + esc(sub) + "</span>" +
       "</div>" +
       '<div class="cam-poe-track">' +
@@ -5172,13 +5165,17 @@ function _camPoeCardHtml(poe, ports) {
     "</div>";
   }).join("");
 
-  // Footnote rather than a warning: an unresolved mapping is a limit on what we
-  // can claim, not a fault on the VPU.
-  var mapNote = (!mapped && mapping.detail)
-    ? '<div class="cam-poe-note-meta">' + esc(mapping.detail) + "</div>"
+  // Integrity note: the per-port readings should account for what the card says
+  // it is delivering. A mismatch means Pulse is reading the wrong channels (the
+  // exact shape of the 0-based bug found on 2026-08-12), not that the VPU has a
+  // fault — so it is a quiet footnote, not a warning.
+  var sumNote = (b.portSumOk === false)
+    ? '<div class="cam-poe-note-meta">Per-port readings total ' + _camPoeW(b.portSumW) +
+      ' but the card reports ' + _camPoeW(b.consumedW) + ' drawn — the per-port figures below ' +
+      'may be incomplete. Card totals are still accurate.</div>'
     : "";
 
-  return hdr + lowBanner + stats + '<div class="cam-poe-ports">' + rows + "</div>" + mapNote;
+  return hdr + lowBanner + stats + '<div class="cam-poe-ports">' + rows + "</div>" + sumNote;
 }
 
 function _camPoeStat(label, id, value) {
