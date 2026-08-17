@@ -468,5 +468,41 @@ class TestBlackFrameDiagnosis(unittest.TestCase):
         self.assertNotIn("diagnosis", results[0])
 
 
+class TestPoeUnderPoweredFinding(unittest.TestCase):
+    """The 55 W healthy floor is bracketed by two real measurements: Pixellot's
+    VPU Manager reports "20.0 W detected (expected >=55W)" on a Molex-
+    disconnected card, and a production GIE74P read 61-63 W with the lead
+    connected (2026-08-12). Same threshold VPU Manager uses, so the two tools
+    agree in front of a tech.
+    """
+
+    @staticmethod
+    def _budget(total, under):
+        return {"available": True, "budget": {
+            "totalW": total, "healthyFloorW": 55.0, "underPowered": under,
+            "consumedW": 12.0, "remainingW": max(total - 12.0, 0), "poeOnCount": 2}}
+
+    def _poe_findings(self, poe):
+        return [f for f in main._compute_camera_findings([], poe)
+                if "PoE" in f["title"]]
+
+    def test_molex_disconnected_value_from_vpu_manager_is_flagged(self):
+        found = self._poe_findings(self._budget(20.0, True))
+        self.assertEqual(len(found), 1)
+        self.assertIn("Molex", found[0]["title"])
+        # Warning, not critical: a 1-2 camera venue runs fine on slot power, and
+        # a critical would contradict the passing port checks next to it.
+        self.assertEqual(found[0]["severity"], "warning")
+        self.assertIn("20.0", found[0]["body"])
+
+    def test_healthy_production_reading_is_not_flagged(self):
+        self.assertEqual(self._poe_findings(self._budget(63.4, False)), [])
+
+    def test_missing_or_unmeasurable_poe_produces_no_finding(self):
+        for poe in (None, {}, {"supported": False, "available": False},
+                    {"available": True}, {"available": True, "budget": {}}):
+            self.assertEqual(self._poe_findings(poe), [])
+
+
 if __name__ == "__main__":
     unittest.main()

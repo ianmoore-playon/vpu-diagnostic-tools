@@ -73,6 +73,10 @@
             <div class="max-w-6xl mx-auto" id="page"></div>
         </main>
     </div>
+    <!-- LMI auto-close countdown (hidden unless the server is counting
+         down to close after the LogMeIn session ended — see app.js
+         _updateLmiCountdown). -->
+    <div id="lmi-countdown" class="lmi-countdown hidden" role="alert" aria-live="assertive"></div>
     <script src="/static/app.js"></script>
 </body>
 </html>

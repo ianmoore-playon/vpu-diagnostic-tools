@@ -56,7 +56,6 @@ try {
         @{ protocol = 'TCP'; port = 443;  host = 'pixellot.tv';            purpose = 'Pixellot';          optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'prod-echo.pixellot.tv';  purpose = 'Pixellot Echo';     optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'nfhsnetwork.com';        purpose = 'NFHS Network';      optional = $false }
-        @{ protocol = 'TCP'; port = 443;  host = 's3.amazonaws.com';       purpose = 'AWS S3';            optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'service.singular.live';  purpose = 'Singular Overlay';  optional = $false }
         # secure.logmein.com, not the logmein.com apex: the apex now points at
         # GoTo's marketing site (Vercel, 76.76.21.21), so reaching it proves

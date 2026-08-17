@@ -240,7 +240,13 @@ class TestComputeFindings(unittest.TestCase):
         )
         self.assertTrue(findings)
         for f in findings:
-            self.assertIn(f.get("severity"), ("critical", "warning"), f)
+            # "info" is a first-class severity, not a leak: the dashboard styles
+            # it (.finding-dot-info / .finding-cat-info / .sev-chip-info) and the
+            # findings list is sorted, not severity-filtered. It exists so a
+            # reassuring result — e.g. os-mainstream-eos, "Windows mainstream
+            # support ends soon but this VPU stays covered" — can be stated
+            # plainly instead of being dressed up as a warning.
+            self.assertIn(f.get("severity"), ("critical", "warning", "info"), f)
             self.assertTrue(f.get("title"), f)
 
     def test_no_duplicate_findings(self):
@@ -495,15 +501,21 @@ class TestStorageFinding(unittest.TestCase):
         self.assertIn("D:", found[0]["title"])
         self.assertIn("VOD", found[0]["recommendation"])
 
-    def test_warning_tier_between_80_and_90(self):
-        found = self._storage(disk_health=self._dh(C=84, D=20))
-        self.assertEqual(len(found), 1, found)
-        self.assertEqual(found[0]["severity"], "warning")
+    def test_no_finding_between_80_and_90(self):
+        # c85bdfd removed the 80–90% "space low" warning tier: Storage Cleanup
+        # only offers itself at 90%, so a warning below that was noise the tech
+        # could do nothing about. Disk fill is critical-only now.
+        self.assertEqual(self._storage(disk_health=self._dh(C=84, D=20)), [])
 
     def test_both_volumes_flagged_independently(self):
-        found = self._storage(disk_health=self._dh(C=92, D=85))
-        self.assertEqual({f["severity"] for f in found}, {"critical", "warning"})
+        # Guards the PULSEDEV-49 fix: each volume is judged on its own, not on
+        # an average. Both volumes are over 90 because that is the only fill
+        # tier left — the point is still that TWO findings come back, one per
+        # drive, rather than a single aggregate one.
+        found = self._storage(disk_health=self._dh(C=92, D=91))
         self.assertEqual(len(found), 2, found)
+        self.assertEqual({f["severity"] for f in found}, {"critical"})
+        self.assertEqual({"C:" in f["title"] for f in found}, {True, False})
 
     def test_healthy_volumes_stay_quiet(self):
         self.assertEqual(self._storage(disk_health=self._dh(C=62, D=25)), [])
@@ -522,12 +534,24 @@ class TestStorageFinding(unittest.TestCase):
         self.assertEqual(found, [])
 
     def test_disk_health_error_falls_back_to_aggregate(self):
+        # Still testing the fallback, not the tier: when the per-volume
+        # collector errors we must fall back to the performance aggregate. The
+        # figure is 93 rather than the old 85 only because 80–90 no longer
+        # emits anything (c85bdfd) — the behaviour under test is unchanged.
         found = self._storage(
             disk_health={"error": "collector failed"},
-            performance={"disk": {"usedPercent": 85}},
+            performance={"disk": {"usedPercent": 93}},
         )
         self.assertEqual(len(found), 1, found)
-        self.assertEqual(found[0]["severity"], "warning")
+        self.assertEqual(found[0]["severity"], "critical")
+
+    def test_disk_health_error_with_mid_band_aggregate_stays_quiet(self):
+        # The other half of the fallback contract: falling back must not
+        # resurrect the retired 80–90 tier.
+        self.assertEqual(self._storage(
+            disk_health={"error": "collector failed"},
+            performance={"disk": {"usedPercent": 85}},
+        ), [])
 
 
 # ── run_ps stdout JSON recovery (the resilience fix) ─────────
@@ -951,6 +975,11 @@ class TestDemoDataContract(unittest.TestCase):
         "Set-PulseShareFirewall.ps1",
         # Reboots the VPU — a side effect, returns no diagnostic data to mock.
         "Reboot-Vpu.ps1",
+        # Background uninstallers for Canopy-deployment leftovers, fired at
+        # launch and gated on the leftover actually being present. Nothing in
+        # the UI consumes their result, so there is nothing to mock.
+        "Remove-CanopyLeaf.ps1",
+        "Remove-Splashtop.ps1",
     }
 
     def _referenced_scripts(self):
@@ -989,6 +1018,66 @@ class TestDemoDataContract(unittest.TestCase):
                 result = fn()
                 self.assertIsInstance(result, (dict, list), name)
                 json.dumps(result, default=str)
+
+
+# ── Stream readiness policy ──────────────────────────────────
+class TestReadinessPolicy(unittest.TestCase):
+    """Guards against the class of bug that shipped to East Henderson (NC) on
+    2026-08-10: a `critical` dashboard finding with no entry in the policy
+    table silently falls through to `info`, so readiness reported WARN ("will
+    likely stream") on a VPU whose graphics, uploads and updates were all
+    severed by venue SSL inspection."""
+
+    def test_ssl_inspection_is_a_blocker(self):
+        verdict = main._compute_readiness(
+            [{"code": "ssl-inspection", "severity": "critical",
+              "category": "Network", "title": "t", "recommendation": "r"}]
+        )
+        self.assertEqual(verdict["status"], "FAIL")
+        self.assertEqual([b["code"] for b in verdict["blockers"]], ["ssl-inspection"])
+
+    def test_every_critical_finding_code_is_classified(self):
+        # `info` is the default for UNKNOWN codes, which is right for new or
+        # unverifiable checks — but a code we ship as `critical` reaching that
+        # default means we forgot to classify it. Every critical must be an
+        # explicit table entry (blocker, or info/risk with a reason in-line).
+        unclassified = sorted(
+            code for code in _CRITICAL_FINDING_CODES
+            if code not in main._READINESS_POLICY
+        )
+        self.assertEqual(
+            unclassified, [],
+            "critical findings missing from _READINESS_POLICY (they silently "
+            f"default to `info` and never gate readiness): {unclassified}",
+        )
+
+
+# Finding codes emitted with severity "critical" by _compute_findings. Kept
+# explicit rather than scraped so adding a critical is a deliberate two-line
+# change: emit it, then classify it.
+_CRITICAL_FINDING_CODES = {
+    # Emitted with a literal "severity": "critical".
+    "cpu-critical",
+    "disk-critical",
+    "disk-smart-prefail",
+    "gpu-anomaly",
+    "gpu-none",
+    "mem-critical",
+    "os-eos-imminent",
+    "os-eos-reached",
+    "pixellot-over-cap",
+    "ssl-inspection",
+    "stream-2088-blocked",
+    "sw-security",
+    "temp-critical",
+    "tz-non-us",
+    # Built from a variable at emit time: the `{name}-down` service findings
+    # and cam-none (critical when zero main cameras are present).
+    "agent-down",
+    "coordinator-down",
+    "watchdog-down",
+    "cam-none",
+}
 
 
 if __name__ == "__main__":

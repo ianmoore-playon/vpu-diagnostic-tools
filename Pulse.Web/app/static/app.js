@@ -832,6 +832,7 @@ function connectWS() {
       if (msg.type === "metrics") {
         updateLiveMetrics(msg);
         appendLogs(msg.logs);
+        _updateLmiCountdown(msg.lmiShutdownSecs);
       }
     } catch { /* ignore parse errors */ }
   };
@@ -872,6 +873,55 @@ function _liveIndicatorHtml() {
 function _refreshLiveIndicator() {
   const el = document.getElementById("live-indicator");
   if (el) el.innerHTML = _liveIndicatorHtml();
+}
+
+// ── LMI auto-close countdown banner ──────────────────────────
+// The server counts down to auto-close after the LogMeIn session that
+// launched Pulse ends (main.py _lmi_session_watch). Every metrics frame
+// carries lmiShutdownSecs — a number while that countdown runs, null
+// otherwise. The banner ticks locally every second between frames so the
+// time reads smoothly; a null frame after a countdown means the session
+// reconnected, so flash the cancel confirmation and hide.
+var _lmiDeadline = null;     // ms epoch of the pending close, or null
+var _lmiTicker = null;
+var _lmiCancelTimer = null;
+
+function _lmiFmtLeft(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function _lmiRenderCountdown() {
+  const el = document.getElementById("lmi-countdown");
+  if (!el || _lmiDeadline == null) return;
+  const left = _lmiDeadline - Date.now();
+  el.textContent = left <= 0
+    ? "Pulse is closing…"
+    : `LogMeIn session ended — Pulse will close in ${_lmiFmtLeft(left)}. Reconnecting cancels this.`;
+}
+
+function _updateLmiCountdown(secs) {
+  const el = document.getElementById("lmi-countdown");
+  if (!el) return;
+  if (typeof secs === "number") {
+    clearTimeout(_lmiCancelTimer);
+    _lmiCancelTimer = null;
+    _lmiDeadline = Date.now() + secs * 1000;
+    el.classList.remove("hidden", "ok");
+    _lmiRenderCountdown();
+    if (!_lmiTicker) _lmiTicker = setInterval(_lmiRenderCountdown, 1000);
+    return;
+  }
+  // No countdown in this frame. If one was on screen, the session
+  // reconnected and the server cancelled the close — confirm, then hide.
+  if (_lmiDeadline != null) {
+    _lmiDeadline = null;
+    clearInterval(_lmiTicker);
+    _lmiTicker = null;
+    el.classList.add("ok");
+    el.textContent = "LogMeIn session reconnected — auto-close cancelled.";
+    _lmiCancelTimer = setTimeout(() => el.classList.add("hidden"), 6000);
+  }
 }
 
 function updateLiveMetrics(msg) {
@@ -1404,11 +1454,15 @@ function renderCalibrations() {
 function _subsystemHealth(findings) {
   // Worst finding severity per category (2 = critical, 1 = warning), so a
   // subsystem with a critical lights red and one with only warnings lights
-  // amber. Each finding maps to exactly ONE subsystem — no double-flagging.
+  // amber. Info findings are context, not faults — they never change a
+  // subsystem's light. Each finding maps to exactly ONE subsystem — no
+  // double-flagging.
   const sev = {};
   (findings || []).forEach((f) => {
+    const s = (f.severity || "").toLowerCase();
+    if (s === "info") return;
     const k = (f.category || "").toLowerCase();
-    const rank = /^(critical|error)$/.test((f.severity || "").toLowerCase()) ? 2 : 1;
+    const rank = /^(critical|error)$/.test(s) ? 2 : 1;
     sev[k] = Math.max(sev[k] || 0, rank);
   });
   const worst = (...keys) => Math.max(0, ...keys.map((k) => sev[k] || 0));
@@ -1554,7 +1608,8 @@ function _renderVolumes(volumes) {
   if (!volumes.length) return '<div class="text-xs text-pulse-muted py-2">No storage data</div>';
   return volumes.map((d) => {
     const pct = d.usedPercent || 0;
-    const color = pct > 90 ? "var(--c-accent-red)" : pct > 80 ? "var(--c-accent-amber)" : "var(--c-accent-blue)";
+    // Critical-only (matches the findings engine): red above 90%, no amber tier.
+    const color = pct > 90 ? "var(--c-accent-red)" : "var(--c-accent-blue)";
     const role = d.deviceID === "C:" ? "System — OS & Pixellot"
                : d.deviceID === "D:" ? "Recordings — local game-video storage"
                : "Storage";
@@ -2052,30 +2107,45 @@ function _pixCompatBannerHtml(c) {
 // tab; pulled from /api/system identity.operatingSystem.lifecycle.
 function _osLifecycleBannerHtml(lc) {
   if (!lc) return "";
-  const days = lc.daysToEos;
+  // Urgency keys on the date security updates actually STOP: the IoT
+  // end-of-servicing date when the build has one (LTSC 2021), else the
+  // headline end-of-support date. The headline date passing with servicing
+  // still running is expected — the banner stays calm and says so.
+  const hasServicing = !!lc.endOfServicingDate;
+  const days = hasServicing && lc.daysToServicingEnd != null ? lc.daysToServicingEnd : lc.daysToEos;
+  const eolDate = hasServicing ? lc.endOfServicingDate : lc.eosDate;
+  const word = hasServicing ? "End-of-servicing" : "End-of-support";
   let cls = "sys-lifecycle-ok";
   let label = "";
   if (days == null) {
-    label = `End-of-support: ${lc.eosDate}`;
+    label = `${word}: ${eolDate}`;
   } else if (days < 0) {
     cls = "sys-lifecycle-crit";
-    label = `End-of-support reached on ${lc.eosDate} (${Math.abs(days)} days ago)`;
+    label = `${word} reached on ${eolDate} (${Math.abs(days)} days ago)`;
   } else if (days < 90) {
     cls = "sys-lifecycle-crit";
-    label = `End-of-support in ${days} days (${lc.eosDate})`;
+    label = `${word} in ${days} days (${eolDate})`;
   } else if (days < 365) {
     cls = "sys-lifecycle-warn";
     const months = Math.floor(days / 30);
-    label = `End-of-support in ~${months} months (${lc.eosDate})`;
+    label = `${word} in ~${months} months (${eolDate})`;
   } else {
     const years = Math.floor(days / 365);
-    label = `End-of-support: ${lc.eosDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
+    label = `${word}: ${eolDate} (${years}+ year${years === 1 ? "" : "s"} away)`;
+  }
+  // Note the (earlier) mainstream date alongside — with reassurance once
+  // it's inside a year, so nobody mistakes it for the update cutoff.
+  let mainstream = "";
+  if (hasServicing) {
+    const mDays = lc.daysToEos;
+    mainstream = ` &middot; Mainstream support ${mDays != null && mDays < 0 ? "ended" : "ends"} ${esc(lc.eosDate)}`;
+    if (mDays != null && mDays < 365) mainstream += " — OK, security updates continue";
   }
   return `<div class="sys-lifecycle ${cls} mt-3">
     ${svgIcon(cls === "sys-lifecycle-ok" ? "info" : "alert", 14)}
     <div>
       <div class="font-semibold">${esc(lc.ltscRelease)}</div>
-      <div class="text-xs mt-1">${esc(label)}${lc.endOfServicingDate ? ` &middot; End-of-servicing: ${esc(lc.endOfServicingDate)}` : ""}</div>
+      <div class="text-xs mt-1">${esc(label)}${mainstream}</div>
     </div>
   </div>`;
 }
@@ -2939,8 +3009,8 @@ function _prefixToMask(prefix) {
 
 // "Impact if blocked" copy, sourced from the NFHS Network Firewall Setup doc
 // where the endpoint appears there, and authored from Pixellot service
-// knowledge for the few Pulse-only endpoints the doc doesn't list (AWS S3,
-// Singular, leaf-* buckets). Single editable home — revisit/expand later.
+// knowledge for the few Pulse-only endpoints the doc doesn't list (Singular,
+// leaf-* buckets). Single editable home — revisit/expand later.
 // Ports are keyed by purpose; domains by hostname.
 const NET_PORT_IMPACT = {
   "DNS": "The VPU can't resolve any hostname, so it can't reach any service.",
@@ -2952,7 +3022,6 @@ const NET_PORT_IMPACT = {
   // verdict is in the Port Connectivity finding.
   "Pixellot Echo": "Backup streaming connection (TCP/443 tunnel) plus the remote-support channel. It fails over with the UDP/443 backup — the live broadcast itself rides UDP/2088, so blocking this only reduces backup redundancy and remote support.",
   "NFHS Network": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
-  "AWS S3": "Recordings and clips can't upload, and software/asset downloads fail.",
   "Singular Overlay": "On-screen graphics and scorebug overlays won't load.",
   "LogMeIn": "The support team can't diagnose the VPU remotely.",
   "NTP": "The clock can drift — the VPU may miss scheduled events if no valid time server is set.",
@@ -2968,7 +3037,6 @@ const NET_DOMAIN_IMPACT = {
   "sportzcast.net": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
   "service.singular.live": "On-screen graphics and scorebug overlays won't load.",
   "logmein.com": "The support team can't diagnose the VPU remotely.",
-  "s3.amazonaws.com": "Recordings can't upload and software/asset downloads fail.",
 };
 function _netPortImpact(p) { return (p && NET_PORT_IMPACT[p.purpose]) || ""; }
 
@@ -3027,7 +3095,6 @@ const TLS_DOMAIN_IMPACT = {
   "pixellot.tv": "System management and software updates are blocked.",
   "software.pixellot.tv": "Software and firmware updates are blocked.",
   "nfhsnetwork.com": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
-  "s3.amazonaws.com": "Recordings can't upload and software/asset downloads fail.",
   "secure.logmein.com": "The support team can't diagnose the VPU remotely.",
   "www.python.org": "The Pulse installer can't download Python on this network.",
 };
@@ -3385,8 +3452,9 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       title: "The venue firewall is intercepting secure connections (SSL inspection)",
       body: "The venue's network is decrypting the VPU's secure traffic and substituting its own certificate"
         + (interceptorNames ? ' — the intercepting device identifies itself as "' + interceptorNames + '"' : "")
-        + ". The VPU rejects the substituted certificate, so the services below can't connect — typically "
-        + "on-screen graphics fail while video keeps streaming. Ask the venue's IT team to add these domains "
+        + ". The VPU rejects the substituted certificate, so every service listed below is cut off — each "
+        + "line shows what that breaks. Don't expect a clean broadcast until this is fixed, and it can only "
+        + "be fixed on the venue's network. Ask the venue's IT team to add these domains "
         + "to the firewall's SSL decryption bypass/exemption list, using a wildcard that covers every "
         + "subdomain plus the bare domain (e.g. *.singular.live AND singular.live). A URL allowlist alone "
         + "is not enough — the traffic must be exempt from decryption.",
@@ -3484,12 +3552,10 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
     var n = stream.blocked.length;
     issues.push({
       severity: "warning",
-      title: (n === 1 ? "A backup streaming connection is blocked" : n + " backup streaming connections are blocked")
-        + " — the broadcast still works",
-      body: "The game can still broadcast right now over its main connection. Pixellot also keeps a spare "
-        + "backup connection to its streaming service, and the venue's network is blocking that backup. Streaming "
-        + "will still work — but if the main connection runs into trouble during a game, there's less to fall back "
-        + "on. Ask the venue's IT or network team to unblock the connection" + (n === 1 ? "" : "s") + " below.",
+      title: (n === 1 ? "A backup streaming connection is blocked" : n + " backup streaming connections are blocked"),
+      body: "Pixellot keeps a backup connection to its streaming service, and the venue's network is blocking "
+        + "it — if the main connection runs into trouble during a game, there's less to fall back on. Ask the "
+        + "venue's IT or network team to unblock the connection" + (n === 1 ? "" : "s") + " below.",
       details: streamDetails,
     });
   }
@@ -4368,6 +4434,7 @@ function renderNetwork() {
 var _camerasRefreshTimer = null;
 var _camerasFailCount = 0;  // consecutive /api/cameras failures during live refresh
 var _camLastSignature = null;  // structural fingerprint of last rendered cameras
+var _camPoeLastSignature = null;  // separate PoE fingerprint — watts change every tick, so PoE is patched in place and must not ride _camLastSignature
 var _camNicLayout = "h";       // 4-port LED diagram orientation: 'h' upright (ports L→R) / 'v' on-side (ports top→bottom)
 var _camLastVideo = null;      // last captured frame set, restored across re-renders (with a capture time so it's never mistaken for live)
 
@@ -4384,7 +4451,7 @@ function _camSignature(data) {
     }).join(",");
     var errs = (p.rxPacketErrors || 0) + (p.txPacketErrors || 0) + (p.rxDiscards || 0) + (p.txDiscards || 0);
     return [p.portLabel, p.name, p.isUp, p.isOcr, p.isDegraded, p.connecting, p.cameraLabel,
-            p.linkSpeedMbps, p.expectedSpeedMbps, p.fullDuplex,
+            p.linkSpeedMbps, p.expectedSpeedMbps, p.fullDuplex, p.hasInternetUplink,
             errs, cams].join("~");
   }).join("||");
   var findSig = ((data && data.findings) || []).map(function(f) {
@@ -4458,15 +4525,25 @@ function _camPortTile(port, index, ctx) {
   if (p.isOcr) camLabelCls = "badge-ol-info";
   else if (camLabel && camLabel.indexOf("Main") === 0) camLabelCls = "badge-ol-main";
   else camLabelCls = "badge-ol-muted";
+  // The venue/internet cable in a camera port: the tile itself calls out the
+  // mis-wired port (red border + INTERNET UPLINK badge + move-the-cable note)
+  // so the tech can spot which physical port to fix without reading findings.
+  var hasUplink = !!p.hasInternetUplink;
+  var uplinkNote = hasUplink
+    ? '<div class="cam-uplink-callout">' + svgIcon("alert", 12) + ' <span>Wrong port — this one is carrying the venue’s internet connection'
+      + (p.uplinkGateway ? ' (gateway ' + esc(p.uplinkGateway) + ')' : '')
+      + '. Move this cable to the motherboard network port; the 4-port camera card is for cameras only.</span></div>'
+    : '';
   // Header carries only the port number + state pill, so the pill sits at the
   // same top-right spot on every tile; the (variable-width) role badge gets
   // its own row below and can never push the status onto a second line.
-  return `<div class="cam-port-tile ${!p.isUp ? "cam-port-down" : p.isDegraded ? "cam-port-degraded" : "cam-port-active"}">
+  return `<div class="cam-port-tile ${!p.isUp ? "cam-port-down" : hasUplink ? "cam-port-uplink" : p.isDegraded ? "cam-port-degraded" : "cam-port-active"}">
     <div class="cam-port-header">
       <span class="cam-port-num">Port ${index + 1}</span>
       <span class="cam-port-state">${badge(stateTxt, stateCls)}</span>
     </div>
-    ${camLabel ? '<div class="cam-port-role"><span class="badge-ol ' + camLabelCls + '">' + esc(camLabel) + '</span></div>' : ''}
+    ${hasUplink ? '<div class="cam-port-role"><span class="badge-ol badge-ol-uplink">Internet Uplink</span></div>'
+      : camLabel ? '<div class="cam-port-role"><span class="badge-ol ' + camLabelCls + '">' + esc(camLabel) + '</span></div>' : ''}
     <div class="cam-port-name">${esc(p.name)}</div>
     ${speedRow}
     <div class="cam-port-detail">
@@ -4489,7 +4566,9 @@ function _camPortTile(port, index, ctx) {
     })()
     : p.connecting ? '<div class="cam-connecting-note">' + svgIcon("refresh", 12) + ' Establishing link — waiting for camera…</div>'
     : !p.isUp ? _camDownGuidanceHtml(p, ctx)
+    : hasUplink ? ''
     : '<div class="cam-no-detect">No Pixellot cameras on this port</div>'}
+    ${uplinkNote}
   </div>`;
 }
 
@@ -4975,6 +5054,206 @@ function _camS1Html(res) {
     "<tbody>" + rows + "</tbody></table></div>";
 }
 
+// ── PoE power draw (ADLINK SmartPoE) ─────────────────────────────
+// Ported from the gen-1 PowerShell tool's "PoE Status" section. Only the
+// I210/I211 (GIE74P) camera NIC can measure this; see Get-PoePower.ps1 for the
+// full gate. Watts change every poll, so the live tick patches the numbers in
+// place (_camPoeUpdate) rather than rebuilding — a 2s innerHTML swap would
+// flicker and fight the transition on the bars.
+
+// Per-port PoE+ ceiling (IEEE 802.3at) — bars are a fraction of this, so fill
+// reads as "how close to the per-port limit".
+//
+// Real Pixellot CHUs draw only 4-7 W (measured on a production GIE74P,
+// 2026-08-12), so a healthy camera fills roughly a fifth of its bar. That's
+// intentional: the bar answers "how much headroom does this port have", and
+// showing a camera near the top of its scale would misrepresent a normal load.
+var CAM_POE_PORT_MAX_W = 25.5;
+
+// Structural signature: everything that changes the card's SHAPE rather than
+// its numbers. Watts/voltage/current/temp are deliberately excluded.
+function _camPoeSignature(poe) {
+  if (!poe) return "none";
+  var portSig = (poe.ports || []).map(function(p) {
+    return p.port + ":" + (p.poeOn ? "1" : "0") + (p.readOk === false ? "x" : "");
+  }).join(",");
+  var tight = poe.budget ? (poe.budget.underPowered ? "1" : "0") : "-";
+  // portSumOk gates the integrity footnote, so a change in it must rebuild the
+  // card rather than be patched over.
+  var sumOk = poe.budget ? (poe.budget.portSumOk === false ? "0" : "1") : "-";
+  return [poe.supported ? "1" : "0", poe.available ? "1" : "0",
+          poe.reason || "", tight, sumOk, portSig].join("~");
+}
+
+function _camPoeCardHtml(poe, ports) {
+  // No payload at all (backend predates this field) — render nothing rather
+  // than an empty box.
+  if (!poe) return "";
+
+  var hdr = sectionTitle("power", "PoE Power Draw");
+
+  // Unsupported NIC family is a by-design N/A, NOT a fault. Render it neutral
+  // and muted: gen-1 explicitly scored this step "pass" so techs don't chase
+  // a measurement the hardware cannot take.
+  if (!poe.supported) {
+    return hdr +
+      '<div class="cam-poe-note cam-poe-note-info">' +
+        '<div class="cam-poe-note-title">Not measurable on this camera NIC</div>' +
+        '<div class="cam-poe-note-body">' + esc(poe.reason || "") + "</div>" +
+        (poe.cardLabel ? '<div class="cam-poe-note-meta font-mono">' + esc(poe.cardLabel) + "</div>" : "") +
+      "</div>";
+  }
+
+  // Supported hardware but no reading — driver bundle missing, card not
+  // detected, or the probe latched off after crashing. Actionable, so amber.
+  if (!poe.available) {
+    return hdr +
+      '<div class="cam-poe-note cam-poe-note-warn">' +
+        '<div class="cam-poe-note-title">Power readings unavailable</div>' +
+        '<div class="cam-poe-note-body">' + esc(poe.reason || "") + "</div>" +
+        (poe.cardLabel ? '<div class="cam-poe-note-meta font-mono">' + esc(poe.cardLabel) + "</div>" : "") +
+      "</div>";
+  }
+
+  var b = poe.budget || {};
+  // Deliberately worded close to Pixellot's VPU Manager ("POE Molex disconnected
+  // or insufficient power. 20.0 W detected (expected >=55W)") so a tech reading
+  // both tools sees one story, not two. Pulse adds the fix rather than just the
+  // verdict.
+  var lowBanner = b.underPowered
+    ? '<div class="cam-poe-note cam-poe-note-warn cam-poe-low">' +
+        '<div class="cam-poe-note-title">PoE Molex disconnected or insufficient power</div>' +
+        '<div class="cam-poe-note-body">The card reports a total budget of ' + _camPoeW(b.totalW) +
+          ', below the ' + _camPoeW(b.healthyFloorW) + ' a healthy card provides. The supplementary ' +
+          'Molex power lead on the PoE card is most likely unplugged, so the card is running on slot ' +
+          'power alone and cannot power a full set of cameras. Power the VPU down, reseat the Molex ' +
+          'lead on the camera card, and re-check. VPU Manager reports this same fault as a failed ' +
+          'POE Power Test.</div>' +
+      "</div>"
+    : "";
+
+  var stats =
+    '<div class="cam-poe-stats">' +
+      _camPoeStat("Total budget", "cam-poe-total", _camPoeW(b.totalW)) +
+      _camPoeStat("Drawing now", "cam-poe-consumed", _camPoeW(b.consumedW)) +
+      _camPoeStat("Available", "cam-poe-remaining", _camPoeW(b.remainingW)) +
+      _camPoeStat("Card temp", "cam-poe-temp", _camPoeC(b.tempC)) +
+    "</div>";
+
+  // PSE channel N is chassis Port N — proven by controlled experiment on a
+  // GIE74P (VPU2, 2026-08-12) and consistent with a second production card, so
+  // rows name the port outright. The collector guarantees the numbering; see
+  // its 1-based channel note.
+  var rows = (poe.ports || []).map(function(p) {
+    var match = (ports || [])[p.port - 1] || null;
+    var sub;
+    if (p.readOk === false)              sub = "Read rejected by driver";
+    else if (match && match.cameraLabel) sub = match.cameraLabel;
+    else                                 sub = p.poeOn ? "Powered device" : "No device powered";
+    return '<div class="cam-poe-row" id="cam-poe-row-' + p.port + '">' +
+      '<div class="cam-poe-row-label">' +
+        '<span class="cam-poe-port">Port ' + p.port + "</span>" +
+        '<span class="cam-poe-sub">' + esc(sub) + "</span>" +
+      "</div>" +
+      '<div class="cam-poe-track">' +
+        '<div class="cam-poe-fill' + _camPoeFillClass(p) + '" id="cam-poe-fill-' + p.port + '"' +
+             ' style="width:' + _camPoePct(p) + '%"></div>' +
+      "</div>" +
+      '<div class="cam-poe-readout font-mono" id="cam-poe-readout-' + p.port + '">' +
+        _camPoeReadout(p) +
+      "</div>" +
+    "</div>";
+  }).join("");
+
+  // Integrity note: the per-port readings should account for what the card says
+  // it is delivering. A mismatch means Pulse is reading the wrong channels (the
+  // exact shape of the 0-based bug found on 2026-08-12), not that the VPU has a
+  // fault — so it is a quiet footnote, not a warning.
+  var sumNote = (b.portSumOk === false)
+    ? '<div class="cam-poe-note-meta">Per-port readings total ' + _camPoeW(b.portSumW) +
+      ' but the card reports ' + _camPoeW(b.consumedW) + ' drawn — the per-port figures below ' +
+      'may be incomplete. Card totals are still accurate.</div>'
+    : "";
+
+  return hdr + lowBanner + stats + '<div class="cam-poe-ports">' + rows + "</div>" + sumNote;
+}
+
+function _camPoeStat(label, id, value) {
+  return '<div class="cam-poe-stat">' +
+    '<div class="cam-poe-stat-label">' + esc(label) + "</div>" +
+    '<div class="cam-poe-stat-value font-mono" id="' + id + '">' + esc(value) + "</div>" +
+  "</div>";
+}
+
+function _camPoeW(w) {
+  return (w == null) ? "--" : (Number(w).toFixed(1) + " W");
+}
+
+function _camPoeC(c) {
+  return (c == null || c === 0) ? "--" : (Number(c).toFixed(1) + " °C");
+}
+
+function _camPoePct(p) {
+  if (!p || !p.poeOn || p.watts == null) return 0;
+  return Math.max(2, Math.min(100, (p.watts / CAM_POE_PORT_MAX_W) * 100));
+}
+
+function _camPoeFillClass(p) {
+  if (!p || p.readOk === false) return " cam-poe-fill-off";
+  if (!p.poeOn) return " cam-poe-fill-off";
+  // Over the PoE+ per-port ceiling is a real fault; 80% is the heads-up.
+  if (p.watts > CAM_POE_PORT_MAX_W) return " cam-poe-fill-hot";
+  if (p.watts > CAM_POE_PORT_MAX_W * 0.8) return " cam-poe-fill-warn";
+  return " cam-poe-fill-ok";
+}
+
+function _camPoeReadout(p) {
+  if (!p) return "--";
+  // A rejected read must not look like a confident "off" — same reason the
+  // collector sends readOk instead of zeroing the values.
+  if (p.readOk === false) return "not readable";
+  if (!p.poeOn) return "off";
+  return Number(p.watts).toFixed(1) + " W  ·  " +
+         Number(p.voltage).toFixed(1) + " V  ·  " +
+         Number(p.current).toFixed(3) + " A";
+}
+
+// Live tick. Patches only the volatile numbers unless the card's shape changed
+// (a port powering up, the budget verdict flipping, the driver dropping out),
+// in which case rebuild the whole card once.
+function _camPoeUpdate(poe, ports) {
+  var wrap = document.getElementById("cam-poe-card");
+  if (!wrap) return;
+
+  var sig = _camPoeSignature(poe);
+  if (sig !== _camPoeLastSignature) {
+    _camPoeLastSignature = sig;
+    wrap.innerHTML = _camPoeCardHtml(poe, ports);
+    wrap.style.display = poe ? "" : "none";
+    return;
+  }
+  if (!poe || !poe.available) return;
+
+  var b = poe.budget || {};
+  var setText = function(id, text) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  setText("cam-poe-total", _camPoeW(b.totalW));
+  setText("cam-poe-consumed", _camPoeW(b.consumedW));
+  setText("cam-poe-remaining", _camPoeW(b.remainingW));
+  setText("cam-poe-temp", _camPoeC(b.tempC));
+
+  (poe.ports || []).forEach(function(p) {
+    setText("cam-poe-readout-" + p.port, _camPoeReadout(p));
+    var fill = document.getElementById("cam-poe-fill-" + p.port);
+    if (fill) {
+      fill.style.width = _camPoePct(p) + "%";
+      fill.className = "cam-poe-fill" + _camPoeFillClass(p);
+    }
+  });
+}
+
 function renderCameras() {
   const data = cached("cameras");
   if (!data) { $page().innerHTML = sectionLoading("Camera Connectivity"); fetchSection("cameras"); return; }
@@ -5014,6 +5293,8 @@ function renderCameras() {
       <div class="cam-port-grid" id="cam-port-grid">
         ${_camPortGridHtml(ports)}
       </div>
+
+      <div class="card" id="cam-poe-card"${data.poe ? "" : ' style="display:none"'}>${_camPoeCardHtml(data.poe, ports)}</div>
     </div>
 
   `;
@@ -5033,6 +5314,7 @@ function renderCameras() {
   // Seed the signature from what we just rendered so the first tick can
   // tell whether anything structural actually changed.
   _camLastSignature = _camSignature(data);
+  _camPoeLastSignature = _camPoeSignature(data.poe);
   if (_camerasRefreshTimer) clearInterval(_camerasRefreshTimer);
   _camerasFailCount = 0;
   _camerasRefreshTimer = setInterval(function() {
@@ -5082,6 +5364,12 @@ function renderCameras() {
         var fw = document.getElementById("cam-findings-wrap");
         if (fw) fw.innerHTML = _camFindingsHtml(fresh.findings || []);
       }
+
+      // PoE runs on its own signature, outside the branch above: watts move
+      // every tick (so they must update even in "steady state"), and a port
+      // powering up is a PoE structural change that need not be a port-grid
+      // one. _camPoeUpdate decides patch-vs-rebuild for itself.
+      _camPoeUpdate(fresh.poe, freshPorts);
 
       // Pulse the live badge to show the tick happened and clear any stale state
       var badge = document.getElementById("cam-live-badge");
@@ -5372,12 +5660,11 @@ function renderDiskHealth() {
   const osLabel = osDrive
     ? `${osFreeGB != null ? osFreeGB : "—"} GB free of ${osDrive.sizeGB != null ? osDrive.sizeGB : "—"} GB`
     : "No data";
-  // Critical at >90% used (matches the volume bars, the [Storage] finding, and
-  // the dashboard gauge), OR if absolute headroom drops below 50 GB (catches a
-  // nearly-full large disk that's still under 90%). Warning at >80% / <100 GB.
+  // Critical at >90% used (matches the volume bars and the [Storage] finding),
+  // OR if absolute headroom drops below 50 GB (catches a nearly-full large
+  // disk that's still under 90%). No warning tier — disk fill is critical-only.
   const osSev =
-    (osPct != null && osPct > 90) || (osFreeGB != null && osFreeGB < 50) ? "critical" :
-    (osPct != null && osPct > 80) || (osFreeGB != null && osFreeGB < 100) ? "warning" : "ok";
+    (osPct != null && osPct > 90) || (osFreeGB != null && osFreeGB < 50) ? "critical" : "ok";
 
   function summaryCard(icon, title, chipSev, chipText, value, desc) {
     return `<div class="card dh-summary-card">
@@ -5391,6 +5678,30 @@ function renderDiskHealth() {
     </div>`;
   }
 
+  // Storage Cleanup — offered only once D: hits 90% full (the same moment
+  // the red "almost full" finding fires). The card stays visible after a
+  // run so the tech keeps the receipt even though D: drops back under 90%.
+  const dDrive = logical.find(d => d.deviceID === "D:");
+  const dPct = dDrive?.usedPercent;
+  const showCleanup = (dPct != null && dPct >= 90) || _cleanupReceipt != null;
+  const cleanupCard = !showCleanup ? "" : `
+    <div class="card mt-4" id="dh-cleanup-card">
+      ${sectionTitle("database", "Storage Cleanup")}
+      ${_cleanupReceipt ? _cleanupReceiptHtml() : `
+        <p class="text-sm">
+          The recordings drive D: is <b>${esc(String(dPct))}% full</b>
+          (${dDrive?.freeSpaceGB != null ? esc(String(dDrive.freeSpaceGB)) : "—"} GB free).
+          Pulse can permanently delete <b>daily test clips older than 90 days</b> and
+          <b>game recordings older than 1 year</b> from D:\\recordedevents.
+          Nothing from the last 90 days is ever touched.
+        </p>
+        <button class="btn-outline btn-ol-blue mt-2" id="dh-cleanup-review">
+          ${svgIcon("database", 14)} Review what can be deleted
+        </button>
+        <div id="dh-cleanup-body" class="mt-3"></div>
+      `}
+    </div>`;
+
   $page().innerHTML = `
     ${pageHeader("Disks", "Drive health, free space, and the Pixellot folders that fill up first",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache['disk-health']=null;renderDiskHealth()">
@@ -5402,8 +5713,10 @@ function renderDiskHealth() {
     <div class="dh-summary-row">
       ${summaryCard("heartbeat", "Drive Self-Check (SMART)", smartSev, smartChip, smartVal, "Built-in health status reported by each drive")}
       ${summaryCard("alert", "Disk & Driver Errors", errorSev, errorChip, errorVal, "Disk, NVMe, NTFS & volume events from the Windows Event Log (last 24 h)")}
-      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : osSev === "warning" ? "Low" : "Critical", osLabel, "Critical when over 90% full or under 50 GB free")}
+      ${summaryCard("hdd", "OS Drive", osSev, osSev === "ok" ? "OK" : "Critical", osLabel, "Critical when over 90% full or under 50 GB free")}
     </div>
+
+    ${cleanupCard}
 
     <!-- Volumes -->
     <div class="card">
@@ -5421,7 +5734,6 @@ function renderDiskHealth() {
         let sevColor = "var(--c-accent-green)", status = "OK";
         if (!hasPct) { sevColor = "var(--c-dim)"; status = "Unknown"; }
         else if (pct > 90) { sevColor = "var(--c-accent-red)"; status = "Critical"; }
-        else if (pct > 80) { sevColor = "var(--c-accent-amber)"; status = "Low"; }
         const freeStr = d.freeSpaceGB != null ? `${d.freeSpaceGB} GB` : "—";
         const sizeStr = d.sizeGB != null ? `${d.sizeGB} GB` : "—";
         return `<div class="dh-vol-row">
@@ -5521,6 +5833,11 @@ function renderDiskHealth() {
   document.querySelectorAll(".dh-repair-btn").forEach(btn => {
     btn.addEventListener("click", () => _runRepairTool(btn.dataset.action));
   });
+
+  document.getElementById("dh-cleanup-review")
+    ?.addEventListener("click", _loadCleanupPreview);
+  document.getElementById("dh-cleanup-dismiss")
+    ?.addEventListener("click", () => { _cleanupReceipt = null; renderDiskHealth(); });
 }
 
 function _repairCard(action, title, body, command, amber) {
@@ -5594,6 +5911,158 @@ async function _runRepairTool(action) {
       </details>
     ` : ""}
   `;
+}
+
+// ── Storage Cleanup (D: recordings) ──────────────────────────
+// Pulse's first destructive action. The preview endpoint enumerates what
+// the rules would delete; the tech reviews counts/sizes/names and confirms;
+// the cleanup endpoint re-enumerates server-side with the same rules and
+// deletes. The receipt survives re-renders (module var) so the card can
+// keep showing what happened after D: drops back under the 90% gate.
+let _cleanupReceipt = null;
+
+async function _loadCleanupPreview() {
+  const btn = document.getElementById("dh-cleanup-review");
+  const body = document.getElementById("dh-cleanup-body");
+  if (!btn || !body) return;
+  btn.disabled = true;
+  body.innerHTML = `<div class="text-xs text-pulse-muted">
+    Measuring what can be deleted — on a full drive this can take a minute or two…
+  </div>`;
+
+  const p = await api("/api/disk-health/cleanup-preview");
+  btn.disabled = false;
+
+  if (!p || p.error) {
+    body.innerHTML = `<div class="dh-repair-result-err">
+      ${svgIcon("alert", 14)} <span class="font-semibold">Preview failed</span>
+      <div class="text-xs mt-1">${esc(p?.message || "(no message)")}</div>
+    </div>`;
+    return;
+  }
+  if (p.rootExists === false) {
+    body.innerHTML = `<p class="text-sm text-pulse-muted">
+      No ${esc(p.root || "D:\\recordedevents")} folder found — nothing to clean up.
+    </p>`;
+    return;
+  }
+
+  const daily = p.dailyTest || {};
+  const recs = p.recordings || {};
+  const totalCount = (daily.count || 0) + (recs.count || 0);
+  if (totalCount === 0) {
+    body.innerHTML = `<p class="text-sm text-pulse-muted">
+      Nothing is old enough to delete: ${esc(String(p.totalFolders ?? 0))} folders checked,
+      ${esc(String(p.skippedRecent ?? 0))} kept because they're newer than the limits.
+      Space on D: is being used by recent recordings — escalate rather than deleting them.
+    </p>`;
+    return;
+  }
+
+  const bucketRow = (label, b) => (b.count || 0) === 0 ? "" : `<tr>
+    <td>${esc(label)}</td>
+    <td class="font-semibold">${esc(String(b.count))}</td>
+    <td class="font-semibold">${b.sizeGB != null ? esc(String(b.sizeGB)) + " GB" : "—"}</td>
+    <td class="text-pulse-muted text-xs">${esc(b.oldest || "—")} → ${esc(b.newest || "—")}</td>
+  </tr>`;
+  const candidates = p.candidates || [];
+
+  body.innerHTML = `
+    <table class="data-table"><thead><tr>
+      <th>What</th><th>Folders</th><th>Size</th><th>Date range</th>
+    </tr></thead><tbody>
+      ${bucketRow("Daily test clips older than 90 days", daily)}
+      ${bucketRow("Game recordings older than 1 year", recs)}
+    </tbody></table>
+    <p class="text-sm mt-2">
+      Deleting all ${esc(String(totalCount))} folders frees
+      <b>${p.totalSizeGB != null ? esc(String(p.totalSizeGB)) : "—"} GB</b>
+      ${p.projectedUsedPercent != null
+        ? `— D: would drop to <b>${esc(String(p.projectedUsedPercent))}% full</b>
+           (${esc(String(p.projectedFreeGB))} GB free)` : ""}.
+      ${p.skippedRecent ? `${esc(String(p.skippedRecent))} newer folders are protected and won't be touched.` : ""}
+    </p>
+    ${candidates.length ? `
+    <details class="dh-repair-details">
+      <summary class="text-xs text-pulse-muted">Every folder that will be deleted (${candidates.length})</summary>
+      <pre class="dh-repair-output">${esc(candidates.map(c =>
+        `${c.date}  ${c.category === "dailytest" ? "test clip" : "recording"}  ${c.sizeMB != null ? c.sizeMB + " MB" : ""}  ${c.name}`
+      ).join("\n"))}</pre>
+    </details>` : ""}
+    <button class="btn-outline btn-ol-red mt-2" id="dh-cleanup-run">
+      ${svgIcon("alert", 14)} Permanently delete ${esc(String(totalCount))} folders…
+    </button>
+  `;
+  document.getElementById("dh-cleanup-run")
+    ?.addEventListener("click", () => _runStorageCleanup(p));
+}
+
+async function _runStorageCleanup(preview) {
+  const daily = preview.dailyTest || {};
+  const recs = preview.recordings || {};
+  const totalCount = (daily.count || 0) + (recs.count || 0);
+  const lines = [];
+  if (daily.count) lines.push(`• ${daily.count} daily test clips older than 90 days (${daily.sizeGB} GB)`);
+  if (recs.count) lines.push(`• ${recs.count} game recordings older than 1 year (${recs.sizeGB} GB)`);
+  const ok = confirm(
+    `Permanently delete ${totalCount} folders from D:\\recordedevents?\n\n` +
+    lines.join("\n") + "\n\n" +
+    "This cannot be undone — the folders do not go to the Recycle Bin.\n" +
+    "Nothing from the last 90 days will be touched.\n\nProceed?"
+  );
+  if (!ok) return;
+
+  const btn = document.getElementById("dh-cleanup-run");
+  const body = document.getElementById("dh-cleanup-body");
+  if (btn) { btn.disabled = true; btn.innerHTML = `${svgIcon("refresh", 14)} Deleting…`; }
+  if (body) body.insertAdjacentHTML("beforeend",
+    `<div class="text-xs text-pulse-muted mt-2" id="dh-cleanup-progress">
+      Deleting ${esc(String(totalCount))} folders — this can take several minutes…
+    </div>`);
+
+  const r = await apiPost("/api/disk-health/cleanup", { confirm: true });
+  _cleanupReceipt = r || { error: true, message: "(no response)" };
+  dataCache["disk-health"] = null;
+  renderDiskHealth();
+}
+
+function _cleanupReceiptHtml() {
+  const r = _cleanupReceipt;
+  if (!r) return "";
+  const dismiss = `<button class="btn-outline btn-ol-blue mt-2" id="dh-cleanup-dismiss">Dismiss</button>`;
+  if (r.error) {
+    return `<div class="dh-repair-result-err">
+      ${svgIcon("alert", 14)} <span class="font-semibold">Cleanup failed</span>
+      <div class="text-xs mt-1">${esc(r.message || "(no message)")}</div>
+    </div>${dismiss}`;
+  }
+  const after = r.after || {};
+  const parts = [];
+  if (r.deletedDailyTest) parts.push(`${r.deletedDailyTest} daily test clips`);
+  if (r.deletedRecordings) parts.push(`${r.deletedRecordings} game recordings`);
+  return `
+    <div class="${r.failedCount ? "dh-repair-result-err" : "dh-repair-result-ok"}">
+      ${svgIcon(r.failedCount ? "alert" : "check", 14)}
+      <span class="font-semibold">Cleanup ${r.failedCount ? "finished with errors" : "complete"}</span>
+      <div class="text-xs mt-1">
+        Deleted ${esc(String(r.deletedCount ?? 0))} folders${parts.length ? ` (${esc(parts.join(", "))})` : ""},
+        freeing ${esc(String(r.freedGB ?? "—"))} GB.
+        ${after.usedPercent != null ? `D: is now ${esc(String(after.usedPercent))}% full (${esc(String(after.freeGB))} GB free).` : ""}
+      </div>
+    </div>
+    ${(r.failed || []).length ? `
+    <details class="dh-repair-details mt-2" open>
+      <summary class="text-xs status-warn">${r.failed.length} folders could not be deleted</summary>
+      <pre class="dh-repair-output">${esc(r.failed.map(f => `${f.name}: ${f.error}`).join("\n"))}</pre>
+    </details>` : ""}
+    ${(r.deleted || []).length ? `
+    <details class="dh-repair-details mt-2">
+      <summary class="text-xs text-pulse-muted">Deleted folders (${r.deleted.length})</summary>
+      <pre class="dh-repair-output">${esc(r.deleted.map(d =>
+        `${d.date}  ${d.category === "dailytest" ? "test clip" : "recording"}  ${d.sizeMB != null ? d.sizeMB + " MB" : ""}  ${d.name}`
+      ).join("\n"))}</pre>
+    </details>` : ""}
+    ${dismiss}`;
 }
 
 function formatTime(iso) {
@@ -6514,6 +6983,18 @@ function _fmtClock(d) {
   return d.length ? d : null;
 }
 
+// Highest period number that is plausible for a sport, used to reject a
+// mis-read quarter instead of displaying it. 4-period sports allow 5 so a
+// single overtime still shows; a second OT (6+) suppresses rather than risk
+// passing garbage through. Innings-based and unknown sports get the full
+// single-digit range, i.e. effectively no clamp.
+function _maxPeriodForSport(sport) {
+  var s = (sport || "").toLowerCase();
+  if (s.indexOf("football") >= 0 || s.indexOf("basketball") >= 0) return 5;
+  if (s.indexOf("hockey") >= 0 || s.indexOf("soccer") >= 0) return 4;
+  return 9;
+}
+
 // ScoreConnect CG parser. SC III decodes scoreboard controllers into a
 // FIXED-WIDTH ASCII layout. Confirmed byte-for-byte against live VPU captures
 // (Daktronics Football, SC III 1.3.0.19) with field meanings verified by a
@@ -6527,13 +7008,27 @@ function _fmtClock(d) {
 //             └┘                        HOME    (pos 11-12)
 //                └┘                     VISITOR (pos 14-15)
 //                   └┘                  field B (pos 18-19) — not surfaced
-//                        │              quarter (last digit before labels)
+//                        │              quarter (pos 25)
 //                         Home Visitor  team labels (alphabetic anchor)
 //
 // Scores are read from FIXED positions (a token split fails because field A
 // sits before HOME and the clock gains a leading space under 10:00). Each
 // score field is read with a 3-char window so 1-3 digit scores all parse.
-function _parseCG(raw) {
+//
+// The quarter is read from pos 25 for the same reason. It used to be found by
+// heuristic — "the last digit of the leading numeric run" — which is correct
+// only when the numeric block ENDS at the quarter, as it does on Daktronics.
+// Electro-Mech appends at least one more digit after it (PXLS2_21655 Bradwell
+// GA, 2026-08-12: reported Q7 while the board was on Q2 and every
+// fixed-position field on the same string was correct), so the heuristic
+// reached past the quarter into a trailing field.
+//
+// pos 25 is CONFIRMED for Daktronics and INFERRED for every other vendor —
+// which is why an implausible value is suppressed rather than displayed. The
+// authoritative per-vendor layout is defined inside the SC III assemblies
+// (its CG formatter + ElectromechModel enum); recovering it from there is the
+// real fix and is tracked as a separate investigation.
+function _parseCG(raw, sport) {
   if (raw.length < 16) return null;
 
   var header = raw.substring(0, 2);
@@ -6548,13 +7043,17 @@ function _parseCG(raw) {
   if (isNaN(home) || isNaN(visitor)) return null;
   if (home > 199 || visitor > 199) return null;  // sanity — not a score line
 
-  // Quarter = the last digit of the numeric block, right before the labels.
+  // Quarter at FIXED pos 25, immediately after the down/to-go/ball-on block.
+  // A value that can't be a real period for the sport is dropped: on a support
+  // tool a blank quarter is safe, but a confidently wrong one gets relayed to a
+  // school. See _maxPeriodForSport for the per-sport ceiling.
   var qtr = null;
-  var prefix = raw.match(/^[\d.\s]+/);
-  if (prefix) {
-    var pd = prefix[0].replace(/\s+$/, "");
-    var q = parseInt(pd.charAt(pd.length - 1), 10);
-    if (q >= 1 && q <= 9) qtr = q;
+  if (raw.length > 25) {
+    var qc = raw.charAt(25);
+    if (qc >= "0" && qc <= "9") {
+      var q = parseInt(qc, 10);
+      if (q >= 1 && q <= 9 && q <= _maxPeriodForSport(sport)) qtr = q;
+    }
   }
 
   // Down / to-go / ball-on: a 5-char packed field at pos 20-24, right before
@@ -6641,7 +7140,7 @@ function parseRtdScores(rawData, vendor, sport) {
   // ── Strategy 2: ScoreConnect CG token format (all vendors) ──────────
   // The common decoded layout ScoreConnect produces. Try this first — it's
   // the format confirmed against real hardware + Daktronics support docs.
-  var cg = _parseCG(rawData);
+  var cg = _parseCG(rawData, sport);
   if (cg && (cg.clock || cg.homeScore != null || cg.guestScore != null)) {
     cg.clockRunning = clockRunning;
     return cg;

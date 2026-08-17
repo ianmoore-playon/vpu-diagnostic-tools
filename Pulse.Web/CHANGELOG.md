@@ -22,6 +22,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-17
+
+### Added
+- Disks: when the recordings drive (D:) reaches 90% full, a Storage Cleanup card can free space — it deletes daily test clips older than 90 days and game recordings older than 1 year, after showing exactly which folders (with counts and sizes) will be removed. Nothing from the last 90 days is ever touched.
+- Pulse now closes itself (server and browser window) 5 minutes after the LogMeIn session that opened it ends — no more Pulse left running on the VPU after you disconnect. A banner at the top of the page shows the live countdown, and reconnecting within those 5 minutes cancels it automatically; opening Pulse at the console or over another remote tool is unaffected.
+- Camera Connectivity now marks the exact port when the venue's internet cable is plugged into the camera card — a red "Internet Uplink — wrong port" tile tells you which cable to move to the motherboard network port.
+- Splashtop Streamer is now removed automatically in the background — it was installed on VPUs as part of the retired Canopy deployment, alongside the Leaf agent Pulse already cleans up. Heads up: if you are connected to a VPU over Splashtop, the first Pulse launch will end that session; use LogMeIn, the supported remote tool.
+- Camera Connectivity now shows live PoE power draw for each camera port — watts, volts and amps per port plus the card's total budget, free power and temperature, refreshing every few seconds. It flags a disconnected Molex power lead on the camera card (the same fault VPU Manager reports as a failed POE Power Test) and tells you to reseat it. Only the newer camera cards (Intel I210/I211) can report power; on an older 82574L card the section says so plainly instead of sitting empty.
+
+### Changed
+- Storage alerts are now critical-only: the amber "space low" warning at 80% full is gone everywhere (findings, readiness, Disks page, dashboard bars). Drives alert only when they actually matter — over 90% full — which is also the moment the Storage Cleanup card appears with the fix.
+- Network Test: AWS S3 (s3.amazonaws.com) is no longer tested anywhere — removed from the port, service reachability, name lookup, and secure-connection checks. It is no longer required for streaming, so a venue firewall blocking it won't show a failure anymore.
+- The "Windows support ends within a year" warning now reassures instead of alarming when the VPU still has years of security updates left: it explains the unit is covered until the true end-of-servicing date (e.g. 2032 for LTSC 2021) and that no action is needed.
+- The blocked-backup-streaming warning no longer says "the broadcast still works" — the title and description now just state what's blocked and what to ask venue IT to open.
+
+### Fixed
+- ScoreConnect: the scoreboard could show the wrong quarter on non-Daktronics boards — an Electro-Mech football board sitting on Q2 read as "Q7" even though the score, clock and down & distance on the same screen were all correct. Pulse now reads the quarter from its own fixed spot in the scoreboard data instead of taking the last digit it finds. It also won't show a quarter that can't be real for the sport any more: a football board reporting Q7 leaves the quarter blank rather than showing a wrong one you might pass on to a school.
+- Stream Readiness now correctly reports FAIL (not WARNING) when a venue firewall is intercepting secure connections — the dashboard verdict was silently ignoring this case.
+
 ## [1.1.2] - 2026-08-07
 
 ### Fixed
@@ -52,6 +71,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - The scoreboard's LIVE / STALE / NO SIGNAL indicator was nearly invisible in light mode — it was using the light theme's dark green on the near-black scoreboard. The scoreboard now keeps its own colours in both modes, so it reads the same whichever mode you're in. Team names and the raw-data label on the scoreboard are clearer too.
 - The loading screen no longer says "this can take a moment" after it has already finished; it now reads "All checks complete." on the last frame.
 - A Pulse run from a source checkout no longer reports itself as the latest production release — it now shows the version it actually is.
+- Stream Readiness now reports FAIL when the venue firewall is intercepting secure connections (SSL inspection). It used to read WARNING — "will likely stream" — on a VPU whose graphics, uploads and Pixellot updates were all cut off. The finding text no longer suggests video keeps streaming either; it says plainly not to expect a clean broadcast until venue IT exempts the domains from decryption.
+- Pulse now actually exits a minute after the last browser tab closes, as designed — a hidden crash in the shutdown step had been leaving the server running in the background until reboot.
 - Network Test no longer shows a wall of false "blocked (TCP/443)" warnings right after Pulse opens. On slower VPUs the checks could time out while Pulse was still busy collecting data, making a healthy network look blocked; any check that fails now gets an automatic second attempt once the rush is over.
 - The dashboard no longer warns "CPU usage elevated" just because Pulse itself was busy collecting data at that moment. An elevated reading is now double-checked with a follow-up sample before the warning shows.
 - Uptime no longer shows an extra day (a VPU up 16 hours used to read "1d 16h").

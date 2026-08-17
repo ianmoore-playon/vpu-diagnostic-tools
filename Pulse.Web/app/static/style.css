@@ -1124,6 +1124,7 @@ html.dark .channel-moved-banner {
 .badge-ol-info  { border-color: var(--c-accent-blue); color: var(--c-accent-blue); }
 .badge-ol-main  { border-color: var(--c-accent-teal); color: var(--c-accent-teal); }
 .badge-ol-muted { border-color: var(--c-dimmer); color: var(--c-dimmer); }
+.badge-ol-uplink { border-color: var(--c-accent-red); color: var(--c-accent-red); }
 
 /* Network config with dots */
 .dash-net-kv { display: flex; flex-direction: column; gap: 2px; }
@@ -2008,6 +2009,9 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
    0.75 opacity that previously washed out the labels. Empty (no-NIC)
    slots stay dashed + half-opacity to clearly read as unused. */
 .cam-port-down { border-color: var(--c-dimmer); border-style: dashed; }
+/* Venue/internet cable plugged into this camera port — a wiring fault the
+   tech must fix, so the tile reads as an error, not just "no camera". */
+.cam-port-uplink { border-color: var(--c-accent-red); }
 .cam-port-empty { border-style: dashed; opacity: 0.5; }
 .cam-port-header { display: flex; align-items: center; gap: 6px; }
 .cam-port-num { font-size: 0.85rem; font-weight: 700; color: var(--c-text); }
@@ -2047,6 +2051,21 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .cam-entry-mac { white-space: nowrap; }
 .cam-entry-source { font-size: 0.6rem; flex-basis: 100%; }
 .cam-no-detect { font-size: 0.7rem; color: var(--c-dim); }
+/* Move-the-cable guidance on a mis-wired (uplink-in-camera-port) tile. */
+.cam-uplink-callout {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--c-tint-red-faint);
+    border: 1px solid var(--c-tint-red-border);
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: var(--c-text);
+}
+.cam-uplink-callout svg { flex-shrink: 0; margin-top: 1px; color: var(--c-accent-red); }
 .cam-down-guide {
     display: flex;
     align-items: flex-start;
@@ -2195,6 +2214,52 @@ details[open] > .cam-details-btn::before { transform: rotate(90deg); }
 .cam-finding-pill-critical { background: var(--c-pill-critical); }
 .cam-finding-pill-warning  { background: var(--c-pill-warning); }
 .cam-finding-body { font-size: 0.8rem; color: var(--c-muted); line-height: 1.4; }
+
+/* ── PoE power draw (ADLINK SmartPoE) ───────────────────────
+   Only rendered on I210/I211 camera NICs; see Get-PoePower.ps1. Bars are a
+   fraction of the 25.5 W PoE+ per-port ceiling, so fill height reads as
+   headroom on that port. Fills use --c-status-* (they are fills, not text);
+   the note titles use --c-accent-* per the a11y pass in PR #138. */
+.cam-poe-note { border-radius: 6px; padding: 10px 14px; box-shadow: inset 0 0 0 1px var(--c-border); }
+.cam-poe-note-info { background: var(--c-tint-blue); border-left: 3px solid var(--c-accent-blue); }
+.cam-poe-note-warn { background: var(--c-tint-amber); border-left: 3px solid var(--c-accent-amber); }
+.cam-poe-note-title { font-size: 0.8rem; font-weight: 600; margin-bottom: 4px; }
+.cam-poe-note-info .cam-poe-note-title { color: var(--c-accent-blue); }
+.cam-poe-note-warn .cam-poe-note-title { color: var(--c-accent-amber); }
+.cam-poe-note-body { font-size: 0.8rem; color: var(--c-muted); line-height: 1.4; }
+.cam-poe-note-meta { font-size: 0.7rem; color: var(--c-dim); margin-top: 6px; }
+.cam-poe-low { margin-bottom: 14px; }
+
+.cam-poe-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px; margin-bottom: 16px;
+}
+.cam-poe-stat { background: var(--c-surface-2); border-radius: 6px; padding: 8px 12px; }
+.cam-poe-stat-label { font-size: 0.68rem; color: var(--c-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.cam-poe-stat-value { font-size: 1.05rem; font-weight: 600; margin-top: 2px; }
+
+.cam-poe-ports { display: flex; flex-direction: column; gap: 10px; }
+.cam-poe-row { display: flex; align-items: center; gap: 12px; }
+/* 190px fits the unconfirmed label ("Channel 4 -> Port 4") and its
+   "port unverified" sub-line without wrapping. */
+.cam-poe-row-label { display: flex; flex-direction: column; min-width: 190px; flex-shrink: 0; }
+.cam-poe-port { font-size: 0.8rem; font-weight: 600; }
+.cam-poe-sub { font-size: 0.7rem; color: var(--c-muted); }
+.cam-poe-track {
+  flex: 1; height: 8px; border-radius: 4px;
+  background: var(--c-surface-3); overflow: hidden; box-shadow: inset 0 0 0 1px var(--c-border);
+}
+.cam-poe-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; background: var(--c-dim); }
+.cam-poe-fill-ok   { background: var(--c-status-ok); }
+.cam-poe-fill-warn { background: var(--c-status-warn); }
+.cam-poe-fill-hot  { background: var(--c-accent-red); }
+.cam-poe-fill-off  { background: var(--c-status-down); }
+.cam-poe-readout { font-size: 0.72rem; color: var(--c-muted); min-width: 168px; text-align: right; flex-shrink: 0; }
+
+@media (max-width: 640px) {
+  .cam-poe-row { flex-wrap: wrap; }
+  .cam-poe-readout { text-align: left; min-width: 0; }
+}
 
 /* ── Camera Fault Isolator wizard ──────────────────────────── */
 .fi-stepper { display: flex; align-items: center; margin-bottom: 20px; }
@@ -3678,4 +3743,38 @@ html.dark .sc-board { box-shadow: none; border-color: var(--c-board-border-2); }
         flex: 0 0 auto;
     }
     .sidebar-footer { display: none; }
+}
+
+/* ── LMI auto-close countdown banner ─────────────────────────── */
+/* Fixed top-center pill shown while the server counts down to closing
+   Pulse after the LogMeIn session ended (main.py _lmi_session_watch).
+   Amber while counting; .ok (green) flashes briefly when a reconnect
+   cancels the countdown. Sits above content but below the splash (9999). */
+.lmi-countdown {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9000;
+    max-width: min(92vw, 560px);
+    padding: 10px 20px;
+    border-radius: 9999px;
+    background: var(--c-surface);
+    border: 1px solid var(--c-status-warn);
+    box-shadow: 0 6px 24px rgba(8, 10, 16, 0.22);
+    color: var(--c-accent-amber);
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+.lmi-countdown.ok {
+    color: var(--c-accent-green);
+    border-color: var(--c-tint-green-border);
+}
+html.dark .lmi-countdown {
+    color: var(--c-status-warn);
+}
+html.dark .lmi-countdown.ok {
+    color: var(--c-status-ok);
 }

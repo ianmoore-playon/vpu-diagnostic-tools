@@ -291,6 +291,174 @@ def cgi_probe(ip):
     return dict(probe) if probe else None
 
 
+# ── Storage cleanup demo (D: recordings) ─────────────────────
+# Candidate list is computed once at module load so the preview and the
+# post-delete receipt tell one consistent story within a session. Numbers
+# mirror the real bench VPU: hundreds of ~10 MB daily test clips (small)
+# and dozens of multi-GB game recordings (where the space actually is).
+def _demo_cleanup_candidates():
+    cands = []
+    for i in range(208):
+        d = datetime.now() - timedelta(days=91 + i * 2)
+        cands.append({
+            "name": f"{d:%Y-%m-%d}_p_DAILYTEST{d:%Y%m%d}",
+            "category": "dailytest",
+            "date": f"{d:%Y-%m-%d}",
+            "sizeMB": round(random.uniform(7.5, 13.5), 1),
+        })
+    for i in range(47):
+        d = datetime.now() - timedelta(days=366 + i * 4)
+        hexid = "".join(random.choice("0123456789abcdef") for _ in range(24))
+        cands.append({
+            "name": f"{d:%Y-%m-%d}_p_{hexid}",
+            "category": "recording",
+            "date": f"{d:%Y-%m-%d}",
+            "sizeMB": round(random.uniform(2400.0, 4300.0), 1),
+        })
+    cands.sort(key=lambda c: c["date"])
+    return cands
+
+
+_DEMO_CLEANUP_CANDIDATES = _demo_cleanup_candidates()
+# Matches the Get-DiskHealth demo payload: D: is 953 GB with 86 GB free (91%).
+_DEMO_D_SIZE_GB, _DEMO_D_FREE_GB = 953, 86
+
+
+def _demo_cleanup_bucket(category):
+    items = [c for c in _DEMO_CLEANUP_CANDIDATES if c["category"] == category]
+    return {
+        "count": len(items),
+        "sizeGB": round(sum(c["sizeMB"] for c in items) / 1024, 1),
+        "oldest": items[0]["date"] if items else None,
+        "newest": items[-1]["date"] if items else None,
+    }
+
+
+def _demo_cleanup_preview(**kw):
+    daily = _demo_cleanup_bucket("dailytest")
+    recs = _demo_cleanup_bucket("recording")
+    total_gb = round(daily["sizeGB"] + recs["sizeGB"], 1)
+    projected_free = round(_DEMO_D_FREE_GB + total_gb, 1)
+    return {
+        "rootExists": True,
+        "root": "D:\\recordedevents",
+        "params": {"recentGuardDays": 90, "recordingMaxAgeDays": 365},
+        "drive": {"letter": "D", "sizeGB": _DEMO_D_SIZE_GB, "freeGB": _DEMO_D_FREE_GB, "usedPercent": 91},
+        "dailyTest": daily,
+        "recordings": recs,
+        "totalSizeGB": total_gb,
+        "totalFolders": len(_DEMO_CLEANUP_CANDIDATES) + 132,
+        "skippedRecent": 131,
+        "skippedUnrecognized": ["0001-01-01_p_"],
+        "projectedFreeGB": projected_free,
+        "projectedUsedPercent": round((_DEMO_D_SIZE_GB - projected_free) / _DEMO_D_SIZE_GB * 100, 1),
+        "candidates": _DEMO_CLEANUP_CANDIDATES,
+    }
+
+
+def _demo_cleanup_result(**kw):
+    p = _demo_cleanup_preview()
+    freed = p["totalSizeGB"]
+    return {
+        "success": True,
+        "deletedCount": len(_DEMO_CLEANUP_CANDIDATES),
+        "deletedDailyTest": p["dailyTest"]["count"],
+        "deletedRecordings": p["recordings"]["count"],
+        "failedCount": 0,
+        "freedGB": freed,
+        "before": {"letter": "D", "sizeGB": _DEMO_D_SIZE_GB, "freeGB": _DEMO_D_FREE_GB, "usedPercent": 91},
+        "after": {"letter": "D", "sizeGB": _DEMO_D_SIZE_GB, "freeGB": p["projectedFreeGB"],
+                  "usedPercent": p["projectedUsedPercent"]},
+        "durationMs": 84250,
+        "deleted": _DEMO_CLEANUP_CANDIDATES,
+        "failed": [],
+    }
+
+
+def _demo_poe_power():
+    """ADLINK SmartPoE card telemetry, matching Get-PoePower.ps1's shape.
+
+    Keyed to the Get-NicAdapters.ps1 demo above so the two agree: that payload
+    reports I210/I211 ports (so PoE telemetry is supported), with Ethernet 4
+    unplugged -- so port 4 reads unpowered here and poeOnCount lands at 3.
+
+    Watts jitter per call so the meters aren't frozen in demo.
+
+    All figures below are calibrated to a real production GIE74P read on
+    2026-08-12 rather than guessed:
+      - Per-port draw 4-7 W, NOT the ~10 W first assumed. Pixellot CHUs sit far
+        under the 25.5 W PoE+ ceiling, which is why demo bars look ~20% full.
+      - Port voltage is a stable per-port constant (that card read 54.709 and
+        54.149 V unchanged across samples); only current moves.
+      - An empty port floats slightly rather than reading exactly 0 V -- the
+        real card showed 0.187 V on its unpopulated port. Port 4 reproduces
+        that so the >1.0 V powered-test stays exercised in demo.
+      - Total is ~60 W and NOT fixed: on real hardware consumed and remaining
+        both drifted down together, so total is a noisy derived figure. Both
+        jitter independently here to keep that honest.
+
+    Total stays above the 55 W healthy floor so demo never fires the Molex
+    warning. Drop `remaining` to ~8 W (total ~25 W) to exercise it -- that
+    reproduces the 20 W VPU Manager reports on a Molex-disconnected card.
+    """
+    port_specs = [
+        (1, 54.709, (0.084, 0.127)),  # Main camera 1 - real measured range
+        (2, 54.149, (0.078, 0.102)),  # Main camera 2
+        (3, 54.402, (0.088, 0.104)),  # OCR / scoreboard camera
+        (4, 0.187,  (0.0, 0.0)),      # Unplugged, matches Ethernet 4 above
+    ]
+    ports = []
+    consumed = 0.0
+    poe_on = 0
+    for num, voltage, (lo, hi) in port_specs:
+        current = round(random.uniform(lo, hi), 3) if hi > 0 else 0.0
+        watts = round(voltage * current, 1)
+        on = voltage > 1.0
+        if on:
+            poe_on += 1
+            consumed += watts
+        ports.append({
+            "port": num,
+            "voltage": round(voltage, 2),
+            "current": current,
+            "watts": watts,
+            "poeOn": on,
+            "state": "Powered" if on else "Off",
+            "readOk": True,
+        })
+
+    consumed = round(consumed, 1)
+    # Jittered independently of consumed, because on real hardware the two are
+    # not complementary — both drifted downward together across samples, so
+    # total is a noisy derived number rather than the card's rating.
+    remaining = round(random.uniform(46.0, 52.0), 1)
+    total = round(consumed + remaining, 1)
+    return {
+        "supported": True,
+        "available": True,
+        "nicModel": "I210",
+        "cardLabel": "ADLINK GIE74P (Intel I210 x4)",
+        "reason": "",
+        "dllPath": r"C:\Program Files\ADLINK\GIE Series\Library\Dll\x64\SmartPoE.dll",
+        "budget": {
+            "totalW": total,
+            "consumedW": consumed,
+            "remainingW": remaining,
+            "tempC": round(random.uniform(45.0, 47.0), 1),
+            "poeOnCount": poe_on,
+            "healthyFloorW": 55.0,
+            "underPowered": total > 0 and total < 55.0,
+            "portMaxW": 25.5,
+            # Per-port readings must account for what the card says it draws.
+            # Demo is self-consistent by construction, so this always passes;
+            # it exists so the integrity-footnote path has a field to read.
+            "portSumW": consumed,
+            "portSumOk": True,
+        },
+        "ports": ports,
+    }
+
+
 DEMO = {
     "Get-SystemIdentity.ps1": lambda **kw: {
         "computerSystem": {"name": _VENUE["hostname"], "manufacturer": "HP", "model": "HP Z2 Tower G9 Workstation Desktop PC"},
@@ -386,6 +554,7 @@ DEMO = {
              "arpEntries": []},
         ]
     },
+    "Get-PoePower.ps1": lambda **kw: _demo_poe_power(),
     "Get-Hardware.ps1": lambda **kw: {
         "processors": [{"name": "Intel(R) Core(TM) i5-10500 CPU @ 3.10GHz", "numberOfCores": 6, "numberOfLogicalProcessors": 12, "maxClockSpeedMHz": 3100}],
         "memory": [
@@ -488,7 +657,6 @@ DEMO = {
             {"domain": "sportzcast.net", "resolvedTo": "104.26.11.87", "status": "pass", "resolutionMs": round(random.uniform(10, 35), 1)},
             {"domain": "service.singular.live", "resolvedTo": "76.76.21.21", "status": "pass", "resolutionMs": round(random.uniform(12, 40), 1)},
             {"domain": "logmein.com", "resolvedTo": "216.52.233.2", "status": "pass", "resolutionMs": round(random.uniform(5, 15), 1)},
-            {"domain": "s3.amazonaws.com", "resolvedTo": "52.217.44.54", "status": "pass", "resolutionMs": round(random.uniform(4, 12), 1)},
         ]
     },
     "Test-NetworkPorts.ps1": lambda **kw: {
@@ -498,7 +666,6 @@ DEMO = {
             {"purpose": "Pixellot", "host": "pixellot.tv", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "Pixellot Echo", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NFHS Network", "host": "nfhsnetwork.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
-            {"purpose": "AWS S3", "host": "s3.amazonaws.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "Singular Overlay", "host": "service.singular.live", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "LogMeIn", "host": "secure.logmein.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
@@ -542,7 +709,6 @@ DEMO = {
             {"domain": "pixellot.tv", "purpose": "Pixellot cloud", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M02, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M02", "issuerOrg": "Amazon", "subjectCn": "pixellot.tv", "chainErrors": "", "notAfter": "2027-01-12", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
             {"domain": "software.pixellot.tv", "purpose": "Pixellot software updates", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M02, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M02", "issuerOrg": "Amazon", "subjectCn": "software.pixellot.tv", "chainErrors": "", "notAfter": "2027-01-12", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
             {"domain": "nfhsnetwork.com", "purpose": "NFHS Network", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M03, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M03", "issuerOrg": "Amazon", "subjectCn": "nfhsnetwork.com", "chainErrors": "", "notAfter": "2026-11-02", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
-            {"domain": "s3.amazonaws.com", "purpose": "Recording uploads (AWS S3)", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M01, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M01", "issuerOrg": "Amazon", "subjectCn": "s3.amazonaws.com", "chainErrors": "", "notAfter": "2026-12-19", "latencyMs": round(random.uniform(40, 120), 1), "detail": None},
             {"domain": "secure.logmein.com", "purpose": "Remote support (LogMeIn)", "status": "pass", "trusted": True, "issuer": "CN=DigiCert TLS RSA SHA256 2020 CA1, O=DigiCert Inc, C=US", "issuerCn": "DigiCert TLS RSA SHA256 2020 CA1", "issuerOrg": "DigiCert Inc", "subjectCn": "*.logmein.com", "chainErrors": "", "notAfter": "2026-10-15", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
             {"domain": "www.python.org", "purpose": "Pulse installer download", "status": "pass", "trusted": True, "issuer": "CN=GlobalSign Atlas R3 DV TLS CA 2025 Q2, O=GlobalSign nv-sa, C=BE", "issuerCn": "GlobalSign Atlas R3 DV TLS CA 2025 Q2", "issuerOrg": "GlobalSign nv-sa", "subjectCn": "www.python.org", "chainErrors": "", "notAfter": "2026-09-07", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
         ],
@@ -622,9 +788,6 @@ DEMO = {
             {"host": "nfhsnetwork.com",
              "system": {"resolvedTo": "143.204.160.62",  "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
              "google": {"resolvedTo": "143.204.160.113", "status": "pass", "resolutionMs": round(random.uniform(8, 16), 1),  "error": None}},
-            {"host": "s3.amazonaws.com",
-             "system": {"resolvedTo": "16.15.254.35",   "status": "pass", "resolutionMs": round(random.uniform(6, 14), 1),  "error": None},
-             "google": {"resolvedTo": "52.216.26.198",  "status": "pass", "resolutionMs": round(random.uniform(8, 16), 1),  "error": None}},
         ],
     },
     "Test-LocalNetwork.ps1": lambda **kw: {
@@ -634,7 +797,8 @@ DEMO = {
     "Get-DiskHealth.ps1": lambda **kw: {
         "logicalDisks": [
             {"deviceID": "C:", "freeSpaceGB": 176, "sizeGB": 465, "usedPercent": 62, "fileSystem": "NTFS"},
-            {"deviceID": "D:", "freeSpaceGB": 712, "sizeGB": 953, "usedPercent": 25, "fileSystem": "NTFS"},
+            # D: over the 90% gate so demo mode exercises the Storage Cleanup card.
+            {"deviceID": "D:", "freeSpaceGB": 86, "sizeGB": 953, "usedPercent": 91, "fileSystem": "NTFS"},
         ],
         "physicalDisks": [
             {"friendlyName": "Samsung SSD 870 EVO 500GB", "sizeGB": 465, "mediaType": "SSD", "busType": "SATA", "serialNumber": "S3Z8NB0K901234A", "healthStatus": "Healthy", "operationalStatus": "OK",
@@ -650,6 +814,8 @@ DEMO = {
         ],
         "diskEvents": [{"timeCreated": (datetime.now() - timedelta(hours=6)).isoformat(), "level": "Warning", "source": "Ntfs", "eventId": 55, "message": "The file system structure on the disk is corrupt. Run chkdsk on volume D:"}],
     },
+    "Get-RecordingsCleanupPreview.ps1": lambda **kw: _demo_cleanup_preview(**kw),
+    "Invoke-RecordingsCleanup.ps1": lambda **kw: _demo_cleanup_result(**kw),
     "Get-EventLogs.ps1": lambda **kw: {
         "entries": [
             {"timeCreated": (datetime.now() - timedelta(hours=2)).isoformat(), "level": "Error", "source": "PixellotAgent", "eventId": 1001, "message": "Connection timeout to cloud service api.pixellot.tv — retrying in 30s"},
