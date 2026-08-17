@@ -35,6 +35,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - The "Windows support ends within a year" warning now reassures instead of alarming when the VPU still has years of security updates left: it explains the unit is covered until the true end-of-servicing date (e.g. 2032 for LTSC 2021) and that no action is needed.
 - The blocked-backup-streaming warning no longer says "the broadcast still works" — the title and description now just state what's blocked and what to ask venue IT to open.
 
+### Fixed
+- ScoreConnect: the scoreboard could show the wrong quarter on non-Daktronics boards — an Electro-Mech football board sitting on Q2 read as "Q7" even though the score, clock and down & distance on the same screen were all correct. Pulse now reads the quarter from its own fixed spot in the scoreboard data instead of taking the last digit it finds. It also won't show a quarter that can't be real for the sport any more: a football board reporting Q7 leaves the quarter blank rather than showing a wrong one you might pass on to a school.
+
 ## [1.1.2] - 2026-08-07
 
 ### Fixed
