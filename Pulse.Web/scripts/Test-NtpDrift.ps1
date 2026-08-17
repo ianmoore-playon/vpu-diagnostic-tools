@@ -20,9 +20,9 @@ param()
 $ErrorActionPreference = 'Stop'
 
 try {
-    # ── Determine the configured time source ─────────────────────
+    # -- Determine the configured time source ---------------------
     # Drift should be measured against the server the VPU actually syncs
-    # with, not a hardcoded reference — otherwise a box pointed at a bad
+    # with, not a hardcoded reference -- otherwise a box pointed at a bad
     # NTP server would still report "in sync" against time.windows.com.
     $configuredSource = $null
     try {

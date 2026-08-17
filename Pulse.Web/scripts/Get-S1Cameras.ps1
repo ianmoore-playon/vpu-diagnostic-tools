@@ -3,7 +3,7 @@
 .SYNOPSIS
     Discover JAI S1 cameras via the JAI SDK.
 .DESCRIPTION
-    S1 4-camera systems use JAI cameras, not Dynacolor — so Pulse's CGI
+    S1 4-camera systems use JAI cameras, not Dynacolor -- so Pulse's CGI
     probe can't see them. This enumerates them through the JAI factory
     (Jai_FactoryDotNet.dll) and returns serial numbers, IP addresses, and
     model names. Outputs JSON.
@@ -12,7 +12,7 @@
     HTTP POST is stripped per Pulse's run_ps convention (JSON to stdout).
 
     The JAI SDK ships with S1 systems at C:\Program Files\JAI\SDK\bin\. On a
-    non-S1 VPU the DLL is absent — we report available=false rather than
+    non-S1 VPU the DLL is absent -- we report available=false rather than
     erroring, so the caller can simply skip the S1 section.
 .OUTPUTS
     { available, count, cameras: [ { serialNumber, ip, model } ], ... }

@@ -61,7 +61,7 @@ try {
     catch { }
 
     # OS-level SMART pre-failure flag. MSStorageDriver_FailurePredictStatus is the
-    # inbox WMI class that surfaces each drive's own "predict failure" boolean — no
+    # inbox WMI class that surfaces each drive's own "predict failure" boolean -- no
     # kernel driver or raw register access involved. Any drive predicting failure
     # flips the top-level flag the dashboard finding keys on.
     $predictFailure = $false
@@ -78,7 +78,7 @@ try {
     try {
         $startTime = (Get-Date).AddHours(-24)
         # Include the filesystem/volume providers (Ntfs/volmgr/partmgr), not just
-        # the controller/driver ones — chkdsk-corruption and bad-block events
+        # the controller/driver ones -- chkdsk-corruption and bad-block events
         # (e.g. Ntfs eventId 55) live there and were previously never collected.
         $events = Get-WinEvent -FilterHashtable @{
             LogName      = 'System'

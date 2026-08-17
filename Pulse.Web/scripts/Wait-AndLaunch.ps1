@@ -27,7 +27,7 @@ function Write-LaunchLog($msg) {
 }
 
 # Resolve chrome.exe explicitly. Start-Process on a bare URL hands it to the
-# DEFAULT browser handler — and a fresh VPU often has no default browser set,
+# DEFAULT browser handler -- and a fresh VPU often has no default browser set,
 # so Windows pops a "How do you want to open this?" picker (with IE as the
 # first option) instead of opening Pulse. The launcher guarantees Chrome is
 # installed, so open it directly; fall back to the default handler only if
@@ -64,7 +64,7 @@ function Test-ChromeWindow {
 # COLD Chrome profile: Chrome's first-run path (profile creation + the
 # "welcome / set as default" interstitial) swallows the URL and never surfaces
 # a window, so the launcher prints "running" and closes with nothing on screen
-# — and the tester has to run it a second time, when the profile is warm. The
+# -- and the tester has to run it a second time, when the profile is warm. The
 # flags below skip that first-run friction and force the URL into a new window;
 # --no-first-run + --no-default-browser-check are exactly what a cold profile
 # needs to open straight to the page.
@@ -83,7 +83,7 @@ function Open-Browser {
 
     $chrome = Get-ChromePath
     if (-not $chrome) {
-        # No Chrome found — fall back to the default handler. Can't pass the
+        # No Chrome found -- fall back to the default handler. Can't pass the
         # cold-profile flags here, but this is the rare "Chrome genuinely
         # missing" path; the launcher normally guarantees it's installed.
         Write-LaunchLog "Chrome not found - opening $Url via default handler"
@@ -126,13 +126,13 @@ while ($elapsed -lt $TimeoutSec) {
         }
         $client.Close()
     } catch {
-        # Port not open yet — sleep and retry
+        # Port not open yet -- sleep and retry
     }
     Start-Sleep -Milliseconds 500
     $elapsed += 1
 }
 
-# Timed out — the server never came up. Do NOT open the browser (it would
+# Timed out -- the server never came up. Do NOT open the browser (it would
 # just show a connection error); exit non-zero so run.bat surfaces the
 # failure and points the user at pulse-server.log.
 Write-LaunchLog "Timed out after ${TimeoutSec}s waiting for port $Port"

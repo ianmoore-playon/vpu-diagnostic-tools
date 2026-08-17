@@ -29,7 +29,7 @@ function _names($items, $prop) {
     @($items | ForEach-Object { $_.$prop } | Where-Object { $_ } | Select-Object -Unique)
 }
 
-# ── Mouse ─────────────────────────────────────────────────────
+# -- Mouse -----------------------------------------------------
 $mouse = [ordered]@{ connected = $false; count = 0; devices = @(); error = $null }
 try {
     $m = @(Get-CimInstance Win32_PointingDevice -ErrorAction Stop)
@@ -38,7 +38,7 @@ try {
     $mouse.devices = _names $m 'Name'
 } catch { $mouse.error = $_.Exception.Message }
 
-# ── Keyboard ──────────────────────────────────────────────────
+# -- Keyboard --------------------------------------------------
 $keyboard = [ordered]@{ connected = $false; count = 0; devices = @(); error = $null }
 try {
     $k = @(Get-CimInstance Win32_Keyboard -ErrorAction Stop)
@@ -47,7 +47,7 @@ try {
     $keyboard.devices = _names $k 'Name'
 } catch { $keyboard.error = $_.Exception.Message }
 
-# ── Monitor ───────────────────────────────────────────────────
+# -- Monitor ---------------------------------------------------
 # Prefer PnP monitor entities that are actually present/OK; fall back to
 # Win32_DesktopMonitor. Headless VPUs report 0 here, which is the point.
 $monitor = [ordered]@{ connected = $false; count = 0; displays = @(); source = $null; error = $null }
@@ -60,7 +60,7 @@ try {
         $monitor.connected = $true
         $monitor.displays = _names $mon 'Name'
     } else {
-        # Fallback — some images don't surface monitors via PnPEntity.
+        # Fallback -- some images don't surface monitors via PnPEntity.
         $dm = @(Get-CimInstance Win32_DesktopMonitor -ErrorAction Stop |
             Where-Object { $_.Availability -ne 8 })   # 8 = Off-Line
         $monitor.source = 'desktopmonitor'

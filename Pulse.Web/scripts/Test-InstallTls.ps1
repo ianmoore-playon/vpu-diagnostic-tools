@@ -8,8 +8,8 @@
     Completes a TLS handshake to each host while accepting ANY certificate,
     then validates the certificate actually presented against the machine's
     trust store. A cert that doesn't chain to a trusted root means a firewall
-    doing SSL deep-packet inspection is substituting certificates — the
-    SEC_E_UNTRUSTED_ROOT failure the Kent School District install hit — so
+    doing SSL deep-packet inspection is substituting certificates -- the
+    SEC_E_UNTRUSTED_ROOT failure the Kent School District install hit -- so
     print a plain-English explanation naming the intercepting device instead
     of leaving the tech with a raw schannel error.
 
@@ -28,7 +28,7 @@ param([string]$TargetHosts = 'www.python.org')
 $ErrorActionPreference = 'SilentlyContinue'
 $intercepted = @()
 # Breadcrumb log: this diagnostic must stay silent on the console when the
-# network is clean, so when IT fails it fails invisibly — the log is the only
+# network is clean, so when IT fails it fails invisibly -- the log is the only
 # way to debug it from the field ("send me %TEMP%\pulse-install-tls.log").
 $diag = @("=== Test-InstallTls $(Get-Date -Format s) targets=$TargetHosts ===")
 
@@ -46,10 +46,10 @@ foreach ($h in ($TargetHosts -split ',')) {
         }
         $tcp.EndConnect($iar)
 
-        # Accept every certificate during the handshake — validation happens
+        # Accept every certificate during the handshake -- validation happens
         # explicitly below so a substituted cert is captured, not just refused.
         # The cast to RemoteCertificateValidationCallback is REQUIRED: Windows
-        # PowerShell 5.1 can fail the implicit scriptblock→delegate conversion
+        # PowerShell 5.1 can fail the implicit scriptblock->delegate conversion
         # inside New-Object (silently, given the error handling here), which is
         # exactly how this check printed nothing on the first Kent-network run.
         $cb = [System.Net.Security.RemoteCertificateValidationCallback] {
@@ -83,9 +83,9 @@ foreach ($h in ($TargetHosts -split ',')) {
         $chain.Reset()
 
         # ANY date-related status means a wrong VPU clock or an expired cert,
-        # NOT interception — don't send the tech after the firewall for those.
-        # (An expired cert also drags in PartialChain — its expired issuer
-        # can't be resolved — so "time-only" would misread it. DPI certs are
+        # NOT interception -- don't send the tech after the firewall for those.
+        # (An expired cert also drags in PartialChain -- its expired issuer
+        # can't be resolved -- so "time-only" would misread it. DPI certs are
         # minted on the fly with fresh validity, so a genuinely intercepted
         # connection never shows NotTimeValid.)
         $timeInvolved = [bool]($statuses | Where-Object { $_ -in @('NotTimeValid', 'NotTimeNested') })
