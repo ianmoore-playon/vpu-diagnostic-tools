@@ -22,6 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-17
+
 ### Added
 - Disks: when the recordings drive (D:) reaches 90% full, a Storage Cleanup card can free space — it deletes daily test clips older than 90 days and game recordings older than 1 year, after showing exactly which folders (with counts and sizes) will be removed. Nothing from the last 90 days is ever touched.
 - Pulse now closes itself (server and browser window) 5 minutes after the LogMeIn session that opened it ends — no more Pulse left running on the VPU after you disconnect. A banner at the top of the page shows the live countdown, and reconnecting within those 5 minutes cancels it automatically; opening Pulse at the console or over another remote tool is unaffected.
@@ -37,6 +39,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ### Fixed
 - ScoreConnect: the scoreboard could show the wrong quarter on non-Daktronics boards — an Electro-Mech football board sitting on Q2 read as "Q7" even though the score, clock and down & distance on the same screen were all correct. Pulse now reads the quarter from its own fixed spot in the scoreboard data instead of taking the last digit it finds. It also won't show a quarter that can't be real for the sport any more: a football board reporting Q7 leaves the quarter blank rather than showing a wrong one you might pass on to a school.
+- Stream Readiness now correctly reports FAIL (not WARNING) when a venue firewall is intercepting secure connections — the dashboard verdict was silently ignoring this case.
 
 ## [1.1.2] - 2026-08-07
 
