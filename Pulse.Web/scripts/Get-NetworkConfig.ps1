@@ -12,14 +12,14 @@ param()
 $ErrorActionPreference = 'Stop'
 
 try {
-    # Net adapters — enriched with PCI location + media type + admin/link state
+    # Net adapters -- enriched with PCI location + media type + admin/link state
     # so role classification (motherboard / camera / Wi-Fi) and the "internet on
     # a camera port" check can run downstream in Python.
     #
     # PCI location resolves the motherboard uplink (onboard LOM = PCI bus 0) from
     # a camera-NIC port (add-in card = bus > 0) even when both use the same Intel
     # chipset. We look it up ONLY for each present adapter via its own PnPDeviceID
-    # — never by scanning Get-PnpDevice -Class Net, which on a VPU enumerates
+    # -- never by scanning Get-PnpDevice -Class Net, which on a VPU enumerates
     # dozens of stale/ghost net devices and was slow enough to time out this whole
     # collector on real hardware. Any failed/expensive lookup degrades to null
     # (role classification falls back to chipset/unknown; internet detection,
@@ -36,7 +36,7 @@ try {
             } catch { }
         }
 
-        # Error/discard counters for EVERY wired adapter — not just the uplink.
+        # Error/discard counters for EVERY wired adapter -- not just the uplink.
         # A multi-NIC VPU has the motherboard port plus the camera card; a bad
         # cable or dirty switch port on a non-uplink wired port was previously
         # invisible here. Wi-Fi/virtual adapters are skipped (no useful counters).
@@ -101,7 +101,7 @@ try {
             interfaceAlias     = $_.InterfaceAlias
             interfaceIndex     = $idx
             # @(...) forces an array so a single IP / gateway / DNS server isn't
-            # unwrapped to a bare string in JSON — consumers expect a list.
+            # unwrapped to a bare string in JSON -- consumers expect a list.
             ipv4Address        = @(if ($_.IPv4Address) { $_.IPv4Address | ForEach-Object { $_.IPAddress } })
             ipv4DefaultGateway = @(if ($_.IPv4DefaultGateway) { $_.IPv4DefaultGateway | ForEach-Object { $_.NextHop } })
             dnsServers         = @(if ($_.DNSServer) { $_.DNSServer | ForEach-Object { $_.ServerAddresses } | Select-Object -Unique })
@@ -110,7 +110,7 @@ try {
         }
     }
 
-    # Identify the uplink adapter — the interface that owns the active default
+    # Identify the uplink adapter -- the interface that owns the active default
     # route (lowest-metric 0.0.0.0/0). Taking the first ipConfig that happens to
     # carry a gateway can pick a secondary/disconnected NIC on a multi-homed box
     # (camera NIC, VPN), mislabeling which adapter's link/error stats we report.
@@ -136,7 +136,7 @@ try {
         }
     }
 
-    # Internet reachability — use .NET Ping with explicit 2s timeout
+    # Internet reachability -- use .NET Ping with explicit 2s timeout
     # (Test-Connection can hang for 10+ seconds on VPU hardware)
     $internetReachable = $false
     $reachHost = $null
@@ -155,7 +155,7 @@ try {
     }
 
     # ICMP fallback: managed/venue networks routinely block outbound ping
-    # while allowing TCP/443. A failed ping does NOT mean "no internet" — so
+    # while allowing TCP/443. A failed ping does NOT mean "no internet" -- so
     # if ICMP came back empty, confirm with a TCP connect to a well-known
     # host on 443 before concluding the box is offline.
     if (-not $internetReachable) {
@@ -184,7 +184,7 @@ try {
     }
     catch { }
 
-    # Uplink adapter statistics (duplex, error counters) — only if we found one
+    # Uplink adapter statistics (duplex, error counters) -- only if we found one
     $uplinkStats = $null
     if ($uplinkAdapter) {
         try {

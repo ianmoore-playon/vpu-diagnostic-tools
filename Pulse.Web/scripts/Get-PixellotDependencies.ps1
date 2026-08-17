@@ -40,7 +40,7 @@ try {
             $installed = (Get-ItemProperty -LiteralPath $regPath -Name $valueName -ErrorAction Stop).$valueName
             $present = $true
         } catch {
-            # Key exists but value doesn't — that's a fresh-install signal.
+            # Key exists but value doesn't -- that's a fresh-install signal.
             $present = $false
         }
     }

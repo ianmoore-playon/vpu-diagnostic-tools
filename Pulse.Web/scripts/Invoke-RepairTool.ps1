@@ -5,9 +5,9 @@
 .DESCRIPTION
     Per Pixellot Troubleshooting Tips PDF #1, the documented system-image
     repair sequence is:
-        DISM /Online /Cleanup-Image /CheckHealth      (fast — ~30s)
-        DISM /Online /Cleanup-Image /RestoreHealth    (slow — 5-20 min)
-        sfc /scannow                                  (slow — 10-30 min)
+        DISM /Online /Cleanup-Image /CheckHealth      (fast -- ~30s)
+        DISM /Online /Cleanup-Image /RestoreHealth    (slow -- 5-20 min)
+        sfc /scannow                                  (slow -- 10-30 min)
         chkdsk /f /r C:                               (schedules for next boot)
 
     The CBS log at C:\Windows\Logs\CBS\CBS.log captures the detailed
@@ -32,7 +32,7 @@ $cbsLogPath = 'C:\Windows\Logs\CBS\CBS.log'
 function _TailCbs([int]$lines) {
     if (-not (Test-Path -LiteralPath $cbsLogPath)) { return @() }
     try {
-        # CBS.log can be open by TrustedInstaller — read with shared mode.
+        # CBS.log can be open by TrustedInstaller -- read with shared mode.
         $fs = [System.IO.File]::Open($cbsLogPath, 'Open', 'Read', 'ReadWrite')
         try {
             $sr = New-Object System.IO.StreamReader($fs)
@@ -55,7 +55,7 @@ function _RunProcess([string]$exe, [string[]]$args, [int]$timeoutSec) {
             -NoNewWindow -PassThru `
             -RedirectStandardOutput $tmpOut -RedirectStandardError $tmpErr
 
-        # Don't use Start-Process -Wait — we want a timeout cap.
+        # Don't use Start-Process -Wait -- we want a timeout cap.
         if (-not $proc.WaitForExit($timeoutSec * 1000)) {
             try { $proc.Kill() } catch {}
             return @{
@@ -98,7 +98,7 @@ try {
             $timeout = 1800
         }
         'ChkdskSchedule' {
-            # `chkdsk /f /r C:` on the system drive can't run live —
+            # `chkdsk /f /r C:` on the system drive can't run live --
             # Windows responds by asking "Schedule for next reboot?".
             # Piping "Y`n" answers yes; the command then returns
             # immediately and the actual check runs on next boot.

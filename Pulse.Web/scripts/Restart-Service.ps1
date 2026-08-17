@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 
 try {
     # Allowlist of services that may be restarted. ScoreConnect ships under
-    # versioned service names (SC I/II/III), so all three are permitted — the
+    # versioned service names (SC I/II/III), so all three are permitted -- the
     # Service Status tab reports whichever is installed. Matching is
     # case-insensitive (-notin), so casing from the SCM doesn't matter.
     $allowedServices = @(

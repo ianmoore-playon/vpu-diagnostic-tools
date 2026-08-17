@@ -13,13 +13,13 @@ $ErrorActionPreference = 'Stop'
 
 try {
     # Filter for camera-facing NIC chipsets. Keep this list in sync with
-    # _CAMERA_NIC_CHIPSETS in main.py — an 82576/82580 camera card must be
+    # _CAMERA_NIC_CHIPSETS in main.py -- an 82576/82580 camera card must be
     # enumerated here too, or the camera-port collector silently skips it.
     $cameraAdapters = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object {
         $_.InterfaceDescription -match 'I210|I211|I350|82574L|82576|82580|Realtek'
     }
 
-    # PnP/driver health per network device (by instance ID) — lets us tell a
+    # PnP/driver health per network device (by instance ID) -- lets us tell a
     # driver fault from a simply-unplugged port when a port is down.
     $pnpStatus = @{}
     try {
@@ -46,7 +46,7 @@ try {
         $fullDuplex = $null
         try { $fullDuplex = $adapter.FullDuplex } catch { }
 
-        # Adapter statistics — broken out for granular display
+        # Adapter statistics -- broken out for granular display
         $rxBytes  = 0; $txBytes  = 0
         $rxErrors = 0; $txErrors = 0
         $rxPacketErrors = 0; $rxDiscards = 0
@@ -88,7 +88,7 @@ try {
         catch { }
 
         # Driver health for this adapter (OK / Error / Degraded / Unknown).
-        # NB: avoid $pid — it's a reserved PowerShell automatic variable.
+        # NB: avoid $pid -- it's a reserved PowerShell automatic variable.
         $driverStatus = $null
         try {
             $pnpId = $adapter.PnPDeviceID

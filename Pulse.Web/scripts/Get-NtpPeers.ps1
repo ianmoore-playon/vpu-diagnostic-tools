@@ -23,7 +23,7 @@ $ErrorActionPreference = 'Stop'
 function Invoke-W32tm {
     # Pass each w32tm token as a separate argument. A single string like
     # "/query /status" is handed to the native exe as ONE argument by
-    # PowerShell (it doesn't re-split on spaces), which w32tm rejects — so
+    # PowerShell (it doesn't re-split on spaces), which w32tm rejects -- so
     # the args must arrive pre-split and be splatted with @.
     param([string[]]$Arguments)
     # Run with a hard timeout so a broken NTP config doesn't hang the script.
@@ -49,7 +49,7 @@ function Get-Field {
 
 function Get-Stratum {
     param([string]$Raw)
-    # "Stratum: 3 (secondary reference - syncd by (S)NTP)" → numeric 3
+    # "Stratum: 3 (secondary reference - syncd by (S)NTP)" -> numeric 3
     if ($null -eq $Raw) { return $null }
     $m = [regex]::Match($Raw, '^\s*(\d+)')
     if ($m.Success) { return [int]$m.Groups[1].Value }
@@ -57,10 +57,10 @@ function Get-Stratum {
 }
 
 try {
-    # ── /query /status ───────────────────────────────────────────
+    # -- /query /status -------------------------------------------
     $statusRaw = Invoke-W32tm @('/query', '/status')
 
-    # "Source: time.windows.com,0x9" — strip the trailing ,0x.. config flag.
+    # "Source: time.windows.com,0x9" -- strip the trailing ,0x.. config flag.
     $source        = Get-Field $statusRaw 'Source'
     if ($source) { $source = ($source -replace ',0x[0-9A-Fa-f]+\s*$', '').Trim() }
     $stratumRaw    = Get-Field $statusRaw 'Stratum'
@@ -94,7 +94,7 @@ try {
         pollInterval   = $pollInterval
     }
 
-    # ── /query /peers ────────────────────────────────────────────
+    # -- /query /peers --------------------------------------------
     $peersRaw = Invoke-W32tm @('/query', '/peers')
 
     # Each peer block starts with "Peer: <name>". Split on that header but
@@ -105,7 +105,7 @@ try {
     foreach ($blk in $blocks) {
         $blk = $blk.Trim()
         if (-not $blk) { continue }
-        # First block is the "#Peers: N" header — skip if it starts with that.
+        # First block is the "#Peers: N" header -- skip if it starts with that.
         if ($blk -match '^\#Peers') { continue }
 
         $firstLine, $rest = $blk -split "`r?`n", 2

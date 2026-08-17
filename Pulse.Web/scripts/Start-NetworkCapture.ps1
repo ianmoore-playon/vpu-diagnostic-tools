@@ -8,7 +8,7 @@
     No third-party drivers or installs required. Outputs JSON to stdout.
 .NOTES
     Requires Windows 10 1903+ and elevated privileges.
-    Only captures TCP headers (128 bytes) — no payload inspection.
+    Only captures TCP headers (128 bytes) -- no payload inspection.
 #>
 [CmdletBinding()]
 param(
@@ -22,7 +22,7 @@ $ErrorActionPreference = 'Stop'
 $DurationSec = [math]::Max(10, [math]::Min($DurationSec, 60))
 
 try {
-    # ── Check pktmon availability ────────────────────────────────
+    # -- Check pktmon availability --------------------------------
     $pktmonPath = Get-Command pktmon -ErrorAction SilentlyContinue
     if (-not $pktmonPath) {
         [ordered]@{
@@ -33,7 +33,7 @@ try {
         return
     }
 
-    # ── Check for admin elevation (pktmon requires it) ───────────
+    # -- Check for admin elevation (pktmon requires it) -----------
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $isAdmin) {
@@ -45,11 +45,11 @@ try {
         return
     }
 
-    # ── Clean up any prior state ─────────────────────────────────
+    # -- Clean up any prior state ---------------------------------
     try { & pktmon stop 2>&1 | Out-Null } catch { }
     try { & pktmon filter remove 2>&1 | Out-Null } catch { }
 
-    # ── Add filters: TCP on key ports ────────────────────────────
+    # -- Add filters: TCP on key ports ----------------------------
     try {
         & pktmon filter add PulseTCP -t TCP -p 443 2>&1 | Out-Null
         & pktmon filter add PulseRTMP -t TCP -p 1935 2>&1 | Out-Null
@@ -65,7 +65,7 @@ try {
         return
     }
 
-    # ── Start capture (ETL file, headers only) ───────────────────
+    # -- Start capture (ETL file, headers only) -------------------
     $etlPath = Join-Path $env:TEMP "pulse_capture.etl"
     if (Test-Path $etlPath) { Remove-Item $etlPath -Force }
 
@@ -82,24 +82,24 @@ try {
         return
     }
 
-    # ── Wait for capture duration ────────────────────────────────
+    # -- Wait for capture duration --------------------------------
     Start-Sleep -Seconds $DurationSec
 
-    # ── Stop capture ─────────────────────────────────────────────
+    # -- Stop capture ---------------------------------------------
     $stopOutput = & pktmon stop 2>&1 | Out-String
 
-    # ── Get counters before cleanup ──────────────────────────────
+    # -- Get counters before cleanup ------------------------------
     $counterOutput = & pktmon counters 2>&1 | Out-String
 
-    # ── Remove filters ───────────────────────────────────────────
+    # -- Remove filters -------------------------------------------
     & pktmon filter remove 2>&1 | Out-Null
 
-    # ── Parse pktmon counters for drop/packet stats ──────────────
+    # -- Parse pktmon counters for drop/packet stats --------------
     $totalPackets = 0
     $droppedPackets = 0
     $components = @()
 
-    # Parse counter output lines — format: "  Name   Packets  Bytes  Drops"
+    # Parse counter output lines -- format: "  Name   Packets  Bytes  Drops"
     $counterLines = $counterOutput -split "`n"
     foreach ($line in $counterLines) {
         if ($line -match '^\s*(.+?)\s+(\d+)\s+(\d+)\s+(\d+)\s*$') {
@@ -118,7 +118,7 @@ try {
         }
     }
 
-    # ── Convert ETL to text for deeper analysis ──────────────────
+    # -- Convert ETL to text for deeper analysis ------------------
     $txtPath = Join-Path $env:TEMP "pulse_capture.txt"
     if (Test-Path $txtPath) { Remove-Item $txtPath -Force }
 
@@ -154,10 +154,10 @@ try {
         }
     }
     catch {
-        # etl2txt may not be available on older builds — counters still work
+        # etl2txt may not be available on older builds -- counters still work
     }
 
-    # ── Build top talkers list ───────────────────────────────────
+    # -- Build top talkers list -----------------------------------
     $topTalkers = @()
     $sorted = $connectionsByRemote.GetEnumerator() | Sort-Object -Property Value -Descending | Select-Object -First 10
     foreach ($kv in $sorted) {
@@ -180,7 +180,7 @@ try {
         }
     }
 
-    # ── Classify findings ────────────────────────────────────────
+    # -- Classify findings ----------------------------------------
     $findings = @()
 
     if ($tcpRetransmits -gt 10) {
@@ -194,7 +194,7 @@ try {
         $findings += [ordered]@{
             severity = 'info'
             title    = "$tcpRetransmits TCP retransmission(s) detected"
-            body     = "Minor retransmissions — typically not a concern unless sustained."
+            body     = "Minor retransmissions -- typically not a concern unless sustained."
         }
     }
 
@@ -222,7 +222,7 @@ try {
         }
     }
 
-    # ── Cleanup temp files ───────────────────────────────────────
+    # -- Cleanup temp files ---------------------------------------
     try {
         if (Test-Path $etlPath) { Remove-Item $etlPath -Force }
         if (Test-Path $txtPath) { Remove-Item $txtPath -Force }

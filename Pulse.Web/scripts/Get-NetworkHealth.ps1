@@ -13,7 +13,7 @@ param()
 $ErrorActionPreference = 'Stop'
 
 try {
-    # ── TCP performance counters ────────────────────────────────
+    # -- TCP performance counters --------------------------------
     $tcpRetransSec  = $null
     $tcpFailures    = $null
     $tcpResets       = $null
@@ -46,8 +46,8 @@ try {
         # First invocation can fail while counter infrastructure warms up
     }
 
-    # ── Active TCP connections on service ports ───────────────
-    # No reverse DNS here — too slow for a 3s poll loop. Raw IPs only.
+    # -- Active TCP connections on service ports ---------------
+    # No reverse DNS here -- too slow for a 3s poll loop. Raw IPs only.
     $activeConns = @()
     try {
         $allTcp = Get-NetTCPConnection -State Established, TimeWait, CloseWait, SynSent -ErrorAction SilentlyContinue
@@ -73,7 +73,7 @@ try {
     }
     catch { }
 
-    # ── Per-NIC queue depth and packet rates ────────────────────
+    # -- Per-NIC queue depth and packet rates --------------------
     $nicHealth = @()
     try {
         $nicCounters = Get-Counter -Counter @(

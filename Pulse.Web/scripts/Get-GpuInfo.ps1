@@ -4,18 +4,18 @@
     Detects NVIDIA GPU architecture for Pixellot version-compatibility checks.
 .DESCRIPTION
     Pixellot version vs hardware compatibility (per field guidance):
-        Win 8                      → max Pixellot 2.66.17
-        Win 10 + Pascal (10xx)     → max Pixellot 5.2.x
-        Win 10 + Turing or newer   → any Pixellot version
+        Win 8                      -> max Pixellot 2.66.17
+        Win 10 + Pascal (10xx)     -> max Pixellot 5.2.x
+        Win 10 + Turing or newer   -> any Pixellot version
 
     Architecture is determined from CUDA compute capability:
-        5.x → Maxwell
-        6.x → Pascal
-        7.0/7.2 → Volta
-        7.5 → Turing
-        8.x → Ampere / Ada Lovelace
-        9.0 → Hopper
-       10.x → Blackwell
+        5.x -> Maxwell
+        6.x -> Pascal
+        7.0/7.2 -> Volta
+        7.5 -> Turing
+        8.x -> Ampere / Ada Lovelace
+        9.0 -> Hopper
+       10.x -> Blackwell
 
     Primary source is `nvidia-smi --query-gpu=name,compute_cap` since it
     yields the compute capability directly. Falls back to parsing the
@@ -45,11 +45,11 @@ function _ArchFromCompute([string]$cap) {
     return 'Unknown'
 }
 
-# Approximate WMI-name → architecture map for the nvidia-smi fallback.
+# Approximate WMI-name -> architecture map for the nvidia-smi fallback.
 # Patterns are tried in declaration order; first hit wins.
 function _ArchFromName([string]$name) {
     if (-not $name) { return @{ arch = 'Unknown'; cap = $null } }
-    # RTX 50xx → Blackwell, RTX 40xx → Ada Lovelace, RTX 30xx → Ampere
+    # RTX 50xx -> Blackwell, RTX 40xx -> Ada Lovelace, RTX 30xx -> Ampere
     if ($name -match 'RTX\s*50\d{2}')               { return @{ arch = 'Blackwell';  cap = '10.0' } }
     if ($name -match 'RTX\s*40\d{2}')               { return @{ arch = 'Ampere/Ada'; cap = '8.9'  } }
     if ($name -match 'RTX\s*30\d{2}|A\d{3,4}|A100') { return @{ arch = 'Ampere/Ada'; cap = '8.6'  } }
@@ -62,7 +62,7 @@ function _ArchFromName([string]$name) {
     return @{ arch = 'Unknown'; cap = $null }
 }
 
-# Architectures sorted oldest → newest for "max" calculation
+# Architectures sorted oldest -> newest for "max" calculation
 $ARCH_RANK = @{
     'Unknown'    = 0
     'Maxwell'    = 1
@@ -79,7 +79,7 @@ try {
     $nvidiaSmiAvailable = $false
     $smiError = $null
 
-    # ── nvidia-smi primary source ────────────────────────────
+    # -- nvidia-smi primary source ----------------------------
     $smiCmd = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
     if ($smiCmd) {
         try {
@@ -109,7 +109,7 @@ try {
         }
     }
 
-    # ── WMI fallback (or supplement for Intel iGPU) ──────────
+    # -- WMI fallback (or supplement for Intel iGPU) ----------
     $wmiGpus = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue
     foreach ($wmi in @($wmiGpus)) {
         $wmiName = $wmi.Name
@@ -123,7 +123,7 @@ try {
         }
         if ($alreadyKnown) { continue }
 
-        # NVIDIA-only — Intel iGPUs and AMD don't apply to Pixellot encoder constraints
+        # NVIDIA-only -- Intel iGPUs and AMD don't apply to Pixellot encoder constraints
         if ($wmiName -notmatch '(?i)NVIDIA|GeForce|Quadro|Tesla|RTX|GTX') {
             [void]$gpus.Add([ordered]@{
                 name         = $wmiName
@@ -143,7 +143,7 @@ try {
         })
     }
 
-    # ── Determine primary NVIDIA architecture (highest rank) ──
+    # -- Determine primary NVIDIA architecture (highest rank) --
     $primaryArch = 'None'
     $primaryCap  = $null
     $highestRank = -1

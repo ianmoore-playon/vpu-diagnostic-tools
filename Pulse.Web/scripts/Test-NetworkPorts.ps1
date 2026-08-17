@@ -17,14 +17,14 @@ try {
     #  - prod-echo.pixellot.tv covers TCP 443 + UDP 123/443/2088 per the CSV;
     #    we hit those specific subdomain entries in addition to the wider
     #    pixellot.tv apex test (some venues filter on FQDN, not IP).
-    #  - scorebot.sportzcast.net binds to TCP 1400–1405 for ScoreConnect; the
+    #  - scorebot.sportzcast.net binds to TCP 1400-1405 for ScoreConnect; the
     #    range is venue-dependent so every port is marked optional. Not all
     #    schools have ScoreConnect.
     # Discover the VPU's configured DNS server so the DNS check tests the
-    # resolver the box actually uses — not a hardcoded public IP like 8.8.8.8,
+    # resolver the box actually uses -- not a hardcoded public IP like 8.8.8.8,
     # which locked-down venue networks block by design (the VPU resolves names
     # through the venue's internal DNS instead).
-    # Test the resolver the ACTIVE UPLINK actually uses — scope to the interface
+    # Test the resolver the ACTIVE UPLINK actually uses -- scope to the interface
     # that holds the default route. Querying every interface and taking the first
     # DNS can grab a stale resolver off a disconnected or secondary adapter (a
     # camera NIC, VPN, etc.); that dead IP then fails the UDP/53 probe and looks
@@ -41,7 +41,7 @@ try {
             Where-Object { $_ -and -not $_.StartsWith('127.') -and -not $_.StartsWith('169.254.') } |
             Select-Object -First 1
         # If the uplink interface carried no usable resolver, fall back to any
-        # interface's — keeps the check working on unusual routing setups.
+        # interface's -- keeps the check working on unusual routing setups.
         if (-not $primaryDns -and $uplinkIdx) {
             $primaryDns = $dnsRows |
                 ForEach-Object { $_.ServerAddresses } |
@@ -52,7 +52,7 @@ try {
     catch { }
 
     $portTests = @(
-        # Required — core Pixellot streaming + cloud services
+        # Required -- core Pixellot streaming + cloud services
         @{ protocol = 'TCP'; port = 443;  host = 'pixellot.tv';            purpose = 'Pixellot';          optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'prod-echo.pixellot.tv';  purpose = 'Pixellot Echo';     optional = $false }
         @{ protocol = 'TCP'; port = 443;  host = 'nfhsnetwork.com';        purpose = 'NFHS Network';      optional = $false }
@@ -60,7 +60,7 @@ try {
         # secure.logmein.com, not the logmein.com apex: the apex now points at
         # GoTo's marketing site (Vercel, 76.76.21.21), so reaching it proves
         # nothing about remote access. secure.logmein.com rides GoTo's real
-        # service block (158.120.16.0/20 — same netblock live VPU LMI sessions
+        # service block (158.120.16.0/20 -- same netblock live VPU LMI sessions
         # use, PTR lmi-www25-10.logmein.com), so this tests what techs depend on.
         @{ protocol = 'TCP'; port = 443;  host = 'secure.logmein.com';     purpose = 'LogMeIn';           optional = $false }
         @{ protocol = 'UDP'; port = 123;  host = 'prod-echo.pixellot.tv';  purpose = 'NTP';               optional = $false }
@@ -70,9 +70,9 @@ try {
         # rules must therefore allow UDP 443/2088 by port, not by destination IP.
         @{ protocol = 'UDP'; port = 443;  host = 'prod-echo.pixellot.tv';  purpose = 'Zixi Backup';       optional = $false }
         @{ protocol = 'UDP'; port = 2088; host = 'prod-echo.pixellot.tv';  purpose = 'Zixi Streaming';    optional = $false }
-        # Optional — RTMP fallback (legacy ingest)
+        # Optional -- RTMP fallback (legacy ingest)
         @{ protocol = 'TCP'; port = 1935; host = 'sportzcast.net';         purpose = 'RTMP Ingest';       optional = $true }
-        # Optional — Sportzcast Scorebot range (ScoreConnect deployments only)
+        # Optional -- Sportzcast Scorebot range (ScoreConnect deployments only)
         @{ protocol = 'TCP'; port = 1400; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
         @{ protocol = 'TCP'; port = 1401; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
         @{ protocol = 'TCP'; port = 1402; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
@@ -82,7 +82,7 @@ try {
     )
 
     # DNS reachability against the *configured* resolver (prepended so it
-    # leads the list). Skipped — not failed — when no resolver is configured;
+    # leads the list). Skipped -- not failed -- when no resolver is configured;
     # a missing/broken resolver still surfaces via the domain-resolution tests.
     if ($primaryDns) {
         $portTests = @(
@@ -105,7 +105,7 @@ try {
     # minimum (= CPU count). During Pulse's launch burst several PowerShell
     # collectors saturate the box at once, so on a starved 6-core VPU ~13
     # concurrent probes could spend the entire shared budget just waiting
-    # for threads — every healthy TCP row then reported "blocked" while the
+    # for threads -- every healthy TCP row then reported "blocked" while the
     # network was fine (reproduced on VPU2, 2026-07-23). Raising the minimum
     # makes threads available immediately; it costs nothing when idle.
     $minWorker = 0; $minIo = 0
@@ -127,7 +127,7 @@ try {
                 }
             }
             catch {
-                # DNS resolution or socket setup failed synchronously — leave
+                # DNS resolution or socket setup failed synchronously -- leave
                 # the probe absent; the row is judged 'fail'.
             }
         }
@@ -144,7 +144,7 @@ try {
             $probe = $tcpProbes["$($test.host):$($test.port)"]
             if ($probe) {
                 try {
-                    # Remaining slice of the shared budget — all connects have
+                    # Remaining slice of the shared budget -- all connects have
                     # been racing since before the loop, so a probe reached
                     # late waits only for what's left (possibly 0ms).
                     $remainingMs = $tcpBudgetMs - $tcpClock.ElapsedMilliseconds
@@ -164,10 +164,10 @@ try {
             }
         }
         elseif ($test.protocol -eq 'UDP' -and $test.port -eq 123) {
-            # NTP/123 egress test — send a real NTP v3 client request, require a
+            # NTP/123 egress test -- send a real NTP v3 client request, require a
             # reply. Any reply passes: this row answers "is UDP/123 egress open",
             # and prod-echo answers as an echo service (it returns our own mode-3
-            # packet verbatim, wire-verified) — so requiring a genuine mode-4
+            # packet verbatim, wire-verified) -- so requiring a genuine mode-4
             # server reply would false-fail an open port. We still send a real
             # 48-byte NTP request (not arbitrary bytes) so NTP-aware middleboxes
             # treat the probe as NTP. Whether time sync actually WORKS is judged
@@ -195,11 +195,11 @@ try {
                             if ($resp.Length -gt 0) { $status = 'pass' }
                         }
                         catch [System.Net.Sockets.SocketException] {
-                            # 10054 = ICMP port unreachable — definitive reject; stop retrying.
+                            # 10054 = ICMP port unreachable -- definitive reject; stop retrying.
                             $sockErr = $_.Exception.ErrorCode
                             if (-not $sockErr -and $_.Exception.InnerException) { $sockErr = $_.Exception.InnerException.ErrorCode }
                             if ($sockErr -eq 10054) { break }
-                            # Otherwise a receive timeout — stay 'fail' and retry.
+                            # Otherwise a receive timeout -- stay 'fail' and retry.
                         }
                         finally {
                             $udp.Close()
@@ -212,7 +212,7 @@ try {
             }
         }
         elseif ($test.protocol -eq 'UDP' -and $test.port -eq 53) {
-            # Real DNS UDP test — send a minimal NS-root query and check for response
+            # Real DNS UDP test -- send a minimal NS-root query and check for response
             try {
                 $udp = New-Object System.Net.Sockets.UdpClient
                 $udp.Client.ReceiveTimeout = 3000
@@ -244,11 +244,11 @@ try {
         }
         elseif ($test.protocol -eq 'UDP') {
             # Echo-contract UDP test. The generic UDP targets (prod-echo.pixellot.tv
-            # 443/2088) run an echo service — anything sent comes back verbatim
+            # 443/2088) run an echo service -- anything sent comes back verbatim
             # (wire-verified: a 24-byte probe to :2088 echoed back in ~20 ms). So a
             # reply is REQUIRED to pass. The old rule treated a silent timeout as
             # pass ("open|filtered"), which false-passed every silently-dropped
-            # port — the most common school-firewall block mode — and let a VPU
+            # port -- the most common school-firewall block mode -- and let a VPU
             # show UDP/2088 green while streaming was actually blocked. Three
             # second attempt defeats transient single-packet loss; capped at two
             # so a silently-blocked port costs ~4s, keeping the whole list inside
@@ -275,11 +275,11 @@ try {
                             if ($resp.Length -gt 0) { $status = 'pass' }
                         }
                         catch [System.Net.Sockets.SocketException] {
-                            # 10054 = ICMP port unreachable — definitive reject; stop retrying.
+                            # 10054 = ICMP port unreachable -- definitive reject; stop retrying.
                             $sockErr = $_.Exception.ErrorCode
                             if (-not $sockErr -and $_.Exception.InnerException) { $sockErr = $_.Exception.InnerException.ErrorCode }
                             if ($sockErr -eq 10054) { break }
-                            # Otherwise a receive timeout — stay 'fail' and retry.
+                            # Otherwise a receive timeout -- stay 'fail' and retry.
                         }
                         finally {
                             $udp.Close()
@@ -306,7 +306,7 @@ try {
     # The first race can run inside Pulse's own collector burst (launch
     # preload fires many PowerShell processes at once); a starved process
     # can burn the budget without the connects ever being serviced, failing
-    # every row at once — a pattern no real firewall produces. A genuinely
+    # every row at once -- a pattern no real firewall produces. A genuinely
     # blocked port fails this pass too, so it costs one extra budget only
     # when something failed, and truly-dead rows (e.g. the July 2026
     # Sportzcast outage) still can't stall the sweep beyond it.

@@ -4,15 +4,15 @@
     Detects whether the VPU is reaching the internet over Wi-Fi.
 .DESCRIPTION
     Pixellot VPUs are wired-only by design. The condition worth flagging is
-    not "a Wi-Fi adapter exists" — Windows always has Wi-Fi Direct / hosted-
-    network *virtual* adapters that show as connected — but "Wi-Fi is the
+    not "a Wi-Fi adapter exists" -- Windows always has Wi-Fi Direct / hosted-
+    network *virtual* adapters that show as connected -- but "Wi-Fi is the
     VPU's actual internet uplink." That is true only when a real Wi-Fi NIC
     carries the default route (0.0.0.0/0) AND no wired adapter does.
 
     Returns every Wi-Fi-class adapter with isVirtual / hasDefaultRoute flags,
     plus a top-level `uplinkIsWifi` the dashboard gates its warning on.
 
-    Adapted from Canopy's reportWifiConnection.ps1 — the Banyan POST envelope
+    Adapted from Canopy's reportWifiConnection.ps1 -- the Banyan POST envelope
     is replaced with stdout JSON for run_ps consumption.
 #>
 [CmdletBinding()]
@@ -39,7 +39,7 @@ function Test-IsVirtualWifi {
 }
 
 try {
-    # ── Which interfaces carry an active default route? ──────────
+    # -- Which interfaces carry an active default route? ----------
     # Membership here means the interface is currently providing a path to
     # the internet (a real gateway next-hop, not APIPA).
     $defaultRouteIdx = @()
@@ -64,7 +64,7 @@ try {
         }
     }
 
-    # ── Enumerate Wi-Fi-class adapters ───────────────────────────
+    # -- Enumerate Wi-Fi-class adapters ---------------------------
     $adapters = @()
     foreach ($a in ($allAdapters | Where-Object { Test-IsWifi $_ })) {
         $isUp = ($a.Status -eq 'Up')
@@ -98,13 +98,13 @@ try {
                     $detail.ipv6Connectivity = "$($connProfile.IPv6Connectivity)"
                 }
             }
-            catch { }  # Up but not on a profile — leave connected=false
+            catch { }  # Up but not on a profile -- leave connected=false
         }
 
         $adapters += $detail
     }
 
-    # ── Is Wi-Fi the VPU's actual internet uplink? ───────────────
+    # -- Is Wi-Fi the VPU's actual internet uplink? ---------------
     # A real (non-virtual) Wi-Fi NIC carries the default route, and no wired
     # adapter does. This is the only case worth a warning.
     $uplinkIsWifi = $false

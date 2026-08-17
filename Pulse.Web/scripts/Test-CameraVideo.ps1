@@ -5,10 +5,10 @@
 .DESCRIPTION
     For each camera IP, grabs ONE JPEG frame from the RTSP stream with ffmpeg
     and reads codec/frame-rate/resolution with ffprobe. A successfully decoded
-    frame proves the camera is streaming real video — far stronger than a ping,
+    frame proves the camera is streaming real video -- far stronger than a ping,
     and near-instant compared to capturing a full clip.
 
-    Returns the frame as a base64 data URI so the UI can show a thumbnail —
+    Returns the frame as a base64 data URI so the UI can show a thumbnail --
     a tech can see at a glance whether the image is black, lens-capped, or
     pointed wrong, not just whether bytes flow.
 
@@ -34,7 +34,7 @@
 .PARAMETER StreamPath
     Preferred RTSP stream path, tried first. Default "stream1"
     (Pixellot/Dynacolor primary). On a 404 a short list of other known OEM
-    paths (h264, stream0, live, …) is tried before giving up.
+    paths (h264, stream0, live, ...) is tried before giving up.
 .PARAMETER RtspUser / RtspPass
     RTSP credentials. Default Admin / 1234 (Pixellot factory default).
 .PARAMETER MaxWidth
@@ -57,7 +57,7 @@ param(
 )
 
 # Native ffmpeg/ffprobe write to stderr and return non-zero on a dead camera;
-# that's expected, not a script failure — don't let it abort the run.
+# that's expected, not a script failure -- don't let it abort the run.
 $ErrorActionPreference = 'Continue'
 
 $ffmpeg  = 'C:\Pixellot\Bin\ffmpeg\ffmpeg.exe'
@@ -65,7 +65,7 @@ $ffprobe = 'C:\Pixellot\Bin\ffmpeg\ffprobe.exe'
 
 function Out-Json($obj) { $obj | ConvertTo-Json -Depth 6 -Compress }
 
-# Concise, single-line failure reason from an ffmpeg/ffprobe stderr file —
+# Concise, single-line failure reason from an ffmpeg/ffprobe stderr file --
 # the last meaningful line, never the version banner.
 function Get-FailReason($errFile) {
     if (-not (Test-Path $errFile)) { return $null }
@@ -73,7 +73,7 @@ function Get-FailReason($errFile) {
         Where-Object { $_ -and $_.Trim() -ne "" -and $_ -notmatch '^ffmpeg version|^ffprobe version|^\s*built with|^\s*configuration:|^\s*lib' }
     if (-not $lines) { return $null }
     $last = ($lines | Select-Object -Last 1).Trim()
-    if ($last.Length -gt 180) { $last = $last.Substring(0, 180) + "…" }
+    if ($last.Length -gt 180) { $last = $last.Substring(0, 180) + "..." }
     return $last
 }
 
@@ -81,7 +81,7 @@ function Get-FailReason($errFile) {
 # ffmpeg's signalstats filter. The "metadata=print" sink writes "key=value"
 # lines (no file= option, so we sidestep the Windows drive-colon escaping trap
 # in the filtergraph); *> captures them whether the build prints to stdout or
-# the log. Returns $null if stats can't be read — never throws, so a frame
+# the log. Returns $null if stats can't be read -- never throws, so a frame
 # still surfaces even if this analysis pass fails.
 function Get-FrameLuma($framePath) {
     $statsFile = "$framePath.stats"

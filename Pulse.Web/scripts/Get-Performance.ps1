@@ -43,7 +43,7 @@ try {
         }
     }
 
-    # Temperature — multi-source fallback
+    # Temperature -- multi-source fallback
     $tempCelsius = $null
     $tempSource  = 'unavailable'
 

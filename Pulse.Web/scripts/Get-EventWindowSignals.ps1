@@ -61,7 +61,7 @@ try {
                     $timeStr = [string]$e.Properties[0].Value
                     $dateStr = [string]$e.Properties[1].Value
                     # SpecifyKind Local so ToString('o') carries the UTC
-                    # offset — Unspecified-kind datetimes serialize naive.
+                    # offset -- Unspecified-kind datetimes serialize naive.
                     $actual = [datetime]::SpecifyKind([datetime]::Parse("$dateStr $timeStr"), 'Local')
                 } catch { }
                 $shutdowns += [pscustomobject]@{
@@ -137,7 +137,7 @@ try {
     } catch { }
 
     # -- Pixellot process restarts: Agent / Coordinator / KeepAgentUp run as
-    #    plain processes (NOT services — verified on a real VPU), so SCM never
+    #    plain processes (NOT services -- verified on a real VPU), so SCM never
     #    sees them die. Each process start writes a "start new log" line to
     #    its log (same marker Search-PixellotLogs.ps1 keys on); a restart
     #    inside an event window with no reboot nearby means the process died

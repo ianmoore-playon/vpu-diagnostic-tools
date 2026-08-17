@@ -8,10 +8,10 @@
     certificate, captures the certificate the far end actually presented, then
     validates that certificate against the VPU's own trust store. A cert that
     doesn't chain to a trusted root means a middlebox (a school firewall doing
-    SSL deep-packet inspection) is substituting its own certificate — the
+    SSL deep-packet inspection) is substituting its own certificate -- the
     failure mode where video streams fine but Singular graphics never load,
     because the graphics data channel correctly rejects the firewall's cert.
-    Field-proven signature: Kent School District 2026-07 — the district's DPI
+    Field-proven signature: Kent School District 2026-07 -- the district's DPI
     bypass covered only *.app.singular.live, so datastream.singular.live got a
     "KSD-FW1-DPI" cert and overlays died at every school in the district.
     Plain reachability tests can't see this (TCP/443 connects fine), which is
@@ -24,10 +24,10 @@ $ErrorActionPreference = 'Stop'
 
 try {
     # Known-HTTPS endpoints only. prod-echo.pixellot.tv:443 is intentionally
-    # absent — it's a Zixi tunnel, not TLS, and would false-fail the handshake.
+    # absent -- it's a Zixi tunnel, not TLS, and would false-fail the handshake.
     # The full singular.live family is listed host-by-host because DPI bypass
     # lists are scoped by pattern; at Kent, *.app.singular.live was exempt while
-    # datastream/api/apex were still decrypted — only per-host checks catch a
+    # datastream/api/apex were still decrypted -- only per-host checks catch a
     # partial bypass. www.python.org is the Pulse installer's own download
     # source (its SEC_E_UNTRUSTED_ROOT failure is the same root cause).
     $targets = @(
@@ -60,14 +60,14 @@ try {
             else {
                 $tcp.EndConnect($connect)
 
-                # Accept every certificate during the handshake — validation is
+                # Accept every certificate during the handshake -- validation is
                 # done explicitly below, so an intercepted (untrusted) cert is
                 # CAPTURED and reported instead of just aborting the handshake.
                 # Clone in the callback: SslStream may dispose its copy after.
                 # The delegate cast is REQUIRED: Windows PowerShell 5.1 can
-                # fail the implicit scriptblock→delegate conversion inside
+                # fail the implicit scriptblock->delegate conversion inside
                 # New-Object (field-found on the first Kent-network run of the
-                # installer twin, Test-InstallTls.ps1 — keep both in sync).
+                # installer twin, Test-InstallTls.ps1 -- keep both in sync).
                 $script:PresentedCert = $null
                 $cb = [System.Net.Security.RemoteCertificateValidationCallback] {
                     param($sender, $cert, $chain, $errors)
@@ -83,7 +83,7 @@ try {
                     # The explicit protocol list is REQUIRED on Windows
                     # PowerShell 5.1: its .NET Framework host resolves the
                     # parameterless overload to the legacy default (SSL3/TLS
-                    # 1.0) — NOT the OS schannel defaults; that's .NET Core
+                    # 1.0) -- NOT the OS schannel defaults; that's .NET Core
                     # behavior. Modern endpoints reject a TLS 1.0 hello, so
                     # 8 of 11 targets false-failed with
                     # SEC_E_UNSUPPORTED_FUNCTION on a real VPU (2026-07-16).
@@ -96,7 +96,7 @@ try {
                 }
                 catch {
                     # Even with an accept-all callback the handshake can die
-                    # (RST mid-handshake, protocol downgrade tampering) — the
+                    # (RST mid-handshake, protocol downgrade tampering) -- the
                     # same SSPI/schannel failures Kent showed on the decrypted
                     # singular.live hosts. Classified below only if no cert was
                     # captured; with a cert in hand we can still judge trust.
@@ -129,7 +129,7 @@ try {
 
                     # Validate against the VPU's trust store. Revocation is
                     # skipped: it needs its own outbound lookups (often blocked
-                    # on these same networks) and isn't the signal — chain
+                    # on these same networks) and isn't the signal -- chain
                     # trust is.
                     $x509chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
                     $x509chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
@@ -141,7 +141,7 @@ try {
                     # ANY time-related chain status is NOT interception: a
                     # wrong VPU clock (or a genuinely expired cert) fails the
                     # date check, and an expired cert also drags in
-                    # PartialChain — its expired issuer can't be resolved — so
+                    # PartialChain -- its expired issuer can't be resolved -- so
                     # requiring time-ONLY would misread it as interception
                     # (verified against expired.badssl.com). DPI certs are
                     # minted on the fly with fresh validity, so a genuinely
@@ -154,7 +154,7 @@ try {
                     elseif ($timeInvolved) { $status = 'cert-time'; $trusted = $false }
                     else {
                         # UntrustedRoot / PartialChain: the presented chain
-                        # doesn't reach a trusted root — certificate
+                        # doesn't reach a trusted root -- certificate
                         # substitution by an inspecting middlebox.
                         $status = 'intercepted'; $trusted = $false
                     }
@@ -189,7 +189,7 @@ try {
         }
     }
 
-    # Who is intercepting — the distinct issuer identities on substituted
+    # Who is intercepting -- the distinct issuer identities on substituted
     # certs (e.g. "KSD-FW1-DPI (Kent School District)"). Naming the device
     # gives the district's IT team an unambiguous pointer to their own box.
     $interceptors = @(
