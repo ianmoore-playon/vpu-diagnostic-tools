@@ -19,7 +19,7 @@ try {
     $os   = Get-CimInstance Win32_OperatingSystem
     $tz   = Get-CimInstance Win32_TimeZone
 
-    # Calculate uptime. TimeSpan.Days, not [int]TotalDays — the [int] cast
+    # Calculate uptime. TimeSpan.Days, not [int]TotalDays -- the [int] cast
     # ROUNDS (0.66 days -> 1), so a VPU up 16 hours displayed "1d 16h".
     $lastBoot = $os.LastBootUpTime
     $uptime   = (Get-Date) - $lastBoot
@@ -70,7 +70,7 @@ try {
     catch { }
 
     # Pixellot Cloud venueId from the latest Coordinator log
-    # Same findstr-based approach as vpuName for encoding safety —
+    # Same findstr-based approach as vpuName for encoding safety --
     # Select-String can silently miss matches on UTF-16-encoded logs.
     # Pattern from Canopy's systemDataCollector.ps1:
     #   "got for key /GENERAL/VenueID result: <ID>"
@@ -129,7 +129,7 @@ try {
             freePhysicalMemoryKB = $os.FreePhysicalMemory
         }
         timezone = $tz.Caption
-        timezoneId = $tz.StandardName  # Stable identifier — e.g. "Eastern Standard Time" — used for US-only validation
+        timezoneId = $tz.StandardName  # Stable identifier -- e.g. "Eastern Standard Time" -- used for US-only validation
         locale     = $(try { (Get-WinSystemLocale).Name } catch { try { (Get-Culture).Name } catch { $null } })
         uptime = [ordered]@{
             totalSeconds = [math]::Round($uptime.TotalSeconds, 0)

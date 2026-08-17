@@ -12,10 +12,10 @@
       - enumerate USB / run WMI queries
       - hit config / bot / scorelink endpoints
 
-    SC III is a stateless REST service designed for concurrent clients —
+    SC III is a stateless REST service designed for concurrent clients --
     polling get-status does NOT interfere with the live data stream that
     Pixellot's agent relies on. Each request is independent: a single
-    HTTP GET to localhost:5000, connect → respond → close.
+    HTTP GET to localhost:5000, connect -> respond -> close.
 .PARAMETER BaseUrl
     SC III base URL. Defaults to http://localhost:5000.
 #>

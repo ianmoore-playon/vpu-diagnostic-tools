@@ -5,7 +5,7 @@
 .DESCRIPTION
     Triggered from Pulse's Settings page ("Reboot VPU"). Uses shutdown.exe
     /r /t <delay> so Windows schedules the restart and this script returns
-    immediately — Restart-Computer would tear the box down before the server's
+    immediately -- Restart-Computer would tear the box down before the server's
     HTTP reply lands, leaving the UI unsure whether the reboot started.
 
     /f forces apps to close so a stuck process (or an in-progress recording)

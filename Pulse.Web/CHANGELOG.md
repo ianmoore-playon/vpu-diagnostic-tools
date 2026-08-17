@@ -22,7 +22,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
-## [1.3.0] - 2026-08-17
+## [1.2.0] - 2026-08-17
 
 ### Added
 - Disks: when the recordings drive (D:) reaches 90% full, a Storage Cleanup card can free space — it deletes daily test clips older than 90 days and game recordings older than 1 year, after showing exactly which folders (with counts and sizes) will be removed. Nothing from the last 90 days is ever touched.
@@ -40,6 +40,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ### Fixed
 - ScoreConnect: the scoreboard could show the wrong quarter on non-Daktronics boards — an Electro-Mech football board sitting on Q2 read as "Q7" even though the score, clock and down & distance on the same screen were all correct. Pulse now reads the quarter from its own fixed spot in the scoreboard data instead of taking the last digit it finds. It also won't show a quarter that can't be real for the sport any more: a football board reporting Q7 leaves the quarter blank rather than showing a wrong one you might pass on to a school.
 - Stream Readiness now correctly reports FAIL (not WARNING) when a venue firewall is intercepting secure connections — the dashboard verdict was silently ignoring this case.
+- Network: the packet capture never ran on a real VPU — it failed instantly with no result. It now runs and reports normally. (A stray dash character in the script stopped Windows from reading the file at all; it worked in testing and failed on every actual unit.)
+- Cleaned up garbled punctuation in diagnostic messages on real VPUs — the ScoreConnect "software is out of date" notice and truncated camera error text were showing stray characters where a dash or "..." belonged.
 
 ## [1.1.2] - 2026-08-07
 

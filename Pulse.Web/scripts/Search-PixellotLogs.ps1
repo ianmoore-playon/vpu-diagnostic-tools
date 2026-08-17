@@ -5,7 +5,7 @@
 .DESCRIPTION
     Per Pixellot Troubleshooting Tips PDF #5, searching the VPU logs for
     "error", "fatal", and "start new log" is the first step in identifying
-    runtime issues. The last marker is especially valuable — it indicates
+    runtime issues. The last marker is especially valuable -- it indicates
     a process restart after a crash.
 
     Searches the last N hours of log files matching:
@@ -13,7 +13,7 @@
         agent_vpu2_*.log
     in C:\Pixellot\Data\Log\
 
-    Uses findstr.exe (native, encoding-tolerant — same pattern proven safe
+    Uses findstr.exe (native, encoding-tolerant -- same pattern proven safe
     in Get-SystemIdentity.ps1 for these Pixellot log files).
 
     Also flags known dependency-failure signatures (CUDNN_STATUS_*,
@@ -52,7 +52,7 @@ try {
 
     $cutoff = (Get-Date).AddHours(-$HoursBack)
 
-    # Find candidate log files — recent + matching name patterns
+    # Find candidate log files -- recent + matching name patterns
     $files = Get-ChildItem -Path $logDir -Filter '*.log' -File -ErrorAction SilentlyContinue |
         Where-Object {
             ($_.Name -like 'vpu*' -or $_.Name -like 'agent_vpu2_*') -and
@@ -64,19 +64,19 @@ try {
     $stats = @{ error = 0; fatal = 0; restart = 0 }
     $depsDetected = $false
 
-    # Patterns that mean "Pixellot dependencies are broken — reinstall" (PDF #2)
+    # Patterns that mean "Pixellot dependencies are broken -- reinstall" (PDF #2)
     $depsErrorRegex = '(CUDNN_STATUS_EXECUTION_FAILED|CUDNN_STATUS|TensorFlow|tensorflow\.python|cudart|libcudnn)'
 
     foreach ($f in $files) {
         if ($entries.Count -ge $MaxMatches) { break }
 
-        # findstr — case-insensitive, line-numbered, multiple needles.
+        # findstr -- case-insensitive, line-numbered, multiple needles.
         # /N adds line numbers, /I makes it case-insensitive, /C: takes a literal needle.
         # 2>$null swallows the "file not found" noise on permission edge cases.
         $matches = & findstr.exe /N /I /C:"error" /C:"fatal" /C:"start new log" $f.FullName 2>$null
         if (-not $matches) { continue }
 
-        # findstr returns string or string[] depending on count — normalize.
+        # findstr returns string or string[] depending on count -- normalize.
         if ($matches -isnot [array]) { $matches = @($matches) }
 
         foreach ($line in $matches) {
@@ -87,7 +87,7 @@ try {
             $lineNum = [int]$Matches[1]
             $content = $Matches[2]
 
-            # Classify level — order matters because "fatal" lines also contain "error" sometimes
+            # Classify level -- order matters because "fatal" lines also contain "error" sometimes
             $level = 'unknown'
             if     ($content -match '(?i)start new log') { $level = 'restart'; $stats.restart++ }
             elseif ($content -match '(?i)fatal')         { $level = 'fatal';   $stats.fatal++ }

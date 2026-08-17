@@ -5,12 +5,12 @@
 .DESCRIPTION
     "Receive over LAN" binds a listener on 0.0.0.0:<port>, but Windows Defender
     Firewall silently drops inbound connections to it until an allow-rule exists
-    — so a peer's send just times out. This adds a single inbound TCP allow-rule
+    -- so a peer's send just times out. This adds a single inbound TCP allow-rule
     named "Pulse LAN Share".
 
     Adding a firewall rule needs admin. The script is idempotent: if the rule
     already exists it returns immediately (no prompt). Otherwise it tries to add
-    it; if that's denied (normal — Pulse runs unelevated), it relaunches itself
+    it; if that's denied (normal -- Pulse runs unelevated), it relaunches itself
     once via Start-Process -Verb RunAs (a single UAC prompt), the same elevation
     pattern as the ScoreConnect III installer.
 
@@ -18,7 +18,7 @@
 .PARAMETER Port
     TCP port to allow inbound. Defaults to 8766.
 .PARAMETER Elevated
-    Internal — set when the script relaunches itself as administrator.
+    Internal -- set when the script relaunches itself as administrator.
 #>
 param(
     [string]$Port = "8766",
@@ -45,7 +45,7 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 if ($Elevated) {
-    # We were the elevated child and still failed — report it rather than loop.
+    # We were the elevated child and still failed -- report it rather than loop.
     Write-Result @{ applied = $false; port = $Port; error = "Could not add firewall rule even when elevated." }
     exit 1
 }

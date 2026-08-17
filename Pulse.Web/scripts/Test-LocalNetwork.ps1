@@ -91,7 +91,7 @@ try {
     # Scope to the interface that owns the active default route (lowest-metric
     # 0.0.0.0/0). Walking Get-NetIPConfiguration and taking the first interface
     # with any gateway can land on a secondary/disconnected NIC (camera port,
-    # VPN) and ping the wrong gateway/DNS — reporting local-network health for
+    # VPN) and ping the wrong gateway/DNS -- reporting local-network health for
     # an adapter that isn't actually carrying traffic.
     $uplinkIdx = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
         Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' -and -not $_.NextHop.StartsWith('169.254.') } |
@@ -102,7 +102,7 @@ try {
         $ipc = Get-NetIPConfiguration -InterfaceIndex $uplinkIdx -ErrorAction SilentlyContinue
     }
     if (-not $ipc) {
-        # No default route resolved — fall back to the first interface that has a
+        # No default route resolved -- fall back to the first interface that has a
         # usable (non-APIPA) gateway, preserving the prior behaviour.
         $ipc = Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object {
             $_.IPv4DefaultGateway | Where-Object { $_.NextHop -and -not $_.NextHop.StartsWith('169.254.') }
