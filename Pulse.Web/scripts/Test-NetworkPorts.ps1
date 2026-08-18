@@ -83,9 +83,6 @@ try {
         # destination-aware filter could still block pixellot.stream while
         # allowing this. Revisit if Pixellot ever adds 1935 to prod-echo.
         @{ protocol = 'TCP'; port = 1935; host = 'a.rtmp.youtube.com';     purpose = 'RTMP Fallback';     optional = $false }
-        # Optional - Sportzcast legacy RTMP ingest (unrelated to the Pixellot
-        # streaming fallback above; ScoreConnect deployments only)
-        @{ protocol = 'TCP'; port = 1935; host = 'sportzcast.net';         purpose = 'RTMP Ingest';       optional = $true }
         # Optional -- Sportzcast Scorebot range (ScoreConnect deployments only)
         @{ protocol = 'TCP'; port = 1400; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
         @{ protocol = 'TCP'; port = 1401; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }

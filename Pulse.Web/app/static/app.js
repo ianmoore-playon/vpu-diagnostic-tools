@@ -3030,7 +3030,6 @@ const NET_PORT_IMPACT = {
   "Zixi Backup": "Backup live-stream connection (Zixi over UDP/443 — the same streaming protocol as UDP/2088, not HTTPS). Either Zixi port alone carries a fully healthy stream; with both blocked the broadcast degrades to the RTMP fallback.",
   "Zixi Streaming": "The primary live-stream connection (Zixi over UDP/2088). If blocked, the stream fails over to Zixi UDP/443, then to the degraded RTMP fallback (TCP/1935).",
   "RTMP Fallback": "Last-resort streaming path (RTMP over TCP/1935) used only when both Zixi/UDP connections are blocked: games start ~4 minutes late with no packet-loss protection. If this is blocked too, a venue with both UDP ports blocked can't broadcast at all. (Tested against a stable public RTMP host — proves 1935 egress by port, not that pixellot.stream specifically is allowed.)",
-  "RTMP Ingest": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
   "Scorebot": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
 };
 const NET_DOMAIN_IMPACT = {

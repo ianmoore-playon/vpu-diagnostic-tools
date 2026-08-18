@@ -681,8 +681,6 @@ DEMO = {
             # Required — RTMP fallback egress (last streaming rung; probed
             # against a stable public RTMP host, see Test-NetworkPorts.ps1)
             {"purpose": "RTMP Fallback", "host": "a.rtmp.youtube.com", "port": 1935, "protocol": "TCP", "status": "pass", "optional": False},
-            # Optional — Sportzcast legacy RTMP ingest (ScoreConnect only)
-            {"purpose": "RTMP Ingest", "host": "sportzcast.net", "port": 1935, "protocol": "TCP", "status": "pass", "optional": True},
             # Optional — Sportzcast Scorebot range (ScoreConnect deployments only)
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1400, "protocol": "TCP", "status": "pass", "optional": True},
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1401, "protocol": "TCP", "status": "pass", "optional": True},
