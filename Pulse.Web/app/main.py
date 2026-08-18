@@ -2024,59 +2024,102 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
     # are intentionally skipped — they vary by venue configuration.
     if port_tests and not port_tests.get("error"):
         results = port_tests.get("results", [])
-        # Streaming model: the live broadcast rides UDP/2088 (Zixi Streaming)
-        # with NO failover — block it and the stream can't go out (critical).
-        # The 443 pair (UDP/443 Zixi Backup + TCP/443 Pixellot Echo tunnel) is a
-        # redundant backup channel that fails over between its two transports, so
-        # a block there is a warning, not "can't broadcast". Keep these in sync
-        # with PRIMARY_STREAM_PURPOSE / STREAMING_PURPOSES in app.js and the
-        # purposes in Test-NetworkPorts.ps1.
-        primary_stream_purpose = "Zixi Streaming"
-        backup_stream_purposes = {"Zixi Backup", "Pixellot Echo"}
+        # Streaming model (verified from VPU logs + packet capture, Olympic WA
+        # 2026-08-18): the feeder walks a fixed failover chain — Zixi UDP/2088
+        # (Zixi Streaming) → Zixi UDP/443 (Zixi Backup, same protocol on a
+        # disguise port) → RTMP TCP/1935 (RTMP Fallback) → nothing. Either UDP
+        # rung alone is a fully healthy stream. RTMP is a degraded last resort:
+        # each dead rung burns ~60s of retries (~4 min of dead air when all
+        # four Zixi attempts fail) and RTMP carries no FEC/ARQ. TCP/443
+        # (Pixellot Echo) is the CONTROL PLANE — cloud API, remote support,
+        # VOD upload — and carries no live video; it is handled by the generic
+        # required-port loop below, not here. Keep purposes in sync with
+        # ZIXI_PURPOSES / RTMP_FALLBACK_PURPOSE in app.js and
+        # Test-NetworkPorts.ps1.
+        zixi_purposes = {"Zixi Streaming", "Zixi Backup"}
+        rtmp_fallback_purpose = "RTMP Fallback"
+        stream_rung_purposes = zixi_purposes | {rtmp_fallback_purpose}
 
         def _lbl(rows):
             return ", ".join(
                 f"{(r.get('protocol') or '').upper()}/{r.get('port')}" for r in rows
             )
 
-        # (1) Primary stream (UDP/2088) — no failover, so a block stops the broadcast.
-        primary_blocked = [
+        rungs = [
             r for r in results
-            if r.get("purpose") == primary_stream_purpose
-            and not r.get("optional") and r.get("status") == "fail"
+            if r.get("purpose") in stream_rung_purposes and not r.get("optional")
         ]
-        if primary_blocked:
+        rungs_blocked = [r for r in rungs if r.get("status") == "fail"]
+        zixi_open = any(
+            r.get("purpose") in zixi_purposes and r.get("status") == "pass"
+            for r in rungs
+        )
+        rtmp_rows = [r for r in rungs if r.get("purpose") == rtmp_fallback_purpose]
+        rtmp_open = any(r.get("status") == "pass" for r in rtmp_rows)
+
+        if rungs and not zixi_open and not rtmp_open:
+            # Every rung of the failover chain is dead — the broadcast cannot
+            # go on air. The only tier that earns "can't broadcast".
             findings.append({
-                "code": "stream-2088-blocked",
+                "code": "stream-blocked",
                 "severity": "critical",
                 "category": "Network",
                 "title": "Streaming is blocked — the VPU can't broadcast",
                 "recommendation": (
-                    "The venue's network is blocking the connection the VPU uses to "
-                    "send the live video to Pixellot's streaming service. This connection "
-                    "has no backup, so the game can't broadcast until it's unblocked. Ask "
-                    f"the venue's IT team to open {_lbl(primary_blocked)} to prod-echo.pixellot.tv."
+                    "The venue's network is blocking every path the VPU can use to "
+                    "send live video — the primary and backup streaming connections "
+                    "and the last-resort fallback. The game can't broadcast until at "
+                    f"least one is unblocked. Ask the venue's IT team to open "
+                    f"{_lbl(rungs_blocked)} (UDP to prod-echo.pixellot.tv; the live "
+                    "stream itself goes to *.pixellot.stream, so domain-based rules "
+                    "are needed on filters that classify by destination)."
                 ),
             })
-
-        # (2) Backup channel (443 pair) — fails over between its transports and the
-        # broadcast rides UDP/2088, so a block here is a warning, not a critical.
-        backup_paths = [
-            r for r in results
-            if r.get("purpose") in backup_stream_purposes and not r.get("optional")
-        ]
-        backup_blocked = [r for r in backup_paths if r.get("status") == "fail"]
-        if backup_blocked:
+        elif rungs and not zixi_open:
+            # Both Zixi/UDP rungs dead, RTMP reachable: games WILL air, but on
+            # the unprotected last resort — ~4 min of dead air at the start
+            # while the feeder walks the dead rungs, then RTMP with no loss
+            # protection. Urgent, but not "can't broadcast".
             findings.append({
-                "code": "stream-443-blocked",
+                "code": "stream-degraded-rtmp",
+                "severity": "critical",
+                "category": "Network",
+                "title": "Streaming is degraded — running on the emergency fallback",
+                "recommendation": (
+                    "The venue's network blocks both Zixi streaming connections "
+                    f"({_lbl([r for r in rungs_blocked if r.get('purpose') in zixi_purposes])}), "
+                    "so broadcasts fall back to RTMP over TCP/1935: games start "
+                    "roughly 4 minutes late and stream with no packet-loss "
+                    "protection. Ask the venue's IT team to open UDP 2088 and "
+                    "UDP 443 outbound — by domain (*.pixellot.stream) on filters "
+                    "that classify by destination, since broadcast servers rotate "
+                    "per event."
+                ),
+            })
+        elif rungs_blocked:
+            # Stream is healthy on Zixi, but one or more rungs of the chain are
+            # blocked — reduced resiliency, not an outage.
+            on_backup = not any(
+                r.get("purpose") == "Zixi Streaming" and r.get("status") == "pass"
+                for r in rungs
+            )
+            findings.append({
+                "code": "stream-resiliency-reduced",
                 "severity": "warning",
                 "category": "Network",
-                "title": "A backup streaming connection is blocked",
+                "title": (
+                    "Streaming is riding its backup connection"
+                    if on_backup else "Streaming resiliency is reduced"
+                ),
                 "recommendation": (
-                    "Pixellot keeps a backup connection to its streaming service, and the "
-                    "venue's network is blocking it — if the main connection has trouble "
-                    "during a game, there's less to fall back on. Ask the venue's IT team "
-                    f"to unblock {_lbl(backup_blocked)} to prod-echo.pixellot.tv."
+                    ("The primary streaming connection (UDP/2088) is blocked, so the "
+                     "stream rides the UDP/443 backup — full quality, but one rung "
+                     "from the degraded RTMP fallback. "
+                     if on_backup else
+                     "The stream is healthy, but part of its failover chain is "
+                     "blocked — less to fall back on if the main connection has "
+                     "trouble during a game. ")
+                    + f"Ask the venue's IT team to unblock {_lbl(rungs_blocked)}."
                 ),
             })
 
@@ -2091,12 +2134,14 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             for r in results
         )
 
-        # Non-streaming required ports — each blocked one is its own warning. The
-        # primary stream and the 443 backup channel are handled above, so skip both.
+        # Non-streaming required ports — each blocked one is its own warning.
+        # The streaming failover rungs are handled above, so skip those. Note
+        # TCP/443 (Pixellot Echo) lands here on purpose: it's the control
+        # plane (cloud API, remote support, VOD upload), not a streaming rung.
         for r in results:
             if r.get("status") != "fail" or r.get("optional"):
                 continue
-            if r.get("purpose") in backup_stream_purposes or r.get("purpose") == primary_stream_purpose:
+            if r.get("purpose") in stream_rung_purposes:
                 continue
             host = r.get("host", "?")
             port = r.get("port", "?")
@@ -2282,7 +2327,11 @@ READINESS_POLICY_VERSION = "v1"
 
 _READINESS_POLICY = {
     # ── BLOCKERS → FAIL (don't expect a clean broadcast tonight) ──
-    "stream-2088-blocked":   "blocker",  # F1  UDP/2088 Zixi Streaming, no failover
+    "stream-blocked":        "blocker",  # F1  every streaming rung dead (UDP/2088,
+                                         #     UDP/443, TCP/1935) — broadcast cannot
+                                         #     go on air. Replaced stream-2088-blocked
+                                         #     when the failover chain was verified
+                                         #     (Olympic WA, 2026-08-18).
     "agent-down":            "blocker",  # F2  core capture process down
     "coordinator-down":      "blocker",  # F3  core capture process down
     "cam-none":              "blocker",  # F4  0 of N main cameras present
@@ -2303,7 +2352,12 @@ _READINESS_POLICY = {
     # ── RISKS → WARN (will likely stream, but a human should eyeball) ──
     "cam-partial":           "risk",     # F6  k of N present (k>0)
     "nic-slow":              "risk",     # F7  camera NIC below gigabit
-    "stream-443-blocked":    "risk",     # F8  443 backup blocked while 2088 up
+    "stream-degraded-rtmp":  "risk",     # F1b both UDP rungs dead, RTMP open — games
+                                         #     air ~4 min late, no loss protection.
+                                         #     Diagnostic severity is critical; games
+                                         #     still air, so readiness is WARN not FAIL.
+    "stream-resiliency-reduced": "risk", # F8  stream healthy on Zixi but part of the
+                                         #     failover chain blocked (was stream-443-blocked)
     "watchdog-down":         "risk",     # F9  KeepAgentUp down — no self-heal
     "pixellot-over-cap":     "risk",     # F10 build newer than GPU/OS supports
     "gpu-anomaly":           "risk",     # F12 Volta / roster anomaly

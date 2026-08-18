@@ -669,16 +669,19 @@ DEMO = {
             {"purpose": "Singular Overlay", "host": "service.singular.live", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "LogMeIn", "host": "secure.logmein.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
-            # Demo: the live UDP/2088 broadcast connection is blocked. It has no
-            # failover, so this exercises the critical "Streaming is blocked — VPU
-            # can't broadcast". The 443 backup channel (UDP/443 + TCP/443 tunnel)
-            # stays open and is unaffected. (To exercise the amber "No failover"
-            # backup warning instead, set 2088 to "pass" and one of Zixi Backup /
-            # Pixellot Echo to "fail" — that leaves the broadcast up with one
-            # backup transport down.)
-            {"purpose": "Zixi Backup", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "pass", "optional": False},
+            # Demo: both Zixi/UDP streaming rungs are blocked but the RTMP
+            # fallback (TCP/1935) is open — the DEGRADED tier: games air ~4 min
+            # late on unprotected RTMP. Exercises the critical "Streaming is
+            # degraded — running on the emergency fallback" (the Olympic WA
+            # 2026-08-18 scenario). Other tiers to demo: set one Zixi row to
+            # "pass" for the healthy-with-reduced-resiliency warning; set RTMP
+            # Fallback to "fail" too for the true "can't broadcast" critical.
+            {"purpose": "Zixi Backup", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "fail", "optional": False},
             {"purpose": "Zixi Streaming", "host": "prod-echo.pixellot.tv", "port": 2088, "protocol": "UDP", "status": "fail", "optional": False},
-            # Optional — RTMP fallback (legacy ingest)
+            # Required — RTMP fallback egress (last streaming rung; probed
+            # against a stable public RTMP host, see Test-NetworkPorts.ps1)
+            {"purpose": "RTMP Fallback", "host": "a.rtmp.youtube.com", "port": 1935, "protocol": "TCP", "status": "pass", "optional": False},
+            # Optional — Sportzcast legacy RTMP ingest (ScoreConnect only)
             {"purpose": "RTMP Ingest", "host": "sportzcast.net", "port": 1935, "protocol": "TCP", "status": "pass", "optional": True},
             # Optional — Sportzcast Scorebot range (ScoreConnect deployments only)
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1400, "protocol": "TCP", "status": "pass", "optional": True},

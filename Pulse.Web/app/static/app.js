@@ -1655,7 +1655,7 @@ function _demoVerdict(state) {
     { code: "disk-d-critical", category: "Storage", title: "Recording drive (D:) almost full", recommendation: "D: is 93% full. The post-event recording (VOD) is written to D: — if it fills during the game the recording may not save. Free space on D:." },
   ] };
   return { status: "FAIL", policyVersion: "v1", timestamp: stamp, info: [], risks: [nicRisk], blockers: [
-    { code: "stream-2088-blocked", category: "Network", title: "Streaming is blocked — VPU can't broadcast", recommendation: "The venue's network is blocking UDP/2088 to prod-echo.pixellot.tv. This connection has no backup, so the game can't broadcast until venue IT opens it." },
+    { code: "stream-blocked", category: "Network", title: "Streaming is blocked — VPU can't broadcast", recommendation: "The venue's network is blocking every streaming path (UDP/2088, UDP/443, and the TCP/1935 fallback), so the game can't broadcast until venue IT opens at least one." },
   ] };
 }
 
@@ -3015,18 +3015,21 @@ function _prefixToMask(prefix) {
 const NET_PORT_IMPACT = {
   "DNS": "The VPU can't resolve any hostname, so it can't reach any service.",
   "Pixellot": "System management and software updates are blocked, and the stream fails to broadcast.",
-  // Streaming model: the live broadcast rides UDP/2088 (Zixi Streaming) with NO
-  // failover — block it and the stream can't go out. The two 443 transports
-  // below (UDP/443 backup, TCP/443 tunnel) are a redundant backup channel that
-  // fails over between themselves. Wording is per-port "in isolation"; the live
-  // verdict is in the Port Connectivity finding.
-  "Pixellot Echo": "Backup streaming connection (TCP/443 tunnel) plus the remote-support channel. It fails over with the UDP/443 backup — the live broadcast itself rides UDP/2088, so blocking this only reduces backup redundancy and remote support.",
+  // Streaming model (verified from VPU logs + packet capture, Olympic WA
+  // 2026-08-18): the live broadcast walks a fixed failover chain — Zixi
+  // UDP/2088 → Zixi UDP/443 (same protocol, disguise port) → RTMP TCP/1935 →
+  // nothing. Either UDP rung alone is a fully healthy stream; RTMP is a
+  // degraded last resort (~4 min late start, no loss protection). TCP/443 is
+  // the CONTROL PLANE and carries no live video. Wording is per-port "in
+  // isolation"; the live verdict is in the Port Connectivity finding.
+  "Pixellot Echo": "Pixellot cloud services over HTTPS (TCP/443): event scheduling, system management, remote support, video upload. Carries no live video — but nothing on the unit works without it.",
   "NFHS Network": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
   "Singular Overlay": "On-screen graphics and scorebug overlays won't load.",
   "LogMeIn": "The support team can't diagnose the VPU remotely.",
   "NTP": "The clock can drift — the VPU may miss scheduled events if no valid time server is set.",
-  "Zixi Backup": "Backup streaming connection (Zixi over UDP/443) that fails over with the TCP/443 tunnel. The live broadcast rides UDP/2088, so blocking this only reduces backup redundancy.",
-  "Zixi Streaming": "The live broadcast connection (Zixi over UDP/2088). It has no failover — if this is blocked, the game can't stream.",
+  "Zixi Backup": "Backup live-stream connection (Zixi over UDP/443 — the same streaming protocol as UDP/2088, not HTTPS). Either Zixi port alone carries a fully healthy stream; with both blocked the broadcast degrades to the RTMP fallback.",
+  "Zixi Streaming": "The primary live-stream connection (Zixi over UDP/2088). If blocked, the stream fails over to Zixi UDP/443, then to the degraded RTMP fallback (TCP/1935).",
+  "RTMP Fallback": "Last-resort streaming path (RTMP over TCP/1935) used only when both Zixi/UDP connections are blocked: games start ~4 minutes late with no packet-loss protection. If this is blocked too, a venue with both UDP ports blocked can't broadcast at all. (Tested against a stable public RTMP host — proves 1935 egress by port, not that pixellot.stream specifically is allowed.)",
   "RTMP Ingest": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
   "Scorebot": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
 };
@@ -3040,34 +3043,41 @@ const NET_DOMAIN_IMPACT = {
 };
 function _netPortImpact(p) { return (p && NET_PORT_IMPACT[p.purpose]) || ""; }
 
-// The live broadcast rides UDP/2088 (Zixi Streaming) with NO failover — if it's
-// blocked the stream can't go out (handled as a standalone critical, below).
-var PRIMARY_STREAM_PURPOSE = "Zixi Streaming";
-// The 443 pair is a redundant BACKUP channel to prod-echo — UDP/443 (Zixi
-// Backup) and TCP/443 (Pixellot Echo tunnel) fail over between themselves, so
-// one blocked with the other open just removes backup redundancy; the broadcast
-// (UDP/2088) is unaffected. Keep these purposes in sync with Test-NetworkPorts.ps1.
-var STREAMING_PURPOSES = ["Zixi Backup", "Pixellot Echo"];
+// Streaming failover chain (verified from VPU logs + packet capture, Olympic
+// WA 2026-08-18): Zixi UDP/2088 → Zixi UDP/443 → RTMP TCP/1935 → nothing.
+// Either Zixi/UDP rung alone is a fully healthy stream; RTMP is a degraded
+// last resort (~4 min late start, no loss protection). TCP/443 (Pixellot
+// Echo) is the control plane, NOT a streaming rung. Keep these purposes in
+// sync with main.py and Test-NetworkPorts.ps1.
+var ZIXI_PURPOSES = ["Zixi Streaming", "Zixi Backup"];
+var RTMP_FALLBACK_PURPOSE = "RTMP Fallback";
+var STREAM_RUNG_PURPOSES = ZIXI_PURPOSES.concat([RTMP_FALLBACK_PURPOSE]);
 function _streamingHealth(ports) {
-  var paths = (ports || []).filter(function(p) { return STREAMING_PURPOSES.indexOf(p.purpose) !== -1; });
-  var open = paths.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; });
-  var blocked = paths.filter(function(p) { return (p.status || "").toLowerCase() !== "pass"; });
+  function isPass(p) { return (p.status || "").toLowerCase() === "pass"; }
+  var rungs = (ports || []).filter(function(p) {
+    return STREAM_RUNG_PURPOSES.indexOf(p.purpose) !== -1 && !p.optional;
+  });
+  var blocked = rungs.filter(function(p) { return !isPass(p); });
+  var zixiOpen = rungs.some(function(p) { return ZIXI_PURPOSES.indexOf(p.purpose) !== -1 && isPass(p); });
+  var rtmpOpen = rungs.some(function(p) { return p.purpose === RTMP_FALLBACK_PURPOSE && isPass(p); });
   return {
-    paths: paths, open: open, blocked: blocked,
-    total: paths.length,
-    anyOpen: open.length > 0,
-    // A blocked backup transport is "redundant" (warning, not failure) when its
-    // sibling is still open. True only while at least one of the pair is open.
-    redundantBlock: open.length > 0 && blocked.length > 0,
+    rungs: rungs, blocked: blocked,
+    zixiOpen: zixiOpen, rtmpOpen: rtmpOpen,
+    // Three verdict tiers: healthy (Zixi carries the stream), degraded (both
+    // UDP rungs dead, games air late on unprotected RTMP), dark (every rung
+    // dead — the broadcast cannot go on air).
+    healthy: zixiOpen,
+    degraded: rungs.length > 0 && !zixiOpen && rtmpOpen,
+    dark: rungs.length > 0 && !zixiOpen && !rtmpOpen,
   };
 }
-// Is this individual blocked port a backup-channel transport that still has an
-// open sibling? Softens its card from a red "Fail" to an amber "No failover".
-// The primary stream (UDP/2088) is never redundant — a block there is a real
-// fail — so it is intentionally excluded from STREAMING_PURPOSES.
+// Is this individual blocked port a failover rung whose chain is still healthy
+// (Zixi carrying the stream)? Softens its card from a red "Fail" to an amber
+// "No backup" — the stream is fine, resiliency is what's lost. Once the stream
+// is degraded or dark, every blocked rung is a real (red) failure.
 function _isRedundantStreamBlock(p, health) {
-  return health.anyOpen
-    && STREAMING_PURPOSES.indexOf(p.purpose) !== -1
+  return health.zixiOpen
+    && STREAM_RUNG_PURPOSES.indexOf(p.purpose) !== -1
     && (p.status || "").toLowerCase() !== "pass";
 }
 function _netDomainImpact(d) { return (d && NET_DOMAIN_IMPACT[d.domain]) || ""; }
@@ -3236,12 +3246,11 @@ function _renderPortConnectivity(ports) {
   var reqPass = required.filter(function(p) { return (p.status || "").toLowerCase() === "pass"; }).length;
   var reqBlocked = required.length - reqPass;
 
-  // A required failure that ISN'T a still-redundant 443 backup path is a real
-  // problem (red) — including a blocked UDP/2088 primary stream. If the only
-  // blocks are 443 backup paths with a sibling still open, the broadcast still
-  // works — show amber, not red.
+  // A required failure that ISN'T a failover rung of a still-healthy stream is
+  // a real problem (red). If the only blocks are streaming rungs while Zixi
+  // still carries the broadcast, the stream works — show amber, not red.
   var nonStreamBlocked = required.filter(function(p) {
-    return (p.status || "").toLowerCase() !== "pass" && STREAMING_PURPOSES.indexOf(p.purpose) === -1;
+    return (p.status || "").toLowerCase() !== "pass" && STREAM_RUNG_PURPOSES.indexOf(p.purpose) === -1;
   }).length;
   var summary;
   if (required.length === 0) {
@@ -3249,8 +3258,8 @@ function _renderPortConnectivity(ports) {
     summary = '<span class="net-port-summary net-port-summary-opt">No required ports tested</span>';
   } else if (reqBlocked === 0) {
     summary = '<span class="net-port-summary net-port-summary-ok">' + svgIcon("check", 13) + ' All ' + required.length + ' required reachable</span>';
-  } else if (nonStreamBlocked === 0 && health.anyOpen) {
-    summary = '<span class="net-port-summary net-port-summary-warn">' + svgIcon("triangle", 13) + ' Streaming OK · ' + health.blocked.length + ' backup path' + (health.blocked.length === 1 ? "" : "s") + ' blocked</span>';
+  } else if (nonStreamBlocked === 0 && health.healthy) {
+    summary = '<span class="net-port-summary net-port-summary-warn">' + svgIcon("triangle", 13) + ' Streaming OK · ' + health.blocked.length + ' failover path' + (health.blocked.length === 1 ? "" : "s") + ' blocked</span>';
   } else {
     summary = '<span class="net-port-summary net-port-summary-bad">' + svgIcon("triangle", 13) + ' ' + reqBlocked + ' of ' + required.length + ' required blocked</span>';
   }
@@ -3517,46 +3526,62 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       + (impact ? " — " + impact : "");
   }
 
-  // (1) The live broadcast (UDP/2088, Zixi Streaming) has NO failover, so if
-  // it's blocked the game can't stream — a critical on its own, regardless of
-  // the 443 backup channel's state.
-  var primaryBlocked = (ports || []).filter(function(p) {
-    return p.purpose === PRIMARY_STREAM_PURPOSE && !p.optional
-      && (p.status || "").toLowerCase() !== "pass";
-  });
-  if (primaryBlocked.length > 0) {
+  // Streaming verdict — three tiers off the failover chain (Zixi UDP/2088 →
+  // Zixi UDP/443 → RTMP TCP/1935). Keep the copy in sync with the findings
+  // main.py emits (stream-blocked / stream-degraded-rtmp /
+  // stream-resiliency-reduced).
+  var stream = _streamingHealth(ports);
+  function _rungDetail(p) {
+    var role = p.purpose === "Zixi Streaming" ? "the primary streaming connection"
+      : p.purpose === "Zixi Backup" ? "the backup streaming connection"
+      : "the last-resort RTMP fallback";
+    return (p.protocol || "UDP").toUpperCase() + " port " + p.port
+      + " to " + (p.host || "the streaming server") + " — " + role;
+  }
+  if (stream.dark) {
+    // (1) Every rung dead — the only tier that earns "can't broadcast".
     issues.push({
       severity: "critical",
       title: "Streaming is blocked — the VPU can't broadcast",
-      body: "The venue's network is blocking the connection the VPU uses to send the live video to Pixellot's "
-        + "streaming service. This connection has no backup, so the game can't broadcast until it's unblocked. "
-        + "Ask the venue's IT or network team to open it.",
-      details: primaryBlocked.map(function(p) {
-        return (p.protocol || "UDP").toUpperCase() + " port " + p.port
-          + " to " + (p.host || "the streaming server") + " — the live streaming connection";
-      }),
+      body: "The venue's network is blocking every path the VPU can use to send live video — the primary and "
+        + "backup streaming connections and the last-resort fallback. The game can't broadcast until at least "
+        + "one is unblocked. Ask the venue's IT or network team to open the connections below (by domain — "
+        + "*.pixellot.stream — on filters that classify traffic by destination, since broadcast servers "
+        + "rotate per event).",
+      details: stream.blocked.map(_rungDetail),
     });
-  }
-
-  // (2) The 443 backup channel (UDP/443 + TCP/443 tunnel) fails over between its
-  // two transports, and the broadcast rides UDP/2088 anyway — so a block here is
-  // a warning (lost backup redundancy), never a "can't broadcast" critical.
-  var stream = _streamingHealth(ports);
-  if (stream.blocked.length > 0) {
-    // Plain-language detail per blocked connection — keeps the exact port so
-    // whoever opens the firewall knows what to unblock, no jargon.
-    var streamDetails = stream.blocked.map(function(p) {
-      return (p.protocol || "TCP").toUpperCase() + " port " + p.port
-        + " to " + (p.host || "the streaming server") + " — a backup streaming connection";
+  } else if (stream.degraded) {
+    // (2) Both Zixi/UDP rungs dead, RTMP reachable: games WILL air, but ~4 min
+    // late on the unprotected last resort. Urgent, but not "can't broadcast" —
+    // that wording burned a support case when a "blocked" venue streamed fine
+    // (Olympic WA, 2026-08-18).
+    issues.push({
+      severity: "critical",
+      title: "Streaming is degraded — running on the emergency fallback",
+      body: "The venue's network blocks both Zixi streaming connections, so broadcasts fall back to RTMP over "
+        + "TCP/1935: games start roughly 4 minutes late and stream with no packet-loss protection. Ask the "
+        + "venue's IT or network team to open UDP 2088 and UDP 443 outbound — by domain (*.pixellot.stream) "
+        + "on filters that classify traffic by destination, since broadcast servers rotate per event.",
+      details: stream.blocked.map(_rungDetail),
     });
-    var n = stream.blocked.length;
+  } else if (stream.blocked.length > 0) {
+    // (3) Stream healthy on Zixi, but part of the chain is blocked — reduced
+    // resiliency, not an outage. Call out when the stream is already riding
+    // the backup (primary blocked): one rung from degraded.
+    var onBackup = !stream.rungs.some(function(p) {
+      return p.purpose === "Zixi Streaming" && (p.status || "").toLowerCase() === "pass";
+    });
     issues.push({
       severity: "warning",
-      title: (n === 1 ? "A backup streaming connection is blocked" : n + " backup streaming connections are blocked"),
-      body: "Pixellot keeps a backup connection to its streaming service, and the venue's network is blocking "
-        + "it — if the main connection runs into trouble during a game, there's less to fall back on. Ask the "
-        + "venue's IT or network team to unblock the connection" + (n === 1 ? "" : "s") + " below.",
-      details: streamDetails,
+      title: onBackup ? "Streaming is riding its backup connection" : "Streaming resiliency is reduced",
+      body: (onBackup
+        ? "The primary streaming connection (UDP/2088) is blocked, so the stream rides the UDP/443 backup — "
+          + "full quality, but one rung from the degraded RTMP fallback. "
+        : "The stream is healthy, but part of its failover chain is blocked — less to fall back on if the "
+          + "main connection runs into trouble during a game. ")
+        + "Ask the venue's IT or network team to unblock the connection"
+        + (stream.blocked.length === 1 ? "" : "s") + " below.",
+      details: stream.blocked.map(_rungDetail),
     });
   }
 
@@ -3572,7 +3597,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
   // resolution is clearly working.
   var reqFailed = (ports || []).filter(function(p) {
     if (p.optional || (p.status || "").toLowerCase() === "pass") return false;
-    if (STREAMING_PURPOSES.indexOf(p.purpose) !== -1 || p.purpose === PRIMARY_STREAM_PURPOSE) return false;
+    if (STREAM_RUNG_PURPOSES.indexOf(p.purpose) !== -1) return false;
     if ((p.purpose === "DNS" || String(p.port) === "53") && _dnsResolving) return false;
     return true;
   });
