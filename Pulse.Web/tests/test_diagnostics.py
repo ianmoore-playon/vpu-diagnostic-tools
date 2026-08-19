@@ -1036,6 +1036,28 @@ class TestReadinessPolicy(unittest.TestCase):
         self.assertEqual(verdict["status"], "FAIL")
         self.assertEqual([b["code"] for b in verdict["blockers"]], ["ssl-inspection"])
 
+    def test_category_filtering_is_a_blocker(self):
+        """The Linewize case (Ohio venue, 2026-08-19): a content filter resets
+        the handshake to eight Pixellot-critical hosts. No certificate is
+        substituted, so `ssl-inspection` never fires - and before `tls-filtered`
+        existed the whole event scored a green PASS with the only clue a soft
+        "possible SSL inspection" note on the Network tab."""
+        verdict = main._compute_readiness(
+            [{"code": "tls-filtered", "severity": "critical",
+              "category": "Network", "title": "t", "recommendation": "r"}]
+        )
+        self.assertEqual(verdict["status"], "FAIL")
+        self.assertEqual([b["code"] for b in verdict["blockers"]], ["tls-filtered"])
+
+    def test_support_only_filtering_does_not_gate(self):
+        """LogMeIn / python.org blocked is a support headache, not a reason to
+        tell a tech tonight's game is at risk."""
+        verdict = main._compute_readiness(
+            [{"code": "tls-filtered-support", "severity": "warning",
+              "category": "Network", "title": "t", "recommendation": "r"}]
+        )
+        self.assertEqual(verdict["status"], "PASS")
+
     def test_every_critical_finding_code_is_classified(self):
         # `info` is the default for UNKNOWN codes, which is right for new or
         # unverifiable checks — but a code we ship as `critical` reaching that
@@ -1068,6 +1090,7 @@ _CRITICAL_FINDING_CODES = {
     "pixellot-over-cap",
     "ssl-inspection",
     "stream-blocked",
+    "tls-filtered",
     "stream-degraded-rtmp",
     "sw-security",
     "temp-critical",

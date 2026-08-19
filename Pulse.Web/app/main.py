@@ -1364,6 +1364,23 @@ def _wifi_disabled_finding(network_config):
     }
 
 
+# TLS targets whose loss stops (or visibly degrades) a broadcast, as opposed
+# to the support-plane hosts on the same probe list (secure.logmein.com,
+# www.python.org). Only a hit in here gates readiness — a district blocking
+# LogMeIn is a support headache, not a reason to tell a tech the game is at
+# risk.
+_BROADCAST_CRITICAL_TLS_DOMAINS = {
+    "singular.live",
+    "app.singular.live",
+    "api.singular.live",
+    "datastream.singular.live",
+    "service.singular.live",
+    "pixellot.tv",
+    "software.pixellot.tv",
+    "nfhsnetwork.com",
+}
+
+
 def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, probe_results=None, tls_inspection=None) -> list:
     findings = []
 
@@ -2205,6 +2222,90 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 }
             )
 
+        # ── Category / SNI filtering (no certificate substitution) ──
+        # The other half of the DPI story, and the half Pulse used to mumble
+        # about. A content filter reads the hostname from the unencrypted SNI
+        # field of the ClientHello and, if the domain sits in a blocked
+        # category, resets the connection outright. Nothing is decrypted, no
+        # cert is substituted, so `intercepted` never fires — the collector
+        # marks these rows `filtered`. Field: Linewize at an Ohio venue
+        # 2026-08-19 — eight Pixellot-critical hosts reset while readiness
+        # still read PASS, because the only signal was a soft "possible SSL
+        # inspection" note on the Network tab.
+        #
+        # The distinction matters operationally: an SSL-decryption bypass
+        # does NOT fix a category block, and vice versa. Say which one it is.
+        filtered = [r for r in tls_rows if r.get("status") == "filtered"]
+        if filtered:
+            vendors = [v for v in (tls_inspection.get("filterVendors") or []) if v]
+            vendor_txt = " / ".join(vendors)
+            block_urls = [r.get("blockPageUrl") for r in filtered if r.get("blockPageUrl")]
+            broadcast_hit = [
+                r for r in filtered
+                if (r.get("domain") or "") in _BROADCAST_CRITICAL_TLS_DOMAINS
+            ]
+            hosts = ", ".join(r.get("domain", "?") for r in filtered)
+            # Dashboard findings render as a title only, so the title has to
+            # be the whole statement: what is blocking, and how much.
+            who = (
+                f"Venue web filter ({vendor_txt})" if vendor_txt
+                else "A web filter on the venue network"
+            )
+            who_lower = (
+                f"The venue's {vendor_txt} web filter" if vendor_txt
+                else "A web filter on the venue network"
+            )
+            evidence = (
+                f" Browsing to one of them from this network lands on the filter's "
+                f"block page ({block_urls[0]}), which names the rule and category "
+                f"being applied." if block_urls else ""
+            )
+            fix = (
+                f"Ask the venue's IT team to allow these domains in the WEB FILTER's "
+                f"category/URL policy — this is a content-category block, so an SSL "
+                f"decryption bypass alone will not fix it. Use a wildcard plus the bare "
+                f"domain (e.g. *.singular.live AND singular.live). While they are in "
+                f"there, have them exempt the same domains from SSL decryption so the "
+                f"second failure mode can't replace the first."
+            )
+            if broadcast_hit:
+                findings.append(
+                    {
+                        "code": "tls-filtered",
+                        "severity": "critical",
+                        "category": "Network",
+                        "title": (
+                            f"{who} is blocking {len(filtered)} Pixellot service"
+                            f"{'s' if len(filtered) != 1 else ''}"
+                        ),
+                        "recommendation": (
+                            f"{who_lower} accepts the connection to {hosts} and then drops it the "
+                            f"instant the VPU names the site — the signature of a blocked "
+                            f"category, not of certificate inspection (the certificates here "
+                            f"are untouched).{evidence} Graphics, scheduling and updates are cut "
+                            f"off outright and it can only be fixed on the venue's network. "
+                            f"{fix} See the Network tab for the per-service impact."
+                        ),
+                    }
+                )
+            else:
+                findings.append(
+                    {
+                        "code": "tls-filtered-support",
+                        "severity": "warning",
+                        "category": "Network",
+                        "title": (
+                            f"{who} is blocking {len(filtered)} support service"
+                            f"{'s' if len(filtered) != 1 else ''} ({hosts})"
+                        ),
+                        "recommendation": (
+                            f"These are support-plane services, so tonight's broadcast is "
+                            f"unaffected — but remote support and installer downloads will "
+                            f"fail on this network.{evidence} {fix}"
+                        ),
+                    }
+                )
+
     # ── Missing / under-count main cameras ─────────────────────
     # Compare what the Coordinator says the VPU is configured for
     # (`expectedMainCameras`, from Get-CameraExpectations) against what's
@@ -2346,6 +2447,16 @@ _READINESS_POLICY = {
                                          #     only the venue's firewall can fix
                                          #     it. Field: East Henderson (NC),
                                          #     2026-08-10 (Zscaler).
+    "tls-filtered":          "blocker",  # F38 venue content filter resetting the
+                                         #     TLS handshake to Pixellot-critical
+                                         #     hosts (blocked category / SNI block).
+                                         #     Same practical outcome as F37 -
+                                         #     graphics, scheduling and updates
+                                         #     severed, fixable only on the venue
+                                         #     network - but a different fix, so it
+                                         #     is its own code. Field: Linewize,
+                                         #     Ohio venue 2026-08-19, where this
+                                         #     scored PASS.
     # F15a C: disk >90% is computed below from disk-health (not the
     # `disk-critical` finding — see _compute_readiness).
 
@@ -2392,6 +2503,10 @@ _READINESS_POLICY = {
     "sw-game-platform":      "info",     # F34
     "sw-consumer-sync":      "info",     # F35
     "uptime-high":           "info",     # F36
+    "tls-filtered-support":  "info",     # F38b only support-plane hosts filtered
+                                         #      (LogMeIn / python.org) - remote
+                                         #      support and installer downloads
+                                         #      suffer, tonight's game does not.
 }
 
 

@@ -22,6 +22,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Added
+- Pulse now names the venue's web filter when it blocks Pixellot services. If the filter kills the secure connection to Singular, pixellot.tv or NFHS (a blocked-category block, not SSL inspection), the Network tab identifies the product — Linewize, Zscaler, iboss, Securly, Lightspeed, GoGuardian and others — and shows the block-page link you can send to venue IT.
+
+### Changed
+- Stream Readiness now FAILS when a venue web filter is blocking Pixellot services. It used to report a green PASS ("game-ready") while graphics, scheduling and updates were all cut off, because the block left the certificates untouched — the wording was a vague "possible SSL inspection" note buried on the Network tab.
+
 ## [1.2.0] - 2026-08-17
 
 ### Added

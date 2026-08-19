@@ -3112,6 +3112,7 @@ function _tlsBadge(status) {
   switch ((status || "").toLowerCase()) {
     case "pass":           return badge("Pass", "pass");
     case "intercepted":    return badge("Intercepted", "fail");
+    case "filtered":       return badge("Blocked by filter", "fail");
     case "handshake-fail": return badge("Handshake failed", "warn");
     case "cert-time":      return badge("Cert dates invalid", "warn");
     case "blocked":        return badge("Unreachable", "fail");
@@ -3451,6 +3452,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
   var tlsRows = (tls && !tls.error && tls.results) || [];
   var tlsIntercepted = tlsRows.filter(function(r) { return r.status === "intercepted"; });
   var tlsHsFail = tlsRows.filter(function(r) { return r.status === "handshake-fail"; });
+  var tlsFiltered = tlsRows.filter(function(r) { return r.status === "filtered"; });
   var tlsCertTime = tlsRows.filter(function(r) { return r.status === "cert-time"; });
   var tlsBlocked = tlsRows.filter(function(r) { return r.status === "blocked"; });
   if (tlsIntercepted.length) {
@@ -3474,14 +3476,53 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
         return r.domain + " — the secure handshake was refused (consistent with the same inspection)";
       })),
     });
-  } else if (tlsHsFail.length) {
-    // Handshake failures with no confirmed substitution — can be inspection
-    // that kills the handshake outright, aggressive filtering, or a protocol
-    // problem. Worth a look, but without a captured cert it isn't proof.
+  }
+  if (tlsFiltered.length) {
+    // Category / SNI blocking: the filter reads the hostname from the
+    // unencrypted ClientHello, decides the domain is in a blocked category
+    // and resets the connection. NO certificate is substituted, which is why
+    // this used to fall through to a vague "possible SSL inspection" warning
+    // that told a tech nothing actionable (Linewize, Ohio venue 2026-08-19 —
+    // eight critical hosts dead, readiness still green). Say the actual
+    // thing: the venue's content filter has these domains on a blocklist,
+    // and an SSL-decryption bypass will not lift it.
+    var vendorNames = ((tls && tls.filterVendors) || []).filter(Boolean).join(" / ");
+    var blockUrlRow = tlsFiltered.filter(function(r) { return r.blockPageUrl; })[0];
+    issues.push({
+      severity: "critical",
+      title: (vendorNames ? "Venue web filter (" + vendorNames + ")" : "A web filter on the venue network")
+        + " is blocking " + tlsFiltered.length + " Pixellot service"
+        + (tlsFiltered.length === 1 ? "" : "s") + " by category",
+      body: (vendorNames ? "The venue runs a " + vendorNames + " web filter. " : "")
+        + "Each connection below reaches the server and is then dropped the instant the VPU says which site it wants — "
+        + "the signature of a content filter matching the hostname against a blocked category. This is NOT certificate "
+        + "inspection: the certificates are untouched, so an SSL-decryption bypass on its own will not fix it"
+        + (blockUrlRow ? ", and a browser on this network is sent to the filter's own block page instead ("
+            + blockUrlRow.blockPageHost + ")" : "")
+        + ". Ask the venue's IT team to allow these domains in the web filter's category/URL policy, using a wildcard "
+        + "plus the bare domain (e.g. *.singular.live AND singular.live) — a category exception, not just a URL entry. "
+        + "While they are in the console, have them exempt the same domains from SSL decryption so the other failure "
+        + "mode can't take its place. It can only be fixed on the venue's network.",
+      // Per-service impact first, then the block page URL ONCE at the end:
+      // it's the single most useful line to paste to venue IT (it carries the
+      // rule and category the filter applied), and repeating a 200-character
+      // URL on every row buries the impacts it sits next to.
+      details: tlsFiltered.map(function(r) {
+        var impact = TLS_DOMAIN_IMPACT[r.domain] || "";
+        return r.domain + " — connection reset during the secure handshake"
+          + (impact ? " — " + impact : "");
+      }).concat(blockUrlRow ? ["Evidence to send venue IT — browsing to "
+        + blockUrlRow.domain + " on this network lands here: " + blockUrlRow.blockPageUrl] : []),
+    });
+  }
+  if (tlsHsFail.length && !tlsIntercepted.length) {
+    // What's left after the reset case is split out: a handshake that died
+    // for some other reason — protocol tampering, a downgrade proxy, or an
+    // endpoint problem. Genuinely ambiguous, so it stays a warning.
     issues.push({
       severity: "warning",
-      title: tlsHsFail.length + " secure service" + (tlsHsFail.length === 1 ? "" : "s") + " failed the TLS handshake — possible SSL inspection",
-      body: "The connection reached the server, but the secure handshake was refused. This often means the venue firewall is inspecting or filtering HTTPS. If graphics or uploads are failing while video works, ask the venue's IT team whether SSL decryption applies to these domains and to exempt them.",
+      title: tlsHsFail.length + " secure service" + (tlsHsFail.length === 1 ? "" : "s") + " failed the TLS handshake",
+      body: "The connection reached the server but the secure handshake was refused, and the reason isn't a blocked category or a substituted certificate (Pulse checks for both). A proxy that rewrites or downgrades TLS is the usual cause. If graphics or uploads are failing while video works, ask the venue's IT team what sits between this VPU and the internet on port 443, and have these domains exempted from it.",
       details: tlsHsFail.map(function(r) {
         var impact = TLS_DOMAIN_IMPACT[r.domain] || "";
         return r.domain + (r.detail ? " — " + r.detail : "") + (impact ? " — " + impact : "");
@@ -4371,22 +4412,34 @@ function renderNetwork() {
     <!-- Advanced Diagnostics (collapsed by default) -->
     <div id="net-adv-section" class="net-adv-section net-adv-collapsed">
 
-      <!-- Secure Connections — SSL-inspection check. A cert issued by anything
-           other than a trusted public CA means the firewall is decrypting the
-           connection (video streams, graphics die — the Kent SD signature). -->
+      <!-- Secure Connections — the two ways a venue middlebox kills HTTPS:
+           a cert issued by anything other than a trusted public CA means the
+           firewall is DECRYPTING the connection (Kent SD signature), while a
+           handshake reset means a content filter has the domain on a BLOCKED
+           CATEGORY list (Linewize signature). Different fixes — the card has
+           to say which one, or IT checks the wrong console. -->
       <div class="card">
-        ${sectionTitle("shield", "Secure Connections (SSL Inspection Check)")}
-        <p class="text-pulse-muted text-xs mb-3">Who really signed each service's HTTPS certificate. "Intercepted" means the venue firewall is decrypting the connection and substituting its own certificate — those services can't connect even though port tests pass. Fix: the venue IT team must exempt the domain from SSL decryption (bypass list), not just allowlist the URL.</p>
+        ${sectionTitle("shield", "Secure Connections (Filtering & SSL Inspection)")}
+        <p class="text-pulse-muted text-xs mb-3">What happens when the VPU opens each service's HTTPS connection. Port tests pass in both failure cases below, which is why they need their own check.<br>
+        <strong>Blocked by filter</strong> — the connection is reset as soon as the VPU names the site: a content filter has the domain on a blocked category list. Fix: venue IT allows the domain in the web filter's category/URL policy (an SSL bypass will not do it).<br>
+        <strong>Intercepted</strong> — the firewall substituted its own certificate and is decrypting the traffic. Fix: venue IT exempts the domain from SSL decryption (bypass list), not just an allowlist entry.<br>
+        Either way, use a wildcard <em>and</em> the bare domain (e.g. *.singular.live AND singular.live).</p>
         ${(tls && tls.results && tls.results.length) ? `
           <table class="data-table"><thead><tr>
-            <th>Service</th><th>Certificate issued by</th><th>Status</th>
+            <th>Service</th><th>Certificate issued by / why it failed</th><th>Status</th>
           </tr></thead><tbody>
           ${tls.results.map(function(r) {
             var st = (r.status || "").toLowerCase();
-            var bad = st === "intercepted" || st === "blocked";
-            var issuerLabel = r.issuerCn
-              ? r.issuerCn + (r.issuerOrg && r.issuerOrg !== r.issuerCn ? " — " + r.issuerOrg : "")
-              : (st === "pass" ? "—" : (r.detail || "—"));
+            var bad = st === "intercepted" || st === "blocked" || st === "filtered";
+            // A filtered host never presents a certificate, so the cert column
+            // carries the more useful fact instead: who blocked it.
+            var issuerLabel = st === "filtered"
+              ? (r.filterVendor
+                  ? "Blocked by " + r.filterVendor + (r.blockPageHost ? " (" + r.blockPageHost + ")" : "")
+                  : "No certificate — connection reset before the handshake finished")
+              : (r.issuerCn
+                  ? r.issuerCn + (r.issuerOrg && r.issuerOrg !== r.issuerCn ? " — " + r.issuerOrg : "")
+                  : (st === "pass" ? "—" : (r.detail || "—")));
             return `<tr>
               <td><div class="font-semibold">${esc(r.domain)}</div><div class="text-xs text-pulse-muted">${esc(r.purpose || "")}</div></td>
               <td class="text-xs${bad ? " status-fail" : ""}" title="${esc(r.issuer || "")}">${esc(issuerLabel)}</td>
