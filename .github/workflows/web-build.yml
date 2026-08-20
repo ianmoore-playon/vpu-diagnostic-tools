@@ -71,10 +71,59 @@ jobs:
           # never fails on a missing-notes file.
           awk '/^## /{s++; if(s==1) next; if(s==2) exit} s>=1{print}' \
             Pulse.Web/CHANGELOG.md > CHANGELOG_BODY.md 2>/dev/null || true
-          if [ ! -s CHANGELOG_BODY.md ]; then
+          # Whitespace-only counts as empty: an unpopulated changelog section
+          # yields a single blank line, which `test -s` reads as non-empty and
+          # would ship notes that are literally blank.
+          if ! grep -q '[^[:space:]]' CHANGELOG_BODY.md 2>/dev/null; then
             echo "- Maintenance and internal improvements." > CHANGELOG_BODY.md
           fi
+          # Drop leading blank lines so the notes start at the first heading.
+          sed -i '/./,$!d' CHANGELOG_BODY.md
           echo "Release-notes body:"; cat CHANGELOG_BODY.md
+
+      - name: Assemble release body
+        run: |
+          # The extracted notes used to be logged here and then dropped: every
+          # publish step hard-coded its own boilerplate as `body:`, so no
+          # release on any channel ever carried its changelog, and the in-app
+          # "Check for Update" showed install instructions instead of what
+          # changed. Assemble notes + per-channel boilerplate once and hand it
+          # to all three publish steps via body_path, so release notes keep
+          # tracking the changelog with no hand-edited bodies.
+          {
+            # ##*-v not #web-*v: the latter matches "web-dev" (it ends in a
+            # v) and leaves "-v1.4.0-dev-abc1234" as the version.
+            echo "## What's new in ${RELEASE_TAG##*-v}"
+            echo
+            cat CHANGELOG_BODY.md
+          } > RELEASE_BODY.md
+          case "$RELEASE_TAG" in
+            web-beta-v*)
+              printf '%s\n' \
+                '' \
+                'Pulse.Web beta build - not yet promoted to main.' '' \
+                'Install on a VPU (beta channel): drop a launcher on the desktop and double-click - it auto-updates from here every launch.' '' \
+                '- **`Pulse-Beta.bat`** - recommended for testers. Download once; it always pulls the current launcher, so launcher fixes land automatically (no re-downloading the launcher each update).' \
+                '- `run_pulse_beta.bat` - the underlying launcher (pinned to this build'"'"'s assets).' \
+                >> RELEASE_BODY.md
+              ;;
+            web-dev-v*)
+              printf '%s\n' \
+                '' \
+                'Pulse.Web dev build - internal testing only.' '' \
+                'Note: the `run_pulse_dev.bat` launcher tracks the latest `dev`-branch commit directly, so dev users normally do not install from this tag. This release exists so the in-app "Check for Update" has something to compare against on dev-channel installs.' \
+                >> RELEASE_BODY.md
+              ;;
+            *)
+              printf '%s\n' \
+                '' \
+                'Public release published on this repo. Field VPUs install via `run_pulse.bat`, which auto-updates from here every launch.' '' \
+                'Install on a VPU:' \
+                '- Drop `run_pulse.bat` on the desktop and double-click - auto-updates every launch.' \
+                >> RELEASE_BODY.md
+              ;;
+          esac
+          echo "Assembled release body:"; cat RELEASE_BODY.md
 
       - name: Upload as workflow artifact
         uses: actions/upload-artifact@v4
@@ -120,15 +169,7 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           prerelease: false
-          body: |
-            Pulse.Web release.
-
-            Public release published on this repo. Field VPUs install via
-            `run_pulse.bat`, which auto-updates from here every launch.
-
-            Install on a VPU:
-            - Drop `run_pulse.bat` on the desktop and double-click — auto-updates every launch.
-
+          body_path: RELEASE_BODY.md
       # ── Beta pre-release (beta channel, web-beta-v* tags) ──────────────
       - name: Publish beta pre-release (source repo)
         if: startsWith(env.RELEASE_TAG, 'web-beta-v')
@@ -141,18 +182,7 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           prerelease: true
-          body: |
-            Pulse.Web beta build — not yet promoted to main.
-
-            Install on a VPU (beta channel): drop a launcher on the desktop and
-            double-click — it auto-updates from here every launch.
-
-            - **`Pulse-Beta.bat`** — recommended for testers. Download once; it
-              always pulls the current launcher, so launcher fixes land
-              automatically (no re-downloading the launcher each update).
-            - `run_pulse_beta.bat` — the underlying launcher (pinned to this
-              build's assets).
-
+          body_path: RELEASE_BODY.md
       # ── Dev pre-release (dev channel, web-dev-v* tags) ─────────────────
       - name: Publish dev pre-release (source repo)
         if: startsWith(env.RELEASE_TAG, 'web-dev-v')
@@ -164,10 +194,4 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           prerelease: true
-          body: |
-            Pulse.Web dev build — internal testing only.
-
-            Note: the `run_pulse_dev.bat` launcher tracks the latest `dev`-branch
-            commit directly, so dev users normally don't install from this tag.
-            This release exists so the in-app "Check for Update" has something
-            to compare against on dev-channel installs.
+          body_path: RELEASE_BODY.md
