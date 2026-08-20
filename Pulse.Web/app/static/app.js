@@ -2418,16 +2418,28 @@ function _suChannelSentence(chan) {
   // The mechanism sentence, shared by the banner and the attestation. Reads as
   // "likely cause", never proof: we can see the channel is blocked today, not
   // when the venue turned the filter on.
+  //
+  // Precision matters here. At Rochelle TX only pixellot.tv (management) was
+  // intercepted while software.pixellot.tv (the dedicated update host) passed,
+  // so a blanket "the update channel is blocked" would have overstated the
+  // measurement in a document going to a school district.
   if (!chan.blocked) return null;
   const hosts = (chan.rows || []).map((r) => r.domain).join(", ");
   const who = _suChannelWho(chan);
   const how = (chan.rows || []).some((r) => r.status === "intercepted")
     ? "is intercepting" : "is blocking";
+  const what = chan.softwareHostBlocked
+    ? " — the host Pixellot delivers software and firmware updates over."
+      + " That is the likely reason patches have stopped arriving, and it can only"
+      + " be fixed on the venue's network."
+    : " — the host Pixellot manages this VPU over. Note that the dedicated"
+      + " software-update host was reachable in this test, so this is not a total"
+      + " block: it cuts the management channel that schedules and drives"
+      + " patching rather than the download itself. Pixellot should confirm which"
+      + " host their OS-patch tooling pulls from. Either way it can only be fixed"
+      + " on the venue's network.";
   return "This venue's network " + how + " " + hosts
-    + (who ? ", attributed to " + who + "," : "")
-    + " — the channel Pixellot manages this VPU and delivers software updates over."
-    + " That is the likely reason patches have stopped arriving, and it can only be"
-    + " fixed on the venue's network.";
+    + (who ? ", attributed to " + who + "," : "") + what;
 }
 
 // The fix ask. A domain allowlist is the usual advice, but it does NOT clear a
@@ -2565,11 +2577,32 @@ function _suAttestationText(d) {
     L.push("LIKELY CAUSE");
     L.push("  This venue's network is " + ((chan.rows || []).some((r) => r.status === "intercepted")
       ? "intercepting" : "blocking") + " " + hosts + ",");
-    if (who) L.push("  attributed to " + who + ",");
-    L.push("  which is the channel Pixellot manages this VPU and delivers software");
-    L.push("  updates over. That is the likely reason patches stopped arriving here,");
-    L.push("  and it can only be fixed on the venue's network.");
+    if (who) L.push("  attributed to " + who + ".");
+    if (chan.softwareHostBlocked) {
+      L.push("  That is the host Pixellot delivers software and firmware updates");
+      L.push("  over, and the likely reason patches stopped arriving here. It can");
+      L.push("  only be fixed on the venue's network.");
+    } else {
+      // Measured at Rochelle TX: management intercepted, the dedicated update
+      // host reachable. Saying "the update channel is blocked" here would
+      // overstate the measurement in a document a district will scrutinise.
+      L.push("  That is the host Pixellot manages this VPU over. The dedicated");
+      L.push("  software-update host was reachable in this test, so this is not a");
+      L.push("  total block - it cuts the management channel that schedules and");
+      L.push("  drives patching rather than the download itself. Pixellot should");
+      L.push("  confirm which host their OS-patch tooling pulls from. Either way,");
+      L.push("  the block can only be fixed on the venue's network.");
+    }
     L.push("");
+    if ((chan.hosts || []).length) {
+      L.push("  Pixellot channel hosts tested from this VPU:");
+      chan.hosts.forEach((h) => {
+        L.push("    " + (h.domain + "                        ").slice(0, 24)
+          + (h.role === "software-updates" ? "software/firmware updates" : "management")
+          + "  ->  " + (h.status === "pass" ? "reachable" : h.status));
+      });
+      L.push("");
+    }
     SU_CHANNEL_FIX.forEach((line) => L.push("  " + line));
     L.push("");
     L.push("  (Pulse can see the channel is blocked now, not when the filter was");
@@ -2763,7 +2796,7 @@ function renderSoftwareUpdates() {
     <div class="dash-info-banner" style="margin-top:0;margin-bottom:1rem">
       <span class="dash-banner-icon">${svgIcon("link", 18)}</span>
       <div>
-        <div class="text-sm font-semibold mb-1">Likely cause: the venue is blocking Pixellot's update channel</div>
+        <div class="text-sm font-semibold mb-1">Likely cause: the venue is blocking ${chan.softwareHostBlocked ? "Pixellot's update channel" : "Pixellot's management channel"}</div>
         <p class="text-sm text-pulse-muted mb-0">${esc(_suChannelSentence(chan))}</p>
         <p class="text-sm text-pulse-muted mt-2 mb-0"><strong>A domain allowlist alone may not be enough.</strong>
           If the filter demands a per-user sign-in (captive portal or directory-based filtering), this VPU can

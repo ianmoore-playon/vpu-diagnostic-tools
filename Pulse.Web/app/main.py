@@ -4199,9 +4199,20 @@ async def api_events(
     return await run_ps("Get-EventLogs.ps1", {"HoursBack": hours, "Level": level})
 
 
-# Hosts that carry Pixellot's own management + software/firmware updates. Keep
-# in sync with TLS_DOMAIN_IMPACT in app.js and Test-TlsInspection.ps1.
-_UPDATE_CHANNEL_HOSTS = ("pixellot.tv", "software.pixellot.tv")
+# Hosts that carry Pixellot's own management + software/firmware updates, and
+# which ROLE each plays. Keep in sync with TLS_DOMAIN_IMPACT in app.js and the
+# domain list in Test-TlsInspection.ps1.
+#
+# The roles matter: Test-TlsInspection checks these two separately, and at
+# Rochelle TX only `pixellot.tv` (management) came back intercepted while
+# `software.pixellot.tv` (the dedicated update host) passed. Claiming "the
+# update channel is blocked" off the management host alone overstates it -- and
+# we do NOT know which host Pixellot's OS-patch tooling actually pulls from, so
+# the wording has to stay precise about what was measured.
+_UPDATE_CHANNEL_HOSTS = {
+    "pixellot.tv": "management",
+    "software.pixellot.tv": "software-updates",
+}
 
 
 def _update_channel_status(tls) -> dict:
@@ -4219,29 +4230,39 @@ def _update_channel_status(tls) -> dict:
     enabled, so the UI says "likely cause" and leaves the timeline open.
     """
     if not isinstance(tls, dict) or tls.get("error"):
-        return {"checked": False, "blocked": False, "rows": []}
-    rows = []
+        return {"checked": False, "blocked": False, "rows": [], "hosts": []}
+    hosts, rows = [], []
     for r in tls.get("results") or []:
-        if (r.get("domain") or "").lower() not in _UPDATE_CHANNEL_HOSTS:
+        role = _UPDATE_CHANNEL_HOSTS.get((r.get("domain") or "").lower())
+        if not role:
             continue
         status = (r.get("status") or "").lower()
-        if status not in ("intercepted", "filtered"):
-            continue
-        rows.append({
+        entry = {
             "domain": r.get("domain"),
+            "role": role,
             "status": status,
             "purpose": r.get("purpose"),
             "filterVendor": r.get("filterVendor"),
             "issuerOrg": r.get("issuerOrg"),
             "issuerCn": r.get("issuerCn"),
             "blockPageUrl": r.get("blockPageUrl"),
-        })
+        }
+        # Every checked channel host is reported, passing ones included, so the
+        # UI can say which half of the channel is actually cut.
+        hosts.append(entry)
+        if status in ("intercepted", "filtered"):
+            rows.append(entry)
     who = [v for v in (tls.get("filterVendors") or []) if v] or \
           [i for i in (tls.get("interceptorIssuers") or []) if i]
     return {
         "checked": True,
         "blocked": bool(rows),
         "rows": rows,
+        "hosts": hosts,
+        # Was the DEDICATED software-update host hit, or only management?
+        "softwareHostBlocked": any(r["role"] == "software-updates" for r in rows),
+        "softwareHostChecked": any(h["role"] == "software-updates" for h in hosts),
+        "managementOnly": bool(rows) and all(r["role"] == "management" for r in rows),
         "attributedTo": who,
     }
 
