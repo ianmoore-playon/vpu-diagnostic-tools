@@ -459,10 +459,179 @@ def _demo_poe_power():
     }
 
 
+def _demo_patch_compliance():
+    """Synthetic patch/update evidence for the Software Updates lane.
+
+    Models the fleet's real configuration: a WU-disabled LTSC 2019 VPU that
+    Pixellot patches offline, so Get-HotFix and the Setup servicing log carry
+    the evidence while the Windows Update UI shows nothing. Driver packages
+    are counted as excluded, never listed.
+    """
+    now = datetime.now()
+
+    def _iso(days_ago, hour=3, minute=14):
+        d = now - timedelta(days=days_ago)
+        return d.replace(hour=hour, minute=minute, second=0, microsecond=0).isoformat()
+
+    # (kb, kind, days_ago, installedBy, source) — the monthly cumulative /
+    # servicing-stack / .NET train an offline-patched VPU accumulates.
+    _rows = [
+        ("KB5062560", "Security Update", 24,  "VPU\\Pixellot",        "QFE inventory + Setup log"),
+        ("KB5062561", "Update",          24,  "VPU\\Pixellot",        "QFE inventory + Setup log"),
+        ("KB5063593", "Security Update", 25,  "VPU\\Pixellot",        "QFE inventory + Setup log"),
+        ("KB5061010", "Security Update", 55,  "VPU\\Pixellot",        "QFE inventory + Setup log"),
+        ("KB5058392", "Security Update", 86,  "VPU\\Pixellot",        "QFE inventory + Setup log"),
+        ("KB5055519", "Security Update", 117, "NT AUTHORITY\\SYSTEM", "QFE inventory + Setup log"),
+        ("KB5056579", "Update",          117, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
+        ("KB5057056", "Security Update", 118, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
+        ("KB5053596", "Security Update", 148, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
+        ("KB5052000", "Update",          179, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
+        ("KB5049981", "Security Update", 210, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
+        ("KB5046612", "Security Update", 241, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
+        ("KB4589208", "Update",          572, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
+        ("KB4535680", "Security Update", 588, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
+    ]
+    items = []
+    for kb, kind, days, by, source in _rows:
+        title = {
+            "Security Update": f"Security Update for Microsoft Windows ({kb})",
+            "Update": f"Update for Microsoft Windows ({kb})",
+        }.get(kind, kind)
+        items.append({
+            "kb": kb,
+            "title": title,
+            "kind": kind,
+            "installedOn": _iso(days),
+            "installedBy": by,
+            "source": source,
+            "package": (f"Package_for_RollupFix~31bf3856ad364e35~amd64~~17763.7434.1.5"
+                        if source.endswith("Setup log") else None),
+        })
+    # One unnamed servicing package — a real Setup log always has a few.
+    items.append({
+        "kb": None,
+        "title": "Package_for_ServicingStack_7434~31bf3856ad364e35~amd64~~17763.7434.1.0",
+        "kind": "Servicing package",
+        "installedOn": _iso(24, hour=3, minute=8),
+        "installedBy": None,
+        "source": "Setup log (servicing)",
+        "package": "Package_for_ServicingStack_7434~31bf3856ad364e35~amd64~~17763.7434.1.0",
+    })
+    items.sort(key=lambda r: r["installedOn"], reverse=True)
+
+    sig_ver = "1.417.842.0"
+    sig_applied = (now - timedelta(days=2, hours=6)).replace(microsecond=0).isoformat()
+
+    # Dated definition history, newest first — the list a school's IT asks for.
+    _defs = [
+        (sig_ver,       "1.417.791.0", 2,  "applied"),
+        ("1.417.791.0", "1.417.744.0", 3,  "applied"),
+        ("1.417.744.0", "1.417.702.0", 4,  "applied"),
+        ("1.417.702.0", "1.417.655.0", 6,  "failed"),
+        ("1.417.702.0", "1.417.655.0", 6,  "applied"),
+        ("1.417.655.0", "1.417.601.0", 8,  "applied"),
+        ("1.417.601.0", "1.417.550.0", 10, "applied"),
+        ("1.417.550.0", "1.417.498.0", 12, "applied"),
+    ]
+    history = []
+    for cur, prev, days, outcome in _defs:
+        history.append({
+            "appliedOn": (now - timedelta(days=days, hours=6)).replace(microsecond=0).isoformat(),
+            "eventId": 2001 if outcome == "failed" else 2000,
+            "outcome": outcome,
+            "signatureType": "AntiVirus",
+            "version": cur,
+            "previousVersion": prev,
+            "updateType": "Scheduled",
+            "engineVersion": "1.1.25060.5",
+        })
+    history.append({
+        "appliedOn": (now - timedelta(days=13, hours=2)).replace(microsecond=0).isoformat(),
+        "eventId": 2002, "outcome": "engine-updated", "signatureType": None,
+        "version": None, "previousVersion": None, "updateType": None,
+        "engineVersion": "1.1.25060.5",
+    })
+
+    return {
+        "collectedAt": now.isoformat(),
+        "elevated": True,
+        "os": {
+            "productName": "Windows 10 IoT Enterprise LTSC 2019",
+            "edition": "IoTEnterpriseS",
+            "featureRelease": "1809",
+            "build": "17763",
+            "ubr": 7434,
+            "fullBuild": "10.0.17763.7434",
+            "imageInstalled": "2024-01-15T08:00:00-05:00",
+        },
+        "delivery": {
+            "mode": "offline",
+            "explanation": (
+                "Automatic Windows Update is disabled on this VPU. Pixellot applies "
+                "patches offline (wusa/DISM), which is why the Windows Update UI shows "
+                "no history. The evidence below comes from the servicing stack, which "
+                "records every install regardless of delivery method."
+            ),
+            "services": [
+                {"name": "wuauserv", "status": "Stopped", "startType": "Disabled"},
+                {"name": "UsoSvc", "status": "Stopped", "startType": "Manual"},
+                {"name": "TrustedInstaller", "status": "Stopped", "startType": "Manual"},
+                {"name": "WinDefend", "status": "Running", "startType": "Automatic"},
+            ],
+            "wsusServer": None,
+            "wsusTargetGroup": None,
+            "noAutoUpdate": 1,
+            "useWuServer": None,
+            "auOptions": 1,
+            "agentResults": [
+                {"phase": "Detect", "lastSuccessUtc": "2024-02-02 11:04:18"},
+                {"phase": "Download", "lastSuccessUtc": None},
+                {"phase": "Install", "lastSuccessUtc": None},
+            ],
+        },
+        "defender": {
+            "status": "current",
+            "present": True,
+            "serviceStatus": "Running",
+            "serviceStartType": "Automatic",
+            "engineVersion": "1.1.25060.5",
+            "platformVersion": "4.18.25050.5",
+            "lastUpdated": sig_applied,
+            "lastUpdatedAgeDays": 2,
+            "realTimeProtection": True,
+            "definitions": [
+                {"type": "AV", "label": "Antivirus", "version": sig_ver,
+                 "appliedOn": sig_applied, "ageDays": 2},
+                {"type": "AS", "label": "Antispyware", "version": sig_ver,
+                 "appliedOn": sig_applied, "ageDays": 2},
+                {"type": "NIS", "label": "Network Inspection", "version": "1.417.842.0",
+                 "appliedOn": (now - timedelta(days=2, hours=6)).replace(microsecond=0).isoformat(),
+                 "ageDays": 2},
+            ],
+            "history": history,
+            "historyNote": None,
+        },
+        "updates": {
+            "count": len(items),
+            "returned": len(items),
+            "securityCount": len([i for i in items if "Security" in (i["kind"] or "")]),
+            "driversExcluded": 7,
+            "lastInstalledOn": items[0]["installedOn"],
+            "lastInstalledAgeDays": 24,
+            "servicingNote": None,
+            "items": items,
+        },
+        "pendingReboot": {"isPending": False, "reasons": []},
+    }
+
+
 DEMO = {
     "Get-SystemIdentity.ps1": lambda **kw: {
         "computerSystem": {"name": _VENUE["hostname"], "manufacturer": "HP", "model": "HP Z2 Tower G9 Workstation Desktop PC"},
-        "bios": {"serialNumber": _VENUE["serial"]},
+        # smbiosVersion/releaseDate feed the Software Updates lane's firmware
+        # card (the BIOS half of the patch-evidence attestation).
+        "bios": {"serialNumber": _VENUE["serial"], "smbiosVersion": "U30 Ver. 02.14.01",
+                 "releaseDate": "2024-09-10T00:00:00.0000000-04:00"},
         "uptime": {"formatted": _fmt_uptime(_uptime_secs()), "totalSeconds": _uptime_secs()},
         # LTSC 2019 (1809, build 17763) — EOS Jan 2029, well clear of the EOL
         # warning window so the demo dashboard stays clean. (Older LTSC build
@@ -838,6 +1007,7 @@ DEMO = {
             {"timeCreated": (datetime.now() - timedelta(hours=24)).isoformat(), "level": "Error", "source": "PixellotEncoder", "eventId": 2001, "message": "Hardware encoder init failed — falling back to software encoding"},
         ]
     },
+    "Get-PatchCompliance.ps1": lambda **kw: _demo_patch_compliance(),
     "Get-RebootHistory.ps1": lambda **kw: {
         "pending": {
             "isPending": True,

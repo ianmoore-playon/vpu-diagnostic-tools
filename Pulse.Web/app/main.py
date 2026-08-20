@@ -4199,6 +4199,60 @@ async def api_events(
     return await run_ps("Get-EventLogs.ps1", {"HoursBack": hours, "Level": level})
 
 
+@app.get("/api/software-updates")
+async def api_software_updates():
+    """Software Updates lane: what has been patched on this VPU, and when.
+
+    Exists because Pixellot owns patching on the fleet and applies updates
+    selectively/offline, so the Windows Update UI looks empty or years stale
+    and cannot be used as evidence either way. Schools' IT departments ask for
+    proof that CVE patches landed; this endpoint assembles it from four
+    independent sources:
+
+      * Get-PatchCompliance.ps1 -- OS build/UBR (the real patch level),
+        WU delivery path, Defender definitions with applied dates, and the
+        installed-update timeline (drivers excluded by design).
+      * Get-SystemIdentity.ps1 (already cached, also feeds /api/system) --
+        BIOS/firmware version + release date and the Pixellot software
+        version, so the whole software-stack attestation is one payload.
+
+    No dashboard finding is threaded off this lane on purpose: the collector
+    reads two event logs, and the dashboard fan-out is already 16 collectors
+    wide. Pending-reboot -- the one actionable signal here -- is already
+    surfaced by Get-RebootHistory on the Power Events lane.
+    """
+    patch, identity = await asyncio.gather(
+        run_ps("Get-PatchCompliance.ps1", timeout=60),
+        run_ps("Get-SystemIdentity.ps1"),
+    )
+    if not isinstance(patch, dict) or patch.get("error"):
+        return patch
+    ident = identity if isinstance(identity, dict) and not identity.get("error") else {}
+    bios = ident.get("bios") or {}
+    cs = ident.get("computerSystem") or {}
+    os_block = ident.get("operatingSystem") or {}
+    pix = ident.get("pixellot") or {}
+    patch["bios"] = {
+        "version": bios.get("smbiosVersion"),
+        "releaseDate": bios.get("releaseDate"),
+        "serialNumber": bios.get("serialNumber"),
+        "manufacturer": cs.get("manufacturer"),
+        "model": cs.get("model"),
+    }
+    patch["pixellot"] = {
+        "version": pix.get("version"),
+        "imageVersion": pix.get("imageVersion"),
+        "vpuName": pix.get("vpuName"),
+        "venueId": pix.get("venueId"),
+    }
+    patch["host"] = {
+        "hostname": cs.get("name"),
+        "osCaption": os_block.get("caption"),
+        "osVersion": os_block.get("version"),
+    }
+    return patch
+
+
 @app.get("/api/reboots")
 async def api_reboots(hours: int = Query(default=168)):
     """Reboot/shutdown history with cause + a pending-reboot indicator.
@@ -4852,6 +4906,7 @@ async def build_report() -> dict:
         ("pixellotInstallState", run_ps("Test-PixellotInstallState.ps1", timeout=15)),
         ("pixellotDependencies", run_ps("Get-PixellotDependencies.ps1", timeout=15)),
         ("installedSoftware",    run_ps("Get-InstalledSoftware.ps1")),
+        ("patchCompliance",      run_ps("Get-PatchCompliance.ps1", timeout=60)),
         ("gpuInfo",              run_ps("Get-GpuInfo.ps1", timeout=15)),
         ("wifi",                 run_ps("Get-WifiAdapters.ps1", timeout=10)),
         ("audio",                run_ps("Get-AudioDevices.ps1", timeout=15)),
