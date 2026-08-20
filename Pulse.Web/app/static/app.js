@@ -2732,9 +2732,15 @@ function _suAttestationText(d) {
   L.push("");
   L.push("All timestamps and ages are measured against this unit's own clock.");
   L.push("");
-  L.push("Sources: Windows registry (CurrentVersion, Defender Signature Updates),");
-  L.push("Get-HotFix / Win32_QuickFixEngineering, Setup event log (Microsoft-Windows-");
-  L.push("Servicing id 2), Microsoft Defender Operational log (ids 2000/2001/2002).");
+  // This is an evidence document: the sources line must cover everything the
+  // report cites, or a reviewer can fault the one omission.
+  L.push("Sources: Windows registry (CurrentVersion; Defender Signature Updates and");
+  L.push("policy keys; .NET Framework Setup Release), Get-HotFix /");
+  L.push("Win32_QuickFixEngineering, Setup event log (Microsoft-Windows-Servicing");
+  L.push("ids 2 and 3), System event log (WindowsUpdateClient id 20), Microsoft");
+  L.push("Defender Operational log (ids 2000/2001/2002), Windows Security Center");
+  L.push("(root/SecurityCenter2 AntiVirusProduct), Windows Firewall profiles, and");
+  L.push("live TLS handshakes to the Pixellot service hosts.");
   return L.join("\n");
 }
 
