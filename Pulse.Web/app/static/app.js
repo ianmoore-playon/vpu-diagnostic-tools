@@ -2402,6 +2402,15 @@ function _suAgeLabel(days) {
   return days + (days === 1 ? " day old" : " days old");
 }
 
+function _suDefInactive(def) {
+  // WinDefend is Stopped/Manual on the fleet image (measured on VPU2), which
+  // makes every signature age meaningless: the registry keeps the versions
+  // baked into the image, so an untouched box reports definitions thousands
+  // of days old. Treat that as "not the security control here", never as a
+  // patching failure.
+  return def.status === "disabled" || def.status === "absent";
+}
+
 function _suDefStatusChip(def) {
   const map = {
     current:  ["ok",    "Current"],
@@ -2475,9 +2484,22 @@ function _suAttestationText(d) {
   pad("Image version", pix.imageVersion);
   L.push("");
   L.push("MICROSOFT DEFENDER SECURITY DEFINITIONS");
-  pad("Status", (def.status || "unknown").toUpperCase()
-        + (def.lastUpdatedAgeDays != null ? " (" + _suAgeLabel(def.lastUpdatedAgeDays) + ")" : ""));
-  pad("Service", (def.serviceStatus || "unknown") + (def.serviceStartType ? " / " + def.serviceStartType : ""));
+  const defOff = _suDefInactive(def);
+  if (defOff) {
+    // Never let the pasted document imply a lapsed AV update: on the fleet
+    // image Defender is switched off, so its signature versions are frozen at
+    // image build and the OS servicing record above is the actual control.
+    pad("Status", "NOT ACTIVE - Microsoft Defender is disabled on this VPU image");
+    pad("Service", (def.serviceStatus || "unknown") + (def.serviceStartType ? " / " + def.serviceStartType : ""));
+    L.push("       Defender is not the security control on this unit. The versions");
+    L.push("       below are whatever the image shipped with, frozen at deployment -");
+    L.push("       they are NOT a lapsed definition update. Operating-system");
+    L.push("       security patching (above) is the control that applies here.");
+  } else {
+    pad("Status", (def.status || "unknown").toUpperCase()
+          + (def.lastUpdatedAgeDays != null ? " (" + _suAgeLabel(def.lastUpdatedAgeDays) + ")" : ""));
+    pad("Service", (def.serviceStatus || "unknown") + (def.serviceStartType ? " / " + def.serviceStartType : ""));
+  }
   pad("Engine", def.engineVersion);
   pad("Platform", def.platformVersion);
   (def.definitions || []).forEach((s) => {
@@ -2486,9 +2508,14 @@ function _suAttestationText(d) {
   const hist = (def.history || []).slice(0, 15);
   if (hist.length) {
     L.push("");
-    L.push("  Definition update history (most recent " + hist.length + "):");
+    L.push("  Definition update history (most recent " + hist.length + " of " + (def.history || []).length + "):");
     hist.forEach((h) => {
-      L.push("    " + _suStamp(h.appliedOn) + "  " + (h.version || "engine " + (h.engineVersion || "?"))
+      // A failed 2001 event carries no new version at all — "engine ?" read
+      // like a parse bug in a document a district's IT is going to scrutinise.
+      const what = h.version ? h.version
+        : h.engineVersion ? "engine " + h.engineVersion
+        : "no new version applied";
+      L.push("    " + _suStamp(h.appliedOn) + "  " + what
         + (h.previousVersion ? "  (was " + h.previousVersion + ")" : "")
         + "  " + (h.outcome || ""));
     });
@@ -2570,9 +2597,11 @@ function renderSoftwareUpdates() {
         <span class="su-stat-sub">${esc(os.featureRelease ? "Release " + os.featureRelease : "")}</span>
       </div>
       <div class="su-stat">
-        <span class="su-stat-val">${esc((def.definitions || [])[0]?.version || "—")}</span>
+        <span class="su-stat-val">${esc(_suDefInactive(def) ? "Disabled" : ((def.definitions || [])[0]?.version || "—"))}</span>
         <span class="su-stat-label">Defender Definitions</span>
-        <span class="su-stat-sub">${def.lastUpdatedAgeDays != null ? esc(_suAgeLabel(def.lastUpdatedAgeDays)) : esc(def.status || "unknown")}</span>
+        <span class="su-stat-sub">${_suDefInactive(def)
+          ? "not active on this image"
+          : def.lastUpdatedAgeDays != null ? esc(_suAgeLabel(def.lastUpdatedAgeDays)) : esc(def.status || "unknown")}</span>
       </div>
       <div class="su-stat">
         <span class="su-stat-val">${esc(String(up.count == null ? "—" : up.count))}</span>
@@ -2606,9 +2635,14 @@ function renderSoftwareUpdates() {
       <div class="flex items-center gap-2 mb-3">
         ${_suDefStatusChip(def)}
         <span class="text-sm text-pulse-muted">
-          ${def.lastUpdated
-            ? "Definitions last applied " + esc(_suStamp(def.lastUpdated)) + " (" + esc(_suAgeLabel(def.lastUpdatedAgeDays)) + ")."
-            : "No definition timestamp recorded on this host."}
+          ${_suDefInactive(def)
+            ? "Microsoft Defender is not running on this VPU image, so it is not the security control here. "
+              + "The versions below are frozen at whatever the image shipped with"
+              + (def.lastUpdated ? " (" + esc(_suStamp(def.lastUpdated, true)) + ")" : "")
+              + " — they are not a lapsed update."
+            : def.lastUpdated
+              ? "Definitions last applied " + esc(_suStamp(def.lastUpdated)) + " (" + esc(_suAgeLabel(def.lastUpdatedAgeDays)) + ")."
+              : "No definition timestamp recorded on this host."}
         </span>
       </div>
       <div class="dash-2col">
@@ -2636,7 +2670,7 @@ function renderSoftwareUpdates() {
 
       ${(def.history || []).length ? `
         <details class="mt-4">
-          <summary class="text-sm text-pulse-muted cursor-pointer">Definition update history (${(def.history || []).length} entries, newest first)</summary>
+          <summary class="text-sm text-pulse-muted cursor-pointer">Definition update history (${(def.history || []).length} entries, newest first)${_suDefInactive(def) ? " — all pre-date Defender being switched off" : ""}</summary>
           <div class="su-table-wrap mt-2">
             <table class="data-table"><thead><tr>
               <th>Applied</th><th>Type</th><th>Version</th><th>Previous</th><th>Trigger</th><th>Result</th>
@@ -2675,7 +2709,7 @@ function renderSoftwareUpdates() {
               <td class="whitespace-nowrap">${esc(_suStamp(u.installedOn, true))}</td>
               <td>${_suKbCell(u.kb)}</td>
               <td>${esc(u.kind || "—")}</td>
-              <td class="text-xs su-title-cell" title="${esc(u.title || "")}">${esc(u.title || "—")}</td>
+              <td class="text-xs su-title-cell" title="${esc(u.title || "")}">${u.title ? esc(u.title) : '<span class="text-pulse-muted">—</span>'}</td>
               <td class="text-pulse-muted text-xs">${esc(u.installedBy || "—")}</td>
               <td class="text-pulse-muted text-xs whitespace-nowrap">${_suSourceCell(u.source)}</td>
             </tr>`).join("")}

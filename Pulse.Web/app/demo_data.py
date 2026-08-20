@@ -462,134 +462,75 @@ def _demo_poe_power():
 def _demo_patch_compliance():
     """Synthetic patch/update evidence for the Software Updates lane.
 
-    Models the fleet's real configuration: a WU-disabled LTSC 2019 VPU that
-    Pixellot patches offline, so Get-HotFix and the Setup servicing log carry
-    the evidence while the Windows Update UI shows nothing. Driver packages
-    are counted as excluded, never listed.
+    Shaped from a real VPU (VPU2, 2026-08-20) so demo mode doesn't paint a
+    prettier box than the fleet: Windows Update is policy-disabled, the WU
+    agent has never run, Get-HotFix Description is just the update class, and
+    servicing package identities are often nothing but the KB. Defender is
+    Stopped/Manual on the fleet image, which freezes its signature versions at
+    image build — so most demo venues render that state, and a minority render
+    an active-Defender box, keeping both UI paths exercised.
     """
     now = datetime.now()
+    # 2 of the 10 demo venues get an active Defender, so both UI branches show
+    # up across sessions (the venue is picked once at module load) while the
+    # fleet-real disabled state stays the common case.
+    defender_active = sum(ord(c) for c in _VENUE["hostname"]) % 4 == 1
 
     def _iso(days_ago, hour=3, minute=14):
         d = now - timedelta(days=days_ago)
         return d.replace(hour=hour, minute=minute, second=0, microsecond=0).isoformat()
 
-    # (kb, kind, days_ago, installedBy, source) — the monthly cumulative /
-    # servicing-stack / .NET train an offline-patched VPU accumulates.
+    def _day(days_ago):
+        d = now - timedelta(days=days_ago)
+        return d.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    # (kb, kind, days_ago, installedBy, source, title)
+    # QFE-only rows carry a date at midnight (Get-HotFix has date granularity);
+    # dual-sourced rows keep the Setup log's real timestamp.
     _rows = [
-        ("KB5062560", "Security Update", 24,  "VPU\\Pixellot",        "QFE inventory + Setup log"),
-        ("KB5062561", "Update",          24,  "VPU\\Pixellot",        "QFE inventory + Setup log"),
-        ("KB5063593", "Security Update", 25,  "VPU\\Pixellot",        "QFE inventory + Setup log"),
-        ("KB5061010", "Security Update", 55,  "VPU\\Pixellot",        "QFE inventory + Setup log"),
-        ("KB5058392", "Security Update", 86,  "VPU\\Pixellot",        "QFE inventory + Setup log"),
-        ("KB5055519", "Security Update", 117, "NT AUTHORITY\\SYSTEM", "QFE inventory + Setup log"),
-        ("KB5056579", "Update",          117, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
-        ("KB5057056", "Security Update", 118, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
-        ("KB5053596", "Security Update", 148, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
-        ("KB5052000", "Update",          179, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
-        ("KB5049981", "Security Update", 210, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
-        ("KB5046612", "Security Update", 241, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
-        ("KB4589208", "Update",          572, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
-        ("KB4535680", "Security Update", 588, "NT AUTHORITY\\SYSTEM", "QFE inventory"),
+        ("KB5094123", "Security Update",   38,  "NT AUTHORITY\\SYSTEM", "QFE inventory + Setup log", None),
+        ("KB5094143", "Security Update",   38,  "NT AUTHORITY\\SYSTEM", "QFE inventory + Setup log", None),
+        ("KB5087066", "Update",            38,  "NT AUTHORITY\\SYSTEM", "QFE inventory + Setup log", None),
+        ("KB5055175", "Servicing package", 111, None,                  "Setup log (servicing)",     None),
+        ("KB5055519", "Servicing package", 111, None,                  "Setup log (servicing)",     None),
+        ("KB5055662", "Security Update",   111, "NT AUTHORITY\\SYSTEM", "QFE inventory + Setup log", None),
+        (None,        "Servicing package", 111, None,                  "Setup log (servicing)",
+         "Package_for_ServicingStack_8880~31bf3856ad364e35~amd64~~17763.8880.1.0"),
+        ("KB5049615", "Servicing package", 216, None,                  "Setup log (servicing)",     None),
+        ("KB5050008", "Servicing package", 216, None,                  "Setup log (servicing)",     None),
+        ("KB5049981", "Security Update",   216, "NT AUTHORITY\\SYSTEM", "QFE inventory + Setup log", None),
+        ("KB5046612", "Security Update",   306, "NT AUTHORITY\\SYSTEM", "QFE inventory",             None),
+        ("KB5043064", "Update",            398, "NT AUTHORITY\\SYSTEM", "QFE inventory",             None),
+        ("KB4589208", "Update",            1972, "NT AUTHORITY\\SYSTEM", "QFE inventory",            None),
+        ("KB4535680", "Security Update",   2011, "NT AUTHORITY\\SYSTEM", "QFE inventory",            None),
     ]
     items = []
-    for kb, kind, days, by, source in _rows:
-        title = {
-            "Security Update": f"Security Update for Microsoft Windows ({kb})",
-            "Update": f"Update for Microsoft Windows ({kb})",
-        }.get(kind, kind)
+    for kb, kind, days, by, source, title in _rows:
         items.append({
             "kb": kb,
             "title": title,
             "kind": kind,
-            "installedOn": _iso(days),
+            "installedOn": _day(days) if source == "QFE inventory" else _iso(days),
             "installedBy": by,
             "source": source,
-            "package": (f"Package_for_RollupFix~31bf3856ad364e35~amd64~~17763.7434.1.5"
-                        if source.endswith("Setup log") else None),
+            "package": kb if "Setup log" in source else None,
         })
-    # One unnamed servicing package — a real Setup log always has a few.
-    items.append({
-        "kb": None,
-        "title": "Package_for_ServicingStack_7434~31bf3856ad364e35~amd64~~17763.7434.1.0",
-        "kind": "Servicing package",
-        "installedOn": _iso(24, hour=3, minute=8),
-        "installedBy": None,
-        "source": "Setup log (servicing)",
-        "package": "Package_for_ServicingStack_7434~31bf3856ad364e35~amd64~~17763.7434.1.0",
-    })
     items.sort(key=lambda r: r["installedOn"], reverse=True)
 
-    sig_ver = "1.417.842.0"
-    sig_applied = (now - timedelta(days=2, hours=6)).replace(microsecond=0).isoformat()
-
-    # Dated definition history, newest first — the list a school's IT asks for.
-    _defs = [
-        (sig_ver,       "1.417.791.0", 2,  "applied"),
-        ("1.417.791.0", "1.417.744.0", 3,  "applied"),
-        ("1.417.744.0", "1.417.702.0", 4,  "applied"),
-        ("1.417.702.0", "1.417.655.0", 6,  "failed"),
-        ("1.417.702.0", "1.417.655.0", 6,  "applied"),
-        ("1.417.655.0", "1.417.601.0", 8,  "applied"),
-        ("1.417.601.0", "1.417.550.0", 10, "applied"),
-        ("1.417.550.0", "1.417.498.0", 12, "applied"),
-    ]
-    history = []
-    for cur, prev, days, outcome in _defs:
-        history.append({
-            "appliedOn": (now - timedelta(days=days, hours=6)).replace(microsecond=0).isoformat(),
-            "eventId": 2001 if outcome == "failed" else 2000,
-            "outcome": outcome,
-            "signatureType": "AntiVirus",
-            "version": cur,
-            "previousVersion": prev,
-            "updateType": "Scheduled",
-            "engineVersion": "1.1.25060.5",
-        })
-    history.append({
-        "appliedOn": (now - timedelta(days=13, hours=2)).replace(microsecond=0).isoformat(),
-        "eventId": 2002, "outcome": "engine-updated", "signatureType": None,
-        "version": None, "previousVersion": None, "updateType": None,
-        "engineVersion": "1.1.25060.5",
-    })
-
-    return {
-        "collectedAt": now.isoformat(),
-        "elevated": True,
-        "os": {
-            "productName": "Windows 10 IoT Enterprise LTSC 2019",
-            "edition": "IoTEnterpriseS",
-            "featureRelease": "1809",
-            "build": "17763",
-            "ubr": 7434,
-            "fullBuild": "10.0.17763.7434",
-            "imageInstalled": "2024-01-15T08:00:00-05:00",
-        },
-        "delivery": {
-            "mode": "offline",
-            "explanation": (
-                "Automatic Windows Update is disabled on this VPU. Pixellot applies "
-                "patches offline (wusa/DISM), which is why the Windows Update UI shows "
-                "no history. The evidence below comes from the servicing stack, which "
-                "records every install regardless of delivery method."
-            ),
-            "services": [
-                {"name": "wuauserv", "status": "Stopped", "startType": "Disabled"},
-                {"name": "UsoSvc", "status": "Stopped", "startType": "Manual"},
-                {"name": "TrustedInstaller", "status": "Stopped", "startType": "Manual"},
-                {"name": "WinDefend", "status": "Running", "startType": "Automatic"},
-            ],
-            "wsusServer": None,
-            "wsusTargetGroup": None,
-            "noAutoUpdate": 1,
-            "useWuServer": None,
-            "auOptions": 1,
-            "agentResults": [
-                {"phase": "Detect", "lastSuccessUtc": "2024-02-02 11:04:18"},
-                {"phase": "Download", "lastSuccessUtc": None},
-                {"phase": "Install", "lastSuccessUtc": None},
-            ],
-        },
-        "defender": {
+    if defender_active:
+        sig_ver = "1.417.842.0"
+        sig_applied = (now - timedelta(days=2, hours=6)).replace(microsecond=0).isoformat()
+        _defs = [
+            (sig_ver,       "1.417.791.0", 2,  "applied"),
+            ("1.417.791.0", "1.417.744.0", 3,  "applied"),
+            ("1.417.744.0", "1.417.702.0", 4,  "applied"),
+            ("1.417.702.0", "1.417.655.0", 6,  "failed"),
+            ("1.417.702.0", "1.417.655.0", 6,  "applied"),
+            ("1.417.655.0", "1.417.601.0", 8,  "applied"),
+            ("1.417.601.0", "1.417.550.0", 10, "applied"),
+            ("1.417.550.0", "1.417.498.0", 12, "applied"),
+        ]
+        defender = {
             "status": "current",
             "present": True,
             "serviceStatus": "Running",
@@ -600,24 +541,117 @@ def _demo_patch_compliance():
             "lastUpdatedAgeDays": 2,
             "realTimeProtection": True,
             "definitions": [
-                {"type": "AV", "label": "Antivirus", "version": sig_ver,
-                 "appliedOn": sig_applied, "ageDays": 2},
-                {"type": "AS", "label": "Antispyware", "version": sig_ver,
-                 "appliedOn": sig_applied, "ageDays": 2},
-                {"type": "NIS", "label": "Network Inspection", "version": "1.417.842.0",
-                 "appliedOn": (now - timedelta(days=2, hours=6)).replace(microsecond=0).isoformat(),
-                 "ageDays": 2},
+                {"type": "AV", "label": "Antivirus", "version": sig_ver, "appliedOn": sig_applied, "ageDays": 2},
+                {"type": "AS", "label": "Antispyware", "version": sig_ver, "appliedOn": sig_applied, "ageDays": 2},
+                {"type": "NIS", "label": "Network Inspection", "version": sig_ver, "appliedOn": sig_applied, "ageDays": 2},
             ],
-            "history": history,
+            "history": [],
             "historyNote": None,
+        }
+        for cur, prev, days, outcome in _defs:
+            defender["history"].append({
+                "appliedOn": (now - timedelta(days=days, hours=6)).replace(microsecond=0).isoformat(),
+                "eventId": 2001 if outcome == "failed" else 2000,
+                "outcome": outcome,
+                "signatureType": "AntiVirus",
+                "version": cur,
+                "previousVersion": prev,
+                "updateType": "Scheduled",
+                "engineVersion": "1.1.25060.5",
+            })
+        defender["history"].append({
+            "appliedOn": (now - timedelta(days=13, hours=2)).replace(microsecond=0).isoformat(),
+            "eventId": 2002, "outcome": "engine-updated", "signatureType": None,
+            "version": None, "previousVersion": None, "updateType": None,
+            "engineVersion": "1.1.25060.5",
+        })
+    else:
+        # The fleet image: WinDefend Stopped/Manual since deployment, so the
+        # signature registry still holds the image-build versions and every
+        # Defender log entry is an ancient failed update attempt. Frozen dates,
+        # deliberately not relative to `now`.
+        frozen_ver = "1.283.3065.0"
+        frozen_applied = "2019-01-15T23:03:04.0000000-05:00"
+        frozen_age = (now - datetime(2019, 1, 15)).days
+        defender = {
+            "status": "disabled",
+            "present": True,
+            "serviceStatus": "Stopped",
+            "serviceStartType": "Manual",
+            "engineVersion": "1.1.15500.2",
+            "platformVersion": None,
+            "lastUpdated": "2019-01-16T08:27:23.8826223-05:00",
+            "lastUpdatedAgeDays": frozen_age,
+            "realTimeProtection": None,
+            "definitions": [
+                {"type": "AV", "label": "Antivirus", "version": frozen_ver,
+                 "appliedOn": frozen_applied, "ageDays": frozen_age},
+                {"type": "AS", "label": "Antispyware", "version": frozen_ver,
+                 "appliedOn": frozen_applied, "ageDays": frozen_age},
+            ],
+            "history": [
+                {"appliedOn": "2019-01-16T12:45:07.0573027-05:00", "eventId": 2001,
+                 "outcome": "failed", "signatureType": "AntiVirus", "version": None,
+                 "previousVersion": frozen_ver, "updateType": "Full", "engineVersion": None},
+                {"appliedOn": "2019-01-16T08:27:24.2316077-05:00", "eventId": 2001,
+                 "outcome": "failed", "signatureType": "AntiVirus", "version": None,
+                 "previousVersion": frozen_ver, "updateType": "Full", "engineVersion": None},
+                {"appliedOn": "2019-01-16T02:11:52.4410901-05:00", "eventId": 2001,
+                 "outcome": "failed", "signatureType": "AntiSpyware", "version": None,
+                 "previousVersion": frozen_ver, "updateType": "Full", "engineVersion": None},
+            ],
+            "historyNote": None,
+        }
+
+    return {
+        "collectedAt": now.isoformat(),
+        "elevated": True,
+        "os": {
+            "productName": "Windows 10 Enterprise LTSC 2019",
+            "edition": "EnterpriseS",
+            "featureRelease": "1809",
+            "build": "17763",
+            "ubr": 8880,
+            "fullBuild": "10.0.17763.8880",
+            "imageInstalled": "2019-02-25T18:56:05.0000000-05:00",
         },
+        "delivery": {
+            "mode": "offline",
+            "explanation": (
+                "Automatic Windows Update is disabled on this VPU. Pixellot applies "
+                "patches offline (wusa/DISM), which is why the Windows Update UI shows "
+                "no history. The evidence below comes from the servicing stack, which "
+                "records every install regardless of delivery method."
+            ),
+            "services": [
+                {"name": "wuauserv", "status": "Stopped", "startType": "Manual"},
+                {"name": "UsoSvc", "status": "Running", "startType": "Automatic"},
+                {"name": "TrustedInstaller", "status": "Stopped", "startType": "Manual"},
+                {"name": "WinDefend",
+                 "status": "Running" if defender_active else "Stopped",
+                 "startType": "Automatic" if defender_active else "Manual"},
+            ],
+            "wsusServer": None,
+            "wsusTargetGroup": None,
+            "noAutoUpdate": 1,
+            "useWuServer": None,
+            "auOptions": None,
+            # The WU agent has never completed a phase on the fleet image —
+            # which is exactly why its history proves nothing.
+            "agentResults": [
+                {"phase": "Detect", "lastSuccessUtc": None},
+                {"phase": "Download", "lastSuccessUtc": None},
+                {"phase": "Install", "lastSuccessUtc": None},
+            ],
+        },
+        "defender": defender,
         "updates": {
             "count": len(items),
             "returned": len(items),
             "securityCount": len([i for i in items if "Security" in (i["kind"] or "")]),
-            "driversExcluded": 7,
+            "driversExcluded": 0,
             "lastInstalledOn": items[0]["installedOn"],
-            "lastInstalledAgeDays": 24,
+            "lastInstalledAgeDays": 38,
             "servicingNote": None,
             "items": items,
         },

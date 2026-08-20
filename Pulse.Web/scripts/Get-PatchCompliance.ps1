@@ -82,6 +82,21 @@ function Get-AgeDays {
     try { return [int]((Get-Date) - $When).TotalDays } catch { return $null }
 }
 
+function Get-MessageField {
+    # Pull "Label: value" out of an event message, bounded to the rest of that
+    # LINE. A greedy \S+ instead walks past an empty field and captures the
+    # next label's text -- measured on VPU2, where every Defender 2001 event
+    # has empty version fields and reported engineVersion = "Previous".
+    param([string]$Message, [string]$Label)
+    if (-not $Message) { return $null }
+    $pattern = '(?m)^\s*' + [regex]::Escape($Label) + '\s*:[ \t]*(.*)$'
+    $m = [regex]::Match($Message, $pattern)
+    if (-not $m.Success) { return $null }
+    $v = $m.Groups[1].Value.Trim()
+    if ($v -eq '') { return $null }
+    return $v
+}
+
 function Test-IsDriverPackage {
     # Driver packages are explicitly out of scope for this lane. They show up
     # in the servicing timeline with a driver marker in the package identity;
@@ -222,11 +237,11 @@ try {
         } -MaxEvents $MaxDefenderEvents -ErrorAction Stop
         foreach ($e in $defEvents) {
             $msg = if ($e.Message) { $e.Message } else { '' }
-            $cur = if ($msg -match '(?m)Current Signature Version:\s*(\S+)') { $Matches[1] } else { $null }
-            $prev = if ($msg -match '(?m)Previous Signature Version:\s*(\S+)') { $Matches[1] } else { $null }
-            $sigType = if ($msg -match '(?m)Signature Type:\s*(.+?)\s*$') { $Matches[1] } else { $null }
-            $updType = if ($msg -match '(?m)Update Type:\s*(\S+)') { $Matches[1] } else { $null }
-            $curEng = if ($msg -match '(?m)Current Engine Version:\s*(\S+)') { $Matches[1] } else { $null }
+            $cur = Get-MessageField $msg 'Current Signature Version'
+            $prev = Get-MessageField $msg 'Previous Signature Version'
+            $sigType = Get-MessageField $msg 'Signature Type'
+            $updType = Get-MessageField $msg 'Update Type'
+            $curEng = Get-MessageField $msg 'Current Engine Version'
             $outcome = switch ($e.Id) {
                 2000 { 'applied' }
                 2001 { 'failed' }
@@ -289,7 +304,7 @@ try {
             try { if ($h.InstalledOn) { $installed = ([DateTime]$h.InstalledOn).ToString('o') } } catch { }
             $rows += [pscustomobject]@{
                 kb          = [string]$h.HotFixID
-                title       = $desc
+                title       = $null   # Description is the class; it lands in `kind`
                 kind        = if ($desc) { $desc } else { 'Update' }
                 installedOn = $installed
                 installedBy = [string]$h.InstalledBy
@@ -313,9 +328,11 @@ try {
             $probe = if ($pkg) { $pkg } else { $msg }
             if (Test-IsDriverPackage $probe) { $driversExcluded++; continue }
             $kb = if ($probe -match '(KB\d{6,7})') { $Matches[1] } else { $null }
+            $title = if ($pkg) { $pkg } else { $msg.Substring(0, [Math]::Min(90, $msg.Length)) }
+            if ($kb -and $title -eq $kb) { $title = $null }
             $rows += [pscustomobject]@{
                 kb          = $kb
-                title       = if ($pkg) { $pkg } else { $msg.Substring(0, [Math]::Min(90, $msg.Length)) }
+                title       = $title
                 kind        = 'Servicing package'
                 installedOn = $e.TimeCreated.ToString('o')
                 installedBy = $null
@@ -341,11 +358,12 @@ try {
             $existing = $keyed[$k]
             $merged = [pscustomobject]@{
                 kb          = $k
-                title       = if ($existing.title -and $existing.title -notmatch '^Package') { $existing.title } elseif ($r.title) { $r.title } else { $existing.title }
+                title       = if ($existing.title) { $existing.title } else { $r.title }
                 kind        = if ($existing.kind -and $existing.kind -ne 'Servicing package') { $existing.kind } else { $r.kind }
-                installedOn = if ($existing.installedOn -and $r.installedOn) {
-                                  if ([DateTime]$existing.installedOn -le [DateTime]$r.installedOn) { $existing.installedOn } else { $r.installedOn }
-                              } elseif ($existing.installedOn) { $existing.installedOn } else { $r.installedOn }
+                installedOn = if ($existing.source -like 'Setup log*' -and $existing.installedOn) { $existing.installedOn }
+                              elseif ($r.source -like 'Setup log*' -and $r.installedOn) { $r.installedOn }
+                              elseif ($existing.installedOn) { $existing.installedOn }
+                              else { $r.installedOn }
                 installedBy = if ($existing.installedBy) { $existing.installedBy } else { $r.installedBy }
                 source      = if ($existing.source -eq $r.source) { $existing.source } else { 'QFE inventory + Setup log' }
                 package     = if ($existing.package) { $existing.package } else { $r.package }
