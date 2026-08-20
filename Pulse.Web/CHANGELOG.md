@@ -22,6 +22,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Fixed
+- Release notes now actually show up. The "what's new" list in Check for Update was showing install instructions instead of the changes in the build — every release on every channel had been publishing boilerplate only.
+
 ## [1.3.0] - 2026-08-20
 
 ### Added
