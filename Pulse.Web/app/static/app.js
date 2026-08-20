@@ -2671,7 +2671,8 @@ function _suAttestationText(d) {
     } else {
       L.push("       NOTE: operating-system patching would normally be the control");
       L.push("       that applies instead - but on this unit it is NOT up to date");
-      L.push("       (see OVERALL above). No current security control is in force.");
+      L.push("       (see OVERALL above). No current patching or antivirus control");
+      L.push("       is in force on this unit.");
     }
   } else {
     pad("Status", (def.status || "unknown").toUpperCase()
