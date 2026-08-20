@@ -574,6 +574,7 @@ def _demo_patch_compliance():
             ],
             "history": [],
             "historyNote": None,
+            "disabledByPolicy": False,
         }
         for cur, prev, days, outcome in _defs:
             defender["history"].append({
@@ -628,6 +629,9 @@ def _demo_patch_compliance():
                  "previousVersion": frozen_ver, "updateType": "Full", "engineVersion": None},
             ],
             "historyNote": None,
+            # The fleet image switches Defender off deliberately (policy key),
+            # which is what lets the report say "by design, not breakage".
+            "disabledByPolicy": True,
         }
 
     last_on = items[0]["installedOn"]
@@ -642,9 +646,9 @@ def _demo_patch_compliance():
     level = ("current" if posture_age <= 120
              else "aging" if posture_age <= 400
              else "stale")
-    control = ("os-patching+defender" if level == "current" and defender_active
+    control = ("os-patching+av" if level == "current" and defender_active
                else "os-patching" if level == "current"
-               else "defender" if defender_active
+               else "av" if defender_active
                else "none")
 
     return {
@@ -661,6 +665,23 @@ def _demo_patch_compliance():
             "fullBuild": "10.0.17763.253" if abandoned else "10.0.17763.8880",
             "imageInstalled": "2019-02-25T18:56:05.0000000-05:00",
         },
+        "dotNet": {"version": "4.8", "release": 528049},
+        "controls": {
+            "firewallProfiles": [
+                {"name": "Domain", "enabled": True},
+                {"name": "Private", "enabled": True},
+                {"name": "Public", "enabled": True},
+            ],
+            "securityCenterChecked": True,
+            # Measured on VPU2: with Defender disabled by policy, SecurityCenter2
+            # registers NO products at all - the list is empty, not
+            # Defender-marked-inactive. Active branch shows the registered entry
+            # (productState middle-byte 0x10 = enabled).
+            "antivirusProducts": ([
+                {"displayName": "Windows Defender", "productState": 397568,
+                 "enabled": True, "isDefender": True},
+            ] if defender_active else []),
+        },
         "posture": {
             "level": level,
             "basis": basis,
@@ -670,6 +691,7 @@ def _demo_patch_compliance():
             "lastSecurityInstalledOn": last_sec_on,
             "lastSecurityAgeDays": last_sec_age,
             "defenderActive": defender_active,
+            "thirdPartyAvActive": False,
         },
         "delivery": {
             "mode": "offline",
@@ -715,6 +737,7 @@ def _demo_patch_compliance():
             "lastSecurityInstalledOn": last_sec_on,
             "lastSecurityAgeDays": last_sec_age,
             "servicingNote": None,
+            "failures": {"servicingFailures": 0, "wuFailures": 0, "recent": []},
             "items": items,
         },
         "pendingReboot": {

@@ -2536,7 +2536,8 @@ function _suAttestationText(d) {
   const os = d.os || {}, del = d.delivery || {}, def = d.defender || {};
   const up = d.updates || {}, bios = d.bios || {}, pix = d.pixellot || {};
   const host = d.host || {}, pend = d.pendingReboot || {}, post = d.posture || {};
-  const chan = d.updateChannel || {};
+  const chan = d.updateChannel || {}, ctrl = d.controls || {}, dotNet = d.dotNet || {};
+  const fails = up.failures || {};
   const L = [];
   const pad = (k, v) => L.push("  " + (k + "                      ").slice(0, 20) + ": " + (v == null || v === "" ? "not reported" : v));
 
@@ -2556,11 +2557,30 @@ function _suAttestationText(d) {
   L.push("OVERALL");
   pad("Patch posture", _suPostureText(post, up));
   pad("Security control", {
+    "os-patching+av": "Operating-system patching and active antivirus",
     "os-patching+defender": "Operating-system patching and Microsoft Defender",
     "os-patching": "Operating-system security patching",
+    "av": "Antivirus only (OS patching is not current)",
     "defender": "Microsoft Defender only (OS patching is not current)",
-    "none": "NONE IN FORCE - see the notes below",
+    "none": "NO CURRENT PATCHING OR ACTIVE ANTIVIRUS - see the notes below",
   }[post.securityControl] || "not determined");
+  const fw = ctrl.firewallProfiles || [];
+  if (fw.length) {
+    const off = fw.filter((f) => !f.enabled).map((f) => f.name);
+    pad("Host firewall", off.length === 0
+      ? "enabled (" + fw.map((f) => f.name).join(", ") + ")"
+      : "DISABLED on: " + off.join(", "));
+  } else {
+    pad("Host firewall", "not readable on this host");
+  }
+  if (ctrl.securityCenterChecked) {
+    const others = (ctrl.antivirusProducts || []).filter((a) => !a.isDefender);
+    pad("Other antivirus", others.length
+      ? others.map((a) => a.displayName + (a.enabled ? " (active)" : " (registered, inactive)")).join("; ")
+      : "none registered - checked the Windows Security Center product list");
+  } else {
+    pad("Other antivirus", "Security Center product list not readable on this host");
+  }
   if (post.lastSecurityInstalledOn) {
     pad("Last security patch", _suStamp(post.lastSecurityInstalledOn, true)
       + (post.lastSecurityAgeDays != null ? "  (" + _suAgeLabel(post.lastSecurityAgeDays) + ")" : ""));
@@ -2613,8 +2633,13 @@ function _suAttestationText(d) {
   L.push("       NOTE: the ages in this report are measured from INSTALL dates.");
   L.push("       A cumulative can be installed long after Microsoft shipped it,");
   L.push("       so the true age of this patch level may be older still.");
+  if (dotNet.version) {
+    pad(".NET Framework", dotNet.version + (dotNet.release ? " (release " + dotNet.release + ")" : ""));
+  }
+  // Never say "Pixellot-applied" here -- Pulse cannot observe who (if anyone)
+  // patches this unit; two units in different states proved nobody does.
   pad("Update delivery", del.mode === "wsus" ? "Managed WSUS server " + (del.wsusServer || "")
-        : del.mode === "offline" ? "Offline (Pixellot-applied); automatic Windows Update disabled"
+        : del.mode === "offline" ? "Automatic Windows Update disabled by policy; no other delivery mechanism is observable from this unit"
         : "Public Windows Update");
   pad("Pending reboot", pend.isPending ? "YES - " + (pend.reasons || []).join("; ") : "no");
   L.push("");
@@ -2634,7 +2659,8 @@ function _suAttestationText(d) {
     // image build. But only claim OS patching covers for it when the OS is
     // ACTUALLY patched -- otherwise this paragraph reassures a district about
     // a unit with no security control at all.
-    pad("Status", "NOT ACTIVE - Microsoft Defender is disabled on this VPU image");
+    pad("Status", "NOT ACTIVE - Microsoft Defender is disabled on this VPU image"
+      + (def.disabledByPolicy ? " (DisableAntiSpyware registry policy is set - deliberate image configuration, not breakage)" : ""));
     pad("Service", (def.serviceStatus || "unknown") + (def.serviceStartType ? " / " + def.serviceStartType : ""));
     L.push("       Defender is not the security control on this unit. The versions");
     L.push("       below are whatever the image shipped with, frozen at deployment -");
@@ -2682,6 +2708,19 @@ function _suAttestationText(d) {
         ? _suStamp(up.lastSecurityInstalledOn) + " (" + _suAgeLabel(up.lastSecurityAgeDays) + ")"
         : "none recorded");
   pad("Drivers excluded", (up.driversExcluded || 0) + " (driver packages are not security patches)");
+  const failTotal = (fails.servicingFailures || 0) + (fails.wuFailures || 0);
+  pad("Failed attempts", failTotal === 0
+    ? "none recorded (servicing + Windows Update logs)"
+    : failTotal + " recorded - see below");
+  if (failTotal === 0) {
+    L.push("       No failed install attempts appear in either log, so the gap");
+    L.push("       above reflects updates that were never attempted on this unit,");
+    L.push("       not attempts that failed or were blocked.");
+  } else {
+    (fails.recent || []).slice(0, 8).forEach((f) => {
+      L.push("    " + _suStamp(f.when) + "  " + (f.kb || "-") + "  " + (f.source || "") + "  FAILED");
+    });
+  }
   L.push("");
   (up.items || []).slice(0, 80).forEach((u) => {
     L.push("  " + _suStamp(u.installedOn, true) + "  "
@@ -2690,6 +2729,8 @@ function _suAttestationText(d) {
       + (u.installedBy ? " by " + u.installedBy : ""));
   });
   if ((up.items || []).length > 80) L.push("  ... " + ((up.items || []).length - 80) + " older entries not listed");
+  L.push("");
+  L.push("All timestamps and ages are measured against this unit's own clock.");
   L.push("");
   L.push("Sources: Windows registry (CurrentVersion, Defender Signature Updates),");
   L.push("Get-HotFix / Win32_QuickFixEngineering, Setup event log (Microsoft-Windows-");
@@ -2736,6 +2777,8 @@ function renderSoftwareUpdates() {
   const host = data.host || {}, pend = data.pendingReboot || {};
   const post = data.posture || {};
   const chan = data.updateChannel || {};
+  const ctrl = data.controls || {}, dotNet = data.dotNet || {};
+  const fails = up.failures || {};
   const items = up.items || [];
 
   const deliveryLabel = del.mode === "wsus" ? "Managed WSUS" : del.mode === "offline" ? "Pixellot / offline" : "Windows Update";
@@ -2835,6 +2878,20 @@ function renderSoftwareUpdates() {
             ${kvRow("Engine version", def.engineVersion)}
             ${kvRow("Platform version", def.platformVersion)}
             ${kvRow("Real-time protection", def.realTimeProtection == null ? null : def.realTimeProtection ? "Enabled" : "Disabled")}
+            ${def.disabledByPolicy ? kvRow("Disabled by policy", "Yes - DisableAntiSpyware registry policy (deliberate image configuration)") : ""}
+            ${(() => {
+              const fw = ctrl.firewallProfiles || [];
+              if (!fw.length) return kvRow("Host firewall", null);
+              const off = fw.filter((f) => !f.enabled).map((f) => f.name);
+              return kvRow("Host firewall", off.length === 0 ? "Enabled (all profiles)" : "DISABLED on: " + off.join(", "));
+            })()}
+            ${(() => {
+              if (!ctrl.securityCenterChecked) return kvRow("Other antivirus", "Security Center not readable");
+              const others = (ctrl.antivirusProducts || []).filter((a) => !a.isDefender);
+              return kvRow("Other antivirus", others.length
+                ? others.map((a) => a.displayName + (a.enabled ? " (active)" : " (inactive)")).join("; ")
+                : "None registered");
+            })()}
           </div>
         </div>
         <div class="sub-card">
@@ -2880,6 +2937,12 @@ function renderSoftwareUpdates() {
         (wusa/DISM) installs appear even though the Windows Update agent never ran.
         ${up.driversExcluded ? `<strong>${esc(String(up.driversExcluded))}</strong> driver package${up.driversExcluded === 1 ? "" : "s"} excluded — driver updates are not security patches.` : "No driver packages were found to exclude."}
         ${up.lastInstalledOn ? ` Most recent install ${esc(_suStamp(up.lastInstalledOn))} (${esc(_suAgeLabel(up.lastInstalledAgeDays))}).` : ""}
+        ${(() => {
+          const n = (fails.servicingFailures || 0) + (fails.wuFailures || 0);
+          return n === 0
+            ? " No failed install attempts are recorded, so gaps reflect updates never attempted rather than attempts that failed."
+            : ` <strong>${esc(String(n))} failed install attempt${n === 1 ? "" : "s"} recorded</strong> — this unit has tried and failed to update.`;
+        })()}
       </p>
       ${up.servicingNote ? `<p class="text-xs text-pulse-muted mb-3">${esc(up.servicingNote)}</p>` : ""}
       ${items.length ? `
@@ -2938,6 +3001,7 @@ function renderSoftwareUpdates() {
             ${kvRow("Manufacturer", bios.manufacturer)}
             ${kvRow("Model", bios.model)}
             ${kvRow("Serial number", bios.serialNumber)}
+            ${kvRow(".NET Framework", dotNet.version)}
             ${kvRow("Pixellot software", pix.version)}
             ${kvRow("Pixellot image", pix.imageVersion)}
           </div>

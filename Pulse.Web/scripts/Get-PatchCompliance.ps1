@@ -353,6 +353,52 @@ try {
         $servicingNote = 'The Setup event log holds no servicing records on this host (it may have rolled over).'
     }
 
+    # Failed install attempts -- the other half of the story. Setup log id 3
+    # is a CBS package change that FAILED; System log WindowsUpdateClient id 20
+    # is a WU-agent install failure. Zero failures alongside a sparse success
+    # record means updates were never attempted, not attempted and blocked --
+    # the distinction the whole vendor conversation turns on.
+    $failRows = @()
+    $svcFailCount = 0
+    try {
+        $svcFails = Get-WinEvent -FilterHashtable @{
+            LogName = 'Setup'; ProviderName = 'Microsoft-Windows-Servicing'; Id = 3
+        } -MaxEvents 50 -ErrorAction Stop
+        $svcFailCount = @($svcFails).Count
+        foreach ($e in $svcFails | Select-Object -First 10) {
+            $msg = if ($e.Message) { $e.Message } else { '' }
+            $kb = if ($msg -match '(KB\d{6,7})') { $Matches[1] } else { $null }
+            $failRows += [pscustomobject]@{
+                when   = $e.TimeCreated.ToString('o')
+                kb     = $kb
+                source = 'Setup log (servicing failure)'
+                detail = $msg.Substring(0, [Math]::Min(120, $msg.Length))
+            }
+        }
+    } catch { }
+    $wuFailCount = 0
+    try {
+        $wuFails = Get-WinEvent -FilterHashtable @{
+            LogName = 'System'; ProviderName = 'Microsoft-Windows-WindowsUpdateClient'; Id = 20
+        } -MaxEvents 50 -ErrorAction Stop
+        $wuFailCount = @($wuFails).Count
+        foreach ($e in $wuFails | Select-Object -First 10) {
+            $msg = if ($e.Message) { $e.Message } else { '' }
+            $kb = if ($msg -match '(KB\d{6,7})') { $Matches[1] } else { $null }
+            $failRows += [pscustomobject]@{
+                when   = $e.TimeCreated.ToString('o')
+                kb     = $kb
+                source = 'WU agent (install failure)'
+                detail = ($msg -split "`r?`n")[0].Trim()
+            }
+        }
+    } catch { }
+    $failuresBlock = [ordered]@{
+        servicingFailures = $svcFailCount
+        wuFailures        = $wuFailCount
+        recent            = @($failRows | Sort-Object -Property @{ Expression = { [DateTime]$_.when } } -Descending)
+    }
+
     # Merge: one row per KB, keeping the earliest recorded install date (the
     # servicing event is the actual install; QFE re-dates on some images) and
     # the richer title. Rows with no KB (unnamed servicing packages) stay as-is.
@@ -408,6 +454,7 @@ try {
         lastSecurityInstalledOn = $lastSecurityOn
         lastSecurityAgeDays = $lastSecurityAge
         servicingNote     = $servicingNote
+        failures          = $failuresBlock
         items             = @($capped)
     }
 
@@ -451,12 +498,61 @@ try {
     } elseif ($sorted.Count -eq 0) {
         $postureLevel = 'stale'
     }
+    # -- Other security controls. The report asserts "no control in force";
+    # that claim is only defensible if we actually looked for controls beyond
+    # Defender. SecurityCenter2 lists every REGISTERED antivirus product
+    # (third-party AV included); the firewall profiles are a real host control
+    # a district reviewer will ask about either way.
+    $scProducts = @()
+    $scAvailable = $false
+    try {
+        $avs = Get-CimInstance -Namespace 'root/SecurityCenter2' -ClassName AntiVirusProduct -ErrorAction Stop
+        $scAvailable = $true
+        foreach ($av in $avs) {
+            # productState middle byte: 0x10 bit set = product enabled. The
+            # widely used SecurityCenter2 decode; kept alongside the raw value
+            # so a wrong guess is auditable.
+            $state = [uint32]$av.productState
+            $mid = ($state -shr 8) -band 0xFF
+            $scProducts += [pscustomobject]@{
+                displayName  = [string]$av.displayName
+                productState = $state
+                enabled      = (($mid -band 0x10) -ne 0)
+                isDefender   = ([string]$av.displayName -match '(?i)defender')
+            }
+        }
+    } catch { }
+
+    $fwProfiles = @()
+    try {
+        foreach ($fp in (Get-NetFirewallProfile -ErrorAction Stop)) {
+            $fwProfiles += [pscustomobject]@{
+                name    = [string]$fp.Name
+                enabled = ($fp.Enabled.ToString() -eq 'True')
+            }
+        }
+    } catch { }
+
+    # Was Defender switched off ON PURPOSE? The policy key proves image-level
+    # intent; without it "disabled" could be read as breakage.
+    $disableAsPolicy = Get-RegValue 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender' 'DisableAntiSpyware'
+    $disableAsLocal  = Get-RegValue 'HKLM:\SOFTWARE\Microsoft\Windows Defender' 'DisableAntiSpyware'
+    $defenderBlock['disabledByPolicy'] = (($disableAsPolicy -eq 1) -or ($disableAsLocal -eq 1))
+
+    $controlsBlock = [ordered]@{
+        firewallProfiles      = @($fwProfiles)
+        securityCenterChecked = $scAvailable
+        antivirusProducts     = @($scProducts)
+    }
+
     $defenderActive = ($defStatus -eq 'current' -or $defStatus -eq 'aging')
+    $thirdPartyAv = @($scProducts | Where-Object { (-not $_.isDefender) -and $_.enabled })
+    $avActive = $defenderActive -or ($thirdPartyAv.Count -gt 0)
     $osPatched = ($postureLevel -eq 'current')
     $securityControl =
-        if ($osPatched -and $defenderActive) { 'os-patching+defender' }
+        if ($osPatched -and $avActive) { 'os-patching+av' }
         elseif ($osPatched) { 'os-patching' }
-        elseif ($defenderActive) { 'defender' }
+        elseif ($avActive) { 'av' }
         else { 'none' }
 
     $postureBlock = [ordered]@{
@@ -468,12 +564,25 @@ try {
         lastSecurityInstalledOn = $lastSecurityOn
         lastSecurityAgeDays     = $lastSecurityAge
         defenderActive          = $defenderActive
+        thirdPartyAvActive      = ($thirdPartyAv.Count -gt 0)
     }
+
+    $dotNetRelease = Get-RegValue 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' 'Release'
+    $dotNetVersion = if ($null -eq $dotNetRelease) { $null }
+        elseif ($dotNetRelease -ge 533320) { '4.8.1' }
+        elseif ($dotNetRelease -ge 528040) { '4.8' }
+        elseif ($dotNetRelease -ge 461808) { '4.7.2' }
+        elseif ($dotNetRelease -ge 461308) { '4.7.1' }
+        elseif ($dotNetRelease -ge 460798) { '4.7' }
+        elseif ($dotNetRelease -ge 394802) { '4.6.2' }
+        else { "release $dotNetRelease" }
 
     [ordered]@{
         collectedAt   = (Get-Date).ToString('o')
         elevated      = $isAdmin
         os            = $osBlock
+        dotNet        = [ordered]@{ version = $dotNetVersion; release = $dotNetRelease }
+        controls      = $controlsBlock
         posture       = $postureBlock
         delivery      = $deliveryBlock
         defender      = $defenderBlock
