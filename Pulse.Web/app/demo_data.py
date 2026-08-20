@@ -669,17 +669,18 @@ DEMO = {
             {"purpose": "Singular Overlay", "host": "service.singular.live", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "LogMeIn", "host": "secure.logmein.com", "port": 443, "protocol": "TCP", "status": "pass", "optional": False},
             {"purpose": "NTP", "host": "prod-echo.pixellot.tv", "port": 123, "protocol": "UDP", "status": "pass", "optional": False},
-            # Demo: the live UDP/2088 broadcast connection is blocked. It has no
-            # failover, so this exercises the critical "Streaming is blocked — VPU
-            # can't broadcast". The 443 backup channel (UDP/443 + TCP/443 tunnel)
-            # stays open and is unaffected. (To exercise the amber "No failover"
-            # backup warning instead, set 2088 to "pass" and one of Zixi Backup /
-            # Pixellot Echo to "fail" — that leaves the broadcast up with one
-            # backup transport down.)
-            {"purpose": "Zixi Backup", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "pass", "optional": False},
+            # Demo: both Zixi/UDP streaming rungs are blocked but the RTMP
+            # fallback (TCP/1935) is open — the DEGRADED tier: games air ~4 min
+            # late on unprotected RTMP. Exercises the critical "Streaming is
+            # degraded — running on the emergency fallback" (the Olympic WA
+            # 2026-08-18 scenario). Other tiers to demo: set one Zixi row to
+            # "pass" for the healthy-with-reduced-resiliency warning; set RTMP
+            # Fallback to "fail" too for the true "can't broadcast" critical.
+            {"purpose": "Zixi Backup", "host": "prod-echo.pixellot.tv", "port": 443, "protocol": "UDP", "status": "fail", "optional": False},
             {"purpose": "Zixi Streaming", "host": "prod-echo.pixellot.tv", "port": 2088, "protocol": "UDP", "status": "fail", "optional": False},
-            # Optional — RTMP fallback (legacy ingest)
-            {"purpose": "RTMP Ingest", "host": "sportzcast.net", "port": 1935, "protocol": "TCP", "status": "pass", "optional": True},
+            # Required — RTMP fallback egress (last streaming rung; probed
+            # against a stable public RTMP host, see Test-NetworkPorts.ps1)
+            {"purpose": "RTMP Fallback", "host": "a.rtmp.youtube.com", "port": 1935, "protocol": "TCP", "status": "pass", "optional": False},
             # Optional — Sportzcast Scorebot range (ScoreConnect deployments only)
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1400, "protocol": "TCP", "status": "pass", "optional": True},
             {"purpose": "Scorebot", "host": "scorebot.sportzcast.net", "port": 1401, "protocol": "TCP", "status": "pass", "optional": True},
@@ -699,20 +700,31 @@ DEMO = {
     # the interception) and add the device to interceptorIssuers, e.g.
     # ["KSD-FW1-DPI (Kent School District)"]. To DEMO the wrong-clock warning,
     # set a row's status to "cert-time" with chainErrors "NotTimeValid".
+    #
+    # To DEMO the OTHER middlebox failure - a content filter blocking the
+    # domain by category (Linewize, Ohio venue 2026-08-19: no cert is
+    # substituted, the handshake is just reset) - set the affected rows to
+    # status "filtered", failureKind "reset", trusted None, detail "An
+    # existing connection was forcibly closed by the remote host", and on the
+    # first few rows filterVendor "Linewize / Family Zone" + blockPageHost
+    # "blocked.syd-1.linewize.net" + a blockPageUrl; then set the top-level
+    # "filterVendors" to ["Linewize / Family Zone"]. That is the case that
+    # scored a green PASS before the tls-filtered finding existed.
     "Test-TlsInspection.ps1": lambda **kw: {
         "results": [
-            {"domain": "singular.live", "purpose": "Singular graphics (apex)", "status": "pass", "trusted": True, "issuer": "CN=WE1, O=Google Trust Services, C=US", "issuerCn": "WE1", "issuerOrg": "Google Trust Services", "subjectCn": "singular.live", "chainErrors": "", "notAfter": "2026-09-28", "latencyMs": round(random.uniform(80, 220), 1), "detail": None},
-            {"domain": "app.singular.live", "purpose": "Singular graphics app", "status": "pass", "trusted": True, "issuer": "CN=WE1, O=Google Trust Services, C=US", "issuerCn": "WE1", "issuerOrg": "Google Trust Services", "subjectCn": "app.singular.live", "chainErrors": "", "notAfter": "2026-09-28", "latencyMs": round(random.uniform(80, 220), 1), "detail": None},
-            {"domain": "api.singular.live", "purpose": "Singular graphics API", "status": "pass", "trusted": True, "issuer": "CN=WE1, O=Google Trust Services, C=US", "issuerCn": "WE1", "issuerOrg": "Google Trust Services", "subjectCn": "api.singular.live", "chainErrors": "", "notAfter": "2026-09-28", "latencyMs": round(random.uniform(80, 220), 1), "detail": None},
-            {"domain": "datastream.singular.live", "purpose": "Singular graphics data feed", "status": "pass", "trusted": True, "issuer": "CN=WE1, O=Google Trust Services, C=US", "issuerCn": "WE1", "issuerOrg": "Google Trust Services", "subjectCn": "datastream.singular.live", "chainErrors": "", "notAfter": "2026-09-28", "latencyMs": round(random.uniform(80, 220), 1), "detail": None},
-            {"domain": "service.singular.live", "purpose": "Singular overlay service", "status": "pass", "trusted": True, "issuer": "CN=R11, O=Let's Encrypt, C=US", "issuerCn": "R11", "issuerOrg": "Let's Encrypt", "subjectCn": "service.singular.live", "chainErrors": "", "notAfter": "2026-08-30", "latencyMs": round(random.uniform(80, 220), 1), "detail": None},
-            {"domain": "pixellot.tv", "purpose": "Pixellot cloud", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M02, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M02", "issuerOrg": "Amazon", "subjectCn": "pixellot.tv", "chainErrors": "", "notAfter": "2027-01-12", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
-            {"domain": "software.pixellot.tv", "purpose": "Pixellot software updates", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M02, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M02", "issuerOrg": "Amazon", "subjectCn": "software.pixellot.tv", "chainErrors": "", "notAfter": "2027-01-12", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
-            {"domain": "nfhsnetwork.com", "purpose": "NFHS Network", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M03, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M03", "issuerOrg": "Amazon", "subjectCn": "nfhsnetwork.com", "chainErrors": "", "notAfter": "2026-11-02", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
-            {"domain": "secure.logmein.com", "purpose": "Remote support (LogMeIn)", "status": "pass", "trusted": True, "issuer": "CN=DigiCert TLS RSA SHA256 2020 CA1, O=DigiCert Inc, C=US", "issuerCn": "DigiCert TLS RSA SHA256 2020 CA1", "issuerOrg": "DigiCert Inc", "subjectCn": "*.logmein.com", "chainErrors": "", "notAfter": "2026-10-15", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
-            {"domain": "www.python.org", "purpose": "Pulse installer download", "status": "pass", "trusted": True, "issuer": "CN=GlobalSign Atlas R3 DV TLS CA 2025 Q2, O=GlobalSign nv-sa, C=BE", "issuerCn": "GlobalSign Atlas R3 DV TLS CA 2025 Q2", "issuerOrg": "GlobalSign nv-sa", "subjectCn": "www.python.org", "chainErrors": "", "notAfter": "2026-09-07", "latencyMs": round(random.uniform(60, 180), 1), "detail": None},
+            {"domain": "singular.live", "purpose": "Singular graphics (apex)", "status": "pass", "trusted": True, "issuer": "CN=WE1, O=Google Trust Services, C=US", "issuerCn": "WE1", "issuerOrg": "Google Trust Services", "subjectCn": "singular.live", "chainErrors": "", "notAfter": "2026-09-28", "latencyMs": round(random.uniform(80, 220), 1), "detail": None, "failureKind": None, "blockPageHost": None, "blockPageUrl": None, "filterVendor": None},
+            {"domain": "app.singular.live", "purpose": "Singular graphics app", "status": "pass", "trusted": True, "issuer": "CN=WE1, O=Google Trust Services, C=US", "issuerCn": "WE1", "issuerOrg": "Google Trust Services", "subjectCn": "app.singular.live", "chainErrors": "", "notAfter": "2026-09-28", "latencyMs": round(random.uniform(80, 220), 1), "detail": None, "failureKind": None, "blockPageHost": None, "blockPageUrl": None, "filterVendor": None},
+            {"domain": "api.singular.live", "purpose": "Singular graphics API", "status": "pass", "trusted": True, "issuer": "CN=WE1, O=Google Trust Services, C=US", "issuerCn": "WE1", "issuerOrg": "Google Trust Services", "subjectCn": "api.singular.live", "chainErrors": "", "notAfter": "2026-09-28", "latencyMs": round(random.uniform(80, 220), 1), "detail": None, "failureKind": None, "blockPageHost": None, "blockPageUrl": None, "filterVendor": None},
+            {"domain": "datastream.singular.live", "purpose": "Singular graphics data feed", "status": "pass", "trusted": True, "issuer": "CN=WE1, O=Google Trust Services, C=US", "issuerCn": "WE1", "issuerOrg": "Google Trust Services", "subjectCn": "datastream.singular.live", "chainErrors": "", "notAfter": "2026-09-28", "latencyMs": round(random.uniform(80, 220), 1), "detail": None, "failureKind": None, "blockPageHost": None, "blockPageUrl": None, "filterVendor": None},
+            {"domain": "service.singular.live", "purpose": "Singular overlay service", "status": "pass", "trusted": True, "issuer": "CN=R11, O=Let's Encrypt, C=US", "issuerCn": "R11", "issuerOrg": "Let's Encrypt", "subjectCn": "service.singular.live", "chainErrors": "", "notAfter": "2026-08-30", "latencyMs": round(random.uniform(80, 220), 1), "detail": None, "failureKind": None, "blockPageHost": None, "blockPageUrl": None, "filterVendor": None},
+            {"domain": "pixellot.tv", "purpose": "Pixellot cloud", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M02, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M02", "issuerOrg": "Amazon", "subjectCn": "pixellot.tv", "chainErrors": "", "notAfter": "2027-01-12", "latencyMs": round(random.uniform(60, 180), 1), "detail": None, "failureKind": None, "blockPageHost": None, "blockPageUrl": None, "filterVendor": None},
+            {"domain": "software.pixellot.tv", "purpose": "Pixellot software updates", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M02, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M02", "issuerOrg": "Amazon", "subjectCn": "software.pixellot.tv", "chainErrors": "", "notAfter": "2027-01-12", "latencyMs": round(random.uniform(60, 180), 1), "detail": None, "failureKind": None, "blockPageHost": None, "blockPageUrl": None, "filterVendor": None},
+            {"domain": "nfhsnetwork.com", "purpose": "NFHS Network", "status": "pass", "trusted": True, "issuer": "CN=Amazon RSA 2048 M03, O=Amazon, C=US", "issuerCn": "Amazon RSA 2048 M03", "issuerOrg": "Amazon", "subjectCn": "nfhsnetwork.com", "chainErrors": "", "notAfter": "2026-11-02", "latencyMs": round(random.uniform(60, 180), 1), "detail": None, "failureKind": None, "blockPageHost": None, "blockPageUrl": None, "filterVendor": None},
+            {"domain": "secure.logmein.com", "purpose": "Remote support (LogMeIn)", "status": "pass", "trusted": True, "issuer": "CN=DigiCert TLS RSA SHA256 2020 CA1, O=DigiCert Inc, C=US", "issuerCn": "DigiCert TLS RSA SHA256 2020 CA1", "issuerOrg": "DigiCert Inc", "subjectCn": "*.logmein.com", "chainErrors": "", "notAfter": "2026-10-15", "latencyMs": round(random.uniform(60, 180), 1), "detail": None, "failureKind": None, "blockPageHost": None, "blockPageUrl": None, "filterVendor": None},
+            {"domain": "www.python.org", "purpose": "Pulse installer download", "status": "pass", "trusted": True, "issuer": "CN=GlobalSign Atlas R3 DV TLS CA 2025 Q2, O=GlobalSign nv-sa, C=BE", "issuerCn": "GlobalSign Atlas R3 DV TLS CA 2025 Q2", "issuerOrg": "GlobalSign nv-sa", "subjectCn": "www.python.org", "chainErrors": "", "notAfter": "2026-09-07", "latencyMs": round(random.uniform(60, 180), 1), "detail": None, "failureKind": None, "blockPageHost": None, "blockPageUrl": None, "filterVendor": None},
         ],
         "interceptorIssuers": [],
+        "filterVendors": [],
     },
     "Test-NtpDrift.ps1": lambda **kw: {"offsetSeconds": round(random.uniform(-0.3, 0.5), 3), "status": "ok", "source": "0.us.pool.ntp.org", "configuredSource": "0.us.pool.ntp.org", "networkSynced": True},
     "Get-NtpPeers.ps1": lambda **kw: {

@@ -22,6 +22,118 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
+# Web-filter / proxy vendors, matched against the block page's redirect
+# target, Server header and body. Naming the box is the whole point: "your
+# Linewize filter is blocking pixellot.tv" gets a district's IT team into the
+# right console, where "something on the network refused the connection" gets
+# a shrug. Ordered most-specific first; the list is data, add to it freely.
+$FilterVendorPatterns = @(
+    @{ pattern = 'linewize|familyzone|family-zone';        name = 'Linewize / Family Zone' }
+    @{ pattern = 'zscaler';                                name = 'Zscaler' }
+    @{ pattern = 'iboss';                                  name = 'iboss' }
+    @{ pattern = 'securly';                                name = 'Securly' }
+    @{ pattern = 'lightspeedsystems|lightspeed';           name = 'Lightspeed Systems' }
+    @{ pattern = 'goguardian';                             name = 'GoGuardian' }
+    @{ pattern = 'contentkeeper';                          name = 'ContentKeeper' }
+    @{ pattern = 'fortiguard|fortinet|fortigate';          name = 'FortiGuard (Fortinet)' }
+    @{ pattern = 'paloaltonetworks';                       name = 'Palo Alto Networks' }
+    @{ pattern = 'umbrella|opendns';                       name = 'Cisco Umbrella (OpenDNS)' }
+    @{ pattern = 'meraki';                                 name = 'Cisco Meraki' }
+    @{ pattern = 'sonicwall';                              name = 'SonicWall' }
+    @{ pattern = 'smoothwall';                             name = 'Smoothwall' }
+    @{ pattern = 'barracuda';                              name = 'Barracuda' }
+    @{ pattern = 'netsweeper';                             name = 'Netsweeper' }
+    @{ pattern = 'forcepoint|websense';                    name = 'Forcepoint (Websense)' }
+    @{ pattern = 'blocksi';                                name = 'Blocksi' }
+    @{ pattern = 'deledao';                                name = 'Deledao' }
+    @{ pattern = 'sophos';                                 name = 'Sophos' }
+    @{ pattern = 'watchguard';                             name = 'WatchGuard' }
+    @{ pattern = 'trellix|mcafee';                         name = 'Trellix (McAfee)' }
+    @{ pattern = 'dnsfilter';                              name = 'DNSFilter' }
+    @{ pattern = 'cleanbrowsing';                          name = 'CleanBrowsing' }
+)
+
+function Get-FilterBlockSignal {
+    <#
+    .SYNOPSIS
+        Asks a filtered domain over plain HTTP and reports the block page it
+        gets back: which host serves it, the full block URL, and which vendor
+        it belongs to.
+    .DESCRIPTION
+        Runs only for hosts whose TLS handshake was reset. The filter that
+        killed 443 normally answers port 80 with a redirect (or a 200/403
+        body) advertising itself, which is what a tech sees when they browse
+        to the domain from the same LAN. Everything here is best-effort: a
+        silent filter simply yields nulls and the caller falls back to
+        "a filtering device on the venue network".
+    #>
+    param([string]$Domain)
+
+    $signal = [ordered]@{ blockPageHost = $null; blockPageUrl = $null; filterVendor = $null }
+    $resp = $null
+    $reader = $null
+
+    try {
+        $req = [System.Net.WebRequest]::Create("http://$Domain/")
+        $req.Method = 'GET'
+        $req.AllowAutoRedirect = $false   # the redirect target IS the evidence
+        $req.Timeout = 2500
+        $req.ReadWriteTimeout = 2500
+        $req.UserAgent = 'Pulse-Diagnostics'
+
+        try { $resp = $req.GetResponse() }
+        catch [System.Net.WebException] {
+            # A filter answering 403 Forbidden still hands back a readable
+            # response object - that body is exactly the block page.
+            if ($_.Exception.Response) { $resp = $_.Exception.Response } else { throw }
+        }
+
+        $location = [string]$resp.Headers['Location']
+        $server   = [string]$resp.Headers['Server']
+
+        # Read a slice of the body - enough for a vendor marker, small enough
+        # that a hung connection can't stall the sweep.
+        $body = ''
+        $stream = $resp.GetResponseStream()
+        if ($stream) {
+            $reader = New-Object System.IO.StreamReader($stream)
+            $buffer = New-Object char[] 4000
+            $read = $reader.Read($buffer, 0, 4000)
+            if ($read -gt 0) { $body = -join $buffer[0..($read - 1)] }
+        }
+
+        # Where the block page lives. A redirect to a DIFFERENT host is the
+        # cleanest signal; otherwise the responding host may still be the
+        # filter answering in place of the real server.
+        $blockHost = $null
+        if ($location) {
+            try { $blockHost = ([uri]$location).Host } catch { $blockHost = $null }
+            if ($blockHost -and ($blockHost -eq $Domain -or $blockHost.EndsWith(".$Domain"))) {
+                $blockHost = $null   # ordinary http->https redirect, not a block
+            }
+            if ($blockHost) {
+                $signal.blockPageHost = $blockHost
+                $signal.blockPageUrl  = $location
+            }
+        }
+
+        $haystack = (("$location $server $body $blockHost")).ToLower()
+        foreach ($v in $FilterVendorPatterns) {
+            if ($haystack -match $v.pattern) { $signal.filterVendor = $v.name; break }
+        }
+    }
+    catch {
+        # Port 80 blocked too, DNS dead, or a filter that just drops - no
+        # signal to report, and never a reason to fail the whole check.
+    }
+    finally {
+        if ($reader) { $reader.Close() }
+        if ($resp) { $resp.Close() }
+    }
+
+    return $signal
+}
+
 try {
     # Known-HTTPS endpoints only. prod-echo.pixellot.tv:443 is intentionally
     # absent -- it's a Zixi tunnel, not TLS, and would false-fail the handshake.
@@ -44,7 +156,8 @@ try {
     )
 
     $results = foreach ($t in $targets) {
-        $status = 'blocked'; $detail = $null
+        $status = 'blocked'; $detail = $null; $failureKind = $null
+        $blockPageHost = $null; $blockPageUrl = $null; $filterVendor = $null
         $issuer = $null; $issuerCn = $null; $issuerOrg = $null; $subjectCn = $null
         $trusted = $null; $chainErrors = $null; $notAfter = $null
         $tcp = $null; $ssl = $null
@@ -104,6 +217,31 @@ try {
                     while ($inner.InnerException) { $inner = $inner.InnerException }
                     $detail = $inner.Message
                     $status = 'handshake-fail'
+                    $failureKind = 'protocol'
+                    # A TCP reset the instant the ClientHello lands is the
+                    # signature of a category/SNI web filter, NOT of SSL
+                    # decryption: the filter reads the hostname from the
+                    # unencrypted SNI field, decides the domain sits in a
+                    # blocked category, and kills the connection. No
+                    # certificate is ever substituted, so the interception
+                    # check below can never fire and the whole event used to
+                    # land in a vague "possible SSL inspection" warning.
+                    # Field: Linewize at an Ohio venue 2026-08-19 - eight
+                    # Pixellot-critical hosts reset, while a browser on the
+                    # same LAN got a "Content Blocked" page (rule "Additional
+                    # Blocked Categories", tag "pixellot") served under a
+                    # VALID public certificate. Split it out so the verdict
+                    # can name the filter instead of hedging about
+                    # inspection - the two problems have different fixes.
+                    $isReset = $false
+                    if ($inner -is [System.Net.Sockets.SocketException]) {
+                        # 10054 WSAECONNRESET / 10053 WSAECONNABORTED
+                        if ($inner.NativeErrorCode -eq 10054 -or $inner.NativeErrorCode -eq 10053) { $isReset = $true }
+                    }
+                    if (-not $isReset -and $inner.Message -match 'forcibly closed|connection was reset|connection was aborted') {
+                        $isReset = $true
+                    }
+                    if ($isReset) { $status = 'filtered'; $failureKind = 'reset' }
                 }
 
                 # Belt-and-suspenders for PS 5.1: if the callback didn't
@@ -177,6 +315,7 @@ try {
             domain      = $t.domain
             purpose     = $t.purpose
             status      = $status
+            failureKind = $failureKind
             trusted     = $trusted
             issuer      = $issuer
             issuerCn    = $issuerCn
@@ -186,8 +325,35 @@ try {
             notAfter    = $notAfter
             latencyMs   = [math]::Round($sw.Elapsed.TotalMilliseconds, 1)
             detail      = $detail
+            blockPageHost = $blockPageHost
+            blockPageUrl  = $blockPageUrl
+            filterVendor  = $filterVendor
         }
     }
+
+    # ---- Identify the filter that reset those handshakes ----------------
+    # Only for hosts already classified 'filtered', and only the first three:
+    # a venue runs ONE filter, so three samples name it, and the probe is
+    # capped so a slow network can't push the script past its 60s budget.
+    # Port 80 is deliberate - the same filter that resets 443 almost always
+    # answers plain HTTP with its own block page (that is how the tech's
+    # browser ends up on it), which is where the vendor name lives.
+    $filteredRows = @($results | Where-Object { $_.status -eq 'filtered' })
+    $probed = 0
+    foreach ($row in $filteredRows) {
+        if ($probed -ge 3) { break }
+        $probed++
+        $signal = Get-FilterBlockSignal -Domain $row.domain
+        $row.blockPageHost = $signal.blockPageHost
+        $row.blockPageUrl  = $signal.blockPageUrl
+        $row.filterVendor  = $signal.filterVendor
+    }
+
+    # Distinct vendor identities, same role as interceptorIssuers: give the
+    # venue's IT team an unambiguous pointer to the box holding the policy.
+    $filterVendors = @(
+        $results | Where-Object { $_.filterVendor } | ForEach-Object { $_.filterVendor } | Select-Object -Unique
+    )
 
     # Who is intercepting -- the distinct issuer identities on substituted
     # certs (e.g. "KSD-FW1-DPI (Kent School District)"). Naming the device
@@ -203,6 +369,7 @@ try {
     [ordered]@{
         results            = @($results)
         interceptorIssuers = $interceptors
+        filterVendors      = $filterVendors
     } | ConvertTo-Json -Depth 5 -Compress
 }
 catch {
