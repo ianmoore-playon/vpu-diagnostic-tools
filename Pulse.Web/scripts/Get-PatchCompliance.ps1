@@ -420,10 +420,26 @@ try {
         reasons   = @($pendingReasons)
     }
 
+    # Score the posture on the newest SECURITY update, not on any servicing
+    # activity. Measured on the disputed unit (Rochelle TX): its newest install
+    # was KB4486153 -- the .NET Framework 4.8 runtime, installed by the Pixellot
+    # account in 2023 because their own software needed it. Scoring off that
+    # reported "3.2 years" for a box whose last actual security content was the
+    # January 2019 cumulative. A runtime install is not a patch.
+    $postureBasis = 'none'
+    $postureAge = $null
+    if ($null -ne $lastSecurityAge) {
+        $postureBasis = 'security-update'
+        $postureAge = $lastSecurityAge
+    } elseif ($null -ne $lastUpdateAge) {
+        $postureBasis = 'any-update'
+        $postureAge = $lastUpdateAge
+    }
+
     $postureLevel = 'unknown'
-    if ($null -ne $lastUpdateAge) {
-        if ($lastUpdateAge -le 120) { $postureLevel = 'current' }
-        elseif ($lastUpdateAge -le 400) { $postureLevel = 'aging' }
+    if ($null -ne $postureAge) {
+        if ($postureAge -le 120) { $postureLevel = 'current' }
+        elseif ($postureAge -le 400) { $postureLevel = 'aging' }
         else { $postureLevel = 'stale' }
     } elseif ($sorted.Count -eq 0) {
         $postureLevel = 'stale'
@@ -438,6 +454,8 @@ try {
 
     $postureBlock = [ordered]@{
         level                   = $postureLevel
+        basis                   = $postureBasis
+        ageDays                 = $postureAge
         securityControl         = $securityControl
         lastUpdateAgeDays       = $lastUpdateAge
         lastSecurityInstalledOn = $lastSecurityOn

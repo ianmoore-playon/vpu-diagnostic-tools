@@ -635,7 +635,13 @@ def _demo_patch_compliance():
     sec_rows = [i for i in items if "Security" in (i["kind"] or "")]
     last_sec_on = sec_rows[0]["installedOn"] if sec_rows else None
     last_sec_age = (now - datetime.fromisoformat(last_sec_on)).days if last_sec_on else None
-    level = "current" if last_age <= 120 else "aging" if last_age <= 400 else "stale"
+    # Mirror the collector: score on the newest SECURITY update, not on any
+    # servicing activity (a .NET runtime install is not a patch).
+    basis = "security-update" if last_sec_age is not None else ("any-update" if last_age is not None else "none")
+    posture_age = last_sec_age if last_sec_age is not None else last_age
+    level = ("current" if posture_age <= 120
+             else "aging" if posture_age <= 400
+             else "stale")
     control = ("os-patching+defender" if level == "current" and defender_active
                else "os-patching" if level == "current"
                else "defender" if defender_active
@@ -657,6 +663,8 @@ def _demo_patch_compliance():
         },
         "posture": {
             "level": level,
+            "basis": basis,
+            "ageDays": posture_age,
             "securityControl": control,
             "lastUpdateAgeDays": last_age,
             "lastSecurityInstalledOn": last_sec_on,

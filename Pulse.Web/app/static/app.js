@@ -2409,18 +2409,65 @@ function _suDuration(days) {
   return (days / 365).toFixed(1) + " years";
 }
 
+function _suChannelWho(chan) {
+  const who = (chan.attributedTo || []).filter(Boolean);
+  return who.length ? who.join(", ") : null;
+}
+
+function _suChannelSentence(chan) {
+  // The mechanism sentence, shared by the banner and the attestation. Reads as
+  // "likely cause", never proof: we can see the channel is blocked today, not
+  // when the venue turned the filter on.
+  if (!chan.blocked) return null;
+  const hosts = (chan.rows || []).map((r) => r.domain).join(", ");
+  const who = _suChannelWho(chan);
+  const how = (chan.rows || []).some((r) => r.status === "intercepted")
+    ? "is intercepting" : "is blocking";
+  return "This venue's network " + how + " " + hosts
+    + (who ? ", attributed to " + who + "," : "")
+    + " — the channel Pixellot manages this VPU and delivers software updates over."
+    + " That is the likely reason patches have stopped arriving, and it can only be"
+    + " fixed on the venue's network.";
+}
+
+// The fix ask. A domain allowlist is the usual advice, but it does NOT clear a
+// user-authentication gate: Rochelle TX (2026-08-20) showed Securly bouncing
+// pixellot.tv to a Google Workspace sign-in brokered through
+// securly.com/oauth2callback. A VPU is an unattended appliance — no browser, no
+// district Google identity, nobody to sign in — so it can never satisfy that
+// gate, and no amount of domain allowlisting helps. The exemption has to be on
+// the DEVICE (IP/MAC), not on a user.
+const SU_CHANNEL_FIX = [
+  "Ask the venue's IT team for two exemptions for this VPU, by IP or MAC:",
+  "  1. Exempt these domains from SSL decryption / category filtering, using a",
+  "     wildcard that covers subdomains plus the bare domain.",
+  "  2. Exempt the VPU itself from any per-user sign-in requirement (captive",
+  "     portal / directory-based filtering). This VPU is an unattended",
+  "     appliance: it has no browser and no district user account, so if the",
+  "     filter demands a Google or directory sign-in before allowing traffic,",
+  "     the VPU can never complete it and the update channel stays dead no",
+  "     matter which domains are allowlisted. It needs to sit in a device or",
+  "     IoT policy group, not a user policy group.",
+];
+
 function _suPostureText(post, up) {
-  const age = post.lastUpdateAgeDays;
+  const age = post.ageDays != null ? post.ageDays : post.lastUpdateAgeDays;
+  // Name what was measured. "Nothing installed for 3.2 years" was measured off
+  // a .NET runtime install on the Rochelle unit, which flattered a box whose
+  // last real security content was the January 2019 cumulative.
+  const what = post.basis === "any-update"
+    ? "no security update is recorded at all; newest servicing activity of any kind was "
+    : "no security patch for ";
   if (post.level === "current") {
-    return "CURRENT - last servicing activity " + _suAgeLabel(age) + ".";
+    return "CURRENT - newest security patch " + _suAgeLabel(age) + ".";
   }
   if (post.level === "aging") {
-    return "BEHIND - nothing has been installed for " + _suDuration(age) + ".";
+    return "BEHIND - " + what + _suDuration(age) + ".";
   }
   if (post.level === "stale") {
     return age == null
       ? "NOT PATCHED - no Windows update installs are recorded on this unit."
-      : "NOT PATCHED - nothing has been installed for " + _suDuration(age) + ".";
+      : "NOT PATCHED - " + what + _suDuration(age) + ".";
   }
   return "not determined";
 }
@@ -2480,6 +2527,7 @@ function _suAttestationText(d) {
   const os = d.os || {}, del = d.delivery || {}, def = d.defender || {};
   const up = d.updates || {}, bios = d.bios || {}, pix = d.pixellot || {};
   const host = d.host || {}, pend = d.pendingReboot || {}, post = d.posture || {};
+  const chan = d.updateChannel || {};
   const L = [];
   const pad = (k, v) => L.push("  " + (k + "                      ").slice(0, 20) + ": " + (v == null || v === "" ? "not reported" : v));
 
@@ -2510,6 +2558,23 @@ function _suAttestationText(d) {
   } else {
     pad("Last security patch", "none recorded on this unit");
   }
+  if (post.level && post.level !== "current" && chan.blocked) {
+    const hosts = (chan.rows || []).map((r) => r.domain).join(", ");
+    const who = _suChannelWho(chan);
+    L.push("");
+    L.push("LIKELY CAUSE");
+    L.push("  This venue's network is " + ((chan.rows || []).some((r) => r.status === "intercepted")
+      ? "intercepting" : "blocking") + " " + hosts + ",");
+    if (who) L.push("  attributed to " + who + ",");
+    L.push("  which is the channel Pixellot manages this VPU and delivers software");
+    L.push("  updates over. That is the likely reason patches stopped arriving here,");
+    L.push("  and it can only be fixed on the venue's network.");
+    L.push("");
+    SU_CHANNEL_FIX.forEach((line) => L.push("  " + line));
+    L.push("");
+    L.push("  (Pulse can see the channel is blocked now, not when the filter was");
+    L.push("  enabled, so this is a mechanism rather than a proven timeline.)");
+  }
   L.push("");
   L.push("OPERATING SYSTEM PATCH LEVEL");
   pad("Product", [os.productName, os.edition ? "(" + os.edition + ")" : ""].filter(Boolean).join(" "));
@@ -2518,6 +2583,11 @@ function _suAttestationText(d) {
   L.push("       The last segment (UBR " + (os.ubr == null ? "?" : os.ubr) + ") identifies the monthly");
   L.push("       cumulative update. Cumulative updates are cumulative, so this");
   L.push("       one number IS the OS patch level, whatever delivered it.");
+  L.push("       Look this build up on Microsoft's Windows 10 release-health page");
+  L.push("       to date it: the KB matching this build names its release month.");
+  L.push("       NOTE: the ages in this report are measured from INSTALL dates.");
+  L.push("       A cumulative can be installed long after Microsoft shipped it,");
+  L.push("       so the true age of this patch level may be older still.");
   pad("Update delivery", del.mode === "wsus" ? "Managed WSUS server " + (del.wsusServer || "")
         : del.mode === "offline" ? "Offline (Pixellot-applied); automatic Windows Update disabled"
         : "Public Windows Update");
@@ -2582,7 +2652,10 @@ function _suAttestationText(d) {
   L.push("WINDOWS UPDATES INSTALLED");
   pad("Total recorded", up.count);
   pad("Security updates", up.securityCount);
-  pad("Most recent", up.lastInstalledOn ? _suStamp(up.lastInstalledOn) + " (" + _suAgeLabel(up.lastInstalledAgeDays) + ")" : null);
+  pad("Newest of any kind", up.lastInstalledOn ? _suStamp(up.lastInstalledOn) + " (" + _suAgeLabel(up.lastInstalledAgeDays) + ")" : null);
+  pad("Newest security", up.lastSecurityInstalledOn
+        ? _suStamp(up.lastSecurityInstalledOn) + " (" + _suAgeLabel(up.lastSecurityAgeDays) + ")"
+        : "none recorded");
   pad("Drivers excluded", (up.driversExcluded || 0) + " (driver packages are not security patches)");
   L.push("");
   (up.items || []).slice(0, 80).forEach((u) => {
@@ -2637,6 +2710,7 @@ function renderSoftwareUpdates() {
   const up = data.updates || {}, bios = data.bios || {}, pix = data.pixellot || {};
   const host = data.host || {}, pend = data.pendingReboot || {};
   const post = data.posture || {};
+  const chan = data.updateChannel || {};
   const items = up.items || [];
 
   const deliveryLabel = del.mode === "wsus" ? "Managed WSUS" : del.mode === "offline" ? "Pixellot / offline" : "Windows Update";
@@ -2682,7 +2756,21 @@ function renderSoftwareUpdates() {
       ${post.securityControl === "none"
         ? " Microsoft Defender is also inactive, so no current security control is in force on this unit."
         : ""}
-      Escalate to Pixellot rather than sending the attestation below as-is.</span>
+      ${chan.blocked ? "" : "Escalate to Pixellot rather than sending the attestation below as-is."}</span>
+    </div>` : ""}
+
+    ${post.level && post.level !== "current" && chan.blocked ? `
+    <div class="dash-info-banner" style="margin-top:0;margin-bottom:1rem">
+      <span class="dash-banner-icon">${svgIcon("link", 18)}</span>
+      <div>
+        <div class="text-sm font-semibold mb-1">Likely cause: the venue is blocking Pixellot's update channel</div>
+        <p class="text-sm text-pulse-muted mb-0">${esc(_suChannelSentence(chan))}</p>
+        <p class="text-sm text-pulse-muted mt-2 mb-0"><strong>A domain allowlist alone may not be enough.</strong>
+          If the filter demands a per-user sign-in (captive portal or directory-based filtering), this VPU can
+          never satisfy it — it has no browser and no district user account. It needs a device-level exemption
+          by IP or MAC, in an appliance/IoT policy group rather than a user policy group.</p>
+        <p class="text-xs text-pulse-muted mt-1 mb-0">Fix the block first (see Network Test), then ask Pixellot to bring this unit's patch level up. Pulse can see the channel is blocked now, but not when the venue enabled the filter.</p>
+      </div>
     </div>` : ""}
 
     <div class="dash-info-banner" style="margin-top:0">
@@ -2811,7 +2899,11 @@ function renderSoftwareUpdates() {
           <p class="text-xs text-pulse-muted mt-3 mb-0">
             The UBR (last segment of the full build) maps to a specific monthly cumulative
             update. Cumulative updates are cumulative, so this single number is the OS patch
-            level regardless of how it was delivered.
+            level regardless of how it was delivered — look it up on
+            <a href="https://learn.microsoft.com/windows/release-health/release-information"
+               target="_blank" rel="noopener">Microsoft's release-health page</a> to date it.
+            Ages here are measured from <em>install</em> dates; a cumulative can be installed
+            long after Microsoft shipped it, so this patch level may be older than it looks.
           </p>
         </div>
         <div class="sub-card">

@@ -4199,6 +4199,53 @@ async def api_events(
     return await run_ps("Get-EventLogs.ps1", {"HoursBack": hours, "Level": level})
 
 
+# Hosts that carry Pixellot's own management + software/firmware updates. Keep
+# in sync with TLS_DOMAIN_IMPACT in app.js and Test-TlsInspection.ps1.
+_UPDATE_CHANNEL_HOSTS = ("pixellot.tv", "software.pixellot.tv")
+
+
+def _update_channel_status(tls) -> dict:
+    """Is the venue's network blocking the channel Pixellot patches over?
+
+    Field case that forced this (Rochelle TX, 2026-08-20): the unit was seven
+    years behind on Windows cumulatives AND its Network tab carried a critical
+    for Securly SSL inspection intercepting pixellot.tv — the host that carries
+    system management and software updates. Reported on separate tabs, those are
+    two unrelated complaints; reported together they are a mechanism and an
+    owner. A stale patch posture with a blocked update channel is very likely
+    caused by it, and it can only be fixed on the venue's network.
+
+    Deliberately NOT a claim of proof: we can't tell when the filter was
+    enabled, so the UI says "likely cause" and leaves the timeline open.
+    """
+    if not isinstance(tls, dict) or tls.get("error"):
+        return {"checked": False, "blocked": False, "rows": []}
+    rows = []
+    for r in tls.get("results") or []:
+        if (r.get("domain") or "").lower() not in _UPDATE_CHANNEL_HOSTS:
+            continue
+        status = (r.get("status") or "").lower()
+        if status not in ("intercepted", "filtered"):
+            continue
+        rows.append({
+            "domain": r.get("domain"),
+            "status": status,
+            "purpose": r.get("purpose"),
+            "filterVendor": r.get("filterVendor"),
+            "issuerOrg": r.get("issuerOrg"),
+            "issuerCn": r.get("issuerCn"),
+            "blockPageUrl": r.get("blockPageUrl"),
+        })
+    who = [v for v in (tls.get("filterVendors") or []) if v] or \
+          [i for i in (tls.get("interceptorIssuers") or []) if i]
+    return {
+        "checked": True,
+        "blocked": bool(rows),
+        "rows": rows,
+        "attributedTo": who,
+    }
+
+
 @app.get("/api/software-updates")
 async def api_software_updates():
     """Software Updates lane: what has been patched on this VPU, and when.
@@ -4221,9 +4268,12 @@ async def api_software_updates():
     wide. Pending-reboot -- the one actionable signal here -- is already
     surfaced by Get-RebootHistory on the Power Events lane.
     """
-    patch, identity = await asyncio.gather(
+    patch, identity, tls = await asyncio.gather(
         run_ps("Get-PatchCompliance.ps1", timeout=60),
         run_ps("Get-SystemIdentity.ps1"),
+        # Cached + in-flight-deduped, and normally already warm from the
+        # dashboard/preload, so this costs nothing here in practice.
+        run_ps("Test-TlsInspection.ps1", timeout=60),
     )
     if not isinstance(patch, dict) or patch.get("error"):
         return patch
@@ -4250,6 +4300,7 @@ async def api_software_updates():
         "osCaption": os_block.get("caption"),
         "osVersion": os_block.get("version"),
     }
+    patch["updateChannel"] = _update_channel_status(tls)
     return patch
 
 
