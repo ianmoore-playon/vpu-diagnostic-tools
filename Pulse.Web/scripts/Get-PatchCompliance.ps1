@@ -265,6 +265,8 @@ try {
         $defLogNote = 'No Microsoft Defender Operational log entries are available on this host.'
     }
 
+    $defHistory = @($defHistory | Sort-Object -Property @{ Expression = { [DateTime]$_.appliedOn } } -Descending)
+
     $sigAge = Get-AgeDays $lastUpdated
     $defStatus = 'unknown'
     if (-not $defPresent) { $defStatus = 'absent' }
@@ -379,7 +381,11 @@ try {
     $sorted = @($allRows | Sort-Object -Property @{ Expression = { if ($_.installedOn) { [DateTime]$_.installedOn } else { [DateTime]'1601-01-01' } } } -Descending)
     $capped = @($sorted | Select-Object -First $MaxUpdates)
 
-    $securityCount = @($sorted | Where-Object { $_.kind -match '(?i)security' }).Count
+    $securityRows = @($sorted | Where-Object { $_.kind -match '(?i)security' })
+    $securityCount = $securityRows.Count
+    $lastSecurity = $securityRows | Where-Object { $_.installedOn } | Select-Object -First 1
+    $lastSecurityOn = if ($lastSecurity) { $lastSecurity.installedOn } else { $null }
+    $lastSecurityAge = if ($lastSecurityOn) { Get-AgeDays ([DateTime]$lastSecurityOn) } else { $null }
     $newest = $sorted | Where-Object { $_.installedOn } | Select-Object -First 1
     $lastUpdateOn = if ($newest) { $newest.installedOn } else { $null }
     $lastUpdateAge = $null
@@ -392,6 +398,8 @@ try {
         driversExcluded   = $driversExcluded
         lastInstalledOn   = $lastUpdateOn
         lastInstalledAgeDays = $lastUpdateAge
+        lastSecurityInstalledOn = $lastSecurityOn
+        lastSecurityAgeDays = $lastSecurityAge
         servicingNote     = $servicingNote
         items             = @($capped)
     }
@@ -412,10 +420,36 @@ try {
         reasons   = @($pendingReasons)
     }
 
+    $postureLevel = 'unknown'
+    if ($null -ne $lastUpdateAge) {
+        if ($lastUpdateAge -le 120) { $postureLevel = 'current' }
+        elseif ($lastUpdateAge -le 400) { $postureLevel = 'aging' }
+        else { $postureLevel = 'stale' }
+    } elseif ($sorted.Count -eq 0) {
+        $postureLevel = 'stale'
+    }
+    $defenderActive = ($defStatus -eq 'current' -or $defStatus -eq 'aging')
+    $osPatched = ($postureLevel -eq 'current')
+    $securityControl =
+        if ($osPatched -and $defenderActive) { 'os-patching+defender' }
+        elseif ($osPatched) { 'os-patching' }
+        elseif ($defenderActive) { 'defender' }
+        else { 'none' }
+
+    $postureBlock = [ordered]@{
+        level                   = $postureLevel
+        securityControl         = $securityControl
+        lastUpdateAgeDays       = $lastUpdateAge
+        lastSecurityInstalledOn = $lastSecurityOn
+        lastSecurityAgeDays     = $lastSecurityAge
+        defenderActive          = $defenderActive
+    }
+
     [ordered]@{
         collectedAt   = (Get-Date).ToString('o')
         elevated      = $isAdmin
         os            = $osBlock
+        posture       = $postureBlock
         delivery      = $deliveryBlock
         defender      = $defenderBlock
         updates       = $updatesBlock

@@ -475,6 +475,13 @@ def _demo_patch_compliance():
     # up across sessions (the venue is picked once at module load) while the
     # fleet-real disabled state stays the common case.
     defender_active = sum(ord(c) for c in _VENUE["hostname"]) % 4 == 1
+    # ...and 2 venues model the abandoned unit that started this lane: Rochelle
+    # (TX), whose OS cumulative was still 17763.253 (KB4480116, January 2019)
+    # with Defender off and a reboot pending. Named explicitly so the "not
+    # patched" path is always reachable in demo, never a lucky draw.
+    abandoned = _VENUE["hostname"] in ("PXLS2-19844", "PXLS2-25618")
+    if abandoned:
+        defender_active = False
 
     def _iso(days_ago, hour=3, minute=14):
         d = now - timedelta(days=days_ago)
@@ -515,6 +522,26 @@ def _demo_patch_compliance():
             "source": source,
             "package": kb if "Setup log" in source else None,
         })
+    if abandoned:
+        # Five entries, nothing since the Jan-2019 cumulative was (late-)
+        # installed. Matches the disputed unit's Get-HotFix output exactly.
+        items = [
+            {"kb": "KB4486153", "title": None, "kind": "Update",
+             "installedOn": "2023-06-27T05:14:00", "installedBy": "VPU\\Pixellot",
+             "source": "QFE inventory", "package": None},
+            {"kb": "KB4480116", "title": None, "kind": "Security Update",
+             "installedOn": "2020-11-09T00:00:00", "installedBy": "NT AUTHORITY\\SYSTEM",
+             "source": "QFE inventory", "package": None},
+            {"kb": "KB4470788", "title": None, "kind": "Security Update",
+             "installedOn": "2019-01-08T00:00:00", "installedBy": "NT AUTHORITY\\SYSTEM",
+             "source": "QFE inventory", "package": None},
+            {"kb": "KB4480056", "title": None, "kind": "Update",
+             "installedOn": "2019-01-08T00:00:00", "installedBy": "NT AUTHORITY\\SYSTEM",
+             "source": "QFE inventory", "package": None},
+            {"kb": "KB4480979", "title": None, "kind": "Security Update",
+             "installedOn": "2019-01-08T00:00:00", "installedBy": "NT AUTHORITY\\SYSTEM",
+             "source": "QFE inventory", "package": None},
+        ]
     items.sort(key=lambda r: r["installedOn"], reverse=True)
 
     if defender_active:
@@ -603,6 +630,17 @@ def _demo_patch_compliance():
             "historyNote": None,
         }
 
+    last_on = items[0]["installedOn"]
+    last_age = (now - datetime.fromisoformat(last_on)).days
+    sec_rows = [i for i in items if "Security" in (i["kind"] or "")]
+    last_sec_on = sec_rows[0]["installedOn"] if sec_rows else None
+    last_sec_age = (now - datetime.fromisoformat(last_sec_on)).days if last_sec_on else None
+    level = "current" if last_age <= 120 else "aging" if last_age <= 400 else "stale"
+    control = ("os-patching+defender" if level == "current" and defender_active
+               else "os-patching" if level == "current"
+               else "defender" if defender_active
+               else "none")
+
     return {
         "collectedAt": now.isoformat(),
         "elevated": True,
@@ -611,9 +649,19 @@ def _demo_patch_compliance():
             "edition": "EnterpriseS",
             "featureRelease": "1809",
             "build": "17763",
-            "ubr": 8880,
-            "fullBuild": "10.0.17763.8880",
+            # UBR 253 = KB4480116, January 2019 -- the abandoned unit never got
+            # another cumulative. 8880 is a currently-patched box (VPU2).
+            "ubr": 253 if abandoned else 8880,
+            "fullBuild": "10.0.17763.253" if abandoned else "10.0.17763.8880",
             "imageInstalled": "2019-02-25T18:56:05.0000000-05:00",
+        },
+        "posture": {
+            "level": level,
+            "securityControl": control,
+            "lastUpdateAgeDays": last_age,
+            "lastSecurityInstalledOn": last_sec_on,
+            "lastSecurityAgeDays": last_sec_age,
+            "defenderActive": defender_active,
         },
         "delivery": {
             "mode": "offline",
@@ -650,12 +698,17 @@ def _demo_patch_compliance():
             "returned": len(items),
             "securityCount": len([i for i in items if "Security" in (i["kind"] or "")]),
             "driversExcluded": 0,
-            "lastInstalledOn": items[0]["installedOn"],
-            "lastInstalledAgeDays": 38,
+            "lastInstalledOn": last_on,
+            "lastInstalledAgeDays": last_age,
+            "lastSecurityInstalledOn": last_sec_on,
+            "lastSecurityAgeDays": last_sec_age,
             "servicingNote": None,
             "items": items,
         },
-        "pendingReboot": {"isPending": False, "reasons": []},
+        "pendingReboot": {
+            "isPending": abandoned,
+            "reasons": ["Files are queued to be replaced on next boot"] if abandoned else [],
+        },
     }
 
 
