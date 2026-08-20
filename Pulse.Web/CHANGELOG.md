@@ -29,6 +29,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - Release notes now actually show up. The "what's new" list in Check for Update was showing install instructions instead of the changes in the build — every release on every channel had been publishing boilerplate only.
 
 ## [1.3.0] - 2026-08-20
+## [1.2.1] - 2026-08-20
 
 ### Added
 - Network Test now checks TCP 1935, the RTMP fallback the VPU streams over when both UDP streaming ports are blocked — it's a required port, and it isn't testable in VPU Manager.
@@ -38,6 +39,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 - The streaming verdict now matches how the VPU actually fails over (UDP 2088 → UDP 443 → TCP 1935): "can't broadcast" only appears when every path is blocked. Both UDP ports blocked with 1935 open now reads "Streaming is degraded — running on the emergency fallback" (games air ~4 minutes late with no loss protection), and a healthy stream with blocked backup paths shows a resiliency warning instead of a false alarm.
 - Network Test: the optional SportzCast TCP 1935 tile is gone — two 1935 tiles with different results was confusing, and SportzCast connectivity is already covered by the Scorebot 1400–1405 tiles and the sportzcast.net service check.
 - Stream Readiness now FAILS when a venue web filter is blocking Pixellot services. It used to report a green PASS ("game-ready") while graphics, scheduling and updates were all cut off, because the block left the certificates untouched — the wording was a vague "possible SSL inspection" note buried on the Network tab.
+
+### Fixed
+- Release notes now actually show up. The "what's new" list in Check for Update was showing install instructions instead of the changes in the build — every release on every channel had been publishing boilerplate only.
 
 ## [1.2.0] - 2026-08-17
 
