@@ -172,9 +172,16 @@ try {
     elseif ($noAutoUpdate -eq 1) { $mode = 'offline' }
     elseif (-not $wuServer -and $noAutoUpdate -ne 1) { $mode = 'windows-update' }
 
+    # Do NOT assert that someone else is patching this box. The original wording
+    # here said "Pixellot applies patches offline (wusa/DISM)" -- an assumption
+    # inherited from the field explanation, not a measurement. Two units in
+    # different states (Rochelle TX, Richland PA) both sit at build 17763.253
+    # with no monthly cumulative ever applied after imaging, so Pulse vouching
+    # for an offline patch process it cannot observe was actively misleading.
+    # State what is configured, and let the servicing record speak.
     $modeExplanation = switch ($mode) {
-        'wsus'   { 'Updates are delivered from a managed WSUS server, not the public Windows Update service. The Windows Update UI reports against that server.' }
-        'offline' { 'Automatic Windows Update is disabled on this VPU. Pixellot applies patches offline (wusa/DISM), which is why the Windows Update UI shows no history. The evidence below comes from the servicing stack, which records every install regardless of delivery method.' }
+        'wsus'   { 'Updates are delivered from a managed WSUS server, not the public Windows Update service. The Windows Update UI reports against that server, so check there as well as the record below.' }
+        'offline' { 'Automatic Windows Update is disabled by policy on this VPU, which is why the Windows Update UI shows no history. Pulse cannot see whether any other mechanism is patching this unit - the servicing record below is the only evidence either way, and it lists every install regardless of how it was delivered.' }
         default  { 'Windows Update is not policy-restricted on this host.' }
     }
 

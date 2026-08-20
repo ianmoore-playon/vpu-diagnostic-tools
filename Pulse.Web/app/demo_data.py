@@ -673,11 +673,15 @@ def _demo_patch_compliance():
         },
         "delivery": {
             "mode": "offline",
+            # Must match Get-PatchCompliance.ps1's wording exactly. It no longer
+            # claims Pixellot patches offline — Pulse can't observe that, and two
+            # units in different states disproved it.
             "explanation": (
-                "Automatic Windows Update is disabled on this VPU. Pixellot applies "
-                "patches offline (wusa/DISM), which is why the Windows Update UI shows "
-                "no history. The evidence below comes from the servicing stack, which "
-                "records every install regardless of delivery method."
+                "Automatic Windows Update is disabled by policy on this VPU, which is "
+                "why the Windows Update UI shows no history. Pulse cannot see whether "
+                "any other mechanism is patching this unit - the servicing record below "
+                "is the only evidence either way, and it lists every install regardless "
+                "of how it was delivered."
             ),
             "services": [
                 {"name": "wuauserv", "status": "Stopped", "startType": "Manual"},

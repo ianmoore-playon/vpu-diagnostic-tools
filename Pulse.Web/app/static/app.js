@@ -2430,16 +2430,13 @@ function _suChannelSentence(chan) {
     ? "is intercepting" : "is blocking";
   const what = chan.softwareHostBlocked
     ? " — the host Pixellot delivers software and firmware updates over."
-      + " That is the likely reason patches have stopped arriving, and it can only"
-      + " be fixed on the venue's network."
-    : " — the host Pixellot manages this VPU over. Note that the dedicated"
-      + " software-update host was reachable in this test, so this is not a total"
-      + " block: it cuts the management channel that schedules and drives"
-      + " patching rather than the download itself. Pixellot should confirm which"
-      + " host their OS-patch tooling pulls from. Either way it can only be fixed"
-      + " on the venue's network.";
+    : " — the host Pixellot manages this VPU over (the dedicated software-update"
+      + " host was reachable in this test).";
   return "This venue's network " + how + " " + hosts
-    + (who ? ", attributed to " + who + "," : "") + what;
+    + (who ? ", attributed to " + who + "," : "") + what
+    + " Worth fixing on its own merits — but it is not established as the reason"
+    + " this unit is unpatched: VPUs on networks with no such block sit at the"
+    + " same patch level.";
 }
 
 // The fix ask. A domain allowlist is the usual advice, but it does NOT clear a
@@ -2574,25 +2571,20 @@ function _suAttestationText(d) {
     const hosts = (chan.rows || []).map((r) => r.domain).join(", ");
     const who = _suChannelWho(chan);
     L.push("");
-    L.push("LIKELY CAUSE");
+    L.push("ALSO BLOCKED ON THIS NETWORK");
     L.push("  This venue's network is " + ((chan.rows || []).some((r) => r.status === "intercepted")
       ? "intercepting" : "blocking") + " " + hosts + ",");
     if (who) L.push("  attributed to " + who + ".");
-    if (chan.softwareHostBlocked) {
-      L.push("  That is the host Pixellot delivers software and firmware updates");
-      L.push("  over, and the likely reason patches stopped arriving here. It can");
-      L.push("  only be fixed on the venue's network.");
-    } else {
-      // Measured at Rochelle TX: management intercepted, the dedicated update
-      // host reachable. Saying "the update channel is blocked" here would
-      // overstate the measurement in a document a district will scrutinise.
-      L.push("  That is the host Pixellot manages this VPU over. The dedicated");
-      L.push("  software-update host was reachable in this test, so this is not a");
-      L.push("  total block - it cuts the management channel that schedules and");
-      L.push("  drives patching rather than the download itself. Pixellot should");
-      L.push("  confirm which host their OS-patch tooling pulls from. Either way,");
-      L.push("  the block can only be fixed on the venue's network.");
-    }
+    L.push("  " + (chan.softwareHostBlocked
+      ? "That is the host Pixellot delivers software and firmware updates over."
+      : "That is the host Pixellot manages this VPU over."));
+    L.push("  This is a real problem worth fixing in its own right - it can only");
+    L.push("  be fixed on the venue's network.");
+    L.push("");
+    L.push("  It is NOT established as the reason this unit is unpatched. VPUs on");
+    L.push("  networks with no such block sit at the same patch level, so the two");
+    L.push("  findings are separate: fix the block, and separately ask Pixellot");
+    L.push("  why the operating system was never brought forward.");
     L.push("");
     if ((chan.hosts || []).length) {
       L.push("  Pixellot channel hosts tested from this VPU:");
@@ -2796,13 +2788,13 @@ function renderSoftwareUpdates() {
     <div class="dash-info-banner" style="margin-top:0;margin-bottom:1rem">
       <span class="dash-banner-icon">${svgIcon("link", 18)}</span>
       <div>
-        <div class="text-sm font-semibold mb-1">Likely cause: the venue is blocking ${chan.softwareHostBlocked ? "Pixellot's update channel" : "Pixellot's management channel"}</div>
+        <div class="text-sm font-semibold mb-1">Also blocked here: ${chan.softwareHostBlocked ? "Pixellot's update channel" : "Pixellot's management channel"}</div>
         <p class="text-sm text-pulse-muted mb-0">${esc(_suChannelSentence(chan))}</p>
         <p class="text-sm text-pulse-muted mt-2 mb-0"><strong>A domain allowlist alone may not be enough.</strong>
           If the filter demands a per-user sign-in (captive portal or directory-based filtering), this VPU can
           never satisfy it — it has no browser and no district user account. It needs a device-level exemption
           by IP or MAC, in an appliance/IoT policy group rather than a user policy group.</p>
-        <p class="text-xs text-pulse-muted mt-1 mb-0">Fix the block first (see Network Test), then ask Pixellot to bring this unit's patch level up. Pulse can see the channel is blocked now, but not when the venue enabled the filter.</p>
+        <p class="text-xs text-pulse-muted mt-1 mb-0">Two separate actions: fix the block on the venue's network (see Network Test), and separately ask Pixellot why the operating system was never brought forward.</p>
       </div>
     </div>` : ""}
 
