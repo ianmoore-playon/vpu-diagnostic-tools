@@ -22,6 +22,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Added
+- Pulse now names the venue's web filter when it blocks Pixellot services. If the filter kills the secure connection to Singular, pixellot.tv or NFHS (a blocked-category block, not SSL inspection), the Network tab identifies the product — Linewize, Zscaler, iboss, Securly, Lightspeed, GoGuardian and others — and shows the block-page link you can send to venue IT.
+
+### Changed
+- Stream Readiness now FAILS when a venue web filter is blocking Pixellot services. It used to report a green PASS ("game-ready") while graphics, scheduling and updates were all cut off, because the block left the certificates untouched — the wording was a vague "possible SSL inspection" note buried on the Network tab.
+
 ## [1.2.0] - 2026-08-17
 
 ### Added
@@ -33,6 +39,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ### Changed
 - Storage alerts are now critical-only: the amber "space low" warning at 80% full is gone everywhere (findings, readiness, Disks page, dashboard bars). Drives alert only when they actually matter — over 90% full — which is also the moment the Storage Cleanup card appears with the fix.
+- Pulse now cleans up the retired Canopy/Leaf software automatically. The old Banyan Hills agent (no longer used by PlayOn) is uninstalled in the background the first time Pulse runs on a VPU, and the leftover C:\Banyan folder is removed — no action needed from techs.
+- Splashtop Streamer is now removed automatically too — it was installed as part of the same retired Canopy deployment. Heads up: if you are connected to a VPU over Splashtop, the first Pulse launch will end that session; use LogMeIn, the supported remote tool.
+- New standalone script `scripts/Get-WindowsPatchStatus.ps1`: run it on a VPU to see the real Windows patch level (build number, hotfixes, servicing history, pending reboot) even though Windows Update is disabled on the fleet image.
+- Network Test now checks TCP 1935, the RTMP fallback the VPU streams over when both UDP streaming ports are blocked — it's a required port, and it isn't testable in VPU Manager.
+
+### Changed
+- The streaming verdict now matches how the VPU actually fails over (UDP 2088 → UDP 443 → TCP 1935): "can't broadcast" only appears when every path is blocked. Both UDP ports blocked with 1935 open now reads "Streaming is degraded — running on the emergency fallback" (games air ~4 minutes late with no loss protection), and a healthy stream with blocked backup paths shows a resiliency warning instead of a false alarm.
+- Network Test: the optional SportzCast TCP 1935 tile is gone — two 1935 tiles with different results was confusing, and SportzCast connectivity is already covered by the Scorebot 1400–1405 tiles and the sportzcast.net service check.
 - Network Test: AWS S3 (s3.amazonaws.com) is no longer tested anywhere — removed from the port, service reachability, name lookup, and secure-connection checks. It is no longer required for streaming, so a venue firewall blocking it won't show a failure anymore.
 - The "Windows support ends within a year" warning now reassures instead of alarming when the VPU still has years of security updates left: it explains the unit is covered until the true end-of-servicing date (e.g. 2032 for LTSC 2021) and that no action is needed.
 - The blocked-backup-streaming warning no longer says "the broadcast still works" — the title and description now just state what's blocked and what to ask venue IT to open.

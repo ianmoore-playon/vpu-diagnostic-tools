@@ -65,13 +65,24 @@ try {
         @{ protocol = 'TCP'; port = 443;  host = 'secure.logmein.com';     purpose = 'LogMeIn';           optional = $false }
         @{ protocol = 'UDP'; port = 123;  host = 'prod-echo.pixellot.tv';  purpose = 'NTP';               optional = $false }
         # Zixi ingest caveat: live events stream to a broadcaster assigned
-        # per-event from AWS pools (observed us-east-2), not to prod-echo
-        # (us-east-1). These rows prove the venue firewall allows the PORTS;
-        # rules must therefore allow UDP 443/2088 by port, not by destination IP.
+        # per-event from AWS pools (observed us-east-2/us-west-2), not to
+        # prod-echo (us-east-1). These rows prove the venue firewall allows the
+        # PORTS; rules must therefore allow UDP 443/2088 by port, not by
+        # destination IP. Streaming failover chain (verified from VPU logs +
+        # packet capture, Olympic WA 2026-08-18): Zixi UDP/2088 -> Zixi UDP/443
+        # (same protocol, disguise port) -> RTMP TCP/1935 -> nothing. Either
+        # UDP rung alone is a fully healthy stream; RTMP is a degraded last
+        # resort (~4 min late start, no FEC/ARQ).
         @{ protocol = 'UDP'; port = 443;  host = 'prod-echo.pixellot.tv';  purpose = 'Zixi Backup';       optional = $false }
         @{ protocol = 'UDP'; port = 2088; host = 'prod-echo.pixellot.tv';  purpose = 'Zixi Streaming';    optional = $false }
-        # Optional -- RTMP fallback (legacy ingest)
-        @{ protocol = 'TCP'; port = 1935; host = 'sportzcast.net';         purpose = 'RTMP Ingest';       optional = $true }
+        # RTMP fallback egress (TCP/1935). No stable Pixellot host listens on
+        # 1935 -- prod-echo doesn't (verified 2026-08-18), and the real
+        # broadcasters (pxltd-<ip>.pixellot.stream) are provisioned per event
+        # and torn down after -- so this probes the most stable public RTMP
+        # listener there is. Caveat: proves 1935 egress BY PORT; a
+        # destination-aware filter could still block pixellot.stream while
+        # allowing this. Revisit if Pixellot ever adds 1935 to prod-echo.
+        @{ protocol = 'TCP'; port = 1935; host = 'a.rtmp.youtube.com';     purpose = 'RTMP Fallback';     optional = $false }
         # Optional -- Sportzcast Scorebot range (ScoreConnect deployments only)
         @{ protocol = 'TCP'; port = 1400; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
         @{ protocol = 'TCP'; port = 1401; host = 'scorebot.sportzcast.net'; purpose = 'Scorebot';         optional = $true }
