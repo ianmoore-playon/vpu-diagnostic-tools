@@ -84,6 +84,7 @@ const NAV_SECTIONS = [
   { label: "SYSTEM INFORMATION", pages: [
     { id: "hardware", label: "Hardware", icon: "cpu" },
     { id: "applications", label: "Applications", icon: "copy" },
+    { id: "software-updates", label: "Software Updates", icon: "shield" },
     { id: "disk-health", label: "Disks", icon: "hdd" },
     { id: "environment", label: "Environment", icon: "globe" },
     { id: "reboots", label: "Power Events", icon: "power" },
@@ -141,6 +142,7 @@ const PAGE_API = {
   audio: "/api/audio",
   scoreconnect: "/api/scoreconnect",
   "pixellot-config": "/api/pixellot-config",
+  "software-updates": "/api/software-updates",
   settings: "/api/settings",
 };
 
@@ -469,7 +471,7 @@ const SPLASH_NOTE_DONE    = "All checks complete.";
 // preloadProgressive); this only orders the checklist.
 const SPLASH_REVEAL_ORDER = [
   "settings", "system", "services", "events", "scoreconnect",
-  "pixellot-config", "disk-health", "reboots", "audio", "cameras",
+  "pixellot-config", "disk-health", "reboots", "software-updates", "audio", "cameras",
   "network", "dashboard",
 ];
 
@@ -1002,6 +1004,9 @@ const pageRenderers = {
   // payload still feeds all three (and Pixellot Software, below).
   hardware: renderHardware,
   applications: renderApplications,
+  // Patch evidence: Defender definitions, Windows updates (drivers excluded),
+  // BIOS/firmware and Pixellot software, with an IT-facing attestation.
+  "software-updates": renderSoftwareUpdates,
   environment: renderEnvironment,
   network: renderNetwork,
   cameras: renderCameras,
@@ -2364,6 +2369,586 @@ function renderApplications() {
       } else if (none) {
         none.style.display = "none";
       }
+    });
+  }
+}
+
+// ── Software Updates (patch evidence) ────────────────────────
+// "Prove this VPU is patched." Pixellot owns fleet patching and applies
+// updates selectively/offline, so the Windows Update UI on a VPU looks empty
+// or years stale — it is NOT evidence either way, which is exactly the
+// conversation this lane exists to end. Everything shown here comes from
+// sources that record an install regardless of how it was delivered:
+// the OS build's UBR, the Defender signature registry + Defender Operational
+// log, Get-HotFix, and the Setup log's servicing timeline. Driver packages
+// are excluded by design (they are not security patches) and the count of
+// what was dropped is shown so the exclusion is visible, not silent.
+// Data: /api/software-updates.
+
+function _suStamp(iso, dateOnly) {
+  // Fixed YYYY-MM-DD [HH:MM] — this text is pasted into emails to school IT,
+  // so it must not shift with the viewer's locale the way formatTime does.
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso);
+  const p = (n) => String(n).padStart(2, "0");
+  const day = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return dateOnly ? day : `${day} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function _suAgeLabel(days) {
+  if (days == null) return "";
+  if (days === 0) return "today";
+  return days + (days === 1 ? " day old" : " days old");
+}
+
+function _suDuration(days) {
+  if (days == null) return "an unknown period";
+  if (days < 60) return days + (days === 1 ? " day" : " days");
+  if (days < 400) return Math.round(days / 30) + " months";
+  return (days / 365).toFixed(1) + " years";
+}
+
+function _suChannelWho(chan) {
+  const who = (chan.attributedTo || []).filter(Boolean);
+  return who.length ? who.join(", ") : null;
+}
+
+function _suChannelSentence(chan) {
+  // The mechanism sentence, shared by the banner and the attestation. Reads as
+  // "likely cause", never proof: we can see the channel is blocked today, not
+  // when the venue turned the filter on.
+  //
+  // Precision matters here. At Rochelle TX only pixellot.tv (management) was
+  // intercepted while software.pixellot.tv (the dedicated update host) passed,
+  // so a blanket "the update channel is blocked" would have overstated the
+  // measurement in a document going to a school district.
+  if (!chan.blocked) return null;
+  const hosts = (chan.rows || []).map((r) => r.domain).join(", ");
+  const who = _suChannelWho(chan);
+  const how = (chan.rows || []).some((r) => r.status === "intercepted")
+    ? "is intercepting" : "is blocking";
+  const what = chan.softwareHostBlocked
+    ? " — the host Pixellot delivers software and firmware updates over."
+    : " — the host Pixellot manages this VPU over (the dedicated software-update"
+      + " host was reachable in this test).";
+  return "This venue's network " + how + " " + hosts
+    + (who ? ", attributed to " + who + "," : "") + what
+    + " Worth fixing on its own merits — but it is not established as the reason"
+    + " this unit is unpatched: VPUs on networks with no such block sit at the"
+    + " same patch level.";
+}
+
+
+function _suPostureText(post, up) {
+  const age = post.ageDays != null ? post.ageDays : post.lastUpdateAgeDays;
+  // Name what was measured. "Nothing installed for 3.2 years" was measured off
+  // a .NET runtime install on the Rochelle unit, which flattered a box whose
+  // last real security content was the January 2019 cumulative.
+  const what = post.basis === "any-update"
+    ? "no security update is recorded at all; newest servicing activity of any kind was "
+    : "no security patch for ";
+  if (post.level === "current") {
+    return "CURRENT - newest security patch " + _suAgeLabel(age) + ".";
+  }
+  if (post.level === "aging") {
+    return "BEHIND - " + what + _suDuration(age) + ".";
+  }
+  if (post.level === "stale") {
+    return age == null
+      ? "NOT PATCHED - no Windows update installs are recorded on this unit."
+      : "NOT PATCHED - " + what + _suDuration(age) + ".";
+  }
+  return "not determined";
+}
+
+function _suPostureChip(post) {
+  const map = {
+    current: ["ok", "Current"],
+    aging:   ["warn", "Behind"],
+    stale:   ["crit", "Not patched"],
+  };
+  const [cls, label] = map[post.level] || ["muted", "Unknown"];
+  return `<span class="sev-chip sev-chip-${cls}">${esc(label)}</span>`;
+}
+
+function _suDefInactive(def) {
+  // WinDefend is Stopped/Manual on the fleet image (measured on VPU2), which
+  // makes every signature age meaningless: the registry keeps the versions
+  // baked into the image, so an untouched box reports definitions thousands
+  // of days old. Treat that as "not the security control here", never as a
+  // patching failure.
+  return def.status === "disabled" || def.status === "absent";
+}
+
+function _suDefStatusChip(def) {
+  const map = {
+    current:  ["ok",    "Current"],
+    aging:    ["warn",  "Aging"],
+    stale:    ["crit",  "Stale"],
+    disabled: ["muted", "Defender disabled"],
+    absent:   ["muted", "Defender not installed"],
+    unknown:  ["muted", "Unknown"],
+  };
+  const [cls, label] = map[def.status] || map.unknown;
+  return `<span class="sev-chip sev-chip-${cls}">${esc(label)}</span>`;
+}
+
+function _suSourceCell(source) {
+  // The full source strings ("QFE inventory + Setup log") squeeze the table's
+  // last column on a 1280px VPU screen — show a compact label, keep the full
+  // wording in the tooltip.
+  if (!source) return '<span class="text-pulse-muted">\u2014</span>';
+  const short = source === "QFE inventory + Setup log" ? "QFE + Setup"
+    : source === "Setup log (servicing)" ? "Setup log"
+    : source === "QFE inventory" ? "QFE"
+    : source;
+  return `<span title="${esc(source)}">${esc(short)}</span>`;
+}
+
+function _suKbCell(kb) {
+  if (!kb) return '<span class="text-pulse-muted">—</span>';
+  const num = String(kb).replace(/^KB/i, "");
+  return `<a href="https://support.microsoft.com/help/${esc(num)}" target="_blank"
+    rel="noopener" class="font-mono text-xs">${esc(kb)}</a>`;
+}
+
+function _suAttestationText(d) {
+  // Data-only by request: every line is a measured value from the unit.
+  // No verdicts, no explanations, no recommendations -- those live in the
+  // lane's UI banners. This document is the raw evidence a district or
+  // vendor reads without Pulse's interpretation attached.
+  const os = d.os || {}, del = d.delivery || {}, def = d.defender || {};
+  const up = d.updates || {}, bios = d.bios || {}, pix = d.pixellot || {};
+  const host = d.host || {}, pend = d.pendingReboot || {};
+  const chan = d.updateChannel || {}, ctrl = d.controls || {}, dotNet = d.dotNet || {};
+  const fails = up.failures || {};
+  const L = [];
+  const pad = (k, v) => L.push("  " + (k + "                          ").slice(0, 26) + ": " + (v == null || v === "" ? "not reported" : v));
+
+  L.push("PIXELLOT VPU - SOFTWARE UPDATE ATTESTATION");
+  L.push("Generated by Pulse diagnostics: " + _suStamp(d.collectedAt || new Date().toISOString()));
+  L.push("");
+  pad("Host", host.hostname);
+  pad("Serial", bios.serialNumber);
+  const mfr = bios.manufacturer || "";
+  const model = bios.model || "";
+  pad("Hardware", (mfr && model.toLowerCase().startsWith(mfr.toLowerCase()))
+    ? model : [mfr, model].filter(Boolean).join(" "));
+  if (pix.vpuName) pad("Venue", pix.vpuName);
+  L.push("");
+  L.push("OPERATING SYSTEM");
+  pad("Product", [os.productName, os.edition ? "(" + os.edition + ")" : ""].filter(Boolean).join(" "));
+  pad("Feature release", os.featureRelease);
+  pad("Full build", os.fullBuild);
+  pad("UBR", os.ubr);
+  pad("Image installed", os.imageInstalled ? _suStamp(os.imageInstalled, true) : null);
+  if (dotNet.version) pad(".NET Framework", dotNet.version + (dotNet.release ? " (release " + dotNet.release + ")" : ""));
+  pad("Pending reboot", pend.isPending ? "yes - " + (pend.reasons || []).join("; ") : "no");
+  L.push("");
+  L.push("WINDOWS UPDATE CONFIGURATION");
+  (del.services || []).forEach((s) => {
+    pad(s.name + " service", (s.status || "unknown") + (s.startType ? " / " + s.startType : ""));
+  });
+  pad("NoAutoUpdate policy", del.noAutoUpdate == null ? "not set" : del.noAutoUpdate);
+  pad("WSUS server", del.wsusServer || "none configured");
+  (del.agentResults || []).forEach((a) => {
+    pad("WU agent last " + a.phase, a.lastSuccessUtc ? a.lastSuccessUtc + " UTC" : "none recorded");
+  });
+  L.push("");
+  L.push("WINDOWS UPDATES INSTALLED");
+  pad("Total recorded", up.count);
+  pad("Security updates", up.securityCount);
+  pad("Newest of any kind", up.lastInstalledOn ? _suStamp(up.lastInstalledOn) + " (" + _suAgeLabel(up.lastInstalledAgeDays) + ")" : "none recorded");
+  pad("Newest security", up.lastSecurityInstalledOn
+    ? _suStamp(up.lastSecurityInstalledOn) + " (" + _suAgeLabel(up.lastSecurityAgeDays) + ")"
+    : "none recorded");
+  pad("Driver packages excluded", up.driversExcluded || 0);
+  pad("Failed install attempts", ((fails.servicingFailures || 0) + (fails.wuFailures || 0))
+    + " (servicing log: " + (fails.servicingFailures || 0) + ", Windows Update log: " + (fails.wuFailures || 0) + ")");
+  L.push("");
+  (up.items || []).slice(0, 80).forEach((u) => {
+    L.push("  " + _suStamp(u.installedOn, true) + "  "
+      + ((u.kb || "-") + "           ").slice(0, 12)
+      + ((u.kind || "") + "                  ").slice(0, 20)
+      + (u.installedBy ? " by " + u.installedBy : ""));
+  });
+  if ((up.items || []).length > 80) L.push("  ... " + ((up.items || []).length - 80) + " older entries not listed");
+  (fails.recent || []).slice(0, 10).forEach((f) => {
+    L.push("  " + _suStamp(f.when) + "  " + (f.kb || "-") + "  " + (f.source || "") + "  FAILED");
+  });
+  L.push("");
+  L.push("MICROSOFT DEFENDER");
+  pad("Service", (def.serviceStatus || "unknown") + (def.serviceStartType ? " / " + def.serviceStartType : ""));
+  pad("DisableAntiSpyware policy", def.disabledByPolicy ? "set" : "not set");
+  pad("Engine version", def.engineVersion);
+  pad("Platform version", def.platformVersion);
+  pad("Signatures last updated", def.lastUpdated
+    ? _suStamp(def.lastUpdated) + (def.lastUpdatedAgeDays != null ? " (" + _suAgeLabel(def.lastUpdatedAgeDays) + ")" : "")
+    : null);
+  (def.definitions || []).forEach((s) => {
+    pad(s.label || s.type, s.version + "  applied " + _suStamp(s.appliedOn)
+      + (s.ageDays != null ? " (" + _suAgeLabel(s.ageDays) + ")" : ""));
+  });
+  const hist = (def.history || []).slice(0, 15);
+  if (hist.length) {
+    L.push("");
+    L.push("  Definition update history (most recent " + hist.length + " of " + (def.history || []).length + "):");
+    hist.forEach((h) => {
+      const what = h.version ? h.version
+        : h.engineVersion ? "engine " + h.engineVersion
+        : "no new version applied";
+      L.push("    " + _suStamp(h.appliedOn) + "  "
+        + ((h.signatureType || "-") + "            ").slice(0, 13) + what
+        + (h.previousVersion ? "  (was " + h.previousVersion + ")" : "")
+        + "  " + (h.outcome || ""));
+    });
+  }
+  L.push("");
+  L.push("SECURITY PRODUCTS AND FIREWALL");
+  (ctrl.firewallProfiles || []).forEach((f) => {
+    pad("Firewall " + f.name, f.enabled ? "enabled" : "disabled");
+  });
+  if (!(ctrl.firewallProfiles || []).length) pad("Firewall profiles", "not readable");
+  if (ctrl.securityCenterChecked) {
+    const avs = ctrl.antivirusProducts || [];
+    pad("Registered AV products", avs.length);
+    avs.forEach((a) => {
+      pad("  " + a.displayName, (a.enabled ? "enabled" : "disabled") + " (productState " + a.productState + ")");
+    });
+  } else {
+    pad("Registered AV products", "Security Center not readable");
+  }
+  L.push("");
+  L.push("BIOS / FIRMWARE");
+  pad("Version", bios.version);
+  pad("Released", bios.releaseDate ? _suStamp(bios.releaseDate, true) : null);
+  L.push("");
+  L.push("PIXELLOT SOFTWARE");
+  pad("VPU software", pix.version);
+  pad("Image version", pix.imageVersion);
+  if ((chan.hosts || []).length) {
+    L.push("");
+    L.push("PIXELLOT SERVICE HOSTS (LIVE TLS TEST)");
+    chan.hosts.forEach((h) => {
+      const issuer = (h.status !== "pass" && (h.issuerCn || h.issuerOrg))
+        ? "  issuer: " + [h.issuerCn, h.issuerOrg ? "(" + h.issuerOrg + ")" : ""].filter(Boolean).join(" ")
+        : "";
+      L.push("  " + (h.domain + "                        ").slice(0, 24)
+        + ((h.role === "software-updates" ? "software/firmware updates" : "management") + "                           ").slice(0, 27)
+        + (h.status === "pass" ? "reachable" : h.status) + issuer);
+      if (h.blockPageUrl) L.push("    block page: " + h.blockPageUrl);
+    });
+  }
+  L.push("");
+  L.push("Sources: Windows registry (CurrentVersion; Defender Signature Updates and");
+  L.push("policy keys; .NET Framework Setup Release), Get-HotFix /");
+  L.push("Win32_QuickFixEngineering, Setup event log (Microsoft-Windows-Servicing");
+  L.push("ids 2 and 3), System event log (WindowsUpdateClient id 20), Microsoft");
+  L.push("Defender Operational log (ids 2000/2001/2002), Windows Security Center");
+  L.push("(root/SecurityCenter2 AntiVirusProduct), Windows Firewall profiles, and");
+  L.push("live TLS handshakes to the Pixellot service hosts. All timestamps are");
+  L.push("from this unit's clock.");
+  return L.join("\n");
+}
+
+function _suCopyAttestation() {
+  const el = document.getElementById("su-attest-text");
+  const msg = document.getElementById("su-attest-msg");
+  if (!el) return;
+  const say = (t) => { if (msg) { msg.textContent = t; setTimeout(() => { msg.textContent = ""; }, 3000); } };
+  // Fallback for both no-clipboard-API (plain http over the LAN) and a
+  // rejected write (no user activation / unfocused document): select the
+  // block so the tech can still Ctrl+C it, rather than leaving them stuck.
+  const selectIt = () => {
+    try {
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      say("Selected — press Ctrl+C to copy.");
+    } catch { say("Select the text and press Ctrl+C."); }
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(el.textContent).then(() => say("Copied to clipboard."), selectIt);
+    return;
+  }
+  selectIt();
+}
+
+function renderSoftwareUpdates() {
+  const data = cached("software-updates");
+  if (!data) {
+    $page().innerHTML = sectionLoading("Software Updates");
+    fetchSection("software-updates").then(() => { if (currentPage === "software-updates") renderSoftwareUpdates(); });
+    return;
+  }
+  if (data.error) { $page().innerHTML = errorBox(data.message); return; }
+
+  const os = data.os || {}, del = data.delivery || {}, def = data.defender || {};
+  const up = data.updates || {}, bios = data.bios || {}, pix = data.pixellot || {};
+  const host = data.host || {}, pend = data.pendingReboot || {};
+  const post = data.posture || {};
+  const chan = data.updateChannel || {};
+  const ctrl = data.controls || {}, dotNet = data.dotNet || {};
+  const fails = up.failures || {};
+  const items = up.items || [];
+
+  const deliveryLabel = del.mode === "wsus" ? "Managed WSUS" : del.mode === "offline" ? "Pixellot / offline" : "Windows Update";
+
+  $page().innerHTML = `
+    ${pageHeader("Software Updates",
+      "What has been patched on this VPU and when — the evidence the Windows Update screen cannot show.",
+      `<button class="btn-outline btn-ol-blue" onclick="dataCache['software-updates']=null;renderSoftwareUpdates()">
+        ${svgIcon("refresh", 14)} Refresh
+      </button>`
+    )}
+
+    <div class="su-stats">
+      <div class="su-stat">
+        <span class="su-stat-val">${esc(os.fullBuild || "—")}</span>
+        <span class="su-stat-label">OS Patch Level</span>
+        <span class="su-stat-sub">${esc(os.featureRelease ? "Release " + os.featureRelease : "")}</span>
+      </div>
+      <div class="su-stat">
+        <span class="su-stat-val">${esc(_suDefInactive(def) ? "Disabled" : ((def.definitions || [])[0]?.version || "—"))}</span>
+        <span class="su-stat-label">Defender Definitions</span>
+        <span class="su-stat-sub">${_suDefInactive(def)
+          ? "not active on this image"
+          : def.lastUpdatedAgeDays != null ? esc(_suAgeLabel(def.lastUpdatedAgeDays)) : esc(def.status || "unknown")}</span>
+      </div>
+      <div class="su-stat">
+        <span class="su-stat-val">${esc(String(up.count == null ? "—" : up.count))}</span>
+        <span class="su-stat-label">Windows Updates</span>
+        <span class="su-stat-sub">${up.securityCount != null ? esc(up.securityCount + " security") : ""}</span>
+      </div>
+      <div class="su-stat">
+        <span class="su-stat-val">${esc(pix.version || "—")}</span>
+        <span class="su-stat-label">Pixellot Software</span>
+        <span class="su-stat-sub">${esc(pix.imageVersion ? "Image " + pix.imageVersion : "")}</span>
+      </div>
+    </div>
+
+    ${post.level && post.level !== "current" ? `
+    <div class="sw-concern-banner" style="margin-top:0;margin-bottom:1rem">
+      ${svgIcon("alert", 14)}
+      <span><strong>${post.level === "stale" ? "This VPU is not being patched." : "This VPU is behind on patching."}</strong>
+      ${esc(_suPostureText(post, up))}
+      ${post.securityControl === "none"
+        ? " Microsoft Defender is also inactive, so no current security control is in force on this unit."
+        : ""}
+      ${chan.blocked ? "" : "Escalate to Pixellot rather than sending the attestation below as-is."}</span>
+    </div>` : ""}
+
+    ${post.level && post.level !== "current" && chan.blocked ? `
+    <div class="dash-info-banner" style="margin-top:0;margin-bottom:1rem">
+      <span class="dash-banner-icon">${svgIcon("link", 18)}</span>
+      <div>
+        <div class="text-sm font-semibold mb-1">Also blocked here: ${chan.softwareHostBlocked ? "Pixellot's update channel" : "Pixellot's management channel"}</div>
+        <p class="text-sm text-pulse-muted mb-0">${esc(_suChannelSentence(chan))}</p>
+        <p class="text-sm text-pulse-muted mt-2 mb-0"><strong>A domain allowlist alone may not be enough.</strong>
+          If the filter demands a per-user sign-in (captive portal or directory-based filtering), this VPU can
+          never satisfy it — it has no browser and no district user account. It needs a device-level exemption
+          by IP or MAC, in an appliance/IoT policy group rather than a user policy group.</p>
+        <p class="text-xs text-pulse-muted mt-1 mb-0">Two separate actions: fix the block on the venue's network (see Network Test), and separately ask Pixellot why the operating system was never brought forward.</p>
+      </div>
+    </div>` : ""}
+
+    <div class="dash-info-banner" style="margin-top:0">
+      <span class="dash-banner-icon">${svgIcon("info", 18)}</span>
+      <div>
+        <div class="text-sm font-semibold mb-1">Update delivery: ${esc(deliveryLabel)}</div>
+        <p class="text-sm text-pulse-muted mb-0">${esc(del.explanation || "")}</p>
+        ${del.wsusServer ? `<p class="text-xs text-pulse-muted mt-1 mb-0 font-mono">${esc(del.wsusServer)}${del.wsusTargetGroup ? " · group " + esc(del.wsusTargetGroup) : ""}</p>` : ""}
+      </div>
+    </div>
+
+    ${pend.isPending ? `<div class="sw-concern-banner" style="margin-top:1rem">
+      ${svgIcon("alert", 14)}
+      <span><strong>A servicing operation is waiting on a reboot.</strong>
+      ${esc((pend.reasons || []).join("; "))} — until this VPU restarts, the patch level above is installed but not fully active.</span>
+    </div>` : ""}
+
+    <div class="card">
+      ${sectionTitle("shield", "Microsoft Defender Security Definitions")}
+      <div class="flex items-center gap-2 mb-3">
+        ${_suDefStatusChip(def)}
+        <span class="text-sm text-pulse-muted">
+          ${_suDefInactive(def)
+            ? "Microsoft Defender is not running on this VPU image, so it is not the security control here. "
+              + "The versions below are frozen at whatever the image shipped with"
+              + (def.lastUpdated ? " (" + esc(_suStamp(def.lastUpdated, true)) + ")" : "")
+              + " — they are not a lapsed update."
+            : def.lastUpdated
+              ? "Definitions last applied " + esc(_suStamp(def.lastUpdated)) + " (" + esc(_suAgeLabel(def.lastUpdatedAgeDays)) + ")."
+              : "No definition timestamp recorded on this host."}
+        </span>
+      </div>
+      <div class="dash-2col">
+        <div class="sub-card">
+          <div class="kv-grid">
+            ${kvRow("Service", (def.serviceStatus || "unknown") + (def.serviceStartType ? " / " + def.serviceStartType : ""))}
+            ${kvRow("Engine version", def.engineVersion)}
+            ${kvRow("Platform version", def.platformVersion)}
+            ${kvRow("Real-time protection", def.realTimeProtection == null ? null : def.realTimeProtection ? "Enabled" : "Disabled")}
+            ${def.disabledByPolicy ? kvRow("Disabled by policy", "Yes - DisableAntiSpyware registry policy (deliberate image configuration)") : ""}
+            ${(() => {
+              const fw = ctrl.firewallProfiles || [];
+              if (!fw.length) return kvRow("Host firewall", null);
+              const off = fw.filter((f) => !f.enabled).map((f) => f.name);
+              return kvRow("Host firewall", off.length === 0 ? "Enabled (all profiles)" : "DISABLED on: " + off.join(", "));
+            })()}
+            ${(() => {
+              if (!ctrl.securityCenterChecked) return kvRow("Other antivirus", "Security Center not readable");
+              const others = (ctrl.antivirusProducts || []).filter((a) => !a.isDefender);
+              return kvRow("Other antivirus", others.length
+                ? others.map((a) => a.displayName + (a.enabled ? " (active)" : " (inactive)")).join("; ")
+                : "None registered");
+            })()}
+          </div>
+        </div>
+        <div class="sub-card">
+          ${(def.definitions || []).length ? `<table class="data-table"><thead><tr>
+              <th>Definition set</th><th>Version</th><th>Applied</th>
+            </tr></thead><tbody>
+            ${(def.definitions || []).map((s) => `<tr>
+              <td>${esc(s.label || s.type)}</td>
+              <td class="font-mono text-xs">${esc(s.version)}</td>
+              <td class="whitespace-nowrap">${esc(_suStamp(s.appliedOn))}
+                ${s.ageDays != null ? `<span class="text-pulse-muted text-xs"> (${esc(_suAgeLabel(s.ageDays))})</span>` : ""}</td>
+            </tr>`).join("")}
+          </tbody></table>` : `<p class="text-sm text-pulse-muted mb-0">No signature versions recorded in the Defender registry on this host.</p>`}
+        </div>
+      </div>
+
+      ${(def.history || []).length ? `
+        <details class="mt-4">
+          <summary class="text-sm text-pulse-muted cursor-pointer">Definition update history (${(def.history || []).length} entries, newest first)${_suDefInactive(def) ? " — all pre-date Defender being switched off" : ""}</summary>
+          <div class="su-table-wrap mt-2">
+            <table class="data-table"><thead><tr>
+              <th>Applied</th><th>Type</th><th>Version</th><th>Previous</th><th>Trigger</th><th>Result</th>
+            </tr></thead><tbody>
+            ${(def.history || []).map((h) => `<tr>
+              <td class="whitespace-nowrap">${esc(_suStamp(h.appliedOn))}</td>
+              <td>${esc(h.signatureType || (h.outcome === "engine-updated" ? "Engine" : "—"))}</td>
+              <td class="font-mono text-xs">${esc(h.version || h.engineVersion || "—")}</td>
+              <td class="font-mono text-xs text-pulse-muted">${esc(h.previousVersion || "—")}</td>
+              <td class="text-pulse-muted">${esc(h.updateType || "—")}</td>
+              <td>${h.outcome === "failed"
+                    ? '<span class="status-warn">failed</span>'
+                    : `<span class="text-pulse-muted">${esc(h.outcome || "")}</span>`}</td>
+            </tr>`).join("")}
+            </tbody></table>
+          </div>
+        </details>` : `<p class="text-sm text-pulse-muted mt-3 mb-0">${esc(def.historyNote || "No definition-update history available.")}</p>`}
+    </div>
+
+    <div class="card">
+      ${sectionTitle("package", "Installed Windows Updates (" + (up.count == null ? 0 : up.count) + ")")}
+      <p class="text-sm text-pulse-muted mb-3">
+        Merged from the QFE inventory and the Setup log's servicing timeline, so offline
+        (wusa/DISM) installs appear even though the Windows Update agent never ran.
+        ${up.driversExcluded ? `<strong>${esc(String(up.driversExcluded))}</strong> driver package${up.driversExcluded === 1 ? "" : "s"} excluded — driver updates are not security patches.` : "No driver packages were found to exclude."}
+        ${up.lastInstalledOn ? ` Most recent install ${esc(_suStamp(up.lastInstalledOn))} (${esc(_suAgeLabel(up.lastInstalledAgeDays))}).` : ""}
+        ${(() => {
+          const n = (fails.servicingFailures || 0) + (fails.wuFailures || 0);
+          return n === 0
+            ? " No failed install attempts are recorded, so gaps reflect updates never attempted rather than attempts that failed."
+            : ` <strong>${esc(String(n))} failed install attempt${n === 1 ? "" : "s"} recorded</strong> — this unit has tried and failed to update.`;
+        })()}
+      </p>
+      ${up.servicingNote ? `<p class="text-xs text-pulse-muted mb-3">${esc(up.servicingNote)}</p>` : ""}
+      ${items.length ? `
+        <input type="text" id="su-filter" placeholder="Filter by KB, type, or package..." class="su-filter-input"/>
+        <div class="su-table-wrap">
+          <table class="data-table" id="su-table"><thead><tr>
+            <th>Installed</th><th>KB</th><th>Type</th><th>Package / title</th><th>Installed by</th><th>Evidence</th>
+          </tr></thead><tbody>
+            ${items.map((u) => `<tr>
+              <td class="whitespace-nowrap">${esc(_suStamp(u.installedOn, true))}</td>
+              <td>${_suKbCell(u.kb)}</td>
+              <td>${esc(u.kind || "—")}</td>
+              <td class="text-xs su-title-cell" title="${esc(u.title || "")}">${u.title ? esc(u.title) : '<span class="text-pulse-muted">—</span>'}</td>
+              <td class="text-pulse-muted text-xs">${esc(u.installedBy || "—")}</td>
+              <td class="text-pulse-muted text-xs whitespace-nowrap">${_suSourceCell(u.source)}</td>
+            </tr>`).join("")}
+          </tbody></table>
+        </div>
+        ${up.returned != null && up.count > up.returned ? `<p class="text-xs text-pulse-muted mt-2 mb-0">Showing the ${esc(String(up.returned))} most recent of ${esc(String(up.count))} recorded updates.</p>` : ""}
+      ` : '<p class="text-pulse-muted text-sm mb-0">No installed updates were recorded by either source.</p>'}
+    </div>
+
+    <div class="card">
+      ${sectionTitle("id-card", "Operating System & Firmware")}
+      <div class="dash-2col">
+        <div class="sub-card">
+          <div class="kv-grid">
+            ${kvRow("Host", host.hostname)}
+            ${kvRow("Product", os.productName)}
+            ${kvRow("Edition", os.edition)}
+            ${kvRow("Feature release", os.featureRelease)}
+            ${kvRowHtml("Full build", `<span class="font-mono">${esc(os.fullBuild || "—")}</span>`)}
+            ${kvRow("UBR", os.ubr)}
+            ${kvRow("Image installed", os.imageInstalled ? _suStamp(os.imageInstalled, true) : null)}
+            ${kvRowHtml("Patch posture", _suPostureChip(post)
+              + ` <span class="text-xs text-pulse-muted">${esc(_suPostureText(post, up))}</span>`)}
+            ${kvRow("Last security patch", post.lastSecurityInstalledOn
+              ? _suStamp(post.lastSecurityInstalledOn, true)
+                + (post.lastSecurityAgeDays != null ? " (" + _suAgeLabel(post.lastSecurityAgeDays) + ")" : "")
+              : "none recorded")}
+          </div>
+          <p class="text-xs text-pulse-muted mt-3 mb-0">
+            The UBR (last segment of the full build) maps to a specific monthly cumulative
+            update. Cumulative updates are cumulative, so this single number is the OS patch
+            level regardless of how it was delivered — look it up on
+            <a href="https://learn.microsoft.com/windows/release-health/release-information"
+               target="_blank" rel="noopener">Microsoft's release-health page</a> to date it.
+            Ages here are measured from <em>install</em> dates; a cumulative can be installed
+            long after Microsoft shipped it, so this patch level may be older than it looks.
+          </p>
+        </div>
+        <div class="sub-card">
+          <div class="kv-grid">
+            ${kvRow("BIOS version", bios.version)}
+            ${kvRow("BIOS released", bios.releaseDate ? _suStamp(bios.releaseDate, true) : null)}
+            ${kvRow("Manufacturer", bios.manufacturer)}
+            ${kvRow("Model", bios.model)}
+            ${kvRow("Serial number", bios.serialNumber)}
+            ${kvRow(".NET Framework", dotNet.version)}
+            ${kvRow("Pixellot software", pix.version)}
+            ${kvRow("Pixellot image", pix.imageVersion)}
+          </div>
+          <p class="text-xs text-pulse-muted mt-3 mb-0">
+            BIOS/firmware and the Pixellot VPU software are both updated by Pixellot, outside
+            the Windows servicing stack — they have no Windows Update record by design.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      ${sectionTitle("clipboard-list", "Attestation for IT")}
+      <p class="text-sm text-pulse-muted mb-3">
+        A data-only plain-text export of the evidence above — measured values only, no
+        interpretation — ready to paste into an email or ticket for a district IT department.
+      </p>
+      <button class="btn-outline btn-ol-green" onclick="_suCopyAttestation()">
+        ${svgIcon("copy", 14)} Copy attestation
+      </button>
+      <span id="su-attest-msg" class="text-sm text-pulse-muted ml-3"></span>
+      <pre class="su-attest" id="su-attest-text">${esc(_suAttestationText(data))}</pre>
+    </div>
+  `;
+
+  const filter = document.getElementById("su-filter");
+  if (filter) {
+    const rows = [...document.querySelectorAll("#su-table tbody tr")];
+    filter.addEventListener("input", () => {
+      const q = filter.value.toLowerCase();
+      rows.forEach((tr) => {
+        tr.style.display = tr.textContent.toLowerCase().includes(q) ? "" : "none";
+      });
     });
   }
 }

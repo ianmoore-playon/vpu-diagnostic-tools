@@ -459,10 +459,301 @@ def _demo_poe_power():
     }
 
 
+def _demo_patch_compliance():
+    """Synthetic patch/update evidence for the Software Updates lane.
+
+    Shaped from a real VPU (VPU2, 2026-08-20) so demo mode doesn't paint a
+    prettier box than the fleet: Windows Update is policy-disabled, the WU
+    agent has never run, Get-HotFix Description is just the update class, and
+    servicing package identities are often nothing but the KB. Defender is
+    Stopped/Manual on the fleet image, which freezes its signature versions at
+    image build — so most demo venues render that state, and a minority render
+    an active-Defender box, keeping both UI paths exercised.
+    """
+    now = datetime.now()
+    # 2 of the 10 demo venues get an active Defender, so both UI branches show
+    # up across sessions (the venue is picked once at module load) while the
+    # fleet-real disabled state stays the common case.
+    defender_active = sum(ord(c) for c in _VENUE["hostname"]) % 4 == 1
+    # ...and 2 venues model the abandoned unit that started this lane: Rochelle
+    # (TX), whose OS cumulative was still 17763.253 (KB4480116, January 2019)
+    # with Defender off and a reboot pending. Named explicitly so the "not
+    # patched" path is always reachable in demo, never a lucky draw.
+    abandoned = _VENUE["hostname"] in ("PXLS2-19844", "PXLS2-25618")
+    if abandoned:
+        defender_active = False
+
+    def _iso(days_ago, hour=3, minute=14):
+        d = now - timedelta(days=days_ago)
+        return d.replace(hour=hour, minute=minute, second=0, microsecond=0).isoformat()
+
+    def _day(days_ago):
+        d = now - timedelta(days=days_ago)
+        return d.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    # (kb, kind, days_ago, installedBy, source, title)
+    # QFE-only rows carry a date at midnight (Get-HotFix has date granularity);
+    # dual-sourced rows keep the Setup log's real timestamp.
+    _rows = [
+        ("KB5094123", "Security Update",   38,  "NT AUTHORITY\\SYSTEM", "QFE inventory + Setup log", None),
+        ("KB5094143", "Security Update",   38,  "NT AUTHORITY\\SYSTEM", "QFE inventory + Setup log", None),
+        ("KB5087066", "Update",            38,  "NT AUTHORITY\\SYSTEM", "QFE inventory + Setup log", None),
+        ("KB5055175", "Servicing package", 111, None,                  "Setup log (servicing)",     None),
+        ("KB5055519", "Servicing package", 111, None,                  "Setup log (servicing)",     None),
+        ("KB5055662", "Security Update",   111, "NT AUTHORITY\\SYSTEM", "QFE inventory + Setup log", None),
+        (None,        "Servicing package", 111, None,                  "Setup log (servicing)",
+         "Package_for_ServicingStack_8880~31bf3856ad364e35~amd64~~17763.8880.1.0"),
+        ("KB5049615", "Servicing package", 216, None,                  "Setup log (servicing)",     None),
+        ("KB5050008", "Servicing package", 216, None,                  "Setup log (servicing)",     None),
+        ("KB5049981", "Security Update",   216, "NT AUTHORITY\\SYSTEM", "QFE inventory + Setup log", None),
+        ("KB5046612", "Security Update",   306, "NT AUTHORITY\\SYSTEM", "QFE inventory",             None),
+        ("KB5043064", "Update",            398, "NT AUTHORITY\\SYSTEM", "QFE inventory",             None),
+        ("KB4589208", "Update",            1972, "NT AUTHORITY\\SYSTEM", "QFE inventory",            None),
+        ("KB4535680", "Security Update",   2011, "NT AUTHORITY\\SYSTEM", "QFE inventory",            None),
+    ]
+    items = []
+    for kb, kind, days, by, source, title in _rows:
+        items.append({
+            "kb": kb,
+            "title": title,
+            "kind": kind,
+            "installedOn": _day(days) if source == "QFE inventory" else _iso(days),
+            "installedBy": by,
+            "source": source,
+            "package": kb if "Setup log" in source else None,
+        })
+    if abandoned:
+        # Five entries, nothing since the Jan-2019 cumulative was (late-)
+        # installed. Matches the disputed unit's Get-HotFix output exactly.
+        items = [
+            {"kb": "KB4486153", "title": None, "kind": "Update",
+             "installedOn": "2023-06-27T05:14:00", "installedBy": "VPU\\Pixellot",
+             "source": "QFE inventory", "package": None},
+            {"kb": "KB4480116", "title": None, "kind": "Security Update",
+             "installedOn": "2020-11-09T00:00:00", "installedBy": "NT AUTHORITY\\SYSTEM",
+             "source": "QFE inventory", "package": None},
+            {"kb": "KB4470788", "title": None, "kind": "Security Update",
+             "installedOn": "2019-01-08T00:00:00", "installedBy": "NT AUTHORITY\\SYSTEM",
+             "source": "QFE inventory", "package": None},
+            {"kb": "KB4480056", "title": None, "kind": "Update",
+             "installedOn": "2019-01-08T00:00:00", "installedBy": "NT AUTHORITY\\SYSTEM",
+             "source": "QFE inventory", "package": None},
+            {"kb": "KB4480979", "title": None, "kind": "Security Update",
+             "installedOn": "2019-01-08T00:00:00", "installedBy": "NT AUTHORITY\\SYSTEM",
+             "source": "QFE inventory", "package": None},
+        ]
+    items.sort(key=lambda r: r["installedOn"], reverse=True)
+
+    if defender_active:
+        sig_ver = "1.417.842.0"
+        sig_applied = (now - timedelta(days=2, hours=6)).replace(microsecond=0).isoformat()
+        _defs = [
+            (sig_ver,       "1.417.791.0", 2,  "applied"),
+            ("1.417.791.0", "1.417.744.0", 3,  "applied"),
+            ("1.417.744.0", "1.417.702.0", 4,  "applied"),
+            ("1.417.702.0", "1.417.655.0", 6,  "failed"),
+            ("1.417.702.0", "1.417.655.0", 6,  "applied"),
+            ("1.417.655.0", "1.417.601.0", 8,  "applied"),
+            ("1.417.601.0", "1.417.550.0", 10, "applied"),
+            ("1.417.550.0", "1.417.498.0", 12, "applied"),
+        ]
+        defender = {
+            "status": "current",
+            "present": True,
+            "serviceStatus": "Running",
+            "serviceStartType": "Automatic",
+            "engineVersion": "1.1.25060.5",
+            "platformVersion": "4.18.25050.5",
+            "lastUpdated": sig_applied,
+            "lastUpdatedAgeDays": 2,
+            "realTimeProtection": True,
+            "definitions": [
+                {"type": "AV", "label": "Antivirus", "version": sig_ver, "appliedOn": sig_applied, "ageDays": 2},
+                {"type": "AS", "label": "Antispyware", "version": sig_ver, "appliedOn": sig_applied, "ageDays": 2},
+                {"type": "NIS", "label": "Network Inspection", "version": sig_ver, "appliedOn": sig_applied, "ageDays": 2},
+            ],
+            "history": [],
+            "historyNote": None,
+            "disabledByPolicy": False,
+        }
+        for cur, prev, days, outcome in _defs:
+            defender["history"].append({
+                "appliedOn": (now - timedelta(days=days, hours=6)).replace(microsecond=0).isoformat(),
+                "eventId": 2001 if outcome == "failed" else 2000,
+                "outcome": outcome,
+                "signatureType": "AntiVirus",
+                "version": cur,
+                "previousVersion": prev,
+                "updateType": "Scheduled",
+                "engineVersion": "1.1.25060.5",
+            })
+        defender["history"].append({
+            "appliedOn": (now - timedelta(days=13, hours=2)).replace(microsecond=0).isoformat(),
+            "eventId": 2002, "outcome": "engine-updated", "signatureType": None,
+            "version": None, "previousVersion": None, "updateType": None,
+            "engineVersion": "1.1.25060.5",
+        })
+    else:
+        # The fleet image: WinDefend Stopped/Manual since deployment, so the
+        # signature registry still holds the image-build versions and every
+        # Defender log entry is an ancient failed update attempt. Frozen dates,
+        # deliberately not relative to `now`.
+        frozen_ver = "1.283.3065.0"
+        frozen_applied = "2019-01-15T23:03:04.0000000-05:00"
+        frozen_age = (now - datetime(2019, 1, 15)).days
+        defender = {
+            "status": "disabled",
+            "present": True,
+            "serviceStatus": "Stopped",
+            "serviceStartType": "Manual",
+            "engineVersion": "1.1.15500.2",
+            "platformVersion": None,
+            "lastUpdated": "2019-01-16T08:27:23.8826223-05:00",
+            "lastUpdatedAgeDays": frozen_age,
+            "realTimeProtection": None,
+            "definitions": [
+                {"type": "AV", "label": "Antivirus", "version": frozen_ver,
+                 "appliedOn": frozen_applied, "ageDays": frozen_age},
+                {"type": "AS", "label": "Antispyware", "version": frozen_ver,
+                 "appliedOn": frozen_applied, "ageDays": frozen_age},
+            ],
+            "history": [
+                {"appliedOn": "2019-01-16T12:45:07.0573027-05:00", "eventId": 2001,
+                 "outcome": "failed", "signatureType": "AntiVirus", "version": None,
+                 "previousVersion": frozen_ver, "updateType": "Full", "engineVersion": None},
+                {"appliedOn": "2019-01-16T08:27:24.2316077-05:00", "eventId": 2001,
+                 "outcome": "failed", "signatureType": "AntiVirus", "version": None,
+                 "previousVersion": frozen_ver, "updateType": "Full", "engineVersion": None},
+                {"appliedOn": "2019-01-16T02:11:52.4410901-05:00", "eventId": 2001,
+                 "outcome": "failed", "signatureType": "AntiSpyware", "version": None,
+                 "previousVersion": frozen_ver, "updateType": "Full", "engineVersion": None},
+            ],
+            "historyNote": None,
+            # The fleet image switches Defender off deliberately (policy key),
+            # which is what lets the report say "by design, not breakage".
+            "disabledByPolicy": True,
+        }
+
+    last_on = items[0]["installedOn"]
+    last_age = (now - datetime.fromisoformat(last_on)).days
+    sec_rows = [i for i in items if "Security" in (i["kind"] or "")]
+    last_sec_on = sec_rows[0]["installedOn"] if sec_rows else None
+    last_sec_age = (now - datetime.fromisoformat(last_sec_on)).days if last_sec_on else None
+    # Mirror the collector: score on the newest SECURITY update, not on any
+    # servicing activity (a .NET runtime install is not a patch).
+    basis = "security-update" if last_sec_age is not None else ("any-update" if last_age is not None else "none")
+    posture_age = last_sec_age if last_sec_age is not None else last_age
+    level = ("current" if posture_age <= 120
+             else "aging" if posture_age <= 400
+             else "stale")
+    control = ("os-patching+av" if level == "current" and defender_active
+               else "os-patching" if level == "current"
+               else "av" if defender_active
+               else "none")
+
+    return {
+        "collectedAt": now.isoformat(),
+        "elevated": True,
+        "os": {
+            "productName": "Windows 10 Enterprise LTSC 2019",
+            "edition": "EnterpriseS",
+            "featureRelease": "1809",
+            "build": "17763",
+            # UBR 253 = KB4480116, January 2019 -- the abandoned unit never got
+            # another cumulative. 8880 is a currently-patched box (VPU2).
+            "ubr": 253 if abandoned else 8880,
+            "fullBuild": "10.0.17763.253" if abandoned else "10.0.17763.8880",
+            "imageInstalled": "2019-02-25T18:56:05.0000000-05:00",
+        },
+        "dotNet": {"version": "4.8", "release": 528049},
+        "controls": {
+            "firewallProfiles": [
+                {"name": "Domain", "enabled": True},
+                {"name": "Private", "enabled": True},
+                {"name": "Public", "enabled": True},
+            ],
+            "securityCenterChecked": True,
+            # Measured on VPU2: with Defender disabled by policy, SecurityCenter2
+            # registers NO products at all - the list is empty, not
+            # Defender-marked-inactive. Active branch shows the registered entry
+            # (productState middle-byte 0x10 = enabled).
+            "antivirusProducts": ([
+                {"displayName": "Windows Defender", "productState": 397568,
+                 "enabled": True, "isDefender": True},
+            ] if defender_active else []),
+        },
+        "posture": {
+            "level": level,
+            "basis": basis,
+            "ageDays": posture_age,
+            "securityControl": control,
+            "lastUpdateAgeDays": last_age,
+            "lastSecurityInstalledOn": last_sec_on,
+            "lastSecurityAgeDays": last_sec_age,
+            "defenderActive": defender_active,
+            "thirdPartyAvActive": False,
+        },
+        "delivery": {
+            "mode": "offline",
+            # Must match Get-PatchCompliance.ps1's wording exactly. It no longer
+            # claims Pixellot patches offline — Pulse can't observe that, and two
+            # units in different states disproved it.
+            "explanation": (
+                "Automatic Windows Update is disabled by policy on this VPU, which is "
+                "why the Windows Update UI shows no history. Pulse cannot see whether "
+                "any other mechanism is patching this unit - the servicing record below "
+                "is the only evidence either way, and it lists every install regardless "
+                "of how it was delivered."
+            ),
+            "services": [
+                {"name": "wuauserv", "status": "Stopped", "startType": "Manual"},
+                {"name": "UsoSvc", "status": "Running", "startType": "Automatic"},
+                {"name": "TrustedInstaller", "status": "Stopped", "startType": "Manual"},
+                {"name": "WinDefend",
+                 "status": "Running" if defender_active else "Stopped",
+                 "startType": "Automatic" if defender_active else "Manual"},
+            ],
+            "wsusServer": None,
+            "wsusTargetGroup": None,
+            "noAutoUpdate": 1,
+            "useWuServer": None,
+            "auOptions": None,
+            # The WU agent has never completed a phase on the fleet image —
+            # which is exactly why its history proves nothing.
+            "agentResults": [
+                {"phase": "Detect", "lastSuccessUtc": None},
+                {"phase": "Download", "lastSuccessUtc": None},
+                {"phase": "Install", "lastSuccessUtc": None},
+            ],
+        },
+        "defender": defender,
+        "updates": {
+            "count": len(items),
+            "returned": len(items),
+            "securityCount": len([i for i in items if "Security" in (i["kind"] or "")]),
+            "driversExcluded": 0,
+            "lastInstalledOn": last_on,
+            "lastInstalledAgeDays": last_age,
+            "lastSecurityInstalledOn": last_sec_on,
+            "lastSecurityAgeDays": last_sec_age,
+            "servicingNote": None,
+            "failures": {"servicingFailures": 0, "wuFailures": 0, "recent": []},
+            "items": items,
+        },
+        "pendingReboot": {
+            "isPending": abandoned,
+            "reasons": ["Files are queued to be replaced on next boot"] if abandoned else [],
+        },
+    }
+
+
 DEMO = {
     "Get-SystemIdentity.ps1": lambda **kw: {
         "computerSystem": {"name": _VENUE["hostname"], "manufacturer": "HP", "model": "HP Z2 Tower G9 Workstation Desktop PC"},
-        "bios": {"serialNumber": _VENUE["serial"]},
+        # smbiosVersion/releaseDate feed the Software Updates lane's firmware
+        # card (the BIOS half of the patch-evidence attestation).
+        "bios": {"serialNumber": _VENUE["serial"], "smbiosVersion": "U30 Ver. 02.14.01",
+                 "releaseDate": "2024-09-10T00:00:00.0000000-04:00"},
         "uptime": {"formatted": _fmt_uptime(_uptime_secs()), "totalSeconds": _uptime_secs()},
         # LTSC 2019 (1809, build 17763) — EOS Jan 2029, well clear of the EOL
         # warning window so the demo dashboard stays clean. (Older LTSC build
@@ -838,6 +1129,7 @@ DEMO = {
             {"timeCreated": (datetime.now() - timedelta(hours=24)).isoformat(), "level": "Error", "source": "PixellotEncoder", "eventId": 2001, "message": "Hardware encoder init failed — falling back to software encoding"},
         ]
     },
+    "Get-PatchCompliance.ps1": lambda **kw: _demo_patch_compliance(),
     "Get-RebootHistory.ps1": lambda **kw: {
         "pending": {
             "isPending": True,

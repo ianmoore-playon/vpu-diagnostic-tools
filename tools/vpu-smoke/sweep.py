@@ -69,6 +69,7 @@ MANIFEST: list[tuple[str, dict, int]] = [
     ("Get-PixellotDependencies.ps1", {}, 10),
     ("Test-PixellotInstallState.ps1", {}, 15),
     ("Get-InstalledSoftware.ps1", {}, 30),
+    ("Get-PatchCompliance.ps1", {}, 60),
     ("Test-NetworkDomains.ps1", {}, 20),
     ("Test-NetworkPorts.ps1", {}, 45),
     ("Test-NtpDrift.ps1", {}, 15),

@@ -22,6 +22,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Added
+- New **Software Updates** tab (System Information) answers "prove this VPU is patched" when a district asks. Lists Microsoft Defender security definitions with the date each one was applied, every Windows update installed and when (driver updates excluded, and it counts how many it skipped), the BIOS/firmware version, and the Pixellot software version. It reads the servicing records directly, so offline patches that Pixellot applies still show up even though the Windows Update screen looks empty. One button copies the whole thing as plain text you can paste into an email or ticket for school IT.
+
 ## [1.2.1] - 2026-08-20
 
 ### Added

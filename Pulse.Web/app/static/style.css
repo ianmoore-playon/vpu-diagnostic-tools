@@ -3778,3 +3778,75 @@ html.dark .lmi-countdown {
 html.dark .lmi-countdown.ok {
     color: var(--c-status-ok);
 }
+
+/* ── Software Updates (patch evidence) ─────────────────────── */
+/* Stat strip across the top of the lane: the four numbers a school's IT asks
+   for (OS patch level, Defender definitions, updates installed, Pixellot
+   version). Same visual as the packet-capture stat tiles, own names so the
+   two lanes can diverge. */
+.su-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+@media (max-width: 900px) { .su-stats { grid-template-columns: repeat(2, 1fr); } }
+.su-stat {
+    background: var(--c-surface-3);
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    padding: 12px 10px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.su-stat-val {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--c-text);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    line-height: 1.2;
+    word-break: break-all;
+}
+.su-stat-label {
+    font-size: 0.65rem;
+    color: var(--c-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.su-stat-sub { font-size: 0.7rem; color: var(--c-muted); }
+.su-table-wrap { max-height: 460px; overflow: auto; }
+.su-filter-input {
+    width: 100%;
+    margin-bottom: 0.75rem;
+    padding: 7px 10px;
+    background: var(--c-surface-3);
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    color: var(--c-text);
+    font-size: 0.8rem;
+}
+.su-attest {
+    width: 100%;
+    min-height: 260px;
+    margin-top: 0.75rem;
+    padding: 12px;
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    color: var(--c-text);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    white-space: pre;
+    overflow: auto;
+}
+/* Servicing package names run 60+ chars and push the Evidence column out of
+   view on a 1280px VPU screen — clamp with an ellipsis, full text on hover. */
+.su-title-cell {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

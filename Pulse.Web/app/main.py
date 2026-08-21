@@ -4199,6 +4199,132 @@ async def api_events(
     return await run_ps("Get-EventLogs.ps1", {"HoursBack": hours, "Level": level})
 
 
+# Hosts that carry Pixellot's own management + software/firmware updates, and
+# which ROLE each plays. Keep in sync with TLS_DOMAIN_IMPACT in app.js and the
+# domain list in Test-TlsInspection.ps1.
+#
+# The roles matter: Test-TlsInspection checks these two separately, and at
+# Rochelle TX only `pixellot.tv` (management) came back intercepted while
+# `software.pixellot.tv` (the dedicated update host) passed. Claiming "the
+# update channel is blocked" off the management host alone overstates it -- and
+# we do NOT know which host Pixellot's OS-patch tooling actually pulls from, so
+# the wording has to stay precise about what was measured.
+_UPDATE_CHANNEL_HOSTS = {
+    "pixellot.tv": "management",
+    "software.pixellot.tv": "software-updates",
+}
+
+
+def _update_channel_status(tls) -> dict:
+    """Is the venue's network blocking the channel Pixellot patches over?
+
+    Field case that forced this (Rochelle TX, 2026-08-20): the unit was seven
+    years behind on Windows cumulatives AND its Network tab carried a critical
+    for Securly SSL inspection intercepting pixellot.tv — the host that carries
+    system management and software updates. Reported on separate tabs, those are
+    two unrelated complaints; reported together they are a mechanism and an
+    owner. A stale patch posture with a blocked update channel is very likely
+    caused by it, and it can only be fixed on the venue's network.
+
+    Deliberately NOT a claim of proof: we can't tell when the filter was
+    enabled, so the UI says "likely cause" and leaves the timeline open.
+    """
+    if not isinstance(tls, dict) or tls.get("error"):
+        return {"checked": False, "blocked": False, "rows": [], "hosts": []}
+    hosts, rows = [], []
+    for r in tls.get("results") or []:
+        role = _UPDATE_CHANNEL_HOSTS.get((r.get("domain") or "").lower())
+        if not role:
+            continue
+        status = (r.get("status") or "").lower()
+        entry = {
+            "domain": r.get("domain"),
+            "role": role,
+            "status": status,
+            "purpose": r.get("purpose"),
+            "filterVendor": r.get("filterVendor"),
+            "issuerOrg": r.get("issuerOrg"),
+            "issuerCn": r.get("issuerCn"),
+            "blockPageUrl": r.get("blockPageUrl"),
+        }
+        # Every checked channel host is reported, passing ones included, so the
+        # UI can say which half of the channel is actually cut.
+        hosts.append(entry)
+        if status in ("intercepted", "filtered"):
+            rows.append(entry)
+    who = [v for v in (tls.get("filterVendors") or []) if v] or \
+          [i for i in (tls.get("interceptorIssuers") or []) if i]
+    return {
+        "checked": True,
+        "blocked": bool(rows),
+        "rows": rows,
+        "hosts": hosts,
+        # Was the DEDICATED software-update host hit, or only management?
+        "softwareHostBlocked": any(r["role"] == "software-updates" for r in rows),
+        "softwareHostChecked": any(h["role"] == "software-updates" for h in hosts),
+        "managementOnly": bool(rows) and all(r["role"] == "management" for r in rows),
+        "attributedTo": who,
+    }
+
+
+@app.get("/api/software-updates")
+async def api_software_updates():
+    """Software Updates lane: what has been patched on this VPU, and when.
+
+    Exists because Pixellot owns patching on the fleet and applies updates
+    selectively/offline, so the Windows Update UI looks empty or years stale
+    and cannot be used as evidence either way. Schools' IT departments ask for
+    proof that CVE patches landed; this endpoint assembles it from four
+    independent sources:
+
+      * Get-PatchCompliance.ps1 -- OS build/UBR (the real patch level),
+        WU delivery path, Defender definitions with applied dates, and the
+        installed-update timeline (drivers excluded by design).
+      * Get-SystemIdentity.ps1 (already cached, also feeds /api/system) --
+        BIOS/firmware version + release date and the Pixellot software
+        version, so the whole software-stack attestation is one payload.
+
+    No dashboard finding is threaded off this lane on purpose: the collector
+    reads two event logs, and the dashboard fan-out is already 16 collectors
+    wide. Pending-reboot -- the one actionable signal here -- is already
+    surfaced by Get-RebootHistory on the Power Events lane.
+    """
+    patch, identity, tls = await asyncio.gather(
+        run_ps("Get-PatchCompliance.ps1", timeout=60),
+        run_ps("Get-SystemIdentity.ps1"),
+        # Cached + in-flight-deduped, and normally already warm from the
+        # dashboard/preload, so this costs nothing here in practice.
+        run_ps("Test-TlsInspection.ps1", timeout=60),
+    )
+    if not isinstance(patch, dict) or patch.get("error"):
+        return patch
+    ident = identity if isinstance(identity, dict) and not identity.get("error") else {}
+    bios = ident.get("bios") or {}
+    cs = ident.get("computerSystem") or {}
+    os_block = ident.get("operatingSystem") or {}
+    pix = ident.get("pixellot") or {}
+    patch["bios"] = {
+        "version": bios.get("smbiosVersion"),
+        "releaseDate": bios.get("releaseDate"),
+        "serialNumber": bios.get("serialNumber"),
+        "manufacturer": cs.get("manufacturer"),
+        "model": cs.get("model"),
+    }
+    patch["pixellot"] = {
+        "version": pix.get("version"),
+        "imageVersion": pix.get("imageVersion"),
+        "vpuName": pix.get("vpuName"),
+        "venueId": pix.get("venueId"),
+    }
+    patch["host"] = {
+        "hostname": cs.get("name"),
+        "osCaption": os_block.get("caption"),
+        "osVersion": os_block.get("version"),
+    }
+    patch["updateChannel"] = _update_channel_status(tls)
+    return patch
+
+
 @app.get("/api/reboots")
 async def api_reboots(hours: int = Query(default=168)):
     """Reboot/shutdown history with cause + a pending-reboot indicator.
@@ -4852,6 +4978,7 @@ async def build_report() -> dict:
         ("pixellotInstallState", run_ps("Test-PixellotInstallState.ps1", timeout=15)),
         ("pixellotDependencies", run_ps("Get-PixellotDependencies.ps1", timeout=15)),
         ("installedSoftware",    run_ps("Get-InstalledSoftware.ps1")),
+        ("patchCompliance",      run_ps("Get-PatchCompliance.ps1", timeout=60)),
         ("gpuInfo",              run_ps("Get-GpuInfo.ps1", timeout=15)),
         ("wifi",                 run_ps("Get-WifiAdapters.ps1", timeout=10)),
         ("audio",                run_ps("Get-AudioDevices.ps1", timeout=15)),
