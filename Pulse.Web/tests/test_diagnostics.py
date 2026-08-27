@@ -228,7 +228,7 @@ class TestComputeFindings(unittest.TestCase):
                       "gpus": [{"vendor": "Intel", "isDedicated": False}]},
             gpu_info=_gpu("Turing"),
         )
-        self.assertIn("No dedicated graphics card — wrong hardware for a VPU", titles)
+        self.assertIn("No dedicated graphics card, so this is the wrong hardware for a VPU", titles)
 
     def test_findings_have_required_shape(self):
         # Every finding must carry severity + title so the dashboard can render it.

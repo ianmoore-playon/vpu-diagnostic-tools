@@ -954,7 +954,7 @@ def _check_pixellot_compatibility(identity, gpu_info) -> dict:
     out["installedVersion"] = installed
     if not installed:
         out["status"] = "skip"
-        out["capReason"] = "Pixellot version not detected — VPU software may not be installed"
+        out["capReason"] = "Pixellot version not detected. The VPU software may not be installed."
         return out
 
     os_caption = (identity.get("operatingSystem") or {}).get("caption") or ""
@@ -974,7 +974,7 @@ def _check_pixellot_compatibility(identity, gpu_info) -> dict:
 
     if arch in ("None", None):
         out["status"] = "no-gpu"
-        out["capReason"] = "No NVIDIA GPU detected — Pixellot requires NVIDIA hardware for encoding"
+        out["capReason"] = "No NVIDIA GPU detected. Pixellot needs NVIDIA hardware to encode."
         return out
 
     cap = _ARCH_VERSION_CAPS.get(arch)
@@ -986,7 +986,7 @@ def _check_pixellot_compatibility(identity, gpu_info) -> dict:
         out["maxVersion"] = None
         out["capReason"] = (
             f"{arch} GPUs are not a deployed Pixellot configuration. "
-            f"Verify this host's hardware roster — Volta cards were never "
+            f"Check this host's hardware roster. Volta cards were never "
             f"shipped in production VPUs."
         )
         return out
@@ -997,10 +997,10 @@ def _check_pixellot_compatibility(identity, gpu_info) -> dict:
         # don't want a false-positive critical finding on a strange host.
         out["maxVersion"] = None
         if arch in ("Turing", "Ampere/Ada", "Hopper", "Blackwell"):
-            out["capReason"] = f"{arch} architecture — no Pixellot version cap"
+            out["capReason"] = f"{arch} architecture, so there is no Pixellot version cap"
             out["status"] = "ok"
         else:
-            out["capReason"] = f"Architecture '{arch}' — no cap data, assuming compatible"
+            out["capReason"] = f"Architecture '{arch}' has no cap data, so Pulse assumes it is compatible"
             out["status"] = "ok"
         return out
 
@@ -1302,11 +1302,11 @@ def _camera_nic_uplink_finding(network_config):
     if mobo:
         st = _mobo_state(mobo[0])
         if st == "disabled":
-            mobo_note = " The motherboard network port is disabled — enable it in Windows."
+            mobo_note = " The motherboard network port is disabled. Enable it in Windows."
         elif st == "unplugged":
             mobo_note = " The motherboard network port has no cable connected."
     else:
-        mobo_note = " No motherboard network port was detected — it may be disabled."
+        mobo_note = " No motherboard network port was detected. It may be disabled."
 
     ports_txt = ", ".join(
         f"{a.get('name') or a.get('interfaceDescription') or '?'} (gateway {gw})"
@@ -1319,9 +1319,9 @@ def _camera_nic_uplink_finding(network_config):
         "recommendation": (
             f"The internet/venue connection is on a camera-NIC port ({ports_txt}), which can "
             f"disrupt camera discovery and streaming. On a Pixellot VPU it must connect to the "
-            f"motherboard network port — the 4-port NIC is for cameras only.{mobo_note} Move the "
-            f"cable there and confirm the port is enabled. (Leave the Wi-Fi card enabled — it's "
-            f"for the Pixellot Connect app.)"
+            f"motherboard network port. The 4-port NIC is for cameras only.{mobo_note} Move the "
+            f"cable there and confirm the port is enabled. Leave the Wi-Fi card enabled, because "
+            f"the Pixellot Connect app needs it."
         ),
     }
 
@@ -1353,12 +1353,12 @@ def _wifi_disabled_finding(network_config):
     return {
         "severity": "warning",
         "category": "Network",
-        "title": "Wi-Fi card is disabled — the Pixellot Connect app can't reach this VPU",
+        "title": "Wi-Fi card is disabled, so the Pixellot Connect app can't reach this VPU",
         "recommendation": (
             f"The VPU's Wi-Fi adapter ({names}) is disabled. The Wi-Fi card is what the Pixellot "
             f"Connect app uses to talk to the VPU, so Connect won't find this unit until it's "
-            f"turned back on — enable it in Windows (Network Connections → right-click the Wi-Fi "
-            f"adapter → Enable). The internet uplink should stay on the motherboard Ethernet port; "
+            f"turned back on. Enable it in Windows: Network Connections, right-click the Wi-Fi "
+            f"adapter, Enable. The internet uplink should stay on the motherboard Ethernet port; "
             f"Wi-Fi is only for Connect."
         ),
     }
@@ -1410,11 +1410,11 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "code": "wifi-uplink",
                 "severity": "warning",
                 "category": "Network",
-                "title": "VPU is using Wi-Fi for its internet connection — switch to wired Ethernet",
+                "title": "VPU is using Wi-Fi for its internet connection. Switch to wired Ethernet",
                 "recommendation": (
                     f"The VPU's active internet path is over Wi-Fi: {names}{ssid_str}. "
                     f"The Wi-Fi card is meant for the Pixellot Connect app, not the internet "
-                    f"uplink — connect the motherboard Ethernet port to the venue network "
+                    f"uplink. Connect the motherboard Ethernet port to the venue network "
                     f"instead. Wi-Fi adds latency and packet loss that disrupt streaming."
                 ),
             }
@@ -1476,7 +1476,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             "title": "Unsupported security software detected",
             "recommendation": (
                 f"Uninstall {names_str} immediately. Pixellot VPUs only support "
-                f"Windows Defender — third-party antivirus/EDR software blocks "
+                f"Windows Defender. Third-party antivirus and EDR software blocks "
                 f"agent.exe and forces a hardware return (RMA)."
             ),
         })
@@ -1534,7 +1534,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "warning",
                     "category": "System",
                     "title": "VPU hasn't been rebooted in a while",
-                    "recommendation": f"Reboot the VPU — it's been running {uptime_secs // 86400} days. A periodic reboot clears memory leaks and stuck processes.",
+                    "recommendation": f"Reboot the VPU. It's been running {uptime_secs // 86400} days, and a periodic reboot clears memory leaks and stuck processes.",
                 }
             )
 
@@ -1551,7 +1551,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "critical",
                     "category": "System",
                     "title": "VPU clock is set to a non-US time zone",
-                    "recommendation": f"Set the VPU to a US time zone — open Date & Time settings and choose Pacific, Mountain, Central, Eastern, Alaska, or Hawaii. Current zone: '{shown}'.",
+                    "recommendation": f"Set the VPU to a US time zone. Open Date & Time settings and choose Pacific, Mountain, Central, Eastern, Alaska, or Hawaii. Current zone: '{shown}'.",
                 }
             )
 
@@ -1589,7 +1589,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "critical",
                     "category": "System",
                     "title": "Windows version loses support soon",
-                    "recommendation": f"{release} end of servicing is {eol_date} — {eol_days} days away. Plan re-imaging to a supported Windows version before that date.",
+                    "recommendation": f"{release} end of servicing is {eol_date}, {eol_days} days away. Plan re-imaging to a supported Windows version before that date.",
                 })
             elif eol_days < 365:
                 months = eol_days // 30
@@ -1611,14 +1611,14 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "os-mainstream-eos",
                     "severity": "info",
                     "category": "System",
-                    "title": ("Windows mainstream support ends within a year — this VPU stays covered"
+                    "title": ("Windows mainstream support ends within a year, but this VPU stays covered"
                               if days >= 0 else
-                              "Windows mainstream support has ended — this VPU is still covered"),
+                              "Windows mainstream support has ended, but this VPU is still covered"),
                     "recommendation": (
                         f"{release} mainstream support {'ends' if days >= 0 else 'ended'} on {eos}. "
-                        f"This is expected and OK: VPUs run the IoT Enterprise release of Windows, "
-                        f"which keeps receiving security updates until {eol_date} (end of servicing) — "
-                        f"{left} of coverage. No action is needed on this unit."
+                        f"That is expected and fine. VPUs run the IoT Enterprise release of Windows, "
+                        f"which keeps getting security updates until {eol_date} (end of servicing), "
+                        f"so there is {left} of coverage. No action is needed on this unit."
                     ),
                 })
 
@@ -1637,7 +1637,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     f"Installed Pixellot {compat['installedVersion']} is newer than the maximum "
                     f"supported version for {arch_str} ({compat['maxVersion']}). "
                     f"{compat['capReason']}. Downgrade Pixellot to {compat['maxVersion']} or earlier "
-                    f"on this VPU — newer builds will not run correctly on this GPU/OS combination."
+                    f"on this VPU. Newer builds will not run correctly on this GPU/OS combination."
                 ),
             })
         elif compat["status"] == "no-gpu":
@@ -1662,8 +1662,8 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "title": "Unrecognized graphics hardware",
                 "recommendation": (
                     f"{compat['architecture']} GPU detected, which is not a known Pixellot "
-                    f"deployment configuration. Escalate to support — this host may be "
-                    f"mis-imaged or the hardware roster needs review. "
+                    f"deployment configuration. Escalate to support, because this host may be "
+                    f"mis-imaged or the hardware roster may need review. "
                     f"Installed Pixellot: {compat['installedVersion']}."
                 ),
             })
@@ -1686,11 +1686,11 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "code": "gpu-igpu-only",
                     "severity": "warning",
                     "category": "Hardware",
-                    "title": "No dedicated graphics card — wrong hardware for a VPU",
+                    "title": "No dedicated graphics card, so this is the wrong hardware for a VPU",
                     "recommendation": (
                         f"Only built-in graphics found ({vendor_str}). "
                         f"Pixellot VPUs require a dedicated NVIDIA or AMD card for video "
-                        f"encoding — this host is the wrong hardware platform for a VPU. "
+                        f"encoding, so this host is the wrong hardware platform for a VPU. "
                         f"Check that the graphics card is seated, powered, and has a current driver."
                     ),
                 })
@@ -1706,7 +1706,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "critical",
                     "category": "Performance",
                     "title": "CPU usage critically high",
-                    "recommendation": f"Check for runaway processes — CPU at {cpu}%.",
+                    "recommendation": f"Check for runaway processes. CPU is at {cpu}%.",
                 }
             )
         elif cpu is not None and cpu > 75:
@@ -1716,7 +1716,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "warning",
                     "category": "Performance",
                     "title": "CPU usage elevated",
-                    "recommendation": f"Monitor for sustained high usage — CPU at {cpu}%.",
+                    "recommendation": f"Watch for sustained high usage. CPU is at {cpu}%.",
                 }
             )
 
@@ -1728,7 +1728,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "critical",
                     "category": "Performance",
                     "title": "Memory usage critically high",
-                    "recommendation": f"Close apps or add memory — memory at {mem}%.",
+                    "recommendation": f"Close apps or add memory. Memory is at {mem}%.",
                 }
             )
         elif mem is not None and mem > 80:
@@ -1738,7 +1738,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "warning",
                     "category": "Performance",
                     "title": "Memory usage elevated",
-                    "recommendation": f"Monitor for memory pressure — memory at {mem}%.",
+                    "recommendation": f"Watch for memory pressure. Memory is at {mem}%.",
                 }
             )
 
@@ -1750,7 +1750,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "severity": "critical",
                     "category": "Hardware",
                     "title": "VPU running hot",
-                    "recommendation": f"Check cooling — temperature at {temp}°C.",
+                    "recommendation": f"Check cooling. Temperature is at {temp}°C.",
                 }
             )
 
@@ -1775,7 +1775,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
         "C": ("system drive", "The live stream is processed on C:, so a full "
                               "system drive can stop capture."),
         "D": ("recordings drive", "New event recordings (VODs) can't be stored "
-                                  "once it fills — clear old VODs."),
+                                  "once it fills. Clear old VODs."),
     }
     for letter, pct in volumes:
         role, consequence = drive_roles.get(letter, (None, None))
@@ -1795,7 +1795,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "category": "Storage",
                     "title": f"{name} almost full",
                     "recommendation": " ".join(filter(None, [
-                        f"Free up space now — {label} is {pct:g}% full.",
+                        f"Free up space now. {label} is {pct:g}% full.",
                         consequence,
                         cleanup_hint,
                     ])),
@@ -1831,7 +1831,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "category": "Storage",
                     "title": f"{prefail_drive} is predicting failure (SMART)",
                     "recommendation": (
-                        "Back up recordings and plan to replace this drive — its built-in "
+                        "Back up recordings and plan to replace this drive. Its built-in "
                         "self-check (SMART) is reporting uncorrectable errors or a pre-failure status."
                     ),
                 }
@@ -1844,7 +1844,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "category": "Storage",
                     "title": f"{wear_drive[0]} nearing end of rated life",
                     "recommendation": (
-                        f"This SSD has used {wear_drive[1]}% of its rated write life — plan a "
+                        f"This SSD has used {wear_drive[1]}% of its rated write life. Plan a "
                         "replacement before it drops to read-only."
                     ),
                 }
@@ -1890,7 +1890,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                         "category": "Services",
                         "title": f"{display} not running",
                         "recommendation": (
-                            f"{display} is not running — the VPU cannot capture or stream. "
+                            f"{display} is not running, so the VPU cannot capture or stream. "
                             f"Use 'Restart Agent + Coordinator' on the Services page "
                             f"(runs keepagentup.exe) to relaunch it."
                         ),
@@ -1997,7 +1997,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                             "code": "nic-slow",
                             "severity": "warning",
                             "category": category,
-                            "title": f"{'Camera' if has_cameras else 'Network'} port {idx + 1} is running slow — {speed} Mbps (should be 1 Gbps)",
+                            "title": f"{'Camera' if has_cameras else 'Network'} port {idx + 1} is running slow at {speed} Mbps (should be 1 Gbps)",
                             "recommendation": (
                                 f"{label} ({port.get('name', 'unknown')}) negotiated to "
                                 f"{speed} Mbps instead of 1 Gbps. Camera streams on this port "
@@ -2081,10 +2081,10 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "code": "stream-blocked",
                 "severity": "critical",
                 "category": "Network",
-                "title": "Streaming is blocked — the VPU can't broadcast",
+                "title": "Streaming is blocked, so the VPU can't broadcast",
                 "recommendation": (
                     "The venue's network is blocking every path the VPU can use to "
-                    "send live video — the primary and backup streaming connections "
+                    "send live video: the primary and backup streaming connections "
                     "and the last-resort fallback. The game can't broadcast until at "
                     f"least one is unblocked. Ask the venue's IT team to open "
                     f"{_lbl(rungs_blocked)} (UDP to prod-echo.pixellot.tv; the live "
@@ -2101,16 +2101,16 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 "code": "stream-degraded-rtmp",
                 "severity": "critical",
                 "category": "Network",
-                "title": "Streaming is degraded — running on the emergency fallback",
+                "title": "Streaming is degraded and running on the emergency fallback",
                 "recommendation": (
                     "The venue's network blocks both Zixi streaming connections "
                     f"({_lbl([r for r in rungs_blocked if r.get('purpose') in zixi_purposes])}), "
-                    "so broadcasts fall back to RTMP over TCP/1935: games start "
+                    "so broadcasts fall back to RTMP over TCP/1935. Games start "
                     "roughly 4 minutes late and stream with no packet-loss "
                     "protection. Ask the venue's IT team to open UDP 2088 and "
-                    "UDP 443 outbound — by domain (*.pixellot.stream) on filters "
-                    "that classify by destination, since broadcast servers rotate "
-                    "per event."
+                    "UDP 443 outbound. On filters that classify by destination they "
+                    "need to allow the domain *.pixellot.stream, because broadcast "
+                    "servers rotate per event."
                 ),
             })
         elif rungs_blocked:
@@ -2130,12 +2130,12 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                 ),
                 "recommendation": (
                     ("The primary streaming connection (UDP/2088) is blocked, so the "
-                     "stream rides the UDP/443 backup — full quality, but one rung "
-                     "from the degraded RTMP fallback. "
+                     "stream rides the UDP/443 backup. Quality is unaffected, but it "
+                     "is one step from the degraded RTMP fallback. "
                      if on_backup else
                      "The stream is healthy, but part of its failover chain is "
-                     "blocked — less to fall back on if the main connection has "
-                     "trouble during a game. ")
+                     "blocked, so there is less to fall back on if the main "
+                     "connection has trouble during a game. ")
                     + f"Ask the venue's IT team to unblock {_lbl(rungs_blocked)}."
                 ),
             })
@@ -2180,7 +2180,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     "title": f"{purpose} is blocked ({proto}/{port})",
                     "recommendation": (
                         f"{proto} port {port} to {host} is unreachable ({err}). "
-                        f"This is a required Pixellot endpoint — ask the venue's "
+                        f"This is a required Pixellot endpoint. Ask the venue's "
                         f"IT team to open it in the firewall."
                     ),
                 }
@@ -2216,7 +2216,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                         "can only be fixed on the venue's network. "
                         "Ask the venue's IT team to add these domains to the firewall's SSL "
                         "decryption bypass/exemption list (use a wildcard like *.singular.live "
-                        "plus the bare domain) — a URL allowlist alone is not enough. "
+                        "plus the bare domain). A URL allowlist alone will not do it. "
                         "See the Network tab for the full certificate detail."
                     ),
                 }
@@ -2262,7 +2262,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
             )
             fix = (
                 f"Ask the venue's IT team to allow these domains in the WEB FILTER's "
-                f"category/URL policy — this is a content-category block, so an SSL "
+                f"category/URL policy. This is a content-category block, so an SSL "
                 f"decryption bypass alone will not fix it. Use a wildcard plus the bare "
                 f"domain (e.g. *.singular.live AND singular.live). While they are in "
                 f"there, have them exempt the same domains from SSL decryption so the "
@@ -2280,9 +2280,9 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                         ),
                         "recommendation": (
                             f"{who_lower} accepts the connection to {hosts} and then drops it the "
-                            f"instant the VPU names the site — the signature of a blocked "
-                            f"category, not of certificate inspection (the certificates here "
-                            f"are untouched).{evidence} Graphics, scheduling and updates are cut "
+                            f"instant the VPU names the site. That is a blocked category, "
+                            f"not certificate inspection: the certificates here are "
+                            f"untouched.{evidence} Graphics, scheduling and updates are cut "
                             f"off outright and it can only be fixed on the venue's network. "
                             f"{fix} See the Network tab for the per-service impact."
                         ),
@@ -2300,7 +2300,7 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                         ),
                         "recommendation": (
                             f"These are support-plane services, so tonight's broadcast is "
-                            f"unaffected — but remote support and installer downloads will "
+                            f"unaffected. Remote support and installer downloads will still "
                             f"fail on this network.{evidence} {fix}"
                         ),
                     }
@@ -2389,8 +2389,8 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     rec = (
                         f"{missing} main camera{'s are' if missing != 1 else ' is'} "
                         f"expected but not detected. Inspect the missing port(s) on "
-                        f"the Camera Connectivity tab — typically a cable, switch "
-                        f"port, or camera-power issue."
+                        f"the Camera Connectivity tab. It is usually a cable, a switch "
+                        f"port, or camera power."
                     )
                 findings.append({
                     "code": "cam-none" if detected_main == 0 else "cam-partial",
@@ -2577,7 +2577,7 @@ def _compute_readiness(findings, performance=None, disk_health=None,
     if isinstance(cpu_avg, (int, float)) and cpu_avg > 90:
         add("risk", "cpu-sustained", "CPU sustained above 90%",
             f"CPU averaged {cpu_avg:g}% over the sample window. Sustained load "
-            f"this high risks dropped frames mid-broadcast — check for a runaway "
+            f"this high risks dropped frames mid-broadcast. Check for a runaway "
             f"process before game time.", "Performance")
 
     # F19 — Memory sustained >90%, averaged (snapshot fallback).
@@ -2587,7 +2587,7 @@ def _compute_readiness(findings, performance=None, disk_health=None,
     if isinstance(mem_avg, (int, float)) and mem_avg > 90:
         add("risk", "mem-sustained", "Memory sustained above 90%",
             f"Memory averaged {mem_avg:g}% over the sample window. The encoder "
-            f"can stall under sustained pressure — close apps or add RAM.",
+            f"can stall under sustained pressure. Close apps or add RAM.",
             "Performance")
 
     # F14 — Temperature ≥90°C (dashboard finding still fires its own at 85°C).
@@ -2596,7 +2596,7 @@ def _compute_readiness(findings, performance=None, disk_health=None,
         if isinstance(temp, (int, float)) and temp >= 90:
             add("risk", "temp-90", "Temperature high (≥90°C)",
                 f"Temperature at {temp:g}°C. Sustained heat throttles the encoder "
-                f"and risks frame drops — check airflow and fans.", "Hardware")
+                f"and risks frame drops. Check airflow and fans.", "Hardware")
 
     # F15a/b — C:/D: by drive letter (C: is stream-processing → blocker;
     # D: is post-event VOD storage → risk). Critical-only: the old 80–90%
@@ -2604,13 +2604,13 @@ def _compute_readiness(findings, performance=None, disk_health=None,
     c_pct, d_pct = _disk_used_by_letter(disk_health, performance)
     if isinstance(c_pct, (int, float)) and c_pct > 90:
         add("blocker", "disk-c-critical", "System drive (C:) almost full",
-            f"C: is {c_pct:g}% full. The live stream is processed on C: — if it "
+            f"C: is {c_pct:g}% full. The live stream is processed on C:. If it "
             f"fills, the VPU can't process the broadcast. Free space on C: now.",
             "Storage")
     if isinstance(d_pct, (int, float)) and d_pct > 90:
         add("risk", "disk-d-critical", "Recording drive (D:) almost full",
             f"D: is {d_pct:g}% full. The post-event recording (VOD) is written to "
-            f"D: — if it fills during the game the recording may not save. Free "
+            f"D:. If it fills during the game the recording may not save. Free "
             f"space on D:.", "Storage")
 
     status = "FAIL" if blockers else "WARN" if risks else "PASS"
@@ -3107,7 +3107,7 @@ def _compute_camera_findings(ports: list, poe=None) -> list:
         b = poe["budget"]
         findings.append({
             "severity": "warning",
-            "title": "PoE card power budget too low — Molex lead likely unplugged",
+            "title": "PoE card power budget too low, Molex lead likely unplugged",
             "body": f"The camera card reports a total PoE budget of {b.get('totalW')} W, "
                     f"below the {b.get('healthyFloorW')} W a healthy card provides. Its "
                     "supplementary Molex power lead is most likely disconnected, leaving it on "
@@ -3123,10 +3123,10 @@ def _compute_camera_findings(ports: list, poe=None) -> list:
             gw = port.get("uplinkGateway")
             findings.append({
                 "severity": "critical",
-                "title": f"{label} — internet cable plugged into a camera port",
+                "title": f"{label}: internet cable plugged into a camera port",
                 "body": f"This port is carrying the venue's internet connection"
                         + (f" (gateway {gw})" if gw else "") +
-                        ". Move that cable to the motherboard network port — the "
+                        ". Move that cable to the motherboard network port. The "
                         "4-port camera card is for cameras only.",
             })
 
@@ -3158,7 +3158,7 @@ def _compute_camera_findings(ports: list, poe=None) -> list:
                 ipinfo = f" ({last.get('ip')})" if last.get("ip") else ""
                 findings.append({
                     "severity": "critical",
-                    "title": f"{label} — camera dropped",
+                    "title": f"{label}: camera dropped",
                     "body": f"A camera{ipinfo} was streaming on this port "
                             "earlier this session and is no longer detected. Check the "
                             "cable and camera power, or use Camera Connection Troubleshooting.",
@@ -3177,7 +3177,7 @@ def _compute_camera_findings(ports: list, poe=None) -> list:
             findings.append(
                 {
                     "severity": "warning",
-                    "title": f"{label} running at {speed} Mbps — expected {exp_label}",
+                    "title": f"{label} running at {speed} Mbps, expected {exp_label}",
                     "body": f"Degraded link speed usually means a bad cable, faulty connector, or wrong duplex negotiation.",
                 }
             )
@@ -3198,7 +3198,7 @@ def _compute_camera_findings(ports: list, poe=None) -> list:
             findings.append(
                 {
                     "severity": "warning",
-                    "title": f"{label} — {total_errs} packet error(s)",
+                    "title": f"{label}: {total_errs} packet error(s)",
                     "body": f"RX {rx_errs}, TX {tx_errs}. May indicate a bad cable or NIC driver issue.",
                 }
             )
@@ -3886,7 +3886,7 @@ def _diagnose_camera_frames(results):
             summary = (f"{label} is sending an almost black picture. Adjust its "
                        "exposure/brightness so the rest of the scene shows.")
         else:
-            summary = (f"{label} is sending an almost black picture — set too dark for "
+            summary = (f"{label} is sending an almost black picture. It is set too dark for "
                        "this room. Turn up its brightness/exposure.")
         if lit:
             summary += (f" {lit} looks normal in the same room, so it's a camera "
@@ -3934,14 +3934,14 @@ async def api_cameras_video_test(request: Request):
     if remaining > 0 and not force:
         return {"available": True, "results": [], "blocked": "cooldown",
                 "cooldown": remaining,
-                "reason": f"Please wait {remaining}s before capturing frames again."}
+                "reason": f"Wait {remaining}s before capturing frames again."}
 
     # Don't capture while the Pixellot capture engine owns the streams — unless
     # the caller forces it (the fleet audit explicitly accepts the risk).
     expectations = await run_ps("Get-CameraExpectations.ps1", timeout=10, use_cache=False)
     if not force and expectations and not expectations.get("error") and expectations.get("vpuRunning"):
         return {"available": False, "results": [], "blocked": "vpu",
-                "reason": "The Pixellot capture engine (vpu.exe) is running — "
+                "reason": "The Pixellot capture engine (vpu.exe) is running, so "
                           "frame capture is disabled to avoid interfering with the "
                           "live stream. Stop the VPU process to capture frames."}
 
@@ -4062,11 +4062,11 @@ async def api_cameras_video_test(request: Request):
 # "tech returns to the school" workflow in demo mode.
 _DEMO_FAULT_HISTORY = [
     {"ts": "2026-05-26T15:12:00", "conclusion": "Cable",
-     "title": "CONCLUSION — FAULTY CABLE", "suspectPort": "Port 1", "testPort": "Port 4",
+     "title": "CONCLUSION: FAULTY CABLE", "suspectPort": "Port 1", "testPort": "Port 4",
      "camera": {"label": "Main Camera 1", "ip": "169.254.16.50", "mac": "00-0E-53-AA-01-01"},
      "recommendation": "Replacing the cable restored the link. Re-terminate both ends or replace the cable end-to-end; inspect the run for damage.",
      "history": [
-         {"ts": "3:11:58 PM", "phase": "Phase 1 - Baseline", "speed": "100 Mbps", "verdict": "Link degraded at 100 Mbps — beginning isolation.", "severity": "Fail"},
+         {"ts": "3:11:58 PM", "phase": "Phase 1 - Baseline", "speed": "100 Mbps", "verdict": "Link degraded at 100 Mbps. Beginning isolation.", "severity": "Fail"},
          {"ts": "3:12:34 PM", "phase": "Phase 2 - NIC Port Test", "speed": "100 Mbps", "verdict": "Fault followed the cable/camera, not the NIC port.", "severity": "Info"},
          {"ts": "3:12:58 PM", "phase": "Phase 3 - Cable Test", "speed": "1 Gbps", "verdict": "Link restored with a known-good cable. The original cable is the fault.", "severity": "Pass"},
      ]},
@@ -4477,7 +4477,7 @@ def _migrate_retired_beta():
         with open(_os.path.join(_web_root, "CHANNEL"), "w") as f:
             f.write("production\n")
         _channel_migration = {"from": "beta", "to": "production"}
-        msg = ("Beta program closed — this install now tracks the production "
+        msg = ("Beta program closed. This install now tracks the production "
                "channel. The next launch installs the latest production release.")
         ps_log("server", 0, "ok", msg)
         _server_log.info(msg)
@@ -4695,14 +4695,14 @@ async def api_update_check():
             return {
                 "managed": False, "channel": channel, "current": current,
                 "updateAvailable": False,
-                "note": "Pulse is running from source here — updates are managed with git, not this button.",
+                "note": "Pulse is running from source here, so updates come from git, not this button.",
             }
         latest, reachable = await _resolve_latest_release(channel)
         if not latest:
             if reachable:
                 error = (f"The update server is reachable, but no {channel} release has "
                          "been published yet, so there is nothing to compare against. "
-                         "This is a publishing issue on our side — not a problem with "
+                         "That is a publishing issue on our side, not a problem with "
                          "this VPU or its network.")
             else:
                 error = ("Couldn't reach the update server. Check the VPU's internet "
@@ -4780,7 +4780,7 @@ async def api_restart_app():
     import subprocess
     vbs = _os.path.join(_web_root, "pulse-launch.vbs")
     if not _os.path.exists(vbs):
-        return {"ok": False, "error": "pulse-launch.vbs not found — can't relaunch the server."}
+        return {"ok": False, "error": "pulse-launch.vbs not found, so the server can't be relaunched."}
     port = int(_os.environ.get("PORT", 8765))
     helper = _os.path.join(_web_root, "pulse-restart.bat")
     lines = [
@@ -4980,7 +4980,7 @@ async def _open_share_firewall(port: int) -> dict:
     Idempotent: if the rule already exists no prompt appears; otherwise it adds
     the rule elevated (single UAC prompt), mirroring the SC3 installer."""
     if _os.name != "nt":
-        return {"applied": False, "reason": "not Windows — open the port manually if firewalled"}
+        return {"applied": False, "reason": "not Windows: open the port manually if it is firewalled"}
     try:
         return await run_ps("Set-PulseShareFirewall.ps1", {"Port": str(port)}, timeout=20)
     except Exception as e:
@@ -5039,7 +5039,7 @@ async def api_peer_send_ping(code: str = Query(""), address: str = Query("")):
             return {"ok": False, "error": "reachable, but that isn't a Pulse receiver"}
         return {"ok": True, "address": f"{ip}:{port}", "hostname": info.get("hostname")}
     except urllib.error.URLError as e:
-        return {"ok": False, "error": f"can't reach {ip}:{port} — {getattr(e, 'reason', e)}"}
+        return {"ok": False, "error": f"can't reach {ip}:{port}: {getattr(e, 'reason', e)}"}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
@@ -5065,10 +5065,10 @@ async def api_peer_send(request: Request):
                 "address": f"{ip}:{port}", "bytes": len(payload)}
     except urllib.error.HTTPError as e:
         if e.code == 403:
-            return {"ok": False, "error": "the receiver rejected the pairing code — re-copy it"}
+            return {"ok": False, "error": "the receiver rejected the pairing code, so re-copy it"}
         return {"ok": False, "error": f"receiver returned HTTP {e.code}"}
     except urllib.error.URLError as e:
-        return {"ok": False, "error": f"can't reach {ip}:{port} — {getattr(e, 'reason', e)}"}
+        return {"ok": False, "error": f"can't reach {ip}:{port}: {getattr(e, 'reason', e)}"}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 

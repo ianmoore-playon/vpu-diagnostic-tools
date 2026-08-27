@@ -70,7 +70,7 @@ Add-Line "Windows Patch Status Report"
 Add-Line "Generated : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') on $env:COMPUTERNAME"
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
            ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-Add-Line "Elevated  : $isAdmin $(if (-not $isAdmin) { '(some sections may be incomplete -- rerun as admin for full detail)' })"
+Add-Line "Elevated  : $isAdmin $(if (-not $isAdmin) { '(some sections may be incomplete; rerun as admin for full detail)' })"
 
 # ---------------------------------------------------------------- 1. OS + build
 Add-Section '1. OS IDENTITY & PATCH LEVEL (ground truth)'
@@ -104,7 +104,7 @@ if ($wuPolicy -or $auPolicy) {
     if ($null -ne $auPolicy.UseWUServer)  { Add-Line "  UseWUServer        : $($auPolicy.UseWUServer) (1 = updates come from the WSUS server above)" }
     if ($null -ne $auPolicy.AUOptions)    { Add-Line "  AUOptions          : $($auPolicy.AUOptions)" }
 } else {
-    Add-Line 'No WindowsUpdate group-policy keys -- WU is not WSUS-redirected; patches'
+    Add-Line 'No WindowsUpdate group-policy keys, so WU is not WSUS-redirected. Patches'
     Add-Line 'are most likely applied offline (wusa/DISM) by Pixellot tooling.'
 }
 
@@ -126,11 +126,11 @@ if ($hotfixes) {
     Add-Block ($hotfixes | Select-Object HotFixID, Description, InstalledOn, InstalledBy |
         Format-Table -AutoSize)
 } else {
-    Add-Line 'Get-HotFix returned nothing (unusual -- check the Setup event log below).'
+    Add-Line 'Get-HotFix returned nothing (unusual; check the Setup event log below).'
 }
 
 # ---------------------------------------------- 4. Servicing timeline (event log)
-Add-Section '4. SERVICING TIMELINE (Setup event log -- catches offline installs)'
+Add-Section '4. SERVICING TIMELINE (Setup event log, which catches offline installs)'
 try {
     $servicingEvents = Get-WinEvent -FilterHashtable @{
         LogName = 'Setup'; ProviderName = 'Microsoft-Windows-Servicing'; Id = 2
@@ -172,7 +172,7 @@ foreach ($f in $pendingFlags) {
 }
 $pfro = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -ErrorAction SilentlyContinue).PendingFileRenameOperations
 Add-Line ("{0,-22}: {1}" -f 'PendingFileRenames', $(if ($pfro) { $anyPending = $true; 'SET' } else { 'clear' }))
-if ($anyPending) { Add-Line 'NOTE: a servicing operation is waiting on a reboot -- the reported patch level is not fully applied yet.' }
+if ($anyPending) { Add-Line 'A servicing operation is waiting on a reboot, so the reported patch level is not fully applied yet.' }
 
 # ---------------------------------------------------------------- 6. Defender
 Add-Section '6. DEFENDER (updated separately from the OS)'
@@ -190,7 +190,7 @@ try {
     if (-not $defSvc) {
         Add-Line 'Defender service (WinDefend) is not present on this image.'
     } elseif ($defSvc.Status -ne 'Running') {
-        Add-Line "Defender service (WinDefend) is $($defSvc.Status) (StartType: $($defSvc.StartType)) -- Defender is not active on this image."
+        Add-Line "Defender service (WinDefend) is $($defSvc.Status) (StartType: $($defSvc.StartType)). Defender is not active on this image."
     } else {
         Add-Line "Defender status unavailable: $($_.Exception.Message)"
     }

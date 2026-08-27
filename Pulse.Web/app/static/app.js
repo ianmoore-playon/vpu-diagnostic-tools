@@ -453,8 +453,8 @@ function _setSplashVerb(text) {
 // The reassurance line under the checklist. Defaults to the up-front
 // expectation; escalates to SLOW if a box runs long (see preloadProgressive).
 // SPLASH_NOTE_DEFAULT must match the static text in index.html.
-const SPLASH_NOTE_DEFAULT = "Running a full diagnostic sweep — this can take a moment.";
-const SPLASH_NOTE_SLOW    = "Still working — some checks (camera frames, speed test) take longer on slower units.";
+const SPLASH_NOTE_DEFAULT = "Running a full diagnostic sweep. This can take a moment.";
+const SPLASH_NOTE_SLOW    = "Still working. Camera frames and the speed test take longer on slower units.";
 // Shown on the last frame before the splash fades. Without it the note still
 // reads "this can take a moment" while the verb already says "Ready".
 const SPLASH_NOTE_DONE    = "All checks complete.";
@@ -539,7 +539,7 @@ function _setSplashIssues(dash) {
   if (crit) parts.push(`${crit} Critical`);
   if (warn) parts.push(`${warn} Warning${warn === 1 ? "" : "s"}`);
   el.className = "splash-issues is-visible " + (crit ? "splash-issues-crit" : "splash-issues-warn");
-  el.innerHTML = `${svgIcon("triangle", 14)}<span>${parts.join(" · ")} found — details on the Dashboard</span>`;
+  el.innerHTML = `${svgIcon("triangle", 14)}<span>${parts.join(" · ")} found. Details on the Dashboard</span>`;
 }
 
 // "Still working" escalation timer. Armed only on real (non-demo) loads —
@@ -897,7 +897,7 @@ function _lmiRenderCountdown() {
   const left = _lmiDeadline - Date.now();
   el.textContent = left <= 0
     ? "Pulse is closing…"
-    : `LogMeIn session ended — Pulse will close in ${_lmiFmtLeft(left)}. Reconnecting cancels this.`;
+    : `LogMeIn session ended. Pulse closes in ${_lmiFmtLeft(left)}. Reconnecting cancels this.`;
 }
 
 function _updateLmiCountdown(secs) {
@@ -919,7 +919,7 @@ function _updateLmiCountdown(secs) {
     clearInterval(_lmiTicker);
     _lmiTicker = null;
     el.classList.add("ok");
-    el.textContent = "LogMeIn session reconnected — auto-close cancelled.";
+    el.textContent = "LogMeIn session reconnected. Auto-close cancelled.";
     _lmiCancelTimer = setTimeout(() => el.classList.add("hidden"), 6000);
   }
 }
@@ -1055,7 +1055,7 @@ function renderCloudEvents() {
   const localEv = (data.localEvents || {}).events || [];
   const header = pageHeader(
     "Event Streaming",
-    "This VPU's recent events as the NFHS cloud sees them — did each one stream, and if not, why. Cloud evidence reflects right now; local recording facts are from the event itself.",
+    "This VPU's recent events as the NFHS cloud sees them. Did each one stream, and if not, why not? Cloud evidence reflects right now. Local recording facts are from the event itself.",
     `<button class="btn-outline btn-ol-blue" onclick="dataCache['cloud-events']=null;renderCloudEvents()">${svgIcon("refresh", 14)} Refresh</button>`
   );
 
@@ -1064,7 +1064,7 @@ function renderCloudEvents() {
     $page().innerHTML = `${header}
       <div class="card">
         <div class="text-sm font-medium mb-1">No venue ID found on this box</div>
-        <div class="text-xs text-pulse-muted">Pulse reads the Pixellot venue ID from the Coordinator log (C:\\Pixellot\\Data\\Log). A fresh image, rotated logs, or a non-VPU host can leave it empty — without it the cloud lookup can't identify this unit.</div>
+        <div class="text-xs text-pulse-muted">Pulse reads the Pixellot venue ID from the Coordinator log (C:\\Pixellot\\Data\\Log). A fresh image, rotated logs, or a non-VPU host can leave it empty. Without it the cloud lookup can't identify this unit.</div>
       </div>`;
     return;
   }
@@ -1074,7 +1074,7 @@ function renderCloudEvents() {
     $page().innerHTML = `${header}
       <div class="card">
         <div class="flex items-center gap-2 mb-1">${svgIcon("alert", 16)}<span class="text-sm font-medium">Cloud lookup unavailable</span></div>
-        <div class="text-xs text-pulse-muted">${esc(cloud.error || "The NFHS cloud APIs could not be reached from this network.")} This is a connectivity statement, not a device fault — school networks often block or intercept outbound HTTPS. See <a class="cam-hw-pointer" href="#network" onclick="navigate('network');return false;">Network Test</a>.</div>
+        <div class="text-xs text-pulse-muted">${esc(cloud.error || "The NFHS cloud APIs could not be reached from this network.")} That is a network problem, not a device fault. School networks often block or intercept outbound HTTPS. See <a class="cam-hw-pointer" href="#network" onclick="navigate('network');return false;">Network Test</a>.</div>
       </div>
       ${_ceLocalOnlyTable(localEv)}`;
     return;
@@ -1166,7 +1166,7 @@ function _ceLocalOnlyTable(localEv) {
     <td class="text-xs">${e.uploadedCount || 0}</td>
   </tr>`).join("");
   return `<div class="card mt-4">
-    <div class="ev-count">Local recordings (cloud unreachable — box-side evidence only)</div>
+    <div class="ev-count">Local recordings (cloud unreachable, so box-side evidence only)</div>
     <div class="ev-table-wrap">
       <table class="data-table ev-table"><thead><tr>
         <th>Date</th><th>Event</th><th>Recorded</th><th>Artifacts uploaded</th>
@@ -1252,7 +1252,7 @@ function renderPixellotSoftware() {
 
     ${pc.error ? "" : `
     <div class="card">
-      ${sectionTitle("database", "Registry — HKLM\\SOFTWARE\\Pixellot")}
+      ${sectionTitle("database", "Registry: HKLM\\SOFTWARE\\Pixellot")}
       <div class="kv-grid">${regRows}</div>
     </div>`}
   `;
@@ -1291,12 +1291,12 @@ function renderCameraHardware() {
 
   $page().innerHTML = `
     ${pageHeader("Camera Hardware",
-      "Full CGI probe of every camera head on an active port — identity, firmware, network, stream, and sensor settings.",
+      "Full CGI probe of every camera head on an active port: identity, firmware, network, stream, and sensor settings.",
       `<button class="btn-outline btn-ol-blue" onclick="_camHwRefresh()">${svgIcon("refresh", 14)} Refresh</button>`)}
 
     <div class="card">
       ${sectionTitle("camera", "Detected Cameras")}
-      <p class="text-xs text-pulse-muted mb-3">Probed live from each camera head over the Admin CGI (<span class="font-mono">Admin:1234</span> · <span class="font-mono">param.cgi</span>) — the same probe the <strong>Camera Connectivity</strong> tab uses for identification. Cameras on a down port aren't probed.</p>
+      <p class="text-xs text-pulse-muted mb-3">Probed live from each camera head over the Admin CGI (<span class="font-mono">Admin:1234</span> · <span class="font-mono">param.cgi</span>). It is the same probe the <strong>Camera Connectivity</strong> tab uses for identification. Cameras on a down port aren't probed.</p>
       ${noCgiNote}
       ${entries.length ? `<div class="cam-hw-grid">${cards}</div>` : empty}
     </div>
@@ -1344,7 +1344,7 @@ function _camHardwareCard(c, port) {
       svgIcon("camera", 14) + ' ' + esc(c.ip) +
       (c.modelNumber ? ' <span class="cam-model-label">' + esc(c.modelNumber) + '</span>' : '') +
       (portLabel ? ' <span class="cam-hw-port">' + esc(portLabel) + '</span>' : '') +
-      (hasCgi ? ' <span class="cam-cgi-badge" title="Camera answered Pulse&#39;s admin probe (CGI)">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none" title="Camera did not answer Pulse&#39;s admin probe (CGI) — it may be offline or unreachable">No CGI</span>') +
+      (hasCgi ? ' <span class="cam-cgi-badge" title="Camera answered Pulse&#39;s admin probe (CGI)">CGI</span>' : ' <span class="cam-cgi-badge cam-cgi-none" title="Camera did not answer Pulse&#39;s admin probe (CGI). It may be offline or unreachable">No CGI</span>') +
     '</div>' +
 
     // Device identity
@@ -1363,8 +1363,8 @@ function _camHardwareCard(c, port) {
     '</div>' : '') +
 
     // Streams (CGI only)
-    _camStreamBlock("Stream 0 — Primary", c.stream0) +
-    _camStreamBlock("Stream 1 — Secondary", c.stream1) +
+    _camStreamBlock("Stream 0: Primary", c.stream0) +
+    _camStreamBlock("Stream 1: Secondary", c.stream1) +
 
     // Image sensor (CGI only)
     (sensor.exposure || sensor.brightness ? '<div class="cam-detail-group">' +
@@ -1423,7 +1423,7 @@ function renderCalibrations() {
   }).join("");
   const sportsBlock = sports.length
     ? `<div class="kv-grid">${sportRows}</div>`
-    : `<div class="info-chip">No sports calibrated — main camera multisport calibration is empty.</div>`;
+    : `<div class="info-chip">No sports calibrated. The main camera's multisport calibration is empty.</div>`;
 
   $page().innerHTML = `
     ${pageHeader("Camera Calibrations", "Main-camera multisport stitch and OCR / scoreboard calibration status.",
@@ -1433,7 +1433,7 @@ function renderCalibrations() {
       ${sectionTitle("check", "Calibration")}
       <div class="flex flex-wrap gap-4">
         <div class="flex-1" style="min-width:260px">
-          <div class="flex items-center gap-2 mb-2"><span class="font-semibold">Main camera — multisport</span>${multi.calibrated ? badge("Calibrated", "pass") : badge("Not calibrated", "warn")}</div>
+          <div class="flex items-center gap-2 mb-2"><span class="font-semibold">Main camera: multisport</span>${multi.calibrated ? badge("Calibrated", "pass") : badge("Not calibrated", "warn")}</div>
           ${sportsBlock}
         </div>
         <div class="flex-1" style="min-width:260px">
@@ -1497,7 +1497,7 @@ function _subsystemHealth(findings) {
       desc: "Internet, name lookups, firewall, and service ports." },
     { id: "cameras", label: "Camera Connectivity", icon: "camera",
       health: lvl(worst("camera")),
-      desc: "Camera ports — link, speed, and camera detection." },
+      desc: "Camera ports: link, speed, and camera detection." },
     { id: "services", label: "Service Status", icon: "server",
       health: lvl(worst("services")),
       desc: "Agent, encoder, watchdog service status." },
@@ -1610,8 +1610,8 @@ function _renderVolumes(volumes) {
     const pct = d.usedPercent || 0;
     // Critical-only (matches the findings engine): red above 90%, no amber tier.
     const color = pct > 90 ? "var(--c-accent-red)" : "var(--c-accent-blue)";
-    const role = d.deviceID === "C:" ? "System — OS & Pixellot"
-               : d.deviceID === "D:" ? "Recordings — local game-video storage"
+    const role = d.deviceID === "C:" ? "System: OS and Pixellot"
+               : d.deviceID === "D:" ? "Recordings: local game video"
                : "Storage";
     return `<div class="dash-vol-row">
       <div class="dash-vol-top">
@@ -1634,9 +1634,9 @@ function _renderVolumes(volumes) {
 // The policy table + rollup live server-side (_compute_readiness in main.py);
 // this just renders the verdict record that rides on dash.readiness.
 var _RDY_META = {
-  PASS: { word: "PASS", icon: "check", tone: "pass", tag: "Game-ready — no blockers, no risks." },
-  WARN: { word: "WARNING", icon: "alert", tone: "warn", tag: "Will likely stream, but there are issues found that should be addressed to improve the system's reliability." },
-  FAIL: { word: "FAIL", icon: "x",     tone: "fail", tag: "Don't expect a clean broadcast tonight — this needs pre-game attention." },
+  PASS: { word: "PASS", icon: "check", tone: "pass", tag: "Game-ready. No blockers, no risks." },
+  WARN: { word: "WARNING", icon: "alert", tone: "warn", tag: "Should stream, but fix the issues below before game time." },
+  FAIL: { word: "FAIL", icon: "x",     tone: "fail", tag: "Don't expect a clean broadcast tonight. Fix this before the game." },
 };
 
 // Demo-only: flip the card through all three states live (e.g. in a meeting).
@@ -1652,10 +1652,10 @@ function _demoVerdict(state) {
   if (state === "PASS") return { status: "PASS", policyVersion: "v1", timestamp: stamp, blockers: [], risks: [], info: [] };
   if (state === "WARN") return { status: "WARN", policyVersion: "v1", timestamp: stamp, blockers: [], info: [], risks: [
     nicRisk,
-    { code: "disk-d-critical", category: "Storage", title: "Recording drive (D:) almost full", recommendation: "D: is 93% full. The post-event recording (VOD) is written to D: — if it fills during the game the recording may not save. Free space on D:." },
+    { code: "disk-d-critical", category: "Storage", title: "Recording drive (D:) almost full", recommendation: "D: is 93% full. The post-event recording (VOD) is written to D:. If it fills during the game the recording may not save. Free space on D:." },
   ] };
   return { status: "FAIL", policyVersion: "v1", timestamp: stamp, info: [], risks: [nicRisk], blockers: [
-    { code: "stream-blocked", category: "Network", title: "Streaming is blocked — VPU can't broadcast", recommendation: "The venue's network is blocking every streaming path (UDP/2088, UDP/443, and the TCP/1935 fallback), so the game can't broadcast until venue IT opens at least one." },
+    { code: "stream-blocked", category: "Network", title: "Streaming is blocked, so the VPU can't broadcast", recommendation: "The venue's network is blocking every streaming path (UDP/2088, UDP/443, and the TCP/1935 fallback), so the game can't broadcast until venue IT opens at least one." },
   ] };
 }
 
@@ -1776,7 +1776,7 @@ function renderDashboard() {
   const _onVpu = !id.isNonVpuHost && uplinkName !== "—";
   let uplinkDisplay;
   if (_onVpu && _uplinkRole === "camera")
-    uplinkDisplay = `${esc(uplinkName)} <span class="dash-net-sub">(camera-NIC port — should be the motherboard port)</span>`;
+    uplinkDisplay = `${esc(uplinkName)} <span class="dash-net-sub">(camera-NIC port, should be the motherboard port)</span>`;
   else if (_onVpu)
     uplinkDisplay = `Motherboard Network Port <span class="dash-net-sub">(${esc(uplinkName)})</span>`;
   else
@@ -1861,7 +1861,7 @@ function renderDashboard() {
           <span class="finding-arrow">${svgIcon("chevron", 14)}</span>
         </a>`;
         }).join("")}
-        ${overflowCount > 0 ? `<div class="cc-findings-overflow">+${overflowCount} more — visit the relevant tab for the full list</div>` : ""}
+        ${overflowCount > 0 ? `<div class="cc-findings-overflow">+${overflowCount} more. Open the relevant tab for the full list</div>` : ""}
       </div>
     </div>` : ""}
 
@@ -1871,7 +1871,7 @@ function renderDashboard() {
       <span class="dash-banner-icon">${svgIcon("info", 20)}</span>
       <div>
         <div class="font-semibold text-sm">Pixellot software not detected</div>
-        <div class="text-xs text-pulse-muted mt-1">This host doesn't appear to be a Pixellot VPU — system metrics are still live, but expect blank values for VPU identity, services, and the diagnostic report.</div>
+        <div class="text-xs text-pulse-muted mt-1">This host doesn't appear to be a Pixellot VPU. System metrics are still live, but expect blank values for VPU identity, services, and the diagnostic report.</div>
       </div>
     </div>` : ""}
 
@@ -2080,7 +2080,7 @@ function _pixCompatBannerHtml(c) {
   if (c.status === "ok") {
     cls = "sys-lifecycle-ok";
     title = "Version compatible with hardware";
-    detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : " — no version limit"}.`;
+    detail = `Pixellot ${esc(c.installedVersion)} is supported on this GPU${c.maxVersion ? ` (up to ${esc(c.maxVersion)})` : ". No version limit"}.`;
   } else if (c.status === "over") {
     cls = "sys-lifecycle-crit";
     title = "Version exceeds hardware compatibility cap";
@@ -2092,7 +2092,7 @@ function _pixCompatBannerHtml(c) {
   } else if (c.status === "anomaly") {
     cls = "sys-lifecycle-crit";
     title = "Unexpected GPU architecture";
-    detail = `${esc(c.architecture)} is not a known Pixellot deployment — escalate to support.`;
+    detail = `${esc(c.architecture)} is not a known Pixellot deployment. Escalate to support.`;
   }
   return `<div class="sys-lifecycle ${cls} mt-3">
     ${svgIcon(cls === "sys-lifecycle-ok" ? "check" : "alert", 14)}
@@ -2139,7 +2139,7 @@ function _osLifecycleBannerHtml(lc) {
   if (hasServicing) {
     const mDays = lc.daysToEos;
     mainstream = ` &middot; Mainstream support ${mDays != null && mDays < 0 ? "ended" : "ends"} ${esc(lc.eosDate)}`;
-    if (mDays != null && mDays < 365) mainstream += " — OK, security updates continue";
+    if (mDays != null && mDays < 365) mainstream += ". Security updates continue";
   }
   return `<div class="sys-lifecycle ${cls} mt-3">
     ${svgIcon(cls === "sys-lifecycle-ok" ? "info" : "alert", 14)}
@@ -2557,7 +2557,7 @@ function _pingCardHtml(p, resolutionWorks) {
   var loss = p.lossPercent != null ? p.lossPercent + "%" : "—";
   var range = (p.minMs != null && p.maxMs != null) ? _fmtMs(p.minMs).replace(" ms","") + " / " + _fmtMs(p.avgMs).replace(" ms","") + " / " + _fmtMs(p.maxMs).replace(" ms","") + " ms" : "—";
   var note = icmpBlocked
-    ? '<div class="net-ping-note">' + svgIcon("info", 12) + ' ICMP ping blocked by firewall — name resolution is working' + '</div>'
+    ? '<div class="net-ping-note">' + svgIcon("info", 12) + ' ICMP ping blocked by firewall, but name resolution is working' + '</div>'
     : "";
   return '<div class="net-ping-card ' + sc + '">' +
     '<div class="net-ping-header">' +
@@ -2759,7 +2759,7 @@ async function _fetchSpeedtest() {
   var btn = document.getElementById("net-speed-fetch-btn");
   if (!input || !out) return;
   var val = input.value.trim();
-  if (!val) { out.innerHTML = '<p class="text-sm status-fail">Please paste a Speedtest result URL or ID.</p>'; return; }
+  if (!val) { out.innerHTML = '<p class="text-sm status-fail">Paste a Speedtest result URL or ID.</p>'; return; }
 
   btn.disabled = true;
   out.innerHTML = '<p class="text-pulse-muted text-sm loading-pulse">Fetching result…</p>';
@@ -2791,7 +2791,7 @@ function _renderSpeedResult(el, d) {
   if (d.upload != null && d.upload < 10)
     findings.push("Upload speed (" + d.upload + " Mbps) is below the 10 Mbps minimum for Pixellot streaming.");
   if (d.ping != null && d.ping > 50)
-    findings.push("Ping (" + d.ping + " ms) is elevated — may cause stream buffering.");
+    findings.push("Ping (" + d.ping + " ms) is high enough to cause stream buffering.");
 
   el.innerHTML =
     '<div class="net-speed-cards">' +
@@ -2829,7 +2829,7 @@ function _renderSpeedResult(el, d) {
       // Only claim "meets requirements" when we actually parsed both numbers.
       (d.download != null && d.upload != null
         ? '<div class="net-speed-ok-msg">' + svgIcon("check", 14) + ' Bandwidth meets Pixellot minimum requirements (≥ 10 Mbps up/down)</div>'
-        : '<div class="net-speed-finding">' + svgIcon("triangle", 14) + ' <span>Speedtest returned partial results — could not verify all thresholds.</span></div>'));
+        : '<div class="net-speed-finding">' + svgIcon("triangle", 14) + ' <span>Speedtest returned partial results, so not every threshold could be checked.</span></div>'));
 }
 
 // ── Live Network Health (WebSocket-driven) ──────────────────
@@ -2845,7 +2845,7 @@ function _renderLiveNetHealth(h) {
   if (ind) {
     ind.classList.toggle("net-live-stale", !_wsConnected);
     var label = ind.querySelector(".text-xs");
-    if (label) label.textContent = _wsConnected ? "Live via WebSocket" : "Disconnected — reconnecting…";
+    if (label) label.textContent = _wsConnected ? "Live via WebSocket" : "Disconnected, reconnecting…";
   }
 
   // Retransmission gauge color
@@ -2894,7 +2894,7 @@ function _renderLiveNetHealth(h) {
     (nics.length ? '<div class="net-live-conns">' +
       '<div class="net-live-conns-title">Network Interfaces (' + nics.length + ')</div>' +
       '<table class="data-table"><thead><tr>' +
-        '<th>Interface</th><th title="Output queue length — sustained &gt;2 means the NIC can\'t drain fast enough">Queue</th><th>RX Err</th><th>TX Err</th><th>RX/s</th><th>TX/s</th>' +
+        '<th>Interface</th><th title="Output queue length. Sustained above 2 means the NIC can\'t drain fast enough">Queue</th><th>RX Err</th><th>TX Err</th><th>RX/s</th><th>TX/s</th>' +
       '</tr></thead><tbody>' +
       nics.map(function(n) {
         var qCls  = (n.queueLen || 0) > 2 ? "status-warn" : "";
@@ -2939,7 +2939,7 @@ async function _runCapture(duration) {
     b.disabled = true;
   });
   if (spinner) spinner.style.display = "inline-flex";
-  if (out) out.innerHTML = '<p class="text-pulse-muted text-sm loading-pulse">Running ' + duration + 's packet capture — analyzing TCP headers on ports 443, 1935, 80, UDP 2088…</p>';
+  if (out) out.innerHTML = '<p class="text-pulse-muted text-sm loading-pulse">Running ' + duration + 's packet capture, reading TCP headers on ports 443, 1935, 80, UDP 2088…</p>';
 
   try {
     var resp = await fetch("/api/network/capture?duration=" + duration);
@@ -2995,7 +2995,7 @@ function _renderCapture(el, d) {
             '</tr>';
           }).join("") +
           '</tbody></table>'
-        : '<p class="net-cap-empty">No outbound destinations parsed from the capture — this Windows build may not expose IP details via etl2txt.</p>') +
+        : '<p class="net-cap-empty">No outbound destinations parsed from the capture. This Windows build may not expose IP details through etl2txt.</p>') +
     '</div>';
 }
 
@@ -3022,14 +3022,14 @@ const NET_PORT_IMPACT = {
   // degraded last resort (~4 min late start, no loss protection). TCP/443 is
   // the CONTROL PLANE and carries no live video. Wording is per-port "in
   // isolation"; the live verdict is in the Port Connectivity finding.
-  "Pixellot Echo": "Pixellot cloud services over HTTPS (TCP/443): event scheduling, system management, remote support, video upload. Carries no live video — but nothing on the unit works without it.",
+  "Pixellot Echo": "Pixellot cloud services over HTTPS (TCP/443): event scheduling, system management, remote support, video upload. It carries no live video, but nothing on the unit works without it.",
   "NFHS Network": "Event scheduling, broadcast watermarks, and viewer access are unavailable.",
   "Singular Overlay": "On-screen graphics and scorebug overlays won't load.",
   "LogMeIn": "The support team can't diagnose the VPU remotely.",
-  "NTP": "The clock can drift — the VPU may miss scheduled events if no valid time server is set.",
-  "Zixi Backup": "Backup live-stream connection (Zixi over UDP/443 — the same streaming protocol as UDP/2088, not HTTPS). Either Zixi port alone carries a fully healthy stream; with both blocked the broadcast degrades to the RTMP fallback.",
+  "NTP": "The clock drifts without a valid time server, and a drifting clock makes the VPU miss scheduled events.",
+  "Zixi Backup": "Backup live-stream connection (Zixi over UDP/443, the same streaming protocol as UDP/2088, not HTTPS). Either Zixi port alone carries a fully healthy stream; with both blocked the broadcast degrades to the RTMP fallback.",
   "Zixi Streaming": "The primary live-stream connection (Zixi over UDP/2088). If blocked, the stream fails over to Zixi UDP/443, then to the degraded RTMP fallback (TCP/1935).",
-  "RTMP Fallback": "Last-resort streaming path (RTMP over TCP/1935) used only when both Zixi/UDP connections are blocked: games start ~4 minutes late with no packet-loss protection. If this is blocked too, a venue with both UDP ports blocked can't broadcast at all. (Tested against a stable public RTMP host — proves 1935 egress by port, not that pixellot.stream specifically is allowed.)",
+  "RTMP Fallback": "Last-resort streaming path (RTMP over TCP/1935) used only when both Zixi/UDP connections are blocked: games start ~4 minutes late with no packet-loss protection. If this is blocked too, a venue with both UDP ports blocked can't broadcast at all. (Tested against a stable public RTMP host. That proves TCP/1935 is open by port, not that pixellot.stream itself is allowed.)",
   "Scorebot": "SportzCast scoreboard software can't connect or update (SportzCast sites only).",
 };
 const NET_DOMAIN_IMPACT = {
@@ -3099,7 +3099,7 @@ const TLS_DOMAIN_IMPACT = {
   "singular.live": "On-screen graphics and scorebug overlays fail to load.",
   "app.singular.live": "On-screen graphics and scorebug overlays fail to load.",
   "api.singular.live": "On-screen graphics and scorebug overlays fail to load.",
-  "datastream.singular.live": "The realtime data feed that drives graphics can't connect — overlays stay blank even though video streams.",
+  "datastream.singular.live": "The realtime data feed that drives graphics can't connect, so overlays stay blank even though video streams.",
   "service.singular.live": "On-screen graphics and scorebug overlays fail to load.",
   "pixellot.tv": "System management and software updates are blocked.",
   "software.pixellot.tv": "Software and firmware updates are blocked.",
@@ -3219,7 +3219,7 @@ function _renderPortConnectivity(ports) {
     // listing hosts. A blocked required port also gets an always-visible
     // issues-panel finding with the same impact text, so the tile stays lean.
     var impact = items.length > 1
-      ? "Several required services share this port — see Service Reachability for what each one does."
+      ? "Several required services share this port. Service Reachability lists what each one does."
       : (NET_PORT_IMPACT[p0.purpose] || "");
     var tip = impact ? _impactTipHtml(impact) : "";
     var aria = impact ? ' aria-label="If blocked on the school\'s network: ' + esc(impact) + '"' : "";
@@ -3302,11 +3302,11 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
     });
     issues.push({
       severity: "warning",
-      title: "VPU is using Wi-Fi for its internet connection — switch to wired Ethernet",
-      body: "The Wi-Fi card is meant for the Pixellot Connect app, not the internet uplink — connect the motherboard Ethernet port to the venue network instead. Wi-Fi adds latency and packet loss that disrupt streaming.",
+      title: "VPU is using Wi-Fi for its internet connection. Switch to wired Ethernet",
+      body: "The Wi-Fi card is meant for the Pixellot Connect app, not the internet uplink. Connect the motherboard Ethernet port to the venue network instead. Wi-Fi adds latency and packet loss that disrupt streaming.",
       details: wifiUplink.map(function(a) {
         var label = a.interfaceDescription || a.name || "Wi-Fi";
-        var ssidPart = a.ssid ? " — SSID: " + a.ssid : "";
+        var ssidPart = a.ssid ? ", SSID " + a.ssid : "";
         return label + ssidPart;
       }),
     });
@@ -3340,16 +3340,16 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       if (_mobo.length) {
         var _m = _mobo[0];
         var _admin = String(_m.adminStatus || "").toLowerCase(), _st = String(_m.status || "").toLowerCase();
-        if (_admin === "down" || _st === "disabled") _moboNote = " The motherboard network port is disabled — enable it in Windows.";
+        if (_admin === "down" || _st === "disabled") _moboNote = " The motherboard network port is disabled. Enable it in Windows.";
         else if (_st === "disconnected" || _st === "not present" || _st === "down") _moboNote = " The motherboard network port has no cable connected.";
       } else {
-        _moboNote = " No motherboard network port was detected — it may be disabled.";
+        _moboNote = " No motherboard network port was detected. It may be disabled.";
       }
       issues.push({
         severity: "critical",
         title: "Internet is plugged into a camera port, not the motherboard network port",
-        body: "The internet/venue connection is on a camera-NIC port, which can disrupt camera discovery and streaming. On a Pixellot VPU it must connect to the motherboard network port — the 4-port NIC is for cameras only." + _moboNote + " Move the cable there and confirm the port is enabled. (Leave the Wi-Fi card enabled — it's for the Pixellot Connect app.)",
-        details: _misplaced.map(function(a) { return (a.name || a.interfaceDescription || "?") + " — gateway " + _camGw(a) + " (a camera port)"; }),
+        body: "The internet/venue connection is on a camera-NIC port, which can disrupt camera discovery and streaming. On a Pixellot VPU it has to connect to the motherboard network port. The 4-port NIC is for cameras only." + _moboNote + " Move the cable there and confirm the port is enabled. Leave the Wi-Fi card enabled, because the Pixellot Connect app needs it.",
+        details: _misplaced.map(function(a) { return (a.name || a.interfaceDescription || "?") + ": gateway " + _camGw(a) + " (a camera port)"; }),
       });
     }
 
@@ -3365,9 +3365,9 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
     if (_wifiOff.length) {
       issues.push({
         severity: "warning",
-        title: "Wi-Fi card is disabled — the Pixellot Connect app can't reach this VPU",
-        body: "The Wi-Fi card is what the Pixellot Connect app uses to talk to the VPU, so Connect won't find this unit until it's turned back on — enable it in Windows (Network Connections → right-click the Wi-Fi adapter → Enable). The internet uplink should stay on the motherboard Ethernet port; Wi-Fi is only for Connect.",
-        details: _wifiOff.map(function(a) { return (a.interfaceDescription || a.name || "Wi-Fi") + " — disabled"; }),
+        title: "Wi-Fi card is disabled, so the Pixellot Connect app can't reach this VPU",
+        body: "The Wi-Fi card is what the Pixellot Connect app uses to talk to the VPU, so Connect won't find this unit until it's turned back on. Enable it in Windows: Network Connections, right-click the Wi-Fi adapter, Enable. The internet uplink should stay on the motherboard Ethernet port; Wi-Fi is only for Connect.",
+        details: _wifiOff.map(function(a) { return (a.interfaceDescription || a.name || "Wi-Fi") + ": disabled"; }),
       });
     }
   }
@@ -3376,7 +3376,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
   if (gw && !gw.reachable) {
     if (!gw.target)
       issues.push({ severity: "critical", title: "VPU has no route to the network",
-        body: "The internet adapter has no IPv4 default gateway. Set one (via DHCP or a static address) — the VPU can't reach the internet without it." });
+        body: "The internet adapter has no IPv4 default gateway. Set one, by DHCP or a static address. The VPU can't reach the internet without it." });
     else if (cfg && cfg.internetReachable)
       // The gateway answers no ICMP, but the VPU is reaching the internet through
       // it — lots of routers/firewalls (and managed venue networks) silently drop
@@ -3385,7 +3385,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       // filtering, not a fault — explain the red gateway test instead of falsely
       // calling the uplink dead and sending a tech to chase a cable.
       issues.push({ severity: "info", title: "Gateway doesn't answer ping, but traffic is routing normally (" + gw.target + ")",
-        body: "The gateway isn't replying to ping (ICMP), so the gateway test above shows red — but the VPU is reaching the internet through it. Many routers and firewalls are set to ignore pings to themselves while still forwarding traffic, so this is expected and needs no action." });
+        body: "The gateway isn't replying to ping (ICMP), so the gateway test above shows red, but the VPU is reaching the internet through it. Many routers and firewalls are set to ignore pings to themselves while still forwarding traffic, so this is expected and needs no action." });
     else
       issues.push({ severity: "critical", title: "VPU can't reach its gateway (" + gw.target + ")",
         body: "Verify the uplink Ethernet cable is seated, the switch port is active, and the VLAN is correct. No traffic will leave the VPU until this is resolved." });
@@ -3394,7 +3394,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
   // latency varies with switch load/Wi-Fi and is harmless up to ~30 ms, so
   // only flag latency well above a healthy LAN gateway.
   else if (gw && gw.reachable && (gw.lossPercent > 0 || (gw.avgMs != null && gw.avgMs > 30)))
-    issues.push({ severity: "warning", title: "Unstable connection to the gateway — " + (gw.avgMs || "?") + " ms latency, " + (gw.lossPercent || 0) + "% loss",
+    issues.push({ severity: "warning", title: "Unstable connection to the gateway: " + (gw.avgMs || "?") + " ms latency, " + (gw.lossPercent || 0) + "% loss",
       body: "Try a different switch port, replace the Ethernet cable, or check for broadcast storms on the venue network." });
 
   // ── DNS server: blocked ICMP vs. real resolution failure ─
@@ -3410,17 +3410,17 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
   // resolved either.
   if (dns && !dns.reachable && _dnsResolving)
     issues.push({ severity: "info", title: "DNS server " + dns.target + " isn't answering pings, but name resolution is working",
-      body: "The VPU is resolving domains normally — the DNS server just isn't replying to ICMP ping, which many venue firewalls block. No action needed." });
+      body: "The VPU is resolving domains normally. The DNS server just isn't replying to ICMP ping, which many venue firewalls block. No action needed." });
   else if (dns && !dns.reachable)
     issues.push({ severity: "warning", title: "Name lookups are failing (DNS server " + dns.target + " unreachable)",
-      body: "Domain resolution will fail. Check DNS server address in adapter settings or try a public DNS (8.8.8.8, 1.1.1.1)." });
+      body: "Nothing will resolve until this is fixed. Check the DNS server address in the adapter settings, or try a public DNS (8.8.8.8, 1.1.1.1)." });
   else if (dns && dns.reachable) {
     if (dns.lossPercent > 0)
-      issues.push({ severity: "warning", title: "Name lookups are unreliable — " + dns.lossPercent + "% loss to " + dns.target,
-        body: "Resolution may be unreliable. Check cable or try a different DNS server." });
+      issues.push({ severity: "warning", title: "Name lookups are unreliable: " + dns.lossPercent + "% loss to " + dns.target,
+        body: "Check the uplink cable, or try a different DNS server." });
     if (dns.avgMs != null && dns.avgMs > 100)
-      issues.push({ severity: "info", title: "Name lookups are slow — " + dns.avgMs + " ms to " + dns.target,
-        body: "Consider switching to a closer DNS server (8.8.8.8 or 1.1.1.1)." });
+      issues.push({ severity: "info", title: "Name lookups are slow: " + dns.avgMs + " ms to " + dns.target,
+        body: "Switch to a closer DNS server (8.8.8.8 or 1.1.1.1)." });
   }
 
   // ── Critical: No internet ────────────────────────────────
@@ -3461,19 +3461,19 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       severity: "critical",
       title: "The venue firewall is intercepting secure connections (SSL inspection)",
       body: "The venue's network is decrypting the VPU's secure traffic and substituting its own certificate"
-        + (interceptorNames ? ' — the intercepting device identifies itself as "' + interceptorNames + '"' : "")
-        + ". The VPU rejects the substituted certificate, so every service listed below is cut off — each "
+        + (interceptorNames ? '. The intercepting device identifies itself as "' + interceptorNames + '"' : "")
+        + ". The VPU rejects the substituted certificate, so every service listed below is cut off. Each "
         + "line shows what that breaks. Don't expect a clean broadcast until this is fixed, and it can only "
         + "be fixed on the venue's network. Ask the venue's IT team to add these domains "
         + "to the firewall's SSL decryption bypass/exemption list, using a wildcard that covers every "
         + "subdomain plus the bare domain (e.g. *.singular.live AND singular.live). A URL allowlist alone "
-        + "is not enough — the traffic must be exempt from decryption.",
+        + "will not do it. The traffic has to be exempt from decryption.",
       details: tlsIntercepted.map(function(r) {
         var impact = TLS_DOMAIN_IMPACT[r.domain] || "";
-        return r.domain + ' — certificate issued by "' + (r.issuerCn || r.issuer || "an untrusted authority")
-          + '" instead of a public certificate authority' + (impact ? " — " + impact : "");
+        return r.domain + ': certificate issued by "' + (r.issuerCn || r.issuer || "an untrusted authority")
+          + '" instead of a public certificate authority' + (impact ? ". " + impact : "");
       }).concat(tlsHsFail.map(function(r) {
-        return r.domain + " — the secure handshake was refused (consistent with the same inspection)";
+        return r.domain + ": the secure handshake was refused (consistent with the same inspection)";
       })),
     });
   }
@@ -3494,13 +3494,13 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
         + " is blocking " + tlsFiltered.length + " Pixellot service"
         + (tlsFiltered.length === 1 ? "" : "s") + " by category",
       body: (vendorNames ? "The venue runs a " + vendorNames + " web filter. " : "")
-        + "Each connection below reaches the server and is then dropped the instant the VPU says which site it wants — "
-        + "the signature of a content filter matching the hostname against a blocked category. This is NOT certificate "
-        + "inspection: the certificates are untouched, so an SSL-decryption bypass on its own will not fix it"
+        + "Each connection below reaches the server and is then dropped the instant the VPU says which site it wants. "
+        + "That is a content filter matching the hostname against a blocked category. It is not certificate "
+        + "inspection. The certificates are untouched, so an SSL-decryption bypass on its own will not fix it"
         + (blockUrlRow ? ", and a browser on this network is sent to the filter's own block page instead ("
             + blockUrlRow.blockPageHost + ")" : "")
         + ". Ask the venue's IT team to allow these domains in the web filter's category/URL policy, using a wildcard "
-        + "plus the bare domain (e.g. *.singular.live AND singular.live) — a category exception, not just a URL entry. "
+        + "plus the bare domain (e.g. *.singular.live AND singular.live). It has to be a category exception, not only a URL entry. "
         + "While they are in the console, have them exempt the same domains from SSL decryption so the other failure "
         + "mode can't take its place. It can only be fixed on the venue's network.",
       // Per-service impact first, then the block page URL ONCE at the end:
@@ -3509,9 +3509,9 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       // URL on every row buries the impacts it sits next to.
       details: tlsFiltered.map(function(r) {
         var impact = TLS_DOMAIN_IMPACT[r.domain] || "";
-        return r.domain + " — connection reset during the secure handshake"
-          + (impact ? " — " + impact : "");
-      }).concat(blockUrlRow ? ["Evidence to send venue IT — browsing to "
+        return r.domain + ": connection reset during the secure handshake"
+          + (impact ? ". " + impact : "");
+      }).concat(blockUrlRow ? ["Evidence to send venue IT. Browsing to "
         + blockUrlRow.domain + " on this network lands here: " + blockUrlRow.blockPageUrl] : []),
     });
   }
@@ -3525,7 +3525,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       body: "The connection reached the server but the secure handshake was refused, and the reason isn't a blocked category or a substituted certificate (Pulse checks for both). A proxy that rewrites or downgrades TLS is the usual cause. If graphics or uploads are failing while video works, ask the venue's IT team what sits between this VPU and the internet on port 443, and have these domains exempted from it.",
       details: tlsHsFail.map(function(r) {
         var impact = TLS_DOMAIN_IMPACT[r.domain] || "";
-        return r.domain + (r.detail ? " — " + r.detail : "") + (impact ? " — " + impact : "");
+        return r.domain + (r.detail ? ": " + r.detail : "") + (impact ? ". " + impact : "");
       }),
     });
   }
@@ -3535,8 +3535,8 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
     issues.push({
       severity: "warning",
       title: tlsCertTime.length + " secure service" + (tlsCertTime.length === 1 ? "" : "s") + " presented a certificate with invalid dates",
-      body: "Certificate validity dates don't match this VPU's clock. Check the Time Sync section — a wrong system clock makes every secure connection fail. If the clock is right, the service's certificate has expired.",
-      details: tlsCertTime.map(function(r) { return r.domain + " — valid until " + (r.notAfter || "unknown"); }),
+      body: "Certificate validity dates don't match this VPU's clock. Check the Time Sync section first. A wrong system clock makes every secure connection fail. If the clock is right, the service's certificate has expired.",
+      details: tlsCertTime.map(function(r) { return r.domain + ": valid until " + (r.notAfter || "unknown"); }),
     });
   }
   if (tlsBlocked.length) {
@@ -3549,7 +3549,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       body: "These services didn't answer on port 443, so their certificates couldn't be verified. If they stay unreachable, ask the venue's IT team to allow them through the firewall.",
       details: tlsBlocked.map(function(r) {
         var impact = TLS_DOMAIN_IMPACT[r.domain] || "";
-        return r.domain + (impact ? " — " + impact : "");
+        return r.domain + (impact ? ": " + impact : "");
       }),
     });
   }
@@ -3563,7 +3563,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
     var proto = (p.protocol || "TCP").toUpperCase();
     var impact = _netPortImpact(p);
     return proto + "/" + p.port + " (" + (p.purpose || "") + ") to " + (p.host || "remote")
-      + (impact ? " — " + impact : "");
+      + (impact ? ". " + impact : "");
   }
 
   // Streaming verdict — three tiers off the failover chain (Zixi UDP/2088 →
@@ -3576,18 +3576,18 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       : p.purpose === "Zixi Backup" ? "the backup streaming connection"
       : "the last-resort RTMP fallback";
     return (p.protocol || "UDP").toUpperCase() + " port " + p.port
-      + " to " + (p.host || "the streaming server") + " — " + role;
+      + " to " + (p.host || "the streaming server") + ": " + role;
   }
   if (stream.dark) {
     // (1) Every rung dead — the only tier that earns "can't broadcast".
     issues.push({
       severity: "critical",
-      title: "Streaming is blocked — the VPU can't broadcast",
-      body: "The venue's network is blocking every path the VPU can use to send live video — the primary and "
+      title: "Streaming is blocked, so the VPU can't broadcast",
+      body: "The venue's network is blocking every path the VPU can use to send live video: the primary and "
         + "backup streaming connections and the last-resort fallback. The game can't broadcast until at least "
-        + "one is unblocked. Ask the venue's IT or network team to open the connections below (by domain — "
-        + "*.pixellot.stream — on filters that classify traffic by destination, since broadcast servers "
-        + "rotate per event).",
+        + "one is unblocked. Ask the venue's IT or network team to open the connections below. On filters that "
+        + "classify traffic by destination, they need to allow the domain *.pixellot.stream, because broadcast "
+        + "servers rotate per event.",
       details: stream.blocked.map(_rungDetail),
     });
   } else if (stream.degraded) {
@@ -3597,11 +3597,11 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
     // (Olympic WA, 2026-08-18).
     issues.push({
       severity: "critical",
-      title: "Streaming is degraded — running on the emergency fallback",
+      title: "Streaming is degraded and running on the emergency fallback",
       body: "The venue's network blocks both Zixi streaming connections, so broadcasts fall back to RTMP over "
-        + "TCP/1935: games start roughly 4 minutes late and stream with no packet-loss protection. Ask the "
-        + "venue's IT or network team to open UDP 2088 and UDP 443 outbound — by domain (*.pixellot.stream) "
-        + "on filters that classify traffic by destination, since broadcast servers rotate per event.",
+        + "TCP/1935. Games start roughly 4 minutes late and stream with no packet-loss protection. Ask the "
+        + "venue's IT or network team to open UDP 2088 and UDP 443 outbound. On filters that classify traffic "
+        + "by destination, they need to allow the domain *.pixellot.stream, because broadcast servers rotate per event.",
       details: stream.blocked.map(_rungDetail),
     });
   } else if (stream.blocked.length > 0) {
@@ -3615,10 +3615,10 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       severity: "warning",
       title: onBackup ? "Streaming is riding its backup connection" : "Streaming resiliency is reduced",
       body: (onBackup
-        ? "The primary streaming connection (UDP/2088) is blocked, so the stream rides the UDP/443 backup — "
-          + "full quality, but one rung from the degraded RTMP fallback. "
-        : "The stream is healthy, but part of its failover chain is blocked — less to fall back on if the "
-          + "main connection runs into trouble during a game. ")
+        ? "The primary streaming connection (UDP/2088) is blocked, so the stream rides the UDP/443 backup. "
+          + "Quality is unaffected, but it is one step from the degraded RTMP fallback. "
+        : "The stream is healthy, but part of its failover chain is blocked, so there is less to fall back on "
+          + "if the main connection runs into trouble during a game. ")
         + "Ask the venue's IT or network team to unblock the connection"
         + (stream.blocked.length === 1 ? "" : "s") + " below.",
       details: stream.blocked.map(_rungDetail),
@@ -3644,7 +3644,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
   if (reqFailed.length > 0) {
     issues.push({ severity: "critical",
       title: reqFailed.length + " required service" + (reqFailed.length === 1 ? "" : "s") + " blocked",
-      body: "Ensure these ports are allowed by the venue firewall and VLAN policy.",
+      body: "Ask the venue's IT team to allow these ports through the firewall and the VLAN policy.",
       details: reqFailed.map(_portDetail) });
   }
 
@@ -3660,7 +3660,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
         title: sysBlocked.length + " domain(s) blocked by configured DNS but reachable via Google DNS (8.8.8.8)",
         body: "The local DNS resolver is filtering or failing on Pixellot infrastructure. Change the VPU's DNS servers to 8.8.8.8 / 8.8.4.4, or ask the venue's network admin to whitelist these hostnames.",
         details: sysBlocked.map(function(r) {
-          return r.host + " — system: " + (r.system.error || "no answer") + "; google: " + (r.google.resolvedTo || "—");
+          return r.host + ": system says " + (r.system.error || "no answer") + "; Google says " + (r.google.resolvedTo || "nothing");
         }),
       });
     }
@@ -3673,9 +3673,9 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
       issues.push({
         severity: "warning",
         title: redirects.length + " domain(s) redirected by the local DNS to an internal IP",
-        body: "The configured resolver returned a private/internal address where Google DNS returned a public one — typically a captive portal or SSL-inspection proxy. Pixellot traffic may be intercepted. Have the venue bypass inspection for these hosts.",
+        body: "The configured resolver returned a private/internal address where Google DNS returned a public one. That usually means a captive portal or an SSL-inspection proxy, and Pixellot traffic may be intercepted. Have the venue bypass inspection for these hosts.",
         details: redirects.map(function(r) {
-          return r.host + " — system: " + r.system.resolvedTo + " (internal); google: " + r.google.resolvedTo;
+          return r.host + ": system says " + r.system.resolvedTo + " (internal); Google says " + r.google.resolvedTo;
         }),
       });
     }
@@ -3692,7 +3692,7 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
   if (domFailed.length > 0) {
     var domDetails = domFailed.map(function(d) {
       var impact = _netDomainImpact(d);
-      return d.domain + (impact ? " — " + impact : " — ensure it is whitelisted (firewall, DNS allow-list, SSL inspection bypass)");
+      return d.domain + (impact ? ": " + impact : ": allow it through the firewall, the DNS allow-list, and the SSL inspection bypass");
     });
     issues.push({ severity: "warning", title: domFailed.length + " of " + domTotal + " domains failed DNS resolution",
       body: "Check DNS server settings on this adapter.",
@@ -3702,9 +3702,9 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
   // ── Domains: slow resolution ─────────────────────────────
   var slowDns = (domains || []).filter(function(d) { return d.resolutionMs != null && d.resolutionMs > 500 && (d.status || "").toLowerCase() === "pass"; });
   if (slowDns.length > 0) {
-    var slowDetails = slowDns.map(function(d) { return d.domain + " — " + d.resolutionMs + " ms"; });
+    var slowDetails = slowDns.map(function(d) { return d.domain + ": " + d.resolutionMs + " ms"; });
     issues.push({ severity: "info", title: slowDns.length + " domain(s) resolved slowly (>500 ms)",
-      body: "Slow DNS can delay connections. Consider switching to a faster DNS server.",
+      body: "Slow DNS delays every connection. Switch to a faster DNS server.",
       details: slowDetails });
   }
 
@@ -4421,8 +4421,8 @@ function renderNetwork() {
       <div class="card">
         ${sectionTitle("shield", "Secure Connections (Filtering & SSL Inspection)")}
         <p class="text-pulse-muted text-xs mb-3">What happens when the VPU opens each service's HTTPS connection. Port tests pass in both failure cases below, which is why they need their own check.<br>
-        <strong>Blocked by filter</strong> — the connection is reset as soon as the VPU names the site: a content filter has the domain on a blocked category list. Fix: venue IT allows the domain in the web filter's category/URL policy (an SSL bypass will not do it).<br>
-        <strong>Intercepted</strong> — the firewall substituted its own certificate and is decrypting the traffic. Fix: venue IT exempts the domain from SSL decryption (bypass list), not just an allowlist entry.<br>
+        <strong>Blocked by filter.</strong> The connection is reset as soon as the VPU names the site, which means a content filter has the domain on a blocked category list. Venue IT has to allow the domain in the web filter's category/URL policy. An SSL bypass will not do it.<br>
+        <strong>Intercepted.</strong> The firewall substituted its own certificate and is decrypting the traffic. Venue IT has to exempt the domain from SSL decryption, which is a bypass list, not an allowlist entry.<br>
         Either way, use a wildcard <em>and</em> the bare domain (e.g. *.singular.live AND singular.live).</p>
         ${(tls && tls.results && tls.results.length) ? `
           <table class="data-table"><thead><tr>
@@ -4436,9 +4436,9 @@ function renderNetwork() {
             var issuerLabel = st === "filtered"
               ? (r.filterVendor
                   ? "Blocked by " + r.filterVendor + (r.blockPageHost ? " (" + r.blockPageHost + ")" : "")
-                  : "No certificate — connection reset before the handshake finished")
+                  : "No certificate. Connection reset before the handshake finished.")
               : (r.issuerCn
-                  ? r.issuerCn + (r.issuerOrg && r.issuerOrg !== r.issuerCn ? " — " + r.issuerOrg : "")
+                  ? r.issuerCn + (r.issuerOrg && r.issuerOrg !== r.issuerCn ? ", " + r.issuerOrg : "")
                   : (st === "pass" ? "—" : (r.detail || "—")));
             return `<tr>
               <td><div class="font-semibold">${esc(r.domain)}</div><div class="text-xs text-pulse-muted">${esc(r.purpose || "")}</div></td>
@@ -4447,7 +4447,7 @@ function renderNetwork() {
             </tr>`;
           }).join("")}
           </tbody></table>
-        ` : '<p class="text-pulse-muted text-sm mt-2">No certificate results — run the network test again.</p>'}
+        ` : '<p class="text-pulse-muted text-sm mt-2">No certificate results. Run the network test again.</p>'}
       </div>
 
       ${_netTimeSyncCard(cfg, ntp, ntpPeers)}
@@ -4607,7 +4607,7 @@ function _camPortTile(port, index, ctx) {
   // so the tech can spot which physical port to fix without reading findings.
   var hasUplink = !!p.hasInternetUplink;
   var uplinkNote = hasUplink
-    ? '<div class="cam-uplink-callout">' + svgIcon("alert", 12) + ' <span>Wrong port — this one is carrying the venue’s internet connection'
+    ? '<div class="cam-uplink-callout">' + svgIcon("alert", 12) + ' <span>Wrong port. This one is carrying the venue&#39;s internet connection'
       + (p.uplinkGateway ? ' (gateway ' + esc(p.uplinkGateway) + ')' : '')
       + '. Move this cable to the motherboard network port; the 4-port camera card is for cameras only.</span></div>'
     : '';
@@ -4641,7 +4641,7 @@ function _camPortTile(port, index, ctx) {
       </div>
       <div class="cam-details-toggle"><a class="cam-hw-pointer" href="#camera-hardware" onclick="navigate('camera-hardware');return false;">${svgIcon("info", 12)} Hardware details</a></div>`;
     })()
-    : p.connecting ? '<div class="cam-connecting-note">' + svgIcon("refresh", 12) + ' Establishing link — waiting for camera…</div>'
+    : p.connecting ? '<div class="cam-connecting-note">' + svgIcon("refresh", 12) + ' Establishing link, waiting for camera…</div>'
     : !p.isUp ? _camDownGuidanceHtml(p, ctx)
     : hasUplink ? ''
     : '<div class="cam-no-detect">No Pixellot cameras on this port</div>'}
@@ -4655,17 +4655,17 @@ function _camDownGuidanceHtml(p, ctx) {
   var reason = p.downReason || "down";
   var msg;
   if (reason === "disabled") {
-    msg = "Adapter is disabled in Windows — enable it in Network Connections to bring this port back.";
+    msg = "The adapter is disabled in Windows. Enable it in Network Connections to bring this port back.";
   } else if (reason === "driver") {
-    msg = "The NIC driver reports a fault — reinstall the Intel network driver, then re-check.";
+    msg = "The NIC driver reports a fault. Reinstall the Intel network driver, then re-check.";
   } else {
     // no-link / generic: nothing detected on the wire.
     var othersUp = ctx && ctx.total > 1 && ctx.upCount >= 1;
     var allDown = ctx && ctx.total > 1 && ctx.upCount === 0;
     if (allDown) {
-      msg = "No signal — and every camera port is down. This points to the network card, its driver, or power to the camera bank — not one cable.";
+      msg = "No signal, and every camera port is down. That points to the network card, its driver, or power to the camera bank, not to one cable.";
     } else if (othersUp) {
-      msg = "Check this cable (both ends) and the camera's power, then run Camera Connection Troubleshooting. The other ports are linked, so the problem is likely just this cable, camera, or port — not a card-wide failure.";
+      msg = "Check this cable (both ends) and the camera's power, then run Camera Connection Troubleshooting. The other ports are linked, so the problem is probably this cable, camera, or port, not the whole card.";
     } else {
       msg = "No signal detected. Check the cable is seated both ends and the camera has power, then use Camera Connection Troubleshooting.";
     }
@@ -4791,7 +4791,7 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
   var layoutToggle = hasRealPorts
     ? '<button class="nic-layout-toggle' + (_camNicLayout === "v" ? " is-active" : "") +
         '" aria-pressed="' + (_camNicLayout === "v" ? "true" : "false") +
-        '" onclick="_camToggleNicLayout()" title="Flip the port row to match how the VPU is mounted — upright (left-to-right) or on its side (top-to-bottom).">' +
+        '" onclick="_camToggleNicLayout()" title="Flip the port row to match how the VPU is mounted: upright (left-to-right) or on its side (top-to-bottom).">' +
         svgIcon("refresh", 12) + ' Flip layout</button>'
     : '';
   var nicHeader = '<div class="nic-diagram-header">' +
@@ -4801,7 +4801,7 @@ function _camNicDiagramHtml(ports, showLiveBadge, sysInfo) {
   // Only show the physical-order note when we actually have NIC data;
   // otherwise it reads misleadingly on an empty system.
   var note = hasRealPorts
-    ? '<div class="nic-diagram-note">Port order mirrors the physical orientation of the NIC — Port ' + count + ' is leftmost on the card.</div>'
+    ? '<div class="nic-diagram-note">Port order mirrors the physical orientation of the NIC. Port ' + count + ' is leftmost on the card.</div>'
     : '';
   return nicHeader + '<div class="nic-diagram-wrap">' +
     '<div class="nic-diagram-ports' + (_camNicLayout === "v" ? " is-vertical" : "") + '">' + portIcons + '</div>' +
@@ -4860,8 +4860,8 @@ function _camOrientationPanelHtml() {
         '<div class="orient-fig-label">On its side</div></div>' +
     '</div>' +
     '<div class="orient-caption">' +
-      'Camera ports (PoE — Power over Ethernet) are the highlighted bank above the <strong>AC power inlet</strong>. ' +
-      '<strong>Tip:</strong> a lit jack matches the linked port above — use it to confirm regardless of mounting.' +
+      'Camera ports (PoE, Power over Ethernet) are the highlighted bank above the <strong>AC power inlet</strong>. ' +
+      'A lit jack matches the linked port above, so you can confirm the layout whichever way the unit is mounted.' +
     '</div>' +
   '</div>';
 }
@@ -5044,7 +5044,7 @@ function _camVideoResultsHtml(res, opts) {
         ? (r.expectedSpeedMbps >= 1000 ? (r.expectedSpeedMbps / 1000) + " Gbps" : r.expectedSpeedMbps + " Mbps")
         : null;
       warn = '<div class="cam-frame-warn">' + svgIcon("alert", 11) +
-        ' Degraded link — ' + spd + (exp ? ", expected " + exp : "") +
+        ' Degraded link: ' + spd + (exp ? ", expected " + exp : "") +
         '. A frame pulled, but the stream won\'t hold until this is fixed.</div>';
     }
     // Black-picture diagnosis: the frame grabbed (so it reads "Active"), but the
@@ -5095,7 +5095,7 @@ function _camVideoResultsHtml(res, opts) {
       ' These are still snapshots, not a live stream. To get a new image, use ' +
       '<strong>Refresh all cameras</strong> below, or <strong>Refresh</strong> on a single camera.</div>'
     : '<div class="cam-frame-notice">' + svgIcon("info", 12) +
-      ' These are still snapshots, not a live stream — use <strong>Refresh</strong> above to recapture.</div>';
+      ' These are still snapshots, not a live stream. Use <strong>Refresh</strong> above to recapture.</div>';
   var toolbar = showControls
     ? '<div class="cam-frame-toolbar">' +
       '<button class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()" ' +
@@ -5248,7 +5248,7 @@ function _camPoeCardHtml(poe, ports) {
   // fault — so it is a quiet footnote, not a warning.
   var sumNote = (b.portSumOk === false)
     ? '<div class="cam-poe-note-meta">Per-port readings total ' + _camPoeW(b.portSumW) +
-      ' but the card reports ' + _camPoeW(b.consumedW) + ' drawn — the per-port figures below ' +
+      ' but the card reports ' + _camPoeW(b.consumedW) + ' drawn, so the per-port figures below ' +
       'may be incomplete. Card totals are still accurate.</div>'
     : "";
 
@@ -5345,12 +5345,12 @@ function renderCameras() {
   }
 
   $page().innerHTML = `
-    ${pageHeader("Camera Connectivity", "Camera ports — link status, speed, and which cameras are detected.",
+    ${pageHeader("Camera Connectivity", "Camera ports: link status, speed, and which cameras are detected.",
       `<button class="btn-outline btn-ol-blue" onclick="_camForceRefresh()">
         ${svgIcon("refresh", 14)} Refresh
       </button>
       <button id="cam-frames-btn" class="btn-outline btn-ol-blue" onclick="_camVerifyVideo()"${data.vpuRunning ? " disabled" : ""}
-        title="${data.vpuRunning ? "Disabled while the Pixellot capture engine (vpu.exe) is running — capturing frames could interfere with the live stream." : "Grabs a single frame from each camera to confirm it is streaming and show what it sees."}">
+        title="${data.vpuRunning ? "Disabled while the Pixellot capture engine (vpu.exe) is running, because capturing frames could interfere with the live stream." : "Grabs a single frame from each camera to confirm it is streaming and show what it sees."}">
         ${svgIcon("camera", 14)} Get Camera Frames
       </button>
       <button class="btn-outline btn-ol-blue" onclick="navigate('fault-isolator')">
@@ -5508,8 +5508,8 @@ function renderServices() {
       // notes here explain that to the tech so the missing button doesn't
       // read as a gap.
       actions = s.watchdog
-        ? `<span class="svc-tile-note" title="This watchdog process restarts the Agent and Coordinator automatically when they exit.">${svgIcon("shield", 12)} Watchdog — restarts Agent/Coordinator on failure</span>`
-        : `<span class="svc-tile-note" title="Use the 'Restart Agent + Coordinator' button above to restart this process.">${svgIcon("shield", 12)} Managed by KeepAgentUp — use Restart action above</span>`;
+        ? `<span class="svc-tile-note" title="This watchdog process restarts the Agent and Coordinator automatically when they exit.">${svgIcon("shield", 12)} Watchdog: restarts Agent/Coordinator on failure</span>`
+        : `<span class="svc-tile-note" title="Use the 'Restart Agent + Coordinator' button above to restart this process.">${svgIcon("shield", 12)} Managed by KeepAgentUp. Use the Restart action above</span>`;
     } else if (s.status !== "NotFound") {
       actions = `<button class="btn-outline btn-ol-blue svc-restart-btn" data-name="${esc(s.name)}">
           ${svgIcon("refresh", 12)} Restart
@@ -5549,7 +5549,7 @@ function renderServices() {
     const services = list.filter(s => s.kind !== "process");
     return (
       section("Pixellot Core Processes",
-        "Launched and supervised by the KeepAgentUp watchdog — these are executables in C:\\Pixellot\\Bin, not Windows services. Restart them with the action above.",
+        "Launched and supervised by the KeepAgentUp watchdog. These are executables in C:\\Pixellot\\Bin, not Windows services. Restart them with the action above.",
         procs, "No process data") +
       section("Windows Services",
         "Real Windows services queried through the Service Control Manager (SCM). Each can be restarted individually.",
@@ -5574,7 +5574,7 @@ function renderServices() {
         <div>
           <div class="svc-quick-action-title">Restart Agent + Coordinator</div>
           <div class="svc-quick-action-body">
-            The documented first fix when the Pixellot Agent or Coordinator stops responding — try it before escalating for a hardware return (RMA). <span class="font-mono">Runs c:\\pixellot\\bin\\keepagentup.exe.</span>
+            The documented first fix when the Pixellot Agent or Coordinator stops responding. Try it before escalating for a hardware return (RMA). <span class="font-mono">Runs c:\\pixellot\\bin\\keepagentup.exe.</span>
           </div>
         </div>
         <button class="btn-outline btn-ol-blue" id="svc-keepagent-btn" title="Documented first-line remedy when Agent/Coordinator is unresponsive">
@@ -5665,7 +5665,7 @@ function renderServices() {
     resultEl.className = "svc-quick-action-result " +
       (ok2 ? "svc-result-ok" : resident ? "svc-result-warn" : "svc-result-err");
     const heading = ok2 ? svgIcon("check", 14) + " Success"
-      : resident ? svgIcon("alert", 14) + " Not restarted — watchdog already running"
+      : resident ? svgIcon("alert", 14) + " Not restarted, the watchdog is already running"
       : svgIcon("alert", 14) + " Failed";
     resultEl.innerHTML = `
       <div class="font-semibold">${heading}</div>
@@ -5799,8 +5799,8 @@ function renderDiskHealth() {
     <div class="card">
       ${sectionTitle("database", "Volumes")}
       ${logical.length ? logical.map(d => {
-        const role = d.deviceID === "C:" ? "System — OS & Pixellot"
-                   : d.deviceID === "D:" ? "Recordings — local game-video storage"
+        const role = d.deviceID === "C:" ? "System: OS and Pixellot"
+                   : d.deviceID === "D:" ? "Recordings: local game video"
                    : "Storage";
         // Missing usedPercent = Unknown — don't default to 0% and paint a
         // green "OK" bar that makes a no-data volume look healthy.
@@ -6004,7 +6004,7 @@ async function _loadCleanupPreview() {
   if (!btn || !body) return;
   btn.disabled = true;
   body.innerHTML = `<div class="text-xs text-pulse-muted">
-    Measuring what can be deleted — on a full drive this can take a minute or two…
+    Measuring what can be deleted. On a full drive this takes a minute or two…
   </div>`;
 
   const p = await api("/api/disk-health/cleanup-preview");
@@ -6019,7 +6019,7 @@ async function _loadCleanupPreview() {
   }
   if (p.rootExists === false) {
     body.innerHTML = `<p class="text-sm text-pulse-muted">
-      No ${esc(p.root || "D:\\recordedevents")} folder found — nothing to clean up.
+      No ${esc(p.root || "D:\\recordedevents")} folder found, so there is nothing to clean up.
     </p>`;
     return;
   }
@@ -6031,7 +6031,7 @@ async function _loadCleanupPreview() {
     body.innerHTML = `<p class="text-sm text-pulse-muted">
       Nothing is old enough to delete: ${esc(String(p.totalFolders ?? 0))} folders checked,
       ${esc(String(p.skippedRecent ?? 0))} kept because they're newer than the limits.
-      Space on D: is being used by recent recordings — escalate rather than deleting them.
+      Recent recordings are using the space on D:. Escalate rather than deleting them.
     </p>`;
     return;
   }
@@ -6084,7 +6084,7 @@ async function _runStorageCleanup(preview) {
   const ok = confirm(
     `Permanently delete ${totalCount} folders from D:\\recordedevents?\n\n` +
     lines.join("\n") + "\n\n" +
-    "This cannot be undone — the folders do not go to the Recycle Bin.\n" +
+    "This cannot be undone. The folders do not go to the Recycle Bin.\n" +
     "Nothing from the last 90 days will be touched.\n\nProceed?"
   );
   if (!ok) return;
@@ -6094,7 +6094,7 @@ async function _runStorageCleanup(preview) {
   if (btn) { btn.disabled = true; btn.innerHTML = `${svgIcon("refresh", 14)} Deleting…`; }
   if (body) body.insertAdjacentHTML("beforeend",
     `<div class="text-xs text-pulse-muted mt-2" id="dh-cleanup-progress">
-      Deleting ${esc(String(totalCount))} folders — this can take several minutes…
+      Deleting ${esc(String(totalCount))} folders. This can take several minutes…
     </div>`);
 
   const r = await apiPost("/api/disk-health/cleanup", { confirm: true });
@@ -6185,7 +6185,7 @@ function renderReboots() {
     isPending ? "alert" : "check", "Pending reboot",
     isPending ? "warning" : "ok", isPending ? "Reboot pending" : "None pending",
     isPending ? reasons.join("; ") : "Nothing is waiting on a restart",
-    isPending ? "Windows may restart on its own — reboot at a safe time to clear it."
+    isPending ? "Windows may restart on its own. Reboot at a safe time to clear it."
               : "No staged updates or pending file operations.");
 
   const uptimeCard = sumCard(
@@ -6196,7 +6196,7 @@ function renderReboots() {
   const diCard = sumCard(
     "zap", "Device-install reboot", diTask ? "info" : "muted", diTask ? "Has fired" : "Never",
     diTask ? formatTime(diTask) : "Not on this box",
-    "Windows' built-in task that reboots after a driver install — the usual cause of an “unprovoked” restart at logon.");
+    "Windows' built-in task that reboots after a driver install. It is the usual cause of an \"unprovoked\" restart at logon.");
 
   function row(h) {
     const typeChip = h.category === "unexpected"
@@ -6230,7 +6230,7 @@ function renderReboots() {
     : '<div class="card mt-4"><div class="text-center py-8 text-pulse-muted">No restarts or shutdowns recorded in the last 7 days.</div></div>';
 
   $page().innerHTML = `
-    ${pageHeader("Power Events", "Why this VPU last restarted, and whether a reboot is pending. Reboots Pulse itself triggered are labeled — everything else is external.",
+    ${pageHeader("Power Events", "Why this VPU last restarted, and whether a reboot is pending. Reboots Pulse triggered are labeled; everything else came from outside Pulse.",
       `<button class="btn-outline btn-ol-blue" onclick="dataCache['reboots']=null;renderReboots()">${svgIcon("refresh", 14)} Refresh</button>`
     )}
     <div class="dh-summary-row">${pendCard}${uptimeCard}${diCard}</div>
@@ -6417,7 +6417,7 @@ async function _loadPixellotLogs() {
       ${svgIcon("alert", 14)}
       <div>
         <div class="font-semibold">Pixellot video dependency error detected (CUDNN/TensorFlow)</div>
-        <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. This needs a Pixellot-support-directed dependency reinstall — capture an export and escalate to Pixellot support.</div>
+        <div class="text-xs mt-1">A known Pixellot dependency error appeared in the logs. Fixing it takes a dependency reinstall that Pixellot support has to direct, so capture an export and escalate to them.</div>
       </div>
     </div>` : ""}
 
@@ -6454,13 +6454,13 @@ function renderPulseLogs() {
 
     <div class="card">
       ${sectionTitle("activity", "Script Call Log")}
-      <p class="text-xs text-pulse-muted mb-3">Every PowerShell diagnostic script Pulse has run this session — duration, output size, and status. Updates live as checks run.</p>
+      <p class="text-xs text-pulse-muted mb-3">Every PowerShell diagnostic script Pulse has run this session, with duration, output size, and status. It updates live as checks run.</p>
       <div class="pulse-log-scroll" id="pulse-log-script">${loading()}</div>
     </div>
 
     <div class="card">
       ${sectionTitle("file", "Server Log")}
-      <p class="text-xs text-pulse-muted mb-3">The Pulse backend's own log (<span class="font-mono">pulse-server.log</span>) — startup, requests, and errors.</p>
+      <p class="text-xs text-pulse-muted mb-3">The Pulse backend's own log (<span class="font-mono">pulse-server.log</span>): startup, requests, and errors.</p>
       <div class="pulse-log-scroll" id="pulse-log-server">${loading()}</div>
     </div>
   `;
@@ -6507,18 +6507,18 @@ function renderHelp() {
 
     <div class="card">
       ${sectionTitle("info", "What Pulse is")}
-      <p class="text-sm" style="line-height:1.7">Pulse is a read-only diagnostic tool for Pixellot VPUs. It collects the VPU's
-      health — network, cameras, ScoreConnect, Pixellot software, system hardware, disks, and logs — into one place so you can
-      tell, fast, whether a unit can stream tonight's game and what's standing in the way. Pulse does not change Pixellot
-      settings; the few actions it offers (restart the Pixellot Agent, restart a service) are clearly labeled.</p>
+      <p class="text-sm" style="line-height:1.7">Pulse is a read-only diagnostic tool for Pixellot VPUs. It pulls the VPU's
+      health into one place: network, cameras, ScoreConnect, Pixellot software, system hardware, disks, and logs. The point is
+      to tell you fast whether a unit can stream tonight's game and what's in the way. Pulse does not change Pixellot
+      settings. The few actions it does offer, like restarting the Pixellot Agent or a service, are labeled as actions.</p>
     </div>
 
     <div class="card">
       ${sectionTitle("grid", "Reading the Dashboard")}
       <ul class="help-list">
-        <li><strong>Stream Readiness</strong> is the headline call — <span class="status-pass">PASS</span>,
+        <li><strong>Stream Readiness</strong> is the headline call: <span class="status-pass">PASS</span>,
         <span class="status-warn">WARN</span>, or <span class="status-fail">FAIL</span> on whether this VPU can broadcast.
-        FAIL means don't expect a clean broadcast without pre-game attention.</li>
+        FAIL means don't expect a clean broadcast until someone fixes it before the game.</li>
         <li><strong>Findings</strong> list the specific issues behind the verdict, worst first. Click any finding to jump
         straight to the tab that owns the fix.</li>
         <li><strong>Sidebar warning triangles</strong> mark which areas have an open issue, so you know where to look
@@ -6529,17 +6529,17 @@ function renderHelp() {
     <div class="card">
       ${sectionTitle("wifi", "First things to try")}
       <ul class="help-list">
-        <li><strong>No internet / can't reach services</strong> — On a VPU the venue/internet cable goes to the
+        <li><strong>No internet, or services unreachable.</strong> On a VPU the venue/internet cable goes to the
         <em>motherboard</em> network port, not the 4-port camera card. Check <strong>Network Test</strong>; Pulse flags it
         if the cable is on the wrong port.</li>
-        <li><strong>A camera is missing or slow</strong> — Check <strong>Camera Connectivity</strong> for the port's link
+        <li><strong>A camera is missing or slow.</strong> Check <strong>Camera Connectivity</strong> for the port's link
         and speed (camera ports should be 1 Gbps), then <strong>Camera Hardware</strong> for firmware and reachability.</li>
-        <li><strong>Scores aren't showing</strong> — Check <strong>ScoreConnect</strong> for the service and the
+        <li><strong>Scores aren't showing.</strong> Check <strong>ScoreConnect</strong> for the service and the
         scoreboard feed, and confirm the OCR camera is calibrated under <strong>Calibrations</strong>.</li>
-        <li><strong>Pixellot Agent looks stuck</strong> — <strong>Service Status</strong> shows the Agent / Coordinator /
+        <li><strong>Pixellot Agent looks stuck.</strong> <strong>Service Status</strong> shows the Agent, Coordinator, and
         Watchdog. The documented first fix is <strong>Restart Agent + Coordinator</strong> on the
         <strong>Pixellot Software</strong> tab.</li>
-        <li><strong>Recording errors / disk filling up</strong> — Check <strong>Disks</strong> for free space and drive
+        <li><strong>Recording errors, or the disk is filling up.</strong> Check <strong>Disks</strong> for free space and drive
         health, and scan <strong>Pixellot Logs</strong> for fatal/restart markers (it flags the known CUDNN/TensorFlow
         dependency error).</li>
       </ul>
@@ -6548,7 +6548,7 @@ function renderHelp() {
     <div class="card">
       ${sectionTitle("inbox", "Capturing evidence for support")}
       <ul class="help-list">
-        <li>Use <strong>Exports</strong> to generate a downloadable report to attach to a ticket — it re-runs
+        <li>Use <strong>Exports</strong> to generate a downloadable report to attach to a ticket. It re-runs
         every check and bundles the results into one file.</li>
         <li><strong>Pulse Logs</strong> shows Pulse's own script and server logs if Pulse itself is misbehaving.</li>
       </ul>
@@ -6565,7 +6565,7 @@ function renderReports() {
   // describing it so action sits with its explanation, and drop the
   // redundant Run All Diagnostics button.
   $page().innerHTML = `
-    ${pageHeader("Exports", "Diagnostic-run snapshots — generate and download full system reports")}
+    ${pageHeader("Exports", "Diagnostic-run snapshots: generate and download full system reports")}
 
     <div class="card">
       ${sectionTitle("file", "Full Diagnostic Export")}
@@ -6655,7 +6655,7 @@ function renderShare() {
 
     <div class="card">
       ${sectionTitle("send", "Send to another Pulse")}
-      <p class="text-sm text-pulse-muted mb-3">Paste the <strong>pairing code</strong> from the receiving Pulse, then Send. (On that machine: Share over LAN → enable "Receive over LAN".) No file to move — Pulse sends the snapshot straight over.</p>
+      <p class="text-sm text-pulse-muted mb-3">Paste the <strong>pairing code</strong> from the receiving Pulse, then Send. On that machine, open Share over LAN and enable "Receive over LAN". There is no file to move; Pulse sends the snapshot straight over.</p>
       <input type="text" id="share-code" class="settings-input" placeholder="Pairing code, e.g. tiger maple river copper dust" autocomplete="off" spellcheck="false" style="max-width:480px"/>
       <details class="mt-2" style="max-width:420px">
         <summary class="text-sm text-pulse-muted cursor-pointer">Receiver has more than one network? Override the address</summary>
@@ -6671,7 +6671,7 @@ function renderShare() {
 
     <div class="card mt-4">
       ${sectionTitle("inbox", "Receive over LAN")}
-      <p class="text-sm text-pulse-muted mb-3">Turn this on to let another Pulse send its snapshot to <em>this</em> machine. This opens a port to your local network — Windows may ask you to allow access the first time.</p>
+      <p class="text-sm text-pulse-muted mb-3">Turn this on to let another Pulse send its snapshot to <em>this</em> machine. This opens a port to your local network, so Windows may ask you to allow access the first time.</p>
       <div class="settings-actions">
         <button class="btn-outline btn-ol-blue" id="share-recv-toggle">${svgIcon("inbox", 14)} <span id="share-recv-label">Enable receiving</span></button>
         <span id="share-recv-msg" class="text-sm text-pulse-muted"></span>
@@ -6701,7 +6701,7 @@ async function _shareTest() {
   _shareSetMsg(msg, "Testing…");
   const q = "code=" + encodeURIComponent(code) + "&address=" + encodeURIComponent(addr);
   const r = await api("/api/peer/send/ping?" + q);
-  if (r.ok) _shareSetMsg(msg, "Reachable — " + (r.hostname || r.address), "var(--c-accent-green)");
+  if (r.ok) _shareSetMsg(msg, "Reachable: " + (r.hostname || r.address), "var(--c-accent-green)");
   else _shareSetMsg(msg, r.error || "Unreachable", "var(--c-accent-red)");
 }
 
@@ -6764,7 +6764,7 @@ function _shareRenderReceiveInfo(status) {
   btn.classList.remove("btn-ol-blue"); btn.classList.add("btn-ol-red");
 
   const wrap = _mk("div", "share-pair");
-  wrap.appendChild(_mk("div", "text-sm text-pulse-muted mb-1", "Pairing code — type these 5 words on the sending Pulse"));
+  wrap.appendChild(_mk("div", "text-sm text-pulse-muted mb-1", "Pairing code: type these 5 words on the sending Pulse"));
   const row = _mk("div", "share-pair-row");
   const codeEl = _mk("span", "share-pair-code", status.code || "");
   codeEl.id = "share-code-display";
@@ -7029,7 +7029,7 @@ function _renderSc3Progress(card, status) {
       <div style="margin-top:2px;color:${barColor}">${svgIcon(iconName, 18)}</div>
       <div style="flex:1">
         <div class="font-semibold" style="margin-bottom:0.25rem">
-          ScoreConnect III Install — ${esc(stageLabel)}${pct ? ' <span class="text-pulse-muted" style="font-weight:normal">(' + pct + '%)</span>' : ''}
+          ScoreConnect III Install: ${esc(stageLabel)}${pct ? ' <span class="text-pulse-muted" style="font-weight:normal">(' + pct + '%)</span>' : ''}
         </div>
         <div class="text-pulse-muted" style="font-size:0.8rem;line-height:1.5">${esc(msg)}</div>
         <div style="margin-top:0.6rem;height:8px;background:var(--c-deep-bg);border-radius:4px;overflow:hidden;border:1px solid var(--c-border)">
@@ -7451,10 +7451,10 @@ function renderScoreConnect() {
   // Page subtitle reflects the single active version (ScoreConnect III takes
   // precedence when present — it's the live data source). We never show both.
   const subtitle = isDetected
-    ? "ScoreConnect III — service, configuration, and live data"
+    ? "ScoreConnect III: service, configuration, and live data"
     : sc2 && sc2.reachable
-    ? legacyFull + " — configuration from device"
-    : "ScoreConnect — service not detected";
+    ? legacyFull + ": configuration from device"
+    : "ScoreConnect: service not detected";
 
   $page().innerHTML = `
     ${pageHeader("ScoreConnect", subtitle,
@@ -7525,7 +7525,7 @@ function renderScoreConnect() {
           <div class="font-semibold" style="margin-bottom:0.25rem">Upgrade to ScoreConnect III</div>
           <div class="text-pulse-muted" style="font-size:0.8rem;line-height:1.5">
             ScoreConnect III is the preferred version. It provides live scoreboard data, parsed
-            scores, and live status — with no interference to the data stream.
+            scores, and live status, without interfering with the data stream.
           </div>
           <div style="margin-top:0.75rem">
             <button class="btn-outline btn-ol-blue" id="btn-install-sc3" onclick="installSc3(this)">
@@ -7534,7 +7534,7 @@ function renderScoreConnect() {
           </div>
           <div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.5rem">
             Downloads the official installer and runs it in the background. A Windows
-            administrator prompt appears on the VPU desktop — approve it to continue.
+            administrator prompt appears on the VPU desktop. Approve it to continue.
           </div>
         </div>
       </div>
@@ -7547,7 +7547,7 @@ function renderScoreConnect() {
       ${sectionTitle("server", legacyFull)}
       <div class="kv-grid">
         ${kvRowHtml("Status", sc2.outOfDate
-          ? _scDot(true, "var(--c-accent-amber)") + '<span class="status-warn">Running — software out of date</span>'
+          ? _scDot(true, "var(--c-accent-amber)") + '<span class="status-warn">Running, software out of date</span>'
           : _scDot(true) + '<span class="status-pass">Running</span>')}
         ${kvRow("Version", sc2.version)}
         ${kvRow("Hardware", (sc2.hardware || "").replace("ScoreConnectII", "ScoreConnect II"))}
@@ -7690,7 +7690,7 @@ function _sc3DataStatusHtml(stage, secs, statusText) {
   }
   if (stage === "stale") {
     return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c-accent-amber);animation:pulse-live 1.4s ease-in-out infinite;margin-right:7px;vertical-align:middle"></span>'
-      + '<span style="color:var(--c-accent-amber)">Data stale — no new packets (disconnecting in ' + secs + 's)</span>';
+      + '<span style="color:var(--c-accent-amber)">Data stale, no new packets (disconnecting in ' + secs + 's)</span>';
   }
   if (stage === "offline") {
     return _scDot(false) + '<span class="status-fail">ScoreConnect III not responding</span>';
@@ -7940,7 +7940,7 @@ function _scConfigHistoryHtml(entries, current) {
     sectionTitle("clock", "Previous Configurations") +
     '<div class="text-pulse-muted" style="font-size:0.75rem;margin:-0.25rem 0 0.6rem;line-height:1.5">' +
       "Recorded automatically each time the scoreboard configuration changes while data is confirmed flowing. " +
-      "Bot numbers are best-effort — ScoreConnect III can report a stale number until its service restarts." +
+      "Bot numbers are best-effort. ScoreConnect III can report a stale number until its service restarts." +
     "</div>" + items + "</div>";
 }
 
@@ -8124,13 +8124,13 @@ function renderFaultIsolator() {
     var camLbl = p.cameraLabel ? " (" + p.cameraLabel + ")" : "";
     var down = !p.isUp || !(p.linkSpeedMbps > 0);
     var spd;
-    if (down) spd = " — No link";
+    if (down) spd = ": no link";
     // Trust the backend isDegraded flag — it knows the expected speed for
     // each camera model. A 100 Mbps OCR isn't degraded; an unknown 100 Mbps
     // camera might be.
-    else if (p.isDegraded) spd = " — " + formatSpeed(p.linkSpeedMbps) + " (FAULT)";
-    else if (p.isOcr) spd = " — " + formatSpeed(p.linkSpeedMbps || 100) + " (expected)";
-    else spd = " — " + formatSpeed(p.linkSpeedMbps);
+    else if (p.isDegraded) spd = ": " + formatSpeed(p.linkSpeedMbps) + " (FAULT)";
+    else if (p.isOcr) spd = ": " + formatSpeed(p.linkSpeedMbps || 100) + " (expected)";
+    else spd = ": " + formatSpeed(p.linkSpeedMbps);
     // Every non-suspect port is selectable — including an empty "No link" port,
     // which is the natural swap target (you light it up by moving the camera
     // onto it). A port's current speed reflects its current occupant, not its
@@ -8183,9 +8183,9 @@ function renderFaultIsolator() {
       var testOpts = '<option value="-1">— Select —</option>' +
         ports.map(function(p, i) { return portOption(p, i, _fi.suspectIdx); }).join("");
       testPortPicker = '<div style="margin:12px 0">' +
-        '<div class="text-xs text-pulse-muted mb-1">Test port — where you\'ll move the camera</div>' +
+        '<div class="text-xs text-pulse-muted mb-1">Test port, where you\'ll move the camera</div>' +
         '<select id="fi-test" class="ev-select" style="width:100%;max-width:360px">' + testOpts + "</select>" +
-        '<div class="text-xs text-pulse-muted" style="margin-top:4px">An empty (No link) port is fine — you light it up by moving the camera over. Pick one you expect to run at this camera\'s speed.</div>' +
+        '<div class="text-xs text-pulse-muted" style="margin-top:4px">An empty (No link) port is fine; you light it up by moving the camera over. Pick one you expect to run at this camera\'s speed.</div>' +
         "</div>";
     }
     inner = '<div class="fi-phase-card">' +
@@ -8196,7 +8196,7 @@ function renderFaultIsolator() {
       "</div>" +
       '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">' +
         '<button id="fi-startover" class="btn-outline btn-ol-blue">Start Over</button>' +
-        (_fi.phase === 3 && !_fi.checking ? '<button id="fi-infer" class="btn-outline btn-ol-muted">No Spare CHU — Infer</button>' : "") +
+        (_fi.phase === 3 && !_fi.checking ? '<button id="fi-infer" class="btn-outline btn-ol-muted">No Spare CHU: Infer</button>' : "") +
         '<button id="fi-action" class="btn-outline btn-ol-blue"' + (_fi.checking ? " disabled" : "") + ">" + esc(btnLabel) + "</button>" +
       "</div>";
   }
@@ -8417,11 +8417,11 @@ function renderFaultIsolator() {
 
       // Healthy if speed meets or exceeds expected for the camera type.
       if (spd0 >= expectedSpd) {
-        addHistory("Phase 1 - Baseline", cfg0, sl0, "Port healthy — no fault on this port.", "Pass");
-        showResult("Baseline: " + sl0 + " — port is healthy.",
-          "At the expected " + expectedLbl + " — no fault here.", "pass");
-        _fi.phaseTitle = "PORT HEALTHY — NO FAULT FOUND";
-        _fi.phaseInstruction = "This port is at its expected speed — no fault to isolate here. To test a different port, select it above and start its baseline. Otherwise close the wizard.";
+        addHistory("Phase 1 - Baseline", cfg0, sl0, "Port healthy. No fault on this port.", "Pass");
+        showResult("Baseline: " + sl0 + ". The port is healthy.",
+          "Running at the expected " + expectedLbl + ", so there is no fault here.", "pass");
+        _fi.phaseTitle = "PORT HEALTHY: NO FAULT FOUND";
+        _fi.phaseInstruction = "This port is at its expected speed, so there is no fault to isolate here. To test a different port, select it above and start its baseline. Otherwise close the wizard.";
         _fi.actionLabel = "Start Baseline";
         // Reset to phase 0 so the suspect dropdown reappears for re-selection.
         _fi.phase = 0;
@@ -8434,10 +8434,10 @@ function renderFaultIsolator() {
         bMsg = "No link";
         bInstr = "Confirm the camera is powered and the cable seated (both ends). Still no link? Pick a test port below, move the camera over, then Check Now.";
       } else {
-        bMsg   = "Degraded — " + sl0 + " (expected " + expectedLbl + ")";
+        bMsg   = "Degraded: " + sl0 + " (expected " + expectedLbl + ")";
         bInstr = "Pick a test port below, then move the SAME cable + camera from " + sn0 + " to it. Check Now.";
       }
-      addHistory("Phase 1 - Baseline", cfg0, sl0, bMsg + " — isolating.", "Fail");
+      addHistory("Phase 1 - Baseline", cfg0, sl0, bMsg + ". Isolating.", "Fail");
       // Detail omitted on purpose — the next step already shows as the phase
       // instruction directly above this callout; repeating bInstr was clutter.
       showResult("Baseline: " + bMsg + ".", "", "fail");
@@ -8516,13 +8516,13 @@ function renderFaultIsolator() {
           swapVerified = false;
           var suspectMac = _fi.suspectCameraMacs[0];
           addHistory("Phase 2 - NIC Port Test", cfg1, sl1,
-            "Swap not verified — camera " + suspectMac + " still on " + sn1 + ", not on " + tn1 + ".", "Info");
+            "Swap not verified. Camera " + suspectMac + " is still on " + sn1 + ", not on " + tn1 + ".", "Info");
           showResult(
-            "Swap not detected — test inconclusive.",
+            "Swap not detected, so the test is inconclusive.",
             "The suspect camera (" + suspectMac + ") still appears on " + sn1 +
-            " and was not detected on " + tn1 + ". Please physically move the cable and camera from " +
+            " and was not detected on " + tn1 + ". Move the cable and camera from " +
             sn1 + " to " + tn1 + ", then click Check Now again. " +
-            "Note: the network can take up to 30 seconds to register the move.",
+            "The network can take up to 30 seconds to register the move.",
             "fail"
           );
           renderFaultIsolator();
@@ -8531,24 +8531,24 @@ function renderFaultIsolator() {
       }
 
       if (spd1 >= expSpd1) {
-        var v1 = "Link restored on the test port — fault is the original NIC port.";
+        var v1 = "Link restored on the test port, so the fault is the original NIC port.";
         addHistory("Phase 2 - NIC Port Test", cfg1, sl1, v1, "Pass");
-        showResult("Phase 2: " + sl1 + " — fault follows the NIC port.", "", "pass");
-        conclude("NicPort", "CONCLUSION — FAULTY NIC PORT",
-          "Moving to " + tn1 + " restored the link — the original NIC port is the fault. Escalate for NIC/motherboard repair.");
+        showResult("Phase 2: " + sl1 + ". The fault follows the NIC port.", "", "pass");
+        conclude("NicPort", "CONCLUSION: FAULTY NIC PORT",
+          "Moving to " + tn1 + " restored the link, so the original NIC port is the fault. Escalate for NIC/motherboard repair.");
         renderFaultIsolator();
         return;
       }
       if (spd1 <= 0) {
-        addHistory("Phase 2 - NIC Port Test", cfg1, sl1, "No link detected — test inconclusive.", "Info");
+        addHistory("Phase 2 - NIC Port Test", cfg1, sl1, "No link detected, so the test is inconclusive.", "Info");
         _fi.phaseInstruction = "No link on " + tn1 + ". Check the cable is seated and the camera powered, then Check Now.";
-        showResult("Phase 2: No link — test inconclusive.", _fi.phaseInstruction, "info");
+        showResult("Phase 2: no link, so the test is inconclusive.", _fi.phaseInstruction, "info");
         renderFaultIsolator();
         return;
       }
-      var cv1 = "Fault followed the cable/camera — NIC port is fine.";
+      var cv1 = "The fault followed the cable/camera, so the NIC port is fine.";
       addHistory("Phase 2 - NIC Port Test", cfg1, sl1, cv1, "Info");
-      showResult("Phase 2: " + sl1 + " — NIC port is fine; fault follows the cable/camera.", "", "info");
+      showResult("Phase 2: " + sl1 + ". The NIC port is fine; the fault follows the cable/camera.", "", "info");
       _fi.phase = 2;
       _fi.phaseTitle = "DOES THE FAULT FOLLOW THE CABLE?";
       _fi.phaseInstruction = "Keep the camera on " + tn1 + ". Swap the original cable for a known-good one (both ends), then Check Now.";
@@ -8567,30 +8567,30 @@ function renderFaultIsolator() {
       _fi.checking = false;
       var sl2 = formatSpeed(spd2);
       var tn2 = portLabel(_fi.testIdx);
-      var cfg2 = "Port: " + tn2 + "  |  Cable: (NEW — known good)  |  Camera: (original)";
+      var cfg2 = "Port: " + tn2 + "  |  Cable: new, known good  |  Camera: original";
 
       if (spd2 >= expSpd2) {
-        var v2 = "Link restored with a known-good cable — cable is the fault.";
+        var v2 = "Link restored with a known-good cable, so the cable is the fault.";
         addHistory("Phase 3 - Cable Test", cfg2, sl2, v2, "Pass");
-        showResult("Phase 3: " + sl2 + " — fault follows the cable.", "", "pass");
-        conclude("Cable", "CONCLUSION — FAULTY CABLE",
-          "Replacing the cable restored the link — the original cable is the fault. Re-terminate both ends or replace the run, and check it for damage (kinks, crushing, pinch points).");
+        showResult("Phase 3: " + sl2 + ". The fault follows the cable.", "", "pass");
+        conclude("Cable", "CONCLUSION: FAULTY CABLE",
+          "Replacing the cable restored the link, so the original cable is the fault. Re-terminate both ends or replace the run, and check it for damage (kinks, crushing, pinch points).");
         renderFaultIsolator();
         return;
       }
       if (spd2 <= 0) {
-        addHistory("Phase 3 - Cable Test", cfg2, sl2, "No link detected — test inconclusive.", "Info");
+        addHistory("Phase 3 - Cable Test", cfg2, sl2, "No link detected, so the test is inconclusive.", "Info");
         _fi.phaseInstruction = "No link on " + tn2 + ". Check the new cable (both ends) and camera power, then Check Now.";
-        showResult("Phase 3: No link — test inconclusive.", _fi.phaseInstruction, "info");
+        showResult("Phase 3: no link, so the test is inconclusive.", _fi.phaseInstruction, "info");
         renderFaultIsolator();
         return;
       }
-      var cv2 = "Fault followed the camera — cable is fine.";
+      var cv2 = "The fault followed the camera, so the cable is fine.";
       addHistory("Phase 3 - Cable Test", cfg2, sl2, cv2, "Info");
-      showResult("Phase 3: " + sl2 + " — cable is fine; fault follows the camera.", "", "info");
+      showResult("Phase 3: " + sl2 + ". The cable is fine; the fault follows the camera.", "", "info");
       _fi.phase = 3;
       _fi.phaseTitle = "DOES THE FAULT FOLLOW THE CAMERA?";
-      _fi.phaseInstruction = "Keep the new cable on " + tn2 + ". Connect a known-good camera, then Check Now. No spare? Click \"No Spare CHU — Infer\".";
+      _fi.phaseInstruction = "Keep the new cable on " + tn2 + ". Connect a known-good camera, then Check Now. No spare? Click \"No Spare CHU: Infer\".";
       _fi.actionLabel = "Check Now";
       renderFaultIsolator();
       return;
@@ -8608,29 +8608,29 @@ function renderFaultIsolator() {
       _fi.checking = false;
       var sl3 = formatSpeed(spd3);
       var tn3 = portLabel(_fi.testIdx);
-      var cfg3 = "Port: " + tn3 + "  |  Cable: (NEW)  |  Camera: (NEW — known good)";
+      var cfg3 = "Port: " + tn3 + "  |  Cable: new  |  Camera: new, known good";
 
       if (spd3 >= 1000) {
-        var v3 = "Link restored with a known-good camera — camera is the fault.";
+        var v3 = "Link restored with a known-good camera, so the camera is the fault.";
         addHistory("Phase 4 - Camera Test", cfg3, sl3, v3, "Pass");
-        showResult("Phase 4: " + sl3 + " — fault follows the camera.", "", "pass");
-        conclude("Camera", "CONCLUSION — FAULTY CAMERA (CHU)",
-          "Replacing the camera restored the link — the original camera (CHU) is the fault. Replace the camera unit.");
+        showResult("Phase 4: " + sl3 + ". The fault follows the camera.", "", "pass");
+        conclude("Camera", "CONCLUSION: FAULTY CAMERA (CHU)",
+          "Replacing the camera restored the link, so the original camera (CHU) is the fault. Replace the camera unit.");
         renderFaultIsolator();
         return;
       }
       if (spd3 <= 0) {
-        addHistory("Phase 4 - Camera Test", cfg3, sl3, "No link detected — test inconclusive.", "Info");
+        addHistory("Phase 4 - Camera Test", cfg3, sl3, "No link detected, so the test is inconclusive.", "Info");
         _fi.phaseInstruction = "No link on " + tn3 + ". Check the known-good camera is connected and powered, then Check Now.";
-        showResult("Phase 4: No link — test inconclusive.", _fi.phaseInstruction, "info");
+        showResult("Phase 4: no link, so the test is inconclusive.", _fi.phaseInstruction, "info");
         renderFaultIsolator();
         return;
       }
-      var vf3 = "Still failing with known-good cable and camera — likely NIC hardware or motherboard.";
+      var vf3 = "Still failing with a known-good cable and camera, so this points to NIC hardware or the motherboard.";
       addHistory("Phase 4 - Camera Test", cfg3, sl3, vf3, "Fail");
-      showResult("Phase 4: " + sl3 + " — still failing with known-good equipment.", "", "fail");
-      conclude("NicHardware", "CONCLUSION — NIC / HARDWARE FAULT",
-        "Known-good cable and camera still fail on " + tn3 + " — the fault is in the NIC hardware or motherboard. Run the full diagnostic and escalate to hardware repair.");
+      showResult("Phase 4: " + sl3 + ". Still failing with known-good equipment.", "", "fail");
+      conclude("NicHardware", "CONCLUSION: NIC / HARDWARE FAULT",
+        "A known-good cable and camera still fail on " + tn3 + ", so the fault is in the NIC hardware or the motherboard. Run the full diagnostic and escalate to hardware repair.");
       renderFaultIsolator();
       return;
     }
@@ -8641,11 +8641,11 @@ function renderFaultIsolator() {
     var tn = portLabel(_fi.testIdx);
     var cfg = "Port: " + tn + "  |  Cable: (NEW)  |  Camera: (no spare available)";
     addHistory("Phase 4 - SKIPPED", cfg, "—",
-      "No spare CHU — inferred from Phase 2 and Phase 3.", "Info");
-    showResult("Phase 4 skipped — inferred conclusion.",
-      "NIC port (Phase 2) and cable (Phase 3) are both cleared — the camera (CHU) is the remaining suspect.", "info");
-    conclude("LikelyCamera", "LIKELY CAMERA (CHU) FAULT — UNVERIFIED",
-      "NIC port and cable are already cleared, so the camera (CHU) is the remaining suspect. Replace it when a known-good spare is available; if a known-good camera still fails, it's likely NIC hardware — run the full diagnostic and escalate.");
+      "No spare CHU, so this is inferred from Phase 2 and Phase 3.", "Info");
+    showResult("Phase 4 skipped, conclusion inferred.",
+      "The NIC port (Phase 2) and the cable (Phase 3) are both cleared, so the camera (CHU) is the remaining suspect.", "info");
+    conclude("LikelyCamera", "LIKELY CAMERA (CHU) FAULT: UNVERIFIED",
+      "The NIC port and cable are already cleared, so the camera (CHU) is the remaining suspect. Replace it when a known-good spare is available. If a known-good camera still fails, the NIC hardware is the next suspect: run the full diagnostic and escalate.");
     renderFaultIsolator();
   }
 }
@@ -8741,7 +8741,7 @@ function renderAudio() {
 
     ${inactive.length ? `<details class="card mt-4 audio-inactive">
       <summary class="audio-inactive-summary">${inactive.length} inactive device${inactive.length === 1 ? "" : "s"} (unplugged or disabled)</summary>
-      <p class="text-xs text-pulse-muted mt-2 mb-2">Connected hardware that isn't usable right now — a jack with nothing plugged in, or a device disabled in Windows.</p>
+      <p class="text-xs text-pulse-muted mt-2 mb-2">Connected hardware that isn't usable right now: a jack with nothing plugged in, or a device disabled in Windows.</p>
       ${inactive.map(d => _audioDeviceRow(d)).join("")}
     </details>` : ""}
   `;
@@ -8828,7 +8828,7 @@ function _audioFindings(devices, data) {
     out.push({
       severity: "info",
       title: "Limited device info",
-      body: "Couldn't read full device details — volume, mute, and signal meters are unavailable."
+      body: "Couldn't read full device details, so volume, mute, and signal meters are unavailable."
     });
   }
   return out;
@@ -8905,14 +8905,14 @@ function _audioDeviceRow(d) {
         ${d.volume != null ? `
           <div class="audio-meter-row">
             <span class="audio-meter-label">${d.muted ? svgIcon("volume-x", 14) : svgIcon("volume", 14)}</span>
-            <input type="range" id="vol-${slug}" class="audio-slider${d.muted ? " audio-slider-muted" : ""}" min="0" max="100" value="${Math.round(d.volume)}" aria-label="Volume — ${esc(d.name || "audio device")}"/>
+            <input type="range" id="vol-${slug}" class="audio-slider${d.muted ? " audio-slider-muted" : ""}" min="0" max="100" value="${Math.round(d.volume)}" aria-label="Volume for ${esc(d.name || "audio device")}"/>
             <span id="vol-lbl-${slug}" class="audio-meter-val">${Math.round(d.volume)}%</span>
             <span id="vol-msg-${slug}" class="audio-vol-msg"></span>
           </div>` : ""}
       </div>
     ` : (d.formFactor && d.formFactor !== "Unknown" ? `
       <div class="audio-device-controls">
-        <p class="text-xs text-pulse-muted">${esc(_audioFormFactorLabel(d.formFactor))} device — controls unavailable while ${d.state === "NotPresent" ? "not connected" : esc(d.state.toLowerCase())}.</p>
+        <p class="text-xs text-pulse-muted">${esc(_audioFormFactorLabel(d.formFactor))} device. Controls are unavailable while ${d.state === "NotPresent" ? "not connected" : esc(d.state.toLowerCase())}.</p>
       </div>
     ` : "")}
   </div>`;
@@ -8930,7 +8930,7 @@ function renderSettings() {
     <!-- Software Update -->
     <div class="card">
       ${sectionTitle("refresh", "Software Update")}
-      <p class="text-sm text-pulse-muted mb-3">Check for a newer Pulse build on this VPU's channel and install it. Pulse restarts and this page reloads automatically — no need to re-run the launcher.</p>
+      <p class="text-sm text-pulse-muted mb-3">Check for a newer Pulse build on this VPU's channel and install it. Pulse restarts and this page reloads on its own, so there is no need to re-run the launcher.</p>
       <div class="settings-actions">
         <button class="btn-outline btn-ol-blue" id="set-update-check">
           ${svgIcon("globe", 14)} Check for Update
@@ -8946,7 +8946,7 @@ function renderSettings() {
     <!-- Restart Pulse app -->
     <div class="card mt-4">
       ${sectionTitle("refresh", "Restart Pulse App")}
-      <p class="text-sm text-pulse-muted mb-3">Restart the Pulse app if the page is stuck or behaving oddly. The VPU and any active recording keep running, and this page reloads automatically once Pulse is back — usually a few seconds.</p>
+      <p class="text-sm text-pulse-muted mb-3">Restart the Pulse app if the page is stuck or behaving oddly. The VPU and any active recording keep running, and this page reloads once Pulse is back, usually within a few seconds.</p>
       <div class="settings-actions">
         <button class="btn-outline btn-ol-blue" id="set-restart-app">
           ${svgIcon("refresh", 14)} Restart Pulse app
@@ -8958,7 +8958,7 @@ function renderSettings() {
     <!-- Reboot VPU -->
     <div class="card mt-4">
       ${sectionTitle("power", "Reboot VPU")}
-      <p class="text-sm text-pulse-muted mb-3">Reboot the whole VPU to restart Windows. This interrupts any active recording and the unit is offline for a few minutes. Pulse won't reopen on its own — relaunch it from the desktop shortcut once Windows is back.</p>
+      <p class="text-sm text-pulse-muted mb-3">Reboot the whole VPU to restart Windows. This interrupts any active recording and the unit is offline for a few minutes. Pulse won't reopen on its own. Relaunch it from the desktop shortcut once Windows is back.</p>
       <div class="settings-actions">
         <button class="btn-outline btn-ol-red" id="set-reboot-vpu">
           ${svgIcon("power", 14)} Reboot VPU
@@ -9032,7 +9032,7 @@ function renderSettings() {
   const rebootMsg = document.getElementById("set-reboot-msg");
 
   restartBtn?.addEventListener("click", async () => {
-    if (!confirm("Restart the Pulse app?\n\nPulse closes and relaunches the same build. This page reloads automatically once it's back — usually a few seconds. The VPU and any recording keep running.")) return;
+    if (!confirm("Restart the Pulse app?\n\nPulse closes and relaunches the same build. This page reloads once it's back, usually within a few seconds. The VPU and any recording keep running.")) return;
     restartBtn.disabled = true;
     rebootBtn.disabled = true;
     restartMsg.textContent = "Restarting…";
@@ -9044,7 +9044,7 @@ function renderSettings() {
         rebootBtn.disabled = false;
         return;
       }
-      _showMaintenanceOverlay("Restarting Pulse…", "Pulse is relaunching. This page reloads automatically once it's back — usually a few seconds.");
+      _showMaintenanceOverlay("Restarting Pulse…", "Pulse is relaunching. This page reloads once it's back, usually within a few seconds.");
       _pollForRestart(dataCache._version);
     } catch (e) {
       restartMsg.textContent = "Couldn't restart Pulse.";
@@ -9054,7 +9054,7 @@ function renderSettings() {
   });
 
   rebootBtn?.addEventListener("click", async () => {
-    if (!confirm("Reboot the whole VPU?\n\nThis restarts Windows. Any active recording is interrupted, and the unit is offline for a few minutes. Pulse won't come back on its own — reopen it from the desktop shortcut once Windows is back.")) return;
+    if (!confirm("Reboot the whole VPU?\n\nThis restarts Windows. Any active recording is interrupted, and the unit is offline for a few minutes. Pulse won't come back on its own. Reopen it from the desktop shortcut once Windows is back.")) return;
     restartBtn.disabled = true;
     rebootBtn.disabled = true;
     rebootMsg.textContent = "Sending reboot…";
@@ -9091,9 +9091,9 @@ function _showChannelMovedBanner() {
   el.setAttribute("role", "status");
   el.innerHTML = `
     <span>${svgIcon("info", 16)}</span>
-    <span class="channel-moved-text">The Pulse beta program has wrapped up — thanks for testing!
-      This VPU has been moved to the <strong>production</strong> version of Pulse, which opens
-      automatically from your next launch. Nothing to do on your end.</span>
+    <span class="channel-moved-text">The Pulse beta program is closed. Thanks for testing.
+      This VPU now tracks the <strong>production</strong> version of Pulse, which opens
+      from your next launch. Nothing to do on your end.</span>
     <button class="channel-moved-dismiss" title="Dismiss" aria-label="Dismiss">&times;</button>`;
   el.querySelector(".channel-moved-dismiss").addEventListener("click", () => el.remove());
   const content = document.getElementById("content");
@@ -9124,7 +9124,7 @@ function _showUpdateOverlay(tag) {
     <div class="update-overlay-box">
       <div class="update-spinner" aria-hidden="true"></div>
       <div class="update-overlay-title">Updating Pulse${tag ? " to " + esc(tag) : ""}…</div>
-      <p class="update-overlay-sub" id="update-overlay-sub">Pulse is restarting. This page reloads automatically once it's back — usually under a minute.</p>
+      <p class="update-overlay-sub" id="update-overlay-sub">Pulse is restarting. This page reloads once it's back, usually under a minute.</p>
     </div>`;
   el.style.display = "flex";
 }

@@ -22,6 +22,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Changed
+- Plain-language pass over everything Pulse says on screen. Findings, fix instructions, the Help page, the wizards and the confirm dialogs now use full sentences instead of dash-joined fragments, and hedges like "consider", "may indicate" and "ensure" are gone in favour of the actual instruction. Same diagnoses, same thresholds; only the wording changed.
+
 ## [1.2.1] - 2026-08-20
 
 ### Added

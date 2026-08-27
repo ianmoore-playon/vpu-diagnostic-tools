@@ -830,12 +830,12 @@ DEMO = {
     "Invoke-RecordingsCleanup.ps1": lambda **kw: _demo_cleanup_result(**kw),
     "Get-EventLogs.ps1": lambda **kw: {
         "entries": [
-            {"timeCreated": (datetime.now() - timedelta(hours=2)).isoformat(), "level": "Error", "source": "PixellotAgent", "eventId": 1001, "message": "Connection timeout to cloud service api.pixellot.tv — retrying in 30s"},
-            {"timeCreated": (datetime.now() - timedelta(hours=3)).isoformat(), "level": "Warning", "source": "PixellotEncoder", "eventId": 2010, "message": "Encoder buffer underrun on Camera1 stream — 2 frames dropped"},
+            {"timeCreated": (datetime.now() - timedelta(hours=2)).isoformat(), "level": "Error", "source": "PixellotAgent", "eventId": 1001, "message": "Connection timeout to cloud service api.pixellot.tv - retrying in 30s"},
+            {"timeCreated": (datetime.now() - timedelta(hours=3)).isoformat(), "level": "Warning", "source": "PixellotEncoder", "eventId": 2010, "message": "Encoder buffer underrun on Camera1 stream - 2 frames dropped"},
             {"timeCreated": (datetime.now() - timedelta(hours=5)).isoformat(), "level": "Error", "source": "Service Control Manager", "eventId": 7034, "message": "The PixellotWatchdog service terminated unexpectedly."},
             {"timeCreated": (datetime.now() - timedelta(hours=8)).isoformat(), "level": "Info", "source": "PixellotAgent", "eventId": 1000, "message": "Agent connected to cloud service successfully"},
-            {"timeCreated": (datetime.now() - timedelta(hours=12)).isoformat(), "level": "Warning", "source": "PixellotVPU", "eventId": 3005, "message": "Camera2 stream quality degraded — switching to fallback bitrate"},
-            {"timeCreated": (datetime.now() - timedelta(hours=24)).isoformat(), "level": "Error", "source": "PixellotEncoder", "eventId": 2001, "message": "Hardware encoder init failed — falling back to software encoding"},
+            {"timeCreated": (datetime.now() - timedelta(hours=12)).isoformat(), "level": "Warning", "source": "PixellotVPU", "eventId": 3005, "message": "Camera2 stream quality degraded, switching to fallback bitrate"},
+            {"timeCreated": (datetime.now() - timedelta(hours=24)).isoformat(), "level": "Error", "source": "PixellotEncoder", "eventId": 2001, "message": "Hardware encoder init failed, falling back to software encoding"},
         ]
     },
     "Get-RebootHistory.ps1": lambda **kw: {
@@ -1047,7 +1047,7 @@ DEMO = {
         "entries": [
             {"file": "vpu_2026-05-27.log", "lineNumber": 1452,
              "level": "restart", "timestamp": "2026-05-27 14:22:11",
-             "content": "[2026-05-27 14:22:11] start new log — process restart detected",
+             "content": "[2026-05-27 14:22:11] start new log - process restart detected",
              "fileMTime": (datetime.now() - timedelta(hours=6)).isoformat(),
              "depsError": False},
             {"file": "vpu_2026-05-27.log", "lineNumber": 1453,
@@ -1057,7 +1057,7 @@ DEMO = {
              "depsError": True},
             {"file": "vpu_2026-05-27.log", "lineNumber": 1454,
              "level": "error", "timestamp": "2026-05-27 14:22:12",
-             "content": "[2026-05-27 14:22:12] ERROR: TensorFlow runtime initialization failed — falling back",
+             "content": "[2026-05-27 14:22:12] ERROR: TensorFlow runtime initialization failed - falling back",
              "fileMTime": (datetime.now() - timedelta(hours=6)).isoformat(),
              "depsError": True},
             {"file": "agent_vpu2_2026-05-27.log", "lineNumber": 87,
@@ -1067,7 +1067,7 @@ DEMO = {
              "depsError": False},
             {"file": "agent_vpu2_2026-05-27.log", "lineNumber": 42,
              "level": "restart", "timestamp": "2026-05-27 09:14:02",
-             "content": "[2026-05-27 09:14:02] start new log — agent service initialized",
+             "content": "[2026-05-27 09:14:02] start new log - agent service initialized",
              "fileMTime": (datetime.now() - timedelta(hours=11)).isoformat(),
              "depsError": False},
         ],
@@ -1373,11 +1373,11 @@ def demo_cloud_events(venue_id, local_events):
             "Ended early",
             "Failed: exposure",
             "Agent restarted mid-event",
-            "Box recorded video — issue in the streaming path",
+            "Box recorded video, so the problem is in the streaming path",
         ]),
         "failed_test": ("failed", [
             "Never went on air",
-            "Box never recorded — camera/capture side",
+            "Box never recorded, so the problem is on the camera/capture side",
         ]),
         "offline": ("failed", [
             "Never went on air",
@@ -1385,7 +1385,7 @@ def demo_cloud_events(venue_id, local_events):
         ]),
         "netblock": ("failed", [
             "Never went on air",
-            "Box recorded, nothing uploaded — likely network block",
+            "Box recorded but uploaded nothing, which points to a network block",
         ]),
     }
 
@@ -1397,7 +1397,7 @@ def demo_cloud_events(venue_id, local_events):
         events.append({
             "gameKey": f"gamdemo{s['n']:07d}",
             "headline": s["headline"] if s["kind"] != "failed_test"
-            else "Test Stream — unlisted",
+            else "Test Stream (unlisted)",
             "sport": s["sport"],
             "startTime": iso(start),
             "localStartTime": start.isoformat(),
@@ -1501,8 +1501,8 @@ def demo_cloud_events(venue_id, local_events):
         "events": events,
         "causeHints": [
             {"severity": "warning",
-             "text": "Cloud reports the camera picture is dark — camera "
-                     "may be obstructed, powered off, or the room is dark",
+             "text": "Cloud reports the camera picture is dark. The camera "
+                     "may be obstructed or powered off, or the room is dark",
              "page": "cameras"},
             {"severity": "info",
              "text": f"Pixellot software is behind its target "
