@@ -3108,6 +3108,29 @@ const TLS_DOMAIN_IMPACT = {
   "www.python.org": "The Pulse installer can't download Python on this network.",
 };
 
+// One-line LogMeIn service-log note under the Secure Connections table — the
+// historical half of the middlebox story. The live handshake rows above show
+// the network as it is right now; LogMeIn's own log shows what the venue did
+// to its gateway connection over the past week (and, after IT relents, the
+// exact minute the unit came back). Quiet logs are the healthy norm: a
+// long-connected unit logs no gateway lines at all for days.
+function _lmiLogNote(lmi) {
+  if (!lmi || lmi.error || !lmi.logsFound) return "";
+  var days = lmi.windowDays || 7;
+  if (lmi.sslFailures > 0 && lmi.blockedNow) {
+    return '<p class="text-xs mt-2 status-fail">LogMeIn service log: ' + lmi.sslFailures
+      + " secure handshakes killed between " + esc(lmi.firstSslFailure || "?") + " and " + esc(lmi.lastSslFailure || "?")
+      + " with no successful login since — LogMeIn is seeing the same filtering/inspection from inside. Evidence lives in " + esc(lmi.logDir || "C:\\ProgramData\\LogMeIn") + ".</p>";
+  }
+  if (lmi.sslFailures > 0) {
+    return '<p class="text-xs mt-2 status-warn">LogMeIn service log: ' + lmi.sslFailures
+      + " secure handshakes were killed between " + esc(lmi.firstSslFailure || "?") + " and " + esc(lmi.lastSslFailure || "?")
+      + ", then it logged in" + (lmi.recoveredAt ? " at " + esc(lmi.recoveredAt) : "")
+      + " — the venue lifted its block. If remote access drops again, start with the web filter.</p>";
+  }
+  return '<p class="text-pulse-muted text-xs mt-2">LogMeIn service log: no killed handshakes in the last ' + days + " days.</p>";
+}
+
 function _tlsBadge(status) {
   switch ((status || "").toLowerCase()) {
     case "pass":           return badge("Pass", "pass");
@@ -3286,7 +3309,7 @@ function _netIssueRank(severity) {
   }
 }
 
-function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
+function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls, lmiLog) {
   var issues = [];
   var gw = (local || {}).gateway;
   var dns = (local || {}).dns;
@@ -3552,6 +3575,43 @@ function _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls) {
         return r.domain + (impact ? ": " + impact : "");
       }),
     });
+  }
+
+  // ── LogMeIn's own service log (historical middlebox evidence) ──
+  // The live checks above only see the network as it is right now — and Pulse
+  // usually runs while a tech is on site, after venue IT has been poked.
+  // LogMeIn's service log carries the timeline: repeated "SSL error: SSLv3/TLS
+  // write client hello" on its gateway connects means the firewall killed the
+  // handshake the instant it started (same mechanism as "Blocked by filter"
+  // above), and a later "Logged in to web gateway" stamps the minute the
+  // block was lifted. Field origin: a VPU dark in LMI for ~16 hours on
+  // 2026-08-28 — the log showed 201 killed handshakes, then recovery the
+  // minute the district disabled packet inspection.
+  if (lmiLog && !lmiLog.error && lmiLog.sslFailures > 0) {
+    var _lmiSpan = (lmiLog.firstSslFailure || "?") + " to " + (lmiLog.lastSslFailure || "?");
+    if (lmiLog.blockedNow) {
+      issues.push({
+        severity: "warning",
+        title: "LogMeIn's own log shows the venue killing its secure connection — remote support can't reach this VPU",
+        body: "LogMeIn's service log records " + lmiLog.sslFailures + " failed secure handshakes (" + _lmiSpan + ") and no successful gateway login since"
+          + (lmiLog.lastLogin ? " " + lmiLog.lastLogin : " the failures began")
+          + ". Every attempt dies the moment LogMeIn starts its TLS handshake — the signature of a firewall inspecting or category-blocking the connection. "
+          + "LogMeIn connects to control.lmi-app*.logmein.com gateways and uses TLS on port 80 as well as 443, so ask the venue's IT team to exempt *.logmein.com AND logmein.com from both SSL inspection and the web filter's category policy. An allowlist entry for secure.logmein.com alone will not cover the gateways. "
+          + "The timeline in C:\\ProgramData\\LogMeIn is evidence you can hand them.",
+        details: [
+          lmiLog.sslFailures + " secure handshakes killed across " + (lmiLog.attempts || 0) + " gateway connection attempts (last " + (lmiLog.windowDays || 7) + " days)",
+          "Last successful gateway login: " + (lmiLog.lastLogin || "none in the log"),
+        ],
+      });
+    } else {
+      issues.push({
+        severity: "info",
+        title: "LogMeIn was being blocked on this network until " + (lmiLog.recoveredAt || lmiLog.lastLogin || "recently"),
+        body: "LogMeIn's service log records " + lmiLog.sslFailures + " killed secure handshakes (" + _lmiSpan + ") followed by a successful gateway login"
+          + (lmiLog.recoveredAt ? " at " + lmiLog.recoveredAt : "")
+          + " — consistent with the venue disabling packet inspection or adding an exemption for logmein.com. Remote support works now, but if this VPU goes dark in LogMeIn again, the venue's web filter or SSL inspection policy is the first place to look.",
+      });
+    }
   }
 
   // ── Ports: required failures ─────────────────────────────
@@ -4113,9 +4173,10 @@ function renderNetwork() {
   const dnsResolution = (data.dnsResolution && !data.dnsResolution.error) ? data.dnsResolution : null;
   const wifi = (data.wifi && !data.wifi.error) ? data.wifi : null;
   const tls = (data.tls && !data.tls.error) ? data.tls : null;
+  const lmiLog = (data.lmiLog && !data.lmiLog.error) ? data.lmiLog : null;
   const ipConfigs = cfg.ipConfig || cfg.ipConfigurations || [];
 
-  const issues = _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls);
+  const issues = _buildNetIssues(cfg, ports, domains, local, dnsResolution, wifi, tls, lmiLog);
 
   const hasCrit = issues.some(function(f) { return f.severity === "critical"; });
   const hasWarn = issues.some(function(f) { return f.severity === "warning"; });
@@ -4448,6 +4509,7 @@ function renderNetwork() {
           }).join("")}
           </tbody></table>
         ` : '<p class="text-pulse-muted text-sm mt-2">No certificate results. Run the network test again.</p>'}
+        ${_lmiLogNote(lmiLog)}
       </div>
 
       ${_netTimeSyncCard(cfg, ntp, ntpPeers)}
