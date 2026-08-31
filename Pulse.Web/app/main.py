@@ -4352,10 +4352,12 @@ async def api_scoreconnect_scorelink():
 
 @app.post("/api/scoreconnect/install-sc3")
 async def api_install_sc3():
-    """Kicks off a ScoreConnect III install in an elevated, visible console.
-    Returns immediately — an elevated child (UAC prompt shows) launches the
-    Canopy installer in a visible window the tech answers, then verifies SC III
-    on :5000. Frontend polls /api/scoreconnect/install-sc3/status for progress.
+    """Kicks off a ScoreConnect III install that runs hidden in the background.
+    Returns immediately — an elevated child (UAC prompt still shows) downloads
+    the Canopy script, strips its console-only pause/cls lines, runs it hidden
+    with output captured, then verifies SC III on :5000. Falls back to the old
+    visible window only if the script grows a prompt the sanitizer can't strip.
+    Frontend polls /api/scoreconnect/install-sc3/status for progress.
     """
     return await run_ps("Install-ScoreConnectIII.ps1", timeout=30)
 

@@ -3632,6 +3632,150 @@ html.dark .sc-board { box-shadow: none; border-color: var(--c-board-border-2); }
     overflow-y: auto;
 }
 
+/* ── ScoreConnect III install modal ─────────────────────────── */
+.sc3-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: var(--c-scrim);
+    backdrop-filter: blur(2px);
+}
+.sc3-modal.open { display: flex; }
+.sc3-modal-box {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    width: min(520px, 92vw);
+    max-height: 86vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+.sc3-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--c-border);
+}
+.sc3-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    color: var(--c-text);
+}
+.sc3-modal-close {
+    background: none;
+    border: none;
+    color: var(--c-muted);
+    cursor: pointer;
+    padding: 4px;
+    line-height: 0;
+    border-radius: 6px;
+}
+.sc3-modal-close:hover { color: var(--c-text); background: var(--c-surface-3); }
+.sc3-modal-body { padding: 16px 18px 18px; }
+.sc3-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+.sc3-warn-box {
+    padding: 12px 14px;
+    background: var(--c-tint-amber);
+    border: 1px solid var(--c-accent-amber);
+    border-radius: 8px;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--c-text);
+}
+.sc3-bot-code {
+    margin-top: 0.6rem;
+    padding: 8px 10px;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.sc3-bot-unknown { font-weight: 400; color: var(--c-muted); }
+.sc3-steps { margin: 0.25rem 0 1rem; }
+.sc3-step {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.35rem 0;
+    font-size: 0.88rem;
+    color: var(--c-text);
+}
+.sc3-step-pending { color: var(--c-muted); }
+.sc3-step-done .sc3-step-icon { color: var(--c-accent-green); }
+.sc3-step-failed .sc3-step-icon { color: var(--c-accent-red); }
+.sc3-step-icon {
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+}
+.sc3-step-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--c-border);
+}
+.sc3-step-spinner {
+    width: 13px;
+    height: 13px;
+    border: 2px solid var(--c-border);
+    border-top-color: var(--c-accent-blue);
+    border-radius: 50%;
+    animation: spin-icon 0.8s linear infinite;
+}
+.sc3-step-msg {
+    margin: 0 0 0.3rem 1.75rem;
+    font-size: 0.76rem;
+    line-height: 1.45;
+    color: var(--c-muted);
+}
+.sc3-bar-track {
+    height: 8px;
+    background: var(--c-deep-bg);
+    border: 1px solid var(--c-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.sc3-bar-fill {
+    height: 100%;
+    transition: width 0.5s ease-out;
+}
+.sc3-log { margin-top: 0.9rem; }
+.sc3-log summary {
+    font-size: 0.76rem;
+    color: var(--c-muted);
+    cursor: pointer;
+    user-select: none;
+}
+.sc3-log pre {
+    margin-top: 0.5rem;
+    padding: 10px 12px;
+    background: var(--c-deep-bg);
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    font-size: 0.7rem;
+    line-height: 1.5;
+    color: var(--c-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
 /* ── Share over LAN ────────────────────────────────────────── */
 
 .share-pair {

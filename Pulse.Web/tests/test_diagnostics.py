@@ -961,10 +961,7 @@ class TestDemoDataContract(unittest.TestCase):
     # Scripts referenced by main.py that intentionally have no demo entry yet.
     # Keep this minimal — each entry is a known gap. Remove an entry once its
     # demo data lands (test_exempt_list_has_no_stale_entries enforces that).
-    _DEMO_EXEMPT = {
-        # Owned by the ScoreConnect session — demo entries pending.
-        "Install-ScoreConnectIII.ps1",
-    }
+    _DEMO_EXEMPT = set()
 
     # Side-effect / action scripts: they *do* something (change system state)
     # rather than return diagnostic data, so demo mode has nothing meaningful
