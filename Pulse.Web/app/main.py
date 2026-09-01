@@ -1381,7 +1381,7 @@ _BROADCAST_CRITICAL_TLS_DOMAINS = {
 }
 
 
-def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, probe_results=None, tls_inspection=None) -> list:
+def _compute_findings(identity, performance, services, nics, hardware=None, installed_sw=None, network_config=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, probe_results=None, tls_inspection=None, lmi_log=None) -> list:
     findings = []
 
     # None vs {} matters for probe_results: None means the caller never
@@ -2306,6 +2306,48 @@ def _compute_findings(identity, performance, services, nics, hardware=None, inst
                     }
                 )
 
+    # ── LogMeIn's own log confirms the block (historical evidence) ──
+    # Get-LmiGatewayLog reads LogMeIn's service log for the middlebox
+    # signature: "SSL error: SSLv3/TLS write client hello" on every gateway
+    # connect — the handshake killed the instant it starts, the same mechanism
+    # as the 'filtered' rows above. The live TLS probe only sees the network
+    # as it is right now; the log carries the timeline (when the block
+    # started, and — after IT disables inspection — the exact minute the unit
+    # came back). Field origin: a VPU dark in LMI for 16 hours, 2026-08-28.
+    # Only a CURRENT block reaches the dashboard; a recovered one is history
+    # and stays on the Network tab.
+    if lmi_log and not lmi_log.get("error") and lmi_log.get("blockedNow"):
+        n = lmi_log.get("sslFailures") or 0
+        since = (lmi_log.get("firstSslFailure") or "")[:10]
+        last_ok = lmi_log.get("lastLogin")
+        findings.append(
+            {
+                "code": "lmi-ssl-blocked",
+                "severity": "warning",
+                "category": "Network",
+                "title": (
+                    "The venue network is killing LogMeIn's secure connection "
+                    "— remote support can't reach this VPU"
+                ),
+                "recommendation": (
+                    f"LogMeIn's own service log shows {n} failed secure handshakes"
+                    + (f" since {since}" if since else "")
+                    + (f", and no successful gateway login since {last_ok}"
+                       if last_ok else ", and no successful gateway login in the log")
+                    + ". Each attempt dies the instant LogMeIn starts its TLS "
+                    "handshake — the signature of a firewall inspecting or "
+                    "category-blocking the connection. Note LogMeIn connects to "
+                    "control.lmi-app*.logmein.com gateways and speaks TLS on port "
+                    "80 as well as 443, so ask the venue's IT team to exempt "
+                    "*.logmein.com AND logmein.com from both SSL inspection and "
+                    "the web filter's category policy — an allowlist entry for "
+                    "secure.logmein.com alone will not cover the gateways. "
+                    "The timeline in C:\\ProgramData\\LogMeIn is evidence you "
+                    "can hand them."
+                ),
+            }
+        )
+
     # ── Missing / under-count main cameras ─────────────────────
     # Compare what the Coordinator says the VPU is configured for
     # (`expectedMainCameras`, from Get-CameraExpectations) against what's
@@ -2507,6 +2549,15 @@ _READINESS_POLICY = {
                                          #      (LogMeIn / python.org) - remote
                                          #      support and installer downloads
                                          #      suffer, tonight's game does not.
+    "lmi-ssl-blocked":       "info",     # F39 LogMeIn's own service log shows the
+                                         #     venue killing its TLS handshakes
+                                         #     (SSL error on client hello) with no
+                                         #     login since. Support plane like
+                                         #     F38b - remote support is cut off,
+                                         #     tonight's game is not. Field:
+                                         #     2026-08-28, VPU dark in LMI ~16h
+                                         #     until packet inspection was
+                                         #     disabled.
 }
 
 
@@ -3209,7 +3260,7 @@ def _compute_camera_findings(ports: list, poe=None) -> list:
 # ─── Data-building helpers (shared by per-page and preload) ──
 
 
-def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None, probe_results=None, tls_inspection=None):
+def _build_dashboard(identity, performance, services, nics, network_config=None, hardware=None, installed_sw=None, install_state=None, port_tests=None, gpu_info=None, wifi=None, pixellot_config=None, expectations=None, disk_health=None, perf_sample=None, probe_results=None, tls_inspection=None, lmi_log=None):
     # Tag adapter roles (motherboard / camera / wifi) so both the findings and
     # the embedded "Network config" the dashboard ships carry them.
     _classify_network_adapters(network_config)
@@ -3271,7 +3322,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
         if isinstance(data, dict) and data.get("error")
     ]
 
-    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health, probe_results=probe_results, tls_inspection=tls_inspection)
+    findings = _compute_findings(identity, performance, services, nics, hardware, installed_sw, network_config, install_state, port_tests, gpu_info, wifi, pixellot_config=pixellot_config, expectations=expectations, disk_health=disk_health, probe_results=probe_results, tls_inspection=tls_inspection, lmi_log=lmi_log)
 
     return {
         "identity": flat_identity,
@@ -3284,7 +3335,7 @@ def _build_dashboard(identity, performance, services, nics, network_config=None,
     }
 
 
-def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None, wifi=None, tls=None):
+def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_resolution=None, wifi=None, tls=None, lmi_log=None):
     net = {}
     _classify_network_adapters(config)
     if config and not config.get("error"):
@@ -3310,7 +3361,8 @@ def _build_network(config, domains, ports, ntp, local=None, ntp_peers=None, dns_
     # the frontend surface whichever subsection failed.
     return {"config": net, "domains": domains, "ports": ports, "ntp": ntp,
             "local": local, "ntpPeers": ntp_peers,
-            "dnsResolution": dns_resolution, "wifi": wifi, "tls": tls}
+            "dnsResolution": dns_resolution, "wifi": wifi, "tls": tls,
+            "lmiLog": lmi_log}
 
 
 # ─── Routes ───────────────────────────────────────────────────
@@ -3407,7 +3459,7 @@ async def _collect_dashboard() -> dict:
     launch check-in beacon so both score readiness with identical inputs."""
     (identity, performance, services, nics, net_config, hardware, installed_sw,
      install_state, port_tests, gpu_info, wifi, pixellot_config, expectations,
-     disk_health, perf_sample, tls_inspection) = await asyncio.gather(
+     disk_health, perf_sample, tls_inspection, lmi_log) = await asyncio.gather(
         run_ps("Get-SystemIdentity.ps1"),
         run_ps("Get-Performance.ps1"),
         run_ps("Get-Services.ps1"),
@@ -3436,6 +3488,9 @@ async def _collect_dashboard() -> dict:
         # connections" critical. Port tests alone can't see this failure mode
         # (TCP/443 connects fine while the substituted cert kills graphics).
         run_ps("Test-TlsInspection.ps1", timeout=60),
+        # LogMeIn's own service log — the historical half of the middlebox
+        # story (feeds the "venue is killing LogMeIn's connection" warning).
+        run_ps("Get-LmiGatewayLog.ps1", timeout=20),
     )
     # CGI probe (cached 30s; usually already warm from preload) so the
     # slow-port finding identifies the OCR by its actual camera model, not a
@@ -3474,6 +3529,7 @@ async def _collect_dashboard() -> dict:
         pixellot_config=pixellot_config, expectations=expectations,
         disk_health=disk_health, perf_sample=perf_sample,
         probe_results=probe_results, tls_inspection=tls_inspection,
+        lmi_log=lmi_log,
     )
 
 
@@ -3589,7 +3645,7 @@ async def api_network():
     """Network tab data: gathers adapter config, domain reachability, port
     checks, NTP drift + peers, the local-network probe, DNS resolution, and
     Wi-Fi adapters in parallel, then assembles them into the network panel."""
-    config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls = await asyncio.gather(
+    config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls, lmi_log = await asyncio.gather(
         run_ps("Get-NetworkConfig.ps1", timeout=15),
         run_ps("Test-NetworkDomains.ps1", timeout=20),
         run_ps("Test-NetworkPorts.ps1", timeout=45),
@@ -3601,8 +3657,11 @@ async def api_network():
         # 60s: eleven sequential handshakes; a fully-blackholed network costs
         # ~4s per host in TCP timeouts alone. Healthy venues finish in ~5s.
         run_ps("Test-TlsInspection.ps1", timeout=60),
+        # LogMeIn's service log — historical middlebox evidence (a healthy
+        # week of dailies parses in well under a second).
+        run_ps("Get-LmiGatewayLog.ps1", timeout=20),
     )
-    return _build_network(config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls)
+    return _build_network(config, domains, ports, ntp, local, ntp_peers, dns_resolution, wifi, tls, lmi_log)
 
 
 @app.get("/api/network/local-ping")
