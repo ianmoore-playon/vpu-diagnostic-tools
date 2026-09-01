@@ -187,14 +187,14 @@ try {
         $findings += [ordered]@{
             severity = 'warning'
             title    = "$tcpRetransmits TCP retransmission(s) detected"
-            body     = "Retransmissions indicate packet loss on the network path. Check for congestion, firewall interference, or a bad cable."
+            body     = "Retransmissions mean packet loss on the network path. Check for congestion, firewall interference, or a bad cable."
         }
     }
     elseif ($tcpRetransmits -gt 0) {
         $findings += [ordered]@{
             severity = 'info'
             title    = "$tcpRetransmits TCP retransmission(s) detected"
-            body     = "Minor retransmissions -- typically not a concern unless sustained."
+            body     = "Minor retransmissions. These only matter if they are sustained."
         }
     }
 
@@ -210,7 +210,7 @@ try {
         $findings += [ordered]@{
             severity = 'critical'
             title    = "$droppedPackets packet(s) dropped by the network stack"
-            body     = "Packets were dropped before reaching the application. This may indicate NIC buffer overflow, driver issues, or a security filter blocking traffic."
+            body     = "Packets were dropped before reaching the application. Look at NIC buffer overflow, the network driver, or a security filter blocking traffic."
         }
     }
 

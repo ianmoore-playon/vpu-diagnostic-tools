@@ -149,7 +149,7 @@ $card = Get-AdlinkCardInfo
 
 if (-not $card.Supported) {
     $reason = switch ($card.Model) {
-        "82574L" { "PoE power telemetry is not available on the ADLINK GIE64 (Intel 82574L) camera NIC. This card family does not expose a PSE management interface -- the ports still deliver power, it just cannot be measured." }
+        "82574L" { "PoE power telemetry is not available on the ADLINK GIE64 (Intel 82574L) camera NIC. This card family does not expose a PSE management interface. The ports still deliver power; the draw just cannot be measured." }
         "I350"   { "PoE power telemetry is not available on the ADLINK GIE74P-AN (Intel I350) camera NIC. This card family does not expose a PSE management interface." }
         "I354"   { "PoE power telemetry is not available on the ADLINK GIE74P-AN (Intel I354) camera NIC. This card family does not expose a PSE management interface." }
         "None"   { "No Intel camera NIC (I210 / I211 / I350 / 82574L) was detected on this system, so there is no PoE card to measure." }

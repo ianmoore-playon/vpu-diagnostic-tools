@@ -155,6 +155,68 @@ def _demo_scoreconnect_history():
     ]
 
 
+# Simulated SC III install timeline. Mirrors the real status file stages
+# (Install-ScoreConnectIII.ps1 → Get-Sc3InstallStatus.ps1) so the install
+# modal can be demoed end-to-end: each entry is (ends-at-seconds, stage,
+# percent, message, log-line-added-at-this-point).
+_SC3_INSTALL_TIMELINE = [
+    (3, "starting", 5, "Approve the Windows administrator prompt to begin installing ScoreConnect III.", None),
+    (8, "downloading", 20, "Downloading the ScoreConnect III installer from Canopy.",
+     "Downloading from https://canopy-public-packages.nfhsnetwork.com/SC3/Current/installScript3_current.ps1"),
+    (13, "installing", 55, "Installer: Downloading installer version 1.4.1.1 to temporary directory... this might take a minute.",
+     "Sanitized installer script; headless=True"),
+    (18, "installing", 62, "Installer: Attempting to uninstall SC1... this might take a minute.",
+     "installer: Download complete."),
+    (22, "installing", 68, "Installer: Checking if SC2 needs uninstalled...",
+     "installer: Uninstall of SC1 attempt complete."),
+    (28, "installing", 78, "Installer: Attempting ScoreConnectIII 1.4.1.1 install now. This will take 60 seconds.",
+     "installer: Uninstall stage complete."),
+    (33, "verifying", 85, "Verifying ScoreConnect III is running.",
+     "installer: Install complete and shortcut created."),
+]
+_sc3_demo_install = {"started": None}
+
+
+def _demo_sc3_install_start():
+    _sc3_demo_install["started"] = time.time()
+    return {
+        "ok": True,
+        "message": "Install started. Poll /api/scoreconnect/install-sc3/status for progress.",
+        "statusUrl": "/api/scoreconnect/install-sc3/status",
+    }
+
+
+def _demo_sc3_install_status():
+    started = _sc3_demo_install["started"]
+    if started is None:
+        # Mirrors the script's 'idle' branch (no status file present).
+        return {"stage": "idle", "percent": 0, "message": "No install in progress"}
+
+    elapsed = time.time() - started
+    log = []
+    current = None
+    for ends_at, stage, percent, message, log_line in _SC3_INSTALL_TIMELINE:
+        if log_line and elapsed >= ends_at - 1:
+            log.append(log_line)
+        if current is None and elapsed < ends_at:
+            current = (stage, percent, message)
+    if current is None:
+        current = ("complete", 100, "ScoreConnect III is installed and running.")
+        log.append("Service recovery configured: auto-restart on crash (5s/5s/30s, counter resets daily)")
+        log.append("SC III reachable on :5000 - install complete")
+
+    stage, percent, message = current
+    return {
+        "stage": stage,
+        "percent": percent,
+        "message": message,
+        "error": None,
+        "updatedAt": datetime.now().isoformat(),
+        "stale": False,
+        "logTail": "\n".join(log) or None,
+    }
+
+
 def _demo_scoreconnect():
     """Generate consistent ScoreConnect demo data.
 
@@ -830,12 +892,12 @@ DEMO = {
     "Invoke-RecordingsCleanup.ps1": lambda **kw: _demo_cleanup_result(**kw),
     "Get-EventLogs.ps1": lambda **kw: {
         "entries": [
-            {"timeCreated": (datetime.now() - timedelta(hours=2)).isoformat(), "level": "Error", "source": "PixellotAgent", "eventId": 1001, "message": "Connection timeout to cloud service api.pixellot.tv — retrying in 30s"},
-            {"timeCreated": (datetime.now() - timedelta(hours=3)).isoformat(), "level": "Warning", "source": "PixellotEncoder", "eventId": 2010, "message": "Encoder buffer underrun on Camera1 stream — 2 frames dropped"},
+            {"timeCreated": (datetime.now() - timedelta(hours=2)).isoformat(), "level": "Error", "source": "PixellotAgent", "eventId": 1001, "message": "Connection timeout to cloud service api.pixellot.tv - retrying in 30s"},
+            {"timeCreated": (datetime.now() - timedelta(hours=3)).isoformat(), "level": "Warning", "source": "PixellotEncoder", "eventId": 2010, "message": "Encoder buffer underrun on Camera1 stream - 2 frames dropped"},
             {"timeCreated": (datetime.now() - timedelta(hours=5)).isoformat(), "level": "Error", "source": "Service Control Manager", "eventId": 7034, "message": "The PixellotWatchdog service terminated unexpectedly."},
             {"timeCreated": (datetime.now() - timedelta(hours=8)).isoformat(), "level": "Info", "source": "PixellotAgent", "eventId": 1000, "message": "Agent connected to cloud service successfully"},
-            {"timeCreated": (datetime.now() - timedelta(hours=12)).isoformat(), "level": "Warning", "source": "PixellotVPU", "eventId": 3005, "message": "Camera2 stream quality degraded — switching to fallback bitrate"},
-            {"timeCreated": (datetime.now() - timedelta(hours=24)).isoformat(), "level": "Error", "source": "PixellotEncoder", "eventId": 2001, "message": "Hardware encoder init failed — falling back to software encoding"},
+            {"timeCreated": (datetime.now() - timedelta(hours=12)).isoformat(), "level": "Warning", "source": "PixellotVPU", "eventId": 3005, "message": "Camera2 stream quality degraded, switching to fallback bitrate"},
+            {"timeCreated": (datetime.now() - timedelta(hours=24)).isoformat(), "level": "Error", "source": "PixellotEncoder", "eventId": 2001, "message": "Hardware encoder init failed, falling back to software encoding"},
         ]
     },
     "Get-RebootHistory.ps1": lambda **kw: {
@@ -883,11 +945,32 @@ DEMO = {
     },
     "Get-ScoreConnectStatus.ps1": lambda **kw: _demo_scoreconnect(),
     "Get-ScoreConnectLive.ps1": lambda **kw: _demo_scoreconnect_live(),
-    # Steady state — no SC III install running. Mirrors the script's 'idle'
-    # branch (no status file present). Frontend only polls this after the
-    # user kicks off an install, so idle is the right resting demo value.
-    "Get-Sc3InstallStatus.ps1": lambda **kw: {
-        "stage": "idle", "percent": 0, "message": "No install in progress",
+    # Kicking off an install starts a simulated timeline (below) so the
+    # install modal can be exercised end-to-end in demo mode.
+    "Install-ScoreConnectIII.ps1": lambda **kw: _demo_sc3_install_start(),
+    "Get-Sc3InstallStatus.ps1": lambda **kw: _demo_sc3_install_status(),
+    # Protected unit: the SCM restart actions a Pulse-driven install applies.
+    # Carries a real crash that SCM recovered, so the "it already saved you
+    # once" evidence line renders in demo mode too.
+    "Get-Sc3ServiceRecovery.ps1": lambda **kw: {
+        "serviceName": "ScoreConnectIII",
+        "installed": True,
+        "status": "Running",
+        "startType": "Auto",
+        "recoveryConfigured": True,
+        "resetPeriodSec": 86400,
+        "actions": [
+            {"type": "Restart", "delayMs": 5000},
+            {"type": "Restart", "delayMs": 5000},
+            {"type": "Restart", "delayMs": 30000},
+        ],
+        "actionSummary": "Restart after 5s, 5s, 30s",
+        "crashCount": 2,
+        "autoRecoveredCount": 2,
+        "lastCrash": (datetime.now() - timedelta(hours=3)).isoformat(),
+        "lastAutoRestart": (datetime.now() - timedelta(hours=3)).isoformat(),
+        "daysBack": 7,
+        "error": None,
     },
     "Get-ScoreLinkStatus.ps1": lambda **kw: {
         "connected": True, "port": "COM7", "model": "ScoreLink",
@@ -1047,7 +1130,7 @@ DEMO = {
         "entries": [
             {"file": "vpu_2026-05-27.log", "lineNumber": 1452,
              "level": "restart", "timestamp": "2026-05-27 14:22:11",
-             "content": "[2026-05-27 14:22:11] start new log — process restart detected",
+             "content": "[2026-05-27 14:22:11] start new log - process restart detected",
              "fileMTime": (datetime.now() - timedelta(hours=6)).isoformat(),
              "depsError": False},
             {"file": "vpu_2026-05-27.log", "lineNumber": 1453,
@@ -1057,7 +1140,7 @@ DEMO = {
              "depsError": True},
             {"file": "vpu_2026-05-27.log", "lineNumber": 1454,
              "level": "error", "timestamp": "2026-05-27 14:22:12",
-             "content": "[2026-05-27 14:22:12] ERROR: TensorFlow runtime initialization failed — falling back",
+             "content": "[2026-05-27 14:22:12] ERROR: TensorFlow runtime initialization failed - falling back",
              "fileMTime": (datetime.now() - timedelta(hours=6)).isoformat(),
              "depsError": True},
             {"file": "agent_vpu2_2026-05-27.log", "lineNumber": 87,
@@ -1067,7 +1150,7 @@ DEMO = {
              "depsError": False},
             {"file": "agent_vpu2_2026-05-27.log", "lineNumber": 42,
              "level": "restart", "timestamp": "2026-05-27 09:14:02",
-             "content": "[2026-05-27 09:14:02] start new log — agent service initialized",
+             "content": "[2026-05-27 09:14:02] start new log - agent service initialized",
              "fileMTime": (datetime.now() - timedelta(hours=11)).isoformat(),
              "depsError": False},
         ],
@@ -1373,11 +1456,11 @@ def demo_cloud_events(venue_id, local_events):
             "Ended early",
             "Failed: exposure",
             "Agent restarted mid-event",
-            "Box recorded video — issue in the streaming path",
+            "Box recorded video, so the problem is in the streaming path",
         ]),
         "failed_test": ("failed", [
             "Never went on air",
-            "Box never recorded — camera/capture side",
+            "Box never recorded, so the problem is on the camera/capture side",
         ]),
         "offline": ("failed", [
             "Never went on air",
@@ -1385,7 +1468,7 @@ def demo_cloud_events(venue_id, local_events):
         ]),
         "netblock": ("failed", [
             "Never went on air",
-            "Box recorded, nothing uploaded — likely network block",
+            "Box recorded but uploaded nothing, which points to a network block",
         ]),
     }
 
@@ -1397,7 +1480,7 @@ def demo_cloud_events(venue_id, local_events):
         events.append({
             "gameKey": f"gamdemo{s['n']:07d}",
             "headline": s["headline"] if s["kind"] != "failed_test"
-            else "Test Stream — unlisted",
+            else "Test Stream (unlisted)",
             "sport": s["sport"],
             "startTime": iso(start),
             "localStartTime": start.isoformat(),
@@ -1501,8 +1584,8 @@ def demo_cloud_events(venue_id, local_events):
         "events": events,
         "causeHints": [
             {"severity": "warning",
-             "text": "Cloud reports the camera picture is dark — camera "
-                     "may be obstructed, powered off, or the room is dark",
+             "text": "Cloud reports the camera picture is dark. The camera "
+                     "may be obstructed or powered off, or the room is dark",
              "page": "cameras"},
             {"severity": "info",
              "text": f"Pixellot software is behind its target "

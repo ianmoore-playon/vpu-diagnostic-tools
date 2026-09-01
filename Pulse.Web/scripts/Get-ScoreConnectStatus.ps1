@@ -254,7 +254,7 @@ function Probe-ScoreConnectI {
         $result.reachable = $true
         $result.outOfDate = $true
         $result.version   = 'Out of date'
-        $result.error     = 'ScoreConnect (SC I) software is out of date -- upgrade to SC III'
+        $result.error     = 'ScoreConnect (SC I) software is out of date. Upgrade to SC III.'
         return $result
     }
 

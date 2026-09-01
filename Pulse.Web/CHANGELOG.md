@@ -20,6 +20,21 @@ flow shows testers when a new build is available.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 `Pulse.Web/VERSION`.
 
+## [Unreleased]
+
+## [1.2.2] - 2026-09-01
+
+### Added
+- The ScoreConnect page now says whether this VPU is protected against the known ScoreConnect III crash. Green means Windows restarts the service on its own; amber means it doesn't, and the scoreboard will stay dark until someone restarts it by hand. It also shows how many crashes Windows has already caught for you.
+
+### Changed
+- ScoreConnect III installs done through Pulse now set Windows to restart the service automatically if it ever crashes. ScoreConnect has a known crash that used to leave the scoreboard down until someone noticed; with this, it's back on its own within seconds.
+- Installing ScoreConnect III no longer opens a PowerShell window on the VPU desktop. The whole install now runs in the background with live progress shown in a Pulse dialog, which also shows the current scoreboard code to save before the old ScoreConnect is removed. The one Windows administrator prompt still appears — approve it and the rest is hands-off.
+- Plain-language pass over everything Pulse says on screen. Findings, fix instructions, the Help page, the wizards and the confirm dialogs now use full sentences instead of dash-joined fragments, and hedges like "consider", "may indicate" and "ensure" are gone in favour of the actual instruction. Same diagnoses, same thresholds; only the wording changed.
+
+### Fixed
+- The ScoreConnect III install confirmation now shows the scoreboard's vendor and sport/code — the details the install actually overwrites — instead of the bot number, which re-reads itself on its own and was never at risk.
+
 ## [1.2.1] - 2026-08-20
 
 ### Added
