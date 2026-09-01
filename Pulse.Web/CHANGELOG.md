@@ -20,8 +20,6 @@ flow shows testers when a new build is available.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 `Pulse.Web/VERSION`.
 
-## [Unreleased]
-
 ## [1.2.2] - 2026-09-01
 
 ### Added
