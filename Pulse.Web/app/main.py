@@ -4362,6 +4362,19 @@ async def api_install_sc3():
     return await run_ps("Install-ScoreConnectIII.ps1", timeout=30)
 
 
+@app.get("/api/scoreconnect/service-recovery")
+async def api_sc3_service_recovery():
+    """Whether ScoreConnect III is set to restart itself after a crash, plus
+    recent crash / auto-recovery counts from the System log.
+
+    SC III crashes on an unhandled WebSocket exception in every version shipped,
+    and Sportzcast's installer configures no recovery, so an unprotected unit
+    just goes dark. Pulse-driven installs apply the SCM restart actions; this
+    endpoint is how a tech confirms a given VPU actually has them.
+    """
+    return await run_ps("Get-Sc3ServiceRecovery.ps1", timeout=25, cache_ttl=15.0)
+
+
 @app.get("/api/scoreconnect/install-sc3/status")
 async def api_install_sc3_status():
     """Polls the SC III install status file written by the elevated install

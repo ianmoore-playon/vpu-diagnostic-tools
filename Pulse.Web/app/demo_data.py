@@ -949,6 +949,29 @@ DEMO = {
     # install modal can be exercised end-to-end in demo mode.
     "Install-ScoreConnectIII.ps1": lambda **kw: _demo_sc3_install_start(),
     "Get-Sc3InstallStatus.ps1": lambda **kw: _demo_sc3_install_status(),
+    # Protected unit: the SCM restart actions a Pulse-driven install applies.
+    # Carries a real crash that SCM recovered, so the "it already saved you
+    # once" evidence line renders in demo mode too.
+    "Get-Sc3ServiceRecovery.ps1": lambda **kw: {
+        "serviceName": "ScoreConnectIII",
+        "installed": True,
+        "status": "Running",
+        "startType": "Auto",
+        "recoveryConfigured": True,
+        "resetPeriodSec": 86400,
+        "actions": [
+            {"type": "Restart", "delayMs": 5000},
+            {"type": "Restart", "delayMs": 5000},
+            {"type": "Restart", "delayMs": 30000},
+        ],
+        "actionSummary": "Restart after 5s, 5s, 30s",
+        "crashCount": 2,
+        "autoRecoveredCount": 2,
+        "lastCrash": (datetime.now() - timedelta(hours=3)).isoformat(),
+        "lastAutoRestart": (datetime.now() - timedelta(hours=3)).isoformat(),
+        "daysBack": 7,
+        "error": None,
+    },
     "Get-ScoreLinkStatus.ps1": lambda **kw: {
         "connected": True, "port": "COM7", "model": "ScoreLink",
         "statusLabel": "ScoreLink device connected (COM7)",
