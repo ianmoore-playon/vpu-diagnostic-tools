@@ -6977,7 +6977,20 @@ function closeSc3Modal() {
 function installSc3() {
   var sc = dataCache.scoreconnect || {};
   var sc2 = sc.sc2 || {};
-  var bot = sc2.botNumber ? String(sc2.botNumber) : null;
+
+  // What the tech has to write down is the scoreboard configuration a human
+  // set on this unit: vendor and sport/code. The install wipes SC I/II's
+  // settings, and nothing re-derives those. The bot number is deliberately
+  // NOT here — it's read off the device, not entered, so it isn't at risk.
+  var val = function(v) {
+    return (v === null || v === undefined || v === "") ? null : String(v);
+  };
+  var cfgRows = [
+    { label: "Scoreboard vendor", value: val(sc2.vendor), isCode: !!sc2.vendorIsCode },
+    { label: "Sport / code", value: val(sc2.sport) }
+  ];
+  var anyMissing = cfgRows.some(function(r) { return !r.value; });
+  var legacyName = (sc2.hardware || "").replace("ScoreConnectII", "ScoreConnect II") || "the legacy ScoreConnect";
 
   var el = _sc3ModalEl();
   el.innerHTML = `
@@ -6988,11 +7001,22 @@ function installSc3() {
       </div>
       <div class="sc3-modal-body">
         <div class="sc3-warn-box">
-          <div class="font-semibold" style="margin-bottom:0.3rem">${svgIcon("alert", 14)} Save the scoreboard code first</div>
-          <div>Installing removes ScoreConnect I/II and its settings. Copy the current
-          scoreboard code down and save it to this venue's Salesforce implementation before continuing.</div>
-          ${bot ? `<div class="sc3-bot-code">Scoreboard code (Bot Number): <span class="font-mono">${esc(bot)}</span></div>`
-                : `<div class="sc3-bot-code sc3-bot-unknown">Pulse could not read the current scoreboard code from ${esc(sc2.hardware || "the legacy ScoreConnect")} — check it in the ScoreConnect app before continuing.</div>`}
+          <div class="font-semibold" style="margin-bottom:0.3rem">${svgIcon("alert", 14)} Save the scoreboard configuration first</div>
+          <div>Installing removes ScoreConnect I/II and its settings. Write these down and save
+          them to this venue's Salesforce implementation before continuing — you'll re-enter them
+          in ScoreConnect III.</div>
+          <div class="sc3-cfg-box">
+            ${cfgRows.map(function(r) {
+              return `
+              <div class="sc3-cfg-row">
+                <span class="sc3-cfg-label">${esc(r.label)}</span>
+                ${r.value
+                  ? `<span class="sc3-cfg-value font-mono">${esc(r.value)}${r.isCode ? ' <span class="sc3-cfg-note">(code)</span>' : ""}</span>`
+                  : `<span class="sc3-cfg-value sc3-cfg-missing">Not readable</span>`}
+              </div>`;
+            }).join("")}
+          </div>
+          ${anyMissing ? `<div class="sc3-cfg-warn">Pulse could not read every setting from ${esc(legacyName)} — open the ScoreConnect app and note the missing ones before continuing.</div>` : ""}
         </div>
         <div class="text-pulse-muted" style="font-size:0.8rem;line-height:1.5;margin-top:0.75rem">
           The install runs in the background and progress shows here — no installer window

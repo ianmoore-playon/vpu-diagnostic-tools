@@ -3693,16 +3693,35 @@ html.dark .sc-board { box-shadow: none; border-color: var(--c-board-border-2); }
     line-height: 1.5;
     color: var(--c-text);
 }
-.sc3-bot-code {
+.sc3-cfg-box {
     margin-top: 0.6rem;
-    padding: 8px 10px;
+    padding: 4px 10px;
     background: var(--c-surface);
     border: 1px solid var(--c-border);
     border-radius: 6px;
-    font-size: 0.85rem;
-    font-weight: 600;
 }
-.sc3-bot-unknown { font-weight: 400; color: var(--c-muted); }
+.sc3-cfg-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 6px 0;
+    font-size: 0.85rem;
+}
+.sc3-cfg-row + .sc3-cfg-row { border-top: 1px solid var(--c-border); }
+.sc3-cfg-label { color: var(--c-muted); }
+.sc3-cfg-value {
+    font-weight: 600;
+    text-align: right;
+    word-break: break-word;
+}
+.sc3-cfg-note { font-weight: 400; color: var(--c-muted); }
+.sc3-cfg-missing { font-weight: 400; color: var(--c-accent-red); }
+.sc3-cfg-warn {
+    margin-top: 0.55rem;
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
 .sc3-steps { margin: 0.25rem 0 1rem; }
 .sc3-step {
     display: flex;
