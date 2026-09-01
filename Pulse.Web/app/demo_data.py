@@ -155,6 +155,68 @@ def _demo_scoreconnect_history():
     ]
 
 
+# Simulated SC III install timeline. Mirrors the real status file stages
+# (Install-ScoreConnectIII.ps1 → Get-Sc3InstallStatus.ps1) so the install
+# modal can be demoed end-to-end: each entry is (ends-at-seconds, stage,
+# percent, message, log-line-added-at-this-point).
+_SC3_INSTALL_TIMELINE = [
+    (3, "starting", 5, "Approve the Windows administrator prompt to begin installing ScoreConnect III.", None),
+    (8, "downloading", 20, "Downloading the ScoreConnect III installer from Canopy.",
+     "Downloading from https://canopy-public-packages.nfhsnetwork.com/SC3/Current/installScript3_current.ps1"),
+    (13, "installing", 55, "Installer: Downloading installer version 1.4.1.1 to temporary directory... this might take a minute.",
+     "Sanitized installer script; headless=True"),
+    (18, "installing", 62, "Installer: Attempting to uninstall SC1... this might take a minute.",
+     "installer: Download complete."),
+    (22, "installing", 68, "Installer: Checking if SC2 needs uninstalled...",
+     "installer: Uninstall of SC1 attempt complete."),
+    (28, "installing", 78, "Installer: Attempting ScoreConnectIII 1.4.1.1 install now. This will take 60 seconds.",
+     "installer: Uninstall stage complete."),
+    (33, "verifying", 85, "Verifying ScoreConnect III is running.",
+     "installer: Install complete and shortcut created."),
+]
+_sc3_demo_install = {"started": None}
+
+
+def _demo_sc3_install_start():
+    _sc3_demo_install["started"] = time.time()
+    return {
+        "ok": True,
+        "message": "Install started. Poll /api/scoreconnect/install-sc3/status for progress.",
+        "statusUrl": "/api/scoreconnect/install-sc3/status",
+    }
+
+
+def _demo_sc3_install_status():
+    started = _sc3_demo_install["started"]
+    if started is None:
+        # Mirrors the script's 'idle' branch (no status file present).
+        return {"stage": "idle", "percent": 0, "message": "No install in progress"}
+
+    elapsed = time.time() - started
+    log = []
+    current = None
+    for ends_at, stage, percent, message, log_line in _SC3_INSTALL_TIMELINE:
+        if log_line and elapsed >= ends_at - 1:
+            log.append(log_line)
+        if current is None and elapsed < ends_at:
+            current = (stage, percent, message)
+    if current is None:
+        current = ("complete", 100, "ScoreConnect III is installed and running.")
+        log.append("Service recovery configured: auto-restart on crash (5s/5s/30s, counter resets daily)")
+        log.append("SC III reachable on :5000 - install complete")
+
+    stage, percent, message = current
+    return {
+        "stage": stage,
+        "percent": percent,
+        "message": message,
+        "error": None,
+        "updatedAt": datetime.now().isoformat(),
+        "stale": False,
+        "logTail": "\n".join(log) or None,
+    }
+
+
 def _demo_scoreconnect():
     """Generate consistent ScoreConnect demo data.
 
@@ -883,12 +945,10 @@ DEMO = {
     },
     "Get-ScoreConnectStatus.ps1": lambda **kw: _demo_scoreconnect(),
     "Get-ScoreConnectLive.ps1": lambda **kw: _demo_scoreconnect_live(),
-    # Steady state — no SC III install running. Mirrors the script's 'idle'
-    # branch (no status file present). Frontend only polls this after the
-    # user kicks off an install, so idle is the right resting demo value.
-    "Get-Sc3InstallStatus.ps1": lambda **kw: {
-        "stage": "idle", "percent": 0, "message": "No install in progress",
-    },
+    # Kicking off an install starts a simulated timeline (below) so the
+    # install modal can be exercised end-to-end in demo mode.
+    "Install-ScoreConnectIII.ps1": lambda **kw: _demo_sc3_install_start(),
+    "Get-Sc3InstallStatus.ps1": lambda **kw: _demo_sc3_install_status(),
     "Get-ScoreLinkStatus.ps1": lambda **kw: {
         "connected": True, "port": "COM7", "model": "ScoreLink",
         "statusLabel": "ScoreLink device connected (COM7)",

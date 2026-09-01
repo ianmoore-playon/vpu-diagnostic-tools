@@ -23,6 +23,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 ## [Unreleased]
 
 ### Changed
+- ScoreConnect III installs done through Pulse now set Windows to restart the service automatically if it ever crashes. ScoreConnect has a known crash that used to leave the scoreboard down until someone noticed; with this, it's back on its own within seconds.
+- Installing ScoreConnect III no longer opens a PowerShell window on the VPU desktop. The whole install now runs in the background with live progress shown in a Pulse dialog, which also shows the current scoreboard code to save before the old ScoreConnect is removed. The one Windows administrator prompt still appears — approve it and the rest is hands-off.
 - Plain-language pass over everything Pulse says on screen. Findings, fix instructions, the Help page, the wizards and the confirm dialogs now use full sentences instead of dash-joined fragments, and hedges like "consider", "may indicate" and "ensure" are gone in favour of the actual instruction. Same diagnoses, same thresholds; only the wording changed.
 
 ## [1.2.1] - 2026-08-20

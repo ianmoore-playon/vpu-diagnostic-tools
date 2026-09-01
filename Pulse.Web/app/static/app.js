@@ -6943,19 +6943,81 @@ async function _shareDeleteReport(id) {
 // ── ScoreConnect ─────────────────────────────────────────────
 
 // ── SC III Installer ─────────────────────────────────────────
+// The install itself runs hidden on the VPU (see Install-ScoreConnectIII.ps1);
+// this modal is the tech's only window into it. Flow: confirm (with the
+// save-your-scoreboard-code reminder the Canopy script used to 'pause' for)
+// → live progress → complete/failed.
 
-var _sc3InstallPoll = null;  // polling interval handle
+var _sc3InstallPoll = null;   // polling interval handle
+var _sc3Installing = false;   // true while an install is in flight (modal locked)
 
-async function installSc3(btn) {
-  // Replace the upgrade banner contents with a progress UI
-  var card = btn.closest(".card");
-  if (!card) return;
-  _renderSc3Progress(card, { stage: "starting", percent: 5, message: "Approve the Windows administrator prompt to begin installing ScoreConnect III." });
+function _sc3ModalEl() {
+  var el = document.getElementById("sc3-modal");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "sc3-modal";
+    el.className = "sc3-modal";
+    // Backdrop click closes only when not mid-install
+    el.addEventListener("click", function(e) {
+      if (e.target === el && !_sc3Installing) closeSc3Modal();
+    });
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function closeSc3Modal() {
+  if (_sc3Installing) return;  // the install can't be cancelled from here
+  var el = document.getElementById("sc3-modal");
+  if (el) el.classList.remove("open");
+  if (_sc3InstallPoll) { clearInterval(_sc3InstallPoll); _sc3InstallPoll = null; }
+}
+
+// Entry point — the Upgrade card button. Opens the confirm step.
+function installSc3() {
+  var sc = dataCache.scoreconnect || {};
+  var sc2 = sc.sc2 || {};
+  var bot = sc2.botNumber ? String(sc2.botNumber) : null;
+
+  var el = _sc3ModalEl();
+  el.innerHTML = `
+    <div class="sc3-modal-box">
+      <div class="sc3-modal-header">
+        <span class="sc3-modal-title">${svgIcon("download", 16)} Install ScoreConnect III</span>
+        <button class="sc3-modal-close" onclick="closeSc3Modal()" title="Close">${svgIcon("x", 16)}</button>
+      </div>
+      <div class="sc3-modal-body">
+        <div class="sc3-warn-box">
+          <div class="font-semibold" style="margin-bottom:0.3rem">${svgIcon("alert", 14)} Save the scoreboard code first</div>
+          <div>Installing removes ScoreConnect I/II and its settings. Copy the current
+          scoreboard code down and save it to this venue's Salesforce implementation before continuing.</div>
+          ${bot ? `<div class="sc3-bot-code">Scoreboard code (Bot Number): <span class="font-mono">${esc(bot)}</span></div>`
+                : `<div class="sc3-bot-code sc3-bot-unknown">Pulse could not read the current scoreboard code from ${esc(sc2.hardware || "the legacy ScoreConnect")} — check it in the ScoreConnect app before continuing.</div>`}
+        </div>
+        <div class="text-pulse-muted" style="font-size:0.8rem;line-height:1.5;margin-top:0.75rem">
+          The install runs in the background and progress shows here — no installer window
+          opens. One Windows administrator prompt appears on the VPU desktop; approve it to continue.
+          Takes about 2–3 minutes.
+        </div>
+        <div class="sc3-modal-actions">
+          <button class="btn-outline" onclick="closeSc3Modal()">Cancel</button>
+          <button class="btn-outline btn-ol-blue" onclick="_sc3StartInstall()">${svgIcon("download", 14)} Start Install</button>
+        </div>
+      </div>
+    </div>
+  `;
+  el.classList.add("open");
+}
+
+async function _sc3StartInstall() {
+  _sc3Installing = true;
+  _renderSc3Progress({ stage: "starting", percent: 5, message: "Approve the Windows administrator prompt to begin installing ScoreConnect III." });
 
   // Kick off the install — backend returns immediately
   var result = await apiPost("/api/scoreconnect/install-sc3");
   if (!result || !result.ok) {
-    _renderSc3Progress(card, {
+    _sc3Installing = false;
+    _renderSc3Progress({
       stage: "failed", percent: 0,
       message: "Failed to start install",
       error: (result && (result.error || result.message)) || "Unknown error"
@@ -6975,7 +7037,8 @@ async function installSc3(btn) {
     if (!s || s.stage === "unknown") {
       if (++badPolls >= 4) {
         clearInterval(_sc3InstallPoll); _sc3InstallPoll = null;
-        _renderSc3Progress(card, {
+        _sc3Installing = false;
+        _renderSc3Progress({
           stage: "failed", percent: 0,
           message: "Lost contact with the installer.",
           error: (s && s.error) || "Could not read install status."
@@ -6984,10 +7047,10 @@ async function installSc3(btn) {
       return;
     }
     badPolls = 0;
-    _renderSc3Progress(card, s);
 
     if (s.stage === "complete") {
       clearInterval(_sc3InstallPoll); _sc3InstallPoll = null;
+      _sc3Installing = false;
       // Refresh the SC data after a moment so the user sees SC III detected
       setTimeout(function() {
         dataCache.scoreconnect = null;
@@ -6995,53 +7058,83 @@ async function installSc3(btn) {
       }, 3000);
     } else if (s.stage === "failed" || s.stale) {
       clearInterval(_sc3InstallPoll); _sc3InstallPoll = null;
+      _sc3Installing = false;
     }
+    _renderSc3Progress(s);
   }, 1500);
 }
 
-function _renderSc3Progress(card, status) {
+// The four visible steps of an install, in order. 'starting' = step 0 active.
+var _SC3_STEPS = [
+  { key: "starting",    label: "Administrator approval" },
+  { key: "downloading", label: "Download installer" },
+  { key: "installing",  label: "Install ScoreConnect III" },
+  { key: "verifying",   label: "Verify it's running" }
+];
+
+function _renderSc3Progress(status) {
   var stage = status.stage || "unknown";
   var pct = Math.max(0, Math.min(100, status.percent || 0));
   var msg = status.message || "";
   var err = status.error || null;
   var stale = status.stale;
+  var failed = stage === "failed" || stale;
+  var complete = stage === "complete";
 
-  var stageLabel = {
-    starting:    "Starting…",
-    downloading: "Downloading",
-    installing:  "Installing",
-    verifying:   "Verifying",
-    complete:    "Complete",
-    failed:      "Failed",
-    idle:        "Idle"
-  }[stage] || stage;
-
-  var barColor = stage === "failed" ? "var(--c-accent-red)"
-    : stage === "complete" ? "var(--c-accent-green)"
+  var barColor = failed ? "var(--c-accent-red)"
+    : complete ? "var(--c-accent-green)"
     : "var(--c-accent-blue)";
 
-  var iconName = stage === "complete" ? "check"
-    : stage === "failed" ? "x"
-    : "refresh";
+  // Index of the active step; complete = past the end.
+  var activeIdx = complete ? _SC3_STEPS.length
+    : Math.max(0, _SC3_STEPS.findIndex(function(st) { return st.key === stage; }));
 
-  card.innerHTML = `
-    <div style="display:flex;align-items:flex-start;gap:0.75rem">
-      <div style="margin-top:2px;color:${barColor}">${svgIcon(iconName, 18)}</div>
-      <div style="flex:1">
-        <div class="font-semibold" style="margin-bottom:0.25rem">
-          ScoreConnect III Install: ${esc(stageLabel)}${pct ? ' <span class="text-pulse-muted" style="font-weight:normal">(' + pct + '%)</span>' : ''}
+  var stepsHtml = _SC3_STEPS.map(function(st, i) {
+    var state = complete || i < activeIdx ? "done"
+      : i === activeIdx ? (failed ? "failed" : "active")
+      : "pending";
+    var icon = state === "done" ? svgIcon("check", 14)
+      : state === "failed" ? svgIcon("x", 14)
+      : state === "active" ? '<span class="sc3-step-spinner"></span>'
+      : '<span class="sc3-step-dot"></span>';
+    return `
+      <div class="sc3-step sc3-step-${state}">
+        <span class="sc3-step-icon">${icon}</span>
+        <span>${esc(st.label)}</span>
+      </div>
+      ${state === "active" && msg ? `<div class="sc3-step-msg">${esc(msg)}</div>` : ""}
+    `;
+  }).join("");
+
+  var el = _sc3ModalEl();
+  el.innerHTML = `
+    <div class="sc3-modal-box">
+      <div class="sc3-modal-header">
+        <span class="sc3-modal-title">${svgIcon("download", 16)} Installing ScoreConnect III</span>
+        ${_sc3Installing ? "" : `<button class="sc3-modal-close" onclick="closeSc3Modal()" title="Close">${svgIcon("x", 16)}</button>`}
+      </div>
+      <div class="sc3-modal-body">
+        <div class="sc3-steps">${stepsHtml}</div>
+        <div class="sc3-bar-track">
+          <div class="sc3-bar-fill" style="width:${pct}%;background:${barColor}"></div>
         </div>
-        <div class="text-pulse-muted" style="font-size:0.8rem;line-height:1.5">${esc(msg)}</div>
-        <div style="margin-top:0.6rem;height:8px;background:var(--c-deep-bg);border-radius:4px;overflow:hidden;border:1px solid var(--c-border)">
-          <div style="height:100%;width:${pct}%;background:${barColor};transition:width 0.5s ease-out"></div>
-        </div>
-        ${err ? `<div class="status-fail" style="font-size:0.75rem;margin-top:0.5rem">${esc(err)}</div>` : ""}
-        ${stale ? `<div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.35rem">Install appears stalled. Click Retry to start over.</div>` : ""}
-        ${(stage === "failed" || stale) ? `<button class="btn-outline btn-ol-blue" style="margin-top:0.6rem" onclick="installSc3(this)">${svgIcon("refresh", 14)} Retry Install</button>` : ""}
-        ${stage === "complete" ? `<div class="status-pass" style="font-size:0.8rem;margin-top:0.5rem">ScoreConnect III is now installed. Refreshing data…</div>` : ""}
+        ${complete ? `<div class="status-pass" style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;margin-top:0.75rem">${svgIcon("check", 14)} <span>${esc(msg || "ScoreConnect III is installed and running.")}</span></div>` : ""}
+        ${err ? `<div class="status-fail" style="font-size:0.8rem;margin-top:0.75rem">${esc(err)}</div>` : ""}
+        ${stale && !err ? `<div class="status-fail" style="font-size:0.8rem;margin-top:0.75rem">The install appears stalled — no update from the installer in over 30 seconds.</div>` : ""}
+        ${status.logTail ? `
+        <details class="sc3-log" ${failed ? "open" : ""}>
+          <summary>Install log</summary>
+          <pre>${esc(status.logTail)}</pre>
+        </details>` : ""}
+        ${failed || complete ? `
+        <div class="sc3-modal-actions">
+          ${failed ? `<button class="btn-outline btn-ol-blue" onclick="_sc3StartInstall()">${svgIcon("refresh", 14)} Retry Install</button>` : ""}
+          <button class="btn-outline" onclick="closeSc3Modal(); dataCache.scoreconnect = null; if (window.location.hash === '#scoreconnect') renderScoreConnect();">Close</button>
+        </div>` : ""}
       </div>
     </div>
   `;
+  el.classList.add("open");
 }
 
 // Format a Daktronics clock digit-run (no colon in the raw) into MM:SS.
@@ -7528,13 +7621,13 @@ function renderScoreConnect() {
             scores, and live status, without interfering with the data stream.
           </div>
           <div style="margin-top:0.75rem">
-            <button class="btn-outline btn-ol-blue" id="btn-install-sc3" onclick="installSc3(this)">
+            <button class="btn-outline btn-ol-blue" id="btn-install-sc3" onclick="installSc3()">
               ${svgIcon("download", 14)} Install ScoreConnect III
             </button>
           </div>
           <div class="text-pulse-muted" style="font-size:0.72rem;margin-top:0.5rem">
-            Downloads the official installer and runs it in the background. A Windows
-            administrator prompt appears on the VPU desktop. Approve it to continue.
+            The official installer runs in the background with progress shown here in Pulse.
+            One Windows administrator prompt appears on the VPU desktop.
           </div>
         </div>
       </div>
