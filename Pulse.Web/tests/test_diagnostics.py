@@ -1071,6 +1071,73 @@ class TestReadinessPolicy(unittest.TestCase):
         )
 
 
+# ── LogMeIn service-log evidence (Get-LmiGatewayLog) ─────────────────
+# Fixture numbers are the real field log (2026-08-28): a VPU dark in LMI all
+# day - 201 handshakes killed with "SSL error: SSLv3/TLS write client hello"
+# across 142 gateway connects - until the district disabled packet inspection
+# at 15:59:50 and it logged straight in. The dashboard warns only while the
+# block is CURRENT; a recovered block is history and stays on the Network tab.
+class TestLmiGatewayLogFinding(unittest.TestCase):
+    def _lmi(self, blocked=True):
+        return {
+            "installed": True, "logsFound": True,
+            "logDir": "C:\\ProgramData\\LogMeIn", "windowDays": 7,
+            "filesScanned": 2, "attempts": 142, "sslFailures": 201,
+            "handshakeFailures": 60, "gatewayFailures": 141,
+            "logins": 0 if blocked else 1,
+            "firstSslFailure": "2026-08-28 00:04:03",
+            "lastSslFailure": "2026-08-28 15:54:16",
+            "lastLogin": None if blocked else "2026-08-28 15:59:50",
+            "blockedNow": blocked,
+            "recoveredAt": None if blocked else "2026-08-28 15:59:50",
+            "gatewayHosts": ["control.lmi-app25-12.logmein.com"],
+        }
+
+    def _findings(self, lmi_log):
+        return main._compute_findings(
+            identity={}, performance={}, services={}, nics={}, lmi_log=lmi_log)
+
+    def test_current_block_warns(self):
+        f = [x for x in self._findings(self._lmi(blocked=True))
+             if x["code"] == "lmi-ssl-blocked"]
+        self.assertEqual(len(f), 1)
+        self.assertEqual(f[0]["severity"], "warning")
+        self.assertIn("201", f[0]["recommendation"])
+        # The fix has to name the gateway wildcard - an allowlist entry for
+        # secure.logmein.com alone leaves control.lmi-app*.logmein.com dead.
+        self.assertIn("*.logmein.com", f[0]["recommendation"])
+
+    def test_recovered_block_stays_off_dashboard(self):
+        # Failures followed by a successful login = venue lifted the block.
+        # That is Network-tab history, not a live dashboard warning.
+        self.assertEqual(
+            [x for x in self._findings(self._lmi(blocked=False))
+             if x["code"] == "lmi-ssl-blocked"], [])
+
+    def test_clean_log_is_quiet(self):
+        clean = self._lmi(blocked=False)
+        clean.update({"sslFailures": 0, "handshakeFailures": 0,
+                      "gatewayFailures": 0, "firstSslFailure": None,
+                      "lastSslFailure": None, "blockedNow": False,
+                      "recoveredAt": None})
+        self.assertEqual(
+            [x for x in self._findings(clean) if x["code"] == "lmi-ssl-blocked"], [])
+
+    def test_collector_error_is_quiet(self):
+        self.assertEqual(
+            [x for x in self._findings({"error": True, "message": "boom"})
+             if x["code"] == "lmi-ssl-blocked"], [])
+
+    def test_lmi_block_does_not_gate_readiness(self):
+        # Support plane, same rationale as tls-filtered-support: remote
+        # support is cut off, tonight's game is not.
+        verdict = main._compute_readiness(
+            [{"code": "lmi-ssl-blocked", "severity": "warning",
+              "category": "Network", "title": "t", "recommendation": "r"}]
+        )
+        self.assertEqual(verdict["status"], "PASS")
+
+
 # Finding codes emitted with severity "critical" by _compute_findings. Kept
 # explicit rather than scraped so adding a critical is a deliberate two-line
 # change: emit it, then classify it.
