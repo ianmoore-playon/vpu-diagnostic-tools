@@ -231,6 +231,29 @@ try {
         Start-Sleep -Seconds 2
     }
 
+    # Sportzcast's installer configures NO service recovery, so SC3's known
+    # process-killing crash (unhandled WebSocket exception in
+    # SendToAllInsteadOfId, present in every version) leaves the scoreboard
+    # down until a human notices. Configure SCM to auto-restart the service:
+    # 5s after the first two crashes, 30s after the third, counter resets
+    # daily. Args are unquoted on purpose - PowerShell strips quotes from
+    # sc.exe args (the actions= "" empty-string form fails from PS), but
+    # these plain tokens pass through clean. Validated on VPU2 2026-09-01:
+    # a force-killed process was back serving :5000 in under 12 seconds.
+    try {
+        `$svc = Get-Service -Name 'ScoreConnectIII' -ErrorAction SilentlyContinue
+        if (`$svc) {
+            `$null = sc.exe failure ScoreConnectIII reset= 86400 actions= restart/5000/restart/5000/restart/30000
+            if (`$LASTEXITCODE -eq 0) {
+                Write-Log 'Service recovery configured: auto-restart on crash (5s/5s/30s, counter resets daily)'
+            } else {
+                Write-Log "sc.exe failure exited `$LASTEXITCODE - service recovery NOT configured"
+            }
+        } else {
+            Write-Log 'ScoreConnectIII service not registered - skipped recovery config'
+        }
+    } catch { Write-Log "Service recovery config failed: `$(`$_.Exception.Message)" }
+
     if (`$ok) {
         Write-Status -Stage 'complete' -Percent 100 -Message 'ScoreConnect III is installed and running.'
         Write-Log 'SC III reachable on :5000 - install complete'

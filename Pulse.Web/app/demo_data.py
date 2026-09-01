@@ -202,6 +202,7 @@ def _demo_sc3_install_status():
             current = (stage, percent, message)
     if current is None:
         current = ("complete", 100, "ScoreConnect III is installed and running.")
+        log.append("Service recovery configured: auto-restart on crash (5s/5s/30s, counter resets daily)")
         log.append("SC III reachable on :5000 - install complete")
 
     stage, percent, message = current
