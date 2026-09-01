@@ -228,7 +228,7 @@ class TestComputeFindings(unittest.TestCase):
                       "gpus": [{"vendor": "Intel", "isDedicated": False}]},
             gpu_info=_gpu("Turing"),
         )
-        self.assertIn("No dedicated graphics card — wrong hardware for a VPU", titles)
+        self.assertIn("No dedicated graphics card, so this is the wrong hardware for a VPU", titles)
 
     def test_findings_have_required_shape(self):
         # Every finding must carry severity + title so the dashboard can render it.
@@ -961,10 +961,7 @@ class TestDemoDataContract(unittest.TestCase):
     # Scripts referenced by main.py that intentionally have no demo entry yet.
     # Keep this minimal — each entry is a known gap. Remove an entry once its
     # demo data lands (test_exempt_list_has_no_stale_entries enforces that).
-    _DEMO_EXEMPT = {
-        # Owned by the ScoreConnect session — demo entries pending.
-        "Install-ScoreConnectIII.ps1",
-    }
+    _DEMO_EXEMPT = set()
 
     # Side-effect / action scripts: they *do* something (change system state)
     # rather than return diagnostic data, so demo mode has nothing meaningful

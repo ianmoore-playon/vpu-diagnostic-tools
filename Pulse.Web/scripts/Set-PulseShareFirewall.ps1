@@ -55,7 +55,7 @@ try {
     $scriptPath = $MyInvocation.MyCommand.Path
     $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Port $Port -Elevated"
     Start-Process -FilePath "powershell.exe" -Verb RunAs -WindowStyle Hidden -ArgumentList $argLine | Out-Null
-    Write-Result @{ applied = $true; elevating = $true; port = $Port; message = "Asked Windows for permission to open the firewall - approve the prompt." }
+    Write-Result @{ applied = $true; elevating = $true; port = $Port; message = "Asked Windows for permission to open the firewall. Approve the prompt." }
     exit 0
 } catch {
     Write-Result @{ applied = $false; port = $Port; error = "Couldn't request administrator approval: $($_.Exception.Message)" }

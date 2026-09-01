@@ -139,7 +139,7 @@ function Test-CleanupRoot {
     }
     $item = Get-Item -LiteralPath $Root -ErrorAction Stop
     if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
-        return "Cleanup root '$Root' is a junction/symlink -- refusing."
+        return "Cleanup root '$Root' is a junction/symlink, so cleanup refuses to run."
     }
     return $null
 }
