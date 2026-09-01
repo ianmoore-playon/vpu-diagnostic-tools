@@ -22,6 +22,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions track
 
 ## [Unreleased]
 
+### Added
+- The ScoreConnect page now says whether this VPU is protected against the known ScoreConnect III crash. Green means Windows restarts the service on its own; amber means it doesn't, and the scoreboard will stay dark until someone restarts it by hand. It also shows how many crashes Windows has already caught for you.
+
 ### Changed
 - ScoreConnect III installs done through Pulse now set Windows to restart the service automatically if it ever crashes. ScoreConnect has a known crash that used to leave the scoreboard down until someone noticed; with this, it's back on its own within seconds.
 - Installing ScoreConnect III no longer opens a PowerShell window on the VPU desktop. The whole install now runs in the background with live progress shown in a Pulse dialog, which also shows the current scoreboard code to save before the old ScoreConnect is removed. The one Windows administrator prompt still appears — approve it and the rest is hands-off.

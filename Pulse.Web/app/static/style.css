@@ -3795,6 +3795,43 @@ html.dark .sc-board { box-shadow: none; border-color: var(--c-board-border-2); }
     overflow-y: auto;
 }
 
+/* ── SC III crash auto-restart panel ────────────────────────── */
+.sc3-recovery { border-left: 3px solid var(--c-border); }
+.sc3-recovery-on { border-left-color: var(--c-accent-green); }
+.sc3-recovery-off { border-left-color: var(--c-accent-amber); }
+.sc3-recovery-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+}
+.sc3-recovery-icon {
+    flex: none;
+    margin-top: 1px;
+    line-height: 0;
+}
+.sc3-recovery-on .sc3-recovery-icon { color: var(--c-accent-green); }
+.sc3-recovery-off .sc3-recovery-icon { color: var(--c-accent-amber); }
+.sc3-recovery-sub {
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--c-muted);
+}
+.sc3-recovery-evidence,
+.sc3-recovery-fix {
+    margin-top: 0.7rem;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    background: var(--c-surface-3);
+    color: var(--c-muted);
+}
+.sc3-recovery-fix {
+    background: var(--c-tint-amber);
+    color: var(--c-text);
+}
+
 /* ── Share over LAN ────────────────────────────────────────── */
 
 .share-pair {

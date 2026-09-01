@@ -7717,6 +7717,9 @@ function renderScoreConnect() {
       </div>` : ""}
     </div>` : ""}
 
+    <!-- Crash auto-restart status (async — see _scLoadServiceRecovery) -->
+    <div id="sc3-recovery-wrap">${_scRecoveryCache ? _scServiceRecoveryHtml(_scRecoveryCache) : ""}</div>
+
     <!-- Cloud BOT (ScoreLink panel moved up under the hero) -->
     ${botCard ? `<div class="mt-4">${botCard}</div>` : ""}
 
@@ -7724,6 +7727,7 @@ function renderScoreConnect() {
     <div id="sc-config-history-wrap">${_scHistCache ? _scConfigHistoryHtml(_scHistCache, data) : ""}</div>
   `;
   _scLoadConfigHistory(data);
+  _scLoadServiceRecovery();
 
   // Start live polling whenever SC III is detected — even if not currently
   // receiving data, so the hero updates the moment the feed starts. Safe:
@@ -7988,6 +7992,95 @@ function _sc3SetText(id, text) {
 // scoreboard data is confirmed flowing ("Data is present…"), so entries are
 // known-working states — not mid-reconfigure noise. Reuses the fault-isolator
 // history styles (fi-hist-*), which are generic collapsible history rows.
+
+// ── SC III crash auto-restart status ─────────────────────────
+// SC III dies on an unhandled WebSocket exception in every shipped version,
+// and Sportzcast's installer configures no service recovery — an unprotected
+// unit just goes dark until someone notices the scoreboard is gone. Pulse
+// installs apply SCM restart actions; this panel is how a tech confirms a
+// given VPU actually has them, and flags the ones that don't.
+
+var _scRecoveryCache = null;  // null = not yet fetched
+
+function _scLoadServiceRecovery() {
+  api("/api/scoreconnect/service-recovery").then(function(d) {
+    _scRecoveryCache = d || null;
+    var w = document.getElementById("sc3-recovery-wrap");
+    if (w && currentPage === "scoreconnect") w.innerHTML = _scServiceRecoveryHtml(_scRecoveryCache);
+  }).catch(function() {});
+}
+
+function _scAgoLabel(iso) {
+  if (!iso) return null;
+  var t = Date.parse(iso);
+  if (isNaN(t)) return null;
+  var mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + (mins === 1 ? " minute ago" : " minutes ago");
+  var hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + (hrs === 1 ? " hour ago" : " hours ago");
+  var days = Math.floor(hrs / 24);
+  return days + (days === 1 ? " day ago" : " days ago");
+}
+
+function _scServiceRecoveryHtml(r) {
+  // Nothing to say when there is no SC III service on the box (a legacy
+  // SC I/II unit) or the collector failed outright.
+  if (!r || r.error || !r.installed) return "";
+
+  var on = !!r.recoveryConfigured;
+  var days = r.daysBack || 7;
+  var crashes = r.crashCount || 0;
+  var recovered = r.autoRecoveredCount || 0;
+  var lastAgo = _scAgoLabel(r.lastAutoRestart);
+
+  // Evidence beats assertion: if SCM has actually caught a crash on this unit,
+  // say so — that is the difference between "configured" and "known working".
+  var evidence = "";
+  if (on && recovered > 0) {
+    evidence = "Windows has already caught " + recovered +
+      (recovered === 1 ? " crash" : " crashes") + " on this VPU in the last " + days + " days" +
+      (lastAgo ? " (most recent " + lastAgo + ")" : "") + ".";
+  } else if (on && crashes === 0) {
+    evidence = "No ScoreConnect III crashes recorded in the last " + days + " days.";
+  } else if (!on && crashes > 0) {
+    evidence = "ScoreConnect III has crashed " + crashes +
+      (crashes === 1 ? " time" : " times") + " in the last " + days +
+      " days with no automatic restart — the scoreboard stayed down until someone noticed.";
+  }
+
+  return `
+    <div class="card mt-4 sc3-recovery ${on ? "sc3-recovery-on" : "sc3-recovery-off"}">
+      <div class="sc3-recovery-head">
+        <span class="sc3-recovery-icon">${svgIcon(on ? "check" : "alert", 18)}</span>
+        <div>
+          <div class="font-semibold">${on
+            ? "Crash auto-restart is active on this VPU"
+            : "Crash auto-restart is not configured"}</div>
+          <div class="sc3-recovery-sub">${on
+            ? "Windows restarts ScoreConnect III by itself if it crashes, so a crash costs seconds instead of the rest of the event."
+            : "ScoreConnect III has a known crash that kills the service. Without this, Windows leaves it stopped and the scoreboard stays dark until someone restarts it by hand."}</div>
+        </div>
+      </div>
+      <div class="kv-grid" style="margin-top:0.7rem">
+        ${kvRowHtml("Service", `<span class="${r.status === "Running" ? "status-pass" : "status-fail"}">${esc(r.status || "Unknown")}</span>`)}
+        ${kvRowHtml("Recovery", on
+          ? `<span class="status-pass">${esc(r.actionSummary || "Configured")}</span>`
+          : `<span class="status-warn">${esc(r.actionSummary || "Not configured")}</span>`)}
+        ${on && r.resetPeriodSec ? kvRow("Failure count resets after", _fmtResetPeriod(r.resetPeriodSec)) : ""}
+      </div>
+      ${evidence ? `<div class="sc3-recovery-evidence">${esc(evidence)}</div>` : ""}
+      ${!on ? `<div class="sc3-recovery-fix">Reinstalling ScoreConnect III from Pulse applies this automatically.</div>` : ""}
+    </div>
+  `;
+}
+
+function _fmtResetPeriod(sec) {
+  if (!sec) return "—";
+  if (sec % 86400 === 0) { var d = sec / 86400; return d + (d === 1 ? " day" : " days"); }
+  if (sec % 3600 === 0) { var h = sec / 3600; return h + (h === 1 ? " hour" : " hours"); }
+  return sec + " seconds";
+}
 
 var _scHistCache = null;  // persisted entries (null = not yet fetched)
 
