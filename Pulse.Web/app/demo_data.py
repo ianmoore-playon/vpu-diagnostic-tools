@@ -788,6 +788,35 @@ DEMO = {
         "interceptorIssuers": [],
         "filterVendors": [],
     },
+    # LogMeIn service-log scan — the healthy shape: a couple of routine
+    # gateway reconnects over the week, zero killed handshakes (a
+    # long-connected unit logs no gateway lines at all for days; that is
+    # normal, not a failure). To DEMO the "venue is killing LogMeIn's
+    # connection" warning (field log 2026-08-28: a VPU dark in LMI ~16 hours),
+    # set sslFailures ~201, handshakeFailures ~60, gatewayFailures ~141,
+    # attempts ~142, logins 0, firstSslFailure/lastSslFailure spanning the
+    # day, lastLogin None, blockedNow True, recoveredAt None. To DEMO the
+    # recovered/info variant (packet inspection disabled while you watch),
+    # keep the failures but set logins 1, lastLogin/recoveredAt a few minutes
+    # after lastSslFailure, and blockedNow False.
+    "Get-LmiGatewayLog.ps1": lambda **kw: {
+        "installed": True,
+        "logsFound": True,
+        "logDir": "C:\\ProgramData\\LogMeIn",
+        "windowDays": 7,
+        "filesScanned": 8,
+        "attempts": 3,
+        "sslFailures": 0,
+        "handshakeFailures": 0,
+        "gatewayFailures": 0,
+        "logins": 3,
+        "firstSslFailure": None,
+        "lastSslFailure": None,
+        "lastLogin": (datetime.now() - timedelta(days=2, hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+        "blockedNow": False,
+        "recoveredAt": None,
+        "gatewayHosts": ["control.lmi-app25-04.logmein.com", "control.lmi-app25-10.logmein.com"],
+    },
     "Test-NtpDrift.ps1": lambda **kw: {"offsetSeconds": round(random.uniform(-0.3, 0.5), 3), "status": "ok", "source": "0.us.pool.ntp.org", "configuredSource": "0.us.pool.ntp.org", "networkSynced": True},
     "Get-NtpPeers.ps1": lambda **kw: {
         "status": {
